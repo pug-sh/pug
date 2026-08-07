@@ -112,8 +112,8 @@ func newPublicIntegrationServer(t *testing.T) (*Server, *coredashboards.Service,
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
-		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub"); err != nil {
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
+		projectID, orgID, "test-project"); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
 	return srv, svc, projectID

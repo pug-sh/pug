@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"connectrpc.com/authn"
@@ -542,4 +543,192 @@ func TestHandler_ProjectLifecycle_AdminAllowed(t *testing.T) {
 	if _, err := srv.Delete(ctxWithCustomerProject(ctx, customer, p), connect.NewRequest(&projectsv1.DeleteRequest{})); err != nil {
 		t.Fatalf("admin Delete: %v", err)
 	}
+}
+
+// ----- API keys: list / create / delete -----
+
+// TestHandler_ApiKeys_Lifecycle walks the flow a user actually performs: a new
+// project already has its public key, they mint a private one (seeing it exactly
+// once), then revoke it.
+func TestHandler_ApiKeys_Lifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:       proto.String(orgID),
+		DisplayName: proto.String("keys project"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	project := created.Msg.GetProject()
+	projectCtx := ctxWithCustomerProject(ctx, customer, dbread.Project{ID: project.GetId(), OrgID: orgID})
+
+	t.Run("a new project lists only its starter public key", func(t *testing.T) {
+		res, err := srv.ListApiKeys(projectCtx, connect.NewRequest(&projectsv1.ListApiKeysRequest{}))
+		if err != nil {
+			t.Fatalf("ListApiKeys: %v", err)
+		}
+		keys := res.Msg.GetApiKeys()
+		if len(keys) != 1 {
+			t.Fatalf("got %d keys, want 1", len(keys))
+		}
+		if keys[0].GetKind() != projectsv1.ApiKeyKind_API_KEY_KIND_PUBLIC {
+			t.Errorf("starter key kind = %v, want PUBLIC", keys[0].GetKind())
+		}
+		// ListApiKeys is the only way to read a project's keys — Project carries none.
+		if !strings.HasPrefix(keys[0].GetKey(), "pub_") {
+			t.Errorf("starter key = %q, want a pub_ key", keys[0].GetKey())
+		}
+	})
+
+	var privateKeyID string
+	t.Run("creating a private key returns it once", func(t *testing.T) {
+		res, err := srv.CreateApiKey(projectCtx, connect.NewRequest(&projectsv1.CreateApiKeyRequest{
+			Kind:        projectsv1.ApiKeyKind_API_KEY_KIND_PRIVATE.Enum(),
+			DisplayName: proto.String("CI"),
+		}))
+		if err != nil {
+			t.Fatalf("CreateApiKey: %v", err)
+		}
+		privateKeyID = res.Msg.GetApiKey().GetId()
+
+		if !strings.HasPrefix(res.Msg.GetKey(), "prv_") {
+			t.Errorf("returned key = %q, want a prv_ key", res.Msg.GetKey())
+		}
+		// The response message itself must not carry the secret — only the
+		// top-level key field does, and only here.
+		if got := res.Msg.GetApiKey().GetKey(); got != "" {
+			t.Errorf("ApiKey.key = %q, want empty for a private key", got)
+		}
+		if res.Msg.GetApiKey().GetMasked() == "" {
+			t.Error("expected a mask to identify the key by later")
+		}
+
+		// ...and never again: a list must show only the mask.
+		list, err := srv.ListApiKeys(projectCtx, connect.NewRequest(&projectsv1.ListApiKeysRequest{}))
+		if err != nil {
+			t.Fatalf("ListApiKeys: %v", err)
+		}
+		for _, k := range list.Msg.GetApiKeys() {
+			if k.GetKind() == projectsv1.ApiKeyKind_API_KEY_KIND_PRIVATE && k.GetKey() != "" {
+				t.Errorf("ListApiKeys returned a private key value %q", k.GetKey())
+			}
+		}
+		if len(list.Msg.GetApiKeys()) != 2 {
+			t.Errorf("got %d keys, want 2", len(list.Msg.GetApiKeys()))
+		}
+	})
+
+	t.Run("deleting the private key removes it", func(t *testing.T) {
+		if _, err := srv.DeleteApiKey(projectCtx, connect.NewRequest(&projectsv1.DeleteApiKeyRequest{
+			Id: proto.String(privateKeyID),
+		})); err != nil {
+			t.Fatalf("DeleteApiKey: %v", err)
+		}
+
+		list, err := srv.ListApiKeys(projectCtx, connect.NewRequest(&projectsv1.ListApiKeysRequest{}))
+		if err != nil {
+			t.Fatalf("ListApiKeys: %v", err)
+		}
+		if len(list.Msg.GetApiKeys()) != 1 {
+			t.Errorf("got %d keys after delete, want 1", len(list.Msg.GetApiKeys()))
+		}
+	})
+}
+
+func TestHandler_DeleteApiKey_NotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:       proto.String(orgID),
+		DisplayName: proto.String("nf project"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projectCtx := ctxWithCustomerProject(ctx, customer,
+		dbread.Project{ID: created.Msg.GetProject().GetId(), OrgID: orgID})
+
+	_, err = srv.DeleteApiKey(projectCtx, connect.NewRequest(&projectsv1.DeleteApiKeyRequest{
+		Id: proto.String("nosuchkey00000000000"),
+	}))
+	assertCode(t, err, connect.CodeNotFound)
+	assertReason(t, err, apperr.ReasonApiKeyNotFound)
+}
+
+// A key id is not a capability: presenting another project's key id must read as
+// "not found" rather than revoking it.
+func TestHandler_DeleteApiKey_IsProjectScoped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	newProject := func(name string) *projectsv1.Project {
+		t.Helper()
+		res, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+			OrgId:       proto.String(orgID),
+			DisplayName: proto.String(name),
+		}))
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		return res.Msg.GetProject()
+	}
+
+	victim := newProject("victim")
+	attacker := newProject("attacker")
+
+	victimCtx := ctxWithCustomerProject(ctx, customer, dbread.Project{ID: victim.GetId(), OrgID: orgID})
+	attackerCtx := ctxWithCustomerProject(ctx, customer, dbread.Project{ID: attacker.GetId(), OrgID: orgID})
+
+	victimKeys, err := srv.ListApiKeys(victimCtx, connect.NewRequest(&projectsv1.ListApiKeysRequest{}))
+	if err != nil {
+		t.Fatalf("ListApiKeys: %v", err)
+	}
+	victimKeyID := victimKeys.Msg.GetApiKeys()[0].GetId()
+
+	_, err = srv.DeleteApiKey(attackerCtx, connect.NewRequest(&projectsv1.DeleteApiKeyRequest{
+		Id: proto.String(victimKeyID),
+	}))
+	assertCode(t, err, connect.CodeNotFound)
+
+	after, err := srv.ListApiKeys(victimCtx, connect.NewRequest(&projectsv1.ListApiKeysRequest{}))
+	if err != nil {
+		t.Fatalf("ListApiKeys after: %v", err)
+	}
+	if len(after.Msg.GetApiKeys()) != 1 {
+		t.Errorf("victim now has %d keys — its key was deleted from another project's context", len(after.Msg.GetApiKeys()))
+	}
+}
+
+// Every key RPC scopes to the x-project-id project. A principal without one is
+// rejected before the service is reached — hence the nil service here, which
+// would panic if a handler ever stopped resolving the project first.
+func TestHandler_ApiKeys_RequireProjectScope(t *testing.T) {
+	srv := NewServer(nil)
+	ctx := ctxWithCustomer(context.Background(), dbread.Customer{ID: "cust-no-project"})
+
+	_, err := srv.ListApiKeys(ctx, connect.NewRequest(&projectsv1.ListApiKeysRequest{}))
+	assertCode(t, err, connect.CodeUnauthenticated)
+
+	_, err = srv.CreateApiKey(ctx, connect.NewRequest(&projectsv1.CreateApiKeyRequest{
+		Kind: projectsv1.ApiKeyKind_API_KEY_KIND_PRIVATE.Enum(),
+	}))
+	assertCode(t, err, connect.CodeUnauthenticated)
+
+	_, err = srv.DeleteApiKey(ctx, connect.NewRequest(&projectsv1.DeleteApiKeyRequest{Id: proto.String("k1")}))
+	assertCode(t, err, connect.CodeUnauthenticated)
 }

@@ -112,6 +112,7 @@ func buildPolicyRules() [][]string {
 	rules = append(rules, grant(roleViewer, ResourceOrg, ActionRead)...)
 	rules = append(rules, grant(roleViewer, ResourceMember, ActionRead)...)
 	rules = append(rules, grant(roleViewer, ResourceProject, ActionRead)...)
+	rules = append(rules, grant(roleViewer, ResourceAPIKey, ActionRead)...)
 
 	// member — full CRUD on all project-scoped resources. The read half overlaps
 	// the viewer floor member inherits; manage() stays readable and the overlap
@@ -131,6 +132,11 @@ func buildPolicyRules() [][]string {
 		ResourceEmailProvider,
 		ResourceProject,
 	)...)
+
+	// admin — minting and revoking a project's API keys. Granted explicitly
+	// rather than via manage(): there is no update action to confer, and the read
+	// half is already the viewer floor above.
+	rules = append(rules, grant(roleAdmin, ResourceAPIKey, ActionCreate, ActionDelete)...)
 
 	return rules
 }

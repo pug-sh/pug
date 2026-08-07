@@ -6,8 +6,34 @@ lint:
   use:
     - STANDARD
 breaking:
+  # The convention: what a field removal costs depends on who generates code from
+  # the proto, so the rule that guards it is scoped to the auth boundary — the same
+  # split proto/ is already laid out along.
+  #
+  # FILE, the strictest category, bans field removal outright (FIELD_NO_DELETE) even
+  # when the number and name are reserved. That is the right guarantee for anything a
+  # third party generates an SDK from: reserving keeps the wire safe, but it does not
+  # stop `key.getPublicApiKey()` from vanishing out of a customer's build, and we do
+  # not control when they regenerate. So sdk/, shared/ (private-key + MCP callers),
+  # public/, common/ and workers/ (messages outlive a deploy in NATS) keep the ban:
+  # a field there is deprecated and left in place, never deleted.
+  #
+  # dashboard/ is the one surface whose only consumer is our own FE, shipped in
+  # lockstep, so a removal there is a two-repo change we schedule rather than a break
+  # we inflict. There it drops to the reservation-aware rules (they live in
+  # WIRE_JSON/WIRE, which FILE does not defer to): a removal must reserve BOTH the
+  # name and the number or it still fails, so the wire and JSON contracts hold — a
+  # reserved number is never reissued and an old client's bytes are never
+  # reinterpreted as a different field.
+  #
+  # Everything else in FILE applies everywhere, unchanged.
   use:
     - FILE
+    - FIELD_NO_DELETE_UNLESS_NAME_RESERVED
+    - FIELD_NO_DELETE_UNLESS_NUMBER_RESERVED
+  ignore_only:
+    FIELD_NO_DELETE:
+      - proto/dashboard
 modules:
   - path: proto
     name: buf.build/pugsh/pug

@@ -66,6 +66,7 @@ func TestRequestMagicLink_IssuesTokenForKnownAndUnknownEmail(t *testing.T) {
 	if len(pub.jobs) != 2 {
 		t.Fatalf("expected 2 published magic-link jobs, got %d", len(pub.jobs))
 	}
+	dispatchIDs := map[string]bool{}
 	for _, pj := range pub.jobs {
 		ml, ok := pj.job.Payload.(*emailworkerv1.EmailJob_MagicLink)
 		if !ok {
@@ -74,6 +75,16 @@ func TestRequestMagicLink_IssuesTokenForKnownAndUnknownEmail(t *testing.T) {
 		if ml.MagicLink.GetToken() == "" {
 			t.Fatal("magic link job missing token")
 		}
+		// The worker keys the provider send on dispatch_id and refuses a blank
+		// one, so an unset dispatch id dead-letters every magic link.
+		if pj.job.GetDispatchId() == "" {
+			t.Fatal("magic link job missing dispatch id")
+		}
+		dispatchIDs[pj.job.GetDispatchId()] = true
+	}
+	// A shared key would let the provider dedupe the second issuance away.
+	if len(dispatchIDs) != len(pub.jobs) {
+		t.Fatalf("dispatch ids must be unique per issuance, got %d for %d jobs", len(dispatchIDs), len(pub.jobs))
 	}
 }
 

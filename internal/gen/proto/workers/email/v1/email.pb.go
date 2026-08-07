@@ -28,7 +28,10 @@ type EmailJob struct {
 	//
 	//	*EmailJob_OrgMemberInvite
 	//	*EmailJob_MagicLink
-	Payload       isEmailJob_Payload `protobuf_oneof:"payload"`
+	Payload isEmailJob_Payload `protobuf_oneof:"payload"`
+	// Identifies one send attempt (the email_action_tokens row id) and is the
+	// provider idempotency key: fresh per issuance, stable across NATS retries.
+	DispatchId    *string `protobuf:"bytes,6,opt,name=dispatch_id,json=dispatchId" json:"dispatch_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -86,6 +89,13 @@ func (x *EmailJob) GetMagicLink() *MagicLinkPayload {
 		}
 	}
 	return nil
+}
+
+func (x *EmailJob) GetDispatchId() string {
+	if x != nil && x.DispatchId != nil {
+		return *x.DispatchId
+	}
+	return ""
 }
 
 type isEmailJob_Payload interface {
@@ -220,12 +230,15 @@ var File_workers_email_v1_email_proto protoreflect.FileDescriptor
 
 const file_workers_email_v1_email_proto_rawDesc = "" +
 	"\n" +
-	"\x1cworkers/email/v1/email.proto\x12\x10workers.email.v1\x1a\x1bbuf/validate/validate.proto\"\xb9\x01\n" +
+	"\x1cworkers/email/v1/email.proto\x12\x10workers.email.v1\x1a\x1bbuf/validate/validate.proto\"\xb4\x02\n" +
 	"\bEmailJob\x12V\n" +
 	"\x11org_member_invite\x18\x03 \x01(\v2(.workers.email.v1.OrgMemberInvitePayloadH\x00R\x0forgMemberInvite\x12C\n" +
 	"\n" +
-	"magic_link\x18\x05 \x01(\v2\".workers.email.v1.MagicLinkPayloadH\x00R\tmagicLinkB\x10\n" +
-	"\apayload\x12\x05\xbaH\x02\b\x01\"\x85\x01\n" +
+	"magic_link\x18\x05 \x01(\v2\".workers.email.v1.MagicLinkPayloadH\x00R\tmagicLink\x12+\n" +
+	"\vdispatch_id\x18\x06 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\n" +
+	"dispatchIdB\x10\n" +
+	"\apayload\x12\x05\xbaH\x02\b\x01J\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x04\x10\x05R\x15signup_verify_welcomeR\x0epassword_resetR\x13verification_resend\"\x85\x01\n" +
 	"\x16OrgMemberInvitePayload\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12+\n" +

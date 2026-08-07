@@ -7,6 +7,8 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/projects"
@@ -97,7 +99,99 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&projectsv1.CreateResponse{Project: wToRPCMsgWithPrivateKey(projectData)}), nil
+	return connect.NewResponse(&projectsv1.CreateResponse{Project: wToRPCMsg(projectData)}), nil
+}
+
+// ListApiKeys returns the API keys of the project specified by the x-project-id
+// header. Public keys are returned in full; a private key is only ever a mask.
+func (s *server) ListApiKeys(
+	ctx context.Context,
+	_ *connect.Request[projectsv1.ListApiKeysRequest],
+) (*connect.Response[projectsv1.ListApiKeysResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	keys, err := s.service.ListApiKeys(ctx, principal.Project.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed listing api keys", slogx.Error(err), slog.String("project_id", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	result := make([]*projectsv1.ApiKey, 0, len(keys))
+	for _, k := range keys {
+		result = append(result, apiKeyToRPCMsg(k))
+	}
+
+	return connect.NewResponse(&projectsv1.ListApiKeysResponse{ApiKeys: result}), nil
+}
+
+// CreateApiKey mints a key for the project specified by the x-project-id header.
+// The response carries the key in full — for a private key that is the only time
+// it exists outside the caller, since only its digest is stored.
+func (s *server) CreateApiKey(
+	ctx context.Context,
+	req *connect.Request[projectsv1.CreateApiKeyRequest],
+) (*connect.Response[projectsv1.CreateApiKeyResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	kind, ok := kindFromRPCEnum(req.Msg.GetKind())
+	if !ok {
+		// Unreachable: the request is protovalidated defined_only + not_in [0].
+		// Reaching this means a new enum value shipped without a mapping.
+		err := fmt.Errorf("unmapped api key kind %v", req.Msg.GetKind())
+		slog.ErrorContext(ctx, "failed to map api key kind", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	created, err := s.service.CreateApiKey(ctx, principal.Project.ID, kind, req.Msg.GetDisplayName())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&projectsv1.CreateApiKeyResponse{
+		ApiKey: createdApiKeyToRPCMsg(created.Key),
+		Key:    proto.String(created.RawKey),
+	}), nil
+}
+
+// DeleteApiKey revokes a key of the project specified by the x-project-id header.
+// It takes effect immediately; the project keeps working through its other keys.
+func (s *server) DeleteApiKey(
+	ctx context.Context,
+	req *connect.Request[projectsv1.DeleteApiKeyRequest],
+) (*connect.Response[projectsv1.DeleteApiKeyResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.service.DeleteApiKey(ctx, principal.Project.ID, req.Msg.GetId()); err != nil {
+		if errors.Is(err, projects.ErrApiKeyNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonApiKeyNotFound, "API key not found", apperr.Resource("api_key", req.Msg.GetId()))
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&projectsv1.DeleteApiKeyResponse{}), nil
 }
 
 // Delete removes the project specified by x-project-id header.

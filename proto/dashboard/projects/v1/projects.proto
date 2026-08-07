@@ -2,6 +2,7 @@ edition = "2023";
 package dashboard.projects.v1;
 
 import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1;projectsv1";
 
@@ -12,6 +13,19 @@ service ProjectsService {
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc UpdateMeta(UpdateMetaRequest) returns (UpdateMetaResponse) {}
   rpc UpdateFCMServiceJSON(UpdateFCMServiceJSONRequest) returns (UpdateFCMServiceJSONResponse) {}
+  rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse) {}
+  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse) {}
+  rpc DeleteApiKey(DeleteApiKeyRequest) returns (DeleteApiKeyResponse) {}
+}
+
+enum ApiKeyKind {
+  API_KEY_KIND_UNSPECIFIED = 0;
+  // Embedded in client apps to send events. Extractable by anyone who ships it,
+  // so it is not a secret: it is stored and returned in full.
+  API_KEY_KIND_PUBLIC = 1;
+  // Authenticates server-side and MCP callers against the whole project. Stored
+  // only as a digest and returned exactly once, by CreateApiKey.
+  API_KEY_KIND_PRIVATE = 2;
 }
 
 message BatchGetRequest {
@@ -56,12 +70,62 @@ message Project {
   string fcm_service_json = 2;
   string id = 3;
   string org_id = 4;
-  string private_api_key = 5;
-  string public_api_key = 6;
+  // 5 and 6 were private_api_key / public_api_key, back when a project carried a
+  // single key pair on its own row. Keys are their own resource now: ListApiKeys
+  // returns a project's keys, and CreateApiKey's response is the only place a
+  // private key's value ever appears.
+  reserved 5, 6;
+  reserved private_api_key, public_api_key;
   // IANA reporting timezone (e.g. "Asia/Kolkata") used to bucket day/week/month
   // boundaries for this project's insights and dashboards. Empty string = UTC.
   string reporting_timezone = 7;
 }
+
+// ApiKey is one of a project's API keys. It never carries a private key's value:
+// only its digest is stored, so CreateApiKey's response is the one and only time
+// a private key is visible.
+message ApiKey {
+  google.protobuf.Timestamp create_time = 1;
+  string display_name = 2;
+  string id = 3;
+  ApiKeyKind kind = 4;
+  // Full value for a public key; empty for a private key — use `masked` to
+  // identify one of those.
+  string key = 5;
+  // Fixed-format hint ("prv_...3f9c") to tell a project's keys apart.
+  string masked = 6;
+}
+
+message ListApiKeysRequest {}
+
+message ListApiKeysResponse {
+  repeated ApiKey api_keys = 1;
+}
+
+message CreateApiKeyRequest {
+  ApiKeyKind kind = 1 [(buf.validate.field) = {
+    required: true
+    enum: {
+      defined_only: true
+      not_in: [0]
+    }
+  }];
+  // Optional label to tell keys apart on the settings page (e.g. "CI", "staging").
+  string display_name = 2 [(buf.validate.field).string.max_len = 150];
+}
+
+message CreateApiKeyResponse {
+  ApiKey api_key = 1;
+  // The full key. For a private key this is the only time it is ever returned —
+  // it is unrecoverable afterwards.
+  string key = 2;
+}
+
+message DeleteApiKeyRequest {
+  string id = 1 [(buf.validate.field).required = true];
+}
+
+message DeleteApiKeyResponse {}
 
 // UpdateMetaRequest is a partial update of the project's editable metadata: every
 // field is optional and an omitted field leaves the stored value unchanged. A

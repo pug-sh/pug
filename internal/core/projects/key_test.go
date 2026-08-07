@@ -9,9 +9,9 @@ import (
 var hexPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 
 func TestNewPrivateKey(t *testing.T) {
-	key, err := NewPrivateKey()
+	key, err := newPrivateKey()
 	if err != nil {
-		t.Fatalf("NewPrivateKey: %v", err)
+		t.Fatalf("newPrivateKey: %v", err)
 	}
 	if !strings.HasPrefix(key, "prv_") {
 		t.Errorf("private key %q does not start with prv_", key)
@@ -26,9 +26,9 @@ func TestNewPrivateKey(t *testing.T) {
 }
 
 func TestNewPublicKey(t *testing.T) {
-	key, err := NewPublicKey()
+	key, err := newPublicKey()
 	if err != nil {
-		t.Fatalf("NewPublicKey: %v", err)
+		t.Fatalf("newPublicKey: %v", err)
 	}
 	if !strings.HasPrefix(key, "pub_") {
 		t.Errorf("public key %q does not start with pub_", key)
@@ -47,13 +47,13 @@ func TestKeyUniqueness(t *testing.T) {
 	seen := make(map[string]struct{}, n*2)
 
 	for i := 0; i < n; i++ {
-		prv, err := NewPrivateKey()
+		prv, err := newPrivateKey()
 		if err != nil {
-			t.Fatalf("NewPrivateKey iteration %d: %v", i, err)
+			t.Fatalf("newPrivateKey iteration %d: %v", i, err)
 		}
-		pub, err := NewPublicKey()
+		pub, err := newPublicKey()
 		if err != nil {
-			t.Fatalf("NewPublicKey iteration %d: %v", i, err)
+			t.Fatalf("newPublicKey iteration %d: %v", i, err)
 		}
 		if _, exists := seen[prv]; exists {
 			t.Fatalf("duplicate private key on iteration %d: %s", i, prv)
@@ -67,24 +67,24 @@ func TestKeyUniqueness(t *testing.T) {
 }
 
 func TestKeysDiffer(t *testing.T) {
-	a, err := NewPrivateKey()
+	a, err := newPrivateKey()
 	if err != nil {
-		t.Fatalf("NewPrivateKey: %v", err)
+		t.Fatalf("newPrivateKey: %v", err)
 	}
-	b, err := NewPrivateKey()
+	b, err := newPrivateKey()
 	if err != nil {
-		t.Fatalf("NewPrivateKey: %v", err)
+		t.Fatalf("newPrivateKey: %v", err)
 	}
 	if a == b {
 		t.Errorf("two consecutive private keys are identical: %s", a)
 	}
-	c, err := NewPublicKey()
+	c, err := newPublicKey()
 	if err != nil {
-		t.Fatalf("NewPublicKey: %v", err)
+		t.Fatalf("newPublicKey: %v", err)
 	}
-	d, err := NewPublicKey()
+	d, err := newPublicKey()
 	if err != nil {
-		t.Fatalf("NewPublicKey: %v", err)
+		t.Fatalf("newPublicKey: %v", err)
 	}
 	if c == d {
 		t.Errorf("two consecutive public keys are identical: %s", c)

@@ -68,6 +68,7 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 			}
 		}
 		delete(autoProps, "$referrerCandidate")
+		applyAttribution(autoProps)
 
 		sess = append(sess, event{
 			eventID:          uuid.New().String(),
@@ -158,6 +159,12 @@ func buildSessionProps(u *userProfile, prof deviceProfile, sessionStart time.Tim
 				props["$utmCampaign"] = promoName
 			} else {
 				props["$utmCampaign"] = utmCampaigns[rand.IntN(len(utmCampaigns))]
+			}
+			if utm.term != "" {
+				props["$utmTerm"] = utm.term
+			}
+			if utm.content != "" {
+				props["$utmContent"] = utm.content
 			}
 			props["$referrerCandidate"] = utm.referrer
 		} else {

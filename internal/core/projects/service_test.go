@@ -73,17 +73,22 @@ func TestProjectsService(t *testing.T) {
 		if proj.OrgID != org.ID {
 			t.Errorf("OrgID = %q, want %q", proj.OrgID, org.ID)
 		}
-		if !strings.HasPrefix(proj.PrivateApiKey, "prv_") {
-			t.Errorf("PrivateApiKey = %q, want prefix prv_", proj.PrivateApiKey)
+		// The project comes with its public key as a real api_keys row — the only
+		// place a key lives — and with no private key at all: one is created
+		// explicitly or not at all.
+		keys, err := svc.ListApiKeys(ctx, proj.ID)
+		if err != nil {
+			t.Fatalf("ListApiKeys: %v", err)
 		}
-		if !strings.HasPrefix(proj.PublicApiKey, "pub_") {
-			t.Errorf("PublicApiKey = %q, want prefix pub_", proj.PublicApiKey)
+		if len(keys) != 1 {
+			t.Fatalf("got %d starter keys, want 1", len(keys))
 		}
-		if len(proj.PrivateApiKey) != 24 {
-			t.Errorf("PrivateApiKey length = %d, want 24", len(proj.PrivateApiKey))
+		if got := projects.Kind(keys[0].Kind); got != projects.KindPublic {
+			t.Errorf("starter key kind = %q, want %q", got, projects.KindPublic)
 		}
-		if len(proj.PublicApiKey) != 24 {
-			t.Errorf("PublicApiKey length = %d, want 24", len(proj.PublicApiKey))
+		// A public key is stored whole, so the token is the key an SDK sends.
+		if !strings.HasPrefix(keys[0].Token, "pub_") || len(keys[0].Token) != 24 {
+			t.Errorf("starter key token = %q, want a 24-char pub_ key", keys[0].Token)
 		}
 	})
 

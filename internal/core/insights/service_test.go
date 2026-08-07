@@ -438,10 +438,8 @@ func seedTestProject(t *testing.T, ctx context.Context, pg *testutil.TestPostgre
 	}
 
 	if _, err := pg.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
 		projectID, orgID, "test-project",
-		xid.New().String()+"test",
-		xid.New().String()+"test",
 	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}

@@ -37,6 +37,30 @@ func (q *Queries) ConsumeEmailActionToken(ctx context.Context, id string) (Email
 	return i, err
 }
 
+const countRecentEmailActionTokensByInvitation = `-- name: CountRecentEmailActionTokensByInvitation :one
+select count(*)
+from email_action_tokens
+where org_invitation_id = $1
+  and purpose = $2
+  and create_time > $3
+`
+
+type CountRecentEmailActionTokensByInvitationParams struct {
+	OrgInvitationID pgtype.Text
+	Purpose         string
+	Since           pgtype.Timestamptz
+}
+
+// One row per email sent for the invitation, counted over a trailing window so
+// the cap on ResendInvite (which mails an address that need not belong to any
+// pug user) bounds a burst without bricking the invitation forever.
+func (q *Queries) CountRecentEmailActionTokensByInvitation(ctx context.Context, arg CountRecentEmailActionTokensByInvitationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRecentEmailActionTokensByInvitation, arg.OrgInvitationID, arg.Purpose, arg.Since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createEmailActionToken = `-- name: CreateEmailActionToken :one
 insert into email_action_tokens (
   id,

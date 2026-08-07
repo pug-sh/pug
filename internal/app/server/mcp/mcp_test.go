@@ -42,7 +42,7 @@ var testJWTKey = []byte("test-jwt-key")
 
 // signDashboardJWT mints a real dashboard access token — the exact shape
 // WithJWTAuth accepts. /mcp must refuse it: MCP clients hold a static credential,
-// so a 1h-expiry access token is useless there, and admitting JWTs would widen the
+// so an expiring access token is useless there, and admitting JWTs would widen the
 // endpoint from project-scoped to customer-scoped.
 func signDashboardJWT(t *testing.T) string {
 	t.Helper()
@@ -79,20 +79,25 @@ var curatedToolNames = []string{
 
 // ---------- stubs ----------
 
-type stubKeyLookup struct{ project dbread.Project }
+// stubKeyLookup resolves exactly privateKey to project. A project no longer
+// carries its keys on its own row, so the pairing lives here instead.
+type stubKeyLookup struct {
+	privateKey string
+	project    dbread.Project
+}
 
 func (s *stubKeyLookup) GetProjectByPublicApiKey(context.Context, string) (dbread.Project, error) {
 	return dbread.Project{}, pgx.ErrNoRows
 }
 
 func (s *stubKeyLookup) GetProjectByPrivateApiKey(_ context.Context, key string) (dbread.Project, error) {
-	if key == s.project.PrivateApiKey {
+	if key == s.privateKey {
 		return s.project, nil
 	}
 	return dbread.Project{}, pgx.ErrNoRows
 }
 
-func (s *stubKeyLookup) InvalidateProjectKeys(context.Context, string, string) {}
+func (s *stubKeyLookup) InvalidateProjectKeys(context.Context, string, ...string) {}
 
 // stubRoleLookup satisfies the authz interceptor's memberRoleLookup. On the
 // private-key path the interceptor short-circuits without a role lookup, so this
@@ -163,7 +168,7 @@ func newTestServer(t *testing.T) testDeps {
 
 	insights := &stubInsights{}
 	profiles := &stubProfiles{}
-	repo := &stubKeyLookup{project: dbread.Project{ID: "proj-mcp", OrgID: "org-mcp", PrivateApiKey: testPrivateKey}}
+	repo := &stubKeyLookup{privateKey: testPrivateKey, project: dbread.Project{ID: "proj-mcp", OrgID: "org-mcp"}}
 
 	authorizer, err := authz.NewAuthorizer()
 	if err != nil {

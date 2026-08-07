@@ -167,22 +167,22 @@ func bd(props ...string) []*insightsv1.Breakdown {
 // ---------------------------------------------------------------------------
 // Fine-grid geometry
 //
-// The dashboard FE renders tiles on a 72-COLUMN grid — one column (and one
-// row) ≈ the ~18px visual gap; see app .../dashboards/constants.ts
-// `COLS.lg = 72`, NOT 12. The w*/h* values below are CELL spans in that
-// 72-col space (a full row is 72). EVERY tile — charts and the markdown
-// explainer alike — is placed with cell(), which insets each tile by one `gap`
-// track on its right and bottom — and drops it one track below the cell top —
-// so neighbours show a gutter and the first row isn't flush against the board's
-// top chrome. The FE renders with margin=0 and compactType:null, so a visible
-// gap is *only* an empty track; without the inset, tiles sit flush.
+// The dashboard FE renders tiles on a 72-COLUMN grid (app
+// .../dashboards/constants.ts `COLS.lg = 72`, NOT 12) with a row pitch of 18px
+// (grid.tsx `GRID_PITCH`). The w*/h* values below are CELL spans in that space.
+//
+// Only WIDTH is inset: cell() shaves one `gap` column off each tile's right so
+// neighbours show a gutter, because the grid's horizontal margin is 0 and a gap
+// there is only an empty column track. Height is used as-is — the grid's
+// vertical margin (`GRID_V_GUTTER`) draws the gap between stacked tiles, and
+// compactType:"vertical" collapses an empty row track anyway. A tile of h rows
+// therefore renders ~18h-14 px tall.
 //
 // Heights MUST clear the FE's per-kind floor: an under-tall tile is clamped UP
 // (grid.tsx `Math.max(pos.h, minH)`) and then silently overlaps the tile below
-// — the "cascading overlap". Floors in rows: insight 15, KPI 9, markdown 9. The
-// cell spans sit a track above each floor so the post-inset height still clears
-// it. TestDemoDashboardTileLayout pins the bounds, floor, and no-overlap for
-// every seeded tile.
+// — the "cascading overlap". Floors in rows: insight 15, KPI 9, markdown 9.
+// TestDemoDashboardTileLayout pins the bounds, floor, and no-overlap for every
+// seeded tile.
 // ---------------------------------------------------------------------------
 const (
 	gap = 1 // gutter between tiles, in fine grid units (~18px)
@@ -194,8 +194,17 @@ const (
 	wNarrow   = 30 // 5/12 — narrower side of a 7:5 split
 	wThird    = 24 // 1/3 — narrower side of a 2:1 split; also the explainer-callout width
 
-	hStd  = 18 // standard insight chart / KPI / explainer cell (17 after inset, clears the 15 floor)
-	hTall = 24 // funnel, retention (line + cohort table), top-K list, tall KPI, or full-width trend chart
+	// Heights are sized to the tile's CONTENT so nothing scrolls inside its own
+	// card: a ranked list needs a row per entry, a broken-down funnel one block
+	// per series, the explainer enough room for its bullets.
+	hKPI    = 16 // KPI stat card — one number over a short sparkline
+	hNote   = 20 // explainer callout where it shares its column with a stat card
+	hRanked = 19 // ranked list of ~6 rows (a fixed, small limit)
+	hStd    = 22 // standard trend chart, or a top-K list of <= 8 rows
+	hLarge  = 26 // hero / full-width trend chart; explainer callout
+	hList     = 24 // ranked list of ~10 rows
+	hListLong = 28 // ranked list of ~12 rows
+	hCohort = 40 // retention cohort table
 )
 
 // gridPos builds a tile's grid placement on the 72-column fine grid.
@@ -204,13 +213,13 @@ func gridPos(x, y, w, h int32) *dashboardsv1.GridPosition {
 }
 
 // cell places a tile from a clean cell span (wHalf, hStd, …): it insets the tile
-// by one `gap` on its right and bottom and drops it one gap below the cell top,
-// so adjacent tiles show a gutter and the first row isn't flush against the
-// board's top chrome. A tile's y is the cell top; cell() adds the gutter row.
-// Every tile is placed this way — including the markdown explainer, so it aligns
-// to the same grid as the hero chart sharing its top row.
+// by one `gap` column on its right so adjacent tiles show a gutter. Height and y
+// pass through untouched — the grid's row margin already separates stacked
+// tiles, so a shaved row would only cost chart height. Every tile is placed this
+// way, including the markdown explainer, so it aligns to the same grid as the
+// hero chart sharing its top row.
 func cell(x, y, w, h int32) *dashboardsv1.GridPosition {
-	return gridPos(x, y+gap, w-gap, h-gap)
+	return gridPos(x, y, w-gap, h)
 }
 
 // threshold builds one KPI threshold rule.
@@ -313,7 +322,7 @@ func revenueDashboard() dashDef {
 					"- **A checkout funnel** with step-by-step conversion timing\n"+
 					"- **Layered filters** mixing event, custom & profile data to drop bots & staff\n\n"+
 					"It all runs straight over your events in ClickHouse — fast, with no data warehouse to wire up.\n",
-				cell(0, 0, wThird, hStd),
+				cell(0, 0, wThird, hLarge),
 			),
 
 			// TRENDS · Area · SUM(amount) — net revenue from real humans on
@@ -322,7 +331,7 @@ func revenueDashboard() dashDef {
 			insightTile(
 				"Net Revenue (humans, paid orders)",
 				"SUM(amount) over purchases with amount>0, excluding bots ($bot_score≥50) and internal accounts (email not @pug.sh).",
-				viewArea, cell(24, 0, wTwoThird, hStd),
+				viewArea, cell(24, 0, wTwoThird, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events: []*insightsv1.EventQuery{
@@ -341,10 +350,12 @@ func revenueDashboard() dashDef {
 
 			// TRENDS · KPI · TOTAL(purchase) — order count with color thresholds. A
 			// KPI sums its trend series, so an additive metric (TOTAL) stays exact.
+			// Stacked under the gross-revenue KPI: two stat cards fill the column
+			// beside the funnel, which is far taller than either card alone.
 			insightTile(
 				"Orders (90d)",
 				"Total purchases in the window. Thresholds color the value green above 1k, red below 200.",
-				viewKPI, cell(0, 60, wThird, hStd),
+				viewKPI, cell(48, 61, wThird, hKPI),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("purchase")},
@@ -360,7 +371,7 @@ func revenueDashboard() dashDef {
 			insightTile(
 				"Average Order Value by Category",
 				"Top categories ranked by AVG(amount) on purchase events.",
-				viewBarGroup, cell(0, 18, wHalf, hStd),
+				viewBarGroup, cell(0, 26, wHalf, hRanked),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -375,11 +386,13 @@ func revenueDashboard() dashDef {
 				},
 			),
 
-			// TOP_K · Table · SUM(amount) by brand — revenue leaderboard.
+			// TOP_K · Table · SUM(amount) by brand — revenue leaderboard. Limit
+			// matches the seed's brand count (6) and hRanked: a larger limit would
+			// scroll inside the tile the moment the catalog grew.
 			insightTile(
 				"Revenue by Brand",
 				"Brands ranked by SUM(amount) on purchases.",
-				viewTable, cell(36, 18, wHalf, hStd),
+				viewTable, cell(36, 26, wHalf, hRanked),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -388,17 +401,19 @@ func revenueDashboard() dashDef {
 						Metric:         aggSum.Enum(),
 						MetricProperty: proto.String("amount"),
 						Scope:          efilter("purchase"),
-						Limit:          proto.Int32(8),
+						Limit:          proto.Int32(6),
 						OmitOthers:     proto.Bool(true),
 					},
 				},
 			),
 
-			// FUNNEL · per-step filter + conversion window + step timing.
+			// FUNNEL · per-step filter + conversion window + step timing. Height is
+			// hKPI*2 so it ends flush with the two stat cards stacked beside it —
+			// n stacked tiles span exactly the same rows as one tile of n*h.
 			insightTile(
 				"High-Value Cart → Purchase",
 				"add_to_cart (price≥50) → checkout_started → purchase, within 24h, with per-step conversion timing.",
-				viewBarGroup, cell(0, 36, wTwoThird, hTall),
+				viewBarGroup, cell(0, 45, wTwoThird, hKPI*2),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itFunnel.Enum(),
 					Events: []*insightsv1.EventQuery{
@@ -417,7 +432,7 @@ func revenueDashboard() dashDef {
 			insightTile(
 				"Gross Revenue (90d)",
 				"SUM(amount) across all purchases in the window — unfiltered gross, vs the filtered net above.",
-				viewKPI, cell(48, 36, wThird, hTall),
+				viewKPI, cell(48, 45, wThird, hKPI),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evqAgg("purchase", aggSum, "amount")},
@@ -428,7 +443,7 @@ func revenueDashboard() dashDef {
 			insightTile(
 				"Coupon Discount Spend",
 				"SUM(discount_amount) on coupon_applied events, compared to the prior period.",
-				viewLine, cell(24, 60, wTwoThird, hStd),
+				viewLine, cell(0, 77, wFull, hStd),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evqAgg("coupon_applied", aggSum, "discount_amount")},
@@ -457,10 +472,14 @@ func acquisitionDashboard() dashDef {
 					"- **A paid browse → buy funnel** split by marketing medium\n"+
 					"- **Traffic & conversions** over time, stacked by source\n\n"+
 					"Pug auto-captures UTM, referrer, geo & device on every event — attribution with zero extra instrumentation.\n",
-				cell(0, 0, wThird, hStd),
+				cell(0, 0, wThird, hLarge),
 			),
 
-			// FUNNEL · 3-step browse→buy funnel, broken down by channel and gated to
+			// FUNNEL · a broken-down funnel renders as small multiples in a fixed
+			// 2-column grid plus a series list, so it needs the height of the two
+			// tiles stacked beside it (hKPI+hLarge) to fit without scrolling.
+			//
+			// 3-step browse→buy funnel, broken down by channel and gated to
 			// paid mediums (IN operator). Built from commerce events that branch
 			// across journeys (bounce/browse stop at product_viewed; only purchase
 			// journeys reach add_to_cart/purchase) so the funnel shows real drop-off.
@@ -470,7 +489,7 @@ func acquisitionDashboard() dashDef {
 			insightTile(
 				"Paid Traffic: Browse → Buy by Medium",
 				"product_viewed → add_to_cart → purchase, restricted to paid mediums ($utmMedium IN cpc/paid_social/email) and split by medium.",
-				viewBarGroup, cell(0, 18, wWide, hTall),
+				viewBarGroup, cell(0, 26, wWide, hKPI+hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itFunnel.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("product_viewed"), evq("add_to_cart"), evq("purchase")},
@@ -486,7 +505,7 @@ func acquisitionDashboard() dashDef {
 			insightTile(
 				"Organic Signups (90d)",
 				"Signups with no paid source ($utmSource is not set).",
-				viewKPI, cell(42, 18, wNarrow, hTall),
+				viewKPI, cell(42, 26, wNarrow, hKPI),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("signup")},
@@ -500,7 +519,7 @@ func acquisitionDashboard() dashDef {
 			insightTile(
 				"Revenue by Campaign",
 				"Campaigns ranked by SUM(amount) on attributed purchases.",
-				viewTable, cell(0, 42, wHalf, hStd),
+				viewTable, cell(42, 42, wNarrow, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -519,7 +538,7 @@ func acquisitionDashboard() dashDef {
 			insightTile(
 				"Top Referrers (non-direct, non-Google)",
 				"Referrers ranked by page views, excluding direct ($referrer is set) and Google ($referrer not contains 'google').",
-				viewBarGroup, cell(36, 42, wHalf, hStd),
+				viewBarGroup, cell(0, 68, wFull, hStd),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -541,7 +560,7 @@ func acquisitionDashboard() dashDef {
 			insightTile(
 				"Traffic by Source",
 				"Page views over time, stacked by acquisition source ($utmSource is set — direct/organic excluded).",
-				viewArea, cell(0, 60, wFull, hTall),
+				viewArea, cell(0, 90, wFull, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType:    itTrends.Enum(),
 					Events:         []*insightsv1.EventQuery{evq("page_view")},
@@ -559,7 +578,7 @@ func acquisitionDashboard() dashDef {
 			insightTile(
 				"Web Purchases by Source",
 				"Purchases on web ($platform = web) with a known source ($utmSource is set), broken down by acquisition source.",
-				viewBarGroup, cell(0, 84, wFull, hTall),
+				viewBarGroup, cell(0, 116, wFull, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("purchase")},
@@ -577,7 +596,7 @@ func acquisitionDashboard() dashDef {
 			insightTile(
 				"Active Users by Platform",
 				"Daily active users (distinct) split by $platform (web / ios / android).",
-				viewLine, cell(24, 0, wTwoThird, hStd),
+				viewLine, cell(24, 0, wTwoThird, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evqAgg("page_view", aggUniqueUser, "")},
@@ -606,14 +625,14 @@ func productHealthDashboard() dashDef {
 					"- **Error leaderboards** plus a severity × platform breakdown\n"+
 					"- **Crashes by app version**, with the count of users affected\n\n"+
 					"Pug flags bots and enriches each event at ingest, so these reliability signals stay trustworthy.\n",
-				cell(0, 0, wThird, hStd),
+				cell(0, 0, wThird, hLarge),
 			),
 
 			// TOP_K · Table · most-viewed products.
 			insightTile(
 				"Top Products Viewed",
 				"Products ranked by product_viewed count.",
-				viewTable, cell(0, 18, wHalf, hTall),
+				viewTable, cell(0, 26, wHalf, hListLong),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -630,7 +649,7 @@ func productHealthDashboard() dashDef {
 			insightTile(
 				"Top Events (native app)",
 				"Most frequent event kinds on the native app ($platform != web).",
-				viewBarGroup, cell(36, 18, wHalf, hTall),
+				viewBarGroup, cell(36, 26, wHalf, hListLong),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -642,16 +661,18 @@ func productHealthDashboard() dashDef {
 				},
 			),
 
-			// TOP_K · Table · most-viewed pages ($url on page_view).
+			// TOP_K · Table · most-viewed pages. Ranks $pathname, not $url: the demo
+			// is a single host, so every $url row truncates to the same prefix and
+			// the ranking reads as ten identical labels.
 			insightTile(
 				"Top Pages",
-				"Pages ranked by page_view count.",
-				viewTable, cell(0, 42, wHalf, hTall),
+				"Page paths ranked by page_view count.",
+				viewTable, cell(0, 54, wHalf, hList),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
 						Dimension:  dimProperty.Enum(),
-						Property:   proto.String("$url"),
+						Property:   proto.String("$pathname"),
 						Scope:      efilter("page_view"),
 						Limit:      proto.Int32(10),
 						OmitOthers: proto.Bool(true),
@@ -663,7 +684,7 @@ func productHealthDashboard() dashDef {
 			insightTile(
 				"Top Error Codes",
 				"Error codes ranked by error_occurred count.",
-				viewTable, cell(36, 42, wHalf, hTall),
+				viewTable, cell(36, 54, wHalf, hList),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -680,7 +701,7 @@ func productHealthDashboard() dashDef {
 			insightTile(
 				"Errors by Severity & Platform",
 				"error_occurred volume split by both severity and $platform (two-dimension stacked breakdown).",
-				viewBarStack, cell(24, 0, wTwoThird, hStd),
+				viewBarStack, cell(24, 0, wTwoThird, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("error_occurred")},
@@ -692,7 +713,7 @@ func productHealthDashboard() dashDef {
 			insightTile(
 				"Crashing Users by App Version",
 				"Distinct users hitting app_crashed, broken down by $app_version (native app only).",
-				viewBarGroup, cell(0, 66, wFull, hTall),
+				viewBarGroup, cell(0, 78, wFull, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evqAgg("app_crashed", aggUniqueUser, "")},
@@ -707,7 +728,7 @@ func productHealthDashboard() dashDef {
 			insightTile(
 				"Avg Product Views per User",
 				"PER_USER_AVG of product_viewed — browsing depth per active user.",
-				viewLine, cell(0, 90, wFull, hStd),
+				viewLine, cell(0, 104, wFull, hStd),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evqAgg("product_viewed", aggPerUserAvg, "")},
@@ -735,7 +756,7 @@ func usersCohortsDashboard() dashDef {
 					"- **VIP orders** from club members or big spenders\n"+
 					"- **Profile segments** like senior dogs, split by country\n\n"+
 					"Pug links events to identified profiles you can segment — and re-engage with push campaigns.\n",
-				cell(0, 0, wThird, hStd),
+				cell(0, 0, wThird, hNote),
 			),
 
 			// TOP_K · Table · USER dimension — rows carry dog-profile enrichment.
@@ -743,7 +764,7 @@ func usersCohortsDashboard() dashDef {
 			insightTile(
 				"Top Customers (whales)",
 				"Users ranked by purchase count. USER-dimension rows are enriched with the dog's profile (name, breed, city).",
-				viewTable, cell(24, 0, wTwoThird, hStd),
+				viewTable, cell(24, 0, wTwoThird, hNote+hKPI),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -760,10 +781,12 @@ func usersCohortsDashboard() dashDef {
 			// purchase in a week defines the cohort; retained by buying again in later
 			// weeks. (signup→purchase was empty: in-window signups are recent joiners
 			// while purchasers are long-tenured, so the two cohorts barely overlap.)
+			// Full width: the cohort table is one column per period, and a 180d/week
+			// window has ~26 of them — the widest tile on any board still scrolls.
 			insightTile(
 				"Repeat Purchase Retention",
 				"Weekly cohorts of first-time purchasers, retained by whether they buy again.",
-				viewTable, cell(0, 18, wTwoThird, hTall),
+				viewTable, cell(0, 36, wFull, hCohort),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itRetention.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("purchase"), evq("purchase")},
@@ -773,11 +796,12 @@ func usersCohortsDashboard() dashDef {
 			// TRENDS · KPI · TOTAL(purchase) over a nested OR group mixing a profile
 			// prop with an order amount — a "VIP" order = club member OR big spender.
 			// Distinct VIP *customers* needs segmentation (not rendered by the FE);
-			// a KPI sums its series, so we count VIP orders instead.
+			// a KPI sums its series, so we count VIP orders instead. Stacked under the
+			// explainer so the cohort table below can take the full row.
 			insightTile(
 				"VIP Orders (90d)",
 				"Purchases that are VIP — an OR group mixing a profile prop (pug_club is set) with a custom prop (amount ≥ 100).",
-				viewKPI, cell(48, 18, wThird, hTall),
+				viewKPI, cell(0, 20, wThird, hKPI),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("purchase")},
@@ -795,7 +819,7 @@ func usersCohortsDashboard() dashDef {
 			insightTile(
 				"Active Senior Dogs by Country",
 				"Distinct active users whose dog is a senior (age_years BETWEEN 8 and 12, a profile prop), broken down by $country.",
-				viewBarGroup, cell(0, 42, wFull, hStd),
+				viewBarGroup, cell(0, 76, wFull, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType:    itTrends.Enum(),
 					Events:         []*insightsv1.EventQuery{evqAgg("page_view", aggUniqueUser, "")},

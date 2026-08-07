@@ -214,10 +214,34 @@ func (s *server) ResendInvite(
 		if errors.Is(err, coreorgs.ErrInviteNotPending) {
 			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationNotPending, "invitation is no longer pending")
 		}
+		if errors.Is(err, coreorgs.ErrInviteSendLimit) {
+			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationSendLimit, "this invitation has been sent too many times today; try again later")
+		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&orgsv1.ResendInviteResponse{Invitation: toRPCInvitation(ctx, dispatch.Invitation)}), nil
+}
+
+func (s *server) RevokeInvite(
+	ctx context.Context,
+	req *connect.Request[orgsv1.RevokeInviteRequest],
+) (*connect.Response[orgsv1.RevokeInviteResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := s.service.RevokeInvite(ctx, req.Msg.GetOrgId(), req.Msg.GetInvitationId()); err != nil {
+		if errors.Is(err, coreorgs.ErrInviteNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonInvitationNotFound, "invitation not found", apperr.Resource("invitation", req.Msg.GetInvitationId()))
+		}
+		if errors.Is(err, coreorgs.ErrInviteNotPending) {
+			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationNotPending, "invitation is no longer pending")
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&orgsv1.RevokeInviteResponse{}), nil
 }
 
 func (s *server) ListInvitations(

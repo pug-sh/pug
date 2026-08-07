@@ -2,10 +2,15 @@ package projects
 
 import (
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pug-sh/pug/internal/deps/postgres"
+	"google.golang.org/protobuf/testing/protocmp"
 
+	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/deps/postgres"
+	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
@@ -16,13 +21,11 @@ func TestROToRPCMsg(t *testing.T) {
 		input dbread.Project
 	}{
 		{
-			name: "converts all fields and excludes private key",
+			name: "converts all fields",
 			input: dbread.Project{
 				ID:             "proj_001",
 				OrgID:          "org_abc",
 				DisplayName:    "My Project",
-				PublicApiKey:   "pub_key_123",
-				PrivateApiKey:  "secret_private_key",
 				FcmServiceJson: postgres.NewText(`{"type":"service_account"}`),
 			},
 		},
@@ -32,8 +35,6 @@ func TestROToRPCMsg(t *testing.T) {
 				ID:             "proj_002",
 				OrgID:          "org_xyz",
 				DisplayName:    "Another Project",
-				PublicApiKey:   "pub_key_456",
-				PrivateApiKey:  "another_secret",
 				FcmServiceJson: pgtype.Text{Valid: false},
 			},
 		},
@@ -52,14 +53,8 @@ func TestROToRPCMsg(t *testing.T) {
 			if msg.GetDisplayName() != tt.input.DisplayName {
 				t.Errorf("DisplayName = %q, want %q", msg.GetDisplayName(), tt.input.DisplayName)
 			}
-			if msg.GetPublicApiKey() != tt.input.PublicApiKey {
-				t.Errorf("PublicApiKey = %q, want %q", msg.GetPublicApiKey(), tt.input.PublicApiKey)
-			}
 			if msg.GetFcmServiceJson() != tt.input.FcmServiceJson.String {
 				t.Errorf("FcmServiceJson = %q, want %q", msg.GetFcmServiceJson(), tt.input.FcmServiceJson.String)
-			}
-			if msg.GetPrivateApiKey() != "" {
-				t.Errorf("PrivateApiKey should be empty, got %q", msg.GetPrivateApiKey())
 			}
 		})
 	}
@@ -71,13 +66,11 @@ func TestWToRPCMsg(t *testing.T) {
 		input dbwrite.Project
 	}{
 		{
-			name: "converts all fields and excludes private key",
+			name: "converts all fields",
 			input: dbwrite.Project{
 				ID:             "proj_w01",
 				OrgID:          "org_w_abc",
 				DisplayName:    "Write Project",
-				PublicApiKey:   "pub_w_key",
-				PrivateApiKey:  "priv_w_secret",
 				FcmServiceJson: postgres.NewText(`{"project_id":"123"}`),
 			},
 		},
@@ -87,8 +80,6 @@ func TestWToRPCMsg(t *testing.T) {
 				ID:             "proj_w02",
 				OrgID:          "org_w_xyz",
 				DisplayName:    "Minimal Project",
-				PublicApiKey:   "pub_w_key2",
-				PrivateApiKey:  "priv_w_secret2",
 				FcmServiceJson: pgtype.Text{Valid: false},
 			},
 		},
@@ -107,105 +98,135 @@ func TestWToRPCMsg(t *testing.T) {
 			if msg.GetDisplayName() != tt.input.DisplayName {
 				t.Errorf("DisplayName = %q, want %q", msg.GetDisplayName(), tt.input.DisplayName)
 			}
-			if msg.GetPublicApiKey() != tt.input.PublicApiKey {
-				t.Errorf("PublicApiKey = %q, want %q", msg.GetPublicApiKey(), tt.input.PublicApiKey)
-			}
 			if msg.GetFcmServiceJson() != tt.input.FcmServiceJson.String {
 				t.Errorf("FcmServiceJson = %q, want %q", msg.GetFcmServiceJson(), tt.input.FcmServiceJson.String)
-			}
-			if msg.GetPrivateApiKey() != "" {
-				t.Errorf("PrivateApiKey should be empty, got %q", msg.GetPrivateApiKey())
 			}
 		})
 	}
 }
 
-func TestWToRPCMsgWithPrivateKey(t *testing.T) {
+func TestApiKeyToRPCMsg(t *testing.T) {
+	createTime := time.Date(2026, 7, 15, 10, 30, 0, 0, time.UTC)
+
 	tests := []struct {
-		name  string
-		input dbwrite.Project
+		name    string
+		input   dbread.ApiKey
+		wantKey string
+		wantKnd projectsv1.ApiKeyKind
 	}{
 		{
-			name: "includes private key",
-			input: dbwrite.Project{
-				ID:             "proj_pk1",
-				OrgID:          "org_pk",
-				DisplayName:    "Create Response Project",
-				PublicApiKey:   "pub_pk_key",
-				PrivateApiKey:  "the_private_key",
-				FcmServiceJson: postgres.NewText(`{"service":"account"}`),
+			name: "public key returns its value",
+			input: dbread.ApiKey{
+				ID:          "key_pub",
+				ProjectID:   "proj_1",
+				Kind:        string(coreprojects.KindPublic),
+				Token:       "pub_abc123",
+				Masked:      "pub_...c123",
+				DisplayName: "web",
+				CreateTime:  pgtype.Timestamptz{Time: createTime, Valid: true},
 			},
+			wantKey: "pub_abc123",
+			wantKnd: projectsv1.ApiKeyKind_API_KEY_KIND_PUBLIC,
 		},
 		{
-			name: "empty private key preserved",
-			input: dbwrite.Project{
-				ID:            "proj_pk2",
-				OrgID:         "org_pk2",
-				DisplayName:   "No Private Key",
-				PublicApiKey:  "pub_pk_key2",
-				PrivateApiKey: "",
+			// The token of a private key is its digest — returning it would leak the
+			// stored secret, and it is useless to the client either way.
+			name: "private key never returns its token",
+			input: dbread.ApiKey{
+				ID:          "key_prv",
+				ProjectID:   "proj_1",
+				Kind:        string(coreprojects.KindPrivate),
+				Token:       "0f5d4e3c2b1a09876543210fedcba98765432100fedcba9876543210abcdef01",
+				Masked:      "prv_...ef01",
+				DisplayName: "CI",
+				CreateTime:  pgtype.Timestamptz{Time: createTime, Valid: true},
 			},
+			wantKey: "",
+			wantKnd: projectsv1.ApiKeyKind_API_KEY_KIND_PRIVATE,
+		},
+		{
+			// Fails closed: an unreadable kind must not pass for a public key, which
+			// would echo the token back.
+			name: "unknown kind is unspecified and returns no value",
+			input: dbread.ApiKey{
+				ID:         "key_bad",
+				ProjectID:  "proj_1",
+				Kind:       "wat",
+				Token:      "some_token",
+				Masked:     "some...oken",
+				CreateTime: pgtype.Timestamptz{Time: createTime, Valid: true},
+			},
+			wantKey: "",
+			wantKnd: projectsv1.ApiKeyKind_API_KEY_KIND_UNSPECIFIED,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := wToRPCMsgWithPrivateKey(tt.input)
+			msg := apiKeyToRPCMsg(tt.input)
 
 			if msg.GetId() != tt.input.ID {
 				t.Errorf("Id = %q, want %q", msg.GetId(), tt.input.ID)
 			}
-			if msg.GetOrgId() != tt.input.OrgID {
-				t.Errorf("OrgId = %q, want %q", msg.GetOrgId(), tt.input.OrgID)
-			}
 			if msg.GetDisplayName() != tt.input.DisplayName {
 				t.Errorf("DisplayName = %q, want %q", msg.GetDisplayName(), tt.input.DisplayName)
 			}
-			if msg.GetPublicApiKey() != tt.input.PublicApiKey {
-				t.Errorf("PublicApiKey = %q, want %q", msg.GetPublicApiKey(), tt.input.PublicApiKey)
+			if msg.GetMasked() != tt.input.Masked {
+				t.Errorf("Masked = %q, want %q", msg.GetMasked(), tt.input.Masked)
 			}
-			if msg.GetPrivateApiKey() != tt.input.PrivateApiKey {
-				t.Errorf("PrivateApiKey = %q, want %q", msg.GetPrivateApiKey(), tt.input.PrivateApiKey)
+			if msg.GetKind() != tt.wantKnd {
+				t.Errorf("Kind = %v, want %v", msg.GetKind(), tt.wantKnd)
 			}
-			if msg.GetFcmServiceJson() != tt.input.FcmServiceJson.String {
-				t.Errorf("FcmServiceJson = %q, want %q", msg.GetFcmServiceJson(), tt.input.FcmServiceJson.String)
+			if msg.GetKey() != tt.wantKey {
+				t.Errorf("Key = %q, want %q", msg.GetKey(), tt.wantKey)
+			}
+			if got := msg.GetCreateTime().AsTime(); !got.Equal(createTime) {
+				t.Errorf("CreateTime = %v, want %v", got, createTime)
 			}
 		})
 	}
 }
 
-func TestWToRPCMsgWithPrivateKeyIncludesAllBaseFields(t *testing.T) {
-	p := dbwrite.Project{
-		ID:             "proj_cmp",
-		OrgID:          "org_cmp",
-		DisplayName:    "Compare",
-		PublicApiKey:   "pub_cmp",
-		PrivateApiKey:  "priv_cmp",
-		FcmServiceJson: postgres.NewText("fcm_json"),
+// createdApiKeyToRPCMsg leans on dbread.ApiKey and dbwrite.ApiKey being the same
+// row generated twice. Pin that it maps identically.
+func TestCreatedApiKeyToRPCMsgMatchesRead(t *testing.T) {
+	w := dbwrite.ApiKey{
+		ID:          "key_new",
+		ProjectID:   "proj_1",
+		Kind:        string(coreprojects.KindPublic),
+		Token:       "pub_fresh0001",
+		Masked:      "pub_...0001",
+		DisplayName: "fresh",
+		CreateTime:  pgtype.Timestamptz{Time: time.Date(2026, 7, 15, 10, 30, 0, 0, time.UTC), Valid: true},
 	}
 
-	base := wToRPCMsg(p)
-	full := wToRPCMsgWithPrivateKey(p)
+	if diff := cmp.Diff(apiKeyToRPCMsg(dbread.ApiKey(w)), createdApiKeyToRPCMsg(w), protocmp.Transform()); diff != "" {
+		t.Errorf("createdApiKeyToRPCMsg differs from apiKeyToRPCMsg (-read +write):\n%s", diff)
+	}
+}
 
-	if base.GetId() != full.GetId() {
-		t.Errorf("Id mismatch: base=%q full=%q", base.GetId(), full.GetId())
+func TestKindFromRPCEnum(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  projectsv1.ApiKeyKind
+		want   coreprojects.Kind
+		wantOK bool
+	}{
+		{"public", projectsv1.ApiKeyKind_API_KEY_KIND_PUBLIC, coreprojects.KindPublic, true},
+		{"private", projectsv1.ApiKeyKind_API_KEY_KIND_PRIVATE, coreprojects.KindPrivate, true},
+		{"unspecified fails closed", projectsv1.ApiKeyKind_API_KEY_KIND_UNSPECIFIED, "", false},
+		{"unknown fails closed", projectsv1.ApiKeyKind(99), "", false},
 	}
-	if base.GetOrgId() != full.GetOrgId() {
-		t.Errorf("OrgId mismatch: base=%q full=%q", base.GetOrgId(), full.GetOrgId())
-	}
-	if base.GetDisplayName() != full.GetDisplayName() {
-		t.Errorf("DisplayName mismatch: base=%q full=%q", base.GetDisplayName(), full.GetDisplayName())
-	}
-	if base.GetPublicApiKey() != full.GetPublicApiKey() {
-		t.Errorf("PublicApiKey mismatch: base=%q full=%q", base.GetPublicApiKey(), full.GetPublicApiKey())
-	}
-	if base.GetFcmServiceJson() != full.GetFcmServiceJson() {
-		t.Errorf("FcmServiceJson mismatch: base=%q full=%q", base.GetFcmServiceJson(), full.GetFcmServiceJson())
-	}
-	if base.GetPrivateApiKey() != "" {
-		t.Errorf("base PrivateApiKey should be empty, got %q", base.GetPrivateApiKey())
-	}
-	if full.GetPrivateApiKey() != "priv_cmp" {
-		t.Errorf("full PrivateApiKey = %q, want %q", full.GetPrivateApiKey(), "priv_cmp")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := kindFromRPCEnum(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if got != tt.want {
+				t.Errorf("kind = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

@@ -63,14 +63,17 @@ func (s *Seeder) seedAccount(ctx context.Context) (dbread.Project, error) {
 	}
 
 	slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
-	project, err := s.seedCustomerOrgProject(ctx)
+	project, privateKey, err := s.seedCustomerOrgProject(ctx)
 	if err != nil {
 		return dbread.Project{}, err
 	}
+	// Only the private key's digest is stored, so this log is the one and only
+	// place it appears. If it is missed, mint another from the project settings
+	// page rather than reaching for the database. The project's public key is not
+	// logged — unlike this one it stays readable, via ListApiKeys.
 	slog.DebugContext(ctx, "account seed complete",
 		slog.String("project_id", project.ID),
-		slog.String("public_api_key", project.PublicApiKey),
-		slog.String("private_api_key", project.PrivateApiKey),
+		slog.String("private_api_key", privateKey),
 	)
 	return project, nil
 }
@@ -142,25 +145,20 @@ func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, custo
 	return projects[0], nil
 }
 
-func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, error) {
+// seedCustomerOrgProject creates the demo customer/org/project and returns the
+// project alongside the raw private API key it minted for it. The project comes
+// with a public key of its own; the private key is created explicitly (as any
+// user would) so local dev has one to call the SDK/MCP endpoints with, and the
+// raw value is returned because nothing but its digest is stored.
+func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, string, error) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to hash password: %w", err)
-	}
-
-	privKey, err := projects.NewPrivateKey()
-	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to generate private api key: %w", err)
-	}
-
-	pubKey, err := projects.NewPublicKey()
-	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to generate public api key: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	tx, err := s.deps.pg.Begin(ctx)
 	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to begin transaction: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
@@ -174,7 +172,7 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 		PictureUri:   "",
 	})
 	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to create customer: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to create customer: %w", err)
 	}
 
 	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
@@ -182,7 +180,7 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 		DisplayName: "default",
 	})
 	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to create default org: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to create default org: %w", err)
 	}
 
 	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
@@ -190,7 +188,7 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 		CustomerID: customer.ID,
 		Role:       coreorgs.RoleAdmin.String(),
 	}); err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to add customer to org: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to add customer to org: %w", err)
 	}
 
 	// Snoop Pugg: a read-only companion on the same org so the viewer experience
@@ -204,7 +202,7 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 		PictureUri:   "",
 	})
 	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to create viewer customer: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to create viewer customer: %w", err)
 	}
 
 	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
@@ -212,31 +210,28 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 		CustomerID: viewer.ID,
 		Role:       coreorgs.RoleViewer.String(),
 	}); err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to add viewer to org: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to add viewer to org: %w", err)
 	}
 
-	p, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID:            xid.New().String(),
-		OrgID:         org.ID,
-		DisplayName:   "default",
-		PrivateApiKey: privKey,
-		PublicApiKey:  pubKey,
-	})
+	p, err := projects.CreateProjectInTx(ctx, w, org.ID, "default", "")
 	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to create project: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to create project: %w", err)
+	}
+
+	privateKey, err := projects.CreateApiKeyInTx(ctx, w, p.ID, projects.KindPrivate, "seed")
+	if err != nil {
+		return dbread.Project{}, "", fmt.Errorf("failed to create private api key: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to commit seed transaction: %w", err)
+		return dbread.Project{}, "", fmt.Errorf("failed to commit seed transaction: %w", err)
 	}
 
 	return dbread.Project{
-		ID:            p.ID,
-		OrgID:         p.OrgID,
-		DisplayName:   p.DisplayName,
-		PrivateApiKey: p.PrivateApiKey,
-		PublicApiKey:  p.PublicApiKey,
-	}, nil
+		ID:          p.ID,
+		OrgID:       p.OrgID,
+		DisplayName: p.DisplayName,
+	}, privateKey.RawKey, nil
 }
 
 // Customers of the Pug & Pals demo store are, naturally, dogs.

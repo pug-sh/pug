@@ -82,6 +82,30 @@ func PropertyValue(ctx context.Context, projectID, key, value string) *commonv1.
 	return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: value}}
 }
 
+// String renders a PropertyValue as the string the promotion layer stores
+// (clickhouse.SplitPromotedAutoProperties) and the ingest enrichers derive
+// from (attribution.Derive). Reports false when the value is absent or holds
+// no slot. It is the inverse direction of PropertyValue and lives beside it
+// for the same reason: two copies would drift silently, and these two callers
+// must not disagree — the SDK handler derives $channel/$pathname from this
+// string while the storage layer files that same value into a promoted
+// column, so a divergence would mean a row whose derived columns describe a
+// value the row does not contain.
+func String(pv *commonv1.PropertyValue) (string, bool) {
+	switch v := pv.GetValue().(type) {
+	case *commonv1.PropertyValue_StringValue:
+		return v.StringValue, true
+	case *commonv1.PropertyValue_IntValue:
+		return strconv.FormatInt(v.IntValue, 10), true
+	case *commonv1.PropertyValue_DoubleValue:
+		return strconv.FormatFloat(v.DoubleValue, 'g', -1, 64), true
+	case *commonv1.PropertyValue_BoolValue:
+		return strconv.FormatBool(v.BoolValue), true
+	default:
+		return "", false
+	}
+}
+
 // Variant returns the chcol.Variant slot for a known auto-property key.
 // Delegates to PropertyValue so the key→type mapping has a single source of
 // truth, then maps the resulting oneof case to a Variant slot.

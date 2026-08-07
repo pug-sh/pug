@@ -12,27 +12,27 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-insert into projects (display_name, id, org_id, private_api_key, public_api_key, reporting_timezone)
-values ($1, $2, $3, $4, $5, $6)
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
+insert into projects (display_name, id, org_id, reporting_timezone)
+values ($1, $2, $3, $4)
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
 `
 
 type CreateProjectParams struct {
 	DisplayName       string
 	ID                string
 	OrgID             string
-	PrivateApiKey     string
-	PublicApiKey      string
 	ReportingTimezone string
 }
 
+// The project row only. Its starter public key is a second statement
+// (CreateApiKey), which projects.CreateProjectInTx runs in the same transaction
+// so a project can never commit without one. A project never gets a private key
+// implicitly; those are created explicitly via CreateApiKey.
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
 	row := q.db.QueryRow(ctx, createProject,
 		arg.DisplayName,
 		arg.ID,
 		arg.OrgID,
-		arg.PrivateApiKey,
-		arg.PublicApiKey,
 		arg.ReportingTimezone,
 	)
 	var i Project
@@ -42,8 +42,6 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -53,31 +51,30 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 const createProjectAsAdmin = `-- name: CreateProjectAsAdmin :one
 with check_admin as (
   select 1 from org_members
-  where org_id = $3 and customer_id = $7 and role = 'ORG_ROLE_ADMIN'
+  where org_id = $3 and customer_id = $5 and role = 'ORG_ROLE_ADMIN'
 )
-insert into projects (display_name, id, org_id, private_api_key, public_api_key, reporting_timezone)
-select $1, $2, $3, $4, $5, $6
+insert into projects (display_name, id, org_id, reporting_timezone)
+select $1, $2, $3, $4
 where exists (select 1 from check_admin)
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
 `
 
 type CreateProjectAsAdminParams struct {
 	DisplayName       string
 	ID                string
 	OrgID             string
-	PrivateApiKey     string
-	PublicApiKey      string
 	ReportingTimezone string
 	CustomerID        string
 }
 
+// CreateProject plus the admin guard. Returns no row for a non-admin, which
+// leaves the caller's transaction without a project — so the starter key insert
+// that follows never runs either.
 func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsAdminParams) (Project, error) {
 	row := q.db.QueryRow(ctx, createProjectAsAdmin,
 		arg.DisplayName,
 		arg.ID,
 		arg.OrgID,
-		arg.PrivateApiKey,
-		arg.PublicApiKey,
 		arg.ReportingTimezone,
 		arg.CustomerID,
 	)
@@ -88,8 +85,6 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -99,7 +94,7 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 const deleteProject = `-- name: DeleteProject :one
 delete from projects
 where org_id = $1 and id = $2
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
 `
 
 type DeleteProjectParams struct {
@@ -116,8 +111,6 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -128,7 +121,7 @@ const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
 update projects
 set fcm_service_json = $1
 where org_id = $2 and id = $3
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
 `
 
 type UpdateFCMServiceJSONParams struct {
@@ -146,8 +139,6 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -159,7 +150,7 @@ update projects
 set display_name       = coalesce($1, display_name),
     reporting_timezone = coalesce($2, reporting_timezone)
 where org_id = $3 and id = $4
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
 `
 
 type UpdateProjectMetaParams struct {
@@ -186,8 +177,6 @@ func (q *Queries) UpdateProjectMeta(ctx context.Context, arg UpdateProjectMetaPa
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)

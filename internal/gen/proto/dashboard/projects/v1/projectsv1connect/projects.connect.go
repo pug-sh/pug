@@ -48,6 +48,15 @@ const (
 	// ProjectsServiceUpdateFCMServiceJSONProcedure is the fully-qualified name of the ProjectsService's
 	// UpdateFCMServiceJSON RPC.
 	ProjectsServiceUpdateFCMServiceJSONProcedure = "/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON"
+	// ProjectsServiceListApiKeysProcedure is the fully-qualified name of the ProjectsService's
+	// ListApiKeys RPC.
+	ProjectsServiceListApiKeysProcedure = "/dashboard.projects.v1.ProjectsService/ListApiKeys"
+	// ProjectsServiceCreateApiKeyProcedure is the fully-qualified name of the ProjectsService's
+	// CreateApiKey RPC.
+	ProjectsServiceCreateApiKeyProcedure = "/dashboard.projects.v1.ProjectsService/CreateApiKey"
+	// ProjectsServiceDeleteApiKeyProcedure is the fully-qualified name of the ProjectsService's
+	// DeleteApiKey RPC.
+	ProjectsServiceDeleteApiKeyProcedure = "/dashboard.projects.v1.ProjectsService/DeleteApiKey"
 )
 
 // ProjectsServiceClient is a client for the dashboard.projects.v1.ProjectsService service.
@@ -58,6 +67,9 @@ type ProjectsServiceClient interface {
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateMeta(context.Context, *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
+	ListApiKeys(context.Context, *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error)
+	CreateApiKey(context.Context, *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error)
+	DeleteApiKey(context.Context, *connect.Request[v1.DeleteApiKeyRequest]) (*connect.Response[v1.DeleteApiKeyResponse], error)
 }
 
 // NewProjectsServiceClient constructs a client for the dashboard.projects.v1.ProjectsService
@@ -107,6 +119,24 @@ func NewProjectsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(projectsServiceMethods.ByName("UpdateFCMServiceJSON")),
 			connect.WithClientOptions(opts...),
 		),
+		listApiKeys: connect.NewClient[v1.ListApiKeysRequest, v1.ListApiKeysResponse](
+			httpClient,
+			baseURL+ProjectsServiceListApiKeysProcedure,
+			connect.WithSchema(projectsServiceMethods.ByName("ListApiKeys")),
+			connect.WithClientOptions(opts...),
+		),
+		createApiKey: connect.NewClient[v1.CreateApiKeyRequest, v1.CreateApiKeyResponse](
+			httpClient,
+			baseURL+ProjectsServiceCreateApiKeyProcedure,
+			connect.WithSchema(projectsServiceMethods.ByName("CreateApiKey")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteApiKey: connect.NewClient[v1.DeleteApiKeyRequest, v1.DeleteApiKeyResponse](
+			httpClient,
+			baseURL+ProjectsServiceDeleteApiKeyProcedure,
+			connect.WithSchema(projectsServiceMethods.ByName("DeleteApiKey")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -118,6 +148,9 @@ type projectsServiceClient struct {
 	get                  *connect.Client[v1.GetRequest, v1.GetResponse]
 	updateMeta           *connect.Client[v1.UpdateMetaRequest, v1.UpdateMetaResponse]
 	updateFCMServiceJSON *connect.Client[v1.UpdateFCMServiceJSONRequest, v1.UpdateFCMServiceJSONResponse]
+	listApiKeys          *connect.Client[v1.ListApiKeysRequest, v1.ListApiKeysResponse]
+	createApiKey         *connect.Client[v1.CreateApiKeyRequest, v1.CreateApiKeyResponse]
+	deleteApiKey         *connect.Client[v1.DeleteApiKeyRequest, v1.DeleteApiKeyResponse]
 }
 
 // BatchGet calls dashboard.projects.v1.ProjectsService.BatchGet.
@@ -150,6 +183,21 @@ func (c *projectsServiceClient) UpdateFCMServiceJSON(ctx context.Context, req *c
 	return c.updateFCMServiceJSON.CallUnary(ctx, req)
 }
 
+// ListApiKeys calls dashboard.projects.v1.ProjectsService.ListApiKeys.
+func (c *projectsServiceClient) ListApiKeys(ctx context.Context, req *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error) {
+	return c.listApiKeys.CallUnary(ctx, req)
+}
+
+// CreateApiKey calls dashboard.projects.v1.ProjectsService.CreateApiKey.
+func (c *projectsServiceClient) CreateApiKey(ctx context.Context, req *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error) {
+	return c.createApiKey.CallUnary(ctx, req)
+}
+
+// DeleteApiKey calls dashboard.projects.v1.ProjectsService.DeleteApiKey.
+func (c *projectsServiceClient) DeleteApiKey(ctx context.Context, req *connect.Request[v1.DeleteApiKeyRequest]) (*connect.Response[v1.DeleteApiKeyResponse], error) {
+	return c.deleteApiKey.CallUnary(ctx, req)
+}
+
 // ProjectsServiceHandler is an implementation of the dashboard.projects.v1.ProjectsService service.
 type ProjectsServiceHandler interface {
 	BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error)
@@ -158,6 +206,9 @@ type ProjectsServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateMeta(context.Context, *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
+	ListApiKeys(context.Context, *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error)
+	CreateApiKey(context.Context, *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error)
+	DeleteApiKey(context.Context, *connect.Request[v1.DeleteApiKeyRequest]) (*connect.Response[v1.DeleteApiKeyResponse], error)
 }
 
 // NewProjectsServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -203,6 +254,24 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 		connect.WithSchema(projectsServiceMethods.ByName("UpdateFCMServiceJSON")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectsServiceListApiKeysHandler := connect.NewUnaryHandler(
+		ProjectsServiceListApiKeysProcedure,
+		svc.ListApiKeys,
+		connect.WithSchema(projectsServiceMethods.ByName("ListApiKeys")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectsServiceCreateApiKeyHandler := connect.NewUnaryHandler(
+		ProjectsServiceCreateApiKeyProcedure,
+		svc.CreateApiKey,
+		connect.WithSchema(projectsServiceMethods.ByName("CreateApiKey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectsServiceDeleteApiKeyHandler := connect.NewUnaryHandler(
+		ProjectsServiceDeleteApiKeyProcedure,
+		svc.DeleteApiKey,
+		connect.WithSchema(projectsServiceMethods.ByName("DeleteApiKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.projects.v1.ProjectsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectsServiceBatchGetProcedure:
@@ -217,6 +286,12 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 			projectsServiceUpdateMetaHandler.ServeHTTP(w, r)
 		case ProjectsServiceUpdateFCMServiceJSONProcedure:
 			projectsServiceUpdateFCMServiceJSONHandler.ServeHTTP(w, r)
+		case ProjectsServiceListApiKeysProcedure:
+			projectsServiceListApiKeysHandler.ServeHTTP(w, r)
+		case ProjectsServiceCreateApiKeyProcedure:
+			projectsServiceCreateApiKeyHandler.ServeHTTP(w, r)
+		case ProjectsServiceDeleteApiKeyProcedure:
+			projectsServiceDeleteApiKeyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -248,4 +323,16 @@ func (UnimplementedProjectsServiceHandler) UpdateMeta(context.Context, *connect.
 
 func (UnimplementedProjectsServiceHandler) UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON is not implemented"))
+}
+
+func (UnimplementedProjectsServiceHandler) ListApiKeys(context.Context, *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.ListApiKeys is not implemented"))
+}
+
+func (UnimplementedProjectsServiceHandler) CreateApiKey(context.Context, *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.CreateApiKey is not implemented"))
+}
+
+func (UnimplementedProjectsServiceHandler) DeleteApiKey(context.Context, *connect.Request[v1.DeleteApiKeyRequest]) (*connect.Response[v1.DeleteApiKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.DeleteApiKey is not implemented"))
 }

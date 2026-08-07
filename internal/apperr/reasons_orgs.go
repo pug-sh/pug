@@ -18,5 +18,6 @@ var (
 	ReasonInvitationExpired        = codes.add("INVITATION_EXPIRED")
 	ReasonInvitationAlreadyPending = codes.add("INVITATION_ALREADY_PENDING")
 	ReasonInvitationWrongEmail     = codes.add("INVITATION_WRONG_EMAIL")
+	ReasonInvitationSendLimit      = codes.add("INVITATION_SEND_LIMIT")
 	ReasonProjectNameTaken         = codes.add("PROJECT_NAME_TAKEN")
 )

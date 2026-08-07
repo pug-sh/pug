@@ -210,6 +210,8 @@ func TileViewModeToRPC(ctx context.Context, kind TileKind, raw string) dashboard
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI
 		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE:
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE
 		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
 		default:

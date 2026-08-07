@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/pug-sh/pug/internal/cookieless"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -281,7 +282,7 @@ func (s *Service) requestErasureByUnresolvedID(ctx context.Context, projectID, i
 		return "", "", err
 	}
 
-	has, err := s.hasActivity(ctx, projectID, id)
+	has, err := s.hasErasableActivity(ctx, projectID, id)
 	if err != nil {
 		err = fmt.Errorf("probe activity for erasure: %w", err)
 		slog.ErrorContext(ctx, "failed probing activity for erasure", slogx.Error(err),
@@ -295,12 +296,45 @@ func (s *Service) requestErasureByUnresolvedID(ctx context.Context, projectID, i
 	return s.requestErasure(ctx, projectID, "", id, requestedBy)
 }
 
+// hasErasableActivity reports whether an id names data this project actually
+// holds, choosing the probe that can see it.
+//
+// The activity rollup is the right probe for ordinary ids because it is what the
+// read path surfaces people from. It is the WRONG probe for a cookieless id:
+// migration 011's WHERE keeps that prefix out of the activity MV by design (each
+// daily rotation would mint a ghost person), so the rollup is blind to ids whose
+// events plainly exist. Erasure asked the rollup anyway and answered
+// ErrProfileNotFound for real data.
+//
+// That mattered once it became clear a controller can SEE these ids —
+// GetEventExplorer and GetActivityFeed both return distinct_id unfiltered — so
+// "not found" was reachable from a UI, on an Art. 17 obligation, for data the
+// system was still holding. Cookieless ids therefore probe the events table
+// directly. Pinned by TestErasure_ByID_CookielessIsErasable.
+func (s *Service) hasErasableActivity(ctx context.Context, projectID, distinctID string) (bool, error) {
+	if strings.HasPrefix(distinctID, cookieless.IDPrefix) {
+		var n uint64
+		if err := s.ch.QueryRow(ctx,
+			"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?",
+			projectID, distinctID,
+		).Scan(&n); err != nil {
+			return false, err
+		}
+		return n > 0, nil
+	}
+	return s.hasActivity(ctx, projectID, distinctID)
+}
+
 // hasActivity reports whether any activity rollup rows exist for the
 // distinct_id — the same source that surfaces it as a derived anonymous person
 // on the read path, so erasure-by-id accepts every id Profiles surfaces from
-// that rollup. It is a superset, not an exact match: it does not re-apply the
-// read path's claim exclusion, so (e.g.) a distinct_id reached via the
-// degraded-alias fall-through is erasable without being separately listed.
+// that rollup.
+//
+// It is a superset of "is listed as a person", not an exact match: it does not
+// re-apply the read path's claim exclusion, so (e.g.) a distinct_id reached via
+// the degraded-alias fall-through is erasable without being separately listed.
+// It is NOT a valid probe for cookieless ids — see hasErasableActivity, which
+// routes those to the events table instead.
 func (s *Service) hasActivity(ctx context.Context, projectID, distinctID string) (bool, error) {
 	var n uint64
 	if err := s.ch.QueryRow(ctx,
@@ -922,7 +956,12 @@ func (s *Service) hardDeletePostgres(ctx context.Context, projectID, profileID s
 
 // eraseClickHouse hard-deletes every ClickHouse store that holds the subject's
 // data. dashboard_event_rollup_daily is intentionally NOT touched — it has no
-// per-person key and retains only an anonymous aggregate (decision "a"). The
+// per-person key (decision "a"). That is pseudonymisation, not anonymisation:
+// uniq_state is an AggregateFunction(uniq, String) over distinct_id, so it keeps
+// a stable per-person token and a candidate id can be tested for membership by
+// merging it in and comparing cardinality. Reaching that needs direct ClickHouse
+// access — no API exposes raw state or arbitrary SQL — so it is defence-in-depth,
+// not an exposed surface. The
 // per-distinct_id and per-session rollups are insert-triggered MVs, so deleting
 // from events does not propagate — they must be deleted explicitly here. Each
 // IN-list mutation is batched (S1) so a huge fan-out can't blow max_query_size,

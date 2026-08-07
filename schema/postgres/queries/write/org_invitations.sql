@@ -15,6 +15,12 @@ select @email, @expires_at, @id, @inviter_id, @org_id, @role, @token
 where not exists (select 1 from check_member)
 returning *;
 
+-- name: DeleteOrgInvitation :exec
+-- Hard delete: the row is the only thing blocking a fresh invite for the same
+-- (org, email), and the email_action_tokens cascade is what makes the invitee's
+-- outstanding links unredeemable.
+delete from org_invitations where id = @id;
+
 -- name: UpdateOrgInvitationStatus :one
 update org_invitations set status = @status where id = @id
 returning *;

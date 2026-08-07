@@ -428,6 +428,7 @@ func buildTrendsBranchQuery(
 			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			chq.When(ev.GetEvent().GetKind() != "", chq.Eq("kind", ev.GetEvent().GetKind())),
+			cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), agg), ""),
 			topLevelFilterCond,
 		)
 
@@ -487,7 +488,11 @@ func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, event
 		if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
 			agg = insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
 		}
-		valExpr, valArgs, err := aggregationExprIf(cond, agg, ev.GetAggregationProperty())
+		// The cookieless exclusion lives INSIDE this event's countIf/uniqIf
+		// condition, never the shared WHERE: sibling TOTAL branches in the same
+		// scan must keep counting all traffic.
+		aggCond := chq.And(cond, cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), agg), ""))
+		valExpr, valArgs, err := aggregationExprIf(aggCond, agg, ev.GetAggregationProperty())
 		if err != nil {
 			return nil, fmt.Errorf("trends: events[%d]: %w", i, err)
 		}
@@ -575,6 +580,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
+			cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), ""),
 			topLevelFilterCond,
 			eventCond,
 		), nil
@@ -740,8 +746,9 @@ func sessionEventKind(session *insightsv1.SessionQuery) string {
 // sessionMetricAggExpr returns the aggregate applied over the per-session CTE rows
 // (one row per session) to produce the metric value. SESSIONS/ENTRY/EXIT all reduce
 // to count() of sessions — ENTRY/EXIT differ only in the breakdown attribute the CTE
-// already resolved (argMin vs argMax), not in this aggregate. AVG_DURATION and
-// BOUNCE_RATE guard count()=0 so an empty bucket yields 0 rather than NULL/NaN.
+// already resolved (argMin vs argMax), not in this aggregate. AVG_DURATION,
+// BOUNCE_RATE, and AVG_EVENTS_PER_SESSION guard count()=0 so an empty bucket
+// yields 0 rather than NULL/NaN.
 // Identical between the raw and rollup paths so their numbers match.
 func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 	switch metric {
@@ -753,6 +760,8 @@ func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 		return "if(count() = 0, 0, avg(dateDiff('second', start_time, end_time)))", nil
 	case insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE:
 		return "if(count() = 0, 0, toFloat64(countIf(event_count = 1)) * 100.0 / toFloat64(count()))", nil
+	case insightsv1.SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION:
+		return "if(count() = 0, 0, avg(toFloat64(event_count)))", nil
 	default:
 		return "", fmt.Errorf("unsupported session metric %s", metric)
 	}
@@ -815,6 +824,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 			stepFilter,
 			topLevelFilterCond,
 		).
@@ -957,6 +967,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 				chq.Eq("project_id", projectID),
 				chq.Gte("occur_time", from),
 				chq.Lt("occur_time", to),
+				cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 				chq.Or(freshOrConds()...),
 				pfTopLevel,
 			).
@@ -986,6 +997,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 			chq.Or(freshOrConds()...),
 			topLevelFilterCond,
 			preFilterCond,
@@ -1077,6 +1089,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 			startCond,
 			topLevelFilterCond,
 		).
@@ -1116,6 +1129,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
 			chq.RawCond("e.occur_time >= c.first_event_time"),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
 			returnCondAliased,
 			topLevelFilterCondAliased,
 		).
@@ -1187,6 +1201,13 @@ func buildFunnelStepCondition(step *insightsv1.EventQuery, projectID string, idx
 
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.
 // The generated query returns a paginated, cursor-keyed list of distinct user IDs.
+//
+// Cookieless ids are excluded unconditionally. This is the one builder that
+// enumerates people directly, and SegmentUsersRequest carries no
+// InsightQuerySpec — so there is no include_cookieless toggle to consult, and
+// admitting them would contradict every other read surface: migration 011 keeps
+// cookieless ids out of distinct_id_activity_states_mv, so a caller resolving one
+// of these ids through profiles.GetByID gets ErrProfileNotFound.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
@@ -1212,6 +1233,7 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			topLevelFilterCond,
 			eventCond,
+			cookielessExclusionCond(true, ""),
 			chq.When(req.GetPageToken() != "", chq.Gt("distinct_id", req.GetPageToken())),
 		).
 		OrderBy("distinct_id ASC").

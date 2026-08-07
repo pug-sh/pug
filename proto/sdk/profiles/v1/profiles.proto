@@ -15,7 +15,20 @@ service ProfilesSDKService {
 
 message IdentifyRequest {
   // Stable user identifier (e.g. email, database ID).
-  string external_id = 1 [(buf.validate.field).required = true];
+  // The 'cookieless-' prefix is server-owned: ingest mints those ids and the
+  // reserved-prefix rule on BatchCreateRequest.distinct_id already refuses them
+  // from clients. external_id needs the same guard because post-identify events
+  // are keyed by external_id, so an id accepted here comes back as a distinct_id
+  // that the batch rule then rejects — and because that rule is `all()`, one such
+  // user fails the WHOLE batch, taking unrelated users' events with it.
+  string external_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).cel = {
+      id: "external_id.reserved_prefix",
+      message: "external_id must not start with the reserved 'cookieless-' prefix",
+      expression: "!this.startsWith('cookieless-')"
+    }
+  ];
   // Profile properties — shallow-merged into existing properties. On key conflict,
   // these values take precedence over previously stored values.
   google.protobuf.Struct traits = 2;
@@ -36,9 +49,17 @@ message IdentifyResponse {}
 // ProfileIdentifyMessage is the internal NATS envelope for the identify worker.
 // project_id is injected server-side from the authenticated principal.
 message ProfileIdentifyMessage {
+  // Mirrors IdentifyRequest.external_id: the worker re-validates this envelope,
+  // so the reserved prefix is enforced at both stages rather than trusting that
+  // the value only ever arrives from an already-validated request.
   string external_id = 1 [
     (buf.validate.field).required = true,
-    (buf.validate.field).string.min_len = 1
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).cel = {
+      id: "external_id.reserved_prefix",
+      message: "external_id must not start with the reserved 'cookieless-' prefix",
+      expression: "!this.startsWith('cookieless-')"
+    }
   ];
   google.protobuf.Struct traits = 2;
   string project_id = 3 [

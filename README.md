@@ -13,7 +13,11 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
 ## Features
 
 - **Event ingestion** — a NATS-backed capture pipeline with automatic geo,
-  user-agent, and bot-detection enrichment.
+  user-agent, bot-detection, and web-attribution enrichment.
+- **Web analytics** — an overview auto-built from your events: visitors,
+  sessions, pageviews, bounce rate, and traffic sources, with no tile to wire up.
+- **Live view** — every visitor on a real-time world map, down to the person and
+  the event they just fired.
 - **Profiles** — identify and alias the users behind events, with a
   ClickHouse-backed profile and activity API.
 - **Insights** — trends, funnels, retention, segmentation, user flow (Sankey),
@@ -25,33 +29,48 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
   events and profile.
 
 <p>
-  <img src="docs/assets/dashboards.webp" alt="A Pug dashboard composed of insight and markdown tiles" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/overview-dark.webp" />
+    <img src="docs/assets/overview-light.webp" alt="Pug's overview page showing visitors, sessions, pageviews, and traffic sources" />
+  </picture>
+  <br /><sub><b>Overview</b> — a web-analytics view auto-built from your events, with the previous period alongside.</sub>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/breakdowns-dark.webp" />
+    <img src="docs/assets/breakdowns-light.webp" alt="Pug's overview breakdowns: a choropleth of pageviews by country, plus locations, devices, and events" />
+  </picture>
+  <br /><sub><b>Breakdowns</b> — pageviews by country, plus locations, devices, and events; click any value to filter the whole view.</sub>
+</p>
+
+<p>
+  <img src="docs/assets/live-light.webp" alt="Pug's live map flying between real-time visitors around the world" />
+  <br /><sub><b>Live view</b> — every visitor on a live world map; click one to fly to them and see the page, device, and profile behind it.</sub>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboards-dark.webp" />
+    <img src="docs/assets/dashboards-light.webp" alt="A Pug dashboard composed of insight and markdown tiles" />
+  </picture>
   <br /><sub><b>Dashboards</b> — compose insight and markdown tiles on a time-windowed grid.</sub>
 </p>
 
 <p>
-  <img src="docs/assets/live-demo.webp" alt="Pug's live map zooming across continents into real-time events" />
-  <br /><sub><b>Live view</b> — every event on a live world map; zoom in for the page, browser, device, and the profile behind it.</sub>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/insights-dark.webp" />
+    <img src="docs/assets/insights-light.webp" alt="A Pug trends insight broken down by country" />
+  </picture>
+  <br /><sub><b>Insights</b> — trends, filters, and breakdowns; here product views split by country.</sub>
 </p>
 
 <p>
-  <img src="docs/assets/insights.webp" alt="The Pug insights query builder with a filter open" />
-  <br /><sub><b>Insights</b> — build trends, funnels, retention, and more with filters and breakdowns.</sub>
-</p>
-
-<p>
-  <img src="docs/assets/retention.webp" alt="A Pug retention insight showing a cohort retention heatmap" />
-  <br /><sub><b>Retention</b> — cohort heatmaps that track how each day's users come back over time.</sub>
-</p>
-
-<p>
-  <img src="docs/assets/profiles.webp" alt="A Pug user profile showing traits and recent activity" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/profiles-dark.webp" />
+    <img src="docs/assets/profiles-light.webp" alt="A Pug user profile showing traits and recent activity" />
+  </picture>
   <br /><sub><b>Profiles</b> — the person behind the events, with traits, sessions, and activity.</sub>
-</p>
-
-<p>
-  <img src="docs/assets/events.webp" alt="The Pug raw-events explorer with an expanded event" />
-  <br /><sub><b>Events</b> — inspect the raw stream, enriched with geo, device, and bot signals.</sub>
 </p>
 
 ## Tech stack
@@ -75,11 +94,46 @@ make infra
 ./bin/pug nats migrate
 ./bin/pug clickhouse migrate
 
+# Seed the demo project with events, profiles, and dashboards
+# (resets the local Postgres and ClickHouse databases — see "Demo data" below)
+./bin/pug seed
+
 # Start the dev server + workers together
 ./bin/pug dev
 ```
 
 Environment variables are documented in [`.env.example`](.env.example).
+
+### Demo data
+
+`./bin/pug seed` fills a "Pug & Pals" demo project with ~4 months of history, so
+dashboards, insights, and profiles have something to show. Profiles are seeded
+only for users that produced events, so the data is internally consistent.
+
+> **Local databases only.** By default `seed` migrates Postgres and ClickHouse
+> all the way down and back up, dropping every table — not just the demo rows.
+> There is no confirmation prompt and no environment check: it connects to
+> whatever `DATABASE_URL` and `CLICKHOUSE_URL` resolve to, and an already
+> exported variable beats `.env`. Point it at a disposable local or demo
+> database.
+
+Pass `--no-reset` to keep the schema; it then deletes the demo project's own
+events and profiles before re-seeding them, leaving other projects untouched.
+Volume is tunable with `--count` (default 500,000 events) and `--batch` (default
+10,000 events per insert). Run it from the repo root; it reads the same `.env`
+as the rest of the CLI.
+
+Two accounts are seeded, both with the password `goodboy`:
+
+- `woof@pug.sh` — org admin
+- `snoop@pug.sh` — read-only viewer
+
+For a live stream of traffic instead of a one-shot backfill, set
+`PUG_DEMO_ENABLED=true`: `./bin/pug dev` then also runs the demo worker. It
+backfills an **empty** project once, so after `pug seed` it skips straight to
+playing new sessions out in real time. If you seed with a smaller `--count`,
+lower `PUG_DEMO_SEED_COUNT` to match — the worker reads a project holding fewer
+events than that as an interrupted backfill and warns rather than topping it up.
 
 ## Development
 

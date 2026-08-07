@@ -245,6 +245,15 @@ func TestTilePayload_SankeyViewModePreservesOnEncode(t *testing.T) {
 	}
 }
 
+func TestTilePayload_PieViewModePreservesOnEncode(t *testing.T) {
+	p := fullPayload()
+	p.ViewMode = dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE
+	enc := mustEncode(t, p)
+	if enc.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE.String() {
+		t.Fatalf("ViewMode = %q, want PIE", enc.ViewMode)
+	}
+}
+
 // UnmarshalThresholds tolerates the proto3 "absent" forms (nil, [], null,
 // empty) and propagates real JSON / proto errors for genuinely malformed
 // data. Pins both halves so a future refactor doesn't accidentally swallow

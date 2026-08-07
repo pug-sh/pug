@@ -68,6 +68,12 @@ services:
     restart: always
     ports:
       - "${DRAGONFLY_PORT:-6380}:6379"
+    # DEV ONLY: persists the keyspace across `make infra-down`, matching the other
+    # services here. Do NOT copy into a production manifest — .env.example requires
+    # the salt store to be ephemeral there, because TTL expiry cannot edit a
+    # snapshot already on disk and the daily cookieless salt's deletion is the whole
+    # privacy guarantee. A graceful shutdown writes .dfs dumps from which a seeded
+    # salt is recoverable in plaintext.
     volumes:
       - dragonfly-data:/data
     networks:

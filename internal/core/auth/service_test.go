@@ -116,14 +116,17 @@ func TestAuthService(t *testing.T) {
 		if claims.Issuer != auth.Issuer {
 			t.Errorf("issuer = %q, want %q", claims.Issuer, auth.Issuer)
 		}
-		// Access token is intentionally short-lived (~1h). A regression to a long TTL
-		// (e.g. the old 90 days) would silently widen the leak window — pin it.
+		// Pin the access token's absolute lifetime. It is not a theft bound (the
+		// client holds both tokens in one localStorage), but a regression to a long
+		// TTL would turn every leaked JWT into a near-permanent credential — SignOut
+		// revokes the refresh family, never an issued JWT. The band is absolute, not
+		// a ratio to refreshTokenTTL: package auth_test can read neither constant.
 		if claims.ExpiresAt == nil || claims.IssuedAt == nil {
 			t.Fatal("access token must carry both iat and exp")
 		}
 		ttl := claims.ExpiresAt.Sub(claims.IssuedAt.Time)
-		if ttl < 55*time.Minute || ttl > 65*time.Minute {
-			t.Errorf("access token TTL = %v, want ~1h", ttl)
+		if ttl < 23*time.Hour || ttl > 25*time.Hour {
+			t.Errorf("access token TTL = %v, want ~24h", ttl)
 		}
 	})
 }

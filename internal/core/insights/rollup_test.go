@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/pug-sh/pug/internal/cookieless"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
@@ -49,6 +50,101 @@ func rollupMultiEventTrendsSpec(kinds ...string) *insightsv1.InsightQuerySpec {
 		})
 	}
 	return spec
+}
+
+// rollupEventSpec names one event of a multi-event trends spec. Unlike
+// rollupMultiEventTrendsSpec (which hardcodes TOTAL everywhere) it lets a test
+// vary aggregation ACROSS events — the shape nothing in InsightQuerySpec's CEL
+// rules forbids, and the one the shared top_vals CTE mis-ranked.
+type rollupEventSpec struct {
+	kind string
+	agg  insightsv1.AggregationType
+}
+
+func rollupTrendsSpecFor(breakdown string, evs ...rollupEventSpec) *insightsv1.InsightQuerySpec {
+	spec := &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}
+	for _, e := range evs {
+		spec.Events = append(spec.Events, &insightsv1.EventQuery{
+			Event:       &commonv1.EventFilter{Kind: proto.String(e.kind)},
+			Aggregation: e.agg.Enum(),
+		})
+	}
+	if breakdown != "" {
+		spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String(breakdown)}}
+	}
+	return spec
+}
+
+// cteBody returns the text of the named CTE so an assertion can bind a predicate
+// to the specific event whose ranking it governs, rather than counting
+// occurrences across the whole statement (which cannot tell WHICH event a
+// predicate landed on — exactly the confusion that let C-1 ship).
+func cteBody(t *testing.T, sql, name string) string {
+	t.Helper()
+	open := name + " AS ("
+	i := strings.Index(sql, open)
+	if i < 0 {
+		t.Fatalf("CTE %s not found in:\n%s", name, sql)
+	}
+	rest := sql[i+len(open):]
+	j := strings.Index(rest, "\n)")
+	if j < 0 {
+		t.Fatalf("unterminated CTE %s in:\n%s", name, sql)
+	}
+	return rest[:j]
+}
+
+// TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN pins the three axes on
+// which the rollup's SQL top-N must equal the raw path's applyTrendsTopN. The
+// rollup returns breakdownLimit=0, so GroupSeries never re-ranks and this SQL is
+// the SOLE arbiter of which breakdown values are named vs folded into $others.
+// Any drift here silently changes chart contents rather than failing a query.
+func TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN(t *testing.T) {
+	total := insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
+	uu := insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS
+
+	t.Run("ranks_by_each_events_own_metric", func(t *testing.T) {
+		req := rollupDayReq(rollupTrendsSpecFor("$country", rollupEventSpec{"page_view", uu}))
+		q, err := buildTrendsFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// applyTrendsTopN accumulates `entry.total += r.Value` bucket by bucket, so
+		// the rollup must (a) evaluate this event's metric at the query's own bucket
+		// grain and (b) rank by the SUM of those values.
+		//
+		// Ranking by sum(cnt) would order countries by page views — a plain "unique
+		// users by country" tile naming wrong values. Ranking by a WINDOW-WIDE
+		// uniqMerge is subtler and was the last axis to be fixed: it equals the
+		// per-bucket sum for TOTAL, so only a multi-day non-additive-metric corpus
+		// exposes it (rollup_parity_trends_multiday_unique_users_top_n).
+		if !strings.Contains(cteBody(t, q.SQL(), "top_grain_0"), "toFloat64(uniqMerge(uniq_state)) AS v") {
+			t.Errorf("UNIQUE_USERS grain CTE must evaluate uniqMerge per bucket, not raw event volume:\n%s", q.SQL())
+		}
+		if !strings.Contains(cteBody(t, q.SQL(), "top_vals_0"), "ORDER BY sum(v) DESC, dim_value ASC") {
+			t.Errorf("top-N must rank by the SUM of per-bucket values, matching applyTrendsTopN:\n%s", q.SQL())
+		}
+	})
+
+	t.Run("ranks_per_event_kind", func(t *testing.T) {
+		req := rollupDayReq(rollupTrendsSpecFor("$country",
+			rollupEventSpec{"page_view", total}, rollupEventSpec{"signup", total}))
+		q, err := buildTrendsFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sql := q.SQL()
+		// applyTrendsTopN partitions byEventKind BEFORE ranking. One global top-N
+		// would let a high-volume kind dictate a low-volume kind's named values.
+		for _, want := range []string{"top_vals_0 AS (", "top_vals_1 AS ("} {
+			if !strings.Contains(sql, want) {
+				t.Errorf("expected per-event ranking CTE %q:\n%s", want, sql)
+			}
+		}
+		if got := strings.Count(sql, "AND kind = ?"); got != 4 {
+			t.Errorf("expected 2 CTEs + 2 branches each scoped to one kind (4), got %d:\n%s", got, sql)
+		}
+	})
 }
 
 func TestRollupAggExpr(t *testing.T) {
@@ -168,9 +264,9 @@ func TestBuildTrendsFromRollup_Breakdown(t *testing.T) {
 	sql := q.SQL()
 	for _, want := range []string{
 		"FROM dashboard_event_rollup_daily",
-		"top_vals",
+		"top_vals_0",
 		"dim_name",
-		"if(dim_value IN (SELECT dim_value FROM top_vals), dim_value, '$others') AS breakdown_0",
+		"if(dim_value IN (SELECT dim_value FROM top_vals_0), dim_value, '$others') AS breakdown_0",
 		"toFloat64(sum(cnt)) AS value",
 		"toStartOfDay(toDateTime(day)) AS t",
 	} {
@@ -238,6 +334,44 @@ func TestFillMultiEventTrendZeros(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("does_not_fill_a_value_folded_into_others", func(t *testing.T) {
+		// Top-N is per kind, so page_view can name GB while signup folded it into
+		// $others. Filling signup|GB=0 would invent a flat-zero series for traffic
+		// already counted in signup|$others.
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"GB"}, Value: 5},
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"$others"}, Value: 2},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"US"}, Value: 4},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"$others"}, Value: 3},
+		}
+		got := flatten(fillMultiEventTrendZeros(rows, []string{"page_view", "signup"}))
+		want := map[string]float64{
+			"page_view|GB|2024-01-01":      5,
+			"page_view|$others|2024-01-01": 2,
+			"signup|US|2024-01-01":         4,
+			"signup|$others|2024-01-01":    3,
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v — signup|GB and page_view|US are inside each kind's $others", got, want)
+		}
+	})
+
+	t.Run("still_fills_across_buckets_when_folded", func(t *testing.T) {
+		// The original purpose survives folding: signup names US, so a bucket where
+		// it has no US row is a genuine gap and must still be zero-filled.
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"US"}, Value: 5},
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"$others"}, Value: 1},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"US"}, Value: 2},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"$others"}, Value: 1},
+			{Time: t2, EventKind: "page_view", Breakdowns: []string{"US"}, Value: 3},
+		}
+		got := flatten(fillMultiEventTrendZeros(rows, []string{"page_view", "signup"}))
+		if v, ok := got["signup|US|2024-01-02"]; !ok || v != 0 {
+			t.Errorf("signup|US|2024-01-02 = (%v, %v), want a synthesized 0", v, ok)
 		}
 	})
 
@@ -524,88 +658,167 @@ func TestSegmentationExecution_RoutesToRollup(t *testing.T) {
 	}
 }
 
-// checkMaterializedDimsMatch verifies that BOTH ARRAY JOIN dimension lists in the
-// migration (the incremental MV and the one-time backfill INSERT) contain exactly
-// the Go materializedDims plus the total sentinel — no more, no less. It returns a
-// descriptive error on any drift: a Go↔migration mismatch in either direction, or
-// the MV and backfill copies diverging from each other. A whole-file substring
-// check cannot catch either, because the two copies share the same tokens.
-func checkMaterializedDimsMatch(sql string, goDims []string, total string) error {
-	// `] AS dim` (whitespace-tolerant) terminates each list.
-	blockRe := regexp.MustCompile(`(?s)ARRAY JOIN \[(.*?)\]\s+AS\s+dim`)
-	blocks := blockRe.FindAllStringSubmatch(sql, -1)
-	if len(blocks) != 2 {
-		return fmt.Errorf("expected 2 ARRAY JOIN blocks (MV + backfill), found %d", len(blocks))
-	}
+const (
+	migration006Path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
+	migration009Path = "../../../schema/clickhouse/migrations/009_extend_dashboard_event_rollup.sql"
+	migration011Path = "../../../schema/clickhouse/migrations/011_cookieless_identity.sql"
+)
 
-	want := append([]string{total}, goDims...)
-	slices.Sort(want)
-
-	dimRe := regexp.MustCompile(`\('([^']*)',`) // first tuple element, e.g. ('$country',
-	for i, block := range blocks {
-		var got []string
-		for _, m := range dimRe.FindAllStringSubmatch(block[1], -1) {
-			got = append(got, m[1])
-		}
-		slices.Sort(got)
-		if !slices.Equal(got, want) {
-			return fmt.Errorf("ARRAY JOIN block %d dims %v != materializedDims+%q %v", i, got, total, want)
-		}
-	}
-	return nil
-}
-
-// TestCheckMaterializedDimsMatch exercises the drift detector itself: a matching
-// migration passes, and every drift direction (MV/backfill divergence, a
-// migration-only dim, a Go-only dim) is caught.
-func TestCheckMaterializedDimsMatch(t *testing.T) {
-	const total = "$__total__"
-	goDims := []string{"$a", "$b"}
-	mk := func(mv, backfill string) string {
-		return "CREATE MATERIALIZED VIEW x AS SELECT a ARRAY JOIN [\n" + mv + "\n] AS dim GROUP BY a;\n" +
-			"INSERT INTO x SELECT a ARRAY JOIN [\n" + backfill + "\n] AS dim GROUP BY a;\n"
-	}
-	good := "('$__total__', ''), ('$a', x), ('$b', y)"
-
-	if err := checkMaterializedDimsMatch(mk(good, good), goDims, total); err != nil {
-		t.Errorf("matching migration flagged: %v", err)
-	}
-	if err := checkMaterializedDimsMatch(mk(good, "('$__total__', ''), ('$a', x)"), goDims, total); err == nil {
-		t.Error("expected MV/backfill divergence (backfill missing $b) to be detected")
-	}
-	withExtra := "('$__total__', ''), ('$a', x), ('$b', y), ('$c', z)"
-	if err := checkMaterializedDimsMatch(mk(withExtra, withExtra), goDims, total); err == nil {
-		t.Error("expected migration-only dimension ($c) to be detected")
-	}
-	if err := checkMaterializedDimsMatch(mk(good, good), []string{"$a", "$b", "$d"}, total); err == nil {
-		t.Error("expected Go-only dimension ($d) to be detected")
-	}
-}
-
-// TestMaterializedDimsMatchMigration pins the Go dimension list to BOTH ARRAY JOIN
-// lists in migration 006 (the MV and the backfill). Hand-coupled; fails loud on any
-// drift in either direction or between the two copies.
-func TestMaterializedDimsMatchMigration(t *testing.T) {
-	const path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
+func readMigration(t *testing.T, path string) string {
+	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
-	if err := checkMaterializedDimsMatch(string(data), materializedDims, totalDimName); err != nil {
-		t.Error(err)
+	return string(data)
+}
+
+// migrationUpSection returns the `-- +goose Up` portion of a migration file so
+// dim checks don't trip over Down-section restatements of older MV definitions.
+func migrationUpSection(t *testing.T, path string) string {
+	t.Helper()
+	sql := readMigration(t, path)
+	up, _, found := strings.Cut(sql, "-- +goose Down")
+	if !found {
+		t.Fatalf("%s has no goose Down marker", path)
+	}
+	return up
+}
+
+// extractArrayJoinBlocks returns each `ARRAY JOIN [ ... ] AS dim` tuple-list
+// body, in order of appearance.
+func extractArrayJoinBlocks(sql string) []string {
+	blockRe := regexp.MustCompile(`(?s)ARRAY JOIN \[(.*?)\]\s+AS\s+dim`)
+	var out []string
+	for _, m := range blockRe.FindAllStringSubmatch(sql, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+// arrayJoinDimNames extracts the first tuple element of each dim tuple in a
+// block, e.g. ('$country', ...) → $country.
+func arrayJoinDimNames(block string) []string {
+	dimRe := regexp.MustCompile(`\('([^']*)',`)
+	var out []string
+	for _, m := range dimRe.FindAllStringSubmatch(block, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+// checkDimList verifies a block carries exactly want (order-insensitive).
+func checkDimList(block string, want []string) error {
+	got := arrayJoinDimNames(block)
+	slices.Sort(got)
+	wantSorted := slices.Clone(want)
+	slices.Sort(wantSorted)
+	if !slices.Equal(got, wantSorted) {
+		return fmt.Errorf("ARRAY JOIN dims %v != expected %v", got, wantSorted)
+	}
+	return nil
+}
+
+// TestCheckDimListHelpers exercises the drift detector itself: a matching block
+// passes, and every drift direction (a migration-only dim, a Go-only dim) is
+// caught.
+func TestCheckDimListHelpers(t *testing.T) {
+	good := "('$__total__', ''), ('$a', x), ('$b', y)"
+	if err := checkDimList(good, []string{"$__total__", "$a", "$b"}); err != nil {
+		t.Errorf("matching block flagged: %v", err)
+	}
+	if err := checkDimList(good, []string{"$__total__", "$a"}); err == nil {
+		t.Error("expected migration-only dimension ($b) to be detected")
+	}
+	if err := checkDimList(good, []string{"$__total__", "$a", "$b", "$c"}); err == nil {
+		t.Error("expected Go-only dimension ($c) to be detected")
 	}
 }
 
-// checkMaterializedDimExprsMatch verifies that both ARRAY JOIN blocks in migration
-// 006 use PropertyExpr-compatible promoted-column expressions for each materialized
-// breakdown dimension (not auto_properties map lookups).
-func checkMaterializedDimExprsMatch(sql string, goDims []string) error {
-	blockRe := regexp.MustCompile(`(?s)ARRAY JOIN \[(.*?)\]\s+AS\s+dim`)
-	blocks := blockRe.FindAllStringSubmatch(sql, -1)
-	if len(blocks) != 2 {
-		return fmt.Errorf("expected 2 ARRAY JOIN blocks (MV + backfill), found %d", len(blocks))
+// TestMaterializedDimsMatchMigration pins the Go dimension lists to the LATEST
+// event-rollup MV definition — migration 011's restated MODIFY QUERY, which
+// must carry exactly materializedDims + $__total__ (011 changes no dims; it
+// adds the cookieless key column, so it has no backfill block). Also pins the
+// internal coherence of the per-migration Go groups.
+func TestMaterializedDimsMatchMigration(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	blocks := extractArrayJoinBlocks(up)
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 ARRAY JOIN block in 011 Up (MODIFY QUERY only, no backfill), found %d", len(blocks))
 	}
-	for _, prop := range goDims {
+	if err := checkDimList(blocks[0], append([]string{totalDimName}, materializedDims...)); err != nil {
+		t.Errorf("MODIFY QUERY block: %v", err)
+	}
+	// The per-migration groups must not overlap: a dim in two groups would be
+	// backfilled by both, doubling its cnt. (materializedDims being their
+	// union needs no assertion — slices.Concat makes it so.)
+	for _, dim := range eventRollupDims009 {
+		if slices.Contains(eventRollupDims006, dim) {
+			t.Errorf("dim %s is in both the 006 and 009 groups; 009's backfill would double its cnt", dim)
+		}
+	}
+}
+
+// deleteDimNames extracts the dim_name list of the rollup DELETE guard.
+func deleteDimNames(sql string) []string {
+	re := regexp.MustCompile(`(?s)ALTER TABLE dashboard_event_rollup_daily DELETE\s+WHERE dim_name IN \((.*?)\)`)
+	m := re.FindStringSubmatch(sql)
+	if m == nil {
+		return nil
+	}
+	var out []string
+	for _, q := range regexp.MustCompile(`'([^']*)'`).FindAllStringSubmatch(m[1], -1) {
+		out = append(out, q[1])
+	}
+	return out
+}
+
+// TestMigration009BackfillDeleteCoversNewDims pins the delete-before-backfill
+// guard to eventRollupDims009. That DELETE is the only thing making the delta
+// backfill re-runnable — cnt is SimpleAggregateFunction(sum), so a partial
+// INSERT plus the natural re-run would double it permanently. A dim added to
+// the backfill but missed here would silently lose that protection for itself.
+func TestMigration009BackfillDeleteCoversNewDims(t *testing.T) {
+	got := deleteDimNames(migrationUpSection(t, migration009Path))
+	if got == nil {
+		t.Fatal("009 Up carries no dashboard_event_rollup_daily DELETE guard before the delta backfill")
+	}
+	slices.Sort(got)
+	want := slices.Clone(eventRollupDims009)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("DELETE dim_name list %v != eventRollupDims009 %v", got, want)
+	}
+}
+
+// TestMigration006Frozen pins migration 006 to its historical content: both
+// ARRAY JOIN blocks carry exactly the legacy ten dims + $__total__, with the
+// promoted-column expressions raw queries used at the time. Guards against
+// editing a shipped migration instead of adding a new one.
+func TestMigration006Frozen(t *testing.T) {
+	sql := readMigration(t, migration006Path)
+	blocks := extractArrayJoinBlocks(sql)
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 ARRAY JOIN blocks in 006 (MV + backfill), found %d", len(blocks))
+	}
+	for i, block := range blocks {
+		if err := checkDimList(block, append([]string{totalDimName}, eventRollupDims006...)); err != nil {
+			t.Errorf("block %d: %v", i, err)
+		}
+	}
+	if err := checkDimExprs(blocks, eventRollupDims006); err != nil {
+		t.Error(err)
+	}
+	if strings.Contains(sql, "auto_properties['$") {
+		t.Error("migration 006 must not read promoted keys from the auto_properties map")
+	}
+}
+
+// checkDimExprs verifies every given dim appears in every given block as a
+// tuple with its PropertyExpr-compatible promoted-column expression (not an
+// auto_properties map lookup) — the same SQL raw insights queries use.
+func checkDimExprs(blocks []string, dims []string) error {
+	for _, prop := range dims {
 		expr := chq.AutoPropertyProjectionFor(prop, "").StringSQL
 		if expr == "" || strings.Contains(expr, "auto_properties") {
 			return fmt.Errorf("property %q has no promoted-column SQL projection", prop)
@@ -615,27 +828,113 @@ func checkMaterializedDimExprsMatch(sql string, goDims []string) error {
 			fmt.Sprintf(`\(\s*'%s'\s*,\s*%s\s*\)`, regexp.QuoteMeta(prop), regexp.QuoteMeta(expr)),
 		)
 		for i, block := range blocks {
-			if !tupleRe.MatchString(block[1]) {
+			if !tupleRe.MatchString(block) {
 				return fmt.Errorf("ARRAY JOIN block %d missing tuple ('%s', %s)", i, prop, expr)
 			}
 		}
 	}
-	if strings.Contains(sql, "auto_properties['$") {
-		return fmt.Errorf("migration still reads promoted keys from auto_properties map")
-	}
 	return nil
 }
 
-// TestMigration006PromotedDimExprsMatch pins migration 006 dim_value expressions to
-// AutoPropertyProjectionFor — the same SQL raw insights queries use via PropertyExpr.
-func TestMigration006PromotedDimExprsMatch(t *testing.T) {
-	const path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
+// TestMigration011PromotedDimExprsMatch pins the latest MV's dim_value
+// expressions (migration 011's restated MODIFY QUERY) to
+// AutoPropertyProjectionFor. The auto_properties ban is scoped to the ARRAY
+// JOIN block because reading the map is legitimate in a derivation mutation
+// (008's, over historical rows that were never split) and never in a rollup
+// that must read the promoted columns.
+func TestMigration011PromotedDimExprsMatch(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	blocks := extractArrayJoinBlocks(up)
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 ARRAY JOIN block in 011 Up, found %d", len(blocks))
 	}
-	if err := checkMaterializedDimExprsMatch(string(data), materializedDims); err != nil {
-		t.Error(err)
+	if err := checkDimExprs(blocks, materializedDims); err != nil {
+		t.Errorf("MODIFY QUERY block: %v", err)
+	}
+	for i, block := range blocks {
+		if strings.Contains(block, "auto_properties['$") {
+			t.Errorf("ARRAY JOIN block %d reads promoted keys from the auto_properties map", i)
+		}
+	}
+}
+
+// TestMigration009Frozen pins migration 009 to its historical content, exactly
+// as TestMigration006Frozen freezes 006: now that 011 restates the MV, 009's SQL
+// must never be edited again (its header comments are not pinned). Its MODIFY QUERY block carries the full
+// 21-dim list, its delta backfill exactly the 009 group, with promoted-column
+// expressions in both. (The DELETE-guard list is pinned separately by
+// TestMigration009BackfillDeleteCoversNewDims.)
+func TestMigration009Frozen(t *testing.T) {
+	up := migrationUpSection(t, migration009Path)
+	blocks := extractArrayJoinBlocks(up)
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 ARRAY JOIN blocks in 009 Up (MODIFY QUERY + delta backfill), found %d", len(blocks))
+	}
+	if err := checkDimList(blocks[0], append([]string{totalDimName}, materializedDims...)); err != nil {
+		t.Errorf("MODIFY QUERY block: %v", err)
+	}
+	if err := checkDimList(blocks[1], eventRollupDims009); err != nil {
+		t.Errorf("delta backfill block: %v", err)
+	}
+	if err := checkDimExprs(blocks[:1], materializedDims); err != nil {
+		t.Errorf("MODIFY QUERY block exprs: %v", err)
+	}
+	if err := checkDimExprs(blocks[1:], eventRollupDims009); err != nil {
+		t.Errorf("delta backfill block exprs: %v", err)
+	}
+	for i, block := range blocks {
+		if strings.Contains(block, "auto_properties['$") {
+			t.Errorf("ARRAY JOIN block %d reads promoted keys from the auto_properties map", i)
+		}
+	}
+	// 009 predates the cookieless key column; its file must not grow one.
+	if strings.Contains(up, "cookieless") {
+		t.Error("migration 009 is frozen and must not mention cookieless — that is 011's job")
+	}
+}
+
+// TestMigration011CookielessPrefixMatchesGo pins the SQL prefix literals to
+// cookieless.IDPrefix — the id format is permanent storage, so drift between
+// the Go constant and the migration would silently corrupt exclusion.
+func TestMigration011CookielessPrefixMatchesGo(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	want := "startsWith(distinct_id, '" + cookieless.IDPrefix + "')"
+	if got := strings.Count(up, want); got != 2 {
+		t.Errorf("011 Up must reference %q exactly twice (activity WHERE + rollup key), got %d", want, got)
+	}
+}
+
+// TestMigration011ActivityStatesExcludeCookieless pins the derived-persons
+// exclusion: the activity MV must filter cookieless ids or every daily
+// rotation mints a ghost person.
+func TestMigration011ActivityStatesExcludeCookieless(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	if !strings.Contains(up, "ALTER TABLE distinct_id_activity_states_mv MODIFY QUERY") {
+		t.Fatal("011 must MODIFY QUERY the activity-states MV (never DROP->CREATE)")
+	}
+	if !strings.Contains(up, "WHERE NOT startsWith(distinct_id, '"+cookieless.IDPrefix+"')") {
+		t.Error("activity-states MV must exclude cookieless ids")
+	}
+	if !strings.Contains(up, "minState(occur_time)") {
+		t.Error("011 must restate the full 005 state list")
+	}
+}
+
+// TestMigration011RollupCookielessKeyColumn pins the rollup flag: computed
+// from the prefix, part of the sorting key, present in the MV GROUP BY.
+func TestMigration011RollupCookielessKeyColumn(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	for _, want := range []string{
+		// No DEFAULT expression: ClickHouse forbids defaulted columns joining a
+		// sorting key (code 36); the bare UInt8 reads type-default 0 on old rows.
+		"ADD COLUMN IF NOT EXISTS cookieless UInt8,",
+		"MODIFY ORDER BY (project_id, kind, dim_name, day, dim_value, cookieless)",
+		"toUInt8(startsWith(distinct_id, '" + cookieless.IDPrefix + "')) AS cookieless",
+		"GROUP BY project_id, day, kind, dim_name, dim_value, cookieless",
+	} {
+		if !strings.Contains(up, want) {
+			t.Errorf("011 Up missing %q", want)
+		}
 	}
 }
 

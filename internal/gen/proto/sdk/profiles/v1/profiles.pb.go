@@ -26,6 +26,12 @@ const (
 type IdentifyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Stable user identifier (e.g. email, database ID).
+	// The 'cookieless-' prefix is server-owned: ingest mints those ids and the
+	// reserved-prefix rule on BatchCreateRequest.distinct_id already refuses them
+	// from clients. external_id needs the same guard because post-identify events
+	// are keyed by external_id, so an id accepted here comes back as a distinct_id
+	// that the batch rule then rejects — and because that rule is `all()`, one such
+	// user fails the WHOLE batch, taking unrelated users' events with it.
 	ExternalId *string `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	// Profile properties — shallow-merged into existing properties. On key conflict,
 	// these values take precedence over previously stored values.
@@ -138,12 +144,15 @@ func (*IdentifyResponse) Descriptor() ([]byte, []int) {
 // ProfileIdentifyMessage is the internal NATS envelope for the identify worker.
 // project_id is injected server-side from the authenticated principal.
 type ProfileIdentifyMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    *string                `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Traits        *structpb.Struct       `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
-	ProjectId     *string                `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	AnonymousId   *string                `protobuf:"bytes,4,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
-	DeviceId      *string                `protobuf:"bytes,5,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Mirrors IdentifyRequest.external_id: the worker re-validates this envelope,
+	// so the reserved prefix is enforced at both stages rather than trusting that
+	// the value only ever arrives from an already-validated request.
+	ExternalId    *string          `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Traits        *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
+	ProjectId     *string          `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	AnonymousId   *string          `protobuf:"bytes,4,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
+	DeviceId      *string          `protobuf:"bytes,5,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -217,17 +226,18 @@ var File_sdk_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc9\x01\n" +
-	"\x0fIdentifyRequest\x12'\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xd1\x02\n" +
+	"\x0fIdentifyRequest\x12\xae\x01\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\x8c\x01\xbaH\x88\x01\xba\x01\x81\x01\n" +
+	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xc8\x01\x01R\n" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x126\n" +
 	"\fanonymous_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\x12$\n" +
 	"\tdevice_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18$R\bdeviceId\"\x12\n" +
-	"\x10IdentifyResponse\"\xe1\x01\n" +
-	"\x16ProfileIdentifyMessage\x12+\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\n" +
+	"\x10IdentifyResponse\"\xe9\x02\n" +
+	"\x16ProfileIdentifyMessage\x12\xb2\x01\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\x90\x01\xbaH\x8c\x01\xba\x01\x81\x01\n" +
+	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xc8\x01\x01r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12)\n" +
 	"\n" +

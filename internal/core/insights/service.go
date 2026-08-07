@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -91,21 +92,29 @@ func normalizeAllowedTypes(in []commonv1.PropertyValueType) []commonv1.PropertyV
 }
 
 // promotedAutoDimValueType is the variant type name reported for every
-// rollup-backed promoted breakdown dimension. All materializedDims are
-// string-typed events columns (String / LowCardinality(String)), so they
-// surface as string properties.
+// injected promoted breakdown dimension. All injected keys are string-typed
+// events columns (String / LowCardinality(String)), so they surface as string
+// properties. (Typed injection for the bool/numeric promoted columns —
+// $mobile, $bot_score, $verified_bot — would need per-key value types and
+// remains out of scope.)
 const promotedAutoDimValueType = "String"
 
-// mergePromotedAutoDimensions injects the rollup-backed promoted breakdown
-// dimensions (materializedDims: browser, country, region, ...) into the
-// discovered auto-property keys. These dimensions live in dedicated events
-// columns, not the auto_properties map, so the property_keys MV never observes
-// them — without this they are missing from the filter/breakdown picker even
-// though the query engine fully supports them. Counts and last-seen come from
-// the event rollup when available; a dimension with no rollup rows — or when the
-// caller degraded a failed/absent rollup query to a nil result — is still
-// surfaced (count 0), so discovery never depends on the rollup being populated
-// or healthy. The combined list is re-sorted by count so the busiest properties
+// mergePromotedAutoDimensions injects every promoted STRING column's property
+// key (clickhouse.PromotedStringAutoProperties) into the discovered
+// auto-property keys. These keys live in dedicated events columns, not the
+// auto_properties map — ingest strips them — so the property_keys MV never
+// observes them; without this they are missing from the filter/breakdown
+// picker even though the query engine fully supports them. Counts and
+// last-seen come from the event rollup where the key is a rollup dimension.
+// $url/$referrer/$pageTitle are promoted but deliberately not rolled up (too
+// high-cardinality), so for them the frozen pre-promotion property_keys entry
+// is the only count that will ever exist and is preferred over reporting zero
+// — it stops growing once ingest starts stripping the key, but it still ranks
+// the property where a user expects to find it. Every other key reports 0
+// when the rollup has no row for it — whether the project hasn't collected it
+// yet or the rollup query degraded — so discovery never depends on the rollup
+// being populated or healthy, and a blip never publishes a count nothing
+// measured. The combined list is re-sorted by count so the busiest properties
 // stay on top.
 func mergePromotedAutoDimensions(discovered, rollup []AggregateKeyMeta) []AggregateKeyMeta {
 	byKey := make(map[string]AggregateKeyMeta, len(rollup))
@@ -113,21 +122,37 @@ func mergePromotedAutoDimensions(discovered, rollup []AggregateKeyMeta) []Aggreg
 		byKey[r.Key] = r
 	}
 
-	out := make([]AggregateKeyMeta, 0, len(discovered)+len(materializedDims))
+	injected := chq.PromotedStringAutoProperties()
+
+	frozen := make(map[string]AggregateKeyMeta)
+	out := make([]AggregateKeyMeta, 0, len(discovered)+len(injected))
 	for _, k := range discovered {
-		// A promoted dim should never appear in property_keys (it is stripped
-		// from the map at ingest); drop any such duplicate in favor of the
-		// authoritative rollup-sourced entry appended below.
-		if isMaterializedDim(k.Key) {
+		// A promoted key should never appear in property_keys for new rows (it
+		// is stripped from the map at ingest), but pre-promotion history left
+		// frozen entries behind; drop any such duplicate in favor of the
+		// injected entry appended below.
+		if !slices.Contains(injected, k.Key) {
+			out = append(out, k)
 			continue
 		}
-		out = append(out, k)
+		// Keep that frozen count only where the rollup has no dimension to
+		// supply a live one — there the miss is permanent, so this is the only
+		// count that will ever exist. For a real rollup dim a missing row
+		// instead means "no rows yet" or "the rollup query degraded", and both
+		// must report 0 rather than publish a count nothing measured (the
+		// caller relies on that, and declines to cache a degraded result).
+		if !isMaterializedDim(k.Key) {
+			frozen[k.Key] = k
+		}
 	}
-	for _, dim := range materializedDims {
-		meta := AggregateKeyMeta{Key: dim, ValueType: promotedAutoDimValueType}
-		if r, ok := byKey[dim]; ok {
+	for _, key := range injected {
+		meta := AggregateKeyMeta{Key: key, ValueType: promotedAutoDimValueType}
+		if r, ok := byKey[key]; ok {
 			meta.Count = r.Count
 			meta.LastSeen = r.LastSeen
+		} else if f, ok := frozen[key]; ok {
+			meta.Count = f.Count
+			meta.LastSeen = f.LastSeen
 		}
 		out = append(out, meta)
 	}

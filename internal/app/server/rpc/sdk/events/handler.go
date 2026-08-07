@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
+	"time"
 
 	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel"
@@ -16,8 +18,11 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/attribution"
 	"github.com/pug-sh/pug/internal/autoprop"
+	"github.com/pug-sh/pug/internal/cookieless"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
@@ -32,8 +37,12 @@ const (
 )
 
 var (
-	cdnHeaderParseFailedCounter metric.Int64Counter
-	ipStrippedCounter           metric.Int64Counter
+	cdnHeaderParseFailedCounter      metric.Int64Counter
+	ipStrippedCounter                metric.Int64Counter
+	attributionDeriveDegradedCounter metric.Int64Counter
+	cookielessDroppedCounter         metric.Int64Counter
+	cookielessSessionDegradedCounter metric.Int64Counter
+	cookielessIdentitySourceCounter  metric.Int64Counter
 )
 
 func init() {
@@ -46,6 +55,106 @@ func init() {
 		"events.ip_stripped_total",
 		metric.WithDescription("A $ip auto-property was stripped during geo enrichment because the visitor IP must never be persisted. Our SDKs never send it, so a non-zero count means a hand-crafted client supplied one (source=client) or a provider emitted one (source=provider) — both are contract violations worth investigating."),
 	)
+	attributionDeriveDegradedCounter, _ = meter.Int64Counter(
+		"events.attribution_derive_degraded_total",
+		metric.WithDescription("A $url was present on an event but did not parse as an http(s) URL with a host, so no pathname/hostname/channel could be derived. Expected to be near zero for web SDKs; a spike (reason=url_not_web) means a tenant or SDK is sending URLs the web-analytics pipeline cannot attribute."),
+	)
+	cookielessDroppedCounter, _ = meter.Int64Counter(
+		"events.cookieless_dropped_total",
+		metric.WithDescription("A cookieless event was dropped at ingest: reason=day_out_of_range (occur_time outside the today/yesterday UTC salt window — often severe client clock skew), reason=salt_unavailable (Redis unreachable with a cold salt cache; identity cannot be derived and is never fabricated), reason=salt_corrupt (the stored salt could not be decoded — NOT self-healing, since nothing overwrites it; needs manual intervention), or reason=identity_headers_missing (no User-Agent or no resolvable client address, so the whole request was refused — usually a proxy stripping headers)."),
+	)
+	cookielessIdentitySourceCounter, _ = meter.Int64Counter(
+		"events.cookieless_identity_source_total",
+		metric.WithDescription("Which input keyed a cookieless batch's identity (geo.IPSource). source=cf_connecting_ip|true_client_ip|x_forwarded_for: a proxy header parsed. source=peer_no_header: none offered, the CONNECTION address was used — expected direct-to-origin. source=peer_after_rejected_header: a header WAS offered and did not parse — alert on this, since behind a proxy the connection address is shared by every visitor, so the tenant's cookieless population collapses onto one identity per UA per day at a 200, corrupting session metrics (which never exclude cookieless traffic). source=none_no_peer|rejected_no_peer: nothing resolved, batch refused."),
+	)
+	cookielessSessionDegradedCounter, _ = meter.Int64Counter(
+		"events.cookieless_session_degraded_total",
+		metric.WithDescription("A cookieless event could not be stitched from Redis session state. reason=get_failed/mint_failed/write_failed fell back to the deterministic one-session-per-visitor-day id; reason=slide_failed kept the correct id but could not advance its last-activity watermark (reads working while writes fail — OOM or a read-only replica — which re-splits the session on later events). Data is intact either way; session metrics coarsen. A sustained mint_failed means Redis < 7.0, which rejects SET NX GET outright."),
+	)
+}
+
+// Drop reasons, reported BOTH as the `reason` attribute on
+// events.cookieless_dropped_total and as keys of
+// BatchCreateResponse.dropped_by_reason. One constant per reason so the metric
+// label an operator alerts on and the token a client branches on cannot drift
+// apart.
+const (
+	// dropReasonDayOutOfRange: occur_time fell outside the today/yesterday UTC
+	// salt window. Client-side (usually severe clock skew) — retrying the same
+	// payload drops it again.
+	dropReasonDayOutOfRange = "day_out_of_range"
+	// dropReasonSaltUnavailable: the daily salt could not be read or minted, so
+	// identity cannot be derived and is never fabricated. Server-side — the same
+	// payload may succeed on retry.
+	dropReasonSaltUnavailable = "salt_unavailable"
+	// dropReasonSaltCorrupt: the day's stored salt could not be decoded. Shares
+	// the salt path with dropReasonSaltUnavailable but NOT its disposition —
+	// nothing overwrites a corrupt value (SETNX only mints when the key is
+	// absent), so it is re-read and re-rejected until the key expires. Retrying
+	// the same payload drops it again; this one needs a human.
+	dropReasonSaltCorrupt = "salt_corrupt"
+	// dropReasonIdentityHeadersMissing: the request carried no User-Agent or no
+	// resolvable client address, so no cookieless identity can be derived for any
+	// event in it. Unlike its siblings this one rejects the whole request rather
+	// than tallying per event, so it appears on the metric but never in
+	// dropped_by_reason — the client learns it from the error instead.
+	dropReasonIdentityHeadersMissing = "identity_headers_missing"
+)
+
+// allDropReasons is the registry of every reason ingest resolution can emit. It
+// exists so the vocabulary can be checked against the source rather than against
+// a hand-maintained copy of it: TestDropReasons_RegistryMatchesDeclaredConstants
+// reads the dropReason* constants out of this file with go/ast and fails if one
+// is declared but never registered here. The predecessor test kept its own map
+// literal, which could only ever agree with itself — adding and emitting a fifth
+// reason left it green.
+//
+// Adding a reason means appending it here AND extending the
+// events.cookieless_dropped_total metric description; the reason is both a metric
+// label and a client-facing wire key, so the two must not drift.
+var allDropReasons = []string{
+	dropReasonDayOutOfRange,
+	dropReasonSaltUnavailable,
+	dropReasonSaltCorrupt,
+	dropReasonIdentityHeadersMissing,
+}
+
+// dropTally counts events refused during ingest resolution, keyed by reason.
+// A nil tally reads fine (total and len are nil-safe) and BatchCreate relies on
+// that for its empty-batch path; only add requires a constructed map.
+type dropTally map[string]uint32
+
+func (d dropTally) add(reason string) { d[reason]++ }
+
+func (d dropTally) total() uint32 {
+	var n uint32
+	for _, c := range d {
+		n += c
+	}
+	return n
+}
+
+// batchResponse reports what became of a batch: how many events were published,
+// and how many the server refused, by reason. Every return path builds its
+// response here so a partial or total drop can never surface as a bare
+// accepted=0 that the caller has to infer a fault from.
+func batchResponse(accepted int, drops dropTally) *connect.Response[eventsv1.BatchCreateResponse] {
+	msg := &eventsv1.BatchCreateResponse{
+		Accepted: proto.Uint32(uint32(accepted)),
+		Dropped:  proto.Uint32(drops.total()),
+	}
+	if len(drops) > 0 {
+		msg.DroppedByReason = drops
+	}
+	return connect.NewResponse(msg)
+}
+
+// identityResolver is the cookieless identity dependency, satisfied by
+// *cookieless.Resolver; an interface so handler tests stub it without Redis.
+type identityResolver interface {
+	DayOf(occur time.Time) (day cookieless.Day, ok bool)
+	DistinctID(ctx context.Context, day cookieless.Day, projectID, ip, ua string) (string, error)
+	SessionID(ctx context.Context, projectID, distinctID string, day cookieless.Day, occur time.Time) (id string, degraded cookieless.DegradeReason)
 }
 
 type Server struct {
@@ -53,13 +162,19 @@ type Server struct {
 	publisher   *coreevents.Publisher
 	geoProvider geo.Provider
 	uaParser    *useragent.Parser
+	cookieless  identityResolver
 }
 
-func NewServer(producer jetstream.JetStream, geoProvider geo.Provider, uaParser *useragent.Parser) *Server {
+// NewServer takes identityResolver rather than *cookieless.Resolver so the nil
+// guard in resolveCookieless can fire: assigning a nil *Resolver to an interface
+// field yields a NON-nil interface, which skips the guard and nil-derefs on the
+// first cookieless event instead of returning the intended error.
+func NewServer(producer jetstream.JetStream, geoProvider geo.Provider, uaParser *useragent.Parser, resolver identityResolver) *Server {
 	return &Server{
 		publisher:   coreevents.NewPublisher(producer),
 		geoProvider: geoProvider,
 		uaParser:    uaParser,
+		cookieless:  resolver,
 	}
 }
 
@@ -80,7 +195,7 @@ func (s *Server) BatchCreate(
 	if len(events) == 0 {
 		slog.DebugContext(ctx, "received empty event batch",
 			slog.String("project_id", principal.Project.ID))
-		return connect.NewResponse(&eventsv1.BatchCreateResponse{Accepted: proto.Uint32(0)}), nil
+		return batchResponse(0, nil), nil
 	}
 
 	if err := coreevents.ValidateExternalEvents(events); err != nil {
@@ -88,18 +203,27 @@ func (s *Server) BatchCreate(
 	}
 
 	projectID := principal.Project.ID
+	events, drops, err := s.resolveCookieless(ctx, projectID, req.Header(), req.Peer().Addr, events)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) == 0 {
+		// Every event was refused. Still OK, not an error — but the response now
+		// carries why, so a caller can tell a retryable salt outage apart from
+		// permanently unusable timestamps instead of seeing a bare accepted=0.
+		return batchResponse(0, drops), nil
+	}
 	s.enrichGeo(ctx, projectID, req.Header(), events)
 	s.enrichUserAgent(ctx, projectID, req.Header(), events)
 	s.enrichBotScore(ctx, projectID, req.Header(), events)
 	s.enrichVerifiedBot(ctx, projectID, req.Header(), events)
+	s.enrichAttribution(ctx, projectID, events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to accept events"))
 	}
 
-	return connect.NewResponse(&eventsv1.BatchCreateResponse{
-		Accepted: proto.Uint32(uint32(len(events))),
-	}), nil
+	return batchResponse(len(events), drops), nil
 }
 
 func (s *Server) enrichUserAgent(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
@@ -195,6 +319,299 @@ func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.He
 			Value: &commonv1.PropertyValue_IntValue{IntValue: int64(val)},
 		}
 	}
+}
+
+// enrichAttribution derives the web-analytics auto-properties ($pathname,
+// $hostname, $referrerDomain, $channel, $screenSize, UTM completion from the
+// URL query, $locale normalization) from the client-sent navigation
+// properties via attribution.Derive. Header-independent and per-event, so it
+// runs last in the chain. Derivation is pure and cannot return an error, but
+// pure is not infallible: a $url the parser rejects derives nothing while
+// saying nothing, so — like the other enrichers — it takes ctx/projectID and
+// records events.attribution_derive_degraded_total when that happens, the one
+// silent-but-visible outcome (see attributionDegraded).
+//
+// $referrerDomain and $channel are server-only (always server-derived): the
+// client value is stripped first, mirroring the bot enrichers. The remaining
+// keys follow derive-if-absent / only-if-absent semantics, which Derive
+// expresses by echoing a non-empty client value back unchanged — so writing
+// every changed output is exactly the per-key overwrite policy. $locale is
+// the one key rewritten in place (casing normalization; rollup rows are
+// permanent, so fragmented variants must never reach storage).
+func (s *Server) enrichAttribution(ctx context.Context, projectID string, events []*eventsv1.Event) {
+	for _, event := range events {
+		attribution.StripServerOnly(event.AutoProperties)
+
+		in := attribution.InputFrom(eventProps(event.AutoProperties))
+		out := attribution.Derive(in)
+
+		if attributionDegraded(in, out) {
+			attributionDeriveDegradedCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("project_id", projectID),
+				attribute.String("reason", "url_not_web"),
+			))
+		}
+
+		// $locale is rewritten in place, so it is dropped AFTER Derive has read
+		// it and re-added below only if it normalized to something. The write
+		// loop can never clear a key — it skips empty outputs — so without this
+		// a client value that NormalizeLocale blanks (whitespace-only) would
+		// survive verbatim into the locale column and become a permanent
+		// rollup dimension value, which is exactly what normalizing before
+		// storage exists to prevent.
+		//
+		// Gate the drop on autoprop.String reporting a renderable value (ok):
+		// that is the exact string Derive read, so a locale we could normalize
+		// is the only one we may replace. A slot autoprop.String cannot render
+		// (ok=false) is one the promotion layer keeps in the map (it too skips
+		// on !ok); deleting it here would destroy a value storage would have
+		// kept, leaving it in neither the column nor the map.
+		if _, ok := autoprop.String(event.AutoProperties[attribution.PropLocale]); ok {
+			delete(event.AutoProperties, attribution.PropLocale)
+		}
+
+		for _, p := range out.Pairs() {
+			if p.Value == "" || autoPropString(event.AutoProperties, p.Key) == p.Value {
+				continue
+			}
+			if event.AutoProperties == nil {
+				event.AutoProperties = make(map[string]*commonv1.PropertyValue)
+			}
+			event.AutoProperties[p.Key] = &commonv1.PropertyValue{
+				Value: &commonv1.PropertyValue_StringValue{StringValue: p.Value},
+			}
+		}
+	}
+}
+
+// attributionDegraded reports a $url that was sent but did not parse as an
+// http(s) URL with a host, so no channel — and no hostname — could be derived.
+// Not an error: a native app may legitimately send a non-web $url. It keys off
+// out.Channel, NOT out.Pathname: Derive sets a channel iff the URL parsed
+// (classifyChannel's switch always yields at least "Direct"), whereas
+// out.Pathname echoes a client-sent $pathname and stays non-empty — hiding the
+// degradation — for exactly the SPA/native SDKs most likely to send a non-web
+// $url. It is the one silent-but-visible outcome a pure derivation still has,
+// so a spike is worth a counter.
+func attributionDegraded(in attribution.Input, out attribution.Output) bool {
+	return in.URL != "" && out.Channel == ""
+}
+
+// eventProps adapts an event's auto-property map to attribution.Source.
+type eventProps map[string]*commonv1.PropertyValue
+
+func (p eventProps) String(key string) string { return autoPropString(p, key) }
+
+func (p eventProps) ScreenDims() (int64, int64) {
+	return autoPropInt64(p, autoprop.PropScreenWidth), autoPropInt64(p, autoprop.PropScreenHeight)
+}
+
+// autoPropString extracts an auto-property as the string the promotion layer
+// would store, so derivation sees exactly what would otherwise land in the
+// column — autoprop.String is that same coercion, shared rather than mirrored.
+func autoPropString(m map[string]*commonv1.PropertyValue, key string) string {
+	s, _ := autoprop.String(m[key])
+	return s
+}
+
+// autoPropInt64 extracts a numeric auto-property ($screenWidth/$screenHeight)
+// as the integer the promotion layer would store. It reads through
+// autoprop.String — the same coercion — rather than switching on slots itself,
+// so it renders every numeric slot (Int64, and Double as sent by a JS SDK with
+// no int/double distinction) identically to storage; a private slot switch is
+// exactly what silently dropped the Double slot before. Returns 0 when absent
+// or when the rendered value is not a base-10 integer (a fractional or
+// unparseable dim is no dim). Migration 008 mirrors this for historical rows by
+// reading the Int64/String/Float64 variant slots.
+func autoPropInt64(m map[string]*commonv1.PropertyValue, key string) int64 {
+	s, ok := autoprop.String(m[key])
+	if !ok {
+		return 0
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// resolveCookieless derives server-side identity for cookieless events — the
+// daily-rotating hashed distinct_id and the Redis-stitched session_id — and
+// returns the events to keep. It runs FIRST in the chain, before any
+// enrichment, so undeliverable cookieless events are dropped before work is
+// spent on them and identity is final when the batch is published (the worker
+// re-validates the envelope; see event.identity_required_unless_cookieless).
+//
+// The IP (trust-ordered proxy headers, connection peer as fallback) and raw
+// User-Agent are hash inputs only — never attached to any event, extending the
+// existing "the IP never reaches NATS" posture to identity derivation.
+//
+// Failure ladder: missing UA (or, residually, no resolvable IP) with
+// cookieless events present rejects the whole request — one batch is one SDK
+// instance, and a proxy stripping User-Agent is a deployment misconfiguration
+// that must be loud. Per-event conditions (occur_time outside the salt window,
+// salt unavailable) drop only the affected cookieless events, counted by
+// reason; consented traffic in the same batch is never affected.
+func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http.Header, peerAddr string, events []*eventsv1.Event) ([]*eventsv1.Event, dropTally, error) {
+	drops := make(dropTally, 2)
+
+	hasCookieless := false
+	for _, e := range events {
+		if e.GetCookieless() {
+			hasCookieless = true
+			break
+		}
+	}
+	if !hasCookieless {
+		return events, drops, nil
+	}
+	if s.cookieless == nil {
+		err := errors.New("cookieless resolver not wired")
+		slog.ErrorContext(ctx, "cookieless events received but no resolver is wired",
+			slogx.Error(err), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, drops, connect.NewError(connect.CodeInternal, errors.New("cookieless ingestion unavailable"))
+	}
+
+	ua := h.Get("User-Agent")
+	ip, ipSource := identitySource(h, peerAddr)
+	cookielessIdentitySourceCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("project_id", projectID),
+		attribute.String("source", string(ipSource)),
+	))
+	if ua == "" || ip == "" {
+		// The design deliberately fails the whole request here (see above), but
+		// "must be loud" was only true for the client: nothing server-side showed
+		// that a tenant's proxy had started stripping User-Agent and that every
+		// one of their batches was now being refused. Client input, so it is
+		// counted and logged at warn — not RecordError'd.
+		cookielessDroppedCounter.Add(ctx, int64(len(events)), metric.WithAttributes(
+			attribute.String("project_id", projectID),
+			attribute.String("reason", dropReasonIdentityHeadersMissing),
+		))
+		slog.WarnContext(ctx, "cookieless batch refused: missing User-Agent or client address",
+			slog.String("project_id", projectID),
+			slog.Bool("ua_present", ua != ""),
+			slog.Bool("ip_present", ip != ""),
+			slog.Int("batch_size", len(events)))
+		return nil, drops, apperr.Invalid(apperr.ReasonCookielessIdentityUnavailable,
+			"cookieless events require a User-Agent header and a resolvable client address")
+	}
+
+	// Memoize per day: IP/UA are constant for the request, and a batch can
+	// legitimately straddle UTC midnight (two days, two salts, two ids).
+	type dayIdentity struct {
+		distinctID string
+		err        error
+	}
+	byDay := make(map[cookieless.Day]dayIdentity, 2)
+	saltFailureLogged := false
+
+	kept := make([]*eventsv1.Event, 0, len(events))
+	for _, e := range events {
+		if !e.GetCookieless() {
+			kept = append(kept, e)
+			continue
+		}
+		occur := e.GetOccurTime().AsTime()
+		day, ok := s.cookieless.DayOf(occur)
+		if !ok {
+			drops.add(dropReasonDayOutOfRange)
+			cookielessDroppedCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("project_id", projectID),
+				attribute.String("reason", dropReasonDayOutOfRange),
+			))
+			continue
+		}
+		id, found := byDay[day]
+		if !found {
+			id.distinctID, id.err = s.cookieless.DistinctID(ctx, day, projectID, ip, ua)
+			byDay[day] = id
+		}
+		if id.err != nil {
+			reason := dropReasonSaltUnavailable
+			if errors.Is(id.err, cookieless.ErrCorruptSalt) {
+				reason = dropReasonSaltCorrupt
+			}
+			// Infra failure, not client input: log + record once per request.
+			if !saltFailureLogged {
+				saltFailureLogged = true
+				slog.ErrorContext(ctx, "cookieless identity unavailable, dropping cookieless events",
+					slogx.Error(id.err), slog.String("project_id", projectID),
+					slog.String("reason", reason))
+				telemetry.RecordError(ctx, id.err)
+			}
+			drops.add(reason)
+			cookielessDroppedCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("project_id", projectID),
+				attribute.String("reason", reason),
+			))
+			continue
+		}
+		sid, degraded := s.cookieless.SessionID(ctx, projectID, id.distinctID, day, occur)
+		if degraded != cookieless.DegradeNone {
+			cookielessSessionDegradedCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("project_id", projectID),
+				attribute.String("reason", string(degraded)),
+			))
+		}
+		e.DistinctId = proto.String(id.distinctID)
+		e.SessionId = proto.String(sid)
+		kept = append(kept, e)
+	}
+	return kept, drops, nil
+}
+
+// identitySource resolves the IP that keys the cookieless HMAC, and which input
+// produced it.
+//
+// Whether the peer fallback is benign depends on WHY the header path yielded
+// nothing, so that survives into the source: behind a proxy the peer is one
+// address shared by every visitor, and a rejected header is the only warning
+// that a whole tenant has just collapsed onto one identity per UA per day.
+func identitySource(h http.Header, peerAddr string) (string, geo.IPSource) {
+	ip, source := geo.ClientIPWithSource(h)
+	if ip != "" {
+		return ip, source
+	}
+	rejected := source == geo.SourceRejected
+	switch ip = peerIP(peerAddr); {
+	case ip != "" && rejected:
+		return ip, geo.SourcePeerAfterRejected
+	case ip != "":
+		return ip, geo.SourcePeerNoHeader
+	case rejected:
+		return "", geo.SourceRejectedNoPeer
+	default:
+		return "", geo.SourceNoneNoPeer
+	}
+}
+
+// peerIP extracts the bare host from a host:port peer address and validates it
+// through the same parser the header path uses, returning "" if it is not an IP.
+//
+// The validation is not decorative. This value keys the cookieless HMAC exactly
+// like a header-derived address, and DistinctID's injectivity argument requires
+// that no field before the last can contain the 0x00 separator. net.SplitHostPort
+// does not provide that: it returns "198.51.100.4\x00x" with a nil error, and the
+// no-port branch previously returned its input verbatim. That was safe only
+// because req.Peer().Addr comes from net/http's kernel-derived RemoteAddr — the
+// property rested on the transport rather than on this function, which is exactly
+// the reasoning the header path rejected when it gained parsing. A Unix socket, an
+// h2c or proxy-protocol shim, or any custom listener reintroduces the hazard.
+//
+// Returning "" routes a bad peer into resolveCookieless's existing ip == ""
+// refusal, which is loud, rather than into a silently mis-derived identity.
+func peerIP(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		ip, _ := geo.ParseClientIP(host)
+		return ip
+	}
+	ip, _ := geo.ParseClientIP(addr)
+	return ip
 }
 
 func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {

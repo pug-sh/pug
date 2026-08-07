@@ -142,10 +142,8 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
 		projectID, orgID, "test-project",
-		xid.New().String()+"priv",
-		xid.New().String()+"pub",
 	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
@@ -375,8 +373,8 @@ func TestHandler_Get_ShareReadFailureDegradesToPrivate(t *testing.T) {
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
-		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub"); err != nil {
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
+		projectID, orgID, "test-project"); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
 
@@ -462,10 +460,8 @@ func newIntegrationServer(t *testing.T) (*Server, string, *coredashboards.Servic
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
 		projectID, orgID, "test-project",
-		xid.New().String()+"priv",
-		xid.New().String()+"pub",
 	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}

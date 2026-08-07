@@ -26,6 +26,7 @@ import (
 	activityrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/activity"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
+	"github.com/pug-sh/pug/internal/cookieless"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
@@ -211,7 +212,8 @@ func start(ctx context.Context, d *deps) error {
 		return err
 	}
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
-		eventsrpc.NewServer(d.nats.GetJetStream(), geoProvider, uaParser), handlerOpts)
+		eventsrpc.NewServer(d.nats.GetJetStream(), geoProvider, uaParser,
+			cookieless.New(d.redis.Unwrap())), handlerOpts)
 
 	mux := http.NewServeMux()
 

@@ -46,6 +46,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.orgs.v1.OrgsService/UpdateDisplayName": authzspec.OrgGated(authz.ResourceOrg, authz.ActionUpdate),
 	"/dashboard.orgs.v1.OrgsService/InviteMember":      authzspec.OrgGated(authz.ResourceInvitation, authz.ActionCreate),
 	"/dashboard.orgs.v1.OrgsService/ResendInvite":      authzspec.OrgGated(authz.ResourceInvitation, authz.ActionUpdate),
+	"/dashboard.orgs.v1.OrgsService/RevokeInvite":      authzspec.OrgGated(authz.ResourceInvitation, authz.ActionDelete),
 	"/dashboard.orgs.v1.OrgsService/ListInvitations":   authzspec.OrgGated(authz.ResourceInvitation, authz.ActionRead),
 	"/dashboard.orgs.v1.OrgsService/RemoveMember":      authzspec.OrgGated(authz.ResourceMember, authz.ActionDelete),
 	"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":  authzspec.OrgGated(authz.ResourceMember, authz.ActionUpdate),
@@ -57,6 +58,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.projects.v1.ProjectsService/Delete":               authzspec.ProjGated(authz.ResourceProject, authz.ActionDelete, "admin-only; org resolved from the x-project-id project"),
 	"/dashboard.projects.v1.ProjectsService/UpdateMeta":           authzspec.ProjGated(authz.ResourceProject, authz.ActionUpdate, "admin-only; org resolved from the x-project-id project"),
 	"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON": authzspec.ProjGated(authz.ResourceProject, authz.ActionUpdate, "admin-only; org resolved from the x-project-id project"),
+	"/dashboard.projects.v1.ProjectsService/ListApiKeys":          authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionRead, "every role; a private key is only ever returned masked"),
+	"/dashboard.projects.v1.ProjectsService/CreateApiKey":         authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionCreate, "admin-only; org resolved from the x-project-id project"),
+	"/dashboard.projects.v1.ProjectsService/DeleteApiKey":         authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionDelete, "admin-only; org resolved from the x-project-id project"),
 
 	// --- dashboard.dashboards.v1.DashboardsService — project-data plane (JWT + x-project-id) ---
 	"/dashboard.dashboards.v1.DashboardsService/Get":            authzspec.ProjGated(authz.ResourceDashboard, authz.ActionRead),

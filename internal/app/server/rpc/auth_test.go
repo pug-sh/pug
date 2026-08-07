@@ -45,15 +45,15 @@ func (s *stubProjectKeyLookup) GetProjectByPrivateApiKey(_ context.Context, key 
 	return p, nil
 }
 
-func (s *stubProjectKeyLookup) InvalidateProjectKeys(_ context.Context, _, _ string) {}
+func (s *stubProjectKeyLookup) InvalidateProjectKeys(_ context.Context, _ string, _ ...string) {}
 
 func newStubLookup() *stubProjectKeyLookup {
 	return &stubProjectKeyLookup{
 		publicProjects: map[string]dbread.Project{
-			"pub_valid123": {ID: "proj-1", PublicApiKey: "pub_valid123"},
+			"pub_valid123": {ID: "proj-1"},
 		},
 		privateProjects: map[string]dbread.Project{
-			"prv_valid456": {ID: "proj-2", PrivateApiKey: "prv_valid456"},
+			"prv_valid456": {ID: "proj-2"},
 		},
 	}
 }
@@ -277,7 +277,7 @@ func TestWithJWTAuth(t *testing.T) {
 				projectID := args[0].(string)
 				if projectID == "proj-1" {
 					return &stubPGXRow{scanFn: func(dest ...any) error {
-						// GetProjectByIDAndOrgMember scan order: CreateTime, DisplayName, FcmServiceJson, ID, OrgID, PrivateApiKey, PublicApiKey, UpdateTime
+						// GetProjectByIDAndOrgMember scan order: CreateTime, DisplayName, FcmServiceJson, ID, OrgID, ReportingTimezone, UpdateTime
 						*(dest[3].(*string)) = "proj-1"
 						*(dest[4].(*string)) = "org-1"
 						return nil

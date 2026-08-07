@@ -52,8 +52,8 @@ func withAPIKeyPassthrough(next http.Handler) http.Handler {
 //
 // Auth is private-key-only and is built here from repo rather than accepted as a
 // parameter, so it holds BY CONSTRUCTION: there is no wiring in which /mcp admits
-// a dashboard JWT (MCP clients hold a static credential, so a 1h access token is
-// useless there, and a JWT would widen the endpoint from project- to
+// a dashboard JWT (MCP clients hold a static credential, so an expiring access
+// token is useless there, and a JWT would widen the endpoint from project- to
 // customer-scoped) or a public key (extractable from client apps). An earlier
 // shape took an authn.AuthFunc, which let the test harness pass its own — so the
 // suite stayed green even when the endpoint was pointed at WithDualAuth.

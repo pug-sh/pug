@@ -112,6 +112,7 @@ func TestNormalizedTileViewModeProto(t *testing.T) {
 		{"insight_table", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE},
 		{"insight_kpi", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI},
 		{"insight_sankey", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY},
+		{"insight_pie", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE},
 		{"insight_unspecified_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
 		{"insight_unknown_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode(99), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
 		{"markdown_coerces_unspecified", TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED},

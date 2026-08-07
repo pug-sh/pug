@@ -2,10 +2,7 @@ package projects
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgerrcode"
@@ -29,8 +26,9 @@ var (
 // projectNameUnique is the Postgres-auto-generated name of the
 // (org_id, display_name) unique constraint declared in
 // schema/postgres/migrations/005_create_projects.sql:11. Kept narrow on
-// purpose: a generic UniqueViolation catch would mis-translate a future
-// constraint (e.g. a private/public API key collision) as a name conflict.
+// purpose: creating a project also inserts its starter key, so a generic
+// UniqueViolation catch would report an api_keys.token collision as a name
+// conflict.
 const projectNameUnique = "projects_org_id_display_name_key"
 
 // isUniqueViolationOn reports whether err is a Postgres unique-violation
@@ -46,6 +44,7 @@ func isUniqueViolationOn(err error, constraint string) bool {
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
+	pgW   *pgxpool.Pool // for the methods that need a tx of their own (CreateProject, CreateProjectAsAdmin)
 	repo  *Repo
 }
 
@@ -53,65 +52,47 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *Repo) *Service {
 	return &Service{
 		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
+		pgW:   pgW,
 		repo:  repo,
 	}
 }
 
 func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) error {
-	project, err := s.write.DeleteProject(ctx, arg)
+	// Listed before the delete, and fatal if it fails: the project's api_keys rows
+	// cascade away with it, so this is the only chance to learn the tokens its
+	// cached row is reachable by. Deleting without them would leave every one of the
+	// project's keys authenticating — against a project that no longer exists —
+	// until apiKeyCacheTTL, with no way left to find the cache entries: the tokens
+	// are gone from the DB and are deliberately never logged. Failing here costs
+	// nothing by comparison, since the project is still there to delete on a retry.
+	// (apiKeyTokens logs + records at source.)
+	tokens, err := s.apiKeyTokens(ctx, arg.ID)
 	if err != nil {
+		return err
+	}
+	if _, err := s.write.DeleteProject(ctx, arg); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrProjectNotFound
 		}
 		return err
 	}
-	s.invalidateProject(ctx, project)
+	s.invalidateTokens(ctx, arg.ID, tokens...)
 	return nil
 }
 
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("crypto/rand: %w", err)
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// NewPrivateKey generates a 24-char private API key: "prv_" + 20 hex chars (80 bits of entropy).
-func NewPrivateKey() (string, error) {
-	h, err := randomHex(10)
-	if err != nil {
-		return "", err
-	}
-	return "prv_" + h, nil
-}
-
-// NewPublicKey generates a 24-char public API key: "pub_" + 20 hex chars (80 bits of entropy).
-func NewPublicKey() (string, error) {
-	h, err := randomHex(10)
-	if err != nil {
-		return "", err
-	}
-	return "pub_" + h, nil
-}
-
 func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, displayName, reportingTimezone string) (dbwrite.Project, error) {
-	privKey, err := NewPrivateKey()
+	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to begin create project transaction", slogx.Error(err),
+			slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
-	pubKey, err := NewPublicKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.Project{}, err
-	}
-	project, err := s.write.CreateProjectAsAdmin(ctx, dbwrite.CreateProjectAsAdminParams{
+	defer func() { _ = tx.Rollback(ctx) }()
+	w := dbwrite.New(tx)
+
+	project, err := w.CreateProjectAsAdmin(ctx, dbwrite.CreateProjectAsAdminParams{
 		ID:                xid.New().String(),
-		PrivateApiKey:     privKey,
-		PublicApiKey:      pubKey,
 		OrgID:             orgID,
 		CustomerID:        customerID,
 		DisplayName:       displayName,
@@ -131,34 +112,59 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
+
+	// A project must never commit without a key to send events with, hence the
+	// shared transaction. CreateApiKeyInTx logs + records at source.
+	if _, err := CreateApiKeyInTx(ctx, w, project.ID, KindPublic, ""); err != nil {
+		return dbwrite.Project{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit create project", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Project{}, err
+	}
 	return project, nil
 }
 
 func (s *Service) CreateProject(ctx context.Context, orgID, displayName, reportingTimezone string) (dbwrite.Project, error) {
-	return CreateProjectInTx(ctx, s.write, orgID, displayName, reportingTimezone)
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin create project transaction", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Project{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	project, err := CreateProjectInTx(ctx, dbwrite.New(tx), orgID, displayName, reportingTimezone)
+	if err != nil {
+		return dbwrite.Project{}, err // CreateProjectInTx logs + records at source
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit create project", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Project{}, err
+	}
+	return project, nil
 }
 
 // CreateProjectInTx is the shared body of Service.CreateProject, exposed so
 // callers with an open transaction (e.g. signup creating a default project
-// alongside the customer+org rows) can run the same insert under their own
-// tx. The handle may be tx-bound or pool-bound; behavior is identical.
+// alongside the customer+org rows) can run the same inserts under their own tx.
+//
+// The handle should be tx-bound. A project and its starter public key are two
+// statements now, so outside a transaction a failure between them commits a
+// project that cannot send events and has no key to send them with.
+// Service.CreateProject opens a tx for exactly that reason, and every other
+// production caller already had one. (A test that only needs a project to exist
+// can pass a pool handle; it just does not get the atomicity.)
 func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayName, reportingTimezone string) (dbwrite.Project, error) {
-	privKey, err := NewPrivateKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.Project{}, err
-	}
-	pubKey, err := NewPublicKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.Project{}, err
-	}
 	project, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
 		ID:                xid.New().String(),
-		PrivateApiKey:     privKey,
-		PublicApiKey:      pubKey,
 		OrgID:             orgID,
 		DisplayName:       displayName,
 		ReportingTimezone: tzx.Coerce(ctx, reportingTimezone),
@@ -170,6 +176,12 @@ func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayNa
 		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err),
 			slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
+		return dbwrite.Project{}, err
+	}
+
+	// A project must never commit without a key to send events with, hence the
+	// shared transaction. CreateApiKeyInTx logs + records at source.
+	if _, err := CreateApiKeyInTx(ctx, w, project.ID, KindPublic, ""); err != nil {
 		return dbwrite.Project{}, err
 	}
 	return project, nil
@@ -221,9 +233,20 @@ func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFC
 }
 
 func (s *Service) invalidateProject(ctx context.Context, project dbwrite.Project) {
-	if s.repo == nil {
-		slog.WarnContext(ctx, "cache repo not set; skipping project cache invalidation", slog.String("project_id", project.ID))
+	// Detached here as well as inside invalidateTokens: the token listing is part
+	// of this post-commit work, and on the caller's cancelled context it would
+	// fail — invalidating none of the project's keys. Unlike DeleteProject, which
+	// lists before its write, there is nothing to list until the update has landed.
+	ctx, cancel := detachedInvalidateCtx(ctx)
+	defer cancel()
+
+	// Best-effort, unlike DeleteProject: the update has already committed, so there
+	// is nothing to abort, and the project and its keys are still there to be listed
+	// again. What goes stale here is a cached copy of the project's own metadata,
+	// not a credential's validity. (apiKeyTokens logs + records at source.)
+	tokens, err := s.apiKeyTokens(ctx, project.ID)
+	if err != nil {
 		return
 	}
-	s.repo.InvalidateProjectKeys(ctx, project.PrivateApiKey, project.PublicApiKey)
+	s.invalidateTokens(ctx, project.ID, tokens...)
 }
