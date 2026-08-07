@@ -72,7 +72,7 @@ func (r *scalarRows) Close() error { return nil }
 
 type userFlowConn struct {
 	driver.Conn
-	rows [][3]any // source, target, value
+	rows [][4]any // step, source, target, value
 }
 
 func (c userFlowConn) Query(_ context.Context, _ string, _ ...any) (driver.Rows, error) {
@@ -81,7 +81,7 @@ func (c userFlowConn) Query(_ context.Context, _ string, _ ...any) (driver.Rows,
 
 type userFlowRows struct {
 	driver.Rows
-	rows [][3]any
+	rows [][4]any
 	idx  int
 }
 
@@ -90,16 +90,18 @@ func (r *userFlowRows) Next() bool {
 }
 
 func (r *userFlowRows) Scan(dest ...any) error {
-	if len(dest) != 3 {
-		return errors.New("userFlowRows: expected 3 scan destinations")
+	if len(dest) != 4 {
+		return errors.New("userFlowRows: expected 4 scan destinations")
 	}
 	row := r.rows[r.idx]
 	r.idx++
-	*dest[0].(*string) = row[0].(string)
+	// QueryUserFlow scans step (Int32), source, target, then the count into a
+	// uint64 (ClickHouse count(DISTINCT) is UInt64) before narrowing to int64; the
+	// mock must match those destination types positionally.
+	*dest[0].(*int32) = row[0].(int32)
 	*dest[1].(*string) = row[1].(string)
-	// QueryUserFlow scans the count into a uint64 (ClickHouse count(DISTINCT) is
-	// UInt64) before narrowing to int64; the mock must match that destination type.
-	*dest[2].(*uint64) = uint64(row[2].(int64))
+	*dest[2].(*string) = row[2].(string)
+	*dest[3].(*uint64) = uint64(row[3].(int64))
 	return nil
 }
 
@@ -632,9 +634,9 @@ func TestRenderDashboard_UserFlowTile(t *testing.T) {
 			{ID: "uf", Kind: int16(TileKindInsight), InsightQuery: queryJSON},
 		},
 	}
-	executor := coreinsights.NewExecutor(userFlowConn{rows: [][3]any{
-		{"login", "dashboard", int64(2)},
-		{"login", "logout", int64(1)},
+	executor := coreinsights.NewExecutor(userFlowConn{rows: [][4]any{
+		{int32(0), "login", "dashboard", int64(2)},
+		{int32(0), "login", "logout", int64(1)},
 	}})
 
 	rendered, err := RenderDashboard(context.Background(), executor, dashboard, DashboardQueryOverrides{})

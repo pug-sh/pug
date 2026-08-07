@@ -223,7 +223,20 @@ func TestBuildUserFlowQuery(t *testing.T) {
 	if !strings.Contains(sql, "count(DISTINCT group_key)") {
 		t.Errorf("expected count(DISTINCT group_key), got: %s", sql)
 	}
-	if q.MaxNodes() != 20 || q.MaxLinks() != 100 {
+	// Step-indexed model: the 0-based source depth is carried through and grouped
+	// on, so the same label at two positions stays two distinct nodes.
+	if !strings.Contains(sql, "toInt32(idx - 1) AS step") {
+		t.Errorf("expected step column toInt32(idx - 1), got: %s", sql)
+	}
+	if !strings.Contains(sql, "GROUP BY step, source, target") {
+		t.Errorf("expected GROUP BY step, source, target, got: %s", sql)
+	}
+	// Consecutive repeats are valid forward steps (endpoints sit at different
+	// depths), so the old self-loop filter must be gone.
+	if strings.Contains(sql, "source != target") {
+		t.Errorf("did not expect source != target filter in step model, got: %s", sql)
+	}
+	if q.MaxNodes() != 20 || q.MaxLinks() != 250 {
 		t.Errorf("defaults: maxNodes=%d maxLinks=%d", q.MaxNodes(), q.MaxLinks())
 	}
 	// The default max_hops (5) is baked into the SQL as the arraySlice node cap
