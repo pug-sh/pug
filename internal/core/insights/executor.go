@@ -49,8 +49,11 @@ type StepTiming struct {
 	Distribution []int64
 }
 
-// UserFlowRow is a single source→target edge aggregate from QueryUserFlow.
+// UserFlowRow is a single step-scoped source→target edge aggregate from
+// QueryUserFlow. Step is the 0-based depth of Source (the Sankey column); the
+// edge connects depth Step → Step+1, so Target lives at depth Step+1.
 type UserFlowRow struct {
+	Step   int32
 	Source string
 	Target string
 	Value  int64
@@ -362,12 +365,13 @@ func (e *Executor) QueryUserFlow(ctx context.Context, projectID string, q UserFl
 	var result []UserFlowRow
 	for rows.Next() {
 		var row UserFlowRow
-		// count(DISTINCT group_key) is UInt64 in ClickHouse; scan into uint64 then
-		// narrow to int64. A distinct-session count for a single edge cannot approach
-		// math.MaxInt64, so the conversion never wraps; UserFlowLink.value is int64
-		// (proto, gte=1) and GroupUserFlowResult drops value<=0 as a backstop.
+		// step is emitted as Int32 (toInt32(idx-1)); count(DISTINCT group_key) is
+		// UInt64 in ClickHouse, so scan into uint64 then narrow to int64. A
+		// distinct-session count for a single edge cannot approach math.MaxInt64, so
+		// the conversion never wraps; UserFlowLink.value is int64 (proto, gte=1) and
+		// GroupUserFlowResult drops value<=0 as a backstop.
 		var value uint64
-		if err := rows.Scan(&row.Source, &row.Target, &value); err != nil {
+		if err := rows.Scan(&row.Step, &row.Source, &row.Target, &value); err != nil {
 			slog.ErrorContext(ctx, "clickhouse: query user flow scan failed", slogx.Error(err),
 				slog.String("project_id", projectID))
 			telemetry.RecordError(ctx, err)
