@@ -17,7 +17,11 @@ All telemetry is bootstrapped in `internal/deps/telemetry/`. The server initiali
 | PostgreSQL     | ✅ — `otelpgx` tracer on all connections                                                                                 |
 | Redis          | ✅ — `redisotel` tracing + metrics on the client                                                                         |
 | NATS/JetStream | Custom — `tracedJetStream` wrapper in `internal/deps/nats/otel.go`, W3C trace context propagation on publish/consume     |
-| ClickHouse     | Custom — `Conn` wrapper in `internal/deps/clickhouse/clickhouse.go`, spans on Query/Exec/Select/PrepareBatch/AsyncInsert |
+| ClickHouse     | Custom — `Conn` wrapper in `internal/deps/clickhouse/clickhouse.go`, spans on Query/Exec/Select/PrepareBatch/AsyncInsert/QueryFormat/InsertFormat                        |
+
+**ClickHouse span lifetimes:** `Query`, `PrepareBatch` and `QueryFormat` return a handle the driver fills in later, so those three spans outlive the call that started them and end on `Rows.Close`, the first of `Batch.Send`/`Abort`/`Close`, and the stream's `Close` respectively. **A caller that abandons the handle loses the span entirely**, so `defer rows.Close()` and a guaranteed batch finalizer are required for tracing, not just for releasing the pooled connection. `Batch.Append`/`AppendStruct`/`Flush` record without ending, since an append failure is batch-fatal but the `Abort` that follows reports success.
+
+`Conn` embeds `driver.Conn` rather than implementing it (the driver adds methods in minor releases and its doc comment says to embed), so a newly added method forwards **untraced** instead of breaking the build — worth checking on a version bump. `QueryFormat`/`InsertFormat` are HTTP-only: a native DSN gets `ErrFormatNativeUnsupported` before the pool is touched.
 
 **Configuration:** Setting an OTLP endpoint is what selects OTLP export (see *Export modes* below) — `OTEL_EXPORTER_OTLP_ENDPOINT` (the conventional collector port is `4317`) or a per-signal `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`. Also set `OTEL_SERVICE_NAME` (strongly recommended — telemetry data will lack a service identifier without it). TLS is disabled by default (`OTEL_EXPORTER_OTLP_INSECURE` defaults to `true` when unset); set `OTEL_EXPORTER_OTLP_INSECURE=false` to enable TLS for production OTLP endpoints.
 

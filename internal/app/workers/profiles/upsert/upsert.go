@@ -135,14 +135,16 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 		return err
 	}
 
-	sent := false
+	// A failed Send still finalizes the batch driver-side, so gate on IsSent, not
+	// a local flag — aborting a sent batch logs a spurious ErrBatchAlreadySent.
 	defer func() {
-		if !sent {
-			if err := batch.Abort(); err != nil {
-				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err),
-					slog.String("profile_id", msg.GetProfileId()))
-				telemetry.RecordError(ctx, err)
-			}
+		if batch.IsSent() {
+			return
+		}
+		if err := batch.Abort(); err != nil {
+			slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err),
+				slog.String("profile_id", msg.GetProfileId()))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -163,7 +165,6 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("send profile batch: %w", err)
 	}
-	sent = true
 
 	return nil
 }

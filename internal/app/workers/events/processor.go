@@ -71,13 +71,15 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		return err
 	}
 
-	sent := false
+	// A failed Send still finalizes the batch driver-side, so gate on IsSent, not
+	// a local flag — aborting a sent batch logs a spurious ErrBatchAlreadySent.
 	defer func() {
-		if !sent {
-			if err := chBatch.Abort(); err != nil {
-				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()))
-				telemetry.RecordError(ctx, err)
-			}
+		if chBatch.IsSent() {
+			return
+		}
+		if err := chBatch.Abort(); err != nil {
+			slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -132,7 +134,6 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	sent = true
 
 	slog.InfoContext(ctx, "inserted events into ClickHouse",
 		slog.String("project_id", batch.GetProjectId()),

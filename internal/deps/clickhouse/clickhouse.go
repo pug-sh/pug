@@ -2,7 +2,9 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
@@ -24,14 +26,12 @@ type DB struct {
 }
 
 type Conn struct {
-	conn chdriver.Conn
+	// Embedded, not implemented: driver.Conn gains methods in minor releases,
+	// and untraced forwarding beats a build that stops on a version bump.
+	chdriver.Conn
 }
 
 var _ chdriver.Conn = (*Conn)(nil)
-
-func (c *Conn) Unwrap() chdriver.Conn {
-	return c.conn
-}
 
 func (c *Conn) withSpan(ctx context.Context) context.Context {
 	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
@@ -51,15 +51,18 @@ func (c *Conn) setSpanAttrs(span trace.Span, query string) {
 	)
 }
 
+// The driver returns once the first block lands and reports later failures via
+// Rows.Err(), so the span outlives this call and ends on Rows.Close.
 func (c *Conn) Query(ctx context.Context, query string, args ...any) (chdriver.Rows, error) {
 	ctx, span := tracer().Start(ctx, c.spanName("query"))
-	defer func() { span.End() }()
 	c.setSpanAttrs(span, query)
-	rows, err := c.conn.Query(c.withSpan(ctx), query, args...)
+	rows, err := c.Conn.Query(c.withSpan(ctx), query, args...)
 	if err != nil {
 		telemetry.RecordError(ctx, err)
+		span.End()
+		return nil, err
 	}
-	return rows, err
+	return &tracedRows{Rows: rows, span: span}, nil
 }
 
 // QueryRow is not traced because driver.Row defers errors to Scan(). A span
@@ -67,14 +70,14 @@ func (c *Conn) Query(ctx context.Context, query string, args ...any) (chdriver.R
 // which actively misleads operators. Callers should record Scan errors on their
 // own spans via telemetry.RecordError if error visibility is needed.
 func (c *Conn) QueryRow(ctx context.Context, query string, args ...any) chdriver.Row {
-	return c.conn.QueryRow(c.withSpan(ctx), query, args...)
+	return c.Conn.QueryRow(c.withSpan(ctx), query, args...)
 }
 
 func (c *Conn) Exec(ctx context.Context, query string, args ...any) error {
 	ctx, span := tracer().Start(ctx, c.spanName("exec"))
 	defer func() { span.End() }()
 	c.setSpanAttrs(span, query)
-	err := c.conn.Exec(c.withSpan(ctx), query, args...)
+	err := c.Conn.Exec(c.withSpan(ctx), query, args...)
 	if err != nil {
 		telemetry.RecordError(ctx, err)
 	}
@@ -85,22 +88,53 @@ func (c *Conn) Select(ctx context.Context, dest any, query string, args ...any) 
 	ctx, span := tracer().Start(ctx, c.spanName("select"))
 	defer func() { span.End() }()
 	c.setSpanAttrs(span, query)
-	err := c.conn.Select(c.withSpan(ctx), dest, query, args...)
+	err := c.Conn.Select(c.withSpan(ctx), dest, query, args...)
 	if err != nil {
 		telemetry.RecordError(ctx, err)
 	}
 	return err
 }
 
+// PrepareBatch writes no rows, so the insert's outcome only shows up later.
+// The span ends on the first of Send/Abort/Close.
 func (c *Conn) PrepareBatch(ctx context.Context, query string, opts ...chdriver.PrepareBatchOption) (chdriver.Batch, error) {
 	ctx, span := tracer().Start(ctx, c.spanName("prepare_batch"))
+	c.setSpanAttrs(span, query)
+	batch, err := c.Conn.PrepareBatch(c.withSpan(ctx), query, opts...)
+	if err != nil {
+		telemetry.RecordError(ctx, err)
+		span.End()
+		return nil, err
+	}
+	return &tracedBatch{Batch: batch, span: span}, nil
+}
+
+// QueryFormat and InsertFormat are HTTP-only — a native DSN gets
+// ErrFormatNativeUnsupported before the pool is touched. QueryFormat's span
+// ends on the stream's Close, since a mid-stream failure surfaces from Read.
+func (c *Conn) QueryFormat(ctx context.Context, format string, query string, args ...any) (io.ReadCloser, error) {
+	ctx, span := tracer().Start(ctx, c.spanName("query_format"))
+	c.setSpanAttrs(span, query)
+	span.SetAttributes(attribute.String("db.clickhouse.format", format))
+	stream, err := c.Conn.QueryFormat(c.withSpan(ctx), format, query, args...)
+	if err != nil {
+		telemetry.RecordError(ctx, err)
+		span.End()
+		return nil, err
+	}
+	return &formatStream{ReadCloser: stream, span: span}, nil
+}
+
+func (c *Conn) InsertFormat(ctx context.Context, format string, query string, data io.Reader) error {
+	ctx, span := tracer().Start(ctx, c.spanName("insert_format"))
 	defer func() { span.End() }()
 	c.setSpanAttrs(span, query)
-	batch, err := c.conn.PrepareBatch(c.withSpan(ctx), query, opts...)
+	span.SetAttributes(attribute.String("db.clickhouse.format", format))
+	err := c.Conn.InsertFormat(c.withSpan(ctx), format, query, data)
 	if err != nil {
 		telemetry.RecordError(ctx, err)
 	}
-	return batch, err
+	return err
 }
 
 func (c *Conn) AsyncInsert(ctx context.Context, query string, wait bool, args ...any) error {
@@ -108,31 +142,135 @@ func (c *Conn) AsyncInsert(ctx context.Context, query string, wait bool, args ..
 	defer func() { span.End() }()
 	c.setSpanAttrs(span, query)
 	ctx = ch.Context(ctx, ch.WithAsync(wait))
-	err := c.conn.Exec(c.withSpan(ctx), query, args...)
+	err := c.Conn.Exec(c.withSpan(ctx), query, args...)
 	if err != nil {
 		telemetry.RecordError(ctx, err)
 	}
 	return err
 }
 
-func (c *Conn) Ping(ctx context.Context) error {
-	return c.conn.Ping(ctx)
+type formatStream struct {
+	io.ReadCloser
+	span     trace.Span
+	recorded bool
 }
 
-func (c *Conn) Stats() chdriver.Stats {
-	return c.conn.Stats()
+func (s *formatStream) record(err error) {
+	if err == nil || s.recorded {
+		return
+	}
+	s.recorded = true
+	telemetry.RecordErrorOnSpan(s.span, err)
 }
 
-func (c *Conn) Close() error {
-	return c.conn.Close()
+func (s *formatStream) Read(p []byte) (int, error) {
+	n, err := s.ReadCloser.Read(p)
+	if !errors.Is(err, io.EOF) {
+		s.record(err)
+	}
+	return n, err
 }
 
-func (c *Conn) ServerVersion() (*chdriver.ServerVersion, error) {
-	return c.conn.ServerVersion()
+func (s *formatStream) Close() error {
+	defer s.span.End()
+	err := s.ReadCloser.Close()
+	s.record(err)
+	return err
 }
 
-func (c *Conn) Contributors() []string {
-	return c.conn.Contributors()
+// Scan is deliberately not wrapped: its errors are the caller's (wrong dest
+// type, Scan before Next), not the query's. Close carries the late error too,
+// so a caller that skips Err() still gets it recorded.
+type tracedRows struct {
+	chdriver.Rows
+	span     trace.Span
+	recorded bool
+}
+
+func (r *tracedRows) record(err error) {
+	if err == nil || r.recorded {
+		return
+	}
+	r.recorded = true
+	telemetry.RecordErrorOnSpan(r.span, err)
+}
+
+func (r *tracedRows) Err() error {
+	err := r.Rows.Err()
+	r.record(err)
+	return err
+}
+
+func (r *tracedRows) Close() error {
+	defer r.span.End()
+	err := r.Rows.Close()
+	r.record(err)
+	return err
+}
+
+type tracedBatch struct {
+	chdriver.Batch
+	span     trace.Span
+	recorded bool
+	ended    bool
+}
+
+// Finalizers routinely run twice — a failed Send then a deferred Abort, which
+// returns the meaningless ErrBatchAlreadySent — so first error wins.
+func (b *tracedBatch) record(err error) {
+	if err == nil || b.recorded || b.ended {
+		return
+	}
+	b.recorded = true
+	telemetry.RecordErrorOnSpan(b.span, err)
+}
+
+func (b *tracedBatch) finish(err error) {
+	if b.ended {
+		return
+	}
+	b.record(err)
+	b.ended = true
+	b.span.End()
+}
+
+// Append looks per-row but is batch-fatal, and the Abort that follows reports
+// nil — without recording here a failed insert would close green.
+func (b *tracedBatch) Append(v ...any) error {
+	err := b.Batch.Append(v...)
+	b.record(err)
+	return err
+}
+
+func (b *tracedBatch) AppendStruct(v any) error {
+	err := b.Batch.AppendStruct(v)
+	b.record(err)
+	return err
+}
+
+// Flush sends a block but leaves the batch usable, so it records without ending.
+func (b *tracedBatch) Flush() error {
+	err := b.Batch.Flush()
+	b.record(err)
+	return err
+}
+
+func (b *tracedBatch) Send() error {
+	err := b.Batch.Send()
+	b.finish(err)
+	return err
+}
+
+func (b *tracedBatch) Abort() error {
+	err := b.Batch.Abort()
+	b.finish(err)
+	return err
+}
+
+func (b *tracedBatch) Close() error {
+	err := b.Batch.Close()
+	b.finish(err)
+	return err
 }
 
 func createConnection(ctx context.Context, cfg *Config) (*Conn, error) {
@@ -156,7 +294,7 @@ func createConnection(ctx context.Context, cfg *Config) (*Conn, error) {
 		return nil, err
 	}
 
-	return &Conn{conn: conn}, nil
+	return &Conn{Conn: conn}, nil
 }
 
 func NewReaderPool(ctx context.Context, cfg *Config) (*Conn, error) {

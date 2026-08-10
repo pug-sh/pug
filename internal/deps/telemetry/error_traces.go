@@ -14,10 +14,16 @@ import (
 // carries no active span, the OTel SDK's no-op span silently discards the calls.
 // Callers that need errors to always be recorded should also use slog.ErrorContext.
 func RecordError(ctx context.Context, err error, attributes ...attribute.KeyValue) {
+	RecordErrorOnSpan(trace.SpanFromContext(ctx), err, attributes...)
+}
+
+// RecordErrorOnSpan is RecordError against a span held directly. Use it where a
+// span outlives the call that started it, so the originating context does not
+// have to be retained purely to find the span again.
+func RecordErrorOnSpan(span trace.Span, err error, attributes ...attribute.KeyValue) {
 	if err == nil {
 		return
 	}
-	span := trace.SpanFromContext(ctx)
 	span.RecordError(err, trace.WithStackTrace(true), trace.WithAttributes(attributes...))
 	span.SetStatus(codes.Error, err.Error())
 }
