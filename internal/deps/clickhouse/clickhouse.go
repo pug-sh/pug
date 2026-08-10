@@ -273,6 +273,22 @@ func (b *tracedBatch) Close() error {
 	return err
 }
 
+// AbortUnsent finalizes a batch no path sent — an abandoned batch holds its
+// pooled connection and never ends its span. A failed Send still finalizes the
+// batch driver-side, so gate on IsSent or the abort logs ErrBatchAlreadySent.
+func AbortUnsent(ctx context.Context, batch chdriver.Batch, attrs ...slog.Attr) {
+	if batch == nil || batch.IsSent() {
+		return
+	}
+	err := batch.Abort()
+	if err == nil {
+		return
+	}
+	slog.LogAttrs(ctx, slog.LevelError, "failed to abort ClickHouse batch",
+		append([]slog.Attr{slogx.Error(err)}, attrs...)...)
+	telemetry.RecordError(ctx, err)
+}
+
 func createConnection(ctx context.Context, cfg *Config) (*Conn, error) {
 	opts, err := ch.ParseDSN(cfg.URL)
 	if err != nil {

@@ -119,6 +119,8 @@ type fakeBatch struct {
 
 func (b *fakeBatch) Append(...any) error { return b.appendErr }
 
+func (b *fakeBatch) IsSent() bool { return b.sent }
+
 func (b *fakeBatch) Flush() error { return b.flushErr }
 
 func (b *fakeBatch) Send() error {
@@ -559,6 +561,103 @@ func TestPrepareBatchSendErrorSurvivesLaterAbort(t *testing.T) {
 	if n := exceptionCount(span.Events); n != 1 {
 		t.Errorf("recorded %d exceptions across Send+Abort, want 1", n)
 	}
+}
+
+// A failed Send still finalizes the batch driver-side, so IsSent must report
+// true or the deferred AbortUnsent fires on a finalized batch.
+func TestPrepareBatchIsSentForwardsDriverState(t *testing.T) {
+	setupTracing(t)
+	sendErr := errors.New("code: 252, TOO_MANY_PARTS")
+	c := &Conn{Conn: &fakeConn{batch: &fakeBatch{sendErr: sendErr}}}
+
+	batch, err := c.PrepareBatch(context.Background(), "insert into events")
+	if err != nil {
+		t.Fatalf("PrepareBatch: %v", err)
+	}
+	if batch.IsSent() {
+		t.Error("IsSent() = true before Send, want false")
+	}
+
+	if err := batch.Send(); !errors.Is(err, sendErr) {
+		t.Fatalf("Send() = %v, want %v", err, sendErr)
+	}
+	if !batch.IsSent() {
+		t.Error("IsSent() = false after a failed Send; a deferred abort would fire on a finalized batch")
+	}
+}
+
+func TestAbortUnsentSkipsFinalizedBatch(t *testing.T) {
+	setupTracing(t)
+	underlying := &fakeBatch{sendErr: errors.New("code: 252, TOO_MANY_PARTS")}
+	c := &Conn{Conn: &fakeConn{batch: underlying}}
+
+	batch, err := c.PrepareBatch(context.Background(), "insert into events")
+	if err != nil {
+		t.Fatalf("PrepareBatch: %v", err)
+	}
+	if err := batch.Send(); err == nil {
+		t.Fatal("Send() = nil, want the send error")
+	}
+
+	AbortUnsent(context.Background(), batch)
+	if underlying.aborted {
+		t.Error("AbortUnsent aborted an already-sent batch, producing a spurious ErrBatchAlreadySent")
+	}
+}
+
+func TestAbortUnsentFinalizesAbandonedBatch(t *testing.T) {
+	exporter := setupTracing(t)
+	underlying := &fakeBatch{}
+	c := &Conn{Conn: &fakeConn{batch: underlying}}
+
+	batch, err := c.PrepareBatch(context.Background(), "insert into events")
+	if err != nil {
+		t.Fatalf("PrepareBatch: %v", err)
+	}
+
+	AbortUnsent(context.Background(), batch)
+	if !underlying.aborted {
+		t.Error("AbortUnsent did not abort an unsent batch, leaking a pooled connection")
+	}
+	if got := len(exporter.GetSpans()); got != 1 {
+		t.Errorf("got %d spans after AbortUnsent, want 1", got)
+	}
+}
+
+// A failed Append leaves the batch unsent, so this is the one path the insert
+// workers actually take where the driver's sent flag and the wrapper's
+// recorded/ended flags disagree — an IsSent sourced from wrapper state would
+// skip the abort here and strand the pooled connection.
+func TestAbortUnsentFinalizesAppendFailedBatch(t *testing.T) {
+	exporter := setupTracing(t)
+	appendErr := errors.New("code: 53, TYPE_MISMATCH")
+	underlying := &fakeBatch{appendErr: appendErr}
+	c := &Conn{Conn: &fakeConn{batch: underlying}}
+
+	batch, err := c.PrepareBatch(context.Background(), "insert into events")
+	if err != nil {
+		t.Fatalf("PrepareBatch: %v", err)
+	}
+	if err := batch.Append("evt"); !errors.Is(err, appendErr) {
+		t.Fatalf("Append() = %v, want %v", err, appendErr)
+	}
+	if batch.IsSent() {
+		t.Fatal("IsSent() = true after a failed Append, want false")
+	}
+
+	AbortUnsent(context.Background(), batch)
+	if !underlying.aborted {
+		t.Error("AbortUnsent did not abort after a failed Append, leaking a pooled connection")
+	}
+	span := onlySpan(t, exporter)
+	if n := exceptionCount(span.Events); n != 1 {
+		t.Errorf("recorded %d exceptions, want 1 (the Append error)", n)
+	}
+}
+
+func TestAbortUnsentToleratesNilBatch(t *testing.T) {
+	setupTracing(t)
+	AbortUnsent(context.Background(), nil)
 }
 
 func TestPrepareBatchCloseErrorRecorded(t *testing.T) {
