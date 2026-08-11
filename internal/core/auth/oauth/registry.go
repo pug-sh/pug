@@ -1,7 +1,8 @@
 package oauth
 
 import (
-	"context"
+	"fmt"
+	"net/http"
 )
 
 // Registry maps provider names to configured Provider implementations.
@@ -25,18 +26,15 @@ func (r *Registry) Get(name ProviderName) (Provider, error) {
 	return p, nil
 }
 
-// NewRegistryFromConfig builds providers for all configured IdPs.
-func NewRegistryFromConfig(ctx context.Context, cfg Config) (*Registry, error) {
+// NewRegistryFromConfig builds providers for all configured IdPs. It performs no
+// I/O; each provider discovers its issuer on first use.
+func NewRegistryFromConfig(cfg Config, httpClient *http.Client) (*Registry, error) {
 	providers := make([]Provider, 0, len(cfg.Providers))
 	for _, providerCfg := range cfg.Providers {
 		if providerCfg.Type != ProviderTypeOIDC {
-			return nil, ErrOAuthProviderDisabled
+			return nil, fmt.Errorf("oauth: provider %q has unsupported type %q", providerCfg.ID, providerCfg.Type)
 		}
-		provider, err := newOIDCProvider(ctx, providerCfg)
-		if err != nil {
-			return nil, err
-		}
-		providers = append(providers, provider)
+		providers = append(providers, newOIDCProvider(providerCfg, httpClient))
 	}
 	return NewRegistry(providers...), nil
 }

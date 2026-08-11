@@ -65,7 +65,7 @@ type AuthServiceClient interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
-	// CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
+	// CompleteOIDCSignIn exchanges a browser-supplied Authorization Code on the
 	// server, keeping confidential-provider secrets out of the dashboard.
 	CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error)
 	// RefreshSession exchanges a valid refresh token for a new access+refresh pair.
@@ -203,7 +203,7 @@ type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
-	// CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
+	// CompleteOIDCSignIn exchanges a browser-supplied Authorization Code on the
 	// server, keeping confidential-provider secrets out of the dashboard.
 	CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error)
 	// RefreshSession exchanges a valid refresh token for a new access+refresh pair.

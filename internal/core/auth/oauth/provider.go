@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -28,18 +29,6 @@ type Identity struct {
 	pictureURI  string
 }
 
-// NewVerifiedProviderIdentity builds a verified identity with the durable
-// provider namespace used in customer_identities. The configured connection ID
-// is deliberately separate and may be renamed without changing account identity.
-func NewVerifiedProviderIdentity(provider ProviderName, c Claims) (*Identity, error) {
-	ident, err := NewVerifiedIdentity(c)
-	if err != nil {
-		return nil, err
-	}
-	ident.provider = provider
-	return ident, nil
-}
-
 // Display-field caps match the storage columns (customers.display_name
 // varchar(150), customers.picture_uri varchar(255)). Clamping here keeps an
 // oversized IdP claim from turning new-account creation into a CodeInternal.
@@ -49,15 +38,26 @@ const (
 )
 
 // NewVerifiedIdentity enforces the security-critical invariant: the IdP must
-// report a non-empty, verified email. It returns ErrUnverifiedEmail otherwise,
-// and clamps display fields to their storage widths.
-func NewVerifiedIdentity(c Claims) (*Identity, error) {
+// report a non-empty, verified email (ErrUnverifiedEmail otherwise), and the
+// identity must carry a provider and subject (ErrIdentityResolutionFailed). It
+// clamps display fields to their storage widths.
+func NewVerifiedIdentity(provider ProviderName, c Claims) (*Identity, error) {
+	if provider == "" {
+		return nil, fmt.Errorf("%w: identity has no provider", ErrIdentityResolutionFailed)
+	}
 	if !c.EmailVerified || strings.TrimSpace(c.Email) == "" {
 		return nil, ErrUnverifiedEmail
 	}
+	// go-oidc doesn't enforce sub; an empty one resolves every user of that IdP
+	// to whoever signed in first.
+	if strings.TrimSpace(c.Subject) == "" {
+		return nil, fmt.Errorf("%w: identity has no subject", ErrIdentityResolutionFailed)
+	}
 	return &Identity{
-		subject:     c.Subject,
-		email:       c.Email,
+		provider: provider,
+		subject:  c.Subject,
+		// lower(email) lookups and the unique index don't trim, so padding forks an account.
+		email:       strings.TrimSpace(c.Email),
 		displayName: truncateRunes(c.DisplayName, maxDisplayNameLen),
 		pictureURI:  truncateRunes(c.PictureURI, maxPictureURILen),
 	}, nil
@@ -86,8 +86,7 @@ type Provider interface {
 }
 
 // AuthorizationCode contains the browser-generated values needed to complete
-// an OIDC Authorization Code + PKCE flow. Provider secrets never cross this
-// boundary to the browser.
+// an OIDC Authorization Code + PKCE flow.
 type AuthorizationCode struct {
 	Code         string
 	CodeVerifier string

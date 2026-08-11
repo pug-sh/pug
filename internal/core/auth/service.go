@@ -114,7 +114,7 @@ type Service struct {
 }
 
 func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config, demoEnabled bool) (*Service, error) {
-	registry, err := coreoauth.NewRegistryFromConfig(ctx, oauthCfg)
+	registry, err := coreoauth.NewRegistryFromConfig(oauthCfg, coreoauth.DefaultHTTPClient())
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +334,7 @@ func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.Pro
 func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, reportingTimezone string) (Session, error) {
 	var session Session
 	var err error
-	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, ident.Provider(), ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
+	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
 		// On first sign-in this seeds the new default project's reporting timezone
 		// from the browser that completed sign-in (coerced to UTC if malformed); on
 		// a returning sign-in FinishSignup is a no-op and the value is ignored.

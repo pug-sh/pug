@@ -102,22 +102,48 @@ func TestCompleteMagicLinkInvalidTokenMapping(t *testing.T) {
 	}
 }
 
-func TestCompleteOIDCInvalidCredentialMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{completeOIDCErr: coreoauth.ErrInvalidCredential}}
+// Drives the real handler for every sentinel it maps. ErrProviderUnavailable in
+// particular must stay Unavailable: collapsing it into the default would tell a
+// user their credential was bad during an IdP outage.
+func TestCompleteOIDCErrorMapping(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		err    error
+		code   connect.Code
+		reason apperr.Reason
+	}{
+		{"invalid credential", coreoauth.ErrInvalidCredential, connect.CodeUnauthenticated, apperr.ReasonOAuthCredentialInvalid},
+		{"provider disabled", coreoauth.ErrOAuthProviderDisabled, connect.CodeInvalidArgument, apperr.ReasonOAuthProviderDisabled},
+		{"unverified email", coreoauth.ErrUnverifiedEmail, connect.CodeInvalidArgument, apperr.ReasonInvalidArgument},
+		{"provider unavailable", coreoauth.ErrProviderUnavailable, connect.CodeUnavailable, apperr.ReasonOAuthProviderUnavailable},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &server{service: fakeAuthService{completeOIDCErr: tt.err}}
+
+			_, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
+			var ae *apperr.Error
+			if !errors.As(err, &ae) {
+				t.Fatalf("expected *apperr.Error, got %T (%v)", err, err)
+			}
+			if ae.Code() != tt.code {
+				t.Errorf("code = %v, want %v", ae.Code(), tt.code)
+			}
+			if ae.Reason() != tt.reason {
+				t.Errorf("reason = %q, want %q", ae.Reason(), tt.reason)
+			}
+		})
+	}
+}
+
+func TestCompleteOIDCInternalErrorDoesNotLeak(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOIDCErr: coreoauth.ErrIdentityResolutionFailed}}
 
 	_, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
 	}
-	var ae *apperr.Error
-	if !errors.As(err, &ae) {
-		t.Fatalf("expected *apperr.Error, got %T", err)
-	}
-	if ae.Code() != connect.CodeUnauthenticated {
-		t.Errorf("code = %v, want Unauthenticated", ae.Code())
-	}
-	if ae.Reason() != apperr.ReasonOAuthCredentialInvalid {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOAuthCredentialInvalid)
+	if strings.Contains(err.Error(), coreoauth.ErrIdentityResolutionFailed.Error()) {
+		t.Errorf("sentinel leaked to client: %v", err)
 	}
 }
 
@@ -150,7 +176,11 @@ func TestCompleteOIDCForwardsAuthorizationCodeValues(t *testing.T) {
 }
 
 func TestCompleteOIDCRejectsMismatchedRedirectOrigin(t *testing.T) {
-	s := &server{service: fakeAuthService{}}
+	// onOIDC fails the test so a refactor that validated *after* the exchange —
+	// minting a session for an attacker-controlled redirect — can't stay green.
+	s := &server{service: fakeAuthService{onOIDC: func(coreoauth.ProviderName, coreoauth.AuthorizationCode) {
+		t.Fatal("service must not be called for a rejected redirect URI")
+	}}}
 	req := connect.NewRequest(&authv1.CompleteOIDCSignInRequest{RedirectUri: proto.String("https://pug.example.com/oauth/callback")})
 	req.Header().Set("Origin", "https://attacker.example.com")
 
@@ -176,6 +206,10 @@ func TestValidateOIDCRedirectURI(t *testing.T) {
 		{"wrong path", "https://pug.example.com/other", "https://pug.example.com", false},
 		{"query", "https://pug.example.com/oauth/callback?next=evil", "https://pug.example.com", false},
 		{"origin mismatch", "https://pug.example.com/oauth/callback", "https://attacker.example.com", false},
+		// A non-browser caller omits Origin entirely; the IdP's registered
+		// redirect URI, not this check, is what pins the host.
+		{"absent origin", "https://pug.example.com/oauth/callback", "", true},
+		{"malformed origin", "https://pug.example.com/oauth/callback", "https://pug.example.com/path", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := validateOIDCRedirectURI(tt.redirect, tt.origin)

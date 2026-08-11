@@ -20,3 +20,6 @@ func FailedPrecondition(reason Reason, msg string, opts ...Option) error {
 func Unauthenticated(reason Reason, msg string, opts ...Option) error {
 	return Err(connect.CodeUnauthenticated, reason, msg, opts...)
 }
+func Unavailable(reason Reason, msg string, opts ...Option) error {
+	return Err(connect.CodeUnavailable, reason, msg, opts...)
+}

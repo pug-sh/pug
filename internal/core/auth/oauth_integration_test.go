@@ -29,7 +29,7 @@ func (m mockOAuthProvider) ExchangeCode(context.Context, coreoauth.Authorization
 
 func mustVerifiedIdentity(t *testing.T, c coreoauth.Claims) *coreoauth.Identity {
 	t.Helper()
-	id, err := coreoauth.NewVerifiedIdentity(c)
+	id, err := coreoauth.NewVerifiedIdentity(testOIDCProvider, c)
 	if err != nil {
 		t.Fatalf("NewVerifiedIdentity: %v", err)
 	}

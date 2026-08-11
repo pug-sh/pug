@@ -362,13 +362,14 @@ func (x *CompleteMagicLinkResponse) GetRefreshToken() string {
 }
 
 type CompleteOIDCSignInRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProviderId    *string                `protobuf:"bytes,1,opt,name=provider_id,json=providerId" json:"provider_id,omitempty"`
-	Code          *string                `protobuf:"bytes,2,opt,name=code" json:"code,omitempty"`
-	CodeVerifier  *string                `protobuf:"bytes,3,opt,name=code_verifier,json=codeVerifier" json:"code_verifier,omitempty"`
-	RedirectUri   *string                `protobuf:"bytes,4,opt,name=redirect_uri,json=redirectUri" json:"redirect_uri,omitempty"`
-	Nonce         *string                `protobuf:"bytes,5,opt,name=nonce" json:"nonce,omitempty"`
-	Timezone      *string                `protobuf:"bytes,6,opt,name=timezone" json:"timezone,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId   *string                `protobuf:"bytes,1,opt,name=provider_id,json=providerId" json:"provider_id,omitempty"`
+	Code         *string                `protobuf:"bytes,2,opt,name=code" json:"code,omitempty"`
+	CodeVerifier *string                `protobuf:"bytes,3,opt,name=code_verifier,json=codeVerifier" json:"code_verifier,omitempty"`
+	RedirectUri  *string                `protobuf:"bytes,4,opt,name=redirect_uri,json=redirectUri" json:"redirect_uri,omitempty"`
+	// min_len, not just required: `required` is a presence check, so "" would pass.
+	Nonce         *string `protobuf:"bytes,5,opt,name=nonce" json:"nonce,omitempty"`
+	Timezone      *string `protobuf:"bytes,6,opt,name=timezone" json:"timezone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -959,14 +960,16 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\btimezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"V\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\xd1\x02\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\xd5\x02\n" +
 	"\x19CompleteOIDCSignInRequest\x12?\n" +
 	"\vprovider_id\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x16\x18?2\x12^[a-z][a-z0-9_-]*$R\n" +
-	"providerId\x12\x1f\n" +
-	"\x04code\x18\x02 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x80@R\x04code\x12F\n" +
+	"providerId\x12!\n" +
+	"\x04code\x18\x02 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\x80@R\x04code\x12F\n" +
 	"\rcode_verifier\x18\x03 \x01(\tB!\xbaH\x1e\xc8\x01\x01r\x19\x10+\x18\x80\x012\x12^[A-Za-z0-9._~-]+$R\fcodeVerifier\x12.\n" +
-	"\fredirect_uri\x18\x04 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x80\x10R\vredirectUri\x12!\n" +
-	"\x05nonce\x18\x05 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x80\x01R\x05nonce\x127\n" +
+	"\fredirect_uri\x18\x04 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x80\x10R\vredirectUri\x12#\n" +
+	"\x05nonce\x18\x05 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x10\x18\x80\x01R\x05nonce\x127\n" +
 	"\btimezone\x18\x06 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"W\n" +
 	"\x1aCompleteOIDCSignInResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +

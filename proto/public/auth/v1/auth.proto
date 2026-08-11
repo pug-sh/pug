@@ -12,7 +12,7 @@ service AuthService {
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
   rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
-  // CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
+  // CompleteOIDCSignIn exchanges a browser-supplied Authorization Code on the
   // server, keeping confidential-provider secrets out of the dashboard.
   rpc CompleteOIDCSignIn(CompleteOIDCSignInRequest) returns (CompleteOIDCSignInResponse) {}
   // RefreshSession exchanges a valid refresh token for a new access+refresh pair.
@@ -81,7 +81,10 @@ message CompleteOIDCSignInRequest {
   ];
   string code = 2 [
     (buf.validate.field).required = true,
-    (buf.validate.field).string.max_len = 8192
+    (buf.validate.field).string = {
+      min_len: 1
+      max_len: 8192
+    }
   ];
   string code_verifier = 3 [
     (buf.validate.field).required = true,
@@ -95,9 +98,13 @@ message CompleteOIDCSignInRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 2048
   ];
+  // min_len, not just required: `required` is a presence check, so "" would pass.
   string nonce = 5 [
     (buf.validate.field).required = true,
-    (buf.validate.field).string.max_len = 128
+    (buf.validate.field).string = {
+      min_len: 16
+      max_len: 128
+    }
   ];
   string timezone = 6 [(buf.validate.field).string = {
     max_len: 64

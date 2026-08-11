@@ -34,6 +34,7 @@ type AuthConfig struct {
 }
 
 type AuthProvider struct {
+	// Stored as customer_identities.provider, so renaming it orphans those links.
 	ID           string       `json:"id"`
 	Type         ProviderType `json:"type"`
 	DisplayName  string       `json:"displayName"`
@@ -110,6 +111,8 @@ func (c *Config) Validate() error {
 
 		p.DisplayName = strings.TrimSpace(p.DisplayName)
 		p.ClientID = strings.TrimSpace(p.ClientID)
+		// A file-mounted k8s secret arrives with a trailing newline the IdP rejects.
+		p.ClientSecret = strings.TrimSpace(p.ClientSecret)
 		if p.DisplayName == "" || len([]rune(p.DisplayName)) > 64 {
 			return fmt.Errorf("%s.displayName must contain 1 to 64 characters", prefix)
 		}
@@ -159,6 +162,10 @@ func validateScopes(scopes []string) error {
 		}
 		scopes[i] = scope
 		seen[scope] = struct{}{}
+	}
+	// Without it the server boots clean and then fails every sign-in on the email claim.
+	if _, ok := seen["email"]; !ok {
+		return errors.New("must include email")
 	}
 	if _, ok := seen["openid"]; !ok {
 		return errors.New("must include openid")

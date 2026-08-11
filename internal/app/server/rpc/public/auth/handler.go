@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
+	"os"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -14,6 +16,7 @@ import (
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -40,6 +43,8 @@ func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKe
 	if err != nil {
 		return nil, fmt.Errorf("load oauth config: %w", err)
 	}
+	logExternalProviders(ctx, oauthCfg)
+
 	service, err := coreauth.NewService(ctx, pgRO, pgW, jwtKey, publisher, oauthCfg, demoEnabled)
 	if err != nil {
 		return nil, err
@@ -51,15 +56,44 @@ func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKe
 	}, nil
 }
 
+// Without this, a half-finished config rollout looks like a healthy boot.
+func logExternalProviders(ctx context.Context, cfg coreoauth.Config) {
+	ids := make([]string, 0, len(cfg.Providers))
+	for _, provider := range cfg.Providers {
+		ids = append(ids, provider.ID)
+	}
+	if len(ids) == 0 {
+		msg := "no external sign-in providers configured"
+		if os.Getenv(legacyGoogleClientIDVar) != "" {
+			msg += "; " + legacyGoogleClientIDVar + " is set but no longer read — move Google into PUG_CONFIG_FILE"
+		}
+		slog.WarnContext(ctx, msg)
+		return
+	}
+	slog.InfoContext(ctx, "external sign-in providers configured", slog.Any("provider_ids", ids))
+}
+
+// Removed in favour of PUG_CONFIG_FILE; kept only to warn operators mid-migration.
+const legacyGoogleClientIDVar = "PUG_OAUTH_GOOGLE_CLIENT_ID"
+
+var authProviderTypes = map[coreoauth.ProviderType]authv1.AuthProviderType{
+	coreoauth.ProviderTypeOIDC: authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC,
+}
+
 func (s *server) GetAuthConfig(
 	context.Context,
 	*connect.Request[authv1.GetAuthConfigRequest],
 ) (*connect.Response[authv1.GetAuthConfigResponse], error) {
 	providers := make([]*authv1.AuthProviderConfig, 0, len(s.oauthCfg.Providers))
 	for _, provider := range s.oauthCfg.Providers {
+		providerType, ok := authProviderTypes[provider.Type]
+		// A type the browser has no flow for must not render a sign-in button.
+		if !ok {
+			continue
+		}
 		providers = append(providers, &authv1.AuthProviderConfig{
 			Id:          proto.String(provider.ID),
-			Type:        authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC.Enum(),
+			Type:        providerType.Enum(),
 			DisplayName: proto.String(provider.DisplayName),
 			ClientId:    proto.String(provider.ClientID),
 			IssuerUrl:   proto.String(provider.IssuerURL),
@@ -119,6 +153,9 @@ func (s *server) CompleteOIDCSignIn(
 ) (*connect.Response[authv1.CompleteOIDCSignInResponse], error) {
 	redirectURI, err := validateOIDCRedirectURI(req.Msg.GetRedirectUri(), req.Header().Get("Origin"))
 	if err != nil {
+		slog.WarnContext(ctx, "rejected oidc redirect uri", slogx.Error(err),
+			slog.String("redirect_uri", req.Msg.GetRedirectUri()),
+			slog.String("origin", req.Header().Get("Origin")))
 		return nil, apperr.Invalid(apperr.ReasonInvalidArgument, "invalid oauth redirect URI") // apperr:exempt
 	}
 
@@ -239,6 +276,8 @@ func mapOAuthHandlerError(err error) error {
 		// Generic reason intentional: no distinct client action for an unverified IdP
 		// email (rare edge), so it maps to plain InvalidArgument.
 		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
+	case errors.Is(err, coreoauth.ErrProviderUnavailable):
+		return apperr.Unavailable(apperr.ReasonOAuthProviderUnavailable, "oauth provider is temporarily unavailable")
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
 		// A failed/expired credential is an authentication failure, not a
 		// malformed request — return Unauthenticated so clients prompt re-auth

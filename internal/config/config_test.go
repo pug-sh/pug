@@ -78,6 +78,7 @@ func TestLoadRejectsInvalidProviderConfiguration(t *testing.T) {
 		{"issuer query", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com?realm=main"}]}}`, "without credentials"},
 		{"scope with whitespace", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","scopes":["openid","bad scope"]}]}}`, "one non-empty scope"},
 		{"missing openid scope", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","scopes":["profile","email"]}]}}`, "must include openid"},
+		{"missing email scope", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","scopes":["openid","profile"]}]}}`, "must include email"},
 	}
 
 	for _, tt := range tests {
@@ -91,7 +92,7 @@ func TestLoadRejectsInvalidProviderConfiguration(t *testing.T) {
 }
 
 func TestLoadAcceptsLocalHTTPAndNormalizesScopes(t *testing.T) {
-	cfg, err := loadFile(t, `{"version":1,"auth":{"providers":[{"id":"local_sso","type":"oidc","displayName":" Local SSO ","clientId":" pug ","issuerUrl":" http://localhost:8080/realms/pug ","scopes":[" openid "," profile "]}]}}`)
+	cfg, err := loadFile(t, `{"version":1,"auth":{"providers":[{"id":"local_sso","type":"oidc","displayName":" Local SSO ","clientId":" pug ","issuerUrl":" http://localhost:8080/realms/pug ","scopes":[" openid "," profile "," email "]}]}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestLoadAcceptsLocalHTTPAndNormalizesScopes(t *testing.T) {
 	if provider.DisplayName != "Local SSO" || provider.ClientID != "pug" || provider.IssuerURL != "http://localhost:8080/realms/pug" {
 		t.Fatalf("provider was not normalized: %+v", provider)
 	}
-	if strings.Join(provider.Scopes, " ") != "openid profile" {
+	if strings.Join(provider.Scopes, " ") != "openid profile email" {
 		t.Fatalf("scopes = %v", provider.Scopes)
 	}
 }

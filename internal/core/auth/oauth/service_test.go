@@ -23,7 +23,7 @@ func (s stubProvider) ExchangeCode(context.Context, coreoauth.AuthorizationCode)
 }
 
 func TestExchangeCodeReturnsVerifiedIdentity(t *testing.T) {
-	identity, err := coreoauth.NewVerifiedIdentity(coreoauth.Claims{
+	identity, err := coreoauth.NewVerifiedIdentity(testProvider, coreoauth.Claims{
 		Subject: "employee-123", Email: "employee@example.com", EmailVerified: true,
 	})
 	if err != nil {
@@ -37,6 +37,22 @@ func TestExchangeCodeReturnsVerifiedIdentity(t *testing.T) {
 	}
 	if got != identity || got.Provider() != testProvider {
 		t.Fatalf("identity = %+v, provider = %q", got, got.Provider())
+	}
+}
+
+// A buggy provider must not file an identity under another provider's namespace.
+func TestExchangeCodeRejectsMismatchedIdentityProvider(t *testing.T) {
+	identity, err := coreoauth.NewVerifiedIdentity("someone_else", coreoauth.Claims{
+		Subject: "employee-123", Email: "employee@example.com", EmailVerified: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := coreoauth.NewService(coreoauth.TestConfig("client-id"), coreoauth.NewRegistry(stubProvider{name: testProvider, identity: identity}))
+
+	_, err = svc.ExchangeCode(context.Background(), testProvider, coreoauth.AuthorizationCode{Code: "code"})
+	if !errors.Is(err, coreoauth.ErrIdentityResolutionFailed) {
+		t.Fatalf("err = %v, want ErrIdentityResolutionFailed", err)
 	}
 }
 
@@ -64,8 +80,12 @@ func TestExchangeCodeConvertsUnexpectedError(t *testing.T) {
 	svc := coreoauth.NewService(coreoauth.TestConfig("client-id"), coreoauth.NewRegistry(stubProvider{name: testProvider, err: boom}))
 
 	_, err := svc.ExchangeCode(context.Background(), testProvider, coreoauth.AuthorizationCode{Code: "code"})
-	if !errors.Is(err, coreoauth.ErrInvalidCredential) {
-		t.Fatalf("err = %v, want ErrInvalidCredential", err)
+	// Not ErrInvalidCredential: our fault, so the user must not be told to re-auth.
+	if !errors.Is(err, coreoauth.ErrProviderUnavailable) {
+		t.Fatalf("err = %v, want ErrProviderUnavailable", err)
+	}
+	if errors.Is(err, coreoauth.ErrInvalidCredential) {
+		t.Fatalf("server-side failure reported as a bad credential: %v", err)
 	}
 	if strings.Contains(err.Error(), "secret-internal-detail") {
 		t.Fatalf("provider internal error leaked to caller: %v", err)
