@@ -28,6 +28,20 @@ func TestNewVerifiedIdentity_RejectsEmptySubject(t *testing.T) {
 	}
 }
 
+// provider_subject lookups don't trim, so a padded claim would fork a second
+// identity row for the same user.
+func TestNewVerifiedIdentity_TrimsSubject(t *testing.T) {
+	id, err := coreoauth.NewVerifiedIdentity("google", coreoauth.Claims{
+		Subject: "  sub  ", Email: "a@b.com", EmailVerified: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.Subject() != "sub" {
+		t.Fatalf("subject = %q, want it trimmed", id.Subject())
+	}
+}
+
 // lower(email) lookups don't trim, so a padded claim would fork a second account.
 func TestNewVerifiedIdentity_TrimsEmail(t *testing.T) {
 	id, err := coreoauth.NewVerifiedIdentity("google", coreoauth.Claims{

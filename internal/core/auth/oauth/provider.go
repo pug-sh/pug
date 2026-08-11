@@ -50,12 +50,14 @@ func NewVerifiedIdentity(provider ProviderName, c Claims) (*Identity, error) {
 	}
 	// go-oidc doesn't enforce sub; an empty one resolves every user of that IdP
 	// to whoever signed in first.
-	if strings.TrimSpace(c.Subject) == "" {
+	subject := strings.TrimSpace(c.Subject)
+	if subject == "" {
 		return nil, fmt.Errorf("%w: identity has no subject", ErrIdentityResolutionFailed)
 	}
 	return &Identity{
 		provider: provider,
-		subject:  c.Subject,
+		// provider_subject lookups don't trim, so padding forks a second identity row.
+		subject: subject,
 		// lower(email) lookups and the unique index don't trim, so padding forks an account.
 		email:       strings.TrimSpace(c.Email),
 		displayName: truncateRunes(c.DisplayName, maxDisplayNameLen),
