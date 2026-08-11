@@ -35,7 +35,8 @@ type FinalizeFunc func(ctx context.Context, w *dbwrite.Queries, customerID strin
 // fresh transaction (so finalize may run in a second transaction, but never
 // partially). The Identity type guarantees a verified, non-empty email, so there
 // is no email re-check here.
-func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, provider ProviderName, ident *Identity, finalize FinalizeFunc) (customerID string, createdNew bool, err error) {
+func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, ident *Identity, finalize FinalizeFunc) (customerID string, createdNew bool, err error) {
+	provider := ident.Provider()
 	result, err := resolveAndFinalizeInTx(ctx, pool, provider, ident, finalize)
 	if err == nil {
 		return result.CustomerID, result.CreatedNew, nil
