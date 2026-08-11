@@ -308,6 +308,58 @@ func (VisualizationOptions_YAxisFormat) EnumDescriptor() ([]byte, []int) {
 	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{6, 0}
 }
 
+type VisualizationOptions_LegendPosition int32
+
+const (
+	VisualizationOptions_LEGEND_POSITION_UNSPECIFIED VisualizationOptions_LegendPosition = 0 // client default: TOP
+	VisualizationOptions_LEGEND_POSITION_BOTTOM      VisualizationOptions_LegendPosition = 1
+	VisualizationOptions_LEGEND_POSITION_RIGHT       VisualizationOptions_LegendPosition = 2
+	VisualizationOptions_LEGEND_POSITION_TOP         VisualizationOptions_LegendPosition = 3
+)
+
+// Enum value maps for VisualizationOptions_LegendPosition.
+var (
+	VisualizationOptions_LegendPosition_name = map[int32]string{
+		0: "LEGEND_POSITION_UNSPECIFIED",
+		1: "LEGEND_POSITION_BOTTOM",
+		2: "LEGEND_POSITION_RIGHT",
+		3: "LEGEND_POSITION_TOP",
+	}
+	VisualizationOptions_LegendPosition_value = map[string]int32{
+		"LEGEND_POSITION_UNSPECIFIED": 0,
+		"LEGEND_POSITION_BOTTOM":      1,
+		"LEGEND_POSITION_RIGHT":       2,
+		"LEGEND_POSITION_TOP":         3,
+	}
+)
+
+func (x VisualizationOptions_LegendPosition) Enum() *VisualizationOptions_LegendPosition {
+	p := new(VisualizationOptions_LegendPosition)
+	*p = x
+	return p
+}
+
+func (x VisualizationOptions_LegendPosition) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (VisualizationOptions_LegendPosition) Descriptor() protoreflect.EnumDescriptor {
+	return file_dashboard_dashboards_v1_dashboards_proto_enumTypes[5].Descriptor()
+}
+
+func (VisualizationOptions_LegendPosition) Type() protoreflect.EnumType {
+	return &file_dashboard_dashboards_v1_dashboards_proto_enumTypes[5]
+}
+
+func (x VisualizationOptions_LegendPosition) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use VisualizationOptions_LegendPosition.Descriptor instead.
+func (VisualizationOptions_LegendPosition) EnumDescriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{6, 1}
+}
+
 type Dashboard struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
@@ -846,6 +898,10 @@ type VisualizationOptions struct {
 	ZeroBaseline *bool                             `protobuf:"varint,4,opt,name=zero_baseline,json=zeroBaseline" json:"zero_baseline,omitempty"` // force Y axis to start at zero
 	// KPI tiles only: hide the trend sparkline, leaving just the value + delta.
 	HideSparkline *bool `protobuf:"varint,5,opt,name=hide_sparkline,json=hideSparkline" json:"hide_sparkline,omitempty"`
+	// Shared legend placement for chart and table tiles.
+	LegendPosition *VisualizationOptions_LegendPosition `protobuf:"varint,6,opt,name=legend_position,json=legendPosition,enum=dashboard.dashboards.v1.VisualizationOptions_LegendPosition" json:"legend_position,omitempty"`
+	// Pie tiles only: hide labels drawn inside sufficiently large slices.
+	HidePieLabels *bool `protobuf:"varint,7,opt,name=hide_pie_labels,json=hidePieLabels" json:"hide_pie_labels,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -911,6 +967,20 @@ func (x *VisualizationOptions) GetZeroBaseline() bool {
 func (x *VisualizationOptions) GetHideSparkline() bool {
 	if x != nil && x.HideSparkline != nil {
 		return *x.HideSparkline
+	}
+	return false
+}
+
+func (x *VisualizationOptions) GetLegendPosition() VisualizationOptions_LegendPosition {
+	if x != nil && x.LegendPosition != nil {
+		return *x.LegendPosition
+	}
+	return VisualizationOptions_LEGEND_POSITION_UNSPECIFIED
+}
+
+func (x *VisualizationOptions) GetHidePieLabels() bool {
+	if x != nil && x.HidePieLabels != nil {
+		return *x.HidePieLabels
 	}
 	return false
 }
@@ -2138,20 +2208,27 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"hide_title\x18\x03 \x01(\bR\thideTitle\x12\x1e\n" +
 	"\n" +
 	"borderless\x18\x04 \x01(\bR\n" +
-	"borderless\"\xc3\x04\n" +
+	"borderless\"\xe0\x06\n" +
 	"\x14VisualizationOptions\x12g\n" +
 	"\ry_axis_format\x18\x01 \x01(\x0e29.dashboard.dashboards.v1.VisualizationOptions.YAxisFormatB\b\xbaH\x05\x82\x01\x02\x10\x01R\vyAxisFormat\x12\x1b\n" +
 	"\tlog_scale\x18\x02 \x01(\bR\blogScale\x12\x1f\n" +
 	"\vhide_legend\x18\x03 \x01(\bR\n" +
 	"hideLegend\x12#\n" +
 	"\rzero_baseline\x18\x04 \x01(\bR\fzeroBaseline\x12%\n" +
-	"\x0ehide_sparkline\x18\x05 \x01(\bR\rhideSparkline\"\x9b\x01\n" +
+	"\x0ehide_sparkline\x18\x05 \x01(\bR\rhideSparkline\x12o\n" +
+	"\x0flegend_position\x18\x06 \x01(\x0e2<.dashboard.dashboards.v1.VisualizationOptions.LegendPositionB\b\xbaH\x05\x82\x01\x02\x10\x01R\x0elegendPosition\x12&\n" +
+	"\x0fhide_pie_labels\x18\a \x01(\bR\rhidePieLabels\"\x9b\x01\n" +
 	"\vYAxisFormat\x12\x1d\n" +
 	"\x19Y_AXIS_FORMAT_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14Y_AXIS_FORMAT_NUMBER\x10\x01\x12\x19\n" +
 	"\x15Y_AXIS_FORMAT_PERCENT\x10\x02\x12\x1d\n" +
 	"\x19Y_AXIS_FORMAT_DURATION_MS\x10\x03\x12\x19\n" +
-	"\x15Y_AXIS_FORMAT_COMPACT\x10\x04:\x99\x01\xbaH\x95\x01\x1a\x92\x01\n" +
+	"\x15Y_AXIS_FORMAT_COMPACT\x10\x04\"\x81\x01\n" +
+	"\x0eLegendPosition\x12\x1f\n" +
+	"\x1bLEGEND_POSITION_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16LEGEND_POSITION_BOTTOM\x10\x01\x12\x19\n" +
+	"\x15LEGEND_POSITION_RIGHT\x10\x02\x12\x17\n" +
+	"\x13LEGEND_POSITION_TOP\x10\x03:\x99\x01\xbaH\x95\x01\x1a\x92\x01\n" +
 	"6visualization_options.log_scale_excludes_zero_baseline\x12/log_scale cannot be combined with zero_baseline\x1a'!(this.log_scale && this.zero_baseline)\"\xdb\x01\n" +
 	"\fGridPosition\x12\x15\n" +
 	"\x01x\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x01x\x12\x15\n" +
@@ -2273,7 +2350,7 @@ func file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP() []byte {
 	return file_dashboard_dashboards_v1_dashboards_proto_rawDescData
 }
 
-var file_dashboard_dashboards_v1_dashboards_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_dashboard_dashboards_v1_dashboards_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_dashboard_dashboards_v1_dashboards_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_dashboard_dashboards_v1_dashboards_proto_goTypes = []any{
 	(DashboardTileViewMode)(0),                      // 0: dashboard.dashboards.v1.DashboardTileViewMode
@@ -2281,107 +2358,109 @@ var file_dashboard_dashboards_v1_dashboards_proto_goTypes = []any{
 	(ThresholdRule_Operator)(0),                     // 2: dashboard.dashboards.v1.ThresholdRule.Operator
 	(ThresholdRule_Tone)(0),                         // 3: dashboard.dashboards.v1.ThresholdRule.Tone
 	(VisualizationOptions_YAxisFormat)(0),           // 4: dashboard.dashboards.v1.VisualizationOptions.YAxisFormat
-	(*Dashboard)(nil),                               // 5: dashboard.dashboards.v1.Dashboard
-	(*DashboardTile)(nil),                           // 6: dashboard.dashboards.v1.DashboardTile
-	(*InsightTileContent)(nil),                      // 7: dashboard.dashboards.v1.InsightTileContent
-	(*MarkdownTileContent)(nil),                     // 8: dashboard.dashboards.v1.MarkdownTileContent
-	(*ThresholdRule)(nil),                           // 9: dashboard.dashboards.v1.ThresholdRule
-	(*TileHeader)(nil),                              // 10: dashboard.dashboards.v1.TileHeader
-	(*VisualizationOptions)(nil),                    // 11: dashboard.dashboards.v1.VisualizationOptions
-	(*GridPosition)(nil),                            // 12: dashboard.dashboards.v1.GridPosition
-	(*DashboardsServiceCreateRequest)(nil),          // 13: dashboard.dashboards.v1.DashboardsServiceCreateRequest
-	(*DashboardsServiceCreateResponse)(nil),         // 14: dashboard.dashboards.v1.DashboardsServiceCreateResponse
-	(*DashboardsServiceDeleteRequest)(nil),          // 15: dashboard.dashboards.v1.DashboardsServiceDeleteRequest
-	(*DashboardsServiceDeleteResponse)(nil),         // 16: dashboard.dashboards.v1.DashboardsServiceDeleteResponse
-	(*DashboardsServiceGetRequest)(nil),             // 17: dashboard.dashboards.v1.DashboardsServiceGetRequest
-	(*DashboardsServiceGetResponse)(nil),            // 18: dashboard.dashboards.v1.DashboardsServiceGetResponse
-	(*DashboardsServiceListRequest)(nil),            // 19: dashboard.dashboards.v1.DashboardsServiceListRequest
-	(*DashboardsServiceListResponse)(nil),           // 20: dashboard.dashboards.v1.DashboardsServiceListResponse
-	(*DashboardsServiceUpdateRequest)(nil),          // 21: dashboard.dashboards.v1.DashboardsServiceUpdateRequest
-	(*DashboardsServiceUpdateResponse)(nil),         // 22: dashboard.dashboards.v1.DashboardsServiceUpdateResponse
-	(*DashboardsServiceUpsertRequest)(nil),          // 23: dashboard.dashboards.v1.DashboardsServiceUpsertRequest
-	(*DashboardTileInput)(nil),                      // 24: dashboard.dashboards.v1.DashboardTileInput
-	(*DashboardsServiceUpsertResponse)(nil),         // 25: dashboard.dashboards.v1.DashboardsServiceUpsertResponse
-	(*DashboardsServiceQueryDashboardRequest)(nil),  // 26: dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest
-	(*RenderedTile)(nil),                            // 27: dashboard.dashboards.v1.RenderedTile
-	(*RenderedDashboard)(nil),                       // 28: dashboard.dashboards.v1.RenderedDashboard
-	(*DashboardsServiceQueryDashboardResponse)(nil), // 29: dashboard.dashboards.v1.DashboardsServiceQueryDashboardResponse
-	(*timestamppb.Timestamp)(nil),                   // 30: google.protobuf.Timestamp
-	(v1.TimeRangePreset)(0),                         // 31: common.v1.TimeRangePreset
-	(v11.Granularity)(0),                            // 32: shared.insights.v1.Granularity
-	(*v11.InsightQuerySpec)(nil),                    // 33: shared.insights.v1.InsightQuerySpec
-	(*v1.TimeRange)(nil),                            // 34: common.v1.TimeRange
-	(*v11.QueryResponse)(nil),                       // 35: shared.insights.v1.QueryResponse
+	(VisualizationOptions_LegendPosition)(0),        // 5: dashboard.dashboards.v1.VisualizationOptions.LegendPosition
+	(*Dashboard)(nil),                               // 6: dashboard.dashboards.v1.Dashboard
+	(*DashboardTile)(nil),                           // 7: dashboard.dashboards.v1.DashboardTile
+	(*InsightTileContent)(nil),                      // 8: dashboard.dashboards.v1.InsightTileContent
+	(*MarkdownTileContent)(nil),                     // 9: dashboard.dashboards.v1.MarkdownTileContent
+	(*ThresholdRule)(nil),                           // 10: dashboard.dashboards.v1.ThresholdRule
+	(*TileHeader)(nil),                              // 11: dashboard.dashboards.v1.TileHeader
+	(*VisualizationOptions)(nil),                    // 12: dashboard.dashboards.v1.VisualizationOptions
+	(*GridPosition)(nil),                            // 13: dashboard.dashboards.v1.GridPosition
+	(*DashboardsServiceCreateRequest)(nil),          // 14: dashboard.dashboards.v1.DashboardsServiceCreateRequest
+	(*DashboardsServiceCreateResponse)(nil),         // 15: dashboard.dashboards.v1.DashboardsServiceCreateResponse
+	(*DashboardsServiceDeleteRequest)(nil),          // 16: dashboard.dashboards.v1.DashboardsServiceDeleteRequest
+	(*DashboardsServiceDeleteResponse)(nil),         // 17: dashboard.dashboards.v1.DashboardsServiceDeleteResponse
+	(*DashboardsServiceGetRequest)(nil),             // 18: dashboard.dashboards.v1.DashboardsServiceGetRequest
+	(*DashboardsServiceGetResponse)(nil),            // 19: dashboard.dashboards.v1.DashboardsServiceGetResponse
+	(*DashboardsServiceListRequest)(nil),            // 20: dashboard.dashboards.v1.DashboardsServiceListRequest
+	(*DashboardsServiceListResponse)(nil),           // 21: dashboard.dashboards.v1.DashboardsServiceListResponse
+	(*DashboardsServiceUpdateRequest)(nil),          // 22: dashboard.dashboards.v1.DashboardsServiceUpdateRequest
+	(*DashboardsServiceUpdateResponse)(nil),         // 23: dashboard.dashboards.v1.DashboardsServiceUpdateResponse
+	(*DashboardsServiceUpsertRequest)(nil),          // 24: dashboard.dashboards.v1.DashboardsServiceUpsertRequest
+	(*DashboardTileInput)(nil),                      // 25: dashboard.dashboards.v1.DashboardTileInput
+	(*DashboardsServiceUpsertResponse)(nil),         // 26: dashboard.dashboards.v1.DashboardsServiceUpsertResponse
+	(*DashboardsServiceQueryDashboardRequest)(nil),  // 27: dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest
+	(*RenderedTile)(nil),                            // 28: dashboard.dashboards.v1.RenderedTile
+	(*RenderedDashboard)(nil),                       // 29: dashboard.dashboards.v1.RenderedDashboard
+	(*DashboardsServiceQueryDashboardResponse)(nil), // 30: dashboard.dashboards.v1.DashboardsServiceQueryDashboardResponse
+	(*timestamppb.Timestamp)(nil),                   // 31: google.protobuf.Timestamp
+	(v1.TimeRangePreset)(0),                         // 32: common.v1.TimeRangePreset
+	(v11.Granularity)(0),                            // 33: shared.insights.v1.Granularity
+	(*v11.InsightQuerySpec)(nil),                    // 34: shared.insights.v1.InsightQuerySpec
+	(*v1.TimeRange)(nil),                            // 35: common.v1.TimeRange
+	(*v11.QueryResponse)(nil),                       // 36: shared.insights.v1.QueryResponse
 }
 var file_dashboard_dashboards_v1_dashboards_proto_depIdxs = []int32{
-	30, // 0: dashboard.dashboards.v1.Dashboard.create_time:type_name -> google.protobuf.Timestamp
-	30, // 1: dashboard.dashboards.v1.Dashboard.update_time:type_name -> google.protobuf.Timestamp
-	6,  // 2: dashboard.dashboards.v1.Dashboard.tiles:type_name -> dashboard.dashboards.v1.DashboardTile
-	31, // 3: dashboard.dashboards.v1.Dashboard.default_time_range:type_name -> common.v1.TimeRangePreset
-	32, // 4: dashboard.dashboards.v1.Dashboard.default_granularity:type_name -> shared.insights.v1.Granularity
-	7,  // 5: dashboard.dashboards.v1.DashboardTile.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
-	8,  // 6: dashboard.dashboards.v1.DashboardTile.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
-	12, // 7: dashboard.dashboards.v1.DashboardTile.position:type_name -> dashboard.dashboards.v1.GridPosition
-	30, // 8: dashboard.dashboards.v1.DashboardTile.create_time:type_name -> google.protobuf.Timestamp
-	30, // 9: dashboard.dashboards.v1.DashboardTile.update_time:type_name -> google.protobuf.Timestamp
+	31, // 0: dashboard.dashboards.v1.Dashboard.create_time:type_name -> google.protobuf.Timestamp
+	31, // 1: dashboard.dashboards.v1.Dashboard.update_time:type_name -> google.protobuf.Timestamp
+	7,  // 2: dashboard.dashboards.v1.Dashboard.tiles:type_name -> dashboard.dashboards.v1.DashboardTile
+	32, // 3: dashboard.dashboards.v1.Dashboard.default_time_range:type_name -> common.v1.TimeRangePreset
+	33, // 4: dashboard.dashboards.v1.Dashboard.default_granularity:type_name -> shared.insights.v1.Granularity
+	8,  // 5: dashboard.dashboards.v1.DashboardTile.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
+	9,  // 6: dashboard.dashboards.v1.DashboardTile.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
+	13, // 7: dashboard.dashboards.v1.DashboardTile.position:type_name -> dashboard.dashboards.v1.GridPosition
+	31, // 8: dashboard.dashboards.v1.DashboardTile.create_time:type_name -> google.protobuf.Timestamp
+	31, // 9: dashboard.dashboards.v1.DashboardTile.update_time:type_name -> google.protobuf.Timestamp
 	0,  // 10: dashboard.dashboards.v1.DashboardTile.view_mode:type_name -> dashboard.dashboards.v1.DashboardTileViewMode
 	1,  // 11: dashboard.dashboards.v1.DashboardTile.compare:type_name -> dashboard.dashboards.v1.ComparePeriod
-	9,  // 12: dashboard.dashboards.v1.DashboardTile.thresholds:type_name -> dashboard.dashboards.v1.ThresholdRule
-	10, // 13: dashboard.dashboards.v1.DashboardTile.header:type_name -> dashboard.dashboards.v1.TileHeader
-	11, // 14: dashboard.dashboards.v1.DashboardTile.visualization:type_name -> dashboard.dashboards.v1.VisualizationOptions
-	33, // 15: dashboard.dashboards.v1.InsightTileContent.spec:type_name -> shared.insights.v1.InsightQuerySpec
+	10, // 12: dashboard.dashboards.v1.DashboardTile.thresholds:type_name -> dashboard.dashboards.v1.ThresholdRule
+	11, // 13: dashboard.dashboards.v1.DashboardTile.header:type_name -> dashboard.dashboards.v1.TileHeader
+	12, // 14: dashboard.dashboards.v1.DashboardTile.visualization:type_name -> dashboard.dashboards.v1.VisualizationOptions
+	34, // 15: dashboard.dashboards.v1.InsightTileContent.spec:type_name -> shared.insights.v1.InsightQuerySpec
 	2,  // 16: dashboard.dashboards.v1.ThresholdRule.operator:type_name -> dashboard.dashboards.v1.ThresholdRule.Operator
 	3,  // 17: dashboard.dashboards.v1.ThresholdRule.tone:type_name -> dashboard.dashboards.v1.ThresholdRule.Tone
 	4,  // 18: dashboard.dashboards.v1.VisualizationOptions.y_axis_format:type_name -> dashboard.dashboards.v1.VisualizationOptions.YAxisFormat
-	31, // 19: dashboard.dashboards.v1.DashboardsServiceCreateRequest.default_time_range:type_name -> common.v1.TimeRangePreset
-	32, // 20: dashboard.dashboards.v1.DashboardsServiceCreateRequest.default_granularity:type_name -> shared.insights.v1.Granularity
-	5,  // 21: dashboard.dashboards.v1.DashboardsServiceCreateResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
-	5,  // 22: dashboard.dashboards.v1.DashboardsServiceGetResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
-	5,  // 23: dashboard.dashboards.v1.DashboardsServiceListResponse.dashboards:type_name -> dashboard.dashboards.v1.Dashboard
-	31, // 24: dashboard.dashboards.v1.DashboardsServiceUpdateRequest.default_time_range:type_name -> common.v1.TimeRangePreset
-	32, // 25: dashboard.dashboards.v1.DashboardsServiceUpdateRequest.default_granularity:type_name -> shared.insights.v1.Granularity
-	5,  // 26: dashboard.dashboards.v1.DashboardsServiceUpdateResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
-	31, // 27: dashboard.dashboards.v1.DashboardsServiceUpsertRequest.default_time_range:type_name -> common.v1.TimeRangePreset
-	32, // 28: dashboard.dashboards.v1.DashboardsServiceUpsertRequest.default_granularity:type_name -> shared.insights.v1.Granularity
-	24, // 29: dashboard.dashboards.v1.DashboardsServiceUpsertRequest.tiles:type_name -> dashboard.dashboards.v1.DashboardTileInput
-	7,  // 30: dashboard.dashboards.v1.DashboardTileInput.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
-	8,  // 31: dashboard.dashboards.v1.DashboardTileInput.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
-	12, // 32: dashboard.dashboards.v1.DashboardTileInput.position:type_name -> dashboard.dashboards.v1.GridPosition
-	0,  // 33: dashboard.dashboards.v1.DashboardTileInput.view_mode:type_name -> dashboard.dashboards.v1.DashboardTileViewMode
-	1,  // 34: dashboard.dashboards.v1.DashboardTileInput.compare:type_name -> dashboard.dashboards.v1.ComparePeriod
-	9,  // 35: dashboard.dashboards.v1.DashboardTileInput.thresholds:type_name -> dashboard.dashboards.v1.ThresholdRule
-	10, // 36: dashboard.dashboards.v1.DashboardTileInput.header:type_name -> dashboard.dashboards.v1.TileHeader
-	11, // 37: dashboard.dashboards.v1.DashboardTileInput.visualization:type_name -> dashboard.dashboards.v1.VisualizationOptions
-	5,  // 38: dashboard.dashboards.v1.DashboardsServiceUpsertResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
-	34, // 39: dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest.time_range:type_name -> common.v1.TimeRange
-	32, // 40: dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest.granularity:type_name -> shared.insights.v1.Granularity
-	6,  // 41: dashboard.dashboards.v1.RenderedTile.tile:type_name -> dashboard.dashboards.v1.DashboardTile
-	35, // 42: dashboard.dashboards.v1.RenderedTile.result:type_name -> shared.insights.v1.QueryResponse
-	31, // 43: dashboard.dashboards.v1.RenderedDashboard.default_time_range:type_name -> common.v1.TimeRangePreset
-	32, // 44: dashboard.dashboards.v1.RenderedDashboard.default_granularity:type_name -> shared.insights.v1.Granularity
-	30, // 45: dashboard.dashboards.v1.RenderedDashboard.create_time:type_name -> google.protobuf.Timestamp
-	30, // 46: dashboard.dashboards.v1.RenderedDashboard.update_time:type_name -> google.protobuf.Timestamp
-	27, // 47: dashboard.dashboards.v1.RenderedDashboard.tiles:type_name -> dashboard.dashboards.v1.RenderedTile
-	28, // 48: dashboard.dashboards.v1.DashboardsServiceQueryDashboardResponse.dashboard:type_name -> dashboard.dashboards.v1.RenderedDashboard
-	13, // 49: dashboard.dashboards.v1.DashboardsService.Create:input_type -> dashboard.dashboards.v1.DashboardsServiceCreateRequest
-	15, // 50: dashboard.dashboards.v1.DashboardsService.Delete:input_type -> dashboard.dashboards.v1.DashboardsServiceDeleteRequest
-	17, // 51: dashboard.dashboards.v1.DashboardsService.Get:input_type -> dashboard.dashboards.v1.DashboardsServiceGetRequest
-	19, // 52: dashboard.dashboards.v1.DashboardsService.List:input_type -> dashboard.dashboards.v1.DashboardsServiceListRequest
-	21, // 53: dashboard.dashboards.v1.DashboardsService.Update:input_type -> dashboard.dashboards.v1.DashboardsServiceUpdateRequest
-	23, // 54: dashboard.dashboards.v1.DashboardsService.Upsert:input_type -> dashboard.dashboards.v1.DashboardsServiceUpsertRequest
-	26, // 55: dashboard.dashboards.v1.DashboardsService.QueryDashboard:input_type -> dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest
-	14, // 56: dashboard.dashboards.v1.DashboardsService.Create:output_type -> dashboard.dashboards.v1.DashboardsServiceCreateResponse
-	16, // 57: dashboard.dashboards.v1.DashboardsService.Delete:output_type -> dashboard.dashboards.v1.DashboardsServiceDeleteResponse
-	18, // 58: dashboard.dashboards.v1.DashboardsService.Get:output_type -> dashboard.dashboards.v1.DashboardsServiceGetResponse
-	20, // 59: dashboard.dashboards.v1.DashboardsService.List:output_type -> dashboard.dashboards.v1.DashboardsServiceListResponse
-	22, // 60: dashboard.dashboards.v1.DashboardsService.Update:output_type -> dashboard.dashboards.v1.DashboardsServiceUpdateResponse
-	25, // 61: dashboard.dashboards.v1.DashboardsService.Upsert:output_type -> dashboard.dashboards.v1.DashboardsServiceUpsertResponse
-	29, // 62: dashboard.dashboards.v1.DashboardsService.QueryDashboard:output_type -> dashboard.dashboards.v1.DashboardsServiceQueryDashboardResponse
-	56, // [56:63] is the sub-list for method output_type
-	49, // [49:56] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	5,  // 19: dashboard.dashboards.v1.VisualizationOptions.legend_position:type_name -> dashboard.dashboards.v1.VisualizationOptions.LegendPosition
+	32, // 20: dashboard.dashboards.v1.DashboardsServiceCreateRequest.default_time_range:type_name -> common.v1.TimeRangePreset
+	33, // 21: dashboard.dashboards.v1.DashboardsServiceCreateRequest.default_granularity:type_name -> shared.insights.v1.Granularity
+	6,  // 22: dashboard.dashboards.v1.DashboardsServiceCreateResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
+	6,  // 23: dashboard.dashboards.v1.DashboardsServiceGetResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
+	6,  // 24: dashboard.dashboards.v1.DashboardsServiceListResponse.dashboards:type_name -> dashboard.dashboards.v1.Dashboard
+	32, // 25: dashboard.dashboards.v1.DashboardsServiceUpdateRequest.default_time_range:type_name -> common.v1.TimeRangePreset
+	33, // 26: dashboard.dashboards.v1.DashboardsServiceUpdateRequest.default_granularity:type_name -> shared.insights.v1.Granularity
+	6,  // 27: dashboard.dashboards.v1.DashboardsServiceUpdateResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
+	32, // 28: dashboard.dashboards.v1.DashboardsServiceUpsertRequest.default_time_range:type_name -> common.v1.TimeRangePreset
+	33, // 29: dashboard.dashboards.v1.DashboardsServiceUpsertRequest.default_granularity:type_name -> shared.insights.v1.Granularity
+	25, // 30: dashboard.dashboards.v1.DashboardsServiceUpsertRequest.tiles:type_name -> dashboard.dashboards.v1.DashboardTileInput
+	8,  // 31: dashboard.dashboards.v1.DashboardTileInput.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
+	9,  // 32: dashboard.dashboards.v1.DashboardTileInput.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
+	13, // 33: dashboard.dashboards.v1.DashboardTileInput.position:type_name -> dashboard.dashboards.v1.GridPosition
+	0,  // 34: dashboard.dashboards.v1.DashboardTileInput.view_mode:type_name -> dashboard.dashboards.v1.DashboardTileViewMode
+	1,  // 35: dashboard.dashboards.v1.DashboardTileInput.compare:type_name -> dashboard.dashboards.v1.ComparePeriod
+	10, // 36: dashboard.dashboards.v1.DashboardTileInput.thresholds:type_name -> dashboard.dashboards.v1.ThresholdRule
+	11, // 37: dashboard.dashboards.v1.DashboardTileInput.header:type_name -> dashboard.dashboards.v1.TileHeader
+	12, // 38: dashboard.dashboards.v1.DashboardTileInput.visualization:type_name -> dashboard.dashboards.v1.VisualizationOptions
+	6,  // 39: dashboard.dashboards.v1.DashboardsServiceUpsertResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
+	35, // 40: dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest.time_range:type_name -> common.v1.TimeRange
+	33, // 41: dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest.granularity:type_name -> shared.insights.v1.Granularity
+	7,  // 42: dashboard.dashboards.v1.RenderedTile.tile:type_name -> dashboard.dashboards.v1.DashboardTile
+	36, // 43: dashboard.dashboards.v1.RenderedTile.result:type_name -> shared.insights.v1.QueryResponse
+	32, // 44: dashboard.dashboards.v1.RenderedDashboard.default_time_range:type_name -> common.v1.TimeRangePreset
+	33, // 45: dashboard.dashboards.v1.RenderedDashboard.default_granularity:type_name -> shared.insights.v1.Granularity
+	31, // 46: dashboard.dashboards.v1.RenderedDashboard.create_time:type_name -> google.protobuf.Timestamp
+	31, // 47: dashboard.dashboards.v1.RenderedDashboard.update_time:type_name -> google.protobuf.Timestamp
+	28, // 48: dashboard.dashboards.v1.RenderedDashboard.tiles:type_name -> dashboard.dashboards.v1.RenderedTile
+	29, // 49: dashboard.dashboards.v1.DashboardsServiceQueryDashboardResponse.dashboard:type_name -> dashboard.dashboards.v1.RenderedDashboard
+	14, // 50: dashboard.dashboards.v1.DashboardsService.Create:input_type -> dashboard.dashboards.v1.DashboardsServiceCreateRequest
+	16, // 51: dashboard.dashboards.v1.DashboardsService.Delete:input_type -> dashboard.dashboards.v1.DashboardsServiceDeleteRequest
+	18, // 52: dashboard.dashboards.v1.DashboardsService.Get:input_type -> dashboard.dashboards.v1.DashboardsServiceGetRequest
+	20, // 53: dashboard.dashboards.v1.DashboardsService.List:input_type -> dashboard.dashboards.v1.DashboardsServiceListRequest
+	22, // 54: dashboard.dashboards.v1.DashboardsService.Update:input_type -> dashboard.dashboards.v1.DashboardsServiceUpdateRequest
+	24, // 55: dashboard.dashboards.v1.DashboardsService.Upsert:input_type -> dashboard.dashboards.v1.DashboardsServiceUpsertRequest
+	27, // 56: dashboard.dashboards.v1.DashboardsService.QueryDashboard:input_type -> dashboard.dashboards.v1.DashboardsServiceQueryDashboardRequest
+	15, // 57: dashboard.dashboards.v1.DashboardsService.Create:output_type -> dashboard.dashboards.v1.DashboardsServiceCreateResponse
+	17, // 58: dashboard.dashboards.v1.DashboardsService.Delete:output_type -> dashboard.dashboards.v1.DashboardsServiceDeleteResponse
+	19, // 59: dashboard.dashboards.v1.DashboardsService.Get:output_type -> dashboard.dashboards.v1.DashboardsServiceGetResponse
+	21, // 60: dashboard.dashboards.v1.DashboardsService.List:output_type -> dashboard.dashboards.v1.DashboardsServiceListResponse
+	23, // 61: dashboard.dashboards.v1.DashboardsService.Update:output_type -> dashboard.dashboards.v1.DashboardsServiceUpdateResponse
+	26, // 62: dashboard.dashboards.v1.DashboardsService.Upsert:output_type -> dashboard.dashboards.v1.DashboardsServiceUpsertResponse
+	30, // 63: dashboard.dashboards.v1.DashboardsService.QueryDashboard:output_type -> dashboard.dashboards.v1.DashboardsServiceQueryDashboardResponse
+	57, // [57:64] is the sub-list for method output_type
+	50, // [50:57] is the sub-list for method input_type
+	50, // [50:50] is the sub-list for extension type_name
+	50, // [50:50] is the sub-list for extension extendee
+	0,  // [0:50] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_dashboards_v1_dashboards_proto_init() }
@@ -2406,7 +2485,7 @@ func file_dashboard_dashboards_v1_dashboards_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_dashboards_v1_dashboards_proto_rawDesc), len(file_dashboard_dashboards_v1_dashboards_proto_rawDesc)),
-			NumEnums:      5,
+			NumEnums:      6,
 			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,

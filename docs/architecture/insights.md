@@ -34,13 +34,16 @@ The request-side `QueryRequest.spec.conversion_window` is also a `google.protobu
 
 ## User Flow
 
-User flow is a **graph insight** (Sankey): discovered session/user transitions as explicit `UserFlowNode` + `UserFlowLink` pairs — not funnel stage counts. Edge weight = distinct sessions/users traversing each source→target edge at least once in the window.
+User flow is a **step-indexed graph insight** (Sankey): for each session, the first N+1 time-ordered events become a path, and consecutive events become `(step, source) → (step+1, target)` transitions. The result is `UserFlowNode` + `UserFlowLink` pairs ready for a layered Sankey — **not** funnel stage counts. Edge weight = distinct sessions/users traversing that step's source→target edge at least once in the window.
 
-- **Builder:** `BuildUserFlowQuery` — two CTEs (`session_nodes`, `pairs`) over raw `events`; sort-then-slice node arrays (`groupArray` → `arraySort` → `arraySlice`), never `groupArray(N)` before sort.
-- **Grouping:** `GroupUserFlowResult` — top-N node retention, `$others` collapse, post-remap self-loop removal, link truncation. Pure Go; no error return.
+**Step-indexed, not page-collapsed.** A node is identified by `(depth, label)`, so the *same* event kind / property value reached at two positions is **two distinct nodes** (`page_view` at step 0 vs step 2). Each `UserFlowNode` carries `depth` (the 0-based Sankey column) and `label` (display name); `id` is an opaque per-`(depth,label)` key referenced by links. Because every edge goes depth `d → d+1`, the graph is a **strict layered DAG** — no cycles, no back-edges, so the client renders clean left→right columns (recharts `<Sankey align="left">`; the default `"justify"` would wrongly pin every terminal node to the last column). This replaced an earlier page-collapsed model whose single-node-per-event graph was cyclic and rendered as a spaghetti of spanning arcs.
+
+- **Builder:** `BuildUserFlowQuery` — two CTEs (`session_nodes`, `pairs`) over raw `events`; sort-then-slice node arrays (`groupArray` → `arraySort` → `arraySlice`), never `groupArray(N)` before sort. The `pairs` CTE keeps `toInt32(idx - 1) AS step`; the outer `count(DISTINCT group_key)` is `GROUP BY step, source, target`. There is **no** `source != target` filter — consecutive identical events are a valid `d → d+1` step (the endpoints are different-depth nodes), never a self-loop.
+- **Grouping:** `GroupUserFlowResult` — **per-step** top-N node retention and a **per-depth** `$others` bucket (each column ranks its own nodes independently, so a label pruned at one step can survive at another), then link truncation. No self-loop removal is needed (endpoints always differ in depth). Pure Go; no error return.
 - **Group by:** session-only (`GROUP_BY_SESSION` / `UNSPECIFIED` → session in builder). Cross-session user grouping is not in the proto yet.
+- **Defaults:** `max_hops` 5 (→ 6 columns), `max_nodes` 20 **per step**, `max_links` 250.
 - **No rollup in v1** — always scans raw events (see [`user-flow.md`](user-flow.md) §15).
-- **Accuracy:** queries omit `FINAL`; ReplacingMergeTree duplicate delivery may slightly inflate edge counts (same tradeoff as other raw-event insights).
+- **Accuracy:** queries omit `FINAL`; ReplacingMergeTree duplicate delivery may slightly inflate edge counts and, in the step model, shift a session's later steps by one (a redelivered event becomes an extra position). Window clipping (§14.1 of the plan) means a session straddling the window start contributes a partial path beginning at its first in-window event — so unexpected events can appear in step 0. Both are accepted, same posture as other raw-event insights.
 
 Dashboard tiles use `DASHBOARD_TILE_VIEW_MODE_SANKEY`; the server stores and echoes view mode but does not enforce insight ↔ view_mode pairing.
 
