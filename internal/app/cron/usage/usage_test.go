@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/app/cron"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -21,7 +22,7 @@ func newJob(t *testing.T, pg *testutil.TestPostgres) *job {
 	t.Helper()
 	return &job{
 		service:    coreusage.NewService(pg.PgRO, pg.PgW),
-		state:      cron.NewState(pg.PgRO, pg.PgW, "usage"),
+		state:      cron.NewState(pg.PgRO, pg.PgW, cron.JobUsage),
 		pgW:        pg.PgW,
 		rescanDays: 2,
 	}
@@ -58,6 +59,132 @@ func countUsageDaily(t *testing.T, pg *testutil.TestPostgres) int {
 		t.Fatalf("count usage_daily: %v", err)
 	}
 	return n
+}
+
+func usageDayCount(t *testing.T, pg *testutil.TestPostgres, projectID string, day time.Time) (int64, bool) {
+	t.Helper()
+	var n int64
+	err := pg.PgRO.QueryRow(t.Context(),
+		"select event_count from usage_daily where project_id = $1 and day = $2",
+		projectID, day).Scan(&n)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false
+	}
+	if err != nil {
+		t.Fatalf("read usage_daily cell: %v", err)
+	}
+	return n, true
+}
+
+// The rescan window's floor has to land on a UTC midnight. Drop the FloorDayUTC
+// and `from` becomes a mid-day instant: MeterWindow then counts only the part of
+// the boundary day after it, while DeleteUnmeteredDays still reconciles the whole
+// day, so that day's stored count silently becomes a function of what time the
+// CronJob happened to fire.
+//
+// Tests place their events straddling the boundary for that reason — an event
+// well inside the window cannot tell the two apart.
+func TestMeterCountsTheWholeBoundaryDay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+	j.rescanDays = 1
+
+	// Fixed so the assertions do not depend on today. now is mid-day, so a floored
+	// window starts at 06-19T00:00Z and an unfloored one at 06-19T12:00Z.
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	boundary := time.Date(2026, 6, 19, 0, 0, 0, 0, time.UTC)
+
+	projectID := seedProject(t, pg)
+	for _, at := range []time.Time{
+		time.Date(2026, 6, 19, 0, 30, 0, 0, time.UTC),  // inside the day, before an unfloored `from`
+		time.Date(2026, 6, 19, 18, 0, 0, 0, time.UTC),  // inside the day, after it
+		time.Date(2026, 6, 18, 23, 30, 0, 0, time.UTC), // the day before: outside either way
+	} {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "user-1", "$pageview",
+			uuid.NewString(), nil, nil, at)
+	}
+
+	// Keep the pass narrow; a full recompute would widen `from` to the 1st and hide
+	// the boundary entirely.
+	if err := j.state.MarkRun(ctx, taskFullRecompute, now.Add(-time.Hour)); err != nil {
+		t.Fatalf("MarkRun: %v", err)
+	}
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter: %v", err)
+	}
+
+	got, ok := usageDayCount(t, pg, projectID, boundary)
+	if !ok {
+		t.Fatal("no cell stored for the boundary day")
+	}
+	if got != 2 {
+		t.Errorf("boundary day = %d, want 2 — the window starts mid-day instead of at UTC midnight", got)
+	}
+	if _, ok := usageDayCount(t, pg, projectID, boundary.AddDate(0, 0, -1)); ok {
+		t.Error("metered the day before the window")
+	}
+}
+
+// A ClickHouse reporting projects this Postgres has never heard of is a pair
+// pointed at different environments. Every upsert then writes nothing and reports
+// success, so reconciling would delete the cells earlier correct passes stored and
+// stamp every org with a zero.
+func TestMeterRefusesToReconcileWhenNoProjectIsKnown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+	j.rescanDays = 2
+
+	now := time.Now().UTC()
+	day := coreusage.FloorDayUTC(now)
+
+	// A real project with a stored cell, standing in for what earlier passes wrote.
+	orgID, projectID := seedOrgProject(t, pg)
+	if err := j.service.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: day, EventCount: 42, ProjectID: projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+
+	// Events for a project id Postgres does not know — the other environment.
+	stranger := xid.New().String()
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), stranger, "user-1", "$pageview",
+		uuid.NewString(), nil, nil, now.Add(-time.Hour))
+
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter = %v, want nil (a bad pairing must not thrash the CronJob)", err)
+	}
+
+	if got, ok := usageDayCount(t, pg, projectID, day); !ok || got != 42 {
+		t.Errorf("stored cell = (%d, %t), want (42, true) — the pass reconciled against a foreign ClickHouse", got, ok)
+	}
+	usage, err := j.service.GetPeriodUsage(ctx, orgID, mustPeriodStart(now))
+	if err != nil {
+		t.Fatalf("GetPeriodUsage: %v", err)
+	}
+	if usage.Counted {
+		t.Error("refreshed a period from a read it could not attribute to any known project")
+	}
+}
+
+func mustPeriodStart(now time.Time) time.Time {
+	start, _ := coreusage.CalendarMonth(now)
+	return start
 }
 
 // Run's exit code is a CronJob's only success signal, so a pass that could not
@@ -250,8 +377,12 @@ func TestEmptyMeterReadKeepsStoredDaysAndLeavesTheGateOpen(t *testing.T) {
 	}
 }
 
-// Both daily sub-tasks are gated on cron_state, not on the schedule: a job firing
-// every few minutes must not full-scan the table on every firing.
+// Both daily sub-tasks are gated on cron_state, not on the schedule: the
+// retention boundary only moves once a day, so a job firing every few minutes
+// would re-scan the same range to delete nothing.
+//
+// Seeds a row on each side of the boundary so the "due" leg proves the prune
+// deleted the right row rather than merely emptying the table.
 func TestPruneIsGatedOnCronState(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -262,33 +393,35 @@ func TestPruneIsGatedOnCronState(t *testing.T) {
 	j := newJob(t, pg)
 
 	projectID := seedProject(t, pg)
-	old := coreusage.FloorDayUTC(time.Now().UTC().AddDate(0, 0, -500))
+	now := time.Now().UTC()
+	old := coreusage.FloorDayUTC(now.AddDate(0, 0, -500))
+	recent := coreusage.FloorDayUTC(now.AddDate(0, 0, -10))
 	if err := j.service.RecordDailyUsage(ctx, []coreusage.DailyUsage{
 		{Day: old, EventCount: 7, ProjectID: projectID},
+		{Day: recent, EventCount: 11, ProjectID: projectID},
 	}); err != nil {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
-	now := time.Now().UTC()
 	if err := j.state.MarkRun(ctx, taskPrune, now.Add(-time.Hour)); err != nil {
 		t.Fatalf("MarkRun: %v", err)
 	}
 	if err := j.prune(ctx, now); err != nil {
 		t.Fatalf("prune (gated): %v", err)
 	}
-	if n := countUsageDaily(t, pg); n != 1 {
-		t.Fatalf("gated prune deleted rows: %d remain, want 1", n)
+	if n := countUsageDaily(t, pg); n != 2 {
+		t.Fatalf("gated prune deleted rows: %d remain, want 2", n)
 	}
 
-	// Past the interval, the same call does the work.
+	// Past the interval, the same call does the work — and only the work.
 	if err := j.state.MarkRun(ctx, taskPrune, now.Add(-25*time.Hour)); err != nil {
 		t.Fatalf("MarkRun: %v", err)
 	}
 	if err := j.prune(ctx, now); err != nil {
 		t.Fatalf("prune (due): %v", err)
 	}
-	if n := countUsageDaily(t, pg); n != 0 {
-		t.Errorf("due prune left %d rows, want 0", n)
+	if n := countUsageDaily(t, pg); n != 1 {
+		t.Errorf("due prune left %d rows, want 1 (the in-retention day)", n)
 	}
 }
 
@@ -462,6 +595,10 @@ func TestRescanDaysClampsToTheDefault(t *testing.T) {
 		{"unset falls back", 0, defaultRescanDays},
 		{"negative falls back", -3, defaultRescanDays},
 		{"positive is honoured", 5, 5},
+		{"at the retention window is honoured", maxRescanDays, maxRescanDays},
+		// Past retention the meter re-inserts day cells the same pass's prune then
+		// deletes, forever, and the ClickHouse scan stops pruning partitions.
+		{"absurd clamps to retention", 100_000, maxRescanDays},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := rescanDays(t.Context(), tc.in); got != tc.want {

@@ -44,7 +44,7 @@ func TestWithLockRunsTheWorkAndReleasesTheLock(t *testing.T) {
 		runs++
 		return nil
 	}
-	if err := cron.WithLock(ctx, pg.PgW, cron.LockUsage, work); err != nil {
+	if err := cron.WithLock(ctx, pg.PgW, cron.JobUsage, work); err != nil {
 		t.Fatalf("WithLock: %v", err)
 	}
 	if runs != 1 {
@@ -53,7 +53,7 @@ func TestWithLockRunsTheWorkAndReleasesTheLock(t *testing.T) {
 
 	// Transaction-scoped: a session-scoped lock would ride the pooled connection
 	// back and wedge every later pass.
-	if err := cron.WithLock(ctx, pg.PgW, cron.LockUsage, work); err != nil {
+	if err := cron.WithLock(ctx, pg.PgW, cron.JobUsage, work); err != nil {
 		t.Fatalf("WithLock (second pass): %v", err)
 	}
 	if runs != 2 {
@@ -71,7 +71,7 @@ func TestWithLockSkipsWhenAnotherPassHoldsIt(t *testing.T) {
 	holdLock(t, pg, cron.LockUsage)
 
 	ran := false
-	err := cron.WithLock(t.Context(), pg.PgW, cron.LockUsage, func(context.Context) error {
+	err := cron.WithLock(t.Context(), pg.PgW, cron.JobUsage, func(context.Context) error {
 		ran = true
 		return nil
 	})
@@ -92,7 +92,7 @@ func TestWithLockReturnsTheWorkError(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	sentinel := errors.New("the pass failed")
 
-	err := cron.WithLock(t.Context(), pg.PgW, cron.LockUsage, func(context.Context) error {
+	err := cron.WithLock(t.Context(), pg.PgW, cron.JobUsage, func(context.Context) error {
 		return sentinel
 	})
 	if !errors.Is(err, sentinel) {
@@ -112,7 +112,7 @@ func TestWithLockFailsWhenTheTxCannotBegin(t *testing.T) {
 	cancel()
 
 	ran := false
-	err := cron.WithLock(ctx, pg.PgW, cron.LockUsage, func(context.Context) error {
+	err := cron.WithLock(ctx, pg.PgW, cron.JobUsage, func(context.Context) error {
 		ran = true
 		return nil
 	})

@@ -24,7 +24,15 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-const defaultRescanDays = 2
+const (
+	defaultRescanDays = 2
+
+	// Past the retention window a wider rescan re-inserts day cells that the same
+	// pass's prune then deletes, every pass, forever — and the ClickHouse scan stops
+	// pruning partitions long before that. Expressed from retention so the two
+	// cannot drift.
+	maxRescanDays = int(retention / (24 * time.Hour))
+)
 
 type Config struct {
 	// Trailing window the meter recomputes each run, absorbing late arrivals.
@@ -37,10 +45,14 @@ type Config struct {
 // negative value would put `from` in the future, so every read comes back empty
 // and the pass meters nothing -- forever, and quietly.
 func rescanDays(ctx context.Context, configured int) int {
-	if configured > 0 {
+	switch {
+	case configured > maxRescanDays:
+		slog.WarnContext(ctx, "clamping PUG_USAGE_RESCAN_DAYS to the retention window",
+			slog.Int("configured", configured), slog.Int("using", maxRescanDays))
+		return maxRescanDays
+	case configured > 0:
 		return configured
-	}
-	if configured < 0 {
+	case configured < 0:
 		slog.WarnContext(ctx, "ignoring a negative PUG_USAGE_RESCAN_DAYS",
 			slog.Int("configured", configured), slog.Int("using", defaultRescanDays))
 	}
@@ -49,12 +61,12 @@ func rescanDays(ctx context.Context, configured int) int {
 
 // Sub-tasks held to a daily cadence regardless of how often the schedule fires.
 const (
-	taskFullRecompute = "full_recompute"
-	taskPrune         = "prune"
+	taskFullRecompute cron.Task = "full_recompute"
+	taskPrune         cron.Task = "prune"
 )
 
 const (
-	// A year of history plus a month of slack.
+	// A year of history plus 25 days of slack.
 	retention = 390 * 24 * time.Hour
 
 	// Both are measured against cron_state. Pruning stays daily because the
@@ -64,9 +76,33 @@ const (
 	pruneInterval         = 24 * time.Hour
 )
 
+// passTimeout bounds one pass end to end. The pass holds an advisory lock for its
+// whole duration, so a hang does not merely stall this run: every later pod finds
+// the lock held, logs "another pass holds the cron lock", and exits 0, leaving a
+// green CronJob and frozen stamps for as long as the wedged pod lives.
+// docs/architecture/usage.md defers the bound to the CronJob's
+// activeDeadlineSeconds, but that lives in a manifest this repo does not ship, so
+// it has to exist here too. Generous on purpose: a full-month uniqExact over a
+// large tenant is minutes.
+const passTimeout = 30 * time.Minute
+
+// setupFailed reports a dependency that would not come up. These all return
+// before the pass starts, so without an explicit log+record they reach only
+// main's stderr line — printed after closeOtel has swapped the handler back — and
+// never OTLP, which is where a misconfigured deployment is diagnosed.
+func setupFailed(ctx context.Context, dependency string, err error) error {
+	err = fmt.Errorf("usage meter setup: %s: %w", dependency, err)
+	slog.ErrorContext(ctx, "usage metering pass could not start", slogx.Error(err),
+		slog.String("dependency", dependency))
+	telemetry.RecordError(ctx, err)
+	return err
+}
+
 // Run meters once and returns. The error is the CronJob's exit code, so a failed
 // pass must not come back nil. Lock contention is not a failure and returns nil.
 func Run(ctx context.Context) error {
+	// The one failure with nowhere to go: telemetry is not up, so this returns
+	// bare and surfaces through main's stderr line.
 	closeOtel, err := telemetry.SetupSDK(ctx)
 	if err != nil {
 		return err
@@ -79,34 +115,44 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
+	// Started before config and pools rather than after: telemetry.RecordError
+	// resolves to the noop span until a root span exists, so anything recorded
+	// during setup would be silently discarded — and setup is exactly where a
+	// misconfigured deployment fails.
+	ctx, span := otel.Tracer("cron/usage").Start(ctx, "usage.pass")
+	defer span.End()
+
+	ctx, cancel := context.WithTimeout(ctx, passTimeout)
+	defer cancel()
+
 	var cfg Config
 	if err := envconfig.Process(ctx, &cfg); err != nil {
-		return err
+		return setupFailed(ctx, "usage config", err)
 	}
 
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
-		return err
+		return setupFailed(ctx, "postgres config", err)
 	}
 	pgRO, err := postgres.NewReaderPool(ctx, &pgCfg)
 	if err != nil {
-		return err
+		return setupFailed(ctx, "postgres reader pool", err)
 	}
 	defer pgRO.Close()
 
 	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
-		return err
+		return setupFailed(ctx, "postgres writer pool", err)
 	}
 	defer pgW.Close()
 
 	var chCfg chdb.Config
 	if err := envconfig.Process(ctx, &chCfg); err != nil {
-		return err
+		return setupFailed(ctx, "clickhouse config", err)
 	}
 	ch, err := chdb.NewReaderPool(ctx, &chCfg)
 	if err != nil {
-		return err
+		return setupFailed(ctx, "clickhouse reader pool", err)
 	}
 	defer func() {
 		if err := ch.Close(); err != nil {
@@ -116,15 +162,10 @@ func Run(ctx context.Context) error {
 
 	j := &job{
 		service:    coreusage.NewService(pgRO, pgW).WithClickHouse(ch),
-		state:      cron.NewState(pgRO, pgW, "usage"),
+		state:      cron.NewState(pgRO, pgW, cron.JobUsage),
 		pgW:        pgW,
 		rescanDays: rescanDays(ctx, cfg.RescanDays),
 	}
-
-	// Without a root span every telemetry.RecordError below resolves to the noop
-	// span and is silently discarded.
-	ctx, span := otel.Tracer("cron/usage").Start(ctx, "usage.pass")
-	defer span.End()
 
 	slog.InfoContext(ctx, "Running a usage metering pass", slog.Int("rescan_days", j.rescanDays))
 	// Logged here rather than in main, which runs after closeOtel has swapped the
@@ -145,8 +186,11 @@ type job struct {
 }
 
 func (j *job) run(ctx context.Context) error {
-	return cron.WithLock(ctx, j.pgW, cron.LockUsage, func(ctx context.Context) error {
+	return cron.WithLock(ctx, j.pgW, cron.JobUsage, func(ctx context.Context) error {
 		now := time.Now().UTC()
+		// Both run even if the first fails, deliberately: prune deletes by age alone
+		// and needs nothing the meter produces, so a ClickHouse outage should not
+		// also stall retention. errors.Join keeps either failure in the exit code.
 		return errors.Join(j.meter(ctx, now), j.prune(ctx, now))
 	})
 }
@@ -204,15 +248,53 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		slog.WarnContext(ctx, "usage meter read no cells and none are stored; treating the window as idle",
 			slog.Time("from", from), slog.Time("to", now))
 	} else {
+		// Does this Postgres know the projects this ClickHouse just reported? An
+		// unknown project's upsert writes nothing and reports success, so a pair
+		// pointed at different environments meters thousands of cells, stores none,
+		// and would then reconcile every stored cell away and stamp every org with a
+		// zero. Counting stored rows cannot detect that -- cells written by earlier
+		// correct passes are still there -- so ask directly.
+		metered := coreusage.ProjectIDs(usage)
+		known, err := j.service.CountKnownProjects(ctx, metered)
+		if err != nil {
+			return err
+		}
+		if known == 0 {
+			// Same disposition as a suspicious empty read: reconcile nothing, refresh
+			// nothing, record it, still exit 0 so a transient misconfiguration does not
+			// thrash the CronJob. The stamp goes stale, which is the signal.
+			err := fmt.Errorf("usage meter read %d cells over [%s, %s) for %d projects postgres does not know",
+				len(usage), from.Format(time.RFC3339), now.Format(time.RFC3339), len(metered))
+			slog.ErrorContext(ctx, "usage meter read cells for no known project; refreshing no periods",
+				slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return nil
+		}
+		if known < int64(len(metered)) {
+			// Routine for a deleted project, so this reconciles anyway -- but it is
+			// also what a partial mismatch looks like, and nothing else would say so.
+			slog.WarnContext(ctx, "usage meter read cells for projects postgres does not know",
+				slog.Int("metered_projects", len(metered)), slog.Int64("known_projects", known))
+		}
+
 		// Guarded here and again inside DeleteUnmeteredDays: with no cells to keep,
 		// every stored row in the window counts as unmetered.
 		if dropped, err = j.service.DeleteUnmeteredDays(ctx, usage, from, now); err != nil {
 			return err
 		}
 		if dropped > 0 {
-			slog.WarnContext(ctx, "dropped usage days ClickHouse no longer returns",
+			// Recorded, not merely warned. Inside a healthy deployment the only cause
+			// is an erasure or a dropped partition, but the same shape is what a
+			// truncated read produces -- ClickHouse's *_overflow_mode='break' and an
+			// unavailable shard both return partial results with no error, and the
+			// query succeeding is why no other layer can see it. Non-fatal: a real
+			// erasure still has to reconcile.
+			err := fmt.Errorf("usage meter dropped %d stored day cells over [%s, %s) that clickhouse no longer returns",
+				dropped, from.Format(time.RFC3339), now.Format(time.RFC3339))
+			slog.WarnContext(ctx, "dropped usage days ClickHouse no longer returns", slogx.Error(err),
 				slog.Int64("dropped", dropped), slog.Int("metered_cells", len(usage)),
 				slog.Time("from", from), slog.Time("to", now))
+			telemetry.RecordError(ctx, err)
 		}
 	}
 	// Stamping a read we would not reconcile on defers the next wide window 24h.
@@ -222,10 +304,20 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		}
 	}
 
-	// Symmetric with the empty-read warning above: no orgs at all usually means the
-	// reader pool is pointed somewhere unmigrated, not that pug has no users.
+	// No orgs at all usually means the reader pool is pointed somewhere unmigrated,
+	// not that pug has no users. Metered cells settle it: a cell implies a project,
+	// which has an FK to an org, so cells without orgs cannot happen on a Postgres
+	// this pass can actually see. Fail rather than warn — left as a warning this
+	// freezes every org's stamp forever behind a green CronJob, since the day cells
+	// still land on the writer pool and no other guard fires.
 	if len(windows) == 0 {
-		slog.WarnContext(ctx, "usage meter found no orgs to refresh")
+		if len(usage) > 0 {
+			err := fmt.Errorf("usage meter found no orgs while metering %d cells", len(usage))
+			slog.ErrorContext(ctx, "usage meter found no orgs to refresh", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return err
+		}
+		slog.WarnContext(ctx, "usage meter found no orgs to refresh; treating as a fresh deployment")
 	}
 
 	var refreshed, failed int

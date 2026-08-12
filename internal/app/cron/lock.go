@@ -12,11 +12,11 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// WithLock runs fn holding key, so a pass that overruns its schedule cannot
-// double up with the next one. Contention returns nil: whoever holds the lock is
-// doing this work. See docs/architecture/usage.md §4 for why the lock is
-// transaction-scoped.
-func WithLock(ctx context.Context, pgW *pgxpool.Pool, key LockKey, fn func(context.Context) error) (err error) {
+// WithLock runs fn holding job's lock, so a pass that overruns its schedule
+// cannot double up with the next one. Contention returns nil: whoever holds the
+// lock is doing this work. See docs/architecture/usage.md §4 for why the lock is
+// transaction-scoped, and for the one setting that can drop it mid-pass.
+func WithLock(ctx context.Context, pgW *pgxpool.Pool, job Job, fn func(context.Context) error) (err error) {
 	tx, err := pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin the cron lock tx", slogx.Error(err))
@@ -36,14 +36,29 @@ func WithLock(ctx context.Context, pgW *pgxpool.Pool, key LockKey, fn func(conte
 		err = errors.Join(err, rollbackErr)
 	}()
 
-	acquired, err := dbwrite.New(tx).TryCronLock(ctx, int64(key))
+	// The tx holds the lock while doing nothing, which is exactly what a non-zero
+	// idle_in_transaction_session_timeout kills — several managed Postgres
+	// providers ship one. Disabling it for this transaction only (SET LOCAL reverts
+	// when the connection returns to the pool) is what makes "cannot double-meter"
+	// true for the pass's whole duration rather than only until the timeout fires.
+	// The rollback handler above stays as the backstop for whatever else can drop
+	// the connection.
+	if _, err := tx.Exec(ctx, "set local idle_in_transaction_session_timeout = 0"); err != nil {
+		slog.ErrorContext(ctx, "failed to disable the idle-in-transaction timeout for the cron lock",
+			slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+
+	acquired, err := dbwrite.New(tx).TryCronLock(ctx, int64(job.Key))
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to take the cron lock", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
 	if !acquired {
-		slog.WarnContext(ctx, "another pass holds the cron lock; skipping", slog.Int64("lock_key", int64(key)))
+		slog.WarnContext(ctx, "another pass holds the cron lock; skipping",
+			slog.String("job", job.Name), slog.Int64("lock_key", int64(job.Key)))
 		return nil
 	}
 

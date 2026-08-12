@@ -21,17 +21,17 @@ import (
 type State struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
-	job   string
+	job   Job
 }
 
-func NewState(pgRO, pgW *pgxpool.Pool, job string) *State {
+func NewState(pgRO, pgW *pgxpool.Pool, job Job) *State {
 	return &State{read: dbread.New(pgRO), write: dbwrite.New(pgW), job: job}
 }
 
-func (s *State) key(task string) string { return s.job + "." + task }
+func (s *State) key(task Task) string { return s.job.Name + "." + string(task) }
 
 // LastRun reports when task last completed, zero if never.
-func (s *State) LastRun(ctx context.Context, task string) (time.Time, error) {
+func (s *State) LastRun(ctx context.Context, task Task) (time.Time, error) {
 	row, err := s.read.GetCronState(ctx, s.key(task))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -46,7 +46,7 @@ func (s *State) LastRun(ctx context.Context, task string) (time.Time, error) {
 
 // MarkRun records a completed task. Call it only on success — a failed task that
 // stamped itself would not be retried until its interval came round again.
-func (s *State) MarkRun(ctx context.Context, task string, at time.Time) error {
+func (s *State) MarkRun(ctx context.Context, task Task, at time.Time) error {
 	err := s.write.MarkCronRun(ctx, dbwrite.MarkCronRunParams{
 		Task:      s.key(task),
 		LastRunAt: postgres.NewTimestamptz(at),

@@ -19,7 +19,7 @@ func TestStateRoundTrips(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	s := cron.NewState(pg.PgRO, pg.PgW, "usage")
+	s := cron.NewState(pg.PgRO, pg.PgW, cron.JobUsage)
 
 	last, err := s.LastRun(ctx, "prune")
 	if err != nil {
@@ -53,11 +53,11 @@ func TestStateIsNamespacedByJob(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
-	if err := cron.NewState(pg.PgRO, pg.PgW, "usage").MarkRun(ctx, "prune", now); err != nil {
+	if err := cron.NewState(pg.PgRO, pg.PgW, cron.JobUsage).MarkRun(ctx, "prune", now); err != nil {
 		t.Fatalf("MarkRun: %v", err)
 	}
 
-	other, err := cron.NewState(pg.PgRO, pg.PgW, "retention").LastRun(ctx, "prune")
+	other, err := cron.NewState(pg.PgRO, pg.PgW, cron.Job{Name: "retention"}).LastRun(ctx, "prune")
 	if err != nil {
 		t.Fatalf("LastRun: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestStateSurfacesAFailedReadAndWrite(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	s := cron.NewState(pg.PgRO, pg.PgW, "usage")
+	s := cron.NewState(pg.PgRO, pg.PgW, cron.JobUsage)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
