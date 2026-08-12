@@ -1,6 +1,9 @@
 package usage_test
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -562,6 +565,31 @@ func TestNeverMeteredOrgHasNoStamp(t *testing.T) {
 	}
 	if usage.EventCount != 0 || !usage.UsageComputedAt.IsZero() {
 		t.Errorf("got %+v, want a zero-valued reading", usage)
+	}
+}
+
+// pgx reports batch failures through a per-item callback, so a swallowed one
+// would let the pass stamp usage_computed_at over counts it never wrote.
+func TestRecordDailyUsageSurfacesAFailedBatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: coreusage.FloorDayUTC(time.Now().UTC()), EventCount: 1, ProjectID: f.projectID},
+	})
+	if err == nil {
+		t.Fatal("RecordDailyUsage returned nil for a batch that could not run")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want it to wrap context.Canceled", err)
+	}
+	if !strings.Contains(err.Error(), "1 of 1 cells") {
+		t.Errorf("err = %q, want it to report how many cells failed", err)
 	}
 }
 

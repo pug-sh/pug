@@ -5,7 +5,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	usagev1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -133,6 +136,86 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 	}
 	if resp.Msg.GetUsedEvents() != 0 {
 		t.Errorf("used_events = %d, want 0 for a period the meter has not reached", resp.Msg.GetUsedEvents())
+	}
+}
+
+// The range bounds the daily series only; used_events stays the current period.
+func TestGetUsageRangeWindowsOnlyTheDailySeries(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+
+	periodStart, periodEnd := coreusage.CalendarMonth(time.Now().UTC())
+	first, second := periodStart, periodStart.AddDate(0, 0, 1)
+	if err := svc.RecordDailyUsage(t.Context(), []coreusage.DailyUsage{
+		{Day: first, EventCount: 3, ProjectID: projectID},
+		{Day: second, EventCount: 5, ProjectID: projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+	if _, err := svc.RefreshPeriodUsage(t.Context(), orgID, periodStart, periodEnd); err != nil {
+		t.Fatalf("RefreshPeriodUsage: %v", err)
+	}
+
+	srv := NewServer(svc)
+	resp, err := srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
+		OrgId: &orgID,
+		Range: &commonv1.TimeRange{
+			From: timestamppb.New(second),
+			To:   timestamppb.New(second.AddDate(0, 0, 1)),
+		},
+	}))
+	if err != nil {
+		t.Fatalf("GetUsage: %v", err)
+	}
+
+	daily := resp.Msg.GetDaily()
+	if len(daily) != 1 || daily[0].GetEventCount() != 5 {
+		t.Fatalf("daily = %+v, want only the second day's cell of 5", daily)
+	}
+	if got := resp.Msg.GetUsedEvents(); got != 8 {
+		t.Errorf("used_events = %d, want 8: the range must not narrow the period total", got)
+	}
+	if !resp.Msg.GetPeriodStart().AsTime().Equal(periodStart) {
+		t.Errorf("period_start = %s, want %s: the range must not move the period bounds",
+			resp.Msg.GetPeriodStart().AsTime(), periodStart)
+	}
+}
+
+// Bounds snap outwards, so half a day returns that day's whole cell.
+func TestGetUsageRangeSnapsToWholeDays(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+
+	day, _ := coreusage.CalendarMonth(time.Now().UTC())
+	if err := svc.RecordDailyUsage(t.Context(), []coreusage.DailyUsage{
+		{Day: day, EventCount: 9, ProjectID: projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+
+	resp, err := NewServer(svc).GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
+		OrgId: &orgID,
+		Range: &commonv1.TimeRange{
+			From: timestamppb.New(day.Add(9 * time.Hour)),
+			To:   timestamppb.New(day.Add(15 * time.Hour)),
+		},
+	}))
+	if err != nil {
+		t.Fatalf("GetUsage: %v", err)
+	}
+	daily := resp.Msg.GetDaily()
+	if len(daily) != 1 || daily[0].GetEventCount() != 9 {
+		t.Errorf("daily = %+v, want the whole day's cell of 9", daily)
 	}
 }
 
