@@ -68,6 +68,7 @@ gen-ts: lint-proto
 .PHONY: build
 build:
 	go build -o bin/pug ./cmd/pug
+	go build -o bin/pug-ai ./cmd/ai
 	go build -o bin/pug-migrate-clickhouse ./cmd/migrate/clickhouse
 	go build -o bin/pug-migrate-nats ./cmd/migrate/nats
 	go build -o bin/pug-migrate-postgres ./cmd/migrate/postgres
