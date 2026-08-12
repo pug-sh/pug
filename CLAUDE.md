@@ -43,6 +43,12 @@ make clickstack
 # Start server only
 ./bin/pug server
 
+# Start the AI dashboard assistant (Connect service on PUG_AI_PORT, default
+# 8001). Boot-fails without MODEL_AGENT (+ its provider API key),
+# PUG_API_BASE_URL, PUG_JWT_SECRET_KEY, and REDIS_URL. Also runs inside
+# `pug dev` when MODEL_AGENT is configured (see ai.DevStatus).
+./bin/pug ai
+
 # Start individual workers
 ./bin/pug worker events
 ./bin/pug worker profile identify
@@ -86,7 +92,9 @@ make sqlc
 # lacks). The MCP plugin emits a `<pkg>mcp` subpackage for every proto package (buf
 # has no per-plugin path filter, so every proto is fed to it); only the
 # insights/activity/profiles packages are linked into the /mcp endpoint (see MCP
-# subsystem), the rest go unused. An RPC's leading comment becomes its MCP tool
+# subsystem), the rest go unused. The wrapper skips files whose services have
+# only streaming RPCs (e.g. ai/dashboards/v1/assistant.proto) — the emitted
+# scaffold would not compile. An RPC's leading comment becomes its MCP tool
 # description — for those three services a proto comment is shipped to the model, so
 # treat it as runtime behavior. Delete the wrapper and point buf at upstream once it
 # declares editions.
@@ -228,6 +236,7 @@ Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architectu
 - **Web analytics** — promoted web columns, event/session rollup dimensions, channel taxonomy, live-rollup-extension migrations 008–010 → [`docs/architecture/web-analytics.md`](docs/architecture/web-analytics.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
 - **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
+- **AI dashboard assistant** — the `ai.dashboards.v1.DashboardAssistantService.Turn` streaming service (`cmd/ai` / `pug ai` / dev-gated): conversation → validated `TileOp`s against a client-owned draft; per-intent repair budget with flagged emission, append-below placement, server-side Redis history/traces (TS-compatible shapes), local JWT spend gate + insights callback with the caller's forwarded JWT, `MODEL_AGENT` provider routing → [`docs/architecture/assistant.md`](docs/architecture/assistant.md)
 - **MCP server** — the read-only shared analytics API (insights + activity + profile reads = 12 tools) exposed as Model Context Protocol tools at `/mcp`. A thin adapter in `internal/app/server/mcp/`: every tool call re-enters the real Connect stack in-process via a loopback client, so validation/auth/authz run identically to an external API call (no duplicated logic).
   - **`mcp.Mount(mux, loopback, repo)` is the single entry point** — it builds the tool handler, builds its own private-key-only auth boundary (`WithPrivateKeyAuth`) from the repo, registers both `/mcp` and `/mcp/`, and fails startup on codegen drift. It does **not** accept an `authn.AuthFunc`: admitting a dashboard JWT or a public key is unrepresentable by construction, and `server.start` and the test harness go through the identical call so the endpoint can't be wired one way in tests and another in production.
   - **`toolPolicy` (`rename.go`) is the single source of truth for the tool surface** — one row per generated tool, either `expose("curated_name")` or `hide("why")`. Naming and exclusion are the same cell, so they cannot disagree. Keyed off the generated `Tool` vars, so an upstream rename/removal breaks it at **compile** time; a tool with no row, a stale row, a duplicate curated name, and a hidden tool that reaches registration all fail **startup** (`registerRenamed` → `checkComplete`; the `*renamer` never escapes, so the check can't be skipped). Hidden today: the GDPR erasure RPCs (irreversible — never LLM-callable) and the WIP insights `SegmentUsers` (still served as a Connect RPC). `List` (server-streaming) is never generated.
