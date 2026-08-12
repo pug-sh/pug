@@ -593,6 +593,25 @@ func TestRecordDailyUsageSurfacesAFailedBatch(t *testing.T) {
 	}
 }
 
+// The server builds the service without ClickHouse, so metering from it has to
+// fail loudly rather than report an empty window.
+func TestMeterWindowWithoutClickHouse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	start, end := coreusage.CalendarMonth(time.Now().UTC())
+
+	usage, err := f.svc.MeterWindow(t.Context(), start, end)
+	if !errors.Is(err, coreusage.ErrNoMeteringConn) {
+		t.Errorf("err = %v, want ErrNoMeteringConn", err)
+	}
+	if usage != nil {
+		t.Errorf("usage = %+v, want nil", usage)
+	}
+}
+
 // Each of these answers with a zero or an empty slice on success, so a swallowed
 // error is indistinguishable from "nothing to report" — the pass would go on to
 // stamp usage_computed_at over counts it never wrote.

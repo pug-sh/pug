@@ -221,6 +221,17 @@ func TestGetUsageRangeSnapsToWholeDays(t *testing.T) {
 	}
 }
 
+// Wiring the handler without a service must fail at startup, not on the first
+// request.
+func TestNewServerRejectsANilService(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("NewServer(nil) returned a server that would nil-deref on its first request")
+		}
+	}()
+	NewServer(nil)
+}
+
 // A failed read must not surface as a zero-usage period, and the driver error
 // must not reach the client.
 func TestGetUsageFailsWhenTheReadFails(t *testing.T) {

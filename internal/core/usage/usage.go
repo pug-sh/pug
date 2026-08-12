@@ -64,11 +64,7 @@ func (s *Service) GetPeriodUsage(ctx context.Context, orgID string, start time.T
 		telemetry.RecordError(ctx, err)
 		return PeriodUsage{}, err
 	}
-	usage := PeriodUsage{EventCount: row.EventCount}
-	if row.UsageComputedAt.Valid {
-		usage.UsageComputedAt = row.UsageComputedAt.Time
-	}
-	return usage, nil
+	return PeriodUsage{EventCount: row.EventCount, UsageComputedAt: row.UsageComputedAt.Time}, nil
 }
 
 // A month rollover leaves the new period rowless until the next pass. That is a
@@ -83,9 +79,6 @@ func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsa
 		slog.ErrorContext(ctx, "failed to read the last usage stamp", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return PeriodUsage{}, err
-	}
-	if !at.Valid {
-		return PeriodUsage{}, nil
 	}
 	return PeriodUsage{UsageComputedAt: at.Time}, nil
 }
