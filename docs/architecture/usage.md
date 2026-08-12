@@ -239,8 +239,14 @@ Three layers that do work, in order of usefulness:
   the current month, which leaves the daily series and the headline disagreeing
   about a closed period.
 - **`uniqExact(event_id)` per day is looser than the storage dedup key** (which
-  also carries minute and kind): the same `event_id` on two days counts twice,
-  under two kinds once.
+  also carries minute and kind): an `event_id` counts once per `(project, day)`
+  however many kinds it arrived under, and once again in each other day it
+  appears in.
+- **An all-empty window is never reconciled** (§4), so a window whose events
+  really were all erased keeps its stale day cells, and the period stays
+  over-counted until a later window comes back with cells. That is the cost of
+  not letting one suspicious ClickHouse read wipe stored days — a wipe the next
+  pass repairs only for days still inside the widest window.
 - **Usage is as stale as the schedule**, and every surface that shows it must say
   so from `usage_computed_at` rather than assuming a cadence.
 

@@ -204,6 +204,46 @@ func TestFullRecomputeIsGatedOnCronState(t *testing.T) {
 	}
 }
 
+// A window that comes back with no cells is treated as a bad read, not as an
+// emptied window: the stored days stand, and the gate stays open so the next pass
+// retries the wide window instead of waiting out the interval. The accepted cost
+// is a genuinely emptied window keeping a stale count — see usage.md §8.
+func TestEmptyMeterReadKeepsStoredDaysAndLeavesTheGateOpen(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	projectID := seedProject(t, pg)
+	if err := j.service.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC), EventCount: 4, ProjectID: projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter: %v", err)
+	}
+	if n := countUsageDaily(t, pg); n != 1 {
+		t.Errorf("usage_daily has %d rows, want 1: an empty read wiped the window", n)
+	}
+
+	last, err := j.state.LastRun(ctx, taskFullRecompute)
+	if err != nil {
+		t.Fatalf("LastRun: %v", err)
+	}
+	if !last.IsZero() {
+		t.Errorf("full_recompute stamped %s on an empty read, deferring the next wide window", last)
+	}
+}
+
 // Both daily sub-tasks are gated on cron_state, not on the schedule: a job firing
 // every few minutes must not full-scan the table on every firing.
 func TestPruneIsGatedOnCronState(t *testing.T) {

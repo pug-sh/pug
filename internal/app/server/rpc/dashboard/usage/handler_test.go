@@ -116,8 +116,10 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
 	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
 
-	// Meter only the *previous* month, leaving the current period rowless.
-	prevStart, prevEnd := coreusage.CalendarMonth(time.Now().UTC().AddDate(0, -1, 0))
+	// Meter only the *previous* month, leaving the current period rowless. Stepped
+	// back from the 1st, not from today: AddDate normalizes Feb 31 to March.
+	currentStart, _ := coreusage.CalendarMonth(time.Now().UTC())
+	prevStart, prevEnd := currentStart.AddDate(0, -1, 0), currentStart
 	if _, err := svc.RefreshPeriodUsage(t.Context(), orgID, prevStart, prevEnd); err != nil {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
 	}

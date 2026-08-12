@@ -175,7 +175,8 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 	} else if _, err := j.service.DeleteUnmeteredDays(ctx, usage, from, now); err != nil {
 		return err
 	}
-	if full {
+	// Stamping a read we would not reconcile on defers the next wide window 24h.
+	if full && len(usage) > 0 {
 		if err := j.state.MarkRun(ctx, taskFullRecompute, now); err != nil {
 			return err
 		}
