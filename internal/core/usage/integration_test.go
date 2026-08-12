@@ -671,3 +671,70 @@ func TestPruneUsageDropsOldDays(t *testing.T) {
 		t.Errorf("pruned = %d, want 1", pruned)
 	}
 }
+
+// Counts have to converge downward, not only upward. A GDPR erasure that removes
+// one user's events from a day the others still occupy leaves that day with a
+// smaller count, and an upsert gated on "greater than" would hold the old number
+// forever while usage_computed_at kept advancing over it.
+func TestRecordDailyUsageConvergesDownward(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	day := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+
+	for _, count := range []int64{10, 7} {
+		if err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+			{Day: day, EventCount: count, ProjectID: f.projectID},
+		}); err != nil {
+			t.Fatalf("RecordDailyUsage(%d): %v", count, err)
+		}
+	}
+
+	daily, err := f.svc.ListDailyUsage(ctx, f.orgID, day, day.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("ListDailyUsage: %v", err)
+	}
+	if len(daily) != 1 {
+		t.Fatalf("got %d cells, want 1", len(daily))
+	}
+	if daily[0].EventCount != 7 {
+		t.Errorf("event_count = %d, want 7: the day never converged downward", daily[0].EventCount)
+	}
+}
+
+// The drop takes "everything the pass saw" as its argument, so an empty slice has
+// to mean "drop nothing" rather than "nothing was seen, so drop it all" -- with no
+// cells to keep, every stored row in the window matches as unmetered.
+func TestDeleteUnmeteredDaysFailsClosedOnAnEmptyRead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	day := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	if err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: day, EventCount: 4, ProjectID: f.projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+
+	dropped, err := f.svc.DeleteUnmeteredDays(ctx, nil, day, day.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("DeleteUnmeteredDays: %v", err)
+	}
+	if dropped != 0 {
+		t.Errorf("dropped %d rows on an empty read, want 0", dropped)
+	}
+
+	stored, err := f.svc.CountStoredDays(ctx, day, day.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("CountStoredDays: %v", err)
+	}
+	if stored != 1 {
+		t.Errorf("%d cells survived the empty read, want 1", stored)
+	}
+}
