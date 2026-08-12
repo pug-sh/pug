@@ -648,7 +648,12 @@ func TestUsageCallsSurfaceFailuresRatherThanEmptyAnswers(t *testing.T) {
 	}
 }
 
-func TestPruneUsageDropsOldDays(t *testing.T) {
+// Both halves matter. A prune that deletes nothing leaves the table growing
+// forever; a prune that deletes too much silently destroys the counts the whole
+// feature exists to report, and "pruned == 1" alone cannot tell the two apart —
+// `where day < $1 or true` satisfies it just as well when the only row seeded is
+// already past the boundary.
+func TestPruneUsageDropsOldDaysAndKeepsRecentOnes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -656,19 +661,71 @@ func TestPruneUsageDropsOldDays(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 
-	old := coreusage.FloorDayUTC(time.Now().UTC().AddDate(0, 0, -500))
+	now := time.Now().UTC()
+	old := coreusage.FloorDayUTC(now.AddDate(0, 0, -500))
+	recent := coreusage.FloorDayUTC(now.AddDate(0, 0, -10))
 	if err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
 		{Day: old, EventCount: 7, ProjectID: f.projectID},
+		{Day: recent, EventCount: 11, ProjectID: f.projectID},
 	}); err != nil {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
-	pruned, err := f.svc.PruneUsage(ctx, time.Now().UTC().AddDate(0, 0, -400))
+	pruned, err := f.svc.PruneUsage(ctx, now.AddDate(0, 0, -400))
 	if err != nil {
 		t.Fatalf("PruneUsage: %v", err)
 	}
 	if pruned != 1 {
-		t.Errorf("pruned = %d, want 1", pruned)
+		t.Errorf("pruned = %d, want 1 (only the row past the boundary)", pruned)
+	}
+
+	kept, err := f.svc.ListDailyUsage(ctx, f.orgID, recent, now)
+	if err != nil {
+		t.Fatalf("ListDailyUsage: %v", err)
+	}
+	if len(kept) != 1 {
+		t.Fatalf("in-retention rows = %d, want 1 — the prune took a day it should have kept", len(kept))
+	}
+	if !kept[0].Day.Equal(recent) || kept[0].EventCount != 11 {
+		t.Errorf("kept %s = %d, want %s = 11", kept[0].Day, kept[0].EventCount, recent)
+	}
+}
+
+// The retention window is a stated number, not an implementation detail: shrink
+// it and a deployment silently loses history it is meant to keep.
+func TestPruneUsageHonorsTheRetentionBoundary(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC()
+	// One day either side of the 390-day retention boundary the cron job uses.
+	inside := coreusage.FloorDayUTC(now.AddDate(0, 0, -389))
+	outside := coreusage.FloorDayUTC(now.AddDate(0, 0, -391))
+	if err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: inside, EventCount: 1, ProjectID: f.projectID},
+		{Day: outside, EventCount: 2, ProjectID: f.projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+
+	pruned, err := f.svc.PruneUsage(ctx, now.AddDate(0, 0, -390))
+	if err != nil {
+		t.Fatalf("PruneUsage: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("pruned = %d, want exactly the day outside the window", pruned)
+	}
+
+	kept, err := f.svc.ListDailyUsage(ctx, f.orgID, inside, now)
+	if err != nil {
+		t.Fatalf("ListDailyUsage: %v", err)
+	}
+	if len(kept) != 1 || !kept[0].Day.Equal(inside) {
+		t.Errorf("kept %v, want the day one inside the boundary (%s)", kept, inside)
 	}
 }
 
