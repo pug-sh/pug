@@ -16,13 +16,17 @@ import (
 
 // Role gating is enforced by rpc.AuthzInterceptor before any handler runs, so a
 // request reaching here proves the org exists and the caller is a member.
+//
+// Holds a coreusage.Reader, not a Service: this endpoint is on the viewer floor
+// and every write in the usage package belongs to the meter, so the read side is
+// given a type with no reachable path to one.
 type Server struct {
-	service *coreusage.Service
+	service *coreusage.Reader
 }
 
-func NewServer(service *coreusage.Service) *Server {
+func NewServer(service *coreusage.Reader) *Server {
 	if service == nil {
-		panic("usage: service is nil")
+		panic("usage: reader is nil")
 	}
 	return &Server{service: service}
 }

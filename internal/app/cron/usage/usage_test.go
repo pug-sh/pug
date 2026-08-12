@@ -12,6 +12,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
+	"github.com/sethvargo/go-envconfig"
 )
 
 func TestMain(m *testing.M) { testutil.Main(m) }
@@ -246,10 +247,11 @@ func TestRunSucceedsWhenAnotherHolderHasTheLock(t *testing.T) {
 		t.Fatal("could not take the lock to hold it")
 	}
 
-	// No ClickHouse: if the lock were ignored, metering would fail and this would
-	// return an error instead of skipping.
-	if err := newJob(t, pg).run(ctx); err != nil {
-		t.Fatalf("run = %v, want nil (the lock holder is doing the work)", err)
+	// No ClickHouse: if the lock were ignored, metering would fail with
+	// ErrNoMeteringConn instead, so ErrLockHeld proves the lock was respected
+	// rather than merely that nothing went wrong.
+	if err := newJob(t, pg).run(ctx); !errors.Is(err, cron.ErrLockHeld) {
+		t.Fatalf("run = %v, want ErrLockHeld (the lock holder is doing the work)", err)
 	}
 }
 
@@ -337,10 +339,14 @@ func TestFullRecomputeIsGatedOnCronState(t *testing.T) {
 	}
 }
 
-// A window that comes back with no cells is treated as a bad read, not as an
-// emptied window: the stored days stand, and the gate stays open so the next pass
-// retries the wide window instead of waiting out the interval. The accepted cost
-// is a genuinely emptied window keeping a stale count — see usage.md §8.
+// An empty read *over days pug has already counted* is treated as a bad read, not
+// as an emptied window: the stored days stand, and the gate stays open so the next
+// pass retries the wide window instead of waiting out the interval. The accepted
+// cost is a genuinely emptied window keeping a stale count — see usage.md §8.
+//
+// The scope matters: with nothing stored the same empty read is treated as idle
+// and every period is refreshed as normal, which
+// TestIdleEmptyReadStillRefreshesTheOrgPeriod covers.
 func TestEmptyMeterReadKeepsStoredDaysAndLeavesTheGateOpen(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -587,6 +593,39 @@ func TestIdleEmptyReadStillRefreshesTheOrgPeriod(t *testing.T) {
 // The clamp lived inside Run, which needs env vars and real pools, so nothing
 // exercised it. A negative window puts `from` in the future: every read comes back
 // empty and the pass meters nothing, quietly, forever.
+// rescanDays is tested in isolation below, which cannot catch a typo'd struct tag
+// or a Run that forgets to route the config through the clamp — both of which
+// silently disable the documented .env knob, or ship a negative window that meters
+// nothing forever.
+func TestConfigReadsTheDocumentedEnvVar(t *testing.T) {
+	for _, tc := range []struct {
+		name, env string
+		want      int
+	}{
+		{"documented default", "2", 2},
+		{"unset falls back", "", defaultRescanDays},
+		{"negative is clamped on the way through", "-5", defaultRescanDays},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := map[string]string{}
+			if tc.env != "" {
+				env["PUG_USAGE_RESCAN_DAYS"] = tc.env
+			}
+
+			var cfg Config
+			if err := envconfig.ProcessWith(t.Context(), &envconfig.Config{
+				Target:   &cfg,
+				Lookuper: envconfig.MapLookuper(env),
+			}); err != nil {
+				t.Fatalf("ProcessWith: %v", err)
+			}
+			if got := rescanDays(t.Context(), cfg.RescanDays); got != tc.want {
+				t.Errorf("PUG_USAGE_RESCAN_DAYS=%q resolved to %d, want %d", tc.env, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRescanDaysClampsToTheDefault(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

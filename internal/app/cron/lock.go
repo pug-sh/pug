@@ -12,10 +12,17 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
+// ErrLockHeld means another pass holds the job's lock and this one did nothing.
+// Not a failed pass — whoever holds it is doing the work, and a caller driving a
+// CronJob should map this to exit 0. It is a distinct value rather than a nil so
+// that "skipped" and "ran" are tellable apart: every pass returning nil looks
+// identical whether the job is healthy or its lock has been wedged for a day.
+var ErrLockHeld = errors.New("cron: another pass holds the job lock")
+
 // WithLock runs fn holding job's lock, so a pass that overruns its schedule
-// cannot double up with the next one. Contention returns nil: whoever holds the
-// lock is doing this work. See docs/architecture/usage.md §4 for why the lock is
-// transaction-scoped, and for the one setting that can drop it mid-pass.
+// cannot double up with the next one. Contention returns ErrLockHeld. See
+// docs/architecture/usage.md §4 for why the lock is transaction-scoped, and for
+// the one setting that can drop it mid-pass.
 func WithLock(ctx context.Context, pgW *pgxpool.Pool, job Job, fn func(context.Context) error) (err error) {
 	tx, err := pgW.Begin(ctx)
 	if err != nil {
@@ -59,7 +66,7 @@ func WithLock(ctx context.Context, pgW *pgxpool.Pool, job Job, fn func(context.C
 	if !acquired {
 		slog.WarnContext(ctx, "another pass holds the cron lock; skipping",
 			slog.String("job", job.Name), slog.Int64("lock_key", int64(job.Key)))
-		return nil
+		return ErrLockHeld
 	}
 
 	// fn writes through its own pool, not this tx: the lock is a mutual-exclusion

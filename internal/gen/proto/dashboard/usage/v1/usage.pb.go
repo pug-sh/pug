@@ -87,6 +87,10 @@ func (x *GetUsageRequest) GetRange() *v1.TimeRange {
 type UsageDay struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// UTC midnight starting the day the events were recorded.
+	//
+	// This is a DATE carried as an instant, so format it in UTC. A client west of
+	// UTC that renders it in local time (`new Date(day)` in a browser, say) shows
+	// the PREVIOUS day for every cell.
 	Day           *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=day" json:"day,omitempty"`
 	ProjectId     *string                `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	EventCount    *int64                 `protobuf:"varint,3,opt,name=event_count,json=eventCount" json:"event_count,omitempty"`

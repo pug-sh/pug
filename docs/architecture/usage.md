@@ -362,6 +362,29 @@ Three layers that do work, in order of usefulness:
   now `telemetry.RecordError`ed rather than only warned, so it reaches OTLP
   instead of depending on someone reading a WARN log. pug sets no client-side
   overflow settings, so the server profile governs.
+- **`usage_daily` is pruned; `usage_periods` is not.** Roughly 12 rows per org per
+  year, kept indefinitely, so the daily series can age out from under a period
+  total that survives. Deliberate — the period row is the cheap answer the
+  dashboard reads, and re-deriving it after its days are gone is impossible.
+- **An idle deployment re-runs the full-month recompute on every pass**, because
+  `full_recompute` is stamped only when the pass actually metered cells
+  (`len(usage) > 0`). Cheap by construction — there is nothing to scan — and the
+  alternative stamps a window the meter never verified.
+- **The per-org period refresh is a serial loop**, one `RefreshUsagePeriod` round
+  trip per org per pass, where the daily upserts are batched. Fine at hundreds of
+  orgs, worth batching at tens of thousands.
+- **A systemic Postgres failure logs once per org.** Continue-on-error is right —
+  one org's failure should not cost the rest their refresh — but the tally is
+  reported after N logs and N recorded exceptions, not instead of them.
+- **`stored == 0` is read as proof of idleness**, so the very first pass against a
+  wiped `usage_daily`, or a fresh Postgres paired with an empty-but-healthy
+  ClickHouse, refreshes every org with a freshly stamped zero. Narrow, and the only
+  branch that asserts a metered zero from the *absence* of evidence rather than its
+  presence.
+- **`day` is a date carried as a `Timestamp`** on the wire. Format it in UTC: a
+  client rendering it in a local zone west of UTC shows the previous day for every
+  cell. `google.type.Date` would make that unrepresentable, at the cost of a new
+  buf module dependency.
 - **Usage is as stale as the schedule**, and every surface that shows it must say
   so from `usage_computed_at` rather than assuming a cadence.
 

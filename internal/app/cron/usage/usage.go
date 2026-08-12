@@ -172,7 +172,19 @@ func Run(ctx context.Context) error {
 	// handler back to stderr.
 	// Recorded at the layer that detected it; this only reports the disposition.
 	if err := j.run(ctx); err != nil {
+		// Another pod is doing this work. Exit 0 — alerting on healthy overlap would
+		// alert on nothing — but say so, because "skipped" and "metered" are
+		// otherwise the same silent success.
+		if errors.Is(err, cron.ErrLockHeld) {
+			slog.InfoContext(ctx, "another pass holds the usage lock; nothing to do")
+			return nil
+		}
 		slog.ErrorContext(ctx, "usage metering pass failed", slogx.Error(err))
+		// The root span's own status, not a second exception event: errors detected
+		// under ClickHouse record onto its child span, and OTel does not propagate a
+		// child's status to its parent — so a trace query filtered on status=ERROR
+		// over usage.pass would miss exactly the passes that failed while metering.
+		telemetry.RecordErrorOnSpan(span, err)
 		return err
 	}
 	return nil

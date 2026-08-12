@@ -631,13 +631,22 @@ func TestUsageCallsSurfaceFailuresRatherThanEmptyAnswers(t *testing.T) {
 	start, end := coreusage.CalendarMonth(now)
 
 	calls := map[string]func() error{
-		"MeterWindow":         func() error { _, err := svc.MeterWindow(ctx, start, end); return err },
-		"OrgPeriods":          func() error { _, err := svc.OrgPeriods(ctx, now); return err },
-		"DeleteUnmeteredDays": func() error { _, err := svc.DeleteUnmeteredDays(ctx, nil, start, end); return err },
-		"RefreshPeriodUsage":  func() error { _, err := svc.RefreshPeriodUsage(ctx, f.orgID, start, end); return err },
-		"PruneUsage":          func() error { _, err := svc.PruneUsage(ctx, now); return err },
-		"GetPeriodUsage":      func() error { _, err := svc.GetPeriodUsage(ctx, f.orgID, start); return err },
-		"ListDailyUsage":      func() error { _, err := svc.ListDailyUsage(ctx, f.orgID, start, end); return err },
+		"MeterWindow": func() error { _, err := svc.MeterWindow(ctx, start, end); return err },
+		"OrgPeriods":  func() error { _, err := svc.OrgPeriods(ctx, now); return err },
+		// Non-empty on purpose: nil usage short-circuits on the fail-closed guard
+		// before any I/O, so it would prove only that the guard exists.
+		"DeleteUnmeteredDays": func() error {
+			_, err := svc.DeleteUnmeteredDays(ctx,
+				[]coreusage.DailyUsage{{Day: coreusage.FloorDayUTC(now), EventCount: 1, ProjectID: f.projectID}},
+				start, end)
+			return err
+		},
+		"RefreshPeriodUsage": func() error { _, err := svc.RefreshPeriodUsage(ctx, f.orgID, start, end); return err },
+		"PruneUsage":         func() error { _, err := svc.PruneUsage(ctx, now); return err },
+		"GetPeriodUsage":     func() error { _, err := svc.GetPeriodUsage(ctx, f.orgID, start); return err },
+		"ListDailyUsage":     func() error { _, err := svc.ListDailyUsage(ctx, f.orgID, start, end); return err },
+		"CountKnownProjects": func() error { _, err := svc.CountKnownProjects(ctx, []string{f.projectID}); return err },
+		"CountStoredDays":    func() error { _, err := svc.CountStoredDays(ctx, start, end); return err },
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
@@ -688,6 +697,52 @@ func TestPruneUsageDropsOldDaysAndKeepsRecentOnes(t *testing.T) {
 	}
 	if !kept[0].Day.Equal(recent) || kept[0].EventCount != 11 {
 		t.Errorf("kept %s = %d, want %s = 11", kept[0].Day, kept[0].EventCount, recent)
+	}
+}
+
+// RecordDailyUsage batches in chunks of 1000, and every other test here uses a
+// handful of cells — so the chunk-boundary slice and the loop that advances past
+// it have never run. A deployment with a few thousand projects hits both on its
+// first full recompute.
+func TestRecordDailyUsageSpansMultipleBatchChunks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+
+	// Past one chunk and into the next, with an uneven remainder so the final
+	// partial chunk is exercised too.
+	const cells = 1001
+	start := coreusage.FloorDayUTC(time.Now().UTC().AddDate(0, 0, -cells))
+	usage := make([]coreusage.DailyUsage, 0, cells)
+	for i := range cells {
+		usage = append(usage, coreusage.DailyUsage{
+			Day:        start.AddDate(0, 0, i),
+			EventCount: int64(i + 1),
+			ProjectID:  f.projectID,
+		})
+	}
+
+	if err := f.svc.RecordDailyUsage(ctx, usage); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+
+	// Read back the two cells that sit either side of the chunk boundary, plus the
+	// last one, so a loop that drops a chunk cannot pass.
+	for _, want := range []struct {
+		offset int
+		count  int64
+	}{{999, 1000}, {1000, 1001}, {cells - 1, cells}} {
+		day := start.AddDate(0, 0, want.offset)
+		got, err := f.svc.ListDailyUsage(ctx, f.orgID, day, day.AddDate(0, 0, 1))
+		if err != nil {
+			t.Fatalf("ListDailyUsage(%s): %v", day, err)
+		}
+		if len(got) != 1 || got[0].EventCount != want.count {
+			t.Errorf("cell at offset %d = %v, want one row counting %d", want.offset, got, want.count)
+		}
 	}
 }
 

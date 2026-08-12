@@ -38,6 +38,10 @@ message GetUsageRequest {
 // can break the series down or sum it; days with no events have no row.
 message UsageDay {
   // UTC midnight starting the day the events were recorded.
+  //
+  // This is a DATE carried as an instant, so format it in UTC. A client west of
+  // UTC that renders it in local time (`new Date(day)` in a browser, say) shows
+  // the PREVIOUS day for every cell.
   google.protobuf.Timestamp day = 1;
   string project_id = 2;
   int64 event_count = 3;

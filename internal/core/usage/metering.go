@@ -238,6 +238,13 @@ func (s *Service) DeleteUnmeteredDays(ctx context.Context, usage []DailyUsage, f
 
 // RefreshPeriodUsage re-sums and stores an org's period. A day cannot split, so
 // it falls in the period containing its own UTC midnight.
+//
+// That is why both bounds use CeilDayUTC where every other call site pairs
+// Floor/Ceil, and it is exact only while periods start at midnight — which
+// CalendarMonth guarantees and nothing else currently produces. A non-calendar
+// period (anniversary billing) would make Ceil silently drop the first partial
+// day from this sum while ListDailyUsage's Floor keeps it in the series, and the
+// two would disagree with nothing to notice. Pin it here if that day comes.
 func (s *Service) RefreshPeriodUsage(ctx context.Context, orgID string, start, end time.Time) (int64, error) {
 	total, err := s.write.RefreshUsagePeriod(ctx, dbwrite.RefreshUsagePeriodParams{
 		FromDay:     postgres.NewDate(CeilDayUTC(start)),

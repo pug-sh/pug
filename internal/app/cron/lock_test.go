@@ -75,8 +75,9 @@ func TestWithLockSkipsWhenAnotherPassHoldsIt(t *testing.T) {
 		ran = true
 		return nil
 	})
-	if err != nil {
-		t.Errorf("WithLock = %v, want nil: contention is not a failed pass", err)
+	if !errors.Is(err, cron.ErrLockHeld) {
+		t.Errorf("WithLock = %v, want ErrLockHeld: contention is not a failed pass, "+
+			"but it is not a completed one either", err)
 	}
 	if ran {
 		t.Error("the work ran while another pass held the lock")
