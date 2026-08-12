@@ -113,7 +113,8 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 		// still pending, not cells that failed. Record where the batch died instead.
 		// Postgres runs a chunk under one implicit transaction (pgx sends a single
 		// trailing Sync), so the whole chunk rolled back either way.
-		s.write.UpsertUsageDaily(ctx, params).Exec(func(i int, err error) {
+		br := s.write.UpsertUsageDaily(ctx, params)
+		br.Exec(func(i int, err error) {
 			if err == nil || firstErr != nil {
 				return
 			}
@@ -123,6 +124,19 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 				slog.String("project_id", chunk[i].ProjectID),
 				slog.Time("day", chunk[i].Day))
 		})
+		// Exec's generated body closes the batch but throws Close's error away, and
+		// the trailing Sync/ReadyForQuery is read there rather than by any Exec. A
+		// chunk that dies after its last statement result -- connection loss, a
+		// failure surfacing at the implicit transaction's commit -- therefore reaches
+		// no callback. Closing again returns the error pgx latched (a second Close on
+		// a clean batch is a nil-returning no-op), so the pass cannot go on to stamp
+		// usage_computed_at over counts it never wrote.
+		if closeErr := br.Close(); closeErr != nil && firstErr == nil {
+			firstErr = closeErr
+			failedChunkStart = start
+			slog.ErrorContext(ctx, "daily usage batch failed at close", slogx.Error(closeErr),
+				slog.Int("chunk_start", start), slog.Int("chunk_size", len(chunk)))
+		}
 	}
 	if firstErr != nil {
 		// Everything from the failing chunk onward is unwritten: that chunk rolled
@@ -149,6 +163,39 @@ func (s *Service) CountStoredDays(ctx context.Context, from, to time.Time) (int6
 		return 0, err
 	}
 	return n, nil
+}
+
+// CountKnownProjects reports how many of the given project ids exist in Postgres.
+// The meter uses it to tell a routine deleted project apart from a Postgres that
+// does not know the projects ClickHouse is reporting at all — the second would
+// otherwise reconcile every stored cell away and stamp every org with a zero,
+// because an unknown project's upsert writes nothing and reports success.
+func (s *Service) CountKnownProjects(ctx context.Context, projectIDs []string) (int64, error) {
+	if len(projectIDs) == 0 {
+		return 0, nil
+	}
+	n, err := s.read.CountKnownProjectIDs(ctx, projectIDs)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to count known projects", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return 0, err
+	}
+	return n, nil
+}
+
+// ProjectIDs returns the distinct project ids in a metered slice, in first-seen
+// order.
+func ProjectIDs(usage []DailyUsage) []string {
+	seen := make(map[string]struct{}, len(usage))
+	out := make([]string, 0, len(usage))
+	for _, u := range usage {
+		if _, ok := seen[u.ProjectID]; ok {
+			continue
+		}
+		seen[u.ProjectID] = struct{}{}
+		out = append(out, u.ProjectID)
+	}
+	return out
 }
 
 // DeleteUnmeteredDays drops cells in [from, to) that the pass did not return.

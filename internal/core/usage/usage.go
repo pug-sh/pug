@@ -45,12 +45,23 @@ func (s Service) WithClickHouse(conn *chdb.Conn) *Service {
 	return &s
 }
 
-// PeriodUsage is the stored per-period total plus how stale it is. A zero
-// UsageComputedAt means the meter has never run for this org — not a metered
-// zero, but no answer at all.
+// PeriodUsage is the stored per-period total plus how stale it is.
+//
+// Three states, and EventCount is only a measurement in the first:
+//
+//   - Counted: the meter has summed this period. EventCount is its total.
+//   - !Counted, UsageComputedAt set: the meter has run for this org but has not
+//     reached this period yet (a month rollover). EventCount is meaningless.
+//   - !Counted, UsageComputedAt zero: the meter has never run. No answer at all.
+//
+// Counted is what keeps the second state from reading as a metered zero. Without
+// it the caller would have to infer the difference by comparing the stamp against
+// the period start, which is the client-side arithmetic the wire shape exists to
+// avoid.
 type PeriodUsage struct {
 	EventCount      int64
 	UsageComputedAt time.Time
+	Counted         bool
 }
 
 // GetPeriodUsage reads the pre-summed period total.
@@ -67,12 +78,18 @@ func (s *Service) GetPeriodUsage(ctx context.Context, orgID string, start time.T
 		telemetry.RecordError(ctx, err)
 		return PeriodUsage{}, err
 	}
-	return PeriodUsage{EventCount: row.EventCount, UsageComputedAt: row.UsageComputedAt.Time}, nil
+	return PeriodUsage{
+		EventCount:      row.EventCount,
+		UsageComputedAt: row.UsageComputedAt.Time,
+		Counted:         true,
+	}, nil
 }
 
 // A month rollover leaves the new period rowless until the next pass. That is a
 // metered org with nothing counted yet, not an unmetered one, so it keeps the
 // org's last stamp — otherwise every dashboard reads "never metered" on the 1st.
+// Counted stays false: the stamp says the meter is alive, not that it has summed
+// this period.
 func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsage, error) {
 	at, err := s.read.GetLatestUsageComputedAt(ctx, orgID)
 	if err != nil {
@@ -86,13 +103,22 @@ func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsa
 	return PeriodUsage{UsageComputedAt: at.Time}, nil
 }
 
+// MaxDailyRows caps one ListDailyUsage read. A row is (day x project): the
+// request's 400-day span cap bounds the days, nothing bounds the projects, so
+// without this a large org's 400-day request materializes the product. 10k rows
+// covers a year for 27 projects, or 400 days for 25 — past that the series is a
+// chart nobody reads, and the caller is better served by a narrower window.
+const MaxDailyRows = 10_000
+
 // ListDailyUsage returns the org's stored (project, day) cells over [from, to),
-// oldest first. Bounds snap outwards to whole UTC days.
+// oldest first, at most MaxDailyRows of them. Bounds snap outwards to whole UTC
+// days.
 func (s *Service) ListDailyUsage(ctx context.Context, orgID string, from, to time.Time) ([]DailyUsage, error) {
 	rows, err := s.read.ListUsageDailyByOrgID(ctx, dbread.ListUsageDailyByOrgIDParams{
-		FromDay: postgres.NewDate(FloorDayUTC(from)),
-		OrgID:   orgID,
-		ToDay:   postgres.NewDate(CeilDayUTC(to)),
+		FromDay:  postgres.NewDate(FloorDayUTC(from)),
+		OrgID:    orgID,
+		ToDay:    postgres.NewDate(CeilDayUTC(to)),
+		RowLimit: MaxDailyRows,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list daily usage", slogx.Error(err), slog.String("org_id", orgID))

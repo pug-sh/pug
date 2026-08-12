@@ -11,6 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countKnownProjectIDs = `-- name: CountKnownProjectIDs :one
+select count(*) from projects where id = any($1::text[])
+`
+
+// How many of the projects a metering pass just read from ClickHouse this
+// Postgres actually knows. UpsertUsageDaily resolves project_id -> org_id in SQL,
+// so an unknown project writes nothing and still reports success; counting stored
+// rows cannot tell that apart, because cells written by earlier correct passes are
+// still there. This asks the question directly -- see docs/architecture/usage.md
+// section 4.
+func (q *Queries) CountKnownProjectIDs(ctx context.Context, projectIds []string) (int64, error) {
+	row := q.db.QueryRow(ctx, countKnownProjectIDs, projectIds)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsageDailyInRange = `-- name: CountUsageDailyInRange :one
 select count(*) from usage_daily where day >= $1 and day < $2
 `
@@ -95,16 +112,27 @@ const listUsageDailyByOrgID = `-- name: ListUsageDailyByOrgID :many
 select day, event_count, org_id, project_id, update_time from usage_daily
 where org_id = $1 and day >= $2 and day < $3
 order by day asc, project_id asc
+limit $4
 `
 
 type ListUsageDailyByOrgIDParams struct {
-	OrgID   string
-	FromDay pgtype.Date
-	ToDay   pgtype.Date
+	OrgID    string
+	FromDay  pgtype.Date
+	ToDay    pgtype.Date
+	RowLimit int32
 }
 
+// Bounded by @row_limit: the request's 400-day cap bounds the span, but a row is
+// (day x project) and projects-per-org is not capped, so the span alone does not
+// bound the result. Ordered oldest-first, so a truncated series loses its newest
+// days rather than an arbitrary slice.
 func (q *Queries) ListUsageDailyByOrgID(ctx context.Context, arg ListUsageDailyByOrgIDParams) ([]UsageDaily, error) {
-	rows, err := q.db.Query(ctx, listUsageDailyByOrgID, arg.OrgID, arg.FromDay, arg.ToDay)
+	rows, err := q.db.Query(ctx, listUsageDailyByOrgID,
+		arg.OrgID,
+		arg.FromDay,
+		arg.ToDay,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
