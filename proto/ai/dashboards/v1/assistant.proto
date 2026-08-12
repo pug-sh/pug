@@ -10,9 +10,9 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/ai/dashboards/v1;a
 // dashboard draft. Message history is persisted server-side, keyed by
 // conversation_id; only the draft round-trips through the client each turn.
 //
-// The service is implemented outside this repo (es/pug-sh/ai) and calls back
-// into shared.insights.v1 with the caller's forwarded JWT, so its reads are
-// authorized exactly as the user's own.
+// The service is implemented by the ai role in this repo (internal/app/ai +
+// internal/core/assistant) and calls back into shared.insights.v1 with the
+// caller's forwarded JWT, so its reads are authorized exactly as the user's own.
 service DashboardAssistantService {
   // Turn processes one user message against the current draft and streams back
   // assistant prose plus zero or more validated tile operations.
@@ -23,7 +23,7 @@ message TurnRequest {
   // Identifies which persisted conversation this turn belongs to. The caller
   // mints one (e.g. per dashboard-builder session) and reuses it across turns.
   string conversation_id = 1 [(buf.validate.field).string.min_len = 1];
-  ConversationState state = 2;
+  ConversationState state = 2 [(buf.validate.field).required = true];
   string message = 3 [(buf.validate.field).string = {
     min_len: 1
     max_len: 10000
