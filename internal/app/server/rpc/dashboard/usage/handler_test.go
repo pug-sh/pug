@@ -111,7 +111,11 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 }
 
 // An org whose usage the meter has not reached this period still reports the
-// stamp from its last one, so a month rollover does not read as "never metered".
+// stamp from its last one, so a month rollover does not read as "never metered" —
+// but used_events stays ABSENT, because nothing has counted this period yet.
+//
+// The assertion is on presence, not value: GetUsedEvents() returns 0 for an
+// absent field too, so `!= 0` would pass either way and pin nothing.
 func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -136,8 +140,9 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 	if resp.Msg.UsageComputedAt == nil {
 		t.Error("usage_computed_at is absent, so every dashboard reads 'never metered' on the 1st")
 	}
-	if resp.Msg.GetUsedEvents() != 0 {
-		t.Errorf("used_events = %d, want 0 for a period the meter has not reached", resp.Msg.GetUsedEvents())
+	if resp.Msg.UsedEvents != nil {
+		t.Errorf("used_events = %d, want ABSENT — a period the meter has not reached has no total, "+
+			"and a present zero is a number the server has no basis for", resp.Msg.GetUsedEvents())
 	}
 }
 

@@ -43,7 +43,8 @@ type UsageServiceClient interface {
 	// month, plus the per-project daily series behind it. The numbers come from a
 	// scheduled meter whose cadence the deployment sets, so read usage_computed_at
 	// for how stale they are rather than assuming one. Both used_events and
-	// usage_computed_at are absent if the meter has never run.
+	// usage_computed_at are absent if the meter has never run; usage_computed_at
+	// alone is present while it is alive but has not summed this period yet.
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
 }
 
@@ -83,7 +84,8 @@ type UsageServiceHandler interface {
 	// month, plus the per-project daily series behind it. The numbers come from a
 	// scheduled meter whose cadence the deployment sets, so read usage_computed_at
 	// for how stale they are rather than assuming one. Both used_events and
-	// usage_computed_at are absent if the meter has never run.
+	// usage_computed_at are absent if the meter has never run; usage_computed_at
+	// alone is present while it is alive but has not summed this period yet.
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
 }
 
