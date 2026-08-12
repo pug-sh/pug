@@ -55,9 +55,16 @@ Two tables (migration `018_create_usage.sql`):
 - **`usage_daily`** — `(project_id, day)` primary key, `org_id` denormalized,
   `event_count`. The grain is what makes one metering pass serve every org, what
   bounds `uniqExact`'s memory, and what the dashboard charts.
-- **`usage_periods`** — `(org_id, period_start)` primary key, plus `event_count`
-  and `usage_computed_at`. A pre-summed total so the dashboard's per-page-load
-  read is one row rather than a sum over daily rows.
+- **`usage_periods`** — `(org_id, period_start)` primary key, plus `event_count`,
+  `period_end` and `usage_computed_at`. A pre-summed total so the dashboard's
+  per-page-load read is one row rather than a sum over daily rows.
+
+`period_end` is stored but never read back: `GetUsage` recomputes both bounds from
+the clock via `CalendarMonth`, because the period it answers for is always the
+current one. It is kept because the row is a record of what was summed — a period
+whose end is only inferable from the reader's clock cannot be audited later, and
+any non-calendar period (anniversary billing) would need it present from the
+start rather than backfilled. Do not delete it as unused.
 
 `usage_computed_at` is both the freshness stamp and the row's modification time,
 which is why `usage_periods` has no `update_time` twin. It is also the load-bearing
@@ -112,11 +119,27 @@ overlap. A lock stuck for good surfaces as a stale `usage_computed_at`.
 Each pass runs inside `cron.WithLock`, which holds a **transaction-scoped** advisory
 lock (`pg_try_advisory_xact_lock`) so a slow run overlapping the next schedule
 cannot double-meter. The `xact` variant matters because the pass runs on a pooled
-connection: a session-scoped lock can be released on a different session, or never,
-and it would outlive the pass by riding its connection back into the pool. A
-transaction-scoped one dies with its transaction. (Both kinds are released when a
-killed pod's backend goes away -- that is not what `xact` buys.) Bound a hang
-with the CronJob's `activeDeadlineSeconds`; pug does not impose its own timeout.
+connection: a session-scoped lock outlives the call that took it, and through a
+pool that cuts both ways — an unlock routed to a different connection silently
+fails (Postgres only lets the holding session release it), so the lock rides its
+original connection back into the pool never released, while a later caller handed
+that same connection can release a lock it never took. A transaction-scoped one
+dies with its transaction. (Both kinds are released when a killed pod's backend
+goes away -- that is not what `xact` buys.)
+
+The lock tx then sits idle for the whole pass, which is exactly what a non-zero
+`idle_in_transaction_session_timeout` kills -- several managed Postgres providers
+ship one, and the lock would be dropped mid-pass while the work continued. The
+lock tx therefore issues `set local idle_in_transaction_session_timeout = 0`
+before taking the lock; `SET LOCAL` reverts when the connection returns to the
+pool. `WithLock` still joins the rollback error into its return, as the backstop
+for whatever else can drop the connection.
+
+A hang is bounded twice: by `passTimeout` (30m) inside `Run`, and by the CronJob's
+`activeDeadlineSeconds` if the deployment sets one. The in-process bound is not
+redundant -- the manifest is not in this repo, and a pass that hangs while holding
+the lock turns every later run into a green no-op, so the failure has to be
+bounded by something pug ships.
 
 Under that lock the pass runs two jobs:
 
@@ -147,6 +170,27 @@ Under that lock the pass runs two jobs:
     So the pass refreshes **no** period, logs at ERROR and records the error --
     and still exits 0, because a transient bad read must not thrash the CronJob.
     The stamp goes stale and section 7's layer 1 fires on its own.
+
+  A **non-empty** read gets its own check, because "returned cells" is not the
+  same as "returned cells about this deployment". `UpsertUsageDaily` resolves
+  `project_id -> org_id` in SQL, so a cell whose project this Postgres does not
+  know writes nothing and reports success. A ClickHouse and a Postgres pointed at
+  different environments therefore meter thousands of cells, store none, and would
+  then reconcile away everything earlier correct passes stored and stamp every org
+  with a zero -- all while exiting 0. Counting stored rows cannot detect it (the
+  cells from those earlier passes are still there), so the pass asks directly:
+  `CountKnownProjects` over the project ids it just read. **None known** takes the
+  same disposition as a suspicious empty read -- reconcile nothing, refresh
+  nothing, record, exit 0. **Some known** reconciles as normal but warns, since a
+  deleted project produces the same shape and only the operator can tell them
+  apart.
+
+  Cells the reconcile *does* drop are recorded, not merely logged. Inside a
+  healthy deployment the only cause is an erasure or a dropped partition, but a
+  truncated read produces the identical shape -- ClickHouse's
+  `*_overflow_mode='break'` and an unavailable shard both return partial results
+  with **no error**, and the query succeeding is precisely why no other layer can
+  see it.
 - **prune** — daily, drops `usage_daily` rows older than ~13 months. Daily rather
   than hourly because the retention boundary only moves once a day, so a more
   frequent pass would re-scan the same range to delete nothing.
@@ -161,11 +205,24 @@ in-memory timestamps would make *every* run do a full-month recompute and a
 full-table prune. The table is what lets the schedule fire as often as it likes
 without the daily work following it.
 
-`cron.State` binds the job name at construction and prefixes it onto every key
-(`usage.prune`), so two jobs choosing the same task name cannot share a row. The
-advisory-lock key comes from `cron.LockKey` — iota, not hand-picked, because a
-collision is silent and reads as success: the second job finds the lock held,
-concludes another pass is covering its work, and exits 0 having done nothing.
+A job's two identities travel together as a `cron.Job`: the advisory-lock key that
+makes its passes mutually exclusive, and the `cron_state` prefix its task
+timestamps live under. `cron.State` prefixes that name onto every key
+(`usage.prune`), so two jobs choosing the same task name cannot share a row, and
+passing the `Job` rather than a key plus a bare string is what stops the two
+halves disagreeing — a job taking one lock while stamping another's state.
+
+The key itself is a hand-picked 64-bit namespace (`0x7075670000000000`) plus iota.
+iota rules out collisions among pug's own jobs; the namespace offset handles
+everything else, because `pg_try_advisory_xact_lock` shares one global keyspace
+per database with every other tool that takes an advisory lock there, and a small
+integer is what an unrelated tool is likeliest to pick. A collision is silent and
+reads as success: the second job finds the lock held, concludes another pass is
+covering its work, and exits 0 having done nothing.
+
+Task names are a `cron.Task` type rather than bare strings for the same reason a
+typo there is expensive and silent — `LastRun` finds no row, reports the zero time
+forever, and a task meant to run once a day runs on every single pass.
 
 `cron_state` is deliberately **control state, not run history**. It is written only
 on success and read only to gate work. "Did the job run, and did it work?" is not
@@ -196,15 +253,31 @@ One RPC: `dashboard.usage.v1.UsageService/GetUsage` (JWT, org-scoped, **no**
 It returns the current period's total, the period bounds, `usage_computed_at`, and
 the per-project daily series. The `range` field bounds the **series only**; the
 headline total always covers the current period. A range is capped at 400 days by
-a protovalidate CEL rule, and retention prunes past ~13 months anyway.
+a protovalidate CEL rule, and retention prunes past ~13 months anyway. The series
+itself is capped at `coreusage.MaxDailyRows` (10,000): the 400-day cap bounds the
+days, nothing bounds projects-per-org, and a row is (day × project) — so without
+it a large org's wide request materializes the product. Rows come oldest-first, so
+a truncated series loses its newest days rather than an arbitrary slice.
 
-`used_events` and `usage_computed_at` are set **together or not at all**, so a
-client cannot read a count the server has no basis for — invariant 2 is enforced
-by the wire shape rather than by client discipline. One wrinkle the meter creates:
-at a month rollover the new period has no `usage_periods` row until the next pass,
-which is *not* "never metered". `GetPeriodUsage` therefore falls back to the org's
-most recent stamp, so the 1st of the month reads as a fresh zero rather than
-flipping every dashboard to "unknown" for a whole schedule interval.
+**Two fields, three states**, which is what keeps a client from ever reading a
+count the server has no basis for — invariant 2 is enforced by the wire shape
+rather than by client discipline:
+
+| `usage_computed_at` | `used_events` | Meaning |
+|---|---|---|
+| absent | absent | The meter has never run. Render "unknown", never 0. |
+| present | absent | The meter is alive but has not summed this period yet. Render "computing". |
+| present | present | A real total. |
+
+The middle state is the wrinkle the meter creates: at a month rollover the new
+period has no `usage_periods` row until the next pass, which is *not* "never
+metered". `GetPeriodUsage` falls back to the org's most recent stamp so the 1st of
+the month does not flip every dashboard to "unknown" for a whole schedule
+interval — but it leaves `Counted` false, so no count goes out beside that stamp.
+An earlier revision emitted a placeholder `used_events: 0` there and asked clients
+to notice that `usage_computed_at < period_start`; that was client discipline
+re-entering through the back door, and the gap it papered over grows without
+bound whenever the meter stops running.
 
 Authorization is `authz.ResourceUsage` + `ActionRead`, recorded in
 `authz_registry.go` and enforced by `rpc.AuthzInterceptor` before the handler
@@ -220,7 +293,7 @@ it. The handler does no existence check of its own.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. |
+| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2 — the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. |
 
 That is the whole surface. There is no enable flag: scheduling `pug cron usage` is
 the switch, and the RPC serves whatever it stored.
@@ -281,12 +354,14 @@ Three layers that do work, in order of usefulness:
   pass repairs only for days still inside the widest window. The same window also
   refreshes no period, so the counts freeze **visibly**: the stamp stops advancing
   rather than reporting fresh-but-frozen numbers.
-- **A partially truncated read is not detected.** ClickHouse's
-  `*_overflow_mode='break'` settings return partial results with no error, so a
-  read that comes back short -- but not empty -- passes the section 4
-  classification and reconciles against what it did return, dropping the cells it
-  did not. The `dropped` count on every pass's summary log is the signal to watch;
-  pug sets no client-side overflow settings, so the server profile governs.
+- **A partially truncated read is still not *prevented*, only reported.**
+  ClickHouse's `*_overflow_mode='break'` settings return partial results with no
+  error, so a read that comes back short -- but not empty, and naming projects
+  this Postgres knows -- passes both section 4 checks and reconciles against what
+  it did return, dropping the cells it did not. What changed is that the drop is
+  now `telemetry.RecordError`ed rather than only warned, so it reaches OTLP
+  instead of depending on someone reading a WARN log. pug sets no client-side
+  overflow settings, so the server profile governs.
 - **Usage is as stale as the schedule**, and every surface that shows it must say
   so from `usage_computed_at` rather than assuming a cadence.
 

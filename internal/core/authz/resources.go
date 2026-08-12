@@ -30,8 +30,9 @@ type Action string
 const (
 	// Org-scoped resources, all backing real dashboard org/admin RPCs. Each is
 	// enforced by AuthzInterceptor from the (resource, action) recorded in
-	// authz_registry.go — org/member/invitation/email_provider/project all gate on
-	// their own resource (project's Create additionally gates race-safe in SQL).
+	// authz_registry.go — org/member/invitation/email_provider/project/usage all
+	// gate on their own resource (project's Create additionally gates race-safe in
+	// SQL).
 	ResourceOrg           Resource = "org"
 	ResourceMember        Resource = "member"
 	ResourceInvitation    Resource = "invitation"

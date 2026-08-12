@@ -54,8 +54,14 @@ make clickstack
 # single-row lookup. Deployed as a k8s CronJob (image `cron-usage`, cmd/cron/usage) — there
 # is no long-running meter, so the cadence is the CronJob's schedule, not a
 # constant here. Runs under a pg_try_advisory_xact_lock so an overrunning pass
-# can't double-meter, and exits non-zero when the pass failed (a CronJob's only
-# success signal). "Once a day" job state lives in the shared cron_state table,
+# can't double-meter (the lock tx disables idle_in_transaction_session_timeout, or
+# it would be dropped mid-pass), and exits non-zero when the pass failed (a CronJob's only
+# success signal) — with two deliberate exceptions that exit 0: lock contention,
+# and a read the pass cannot trust (empty over stored days, or naming no project
+# Postgres knows), which refreshes nothing and lets the stamp go stale instead.
+# The pass is bounded by its own 30m timeout, not only the CronJob's
+# activeDeadlineSeconds, since a hang would hold the lock and turn every later run
+# into a green no-op. "Once a day" job state lives in the shared cron_state table,
 # not memory, so a fresh process doesn't redo the full recompute and prune every
 # run.
 # Nothing schedules it implicitly — not `pug server`, not `pug dev`; skip it and
