@@ -186,6 +186,10 @@ func TestGetUsageRangeWindowsOnlyTheDailySeries(t *testing.T) {
 		t.Errorf("period_start = %s, want %s: the range must not move the period bounds",
 			resp.Msg.GetPeriodStart().AsTime(), periodStart)
 	}
+	if !resp.Msg.GetPeriodEnd().AsTime().Equal(periodEnd) {
+		t.Errorf("period_end = %s, want %s: the range must not move the period bounds",
+			resp.Msg.GetPeriodEnd().AsTime(), periodEnd)
+	}
 }
 
 // Bounds snap outwards, so half a day returns that day's whole cell.

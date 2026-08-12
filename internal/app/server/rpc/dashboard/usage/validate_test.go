@@ -15,6 +15,9 @@ import (
 // Edition 2023 skips rules on an unset field, so an omitted org_id validates and
 // is instead denied by the OrgGated interceptor resolving "" to no membership.
 func TestGetUsageRequest_OrgIDMinLenOnlyAppliesWhenPresent(t *testing.T) {
+	if err := protovalidate.Validate(&usagev1.GetUsageRequest{}); err != nil {
+		t.Fatalf("omitted org_id should be valid: %v", err)
+	}
 	if err := protovalidate.Validate(&usagev1.GetUsageRequest{OrgId: proto.String("")}); err == nil {
 		t.Fatal("present empty org_id should fail min_len")
 	}
