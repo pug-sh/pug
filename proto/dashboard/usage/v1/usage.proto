@@ -1,0 +1,57 @@
+edition = "2023";
+package dashboard.usage.v1;
+
+import "buf/validate/validate.proto";
+import "common/v1/time.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1;usagev1";
+
+service UsageService {
+  // Returns how many events the org's projects recorded in the current calendar
+  // month, plus the per-project daily series behind it. The numbers come from a
+  // scheduled meter whose cadence the deployment sets, so read usage_computed_at
+  // for how stale they are rather than assuming one. Both used_events and
+  // usage_computed_at are absent if the meter has never run.
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse) {}
+}
+
+message GetUsageRequest {
+  option (buf.validate.message).cel = {
+    id: "get_usage.range_max"
+    message: "range must not span more than 400 days"
+    expression: "!has(this.range) || this.range.to - this.range.from <= duration('9600h')"
+  };
+
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Bounds the daily series only; used_events always covers the current period.
+  // Absent means the current period. The bounds snap outwards to whole UTC days,
+  // since that is the grain the counts are stored at — asking for half a day
+  // returns that day's whole cell. Metered days are pruned after ~13 months, so a
+  // longer window simply returns fewer rows than it asked for.
+  common.v1.TimeRange range = 2;
+}
+
+// UsageDay is one metered (project, day) cell. Cells are per project so a client
+// can break the series down or sum it; days with no events have no row.
+message UsageDay {
+  // UTC midnight starting the day the events were recorded.
+  google.protobuf.Timestamp day = 1;
+  string project_id = 2;
+  int64 event_count = 3;
+}
+
+message GetUsageResponse {
+  // Distinct events recorded across all of the org's projects this period.
+  // ABSENT whenever usage_computed_at is — never render it as 0.
+  int64 used_events = 1;
+  google.protobuf.Timestamp period_start = 2;
+  google.protobuf.Timestamp period_end = 3;
+  // When the meter last ran for this org. ABSENT means it never has — there is no
+  // answer at all, which a deployment not running `pug cron usage` must render as
+  // "unknown" rather than "0". A period the meter has not reached yet (the 1st of
+  // a month, before the first pass) keeps the previous period's stamp.
+  google.protobuf.Timestamp usage_computed_at = 4;
+  // Per-project daily counts over the requested window, oldest first.
+  repeated UsageDay daily = 5;
+}

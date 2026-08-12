@@ -113,6 +113,7 @@ func buildPolicyRules() [][]string {
 	rules = append(rules, grant(roleViewer, ResourceMember, ActionRead)...)
 	rules = append(rules, grant(roleViewer, ResourceProject, ActionRead)...)
 	rules = append(rules, grant(roleViewer, ResourceAPIKey, ActionRead)...)
+	rules = append(rules, grant(roleViewer, ResourceUsage, ActionRead)...)
 
 	// member — full CRUD on all project-scoped resources. The read half overlaps
 	// the viewer floor member inherits; manage() stays readable and the overlap

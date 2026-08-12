@@ -19,6 +19,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
+	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/usage"
 	"github.com/pug-sh/pug/internal/app/server/rpc/public/auth"
 	publicdashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/public/dashboards"
 	eventsrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/events"
@@ -36,11 +37,13 @@ import (
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1/usagev1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/public/dashboards/v1/publicdashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
@@ -194,6 +197,10 @@ func start(ctx context.Context, d *deps) error {
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
 		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
 
+	// No ClickHouse: the server only reads what `pug cron usage` has stored.
+	usagePath, usageHandler := usagev1connect.NewUsageServiceHandler(
+		usage.NewServer(coreusage.NewService(d.pgRo, d.pgW)), handlerOpts)
+
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
@@ -246,6 +253,7 @@ func start(ctx context.Context, d *deps) error {
 	handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
 	handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 	handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
+	handle(usagePath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(usageHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))

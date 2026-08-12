@@ -49,6 +49,11 @@ type ComplianceRequest struct {
 	Error          pgtype.Text
 }
 
+type CronState struct {
+	Task      string
+	LastRunAt pgtype.Timestamptz
+}
+
 type Customer struct {
 	CreateTime      pgtype.Timestamptz
 	DisplayName     string
@@ -197,4 +202,20 @@ type RefreshToken struct {
 	ConsumedAt pgtype.Timestamptz
 	RevokedAt  pgtype.Timestamptz
 	CreateTime pgtype.Timestamptz
+}
+
+type UsageDaily struct {
+	Day        pgtype.Date
+	EventCount int64
+	OrgID      string
+	ProjectID  string
+	UpdateTime pgtype.Timestamptz
+}
+
+type UsagePeriod struct {
+	EventCount      int64
+	OrgID           string
+	PeriodEnd       pgtype.Timestamptz
+	PeriodStart     pgtype.Timestamptz
+	UsageComputedAt pgtype.Timestamptz
 }

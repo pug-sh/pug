@@ -38,6 +38,12 @@ const (
 	ResourceEmailProvider Resource = "email_provider"
 	ResourceProject       Resource = "project"
 
+	// ResourceUsage is an org's metered event counts. Read-only and on the viewer
+	// floor: it is a reporting number spanning every project the org owns, and the
+	// person who notices a spike is rarely the admin. There is nothing to create,
+	// update or delete — the meter writes it, no RPC does.
+	ResourceUsage Resource = "usage"
+
 	// ResourceAPIKey is a project's API keys. Its org is resolved from the
 	// x-project-id project like the project-data resources below, but minting a
 	// credential for a whole project is an administrative act, so create/delete
@@ -71,8 +77,8 @@ const (
 // policy_test.go asserts full coverage. Keep these in sync when adding a const.
 var allResources = []Resource{
 	ResourceOrg, ResourceMember, ResourceInvitation, ResourceEmailProvider,
-	ResourceProject, ResourceAPIKey, ResourceDashboard, ResourceInsight,
-	ResourceActivity, ResourceProfile,
+	ResourceProject, ResourceUsage, ResourceAPIKey, ResourceDashboard,
+	ResourceInsight, ResourceActivity, ResourceProfile,
 }
 
 var allActions = []Action{ActionCreate, ActionRead, ActionUpdate, ActionDelete}

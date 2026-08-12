@@ -1,0 +1,138 @@
+// Package usage counts the events an org has sent, at (project, day) grain.
+//
+// It is reporting, never enforcement. The meter reads ClickHouse well after
+// ingestion has committed, so nothing here can reject, throttle or delay an
+// event, and a stalled meter degrades observability rather than the product.
+package usage
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	chdb "github.com/pug-sh/pug/internal/deps/clickhouse"
+	"github.com/pug-sh/pug/internal/deps/postgres"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/slogx"
+)
+
+type Service struct {
+	read  *dbread.Queries
+	write *dbwrite.Queries
+
+	// Nil on the server, which only reads what `pug cron usage` stored.
+	ch *chdb.Conn
+}
+
+// NewService builds the read-only half — what `pug server` needs. Metering
+// additionally requires WithClickHouse.
+func NewService(pgRO, pgW *pgxpool.Pool) *Service {
+	return &Service{read: dbread.New(pgRO), write: dbwrite.New(pgW)}
+}
+
+// WithClickHouse attaches the metering connection. Only `pug cron usage` needs
+// it; the server answers every read from Postgres alone.
+func (s *Service) WithClickHouse(conn *chdb.Conn) *Service {
+	s.ch = conn
+	return s
+}
+
+// PeriodUsage is the stored per-period total plus how stale it is. A zero
+// UsageComputedAt means the meter has never run for this org — not a metered
+// zero, but no answer at all.
+type PeriodUsage struct {
+	EventCount      int64
+	UsageComputedAt time.Time
+}
+
+// GetPeriodUsage reads the pre-summed period total.
+func (s *Service) GetPeriodUsage(ctx context.Context, orgID string, start time.Time) (PeriodUsage, error) {
+	row, err := s.read.GetUsagePeriod(ctx, dbread.GetUsagePeriodParams{
+		OrgID:       orgID,
+		PeriodStart: postgres.NewTimestamptz(start),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return s.periodNotReached(ctx, orgID)
+		}
+		slog.ErrorContext(ctx, "failed to read period usage", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return PeriodUsage{}, err
+	}
+	usage := PeriodUsage{EventCount: row.EventCount}
+	if row.UsageComputedAt.Valid {
+		usage.UsageComputedAt = row.UsageComputedAt.Time
+	}
+	return usage, nil
+}
+
+// A month rollover leaves the new period rowless until the next pass. That is a
+// metered org with nothing counted yet, not an unmetered one, so it keeps the
+// org's last stamp — otherwise every dashboard reads "never metered" on the 1st.
+func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsage, error) {
+	at, err := s.read.GetLatestUsageComputedAt(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PeriodUsage{}, nil
+		}
+		slog.ErrorContext(ctx, "failed to read the last usage stamp", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return PeriodUsage{}, err
+	}
+	if !at.Valid {
+		return PeriodUsage{}, nil
+	}
+	return PeriodUsage{UsageComputedAt: at.Time}, nil
+}
+
+// ListDailyUsage returns the org's stored (project, day) cells over [from, to),
+// oldest first. Bounds snap outwards to whole UTC days.
+func (s *Service) ListDailyUsage(ctx context.Context, orgID string, from, to time.Time) ([]DailyUsage, error) {
+	rows, err := s.read.ListUsageDailyByOrgID(ctx, dbread.ListUsageDailyByOrgIDParams{
+		FromDay: postgres.NewDate(FloorDayUTC(from)),
+		OrgID:   orgID,
+		ToDay:   postgres.NewDate(CeilDayUTC(to)),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list daily usage", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return nil, err
+	}
+	out := make([]DailyUsage, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, DailyUsage{
+			ProjectID:  row.ProjectID,
+			Day:        row.Day.Time,
+			EventCount: row.EventCount,
+		})
+	}
+	return out, nil
+}
+
+// CalendarMonth returns the UTC calendar month containing now, half-open.
+func CalendarMonth(now time.Time) (start, end time.Time) {
+	u := now.UTC()
+	start = time.Date(u.Year(), u.Month(), 1, 0, 0, 0, 0, time.UTC)
+	return start, start.AddDate(0, 1, 0)
+}
+
+// FloorDayUTC truncates to the UTC midnight starting t's day. Calendar-explicit
+// rather than Truncate(24h), which floors relative to the zero time.
+func FloorDayUTC(t time.Time) time.Time {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// CeilDayUTC rounds up to the next UTC midnight, leaving an exact one alone.
+func CeilDayUTC(t time.Time) time.Time {
+	day := FloorDayUTC(t)
+	if day.Equal(t.UTC()) {
+		return day
+	}
+	return day.AddDate(0, 0, 1)
+}
