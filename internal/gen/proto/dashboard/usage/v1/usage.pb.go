@@ -30,8 +30,9 @@ type GetUsageRequest struct {
 	// Bounds the daily series only; used_events always covers the current period.
 	// Absent means the current period. The bounds snap outwards to whole UTC days,
 	// since that is the grain the counts are stored at — asking for half a day
-	// returns that day's whole cell. Metered days are pruned after ~13 months, so a
-	// longer window simply returns fewer rows than it asked for.
+	// returns that day's whole cell. Metered days are pruned once they age past the
+	// retention window, so a longer range simply returns fewer rows than it asked
+	// for rather than failing.
 	Range         *v1.TimeRange `protobuf:"bytes,2,opt,name=range" json:"range,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -155,6 +156,12 @@ type GetUsageResponse struct {
 	// answer at all, which a deployment not running `pug cron usage` must render as
 	// "unknown" rather than "0". A period the meter has not reached yet (the 1st of
 	// a month, before the first pass) keeps the previous period's stamp.
+	//
+	// That carries one consequence clients must handle: when usage_computed_at is
+	// EARLIER than period_start, used_events is not a measurement of this period --
+	// it is a placeholder zero for a period nothing has counted yet. Render it as
+	// "computing" rather than as a total. The gap is normally minutes, but it grows
+	// without bound if the meter stops running.
 	UsageComputedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=usage_computed_at,json=usageComputedAt" json:"usage_computed_at,omitempty"`
 	// Per-project daily counts over the requested window, oldest first.
 	Daily         []*UsageDay `protobuf:"bytes,5,rep,name=daily" json:"daily,omitempty"`

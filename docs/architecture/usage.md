@@ -42,9 +42,11 @@ Three deliberate choices, each of which has a tempting wrong alternative:
   counts distinct ids, which is the same number before and after that merge.
   Paying for `FINAL` would buy nothing.
 
-The scan is bounded by the query's own time window, and `project_id` leads the
-`events` primary key, so the optional project filter prunes granules rather than
-scanning every partition.
+The scan is bounded by the query's own time window, which prunes partitions --
+`events` is `PARTITION BY toYYYYMM(occur_time)`, so a trailing-window pass reads
+the current month's parts and skips the rest. The meter deliberately takes **no
+project filter**: one pass counts every project at once, which is what lets a
+single query serve every org's period.
 
 ## 3. Storage
 
@@ -62,6 +64,8 @@ which is why `usage_periods` has no `update_time` twin. It is also the load-bear
 signal for invariant 2: **a missing row means "never metered", a present row with
 `event_count = 0` means "metered, and it really is zero"**. Collapsing those two
 into a bare integer is the one modelling mistake this schema is shaped to prevent.
+(Read at org level -- for the *current* period specifically there is a wrinkle,
+covered in section 5.)
 
 ## 3.1 Timezone
 
@@ -79,7 +83,10 @@ the edges. They are answering different questions.
 
 The meter's `toDate(occur_time, 'UTC')` names the zone explicitly.
 `events.occur_time` is `DateTime64(3)` with no declared timezone, so the column
-inherits the ClickHouse **server's** timezone at `CREATE TABLE` time — a bare
+carries no zone of its own and every bare date function resolves against the
+ClickHouse **server's** timezone -- read from its config at **server start**, not
+frozen at `CREATE TABLE` time, so a later `TZ` change moves it under an existing
+table — a bare
 `toDate()` would silently cut days on local midnight for anyone running ClickHouse
 with `TZ` set. No test covers that case: the shared test container is UTC, where
 bare and explicit `toDate` are identical.
@@ -104,10 +111,11 @@ overlap. A lock stuck for good surfaces as a stale `usage_computed_at`.
 
 Each pass runs inside `cron.WithLock`, which holds a **transaction-scoped** advisory
 lock (`pg_try_advisory_xact_lock`) so a slow run overlapping the next schedule
-cannot double-meter. The `xact` variant matters twice over: a session-scoped lock
-taken through a pooled connection can be released on a different session or never,
-and a transaction-scoped one is released as soon as Postgres notices a killed pod's
-connection is gone — so a hung pass cannot wedge every later firing. Bound a hang
+cannot double-meter. The `xact` variant matters because the pass runs on a pooled
+connection: a session-scoped lock can be released on a different session, or never,
+and it would outlive the pass by riding its connection back into the pool. A
+transaction-scoped one dies with its transaction. (Both kinds are released when a
+killed pod's backend goes away -- that is not what `xact` buys.) Bound a hang
 with the CronJob's `activeDeadlineSeconds`; pug does not impose its own timeout.
 
 Under that lock the pass runs two jobs:
@@ -122,12 +130,30 @@ Under that lock the pass runs two jobs:
   erasure hard-deletes events (`ALTER TABLE events DELETE`), and an upsert-only
   pass writes just the keys ClickHouse returned, so a day emptied by an erasure
   would keep its old count forever. A window that comes back with **no cells at
-  all** skips the drop and logs a warning instead — that is far likelier a
-  misconfigured ClickHouse than a genuinely idle deployment, and reconciling on
-  it would wipe the window.
+  all** never reconciles -- with nothing to keep, every stored row in the window
+  counts as unmetered and the drop would wipe it. That guard sits in
+  `DeleteUnmeteredDays` itself, not only at its caller.
+
+  An empty read is then classified rather than assumed. The pass counts the day
+  cells already stored over the same window:
+
+  - **none stored** -- a genuinely idle or brand-new deployment. Warn, refresh
+    every org's period as normal (that is what makes an eventless org read as a
+    metered zero), exit 0.
+  - **some stored** -- a contradiction idleness cannot produce: ClickHouse
+    returned nothing over days pug has already counted. Refreshing here would
+    advance `usage_computed_at` over counts the pass never verified, and since the
+    query *succeeded*, a stale stamp is the only layer that would ever catch it.
+    So the pass refreshes **no** period, logs at ERROR and records the error --
+    and still exits 0, because a transient bad read must not thrash the CronJob.
+    The stamp goes stale and section 7's layer 1 fires on its own.
 - **prune** — daily, drops `usage_daily` rows older than ~13 months. Daily rather
-  than hourly because no index leads with `day`, so the delete scans the table and
-  the retention boundary only moves once a day.
+  than hourly because the retention boundary only moves once a day, so a more
+  frequent pass would re-scan the same range to delete nothing.
+
+Both day-range deletes are indexed: `usage_daily_day_idx (day)` exists precisely
+because neither the primary key `(project_id, day)` nor `(org_id, day)` leads with
+`day`, and the reconcile delete runs on **every** pass.
 
 "Once a day" for both is tracked in **`cron_state`** (`internal/app/cron`), shared
 by every scheduled job. It cannot live in the process: each pass is a fresh one, so
@@ -215,8 +241,14 @@ pod dies mid-pass (the table says "running", the Job says failed).
 Three layers that do work, in order of usefulness:
 
 1. **`usage_periods.usage_computed_at` going stale.** An outcome check, not a
-   process check, so it catches every failure mode including the ones above and
-   "nobody ever scheduled it". This is the alert worth having.
+   process check, so it catches the failure modes above and "nobody ever
+   scheduled it". This is the alert worth having.
+
+   It only works because nothing advances the stamp on a pass that did not verify
+   a count. That is why a suspicious empty read (section 4) refreshes no period at
+   all: the one failure this layer could otherwise miss is the one where the
+   ClickHouse query *succeeds* and returns nothing, since every other failure
+   already stops the pass before it refreshes.
 2. **The CronJob's own Job objects** — start/completion times and exit codes, which
    is why `Run` propagates the error rather than swallowing it.
 3. **OTLP** — the pass logs and `telemetry.RecordError`s at source.
@@ -246,7 +278,15 @@ Three layers that do work, in order of usefulness:
   really were all erased keeps its stale day cells, and the period stays
   over-counted until a later window comes back with cells. That is the cost of
   not letting one suspicious ClickHouse read wipe stored days — a wipe the next
-  pass repairs only for days still inside the widest window.
+  pass repairs only for days still inside the widest window. The same window also
+  refreshes no period, so the counts freeze **visibly**: the stamp stops advancing
+  rather than reporting fresh-but-frozen numbers.
+- **A partially truncated read is not detected.** ClickHouse's
+  `*_overflow_mode='break'` settings return partial results with no error, so a
+  read that comes back short -- but not empty -- passes the section 4
+  classification and reconciles against what it did return, dropping the cells it
+  did not. The `dropped` count on every pass's summary log is the signal to watch;
+  pug sets no client-side overflow settings, so the server profile governs.
 - **Usage is as stale as the schedule**, and every surface that shows it must say
   so from `usage_computed_at` rather than assuming a cadence.
 
