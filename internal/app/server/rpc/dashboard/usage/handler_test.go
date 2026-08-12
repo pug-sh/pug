@@ -1,6 +1,8 @@
 package usage
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -216,6 +218,50 @@ func TestGetUsageRangeSnapsToWholeDays(t *testing.T) {
 	daily := resp.Msg.GetDaily()
 	if len(daily) != 1 || daily[0].GetEventCount() != 9 {
 		t.Errorf("daily = %+v, want the whole day's cell of 9", daily)
+	}
+}
+
+// A failed read must not surface as a zero-usage period, and the driver error
+// must not reach the client.
+func TestGetUsageFailsWhenTheReadFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	srv := NewServer(svc)
+
+	pg.PgRO.Close()
+
+	resp, err := getUsage(t, srv, orgID)
+	if err == nil {
+		t.Fatalf("GetUsage = %+v against a closed pool, want an error", resp.Msg)
+	}
+	if got := connect.CodeOf(err); got != connect.CodeInternal {
+		t.Errorf("code = %s, want %s", got, connect.CodeInternal)
+	}
+	if strings.Contains(err.Error(), "pool") {
+		t.Errorf("err = %q, want no internal detail", err)
+	}
+}
+
+func TestGetUsageOnACancelledRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	srv := NewServer(coreusage.NewService(pg.PgRO, pg.PgW))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := srv.GetUsage(ctx, connect.NewRequest(&usagev1.GetUsageRequest{OrgId: &orgID}))
+	if got := connect.CodeOf(err); got != connect.CodeCanceled {
+		t.Errorf("code = %s, want %s", got, connect.CodeCanceled)
 	}
 }
 

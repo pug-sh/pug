@@ -1,6 +1,8 @@
 package cron_test
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -61,5 +63,26 @@ func TestStateIsNamespacedByJob(t *testing.T) {
 	}
 	if !other.IsZero() {
 		t.Errorf("a second job read %s from another job's task row", other)
+	}
+}
+
+// A failed read and a task that never ran both come back zero, so only the error
+// tells them apart.
+func TestStateSurfacesAFailedReadAndWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	s := cron.NewState(pg.PgRO, pg.PgW, "usage")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, err := s.LastRun(ctx, "prune"); !errors.Is(err, context.Canceled) {
+		t.Errorf("LastRun err = %v, want context.Canceled", err)
+	}
+	if err := s.MarkRun(ctx, "prune", time.Now()); !errors.Is(err, context.Canceled) {
+		t.Errorf("MarkRun err = %v, want context.Canceled", err)
 	}
 }

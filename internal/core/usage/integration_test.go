@@ -593,6 +593,42 @@ func TestRecordDailyUsageSurfacesAFailedBatch(t *testing.T) {
 	}
 }
 
+// Each of these answers with a zero or an empty slice on success, so a swallowed
+// error is indistinguishable from "nothing to report" — the pass would go on to
+// stamp usage_computed_at over counts it never wrote.
+func TestUsageCallsSurfaceFailuresRatherThanEmptyAnswers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ch := testutil.SetupClickHouse(t)
+	svc := f.svc.WithClickHouse(ch.Conn)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	now := time.Now().UTC()
+	start, end := coreusage.CalendarMonth(now)
+
+	calls := map[string]func() error{
+		"MeterWindow":         func() error { _, err := svc.MeterWindow(ctx, start, end); return err },
+		"OrgPeriods":          func() error { _, err := svc.OrgPeriods(ctx, now); return err },
+		"DeleteUnmeteredDays": func() error { _, err := svc.DeleteUnmeteredDays(ctx, nil, start, end); return err },
+		"RefreshPeriodUsage":  func() error { _, err := svc.RefreshPeriodUsage(ctx, f.orgID, start, end); return err },
+		"PruneUsage":          func() error { _, err := svc.PruneUsage(ctx, now); return err },
+		"GetPeriodUsage":      func() error { _, err := svc.GetPeriodUsage(ctx, f.orgID, start); return err },
+		"ListDailyUsage":      func() error { _, err := svc.ListDailyUsage(ctx, f.orgID, start, end); return err },
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil {
+				t.Error("returned nil against a cancelled context")
+			}
+		})
+	}
+}
+
 func TestPruneUsageDropsOldDays(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
