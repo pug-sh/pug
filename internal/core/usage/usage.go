@@ -29,17 +29,20 @@ type Service struct {
 	ch *chdb.Conn
 }
 
-// NewService builds the read-only half — what `pug server` needs. Metering
-// additionally requires WithClickHouse.
+// NewService builds the service without a metering source — what `pug server`
+// needs, since it only reads what the meter stored. The write methods are still
+// live on the result; only MeterWindow is gated. Metering additionally requires
+// WithClickHouse.
 func NewService(pgRO, pgW *pgxpool.Pool) *Service {
 	return &Service{read: dbread.New(pgRO), write: dbwrite.New(pgW)}
 }
 
-// WithClickHouse attaches the metering connection. Only `pug cron usage` needs
-// it; the server answers every read from Postgres alone.
-func (s *Service) WithClickHouse(conn *chdb.Conn) *Service {
+// WithClickHouse returns a copy with the metering connection attached. Only
+// `pug cron usage` needs it; the server answers every read from Postgres alone.
+// Value receiver so this really is the copy-returning builder it reads as.
+func (s Service) WithClickHouse(conn *chdb.Conn) *Service {
 	s.ch = conn
-	return s
+	return &s
 }
 
 // PeriodUsage is the stored per-period total plus how stale it is. A zero
@@ -115,7 +118,10 @@ func CalendarMonth(now time.Time) (start, end time.Time) {
 }
 
 // FloorDayUTC truncates to the UTC midnight starting t's day. Calendar-explicit
-// rather than Truncate(24h), which floors relative to the zero time.
+// rather than Truncate(24h): both land on the same instant for a UTC-normalized
+// value, but Truncate floors relative to the zero time rather than to a calendar
+// day, so it would start cutting the wrong boundary if the .UTC() below were ever
+// dropped.
 func FloorDayUTC(t time.Time) time.Time {
 	u := t.UTC()
 	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)

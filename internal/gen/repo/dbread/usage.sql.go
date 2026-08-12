@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUsageDailyInRange = `-- name: CountUsageDailyInRange :one
+select count(*) from usage_daily where day >= $1 and day < $2
+`
+
+type CountUsageDailyInRangeParams struct {
+	FromDay pgtype.Date
+	ToDay   pgtype.Date
+}
+
+// Whether the meter has stored anything over a window, across every org. An
+// empty ClickHouse read while this is non-zero is a contradiction an idle
+// deployment cannot produce, which is what lets the pass tell "nothing to count"
+// apart from "counted nothing" -- see docs/architecture/usage.md section 4.
+func (q *Queries) CountUsageDailyInRange(ctx context.Context, arg CountUsageDailyInRangeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsageDailyInRange, arg.FromDay, arg.ToDay)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getLatestUsageComputedAt = `-- name: GetLatestUsageComputedAt :one
 select usage_computed_at from usage_periods
 where org_id = $1 order by period_start desc limit 1

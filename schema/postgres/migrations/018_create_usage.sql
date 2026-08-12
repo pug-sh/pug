@@ -16,6 +16,11 @@ create table usage_daily (
 
 create index usage_daily_org_day_idx on usage_daily (org_id, day);
 
+-- Both day-range deletes -- the per-pass reconcile and the daily prune -- filter
+-- on `day` alone, and neither index above leads with it. Without this they
+-- seq-scan the whole table; the reconcile pays that on every single pass.
+create index usage_daily_day_idx on usage_daily (day);
+
 -- Pre-summed so the dashboard's per-page-load read is a single-row lookup.
 create table usage_periods (
   event_count bigint not null default 0,

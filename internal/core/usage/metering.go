@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 )
@@ -44,11 +45,12 @@ func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyU
 		return nil, ErrNoMeteringConn
 	}
 
+	// chdb.Conn.Query records the error on the ClickHouse span already, so this
+	// logs the window it failed over without re-recording it.
 	rows, err := s.ch.Query(ctx, meterQuery, from.UTC(), to.UTC())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to meter events", slogx.Error(err),
 			slog.Time("from", from), slog.Time("to", to))
-		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	defer func() {
@@ -69,15 +71,17 @@ func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyU
 			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
-		// toDate arrives stamped in the ClickHouse server's timezone, so .UTC() would
-		// shift a non-UTC server's midnight back into the previous day. Take the
-		// calendar day as reported and re-stamp it.
+		// toDate arrives stamped in the ClickHouse server's timezone. Converting that
+		// to UTC -- which postgres.NewDate does on the way to storage -- would shift
+		// midnight on a server *east* of UTC back into the previous day (Asia/Kolkata
+		// midnight is 18:30Z the day before). Take the calendar day as reported and
+		// re-stamp it, so what gets stored is the day ClickHouse named.
 		utcDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 		out = append(out, DailyUsage{ProjectID: projectID, Day: utcDay, EventCount: int64(count)})
 	}
+	// Recorded on the ClickHouse span by tracedRows.Err; log only.
 	if err := rows.Err(); err != nil {
 		slog.ErrorContext(ctx, "failed while iterating metered usage", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	return out, nil
@@ -91,7 +95,7 @@ const usageBatchChunk = 1000
 // project is gone from Postgres writes nothing; see UpsertUsageDaily.
 func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) error {
 	var firstErr error
-	var failed int
+	failedChunkStart := -1
 	for start := 0; start < len(usage) && firstErr == nil; start += usageBatchChunk {
 		chunk := usage[start:min(start+usageBatchChunk, len(usage))]
 
@@ -104,30 +108,66 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 			})
 		}
 
+		// pgx latches the first error and hands it back from every later Exec without
+		// touching the wire, so counting callback invocations would count results
+		// still pending, not cells that failed. Record where the batch died instead.
+		// Postgres runs a chunk under one implicit transaction (pgx sends a single
+		// trailing Sync), so the whole chunk rolled back either way.
 		s.write.UpsertUsageDaily(ctx, params).Exec(func(i int, err error) {
-			if err == nil {
+			if err == nil || firstErr != nil {
 				return
 			}
-			failed++
-			if firstErr == nil {
-				firstErr = err
-				slog.ErrorContext(ctx, "failed to upsert daily usage", slogx.Error(err),
-					slog.String("project_id", chunk[i].ProjectID))
-			}
+			firstErr = err
+			failedChunkStart = start
+			slog.ErrorContext(ctx, "failed to upsert daily usage", slogx.Error(err),
+				slog.String("project_id", chunk[i].ProjectID),
+				slog.Time("day", chunk[i].Day))
 		})
 	}
 	if firstErr != nil {
-		err := fmt.Errorf("usage upsert failed for %d of %d cells: %w", failed, len(usage), firstErr)
+		// Everything from the failing chunk onward is unwritten: that chunk rolled
+		// back and the loop never issued the ones after it.
+		err := fmt.Errorf("usage upsert failed in the chunk starting at cell %d; %d of %d cells unwritten: %w",
+			failedChunkStart, len(usage)-failedChunkStart, len(usage), firstErr)
 		telemetry.RecordError(ctx, err)
 		return err
 	}
 	return nil
 }
 
+// CountStoredDays reports how many day cells are stored over [from, to), across
+// every org. The meter uses it to tell a genuinely idle window apart from a
+// ClickHouse read that came back empty when it should not have.
+func (s *Service) CountStoredDays(ctx context.Context, from, to time.Time) (int64, error) {
+	n, err := s.read.CountUsageDailyInRange(ctx, dbread.CountUsageDailyInRangeParams{
+		FromDay: postgres.NewDate(FloorDayUTC(from)),
+		ToDay:   postgres.NewDate(CeilDayUTC(to)),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to count stored usage days", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return 0, err
+	}
+	return n, nil
+}
+
 // DeleteUnmeteredDays drops cells in [from, to) that the pass did not return.
 // Their events are gone (GDPR erasure, a dropped partition), and an upsert-only
 // pass would leave the stale count standing forever.
+//
+// An empty usage deletes nothing rather than everything: with no cells to keep,
+// every stored row in the window is "unmetered" and the statement would wipe it.
+// An empty read is a bad read, never a reconcile.
 func (s *Service) DeleteUnmeteredDays(ctx context.Context, usage []DailyUsage, from, to time.Time) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	// Fails closed here, not just at the caller: this is the most destructive
+	// statement in the feature and it is exported.
+	if len(usage) == 0 {
+		return 0, nil
+	}
+
 	projectIDs := make([]string, 0, len(usage))
 	days := make([]pgtype.Date, 0, len(usage))
 	for _, u := range usage {

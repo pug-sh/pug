@@ -20,8 +20,10 @@ func main() {
 		slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 	}
 
+	// Run has already logged the failure through the OTLP handler; this line goes
+	// to stderr after telemetry shut down, so it says only what main adds.
 	if err := usagecron.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "usage metering pass failed", slogx.Error(err))
+		slog.ErrorContext(ctx, "exiting non-zero", slogx.Error(err))
 		os.Exit(1)
 	}
 }

@@ -28,7 +28,23 @@ const defaultRescanDays = 2
 
 type Config struct {
 	// Trailing window the meter recomputes each run, absorbing late arrivals.
-	RescanDays int `env:"PUG_USAGE_RESCAN_DAYS,default=2"`
+	// No envconfig default: an unset var and an explicit 0 both resolve through
+	// rescanDays, so defaultRescanDays stays the single source for the number.
+	RescanDays int `env:"PUG_USAGE_RESCAN_DAYS"`
+}
+
+// rescanDays clamps a configured window to something the meter can act on. A
+// negative value would put `from` in the future, so every read comes back empty
+// and the pass meters nothing -- forever, and quietly.
+func rescanDays(ctx context.Context, configured int) int {
+	if configured > 0 {
+		return configured
+	}
+	if configured < 0 {
+		slog.WarnContext(ctx, "ignoring a negative PUG_USAGE_RESCAN_DAYS",
+			slog.Int("configured", configured), slog.Int("using", defaultRescanDays))
+	}
+	return defaultRescanDays
 }
 
 // Sub-tasks held to a daily cadence regardless of how often the schedule fires.
@@ -41,8 +57,9 @@ const (
 	// A year of history plus a month of slack.
 	retention = 390 * 24 * time.Hour
 
-	// Both are measured against cron_state. Pruning stays daily because no index
-	// leads with `day`, so the delete scans the table.
+	// Both are measured against cron_state. Pruning stays daily because the
+	// retention boundary only moves once a day, so a more frequent pass would
+	// re-scan the same range to delete nothing.
 	fullRecomputeInterval = 24 * time.Hour
 	pruneInterval         = 24 * time.Hour
 )
@@ -97,16 +114,11 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
-	if cfg.RescanDays <= 0 {
-		slog.WarnContext(ctx, "ignoring a non-positive PUG_USAGE_RESCAN_DAYS",
-			slog.Int("configured", cfg.RescanDays), slog.Int("using", defaultRescanDays))
-		cfg.RescanDays = defaultRescanDays
-	}
 	j := &job{
 		service:    coreusage.NewService(pgRO, pgW).WithClickHouse(ch),
 		state:      cron.NewState(pgRO, pgW, "usage"),
 		pgW:        pgW,
-		rescanDays: cfg.RescanDays,
+		rescanDays: rescanDays(ctx, cfg.RescanDays),
 	}
 
 	// Without a root span every telemetry.RecordError below resolves to the noop
@@ -117,9 +129,9 @@ func Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "Running a usage metering pass", slog.Int("rescan_days", j.rescanDays))
 	// Logged here rather than in main, which runs after closeOtel has swapped the
 	// handler back to stderr.
+	// Recorded at the layer that detected it; this only reports the disposition.
 	if err := j.run(ctx); err != nil {
 		slog.ErrorContext(ctx, "usage metering pass failed", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
 		return err
 	}
 	return nil
@@ -167,19 +179,53 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 	if err := j.service.RecordDailyUsage(ctx, usage); err != nil {
 		return err
 	}
-	// No cells at all is far likelier a misconfigured ClickHouse than a genuinely
-	// idle deployment, and reconciling on it would wipe the window's stored days.
+	var dropped int64
 	if len(usage) == 0 {
-		slog.WarnContext(ctx, "usage meter read no cells; leaving stored days alone",
+		// An empty read is either a genuinely idle deployment or a ClickHouse this
+		// pass cannot see properly. Stored cells over the same window settle it: an
+		// idle deployment cannot have produced them.
+		stored, err := j.service.CountStoredDays(ctx, from, now)
+		if err != nil {
+			return err
+		}
+		if stored > 0 {
+			// Refreshing here would advance usage_computed_at over counts this pass
+			// never verified -- and a stale stamp is the only layer that catches an
+			// empty read, since the query itself succeeded. Skip every refresh so the
+			// stamp does go stale, and record the error so OTLP sees it now. Still
+			// exit 0: a transient bad read must not thrash the CronJob.
+			err := fmt.Errorf("usage meter read no cells over [%s, %s) while %d stored cells exist",
+				from.Format(time.RFC3339), now.Format(time.RFC3339), stored)
+			slog.ErrorContext(ctx, "usage meter read nothing over stored days; refreshing no periods",
+				slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return nil
+		}
+		slog.WarnContext(ctx, "usage meter read no cells and none are stored; treating the window as idle",
 			slog.Time("from", from), slog.Time("to", now))
-	} else if _, err := j.service.DeleteUnmeteredDays(ctx, usage, from, now); err != nil {
-		return err
+	} else {
+		// Guarded here and again inside DeleteUnmeteredDays: with no cells to keep,
+		// every stored row in the window counts as unmetered.
+		if dropped, err = j.service.DeleteUnmeteredDays(ctx, usage, from, now); err != nil {
+			return err
+		}
+		if dropped > 0 {
+			slog.WarnContext(ctx, "dropped usage days ClickHouse no longer returns",
+				slog.Int64("dropped", dropped), slog.Int("metered_cells", len(usage)),
+				slog.Time("from", from), slog.Time("to", now))
+		}
 	}
 	// Stamping a read we would not reconcile on defers the next wide window 24h.
 	if full && len(usage) > 0 {
 		if err := j.state.MarkRun(ctx, taskFullRecompute, now); err != nil {
 			return err
 		}
+	}
+
+	// Symmetric with the empty-read warning above: no orgs at all usually means the
+	// reader pool is pointed somewhere unmigrated, not that pug has no users.
+	if len(windows) == 0 {
+		slog.WarnContext(ctx, "usage meter found no orgs to refresh")
 	}
 
 	var refreshed, failed int
@@ -198,14 +244,15 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		refreshed++
 	}
 	if failed > 0 {
+		// Each org's own failure was recorded at source; this reports the tally.
 		err := fmt.Errorf("usage meter left %d of %d orgs unrefreshed: %w", failed, len(windows), firstErr)
 		slog.ErrorContext(ctx, "failed to refresh period usage for some orgs", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
 		return err
 	}
 
 	slog.InfoContext(ctx, "metered event usage",
 		slog.Time("from", from), slog.Int("cells", len(usage)),
+		slog.Int64("dropped", dropped),
 		slog.Int("orgs_refreshed", refreshed), slog.Bool("full_period", full))
 	return nil
 }
