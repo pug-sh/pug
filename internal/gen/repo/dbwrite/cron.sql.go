@@ -31,8 +31,12 @@ const tryCronLock = `-- name: TryCronLock :one
 select pg_try_advisory_xact_lock($1::bigint) as acquired
 `
 
-// Transaction-scoped so the lock dies with its transaction. A session lock taken
-// through a pooled connection can be released on a different session, or never.
+// Transaction-scoped so the lock dies with its transaction. A session-scoped lock
+// outlives the call that took it, which through a pool cuts both ways: an unlock
+// routed to a different connection silently fails (postgres only lets the holding
+// session release it), so the lock rides its original connection back into the
+// pool never released -- and a later caller handed that same connection can
+// release a lock it never took.
 func (q *Queries) TryCronLock(ctx context.Context, lockKey int64) (bool, error) {
 	row := q.db.QueryRow(ctx, tryCronLock, lockKey)
 	var acquired bool
