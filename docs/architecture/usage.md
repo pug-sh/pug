@@ -44,9 +44,9 @@ Three deliberate choices, each of which has a tempting wrong alternative:
 
 The scan is bounded by the query's own time window, which prunes partitions --
 `events` is `PARTITION BY toYYYYMM(occur_time)`, so a trailing-window pass reads
-the current month's parts and skips the rest. The meter deliberately takes **no
-project filter**: one pass counts every project at once, which is what lets a
-single query serve every org's period.
+only the month partitions its window touches and skips the rest. The meter
+deliberately takes **no project filter**: one pass counts every project at once,
+which is what lets a single query serve every org's period.
 
 ## 3. Storage
 
@@ -321,7 +321,9 @@ Three layers that do work, in order of usefulness:
    a count. That is why a suspicious empty read (section 4) refreshes no period at
    all: the one failure this layer could otherwise miss is the one where the
    ClickHouse query *succeeds* and returns nothing, since every other failure
-   already stops the pass before it refreshes.
+   already stops the pass before it refreshes. Its idle twin -- empty with nothing
+   stored -- does refresh, because a zero cross-checked against no stored cells is
+   a verified count rather than a missing one.
 2. **The CronJob's own Job objects** — start/completion times and exit codes, which
    is why `Run` propagates the error rather than swallowing it.
 3. **OTLP** — the pass logs and `telemetry.RecordError`s at source.
