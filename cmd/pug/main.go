@@ -12,6 +12,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/pug-sh/pug/internal/app/ai"
+	usagecron "github.com/pug-sh/pug/internal/app/cron/usage"
 	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
 	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
 	"github.com/pug-sh/pug/internal/app/migrate/postgres"
@@ -184,6 +185,19 @@ var emailCmd = &cobra.Command{
 	Run:   run(emailworker.Run),
 }
 
+// Scheduled jobs. Unlike `pug worker`, these run once and exit — non-zero when
+// the pass failed, which is a k8s CronJob's only success signal.
+var cronCmd = &cobra.Command{
+	Use:   "cron",
+	Short: "Run a scheduled job once and exit",
+}
+
+var cronUsageCmd = &cobra.Command{
+	Use:   "usage",
+	Short: "Run an event usage metering pass",
+	Run:   run(usagecron.Run),
+}
+
 var (
 	emailPreviewText bool
 	emailPreviewOut  string
@@ -311,6 +325,12 @@ var devCmd = &cobra.Command{
 		}
 		fmt.Println()
 
+		// Listed but not started: metering is a CronJob in deploys, so dev has to
+		// say so or usage silently reads back as "never metered".
+		fmt.Println(bold + "Jobs:" + reset)
+		fmt.Println("  "+yellow+"Usage metering:"+reset, "not scheduled — run", cyan+"pug cron usage"+reset, "for one pass")
+		fmt.Println()
+
 		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
 		fmt.Println()
 
@@ -393,6 +413,9 @@ func init() {
 	workerCmd.AddCommand(emailCmd)
 	workerCmd.AddCommand(demoWorkerCmd)
 	workerCmd.AddCommand(complianceCmd)
+
+	cronCmd.AddCommand(cronUsageCmd)
+	rootCmd.AddCommand(cronCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(aiCmd)

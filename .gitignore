@@ -1,6 +1,8 @@
 # Clients folder
 clients/
 .env
+# holds IdP client secrets; config.example.json is the tracked template
+/config.json
 __debug*
 /bin/
 coverage.out

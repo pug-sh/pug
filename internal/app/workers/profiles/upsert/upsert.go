@@ -135,16 +135,7 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 		return err
 	}
 
-	sent := false
-	defer func() {
-		if !sent {
-			if err := batch.Abort(); err != nil {
-				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err),
-					slog.String("profile_id", msg.GetProfileId()))
-				telemetry.RecordError(ctx, err)
-			}
-		}
-	}()
+	defer clickhouse.AbortUnsent(ctx, batch, slog.String("profile_id", msg.GetProfileId()))
 
 	if err := batch.Append(msg.GetProfileId(), msg.GetProjectId(), msg.GetExternalId(), string(propsJSON), isDeleted, createTime, updateTime); err != nil {
 		slog.ErrorContext(ctx, "failed to append profile to batch", slogx.Error(err),
@@ -163,7 +154,6 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("send profile batch: %w", err)
 	}
-	sent = true
 
 	return nil
 }

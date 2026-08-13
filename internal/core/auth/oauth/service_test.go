@@ -10,61 +10,84 @@ import (
 )
 
 type stubProvider struct {
-	name coreoauth.ProviderName
-	err  error
+	name     coreoauth.ProviderName
+	identity *coreoauth.Identity
+	err      error
 }
+
+const testProvider = coreoauth.ProviderName("test_oidc")
 
 func (s stubProvider) Name() coreoauth.ProviderName { return s.name }
-func (s stubProvider) VerifyCredential(context.Context, string) (*coreoauth.Identity, error) {
-	return nil, s.err
+func (s stubProvider) ExchangeCode(context.Context, coreoauth.AuthorizationCode) (*coreoauth.Identity, error) {
+	return s.identity, s.err
 }
 
-func TestVerifyIdentity_RejectsWhenProviderDisabled(t *testing.T) {
-	cfg := coreoauth.TestConfig("")
-	svc := coreoauth.NewService(cfg, coreoauth.NewRegistry(stubProvider{name: coreoauth.ProviderGoogle, err: coreoauth.ErrInvalidCredential}))
+func TestExchangeCodeReturnsVerifiedIdentity(t *testing.T) {
+	identity, err := coreoauth.NewVerifiedIdentity(testProvider, coreoauth.Claims{
+		Subject: "employee-123", Email: "employee@example.com", EmailVerified: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := coreoauth.NewService(coreoauth.TestConfig("client-id"), coreoauth.NewRegistry(stubProvider{name: testProvider, identity: identity}))
 
-	_, err := svc.VerifyIdentity(context.Background(), coreoauth.ProviderGoogle, "credential")
+	got, err := svc.ExchangeCode(context.Background(), testProvider, coreoauth.AuthorizationCode{Code: "code"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != identity || got.Provider() != testProvider {
+		t.Fatalf("identity = %+v, provider = %q", got, got.Provider())
+	}
+}
+
+// A buggy provider must not file an identity under another provider's namespace.
+func TestExchangeCodeRejectsMismatchedIdentityProvider(t *testing.T) {
+	identity, err := coreoauth.NewVerifiedIdentity("someone_else", coreoauth.Claims{
+		Subject: "employee-123", Email: "employee@example.com", EmailVerified: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := coreoauth.NewService(coreoauth.TestConfig("client-id"), coreoauth.NewRegistry(stubProvider{name: testProvider, identity: identity}))
+
+	_, err = svc.ExchangeCode(context.Background(), testProvider, coreoauth.AuthorizationCode{Code: "code"})
+	if !errors.Is(err, coreoauth.ErrIdentityResolutionFailed) {
+		t.Fatalf("err = %v, want ErrIdentityResolutionFailed", err)
+	}
+}
+
+func TestExchangeCodeRejectsDisabledProvider(t *testing.T) {
+	svc := coreoauth.NewService(coreoauth.TestConfig(""), coreoauth.NewRegistry(stubProvider{name: testProvider}))
+
+	_, err := svc.ExchangeCode(context.Background(), testProvider, coreoauth.AuthorizationCode{Code: "code"})
 	if !errors.Is(err, coreoauth.ErrOAuthProviderDisabled) {
 		t.Fatalf("err = %v, want ErrOAuthProviderDisabled", err)
 	}
 }
 
-func TestVerifyIdentity_PropagatesInvalidCredential(t *testing.T) {
-	cfg := coreoauth.TestConfig("client-id")
-	svc := coreoauth.NewService(cfg, coreoauth.NewRegistry(stubProvider{name: coreoauth.ProviderGoogle, err: coreoauth.ErrInvalidCredential}))
-
-	_, err := svc.VerifyIdentity(context.Background(), coreoauth.ProviderGoogle, "bad")
-	if !errors.Is(err, coreoauth.ErrInvalidCredential) {
-		t.Fatalf("err = %v, want ErrInvalidCredential", err)
+func TestExchangeCodePropagatesClientInputErrors(t *testing.T) {
+	for _, sentinel := range []error{coreoauth.ErrInvalidCredential, coreoauth.ErrUnverifiedEmail} {
+		svc := coreoauth.NewService(coreoauth.TestConfig("client-id"), coreoauth.NewRegistry(stubProvider{name: testProvider, err: sentinel}))
+		_, err := svc.ExchangeCode(context.Background(), testProvider, coreoauth.AuthorizationCode{Code: "code"})
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("err = %v, want %v", err, sentinel)
+		}
 	}
 }
 
-// TestVerifyIdentity_PropagatesUnverifiedEmail pins that an unverified-email
-// rejection from the provider is NOT collapsed into ErrInvalidCredential — the
-// handler maps the two to different reasons/codes, so the distinction matters.
-func TestVerifyIdentity_PropagatesUnverifiedEmail(t *testing.T) {
-	cfg := coreoauth.TestConfig("client-id")
-	svc := coreoauth.NewService(cfg, coreoauth.NewRegistry(stubProvider{name: coreoauth.ProviderGoogle, err: coreoauth.ErrUnverifiedEmail}))
+func TestExchangeCodeConvertsUnexpectedError(t *testing.T) {
+	boom := errors.New("token endpoint exploded: secret-internal-detail")
+	svc := coreoauth.NewService(coreoauth.TestConfig("client-id"), coreoauth.NewRegistry(stubProvider{name: testProvider, err: boom}))
 
-	_, err := svc.VerifyIdentity(context.Background(), coreoauth.ProviderGoogle, "cred")
-	if !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
-		t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
+	_, err := svc.ExchangeCode(context.Background(), testProvider, coreoauth.AuthorizationCode{Code: "code"})
+	// Not ErrInvalidCredential: our fault, so the user must not be told to re-auth.
+	if !errors.Is(err, coreoauth.ErrProviderUnavailable) {
+		t.Fatalf("err = %v, want ErrProviderUnavailable", err)
 	}
-}
-
-// TestVerifyIdentity_ConvertsUnexpectedErrorToInvalidCredential pins that a
-// non-sentinel verifier error is converted to ErrInvalidCredential AND that the
-// internal error string does not leak to the caller.
-func TestVerifyIdentity_ConvertsUnexpectedErrorToInvalidCredential(t *testing.T) {
-	cfg := coreoauth.TestConfig("client-id")
-	boom := errors.New("jwks endpoint exploded: secret-internal-detail")
-	svc := coreoauth.NewService(cfg, coreoauth.NewRegistry(stubProvider{name: coreoauth.ProviderGoogle, err: boom}))
-
-	_, err := svc.VerifyIdentity(context.Background(), coreoauth.ProviderGoogle, "cred")
-	if !errors.Is(err, coreoauth.ErrInvalidCredential) {
-		t.Fatalf("err = %v, want ErrInvalidCredential", err)
+	if errors.Is(err, coreoauth.ErrInvalidCredential) {
+		t.Fatalf("server-side failure reported as a bad credential: %v", err)
 	}
 	if strings.Contains(err.Error(), "secret-internal-detail") {
-		t.Fatalf("verifier internal error leaked to caller: %v", err)
+		t.Fatalf("provider internal error leaked to caller: %v", err)
 	}
 }

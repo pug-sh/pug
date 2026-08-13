@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/autoprop"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	chdeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -198,6 +199,8 @@ func InsertLiveEvent(ctx context.Context, ch driver.Conn, projectID string, e Li
 	if err != nil {
 		return fmt.Errorf("prepare events batch: %w", err)
 	}
+	defer chdeps.AbortUnsent(ctx, batch)
+
 	promoted, restAuto := chq.SplitPromotedAutoAnyProperties(e.AutoProperties)
 	args := []any{
 		e.EventID,
@@ -243,6 +246,8 @@ func InsertLiveProfile(ctx context.Context, ch driver.Conn, projectID string, p 
 	if err != nil {
 		return fmt.Errorf("prepare profiles batch: %w", err)
 	}
+	defer chdeps.AbortUnsent(ctx, batch)
+
 	if err := batch.Append(p.ID, projectID, p.ExternalID, string(propsJSON), uint8(0), p.CreateTime, p.UpdateTime); err != nil {
 		return fmt.Errorf("append profile: %w", err)
 	}
@@ -257,6 +262,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 	if err != nil {
 		return 0, err
 	}
+	defer chdeps.AbortUnsent(ctx, batch)
 
 	inserted := 0
 	// Sessions are atomic and variable-length, so keep pulling whole sessions
@@ -350,6 +356,8 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string) error {
 	if err != nil {
 		return fmt.Errorf("prepare profiles batch: %w", err)
 	}
+	// batch is reassigned every 1000 rows, so the closure reads the current one.
+	defer func() { chdeps.AbortUnsent(ctx, batch) }()
 
 	inserted := 0
 	for _, p := range profiles {

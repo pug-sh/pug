@@ -37,6 +37,7 @@ jobs:
           - { name: worker-profile-upsert,   cmd: workers/profile/upsert,   target: worker }
           - { name: worker-compliance,       cmd: workers/compliance,       target: worker }
           - { name: worker-demo,             cmd: workers/demo,             target: worker }
+          - { name: cron-usage,              cmd: cron/usage,               target: app }
           - { name: migrate-postgres,        cmd: migrate/postgres,         target: migrate }
           - { name: migrate-clickhouse,      cmd: migrate/clickhouse,       target: migrate }
           - { name: migrate-nats,            cmd: migrate/nats,             target: migrate }

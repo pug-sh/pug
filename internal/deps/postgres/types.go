@@ -27,6 +27,13 @@ func NewNullableText(s *string) pgtype.Text {
 	return pgtype.Text{String: *s, Valid: true}
 }
 
+// pgtype.Date encodes Year/Month/Day in the value's own location, so a non-UTC
+// t would store a different calendar day than it names in UTC.
+func NewDate(t time.Time) pgtype.Date {
+	u := t.UTC()
+	return pgtype.Date{Time: time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC), Valid: true}
+}
+
 func NewTimestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
 }

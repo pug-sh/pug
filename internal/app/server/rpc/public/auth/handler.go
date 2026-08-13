@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/url"
+	"os"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +16,8 @@ import (
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
+	"github.com/pug-sh/pug/internal/slogx"
+	"google.golang.org/protobuf/proto"
 )
 
 // authService is the coreauth.Service surface the handler depends on, defined
@@ -21,14 +27,15 @@ type authService interface {
 	SignInWithEmail(ctx context.Context, email, password string) (coreauth.Session, error)
 	RequestMagicLink(ctx context.Context, email string) error
 	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
-	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (coreauth.Session, error)
+	CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, reportingTimezone string) (coreauth.Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
 	RevokeSession(ctx context.Context, refreshToken string) error
 	DemoSignIn(ctx context.Context) (coreauth.DemoSession, error)
 }
 
 type server struct {
-	service authService
+	service  authService
+	oauthCfg coreoauth.Config
 }
 
 func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool) (*server, error) {
@@ -36,14 +43,64 @@ func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKe
 	if err != nil {
 		return nil, fmt.Errorf("load oauth config: %w", err)
 	}
+	logExternalProviders(ctx, oauthCfg)
+
 	service, err := coreauth.NewService(ctx, pgRO, pgW, jwtKey, publisher, oauthCfg, demoEnabled)
 	if err != nil {
 		return nil, err
 	}
 
 	return &server{
-		service: service,
+		service:  service,
+		oauthCfg: oauthCfg,
 	}, nil
+}
+
+// Without this, a half-finished config rollout looks like a healthy boot.
+func logExternalProviders(ctx context.Context, cfg coreoauth.Config) {
+	ids := make([]string, 0, len(cfg.Providers))
+	for _, provider := range cfg.Providers {
+		ids = append(ids, provider.ID)
+	}
+	if len(ids) == 0 {
+		msg := "no external sign-in providers configured"
+		if os.Getenv(legacyGoogleClientIDVar) != "" {
+			msg += "; " + legacyGoogleClientIDVar + " is set but no longer read — move Google into PUG_CONFIG_FILE"
+		}
+		slog.WarnContext(ctx, msg)
+		return
+	}
+	slog.InfoContext(ctx, "external sign-in providers configured", slog.Any("provider_ids", ids))
+}
+
+// Removed in favour of PUG_CONFIG_FILE; kept only to warn operators mid-migration.
+const legacyGoogleClientIDVar = "PUG_OAUTH_GOOGLE_CLIENT_ID"
+
+var authProviderTypes = map[coreoauth.ProviderType]authv1.AuthProviderType{
+	coreoauth.ProviderTypeOIDC: authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC,
+}
+
+func (s *server) GetAuthConfig(
+	context.Context,
+	*connect.Request[authv1.GetAuthConfigRequest],
+) (*connect.Response[authv1.GetAuthConfigResponse], error) {
+	providers := make([]*authv1.AuthProviderConfig, 0, len(s.oauthCfg.Providers))
+	for _, provider := range s.oauthCfg.Providers {
+		providerType, ok := authProviderTypes[provider.Type]
+		// A type the browser has no flow for must not render a sign-in button.
+		if !ok {
+			continue
+		}
+		providers = append(providers, &authv1.AuthProviderConfig{
+			Id:          proto.String(provider.ID),
+			Type:        providerType.Enum(),
+			DisplayName: proto.String(provider.DisplayName),
+			ClientId:    proto.String(provider.ClientID),
+			IssuerUrl:   proto.String(provider.IssuerURL),
+			Scopes:      provider.Scopes,
+		})
+	}
+	return connect.NewResponse(&authv1.GetAuthConfigResponse{Providers: providers}), nil
 }
 
 func (s *server) SignInWithEmail(
@@ -90,23 +147,76 @@ func (s *server) CompleteMagicLink(
 	}), nil
 }
 
-func (s *server) CompleteOAuthSignIn(
+func (s *server) CompleteOIDCSignIn(
 	ctx context.Context,
-	req *connect.Request[authv1.CompleteOAuthSignInRequest],
-) (*connect.Response[authv1.CompleteOAuthSignInResponse], error) {
-	provider, err := coreoauth.ProviderFromProto(req.Msg.GetProvider())
+	req *connect.Request[authv1.CompleteOIDCSignInRequest],
+) (*connect.Response[authv1.CompleteOIDCSignInResponse], error) {
+	redirectURI, err := validateOIDCRedirectURI(req.Msg.GetRedirectUri(), req.Header().Get("Origin"))
 	if err != nil {
-		return nil, apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
+		slog.WarnContext(ctx, "rejected oidc redirect uri", slogx.Error(err),
+			slog.String("redirect_uri", req.Msg.GetRedirectUri()),
+			slog.String("origin", req.Header().Get("Origin")))
+		return nil, apperr.Invalid(apperr.ReasonInvalidArgument, "invalid oauth redirect URI") // apperr:exempt
 	}
 
-	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential(), req.Msg.GetTimezone())
+	session, err := s.service.CompleteOIDCSignIn(ctx, coreoauth.ProviderName(req.Msg.GetProviderId()), coreoauth.AuthorizationCode{
+		Code:         req.Msg.GetCode(),
+		CodeVerifier: req.Msg.GetCodeVerifier(),
+		RedirectURI:  redirectURI,
+		Nonce:        req.Msg.GetNonce(),
+	}, req.Msg.GetTimezone())
 	if err != nil {
 		return nil, mapOAuthHandlerError(err)
 	}
-	return connect.NewResponse(&authv1.CompleteOAuthSignInResponse{
+	return connect.NewResponse(&authv1.CompleteOIDCSignInResponse{
 		Token:        &session.AccessToken,
 		RefreshToken: &session.RefreshToken,
 	}), nil
+}
+
+func validateOIDCRedirectURI(rawRedirectURI, requestOrigin string) (string, error) {
+	redirectURI, err := url.Parse(rawRedirectURI)
+	if err != nil || redirectURI.Scheme == "" || redirectURI.Host == "" || redirectURI.User != nil || redirectURI.RawQuery != "" || redirectURI.Fragment != "" {
+		return "", errors.New("redirect URI must be absolute and have no credentials, query, or fragment")
+	}
+	localhost := redirectURI.Hostname() == "localhost" || redirectURI.Hostname() == "127.0.0.1" || redirectURI.Hostname() == "::1"
+	if redirectURI.Scheme != "https" && (redirectURI.Scheme != "http" || !localhost) {
+		return "", errors.New("redirect URI must use HTTPS except on localhost")
+	}
+	if redirectURI.Path != "/oauth/callback" {
+		return "", errors.New("unexpected callback path")
+	}
+
+	if requestOrigin != "" {
+		origin, err := url.Parse(requestOrigin)
+		if err != nil || origin.Scheme == "" || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
+			return "", errors.New("invalid request origin")
+		}
+		if !sameOrigin(origin, redirectURI) {
+			return "", errors.New("request origin does not match redirect URI")
+		}
+	}
+	return redirectURI.String(), nil
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		effectivePort(left) == effectivePort(right)
+}
+
+func effectivePort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 func (s *server) RefreshSession(
@@ -166,6 +276,8 @@ func mapOAuthHandlerError(err error) error {
 		// Generic reason intentional: no distinct client action for an unverified IdP
 		// email (rare edge), so it maps to plain InvalidArgument.
 		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
+	case errors.Is(err, coreoauth.ErrProviderUnavailable):
+		return apperr.Unavailable(apperr.ReasonOAuthProviderUnavailable, "oauth provider is temporarily unavailable")
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
 		// A failed/expired credential is an authentication failure, not a
 		// malformed request — return Unauthenticated so clients prompt re-auth

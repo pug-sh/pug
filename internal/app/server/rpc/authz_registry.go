@@ -26,13 +26,14 @@ import (
 // interfaces via reflection.
 var permissionRegistry = map[string]authzspec.Spec{
 	// --- public.auth.v1.AuthService — no auth ---
-	"/public.auth.v1.AuthService/SignInWithEmail":     authzspec.Public(),
-	"/public.auth.v1.AuthService/RequestMagicLink":    authzspec.Public(),
-	"/public.auth.v1.AuthService/CompleteMagicLink":   authzspec.Public("invite acceptance is authorized by invite-token possession, not an org role"),
-	"/public.auth.v1.AuthService/CompleteOAuthSignIn": authzspec.Public(),
-	"/public.auth.v1.AuthService/RefreshSession":      authzspec.Public("runs after access-token expiry; authorized by refresh-token possession"),
-	"/public.auth.v1.AuthService/SignOut":             authzspec.Public(),
-	"/public.auth.v1.AuthService/DemoSignIn":          authzspec.Public("credential-less demo viewer login; gated by PUG_DEMO_ENABLED, and the minted principal is a read-only org viewer"),
+	"/public.auth.v1.AuthService/SignInWithEmail":    authzspec.Public(),
+	"/public.auth.v1.AuthService/RequestMagicLink":   authzspec.Public(),
+	"/public.auth.v1.AuthService/CompleteMagicLink":  authzspec.Public("invite acceptance is authorized by invite-token possession, not an org role"),
+	"/public.auth.v1.AuthService/CompleteOIDCSignIn": authzspec.Public(),
+	"/public.auth.v1.AuthService/GetAuthConfig":      authzspec.Public(),
+	"/public.auth.v1.AuthService/RefreshSession":     authzspec.Public("runs after access-token expiry; authorized by refresh-token possession"),
+	"/public.auth.v1.AuthService/SignOut":            authzspec.Public(),
+	"/public.auth.v1.AuthService/DemoSignIn":         authzspec.Public("credential-less demo viewer login; gated by PUG_DEMO_ENABLED, and the minted principal is a read-only org viewer"),
 
 	// --- public.dashboards.v1.SharedDashboardsService — no auth (share token) ---
 	"/public.dashboards.v1.SharedDashboardsService/Query": authzspec.Public("authorized by share_id"),
@@ -76,6 +77,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":      authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionUpdate),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionDelete),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionUpdate),
+
+	// --- dashboard.usage.v1.UsageService — org control plane; read-only, on the viewer floor ---
+	"/dashboard.usage.v1.UsageService/GetUsage": authzspec.OrgGated(authz.ResourceUsage, authz.ActionRead),
 
 	// --- dashboard.customers.v1.CustomersService — self-service ---
 	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.Self(),
