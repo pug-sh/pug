@@ -306,6 +306,84 @@ func TestAuthzInterceptorRegistryEntriesEnforced(t *testing.T) {
 // UNLISTED role-gated RPC that denies a member fails too (a new admin-only RPC
 // must be added here, not silently escape the oracle). A trailing pass catches a
 // listed proc that is not a real role-gated entry (a typo or removed RPC).
+// Every other oracle in this file iterates the registry and `continue`s on
+// !IsRoleGated, so downgrading an entry — OrgGated to Self(), say — does not fail
+// a check, it REMOVES the RPC from every check. Nothing else notices, and the RPC
+// silently becomes callable by any signed-in customer with a caller-supplied
+// org_id.
+//
+// This is the one oracle that names the role-gated set outright, so a downgrade
+// has to be a deliberate edit here rather than a side effect somewhere else.
+// Checked in both directions: a listed RPC that stops being role-gated fails, and
+// a newly role-gated RPC missing from the list fails too.
+func TestRoleGatedRPCsAreGated(t *testing.T) {
+	roleGated := map[string]bool{
+		"/dashboard.orgs.v1.OrgsService/Get":                                true,
+		"/dashboard.orgs.v1.OrgsService/ListMembers":                        true,
+		"/dashboard.orgs.v1.OrgsService/UpdateDisplayName":                  true,
+		"/dashboard.orgs.v1.OrgsService/InviteMember":                       true,
+		"/dashboard.orgs.v1.OrgsService/ResendInvite":                       true,
+		"/dashboard.orgs.v1.OrgsService/RevokeInvite":                       true,
+		"/dashboard.orgs.v1.OrgsService/ListInvitations":                    true,
+		"/dashboard.orgs.v1.OrgsService/RemoveMember":                       true,
+		"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":                   true,
+		"/dashboard.projects.v1.ProjectsService/BatchGet":                   true,
+		"/dashboard.projects.v1.ProjectsService/Create":                     true,
+		"/dashboard.projects.v1.ProjectsService/Delete":                     true,
+		"/dashboard.projects.v1.ProjectsService/UpdateMeta":                 true,
+		"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON":       true,
+		"/dashboard.projects.v1.ProjectsService/ListApiKeys":                true,
+		"/dashboard.projects.v1.ProjectsService/CreateApiKey":               true,
+		"/dashboard.projects.v1.ProjectsService/DeleteApiKey":               true,
+		"/dashboard.dashboards.v1.DashboardsService/Get":                    true,
+		"/dashboard.dashboards.v1.DashboardsService/List":                   true,
+		"/dashboard.dashboards.v1.DashboardsService/QueryDashboard":         true,
+		"/dashboard.dashboards.v1.DashboardsService/Create":                 true,
+		"/dashboard.dashboards.v1.DashboardsService/Update":                 true,
+		"/dashboard.dashboards.v1.DashboardsService/Delete":                 true,
+		"/dashboard.dashboards.v1.DashboardsService/Upsert":                 true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get":      true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":      true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": true,
+		"/dashboard.usage.v1.UsageService/GetUsage":                         true,
+		"/shared.insights.v1.InsightsService/Query":                         true,
+		"/shared.insights.v1.InsightsService/SegmentUsers":                  true,
+		"/shared.insights.v1.InsightsService/GetFilterSchema":               true,
+		"/shared.insights.v1.InsightsService/GetPropertyValues":             true,
+		"/shared.activity.v1.ActivityService/GetActivityFeed":               true,
+		"/shared.activity.v1.ActivityService/GetEventExplorer":              true,
+		"/shared.activity.v1.ActivityService/GetFilterSchema":               true,
+		"/shared.activity.v1.ActivityService/GetPropertyValues":             true,
+		"/shared.activity.v1.ActivityService/GetActivityHeatmap":            true,
+		"/shared.activity.v1.ActivityService/GetProfileStats":               true,
+		"/shared.profiles.v1.ProfilesService/Get":                           true,
+		"/shared.profiles.v1.ProfilesService/GetByExternalId":               true,
+		"/shared.profiles.v1.ProfilesService/List":                          true,
+		"/shared.profiles.v1.ProfilesService/GetDeletionRequest":            true,
+		"/shared.profiles.v1.ProfilesService/Delete":                        true,
+		"/shared.profiles.v1.ProfilesService/DeleteDataSubject":             true,
+	}
+
+	for proc := range roleGated {
+		spec, ok := permissionRegistry[proc]
+		if !ok {
+			t.Errorf("%s: listed as role-gated but has no registry entry", proc)
+			continue
+		}
+		if !spec.IsRoleGated() {
+			t.Errorf("%s: DOWNGRADED — listed as role-gated but its registry entry no longer is, "+
+				"so every role oracle now skips it", proc)
+		}
+	}
+
+	for proc, spec := range permissionRegistry {
+		if spec.IsRoleGated() && !roleGated[proc] {
+			t.Errorf("%s: role-gated but not listed — add it here so a later downgrade is caught", proc)
+		}
+	}
+}
+
 func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 	authorizer := mustAuthorizer(t)
 

@@ -49,6 +49,26 @@ make clickstack
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
 
+# One event usage metering pass, then exits: uniqExact(event_id) per (project,
+# day) in ClickHouse, stored in Postgres so the dashboard's headline total is a
+# single-row lookup. Deployed as a k8s CronJob (image `cron-usage`, cmd/cron/usage) — there
+# is no long-running meter, so the cadence is the CronJob's schedule, not a
+# constant here. Runs under a pg_try_advisory_xact_lock so an overrunning pass
+# can't double-meter (the lock tx disables idle_in_transaction_session_timeout, or
+# it would be dropped mid-pass), and exits non-zero when the pass failed (a CronJob's only
+# success signal) — with two deliberate exceptions that exit 0: lock contention,
+# and a read the pass cannot trust (empty over stored days, or naming no project
+# Postgres knows), which refreshes nothing and lets the stamp go stale instead.
+# The pass is bounded by its own 30m timeout, not only the CronJob's
+# activeDeadlineSeconds, since a hang would hold the lock and turn every later run
+# into a green no-op. "Once a day" job state lives in the shared cron_state table,
+# not memory, so a fresh process doesn't redo the full recompute and prune every
+# run.
+# Nothing schedules it implicitly — not `pug server`, not `pug dev`; skip it and
+# GetUsage reports "never metered" (absent usage_computed_at) rather than a zero
+# it has no basis for. Ingestion never consults it.
+./bin/pug cron usage
+
 # Rolling demo-traffic generator. Gated by PUG_DEMO_ENABLED everywhere: when off
 # (default), `pug dev` skips it and the standalone `pug worker demo` idles (stays
 # running but generates nothing, so a k8s Deployment doesn't restart-loop on
@@ -226,6 +246,7 @@ Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architectu
 - **Compliance (GDPR/DPDP)** — data-subject erasure: a synchronous prelude + the generalized `compliance` worker that hard-deletes events, derived rollups, and the profile; the unified `compliance_requests` DSAR ledger; idempotent re-drive on retry, NATS retry-to-DLQ for the async hard delete
 - **Event ingestion enrichment** — geo, user-agent, bot-management, and web-attribution auto-properties (`internal/attribution`: pathname/hostname/referrer-domain/channel/UTM/locale/screen-size derivation); **cookieless visitor identity** (`internal/cookieless`: server-derived daily-rotating HMAC ids prefixed `cookieless-` for consent-rejecting GDPR/DPDP visitors — Redis daily salt with TTL-deletion as the privacy guarantee, Redis-stitched sessions, resolved first in the ingest chain; the prefix is the downstream single source of truth) → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
 - **Web analytics** — promoted web columns, event/session rollup dimensions, channel taxonomy, live-rollup-extension migrations 008–010 → [`docs/architecture/web-analytics.md`](docs/architecture/web-analytics.md)
+- **Event usage metering** — exact `uniqExact(event_id)` counts at (project, day) grain (never the over-counting rollup, never approximate `uniq()`), the `pug cron usage` one-shot pass under an advisory lock, and the org-scoped `GetUsage` read. Counting only: no plans, quotas, limits or enforcement, and ingestion never consults it. An absent `usage_computed_at` means "never metered" and must not render as zero → [`docs/architecture/usage.md`](docs/architecture/usage.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
 - **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
 - **MCP server** — the read-only shared analytics API (insights + activity + profile reads = 12 tools) exposed as Model Context Protocol tools at `/mcp`. A thin adapter in `internal/app/server/mcp/`: every tool call re-enters the real Connect stack in-process via a loopback client, so validation/auth/authz run identically to an external API call (no duplicated logic).

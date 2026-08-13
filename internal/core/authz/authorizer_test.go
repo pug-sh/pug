@@ -86,6 +86,8 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"viewer org read", roleViewer, ResourceOrg, ActionRead, true},
 		{"viewer member read", roleViewer, ResourceMember, ActionRead, true},
 		{"viewer project read", roleViewer, ResourceProject, ActionRead, true},
+		{"viewer api_key read", roleViewer, ResourceAPIKey, ActionRead, true},
+		{"viewer usage read", roleViewer, ResourceUsage, ActionRead, true},
 
 		// viewer — denied every write, plus the admin-only org reads.
 		{"viewer dashboard create", roleViewer, ResourceDashboard, ActionCreate, false},
@@ -97,6 +99,8 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"viewer org update", roleViewer, ResourceOrg, ActionUpdate, false},
 		{"viewer invitation read", roleViewer, ResourceInvitation, ActionRead, false},
 		{"viewer email_provider read", roleViewer, ResourceEmailProvider, ActionRead, false},
+		{"viewer api_key create", roleViewer, ResourceAPIKey, ActionCreate, false},
+		{"viewer usage update", roleViewer, ResourceUsage, ActionUpdate, false},
 
 		// unknown role gets nothing.
 		{"unknown role dashboard read", "ORG_ROLE_BOGUS", ResourceDashboard, ActionRead, false},

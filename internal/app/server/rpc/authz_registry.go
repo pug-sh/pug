@@ -78,6 +78,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionDelete),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionUpdate),
 
+	// --- dashboard.usage.v1.UsageService — org control plane; read-only, on the viewer floor ---
+	"/dashboard.usage.v1.UsageService/GetUsage": authzspec.OrgGated(authz.ResourceUsage, authz.ActionRead),
+
 	// --- dashboard.customers.v1.CustomersService — self-service ---
 	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.Self(),
 	"/dashboard.customers.v1.CustomersService/SetPassword": authzspec.Self(),
