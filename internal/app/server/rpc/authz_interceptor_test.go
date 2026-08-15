@@ -347,6 +347,7 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   true,
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": true,
 		"/dashboard.usage.v1.UsageService/GetUsage":                         true,
+		"/dashboard.billing.v1.BillingService/GetBillingStatus":             true,
 		"/shared.insights.v1.InsightsService/Query":                         true,
 		"/shared.insights.v1.InsightsService/SegmentUsers":                  true,
 		"/shared.insights.v1.InsightsService/GetFilterSchema":               true,

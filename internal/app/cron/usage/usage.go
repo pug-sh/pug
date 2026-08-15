@@ -197,6 +197,28 @@ type job struct {
 	rescanDays int
 }
 
+// meterFrom is the lower bound of one pass's recompute window.
+//
+// A full pass floors at month-to-date, which is what the erasure reconcile needs
+// and what the empty-read guard reads as its evidence window — an org anchored
+// near today would otherwise leave a full pass no wider than the trailing rescan.
+// Anniversaries only widen it further: an org metered on the 10th has a period
+// that began in the previous month, and stopping at the month boundary would
+// re-sum it over a window the pass had not fully read.
+func meterFrom(now time.Time, rescanDays int, full bool, windows []coreusage.OrgPeriod) time.Time {
+	from := coreusage.FloorDayUTC(now.AddDate(0, 0, -rescanDays))
+	if !full {
+		return from
+	}
+	if monthStart := coreusage.FloorMonthUTC(now); monthStart.Before(from) {
+		from = monthStart
+	}
+	if earliest := coreusage.EarliestPeriodStart(windows); !earliest.IsZero() && earliest.Before(from) {
+		from = earliest
+	}
+	return from
+}
+
 func (j *job) run(ctx context.Context) error {
 	return cron.WithLock(ctx, j.pgW, cron.JobUsage, func(ctx context.Context) error {
 		now := time.Now().UTC()
@@ -208,7 +230,8 @@ func (j *job) run(ctx context.Context) error {
 }
 
 // meter recomputes a trailing window, then re-sums every org's current period.
-// Once a day it widens to the whole current month.
+// Once a day it widens to the calendar month, or to the earliest period start in
+// the work list when an anniversary reaches back further.
 func (j *job) meter(ctx context.Context, now time.Time) error {
 	windows, err := j.service.OrgPeriods(ctx, now)
 	if err != nil {
@@ -220,13 +243,8 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		return err
 	}
 
-	from := coreusage.FloorDayUTC(now.AddDate(0, 0, -j.rescanDays))
 	full := now.Sub(lastFull) >= fullRecomputeInterval
-	if full {
-		if periodStart, _ := coreusage.CalendarMonth(now); periodStart.Before(from) {
-			from = periodStart
-		}
-	}
+	from := meterFrom(now, j.rescanDays, full, windows)
 
 	usage, err := j.service.MeterWindow(ctx, from, now)
 	if err != nil {

@@ -81,6 +81,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	// --- dashboard.usage.v1.UsageService — org control plane; read-only, on the viewer floor ---
 	"/dashboard.usage.v1.UsageService/GetUsage": authzspec.OrgGated(authz.ResourceUsage, authz.ActionRead),
 
+	// --- dashboard.billing.v1.BillingService — org control plane; read-only, on the viewer floor ---
+	"/dashboard.billing.v1.BillingService/GetBillingStatus": authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead),
+
 	// --- dashboard.customers.v1.CustomersService — self-service ---
 	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.Self(),
 	"/dashboard.customers.v1.CustomersService/SetPassword": authzspec.Self(),

@@ -17,8 +17,9 @@ import (
 	"github.com/rs/xid"
 )
 
-func seedOrgProject(t *testing.T, w *dbwrite.Queries) (orgID, projectID string) {
+func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID string) {
 	t.Helper()
+	w := dbwrite.New(pg.PgW)
 
 	org, err := w.CreateOrg(t.Context(), dbwrite.CreateOrgParams{
 		ID: xid.New().String(), DisplayName: "acme",
@@ -26,6 +27,10 @@ func seedOrgProject(t *testing.T, w *dbwrite.Queries) (orgID, projectID string) 
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
+	// Backdated to the 1st so the org's quota window is the calendar month these
+	// assertions assume — an anchor derives from create_time, so an org created
+	// "now" would shift every expected bound with the suite's run date.
+	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	id := xid.New().String()
 	project, err := w.CreateProject(t.Context(), dbwrite.CreateProjectParams{
 		ID: id, OrgID: org.ID, DisplayName: "project-" + id,
@@ -46,7 +51,7 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, projectID := seedOrgProject(t, pg)
 	srv := NewServer(svc.Reader)
 
 	resp, err := srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
@@ -68,7 +73,7 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 
 	// Metered, and it really is zero: both fields present.
 	now := time.Now().UTC()
-	start, end := coreusage.CalendarMonth(now)
+	start, end := coreusage.PeriodFor(now, 1)
 	if _, err := svc.RefreshPeriodUsage(t.Context(), orgID, start, end); err != nil {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
 	}
@@ -123,11 +128,11 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, _ := seedOrgProject(t, pg)
 
 	// Meter only the *previous* month, leaving the current period rowless. Stepped
 	// back from the 1st, not from today: AddDate normalizes Feb 31 to March.
-	currentStart, _ := coreusage.CalendarMonth(time.Now().UTC())
+	currentStart, _ := coreusage.PeriodFor(time.Now().UTC(), 1)
 	prevStart, prevEnd := currentStart.AddDate(0, -1, 0), currentStart
 	if _, err := svc.RefreshPeriodUsage(t.Context(), orgID, prevStart, prevEnd); err != nil {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
@@ -154,9 +159,9 @@ func TestGetUsageRangeWindowsOnlyTheDailySeries(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, projectID := seedOrgProject(t, pg)
 
-	periodStart, periodEnd := coreusage.CalendarMonth(time.Now().UTC())
+	periodStart, periodEnd := coreusage.PeriodFor(time.Now().UTC(), 1)
 	first, second := periodStart, periodStart.AddDate(0, 0, 1)
 	if err := svc.RecordDailyUsage(t.Context(), []coreusage.DailyUsage{
 		{Day: first, EventCount: 3, ProjectID: projectID},
@@ -205,9 +210,9 @@ func TestGetUsageRangeSnapsToWholeDays(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, projectID := seedOrgProject(t, pg)
 
-	day, _ := coreusage.CalendarMonth(time.Now().UTC())
+	day, _ := coreusage.PeriodFor(time.Now().UTC(), 1)
 	if err := svc.RecordDailyUsage(t.Context(), []coreusage.DailyUsage{
 		{Day: day, EventCount: 9, ProjectID: projectID},
 	}); err != nil {
@@ -250,7 +255,7 @@ func TestGetUsageFailsWhenTheReadFails(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, _ := seedOrgProject(t, pg)
 	srv := NewServer(svc.Reader)
 
 	pg.PgRO.Close()
@@ -273,7 +278,7 @@ func TestGetUsageOnACancelledRequest(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, _ := seedOrgProject(t, pg)
 	srv := NewServer(coreusage.NewReader(pg.PgRO))
 
 	ctx, cancel := context.WithCancel(t.Context())

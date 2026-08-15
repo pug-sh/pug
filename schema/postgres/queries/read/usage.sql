@@ -2,10 +2,15 @@
 select * from usage_periods where org_id = @org_id and period_start = @period_start;
 
 -- name: GetLatestUsageComputedAt :one
--- Fallback stamp for a period the meter has not reached yet — at a month rollover
--- the current period has no row, which is not the same as never having metered.
+-- Fallback stamp for a period the meter has not reached yet — at a rollover the
+-- current period has no row, which is not the same as never having metered.
+--
+-- Ordered by the stamp, not by period_start: an anchor_day change (or a row left
+-- by the calendar-month periods this predates) strands a period whose start is
+-- later than the one the meter is actually keeping current, and ordering by start
+-- would then hand back that stranded row's frozen stamp.
 select usage_computed_at from usage_periods
-where org_id = @org_id order by period_start desc limit 1;
+where org_id = @org_id order by usage_computed_at desc limit 1;
 
 -- name: CountUsageDailyInRange :one
 -- Whether the meter has stored anything over a window, across every org. An
@@ -24,8 +29,24 @@ where org_id = @org_id and day >= @from_day and day < @to_day
 order by day asc, project_id asc
 limit @row_limit;
 
--- name: ListOrgIDsForUsage :many
-select id from orgs order by id asc;
+-- name: ListOrgUsageWindows :many
+-- The meter's work list: every org, with what its quota window is anchored to.
+-- create_time is the default anchor and anchor_day overrides it, so a period is
+-- resolvable for an org that has never touched billing -- which is almost all of
+-- them. Reads a billing table but imports nothing from it: the meter needs the
+-- window, not the entitlement. See docs/architecture/billing.md section 6.1.
+select o.id, o.create_time, e.anchor_day
+from orgs o
+left join billing_entitlements e on e.org_id = o.id
+order by o.id asc;
+
+-- name: GetOrgUsageWindow :one
+-- One org's anchor, for the read path. The same two inputs as the work list, so
+-- the RPC and the meter cannot derive different windows.
+select o.create_time, e.anchor_day
+from orgs o
+left join billing_entitlements e on e.org_id = o.id
+where o.id = @org_id;
 
 -- name: CountKnownProjectIDs :one
 -- How many of the projects a metering pass just read from ClickHouse this

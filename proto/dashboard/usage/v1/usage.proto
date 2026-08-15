@@ -8,8 +8,9 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1;usagev1";
 
 service UsageService {
-  // Returns how many events the org's projects recorded in the current calendar
-  // month, plus the per-project daily series behind it. The numbers come from a
+  // Returns how many events the org's projects recorded in the current billing
+  // period — which runs from the org's signup anniversary, not the 1st of the
+  // month — plus the per-project daily series behind it. The numbers come from a
   // scheduled meter whose cadence the deployment sets, so read usage_computed_at
   // for how stale they are rather than assuming one. Both used_events and
   // usage_computed_at are absent if the meter has never run; usage_computed_at
@@ -60,8 +61,9 @@ message GetUsageResponse {
   // `pug cron usage` must render as "unknown" rather than "0".
   //
   // Present WITH used_events absent is the third state: the meter is alive but has
-  // not reached this period yet (the 1st of a month, before the first pass, when
-  // this stamp is still the previous period's). Render that as "computing". The
+  // not reached this period yet (just after the org's anniversary, before the first
+  // pass, when this stamp is still the previous period's). Render that as
+  // "computing". The
   // two fields carry the distinction on their own — no comparison against
   // period_start is required, and none should be relied on.
   google.protobuf.Timestamp usage_computed_at = 4;

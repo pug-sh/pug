@@ -163,8 +163,9 @@ type GetUsageResponse struct {
 	// `pug cron usage` must render as "unknown" rather than "0".
 	//
 	// Present WITH used_events absent is the third state: the meter is alive but has
-	// not reached this period yet (the 1st of a month, before the first pass, when
-	// this stamp is still the previous period's). Render that as "computing". The
+	// not reached this period yet (just after the org's anniversary, before the first
+	// pass, when this stamp is still the previous period's). Render that as
+	// "computing". The
 	// two fields carry the distinction on their own — no comparison against
 	// period_start is required, and none should be relied on.
 	UsageComputedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=usage_computed_at,json=usageComputedAt" json:"usage_computed_at,omitempty"`

@@ -240,11 +240,11 @@ func (s *Service) DeleteUnmeteredDays(ctx context.Context, usage []DailyUsage, f
 // it falls in the period containing its own UTC midnight.
 //
 // That is why both bounds use CeilDayUTC where every other call site pairs
-// Floor/Ceil, and it is exact only while periods start at midnight — which
-// CalendarMonth guarantees and nothing else currently produces. A non-calendar
-// period (anniversary billing) would make Ceil silently drop the first partial
-// day from this sum while ListDailyUsage's Floor keeps it in the series, and the
-// two would disagree with nothing to notice. Pin it here if that day comes.
+// Floor/Ceil, and it is exact only while periods start at midnight — which is
+// why PeriodFor takes a day-of-month rather than an instant. An anchor carrying
+// a time of day would make Ceil silently drop the first partial day from this
+// sum while ListDailyUsage's Floor keeps it in the series, and the two would
+// disagree with nothing to notice.
 func (s *Service) RefreshPeriodUsage(ctx context.Context, orgID string, start, end time.Time) (int64, error) {
 	total, err := s.write.RefreshUsagePeriod(ctx, dbwrite.RefreshUsagePeriodParams{
 		FromDay:     postgres.NewDate(CeilDayUTC(start)),
@@ -278,21 +278,41 @@ type OrgPeriod struct {
 	Start, End time.Time
 }
 
-// OrgPeriods is the meter's work list: every org, on the UTC calendar month.
+// OrgPeriods is the meter's work list: every org, each on its own quota window.
 // Driven from orgs, so an org that has never sent an event still gets a row and
 // reads as a metered zero.
+//
+// The windows are per-org because quotas run on a billing anniversary, so unlike
+// a calendar month they do not all start on the same day — and some of them
+// started before the current month did, which is why the caller widens its rescan
+// to the earliest of them.
 func (s *Service) OrgPeriods(ctx context.Context, now time.Time) ([]OrgPeriod, error) {
-	ids, err := s.read.ListOrgIDsForUsage(ctx)
+	orgs, err := s.read.ListOrgUsageWindows(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list orgs for metering", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 
-	start, end := CalendarMonth(now)
-	out := make([]OrgPeriod, 0, len(ids))
-	for _, id := range ids {
-		out = append(out, OrgPeriod{OrgID: id, Start: start, End: end})
+	out := make([]OrgPeriod, 0, len(orgs))
+	for _, o := range orgs {
+		start, end := PeriodFor(now, AnchorDay(o.CreateTime.Time, anchorOverride(o.AnchorDay)))
+		out = append(out, OrgPeriod{OrgID: o.ID, Start: start, End: end})
 	}
 	return out, nil
+}
+
+// EarliestPeriodStart is the oldest window start in a work list, and the lower
+// bound a full recompute has to reach: with per-org anchors an org's current
+// period can have begun before the current calendar month, and a rescan that
+// stopped at the month boundary would re-sum that org over a window it had not
+// fully read. Zero for an empty list, which the caller reads as "no widening".
+func EarliestPeriodStart(periods []OrgPeriod) time.Time {
+	var earliest time.Time
+	for _, p := range periods {
+		if earliest.IsZero() || p.Start.Before(earliest) {
+			earliest = p.Start
+		}
+	}
+	return earliest
 }

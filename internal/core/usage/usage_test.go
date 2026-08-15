@@ -72,9 +72,9 @@ func TestDayAndMonthBoundaries(t *testing.T) {
 			if got := coreusage.CeilDayUTC(tc.in); !got.Equal(tc.ceil) {
 				t.Errorf("CeilDayUTC = %s, want %s", got, tc.ceil)
 			}
-			start, end := coreusage.CalendarMonth(tc.in)
+			start, end := coreusage.PeriodFor(tc.in, 1)
 			if !start.Equal(tc.monthStart) || !end.Equal(tc.monthEnd) {
-				t.Errorf("CalendarMonth = [%s, %s), want [%s, %s)", start, end, tc.monthStart, tc.monthEnd)
+				t.Errorf("PeriodFor = [%s, %s), want [%s, %s)", start, end, tc.monthStart, tc.monthEnd)
 			}
 		})
 	}

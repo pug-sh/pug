@@ -50,16 +50,42 @@ func (q *Queries) CountUsageDailyInRange(ctx context.Context, arg CountUsageDail
 
 const getLatestUsageComputedAt = `-- name: GetLatestUsageComputedAt :one
 select usage_computed_at from usage_periods
-where org_id = $1 order by period_start desc limit 1
+where org_id = $1 order by usage_computed_at desc limit 1
 `
 
-// Fallback stamp for a period the meter has not reached yet — at a month rollover
-// the current period has no row, which is not the same as never having metered.
+// Fallback stamp for a period the meter has not reached yet — at a rollover the
+// current period has no row, which is not the same as never having metered.
+//
+// Ordered by the stamp, not by period_start: an anchor_day change (or a row left
+// by the calendar-month periods this predates) strands a period whose start is
+// later than the one the meter is actually keeping current, and ordering by start
+// would then hand back that stranded row's frozen stamp.
 func (q *Queries) GetLatestUsageComputedAt(ctx context.Context, orgID string) (pgtype.Timestamptz, error) {
 	row := q.db.QueryRow(ctx, getLatestUsageComputedAt, orgID)
 	var usage_computed_at pgtype.Timestamptz
 	err := row.Scan(&usage_computed_at)
 	return usage_computed_at, err
+}
+
+const getOrgUsageWindow = `-- name: GetOrgUsageWindow :one
+select o.create_time, e.anchor_day
+from orgs o
+left join billing_entitlements e on e.org_id = o.id
+where o.id = $1
+`
+
+type GetOrgUsageWindowRow struct {
+	CreateTime pgtype.Timestamptz
+	AnchorDay  pgtype.Int2
+}
+
+// One org's anchor, for the read path. The same two inputs as the work list, so
+// the RPC and the meter cannot derive different windows.
+func (q *Queries) GetOrgUsageWindow(ctx context.Context, orgID string) (GetOrgUsageWindowRow, error) {
+	row := q.db.QueryRow(ctx, getOrgUsageWindow, orgID)
+	var i GetOrgUsageWindowRow
+	err := row.Scan(&i.CreateTime, &i.AnchorDay)
+	return i, err
 }
 
 const getUsagePeriod = `-- name: GetUsagePeriod :one
@@ -84,23 +110,37 @@ func (q *Queries) GetUsagePeriod(ctx context.Context, arg GetUsagePeriodParams) 
 	return i, err
 }
 
-const listOrgIDsForUsage = `-- name: ListOrgIDsForUsage :many
-select id from orgs order by id asc
+const listOrgUsageWindows = `-- name: ListOrgUsageWindows :many
+select o.id, o.create_time, e.anchor_day
+from orgs o
+left join billing_entitlements e on e.org_id = o.id
+order by o.id asc
 `
 
-func (q *Queries) ListOrgIDsForUsage(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, listOrgIDsForUsage)
+type ListOrgUsageWindowsRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	AnchorDay  pgtype.Int2
+}
+
+// The meter's work list: every org, with what its quota window is anchored to.
+// create_time is the default anchor and anchor_day overrides it, so a period is
+// resolvable for an org that has never touched billing -- which is almost all of
+// them. Reads a billing table but imports nothing from it: the meter needs the
+// window, not the entitlement. See docs/architecture/billing.md section 6.1.
+func (q *Queries) ListOrgUsageWindows(ctx context.Context) ([]ListOrgUsageWindowsRow, error) {
+	rows, err := q.db.Query(ctx, listOrgUsageWindows)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []ListOrgUsageWindowsRow
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i ListOrgUsageWindowsRow
+		if err := rows.Scan(&i.ID, &i.CreateTime, &i.AnchorDay); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

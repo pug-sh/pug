@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc/authzspec"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1/billingv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
@@ -40,6 +41,7 @@ var servedServices = []struct {
 	{orgemailprovidersv1connect.OrgEmailProvidersServiceName, reflect.TypeFor[orgemailprovidersv1connect.OrgEmailProvidersServiceHandler]()},
 	{customersv1connect.CustomersServiceName, reflect.TypeFor[customersv1connect.CustomersServiceHandler]()},
 	{usagev1connect.UsageServiceName, reflect.TypeFor[usagev1connect.UsageServiceHandler]()},
+	{billingv1connect.BillingServiceName, reflect.TypeFor[billingv1connect.BillingServiceHandler]()},
 	{insightsv1connect.InsightsServiceName, reflect.TypeFor[insightsv1connect.InsightsServiceHandler]()},
 	{activityv1connect.ActivityServiceName, reflect.TypeFor[activityv1connect.ActivityServiceHandler]()},
 	{profilesv1connect.ProfilesServiceName, reflect.TypeFor[profilesv1connect.ProfilesServiceHandler]()},

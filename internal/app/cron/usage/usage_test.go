@@ -43,6 +43,10 @@ func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID s
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
+	// Backdated to the 1st so the org's quota window is the calendar month these
+	// assertions assume — an anchor derives from create_time, so an org created
+	// "now" would shift every expected bound with the suite's run date.
+	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	id := xid.New().String()
 	project, err := w.CreateProject(t.Context(), dbwrite.CreateProjectParams{
 		ID: id, OrgID: org.ID, DisplayName: "project-" + id,
@@ -184,7 +188,7 @@ func TestMeterRefusesToReconcileWhenNoProjectIsKnown(t *testing.T) {
 }
 
 func mustPeriodStart(now time.Time) time.Time {
-	start, _ := coreusage.CalendarMonth(now)
+	start, _ := coreusage.PeriodFor(now, 1)
 	return start
 }
 
@@ -500,7 +504,7 @@ func TestMeterRefreshesTheOrgPeriod(t *testing.T) {
 		t.Fatalf("meter: %v", err)
 	}
 
-	start, _ := coreusage.CalendarMonth(now)
+	start, _ := coreusage.PeriodFor(now, 1)
 	got, err := j.service.GetPeriodUsage(ctx, orgID, start)
 	if err != nil {
 		t.Fatalf("GetPeriodUsage: %v", err)
@@ -542,7 +546,7 @@ func TestSuspiciousEmptyReadRefreshesNoPeriod(t *testing.T) {
 		t.Fatalf("meter: %v", err)
 	}
 
-	start, _ := coreusage.CalendarMonth(now)
+	start, _ := coreusage.PeriodFor(now, 1)
 	got, err := j.service.GetPeriodUsage(ctx, orgID, start)
 	if err != nil {
 		t.Fatalf("GetPeriodUsage: %v", err)
@@ -577,7 +581,7 @@ func TestIdleEmptyReadStillRefreshesTheOrgPeriod(t *testing.T) {
 		t.Fatalf("meter: %v", err)
 	}
 
-	start, _ := coreusage.CalendarMonth(now)
+	start, _ := coreusage.PeriodFor(now, 1)
 	got, err := j.service.GetPeriodUsage(ctx, orgID, start)
 	if err != nil {
 		t.Fatalf("GetPeriodUsage: %v", err)

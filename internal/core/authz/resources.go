@@ -45,6 +45,14 @@ const (
 	// update or delete — the meter writes it, no RPC does.
 	ResourceUsage Resource = "usage"
 
+	// ResourceBilling is an org's entitlement — its plan and event quota.
+	// Read-only and on the viewer floor, for the same reason as ResourceUsage:
+	// it is the other half of "X of Y", and a member who notices the limit is
+	// rarely the admin. There is nothing to create, update or delete because no
+	// RPC changes an entitlement — `pug billing` does, at the operator's trust
+	// level. Money moves will need their own actions when checkout lands.
+	ResourceBilling Resource = "billing"
+
 	// ResourceAPIKey is a project's API keys. Its org is resolved from the
 	// x-project-id project like the project-data resources below, but minting a
 	// credential for a whole project is an administrative act, so create/delete
@@ -78,8 +86,8 @@ const (
 // policy_test.go asserts full coverage. Keep these in sync when adding a const.
 var allResources = []Resource{
 	ResourceOrg, ResourceMember, ResourceInvitation, ResourceEmailProvider,
-	ResourceProject, ResourceUsage, ResourceAPIKey, ResourceDashboard,
-	ResourceInsight, ResourceActivity, ResourceProfile,
+	ResourceProject, ResourceUsage, ResourceBilling, ResourceAPIKey,
+	ResourceDashboard, ResourceInsight, ResourceActivity, ResourceProfile,
 }
 
 var allActions = []Action{ActionCreate, ActionRead, ActionUpdate, ActionDelete}

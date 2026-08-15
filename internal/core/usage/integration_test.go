@@ -18,6 +18,7 @@ import (
 // fixture is one test's org + project, with the service under test.
 type fixture struct {
 	svc       *coreusage.Service
+	pg        *testutil.TestPostgres
 	w         *dbwrite.Queries
 	orgID     string
 	projectID string
@@ -28,15 +29,21 @@ func newFixture(t *testing.T) *fixture {
 	pg := testutil.SetupPostgres(t)
 	f := &fixture{
 		svc: coreusage.NewService(pg.PgRO, pg.PgW),
+		pg:  pg,
 		w:   dbwrite.New(pg.PgW),
 	}
-	f.orgID, f.projectID = seedOrgProject(t, f.w)
+	f.orgID, f.projectID = seedOrgProject(t, pg)
 	return f
 }
 
-func seedOrgProject(t *testing.T, w *dbwrite.Queries) (orgID, projectID string) {
+// Orgs are backdated to the 1st so every period in this file is the calendar
+// month the assertions assume. A quota window is anchored to the org's
+// create_time, so an org created "now" would anchor on whatever day the suite
+// runs and shift every expected bound with it.
+func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID string) {
 	t.Helper()
 
+	w := dbwrite.New(pg.PgW)
 	org, err := w.CreateOrg(t.Context(), dbwrite.CreateOrgParams{
 		ID:          xid.New().String(),
 		DisplayName: "acme",
@@ -44,6 +51,7 @@ func seedOrgProject(t *testing.T, w *dbwrite.Queries) (orgID, projectID string) 
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
+	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	return org.ID, seedProject(t, w, org.ID)
 }
 
@@ -167,7 +175,7 @@ func TestMeteringBucketsEventsIntoTheRightMonth(t *testing.T) {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
-	julyStart, julyStop := coreusage.CalendarMonth(julyEnd)
+	julyStart, julyStop := coreusage.PeriodFor(julyEnd, 1)
 	july, err := svc.RefreshPeriodUsage(ctx, f.orgID, julyStart, julyStop)
 	if err != nil {
 		t.Fatalf("RefreshPeriodUsage (july): %v", err)
@@ -176,7 +184,7 @@ func TestMeteringBucketsEventsIntoTheRightMonth(t *testing.T) {
 		t.Errorf("july = %d, want 1", july)
 	}
 
-	augStartOfMonth, augStop := coreusage.CalendarMonth(augStart)
+	augStartOfMonth, augStop := coreusage.PeriodFor(augStart, 1)
 	august, err := svc.RefreshPeriodUsage(ctx, f.orgID, augStartOfMonth, augStop)
 	if err != nil {
 		t.Fatalf("RefreshPeriodUsage (august): %v", err)
@@ -196,7 +204,7 @@ func TestLateArrivalInsideTheTrailingWindowUpdatesItsDay(t *testing.T) {
 	svc := f.svc.WithClickHouse(ch.Conn)
 	ctx := t.Context()
 
-	// Pinned mid-month: the assertions sum over CalendarMonth(now) while the event
+	// Pinned mid-month: the assertions sum over PeriodFor(now, 1) while the event
 	// lands a day earlier, which on the 1st would fall in the previous month.
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	yesterday := now.AddDate(0, 0, -1).Truncate(time.Hour)
@@ -211,7 +219,7 @@ func TestLateArrivalInsideTheTrailingWindowUpdatesItsDay(t *testing.T) {
 		if err := svc.RecordDailyUsage(ctx, usage); err != nil {
 			t.Fatalf("RecordDailyUsage: %v", err)
 		}
-		start, end := coreusage.CalendarMonth(now)
+		start, end := coreusage.PeriodFor(now, 1)
 		total, err := svc.RefreshPeriodUsage(ctx, f.orgID, start, end)
 		if err != nil {
 			t.Fatalf("RefreshPeriodUsage: %v", err)
@@ -242,14 +250,14 @@ func TestRefreshPeriodUsageStoresTheSingleRowRead(t *testing.T) {
 	ctx := t.Context()
 
 	// Pinned mid-month: the event lands two hours earlier, which in the first two
-	// hours of the 1st would fall outside CalendarMonth(now).
+	// hours of the 1st would fall outside PeriodFor(now, 1).
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	insertEvent(t, ch.Conn, f.projectID, uuid.NewString(), now.Add(-2*time.Hour))
 
 	// Before the meter runs there is no row, which reads as zero usage rather than
 	// an error — the org has simply not been counted yet. The zero stamp is what
 	// tells the dashboard the difference.
-	start, end := coreusage.CalendarMonth(now)
+	start, end := coreusage.PeriodFor(now, 1)
 	usage, err := svc.GetPeriodUsage(ctx, f.orgID, start)
 	if err != nil {
 		t.Fatalf("GetPeriodUsage: %v", err)
@@ -300,7 +308,7 @@ func TestMeteringKeepsTwoOrgsApart(t *testing.T) {
 	svc := f.svc.WithClickHouse(ch.Conn)
 	ctx := t.Context()
 
-	otherOrgID, otherProjectID := seedOrgProject(t, f.w)
+	otherOrgID, otherProjectID := seedOrgProject(t, f.pg)
 
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	insertEvent(t, ch.Conn, f.projectID, uuid.NewString(), now.Add(-time.Hour))
@@ -308,7 +316,7 @@ func TestMeteringKeepsTwoOrgsApart(t *testing.T) {
 		insertEvent(t, ch.Conn, otherProjectID, uuid.NewString(), now.Add(-time.Hour))
 	}
 
-	start, end := coreusage.CalendarMonth(now)
+	start, end := coreusage.PeriodFor(now, 1)
 	usage, err := svc.MeterWindow(ctx, start, now.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("MeterWindow: %v", err)
@@ -347,7 +355,7 @@ func TestListDailyUsageReturnsThePerProjectSeries(t *testing.T) {
 	// not just the one the events happened to land in.
 	secondProjectID := seedProject(t, f.w, f.orgID)
 	// And a foreign org's cell on the same day, which must never appear.
-	_, foreignProjectID := seedOrgProject(t, f.w)
+	_, foreignProjectID := seedOrgProject(t, f.pg)
 
 	day1 := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
 	day2 := day1.AddDate(0, 0, 1)
@@ -405,7 +413,7 @@ func TestOrgPeriodsCoversAnOrgWithNoEvents(t *testing.T) {
 	if len(periods) != 1 || periods[0].OrgID != f.orgID {
 		t.Fatalf("got %+v, want the one seeded org", periods)
 	}
-	wantStart, wantEnd := coreusage.CalendarMonth(now)
+	wantStart, wantEnd := coreusage.PeriodFor(now, 1)
 	if !periods[0].Start.Equal(wantStart) || !periods[0].End.Equal(wantEnd) {
 		t.Errorf("period = [%s, %s), want [%s, %s)",
 			periods[0].Start, periods[0].End, wantStart, wantEnd)
@@ -471,6 +479,61 @@ func TestDeleteUnmeteredDaysDropsCellsWithNoEventsLeft(t *testing.T) {
 	}
 }
 
+// The kept set is a list of (project, day) PAIRS, zipped by ordinality. With one
+// project the zip and the cross product are identical, so only two projects
+// crossing two days can tell a broken pairing from a working one: drop the
+// `on p.n = k.n` and this deletes nothing.
+func TestDeleteUnmeteredDaysPairsProjectsWithTheirOwnDays(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+
+	projectB := seedProject(t, f.w, f.orgID)
+	day1 := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	day2 := day1.AddDate(0, 0, 1)
+	if err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: day1, EventCount: 1, ProjectID: f.projectID},
+		{Day: day2, EventCount: 2, ProjectID: f.projectID},
+		{Day: day1, EventCount: 3, ProjectID: projectB},
+		{Day: day2, EventCount: 4, ProjectID: projectB},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+
+	// A re-meter that saw A only on day1 and B only on day2: the diagonal survives.
+	remetered := []coreusage.DailyUsage{
+		{Day: day1, EventCount: 1, ProjectID: f.projectID},
+		{Day: day2, EventCount: 4, ProjectID: projectB},
+	}
+	dropped, err := f.svc.DeleteUnmeteredDays(ctx, remetered, day1, day2.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("DeleteUnmeteredDays: %v", err)
+	}
+	if dropped != 2 {
+		t.Fatalf("dropped = %d, want 2 (A/day2 and B/day1); 0 means the pairing degraded to a cross product", dropped)
+	}
+
+	daily, err := f.svc.ListDailyUsage(ctx, f.orgID, day1, day2.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("ListDailyUsage: %v", err)
+	}
+	if len(daily) != 2 {
+		t.Fatalf("got %d cells, want 2: %+v", len(daily), daily)
+	}
+	for _, d := range daily {
+		wantDay := day1
+		if d.ProjectID == projectB {
+			wantDay = day2
+		}
+		if !d.Day.Equal(wantDay) {
+			t.Errorf("cell %+v survived; each project keeps only the day it was re-metered on", d)
+		}
+	}
+}
+
 // A month rollover leaves the new period rowless until the next pass. That is a
 // metered org with nothing counted yet, not an unmetered one — reporting it as
 // "never metered" would blank every dashboard on the 1st.
@@ -483,7 +546,7 @@ func TestPeriodNotYetMeteredKeepsTheLastStamp(t *testing.T) {
 	ctx := t.Context()
 
 	july := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
-	julyStart, julyEnd := coreusage.CalendarMonth(july)
+	julyStart, julyEnd := coreusage.PeriodFor(july, 1)
 	if err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
 		{Day: coreusage.FloorDayUTC(july), EventCount: 12, ProjectID: f.projectID},
 	}); err != nil {
@@ -494,7 +557,7 @@ func TestPeriodNotYetMeteredKeepsTheLastStamp(t *testing.T) {
 	}
 
 	// August, before the first pass of the month has run.
-	augStart, _ := coreusage.CalendarMonth(july.AddDate(0, 1, 0))
+	augStart, _ := coreusage.PeriodFor(july.AddDate(0, 1, 0), 1)
 	usage, err := f.svc.GetPeriodUsage(ctx, f.orgID, augStart)
 	if err != nil {
 		t.Fatalf("GetPeriodUsage: %v", err)
@@ -518,7 +581,7 @@ func TestRefreshPeriodAdvancesTheStampForAnIdleOrg(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	start, end := coreusage.CalendarMonth(now)
+	start, end := coreusage.PeriodFor(now, 1)
 
 	if err := f.svc.RecordDailyUsage(ctx, []coreusage.DailyUsage{
 		{Day: coreusage.FloorDayUTC(now), EventCount: 3, ProjectID: f.projectID},
@@ -557,7 +620,7 @@ func TestNeverMeteredOrgHasNoStamp(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	start, _ := coreusage.CalendarMonth(time.Now())
+	start, _ := coreusage.PeriodFor(time.Now(), 1)
 
 	usage, err := f.svc.GetPeriodUsage(t.Context(), f.orgID, start)
 	if err != nil {
@@ -601,7 +664,7 @@ func TestMeterWindowWithoutClickHouse(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	start, end := coreusage.CalendarMonth(time.Now().UTC())
+	start, end := coreusage.PeriodFor(time.Now().UTC(), 1)
 
 	usage, err := f.svc.MeterWindow(t.Context(), start, end)
 	if !errors.Is(err, coreusage.ErrNoMeteringConn) {
@@ -628,7 +691,7 @@ func TestUsageCallsSurfaceFailuresRatherThanEmptyAnswers(t *testing.T) {
 	cancel()
 
 	now := time.Now().UTC()
-	start, end := coreusage.CalendarMonth(now)
+	start, end := coreusage.PeriodFor(now, 1)
 
 	calls := map[string]func() error{
 		"MeterWindow": func() error { _, err := svc.MeterWindow(ctx, start, end); return err },

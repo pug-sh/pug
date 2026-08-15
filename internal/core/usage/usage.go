@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	chdb "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -20,6 +21,10 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 )
+
+// ErrOrgNotFound reports an org id no org row matches. Distinct from a database
+// failure because the caller answers it with NotFound, not Internal.
+var ErrOrgNotFound = errors.New("usage: org not found")
 
 // Reader answers the dashboard's two usage questions and nothing else.
 //
@@ -153,11 +158,85 @@ func (s *Reader) ListDailyUsage(ctx context.Context, orgID string, from, to time
 	return out, nil
 }
 
-// CalendarMonth returns the UTC calendar month containing now, half-open.
-func CalendarMonth(now time.Time) (start, end time.Time) {
+// GetOrgPeriod resolves the org's current quota window from its anchor. The RPC
+// read path and the meter both go through this, so the window a dashboard shows
+// and the window the meter sums cannot be derived differently.
+func (s *Reader) GetOrgPeriod(ctx context.Context, orgID string, now time.Time) (start, end time.Time, err error) {
+	row, err := s.read.GetOrgUsageWindow(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return time.Time{}, time.Time{}, ErrOrgNotFound
+		}
+		slog.ErrorContext(ctx, "failed to read the org usage window", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return time.Time{}, time.Time{}, err
+	}
+	start, end = PeriodFor(now, AnchorDay(row.CreateTime.Time, anchorOverride(row.AnchorDay)))
+	return start, end, nil
+}
+
+// AnchorDay is the day of month an org's quota window starts on: the stored
+// override when there is one (0 means none), otherwise the day the org was
+// created. Every org therefore has a well-defined anchor without billing having
+// written anything — see docs/architecture/billing.md section 6.1.
+func AnchorDay(orgCreateTime time.Time, override int) int {
+	if override >= 1 && override <= 31 {
+		return override
+	}
+	return orgCreateTime.UTC().Day()
+}
+
+// anchorOverride unpacks the nullable column. Out of range is impossible under
+// the table's check constraint and resolves to "none" anyway, since a period has
+// to exist for every org whatever the row says.
+func anchorOverride(v pgtype.Int2) int {
+	if !v.Valid {
+		return 0
+	}
+	return int(v.Int16)
+}
+
+// PeriodFor returns the half-open quota window containing now for an org
+// anchored on anchorDay, in UTC. Both bounds land on midnight, which is what
+// RefreshPeriodUsage's day-grain sum requires.
+func PeriodFor(now time.Time, anchorDay int) (start, end time.Time) {
 	u := now.UTC()
-	start = time.Date(u.Year(), u.Month(), 1, 0, 0, 0, 0, time.UTC)
-	return start, start.AddDate(0, 1, 0)
+	start = anchored(u.Year(), u.Month(), anchorDay)
+	if u.Before(start) {
+		y, m := shiftMonth(u.Year(), u.Month(), -1)
+		start = anchored(y, m, anchorDay)
+	}
+	y, m := shiftMonth(start.Year(), start.Month(), 1)
+	return start, anchored(y, m, anchorDay)
+}
+
+// anchored is the UTC midnight of anchorDay within a month, clamped to that
+// month's last day. The clamp is the whole point: time.Date NORMALIZES an
+// out-of-range day (Feb 31 becomes Mar 3), which would put a period boundary in
+// the wrong month rather than at the end of the intended one. Each start is
+// re-derived from the anchor, never from the previous start, so a clamped month
+// does not drag the anchor down with it: 31 Jan, 28 Feb, 31 Mar.
+func anchored(year int, month time.Month, anchorDay int) time.Time {
+	if anchorDay < 1 {
+		anchorDay = 1
+	}
+	if last := daysIn(year, month); anchorDay > last {
+		anchorDay = last
+	}
+	return time.Date(year, month, anchorDay, 0, 0, 0, 0, time.UTC)
+}
+
+// daysIn is the length of a month: day 0 of the next one normalizes back to it.
+func daysIn(year int, month time.Month) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
+// shiftMonth moves (year, month) by delta months. Anchored to day 1, which every
+// month has, so the addition cannot normalize into a neighbouring month the way
+// it would from day 31.
+func shiftMonth(year int, month time.Month, delta int) (int, time.Month) {
+	t := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).AddDate(0, delta, 0)
+	return t.Year(), t.Month()
 }
 
 // FloorDayUTC truncates to the UTC midnight starting t's day. Calendar-explicit
@@ -168,6 +247,12 @@ func CalendarMonth(now time.Time) (start, end time.Time) {
 func FloorDayUTC(t time.Time) time.Time {
 	u := t.UTC()
 	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// FloorMonthUTC truncates to the UTC midnight starting t's calendar month.
+func FloorMonthUTC(t time.Time) time.Time {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
 // CeilDayUTC rounds up to the next UTC midnight, leaving an exact one alone.

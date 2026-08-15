@@ -14,11 +14,10 @@ import (
 const deleteUnmeteredUsageDaily = `-- name: DeleteUnmeteredUsageDaily :execrows
 delete from usage_daily d
 where d.day >= $1 and d.day < $2
-  and not exists (
-    select 1
+  and (d.project_id::text, d.day) not in (
+    select p.project_id, k.day
     from unnest($3::text[]) with ordinality as p(project_id, n)
     join unnest($4::date[]) with ordinality as k(day, n) on p.n = k.n
-    where p.project_id = d.project_id and k.day = d.day
   )
 `
 
@@ -32,6 +31,13 @@ type DeleteUnmeteredUsageDailyParams struct {
 // Cells the recompute no longer sees at all: their events were deleted (GDPR
 // erasure, a dropped partition). Upserting only what ClickHouse returned would
 // leave the old count standing forever.
+//
+// Uncorrelated on purpose. A `not exists` referencing d re-runs the unnest join
+// per candidate row, and unnest estimates 100 rows whatever the array holds, so
+// the planner picks a join filter and the cost becomes days x projects^2 -- tens
+// of seconds and gigabytes of temp spill once a full recompute widens the window
+// to a month. The arrays never contain NULL, so `not in` is exact here, and an
+// empty one still means "delete the whole window" exactly as before.
 func (q *Queries) DeleteUnmeteredUsageDaily(ctx context.Context, arg DeleteUnmeteredUsageDailyParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteUnmeteredUsageDaily,
 		arg.FromDay,

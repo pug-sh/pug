@@ -60,11 +60,11 @@ Two tables (migration `018_create_usage.sql`):
   per-page-load read is one row rather than a sum over daily rows.
 
 `period_end` is stored but never read back: `GetUsage` recomputes both bounds from
-the clock via `CalendarMonth`, because the period it answers for is always the
-current one. It is kept because the row is a record of what was summed — a period
-whose end is only inferable from the reader's clock cannot be audited later, and
-any non-calendar period (anniversary billing) would need it present from the
-start rather than backfilled. Do not delete it as unused.
+the clock and the org's anchor (§3.1), because the period it answers for is always
+the current one. It is kept because the row is a record of what was summed, and
+that matters more now than when it was written — with anniversary periods a row's
+window is not inferable from a reader's clock alone, since it depends on an
+`anchor_day` an operator can change afterwards. Do not delete it as unused.
 
 `usage_computed_at` is both the freshness stamp and the row's modification time,
 which is why `usage_periods` has no `update_time` twin. It is also the load-bearing
@@ -76,9 +76,32 @@ covered in section 5.)
 
 ## 3.1 Timezone
 
-**Usage is UTC end to end** — day boundaries, month boundaries, everything. There
-are no per-org anniversary periods, so the window is derived from the clock
-(`CalendarMonth`) and the database only supplies the org ids.
+**Usage is UTC end to end** — day boundaries, period boundaries, everything.
+
+Periods are **per-org billing anniversaries**, not calendar months: an org that
+signed up on the 17th is metered 17th to 17th. `PeriodFor(now, anchorDay)`
+derives the window, and `AnchorDay` resolves the anchor from
+`billing_entitlements.anchor_day` when an operator has set one and from
+`orgs.create_time` otherwise — so every org has a window whether or not billing
+has ever written a row. `ListOrgUsageWindows` returns both inputs with the work
+list; the meter reads that billing column but imports nothing from
+`internal/core/billing`, and `GetOrgPeriod` is the single derivation the RPC read
+path and the meter share.
+
+Two consequences worth holding onto. Period starts land on **UTC midnight** and
+never on an instant, because `RefreshPeriodUsage` sums day cells with
+`CeilDayUTC` on both bounds and is exact only for day-aligned windows — which is
+why the anchor is a day-of-month integer. And an anchor past a month's length
+**clamps** (31 January, 28 February, 31 March), which `PeriodFor` re-derives from
+the anchor each month rather than carrying the clamp forward; `time.AddDate`
+normalizes such a date into the following month instead, which is the specific
+bug `period_test.go` exists to catch.
+
+Rollovers are therefore spread across the month rather than landing on the 1st
+for everybody, so the "metered, but not this period yet" state (§5) is an
+everyday occurrence for some org rather than a monthly spike for all of them.
+Quotas themselves live in [`billing.md`](billing.md); this subsystem only borrows
+the window so that "X of Y" compares two numbers measured over the same one.
 
 This deliberately differs from insights, which bucket in the **project's**
 `reporting_timezone` (`bucketExpr` wraps the column in `toTimeZone`). An org can
@@ -146,8 +169,16 @@ Under that lock the pass runs two jobs:
 - **meter** — re-counts a trailing window (`PUG_USAGE_RESCAN_DAYS`, default 2)
   to absorb late arrivals, upserts the day cells, drops any cell in the window
   ClickHouse no longer returns, then re-sums every org's current period. Once
-  every 24h it widens the window to the whole current month, catching late
-  arrivals that fell outside the trailing rescan.
+  every 24h it widens the window (`meterFrom`), catching late arrivals that fell
+  outside the trailing rescan. That widening floors at **month-to-date** and then
+  takes the earliest **anniversary** in the work list (`EarliestPeriodStart`) if
+  it reaches back further. Both bounds are load-bearing and neither subsumes the
+  other: with per-org anchors an org's period can have begun in the previous
+  calendar month, and stopping at the month boundary would leave the earlier part
+  of it re-summed over days the pass had not re-read — while an org anchored a day
+  or two ago has a period start *later* than the trailing rescan, so the
+  anniversary alone would collapse a full pass back to those two days and stop
+  reconciling erasures on older ones.
 
   The drop half matters because counts have to converge **downward** too: GDPR
   erasure hard-deletes events (`ALTER TABLE events DELETE`), and an upsert-only
@@ -269,11 +300,13 @@ rather than by client discipline:
 | present | absent | The meter is alive but has not summed this period yet. Render "computing". |
 | present | present | A real total. |
 
-The middle state is the wrinkle the meter creates: at a month rollover the new
+The middle state is the wrinkle the meter creates: at a period rollover the new
 period has no `usage_periods` row until the next pass, which is *not* "never
-metered". `GetPeriodUsage` falls back to the org's most recent stamp so the 1st of
-the month does not flip every dashboard to "unknown" for a whole schedule
-interval — but it leaves `Counted` false, so no count goes out beside that stamp.
+metered". `GetPeriodUsage` falls back to the org's most recent stamp so an org
+crossing its anniversary does not flip to "unknown" for a whole schedule interval
+— but it leaves `Counted` false, so no count goes out beside that stamp. Because
+anchors are per-org these rollovers are spread across the month rather than
+hitting every dashboard on the 1st.
 An earlier revision emitted a placeholder `used_events: 0` there and asked clients
 to notice that `usage_computed_at < period_start`; that was client discipline
 re-entering through the back door, and the gap it papered over grows without
@@ -333,18 +366,18 @@ Three layers that do work, in order of usefulness:
 - **Client clock skew** can place an event's `occur_time` in a neighbouring month;
   ingestion does not clamp it. A skewed client shifts a small number of events
   between periods.
-- **A closed month is never revisited.** At its widest (the 24h full recompute)
-  the metered window's floor is the 1st of the current month, or
-  `now - PUG_USAGE_RESCAN_DAYS` if that is earlier — so it reaches into the
-  previous month only for the first `PUG_USAGE_RESCAN_DAYS` of a new one. An
+- **A closed period is never revisited.** At its widest (the 24h full recompute)
+  the metered window's floor is the earliest of three: month-to-date, the earliest
+  current-period start across all orgs, and `now - PUG_USAGE_RESCAN_DAYS` — so it
+  reaches back at most to the oldest live anniversary, and usually to the 1st. An
   import carrying months-old `occur_time` values therefore lands in **neither**
   the daily series nor any headline total: `MeterWindow` never sees those days,
   so no day cell is written and no closed period is re-summed. Deletions in a
   closed month are unrepairable for the same reason — the drop pass only
   reconciles the window it just metered. Widening `PUG_USAGE_RESCAN_DAYS` is not
   the fix: it recomputes older day cells while `OrgPeriods` still re-sums only
-  the current month, which leaves the daily series and the headline disagreeing
-  about a closed period.
+  each org's *current* period, which leaves the daily series and the headline
+  disagreeing about a closed one.
 - **`uniqExact(event_id)` per day is looser than the storage dedup key** (which
   also carries minute and kind): an `event_id` counts once per `(project, day)`
   however many kinds it arrived under, and once again in each other day it
@@ -394,6 +427,16 @@ Three layers that do work, in order of usefulness:
 
 - **Plans, quotas, limits and enforcement.** There is no tier model here — see
   invariant 3.
+- **An operator alert on runaway volume.** Nothing tells *us* when one project
+  starts sending orders of magnitude more than it used to, so the first signal is
+  the ClickHouse bill. This is the natural home for one — the pass already visits
+  every project on a schedule and holds the day's counts in memory — and it needs
+  no quota to be useful: "any project over N events/day, or M× its trailing
+  median" catches the same traffic without importing an entitlement. Deliberately
+  absent rather than forgotten; see [`billing.md`](billing.md) §13, which records
+  the same gap from the other side. Note that an alert would be the first thing
+  here to *act* on a count, so it must stay on the read side of invariant 1 —
+  telling someone, never throttling anyone.
 - **Payments of any kind.** No provider, no checkout, no ledger, no webhooks.
 - **Per-period usage history in the API.** `GetUsage` answers for the current
   period; older totals live in `usage_periods` but are not served.

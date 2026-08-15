@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	usagev1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1"
 )
@@ -40,7 +41,16 @@ func (s *Server) GetUsage(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	periodStart, periodEnd := coreusage.CalendarMonth(time.Now())
+	// The org's own quota window, which starts on its billing anniversary rather
+	// than the 1st — resolved through the same helper the meter uses, so the
+	// window shown and the window summed cannot diverge.
+	periodStart, periodEnd, err := s.service.GetOrgPeriod(ctx, orgID, time.Now())
+	if err != nil {
+		if errors.Is(err, coreusage.ErrOrgNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
+		}
+		return nil, internalErr()
+	}
 
 	usage, err := s.service.GetPeriodUsage(ctx, orgID, periodStart)
 	if err != nil {
