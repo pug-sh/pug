@@ -447,6 +447,7 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20260508232706-74f9aab9d74a // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -470,5 +471,6 @@ tool (
 	github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc
 	github.com/pug-sh/pug/cmd/protoc-gen-mcp
 	github.com/sqlc-dev/sqlc/cmd/sqlc
+	golang.org/x/tools/cmd/deadcode
 	google.golang.org/protobuf/cmd/protoc-gen-go
 )

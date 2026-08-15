@@ -70,6 +70,14 @@ jobs:
       - name: Lint
         run: make lint
 
+      - name: Dead code
+        if: '!cancelled()'
+        run: make lint-dead
+
+      - name: Duplicate code
+        if: '!cancelled()'
+        run: make lint-dupl
+
   drift:
     runs-on: ubuntu-latest
     steps:

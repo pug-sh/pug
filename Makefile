@@ -57,6 +57,22 @@ lint-proto:
 lint:
 	go tool golangci-lint run --allow-parallel-runners --timeout 5m ./...
 
+# -test makes test packages roots too, so a helper used only by tests is live.
+# deadcode exits 0 even when it reports, so failing is on us.
+.PHONY: lint-dead
+lint-dead:
+	@out=$$(go tool deadcode -test ./...); \
+	if [ -n "$$out" ]; then \
+		printf '%s\n\n' "$$out"; \
+		echo "unreachable from any main or test: delete it, or wire it up"; \
+		exit 1; \
+	fi
+
+.PHONY: lint-dupl
+lint-dupl:
+	go tool golangci-lint run --no-config --default=none -E dupl \
+		--tests=false --allow-parallel-runners --timeout 5m ./...
+
 .PHONY: rpc
 rpc: lint-proto
 	go tool buf generate
