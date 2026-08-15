@@ -67,7 +67,17 @@ jobs:
       - name: Download modules and compile tools
         run: go mod download && go install tool
 
+      # Every check runs even when an earlier one fails, so one push reports
+      # every category instead of stopping at the first.
+      - name: Format
+        run: make lint-fmt
+
+      - name: Migration numbering
+        if: '!cancelled()'
+        run: make lint-migrations
+
       - name: Lint
+        if: '!cancelled()'
         run: make lint
 
       - name: Dead code
@@ -107,3 +117,37 @@ jobs:
 
       - name: Check protobuf drift
         run: make rpc && git diff --exit-code internal/gen/proto/
+
+      - name: Check templ drift
+        run: make templ && git diff --exit-code internal/core/email/templates/
+
+  # Images only build on a release tag, so a broken Dockerfile would otherwise
+  # surface on release day. One build per target (not per image) is enough to
+  # prove it compiles; the release job still builds all twelve.
+  docker:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: app, cmd: server }
+          - { target: worker, cmd: workers/events }
+          - { target: migrate, cmd: migrate/postgres }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          build-args: |
+            CMD=${{ matrix.cmd }}
+          # Native arch only; the release job is what proves the arm64 cross-build.
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=pr-${{ matrix.target }}
+          cache-to: type=gha,scope=pr-${{ matrix.target }},mode=max

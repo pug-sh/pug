@@ -73,6 +73,34 @@ lint-dupl:
 	go tool golangci-lint run --no-config --default=none -E dupl \
 		--tests=false --allow-parallel-runners --timeout 5m ./...
 
+# templ emits code that isn't goimports-clean, so formatting it would fight
+# `make templ` and the templ drift check. Shared by fmt and lint-fmt so the
+# two can't drift apart.
+GOFILES = git ls-files -- '*.go' ':!:internal/gen/**' ':!:*_templ.go'
+
+.PHONY: lint-fmt
+lint-fmt:
+	@out=$$($(GOFILES) | xargs -r go tool goimports -l); \
+	if [ -n "$$out" ]; then \
+		echo "not goimports-clean:"; \
+		printf '%s\n\n' "$$out"; \
+		echo "run: make fmt"; \
+		exit 1; \
+	fi
+
+# Two branches can each claim the next number without git ever conflicting.
+.PHONY: lint-migrations
+lint-migrations:
+	@fail=0; \
+	for d in schema/postgres/migrations schema/clickhouse/migrations; do \
+		dups=$$(ls $$d | grep -oE '^[0-9]+' | sort | uniq -d); \
+		if [ -n "$$dups" ]; then \
+			echo "$$d: duplicate migration number(s): $$dups"; \
+			fail=1; \
+		fi; \
+	done; \
+	[ $$fail -eq 0 ]
+
 .PHONY: rpc
 rpc: lint-proto
 	go tool buf generate
@@ -99,7 +127,7 @@ build:
 
 .PHONY: fmt
 fmt:
-	rg --files -g '*.go' -g '!internal/gen/**' | xargs -r goimports -w
+	@$(GOFILES) | xargs -r go tool goimports -w
 
 .PHONY: test
 test:

@@ -197,14 +197,14 @@ const (
 	// Heights are sized to the tile's CONTENT so nothing scrolls inside its own
 	// card: a ranked list needs a row per entry, a broken-down funnel one block
 	// per series, the explainer enough room for its bullets.
-	hKPI    = 16 // KPI stat card — one number over a short sparkline
-	hNote   = 20 // explainer callout where it shares its column with a stat card
-	hRanked = 19 // ranked list of ~6 rows (a fixed, small limit)
-	hStd    = 22 // standard trend chart, or a top-K list of <= 8 rows
-	hLarge  = 26 // hero / full-width trend chart; explainer callout
+	hKPI      = 16 // KPI stat card — one number over a short sparkline
+	hNote     = 20 // explainer callout where it shares its column with a stat card
+	hRanked   = 19 // ranked list of ~6 rows (a fixed, small limit)
+	hStd      = 22 // standard trend chart, or a top-K list of <= 8 rows
+	hLarge    = 26 // hero / full-width trend chart; explainer callout
 	hList     = 24 // ranked list of ~10 rows
 	hListLong = 28 // ranked list of ~12 rows
-	hCohort = 40 // retention cohort table
+	hCohort   = 40 // retention cohort table
 )
 
 // gridPos builds a tile's grid placement on the 72-column fine grid.

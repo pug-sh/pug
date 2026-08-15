@@ -472,5 +472,6 @@ tool (
 	github.com/pug-sh/pug/cmd/protoc-gen-mcp
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 	golang.org/x/tools/cmd/deadcode
+	golang.org/x/tools/cmd/goimports
 	google.golang.org/protobuf/cmd/protoc-gen-go
 )

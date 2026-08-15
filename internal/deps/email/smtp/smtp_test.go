@@ -37,9 +37,11 @@ type fakeSMTPServer struct {
 // them after newFakeSMTPServer returns would race the goroutine.
 type fakeOption func(*fakeSMTPServer)
 
-func withDropOnQuit() fakeOption        { return func(s *fakeSMTPServer) { s.dropOnQuit = true } }
-func withHangAfterGreeting() fakeOption { return func(s *fakeSMTPServer) { s.hangAfterGreeting = true } }
-func withSilentOnAccept() fakeOption    { return func(s *fakeSMTPServer) { s.silentOnAccept = true } }
+func withDropOnQuit() fakeOption { return func(s *fakeSMTPServer) { s.dropOnQuit = true } }
+func withHangAfterGreeting() fakeOption {
+	return func(s *fakeSMTPServer) { s.hangAfterGreeting = true }
+}
+func withSilentOnAccept() fakeOption { return func(s *fakeSMTPServer) { s.silentOnAccept = true } }
 
 func newFakeSMTPServer(t *testing.T, opts ...fakeOption) *fakeSMTPServer {
 	t.Helper()
