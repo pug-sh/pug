@@ -36,8 +36,12 @@ func newFixture(t *testing.T) *fixture {
 	}
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
 
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
 	return &fixture{
-		svc:   corebilling.NewService(pg.PgRO, pg.PgW, true),
+		svc:   svc,
 		pg:    pg,
 		orgID: org.ID,
 	}
@@ -80,7 +84,7 @@ func TestQuotaWindowMatchesTheMeters(t *testing.T) {
 
 	f := newFixture(t)
 	ctx := t.Context()
-	meter := coreusage.NewReader(f.pg.PgRO)
+	meter := coreusage.NewService(f.pg.PgRO, f.pg.PgW)
 
 	for _, tc := range []struct {
 		name   string
@@ -93,7 +97,7 @@ func TestQuotaWindowMatchesTheMeters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			change := corebilling.Change{PlanSlug: "growth"}
 			if tc.anchor > 0 {
-				change.AnchorDay = corebilling.Set(tc.anchor)
+				change.AnchorDay = new(tc.anchor)
 			}
 			if _, err := f.svc.SetPlan(ctx, f.orgID, actor, change); err != nil {
 				t.Fatalf("SetPlan: %v", err)
@@ -144,8 +148,8 @@ func TestSetPlanRoundTrips(t *testing.T) {
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
 		PlanSlug:       "growth",
-		ContractEndsAt: corebilling.Set(until),
-		Note:           corebilling.Set("annual wire, INV-123"),
+		ContractEndsAt: new(until),
+		Note:           new("annual wire, INV-123"),
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
@@ -174,14 +178,12 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 
 	f := newFixture(t)
 	ctx := t.Context()
-	price := int64(40_000)
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugCustom,
-		IncludedEvents: corebilling.Set(int64(5_000_000)),
-		DisplayName:    corebilling.Set("Acme Enterprise"),
-		PriceCents:     corebilling.Set(price),
-		Currency:       corebilling.Set("USD"),
+		IncludedEvents: new(int64(5_000_000)),
+		DisplayName:    new("Acme Enterprise"),
+		AnchorDay:      new(17),
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
@@ -189,7 +191,7 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 	// A renewal: a new end date and nothing else.
 	rec, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugCustom,
-		ContractEndsAt: corebilling.Set(time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)),
+		ContractEndsAt: new(time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)),
 	})
 	if err != nil {
 		t.Fatalf("renewal SetPlan: %v", err)
@@ -200,15 +202,15 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 	if rec.DisplayNameOverride != "Acme Enterprise" {
 		t.Errorf("name after a renewal = %q, want it preserved", rec.DisplayNameOverride)
 	}
-	if rec.PriceCentsOverride == nil || *rec.PriceCentsOverride != price {
-		t.Errorf("price after a renewal = %v, want it preserved", rec.PriceCentsOverride)
+	if rec.AnchorDay != 17 {
+		t.Errorf("anchor day after a renewal = %d, want it preserved", rec.AnchorDay)
 	}
 
 	// And an explicit clear really clears.
 	cleared, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
 		PlanSlug:       "growth",
-		IncludedEvents: corebilling.Clear[int64](),
-		DisplayName:    corebilling.Clear[string](),
+		IncludedEvents: new(int64),
+		DisplayName:    new(string),
 	})
 	if err != nil {
 		t.Fatalf("clearing SetPlan: %v", err)
@@ -240,31 +242,9 @@ func TestCustomPlanRequiresAQuota(t *testing.T) {
 	}
 }
 
-func TestPriceOverrideRequiresACurrency(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:   "growth",
-		PriceCents: corebilling.Set(int64(40_000)),
-	})
-	if !errors.Is(err, corebilling.ErrPriceNeedsCurrency) {
-		t.Fatalf("err = %v, want ErrPriceNeedsCurrency", err)
-	}
-
-	_, err = f.pg.PgW.Exec(t.Context(),
-		"insert into billing_entitlements (org_id, plan_slug, currency_override) values ($1, 'growth', 'USD')", f.orgID)
-	if err == nil {
-		t.Error("the database accepted a currency with no amount")
-	} else if !strings.Contains(err.Error(), "billing_entitlements_currency_needs_price") {
-		t.Errorf("err = %v, want the currency_needs_price constraint", err)
-	}
-}
-
-// Every slug the Go catalog knows must be storable. This is the test that fails
-// when the catalog and the column's check constraint drift apart.
+// Every slug the Go catalog knows must be storable. There is deliberately no
+// plan_slug check constraint, so this is what catches a slug outgrowing
+// varchar(50) or being rejected by the service.
 func TestEveryCatalogSlugIsStorable(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -274,13 +254,13 @@ func TestEveryCatalogSlugIsStorable(t *testing.T) {
 	for _, plan := range corebilling.Plans() {
 		change := corebilling.Change{PlanSlug: plan.Slug}
 		if plan.Slug == corebilling.SlugCustom {
-			change.IncludedEvents = corebilling.Set(int64(1))
+			change.IncludedEvents = new(int64(1))
 		}
 		if plan.Slug == corebilling.SlugTrial {
 			continue // not settable by design; ExtendTrial owns it
 		}
 		if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); err != nil {
-			t.Errorf("%s: %v — the catalog and the plan_slug check constraint have drifted", plan.Slug, err)
+			t.Errorf("%s: %v — this catalog slug is not storable", plan.Slug, err)
 		}
 	}
 }
@@ -295,7 +275,7 @@ func TestCustomPlanIsGrantableToAnyOrg(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugCustom,
-		IncludedEvents: corebilling.Set(int64(5_000_000)),
+		IncludedEvents: new(int64(5_000_000)),
 	}); err != nil {
 		t.Fatalf("granting a custom deal: %v", err)
 	}
@@ -353,12 +333,12 @@ func TestHistoryRecordsEveryChange(t *testing.T) {
 	ctx := t.Context()
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug: "starter", Note: corebilling.Set("first"),
+		PlanSlug: "starter", Note: new("first"),
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	if _, err := f.svc.SetPlan(ctx, f.orgID, "someone@else", corebilling.Change{
-		PlanSlug: "scale", Note: corebilling.Set("upgrade"),
+		PlanSlug: "scale", Note: new("upgrade"),
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}

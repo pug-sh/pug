@@ -24,7 +24,7 @@ func (q *Queries) DeleteBillingEntitlement(ctx context.Context, orgID string) (i
 }
 
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
-select anchor_day, contract_ends_at, create_time, currency_override, display_name_override, included_events_override, note, org_id, plan_slug, price_cents_override, trial_ends_at, update_time from billing_entitlements where org_id = $1 for update
+select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time from billing_entitlements where org_id = $1 for update
 `
 
 // Locks the row for a read-modify-write: the CLI leaves un-passed flags at their
@@ -37,13 +37,11 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.AnchorDay,
 		&i.ContractEndsAt,
 		&i.CreateTime,
-		&i.CurrencyOverride,
 		&i.DisplayNameOverride,
 		&i.IncludedEventsOverride,
 		&i.Note,
 		&i.OrgID,
 		&i.PlanSlug,
-		&i.PriceCentsOverride,
 		&i.TrialEndsAt,
 		&i.UpdateTime,
 	)
@@ -52,13 +50,11 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 
 const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
-  actor, anchor_day, contract_ends_at, currency_override, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, price_cents_override,
-  trial_ends_at
+  actor, anchor_day, contract_ends_at, display_name_override,
+  id, included_events_override, note, org_id, plan_slug, trial_ends_at
 ) values (
-  $1, $2, $3, $4, $5,
-  $6, $7, $8, $9, $10, $11,
-  $12
+  $1, $2, $3, $4,
+  $5, $6, $7, $8, $9, $10
 )
 `
 
@@ -66,14 +62,12 @@ type InsertBillingEntitlementHistoryParams struct {
 	Actor                  string
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
-	CurrencyOverride       pgtype.Text
 	DisplayNameOverride    pgtype.Text
 	ID                     string
 	IncludedEventsOverride pgtype.Int8
 	Note                   string
 	OrgID                  string
 	PlanSlug               pgtype.Text
-	PriceCentsOverride     pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -84,14 +78,12 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 		arg.Actor,
 		arg.AnchorDay,
 		arg.ContractEndsAt,
-		arg.CurrencyOverride,
 		arg.DisplayNameOverride,
 		arg.ID,
 		arg.IncludedEventsOverride,
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
-		arg.PriceCentsOverride,
 		arg.TrialEndsAt,
 	)
 	return err
@@ -111,37 +103,31 @@ func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) e
 
 const upsertBillingEntitlement = `-- name: UpsertBillingEntitlement :one
 insert into billing_entitlements (
-  anchor_day, contract_ends_at, currency_override, display_name_override,
-  included_events_override, note, org_id, plan_slug, price_cents_override,
-  trial_ends_at
+  anchor_day, contract_ends_at, display_name_override,
+  included_events_override, note, org_id, plan_slug, trial_ends_at
 ) values (
-  $1, $2, $3, $4,
-  $5, $6, $7, $8, $9,
-  $10
+  $1, $2, $3,
+  $4, $5, $6, $7, $8
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
     contract_ends_at = excluded.contract_ends_at,
-    currency_override = excluded.currency_override,
     display_name_override = excluded.display_name_override,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
-    price_cents_override = excluded.price_cents_override,
     trial_ends_at = excluded.trial_ends_at
-returning anchor_day, contract_ends_at, create_time, currency_override, display_name_override, included_events_override, note, org_id, plan_slug, price_cents_override, trial_ends_at, update_time
+returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time
 `
 
 type UpsertBillingEntitlementParams struct {
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
-	CurrencyOverride       pgtype.Text
 	DisplayNameOverride    pgtype.Text
 	IncludedEventsOverride pgtype.Int8
 	Note                   string
 	OrgID                  string
 	PlanSlug               string
-	PriceCentsOverride     pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -151,13 +137,11 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 	row := q.db.QueryRow(ctx, upsertBillingEntitlement,
 		arg.AnchorDay,
 		arg.ContractEndsAt,
-		arg.CurrencyOverride,
 		arg.DisplayNameOverride,
 		arg.IncludedEventsOverride,
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
-		arg.PriceCentsOverride,
 		arg.TrialEndsAt,
 	)
 	var i BillingEntitlement
@@ -165,13 +149,11 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.AnchorDay,
 		&i.ContractEndsAt,
 		&i.CreateTime,
-		&i.CurrencyOverride,
 		&i.DisplayNameOverride,
 		&i.IncludedEventsOverride,
 		&i.Note,
 		&i.OrgID,
 		&i.PlanSlug,
-		&i.PriceCentsOverride,
 		&i.TrialEndsAt,
 		&i.UpdateTime,
 	)

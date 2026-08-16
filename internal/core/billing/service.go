@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -27,17 +25,14 @@ var (
 	ErrPlanNotFound = errors.New("billing: plan not found")
 	ErrPlanRetired  = errors.New("billing: plan is retired and cannot be newly assigned")
 	// ErrTrialNotSettable guards the one slug that means nothing without a date.
-	ErrTrialNotSettable   = errors.New("billing: use extend-trial to put an org on the trial plan")
-	ErrCustomNeedsQuota   = errors.New("billing: the custom plan requires an events override")
-	ErrPriceNeedsCurrency = errors.New("billing: a price override requires a currency")
-	ErrCurrencyNeedsPrice = errors.New("billing: a currency override requires a price")
-	ErrAnchorDayRange     = errors.New("billing: anchor day must be between 1 and 31")
-	ErrCurrencyInvalid = errors.New("billing: currency must be a three-letter ISO 4217 code")
-	ErrQuotaNegative   = errors.New("billing: the events override must be positive")
+	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
+	ErrCustomNeedsQuota = errors.New("billing: the custom plan requires an events override")
+	ErrAnchorDayRange   = errors.New("billing: anchor day must be between 1 and 31")
+	ErrQuotaNegative    = errors.New("billing: the events override must be positive")
 	// ErrTrialNotExtended guards a date that would move the org's trial end
 	// backwards, which "extend" must never do.
 	ErrTrialNotExtended = errors.New("billing: that trial end is not later than the current one")
-	ErrTrialDaysRange   = errors.New("billing: trial extension is capped at one year")
+	ErrTrialDaysRange   = errors.New("billing: trial extension must be between 1 and 365 days")
 	// ErrTrialOnGrantedPlan guards a trial date that would resolve to nothing: a
 	// granted plan wins over it, so the write would look like it worked.
 	ErrTrialOnGrantedPlan = errors.New("billing: clear the granted plan before extending a trial")
@@ -46,26 +41,38 @@ var (
 	ErrNoEntitlement = errors.New("billing: no entitlement stored for this org")
 )
 
-// Reader answers the dashboard's one question. It holds no write pool, so the
-// endpoint on the viewer floor has no reachable path to a mutation.
-type Reader struct {
-	read *dbread.Queries
-	// Off means a self-hosted install: no quota anywhere, decided once here
-	// rather than re-read per request.
+// Service is the whole package: GetEntitlement for the dashboard, the rest for
+// `pug billing`. No RPC mutates an entitlement, so nothing here is behind a
+// second type.
+type Service struct {
+	read  *dbread.Queries
+	write *dbwrite.Queries
+	pgW   *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
+	// billingEnabled mirrors PUG_BILLING_ENABLED. Off means a self-hosted install,
+	// where every org resolves with no quota at all, so no client can render a
+	// limit that does not apply.
 	billingEnabled bool
 }
 
-func NewReader(pgRO *pgxpool.Pool, billingEnabled bool) *Reader {
-	// Wiring time rather than the first request: a catalog missing a floor would
-	// otherwise serve every org a blank plan with no quota, and look healthy doing it.
-	mustPlan(SlugFree)
-	mustPlan(SlugTrial)
-	return &Reader{read: dbread.New(pgRO), billingEnabled: billingEnabled}
+// NewService checks the floors at wiring time: a catalog missing one resolves
+// every org to a blank plan with no quota, and looks healthy doing it.
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Service, error) {
+	for _, slug := range []string{SlugFree, SlugTrial} {
+		if _, ok := PlanBySlug(slug); !ok {
+			return nil, fmt.Errorf("billing: catalog is missing the floor plan %q", slug)
+		}
+	}
+	return &Service{
+		read:           dbread.New(pgRO),
+		write:          dbwrite.New(pgW),
+		pgW:            pgW,
+		billingEnabled: billingEnabled,
+	}, nil
 }
 
 // GetEntitlement resolves what the org may send right now.
-func (r *Reader) GetEntitlement(ctx context.Context, orgID string, now time.Time) (Entitlement, error) {
-	row, err := r.read.GetOrgEntitlement(ctx, orgID)
+func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Time) (Entitlement, error) {
+	row, err := s.read.GetOrgEntitlement(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Entitlement{}, ErrOrgNotFound
@@ -85,14 +92,14 @@ func (r *Reader) GetEntitlement(ctx context.Context, orgID string, now time.Time
 				slog.String("org_id", orgID), slog.String("plan_slug", rec.PlanSlug))
 		}
 	}
-	return Resolve(row.OrgCreateTime.Time, rec, now, r.billingEnabled), nil
+	return Resolve(row.OrgCreateTime.Time, rec, now, s.billingEnabled), nil
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the
 // resolved entitlement, because an override that is not in force today — a
 // lapsed deal's quota, say — is invisible in the resolved answer alone.
-func (r *Reader) StoredRecord(ctx context.Context, orgID string) (Record, error) {
-	row, err := r.read.GetOrgEntitlement(ctx, orgID)
+func (s *Service) StoredRecord(ctx context.Context, orgID string) (Record, error) {
+	row, err := s.read.GetOrgEntitlement(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Record{}, ErrOrgNotFound
@@ -112,9 +119,8 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 	}
 	rec := Record{
 		Present:             true,
-		AnchorDay:           anchorDay(row.AnchorDay),
+		AnchorDay:           postgres.Int2ToInt(row.AnchorDay),
 		ContractEndsAt:      row.ContractEndsAt.Time,
-		CurrencyOverride:    row.CurrencyOverride.String,
 		DisplayNameOverride: row.DisplayNameOverride.String,
 		Note:                row.Note.String,
 		PlanSlug:            row.PlanSlug.String,
@@ -123,64 +129,32 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 	if row.IncludedEventsOverride.Valid {
 		rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
 	}
-	if row.PriceCentsOverride.Valid {
-		v := row.PriceCentsOverride.Int64
-		rec.PriceCentsOverride = &v
-	}
 	return rec
 }
 
-// Service adds the operator writes. Only `pug billing` builds one — no RPC
-// mutates an entitlement, so nothing the server serves can reach these.
-type Service struct {
-	*Reader
-	pool *pgxpool.Pool
-}
-
-func NewService(pgRO, pgW *pgxpool.Pool, billingEnabled bool) *Service {
-	return &Service{Reader: NewReader(pgRO, billingEnabled), pool: pgW}
-}
-
-// Opt is a tri-state update field: unset leaves the stored value alone, Set
-// replaces it, Clear removes it.
+// Change is one operator edit. PlanSlug is required; every other field is nil to
+// leave the stored value alone, or a value to write — the zero value being the
+// clear.
 //
 // Leaving values alone is the default because the common re-set is a renewal — a
 // new end date on terms that have not changed — and a flag that silently
 // reverted a customer's negotiated quota to a catalog number would be the most
 // expensive bug this API could have.
-type Opt[T any] struct {
-	set   bool
-	clear bool
-	val   T
-}
-
-func Set[T any](v T) Opt[T] { return Opt[T]{set: true, val: v} }
-
-func Clear[T any]() Opt[T] { return Opt[T]{clear: true} }
-
-// Apply resolves the option against the value already stored.
-func (o Opt[T]) Apply(current T) T {
-	switch {
-	case o.set:
-		return o.val
-	case o.clear:
-		var zero T
-		return zero
-	}
-	return current
-}
-
-// Change is one operator edit. PlanSlug is required; everything else defaults to
-// leaving the stored value alone.
 type Change struct {
 	PlanSlug       string
-	IncludedEvents Opt[int64]
-	DisplayName    Opt[string]
-	PriceCents     Opt[int64]
-	Currency       Opt[string]
-	AnchorDay      Opt[int]
-	ContractEndsAt Opt[time.Time]
-	Note           Opt[string]
+	IncludedEvents *int64
+	DisplayName    *string
+	AnchorDay      *int
+	ContractEndsAt *time.Time
+	Note           *string
+}
+
+// orKeep resolves one Change field against the value already stored.
+func orKeep[T any](v *T, current T) T {
+	if v == nil {
+		return current
+	}
+	return *v
 }
 
 // SetPlan grants a plan, merging the change over whatever is stored. Returns the
@@ -209,20 +183,6 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 		if next.IncludedEventsOverride < 0 {
 			return Record{}, ErrQuotaNegative
 		}
-		if next.CurrencyOverride != "" {
-			next.CurrencyOverride = strings.ToUpper(next.CurrencyOverride)
-			if !isCurrencyCode(next.CurrencyOverride) {
-				return Record{}, ErrCurrencyInvalid
-			}
-		}
-		if next.PriceCentsOverride != nil && next.CurrencyOverride == "" {
-			return Record{}, ErrPriceNeedsCurrency
-		}
-		// The mirror of the guard above, because the pair is stored, not passed:
-		// clearing only the price leaves the currency behind on the row.
-		if next.CurrencyOverride != "" && next.PriceCentsOverride == nil {
-			return Record{}, ErrCurrencyNeedsPrice
-		}
 		if next.AnchorDay < 0 || next.AnchorDay > 31 {
 			return Record{}, ErrAnchorDayRange
 		}
@@ -234,10 +194,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 // trial_ends_at on the row at all — every other org's trial is derived from its
 // age and stores nothing.
 func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int, now time.Time) (Record, error) {
-	if days <= 0 {
-		return Record{}, fmt.Errorf("billing: trial extension must be positive, got %d", days)
-	}
-	if days > MaxTrialDays {
+	if days <= 0 || days > MaxTrialDays {
 		return Record{}, ErrTrialDaysRange
 	}
 	// The org's create time, because the trial being extended is usually the
@@ -248,9 +205,13 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 	}
 	return s.mutate(ctx, orgID, actor, func(cur Record) (Record, error) {
 		// A granted plan resolves ahead of any trial date, so writing one here would
-		// store a date that changes nothing and still print as a success.
-		if plan, ok := PlanBySlug(cur.PlanSlug); cur.Present && ok && !plan.isFloor() {
-			return Record{}, ErrTrialOnGrantedPlan
+		// store a date that changes nothing and still print as a success. A slug the
+		// catalog no longer knows counts as granted: it resolves free without ever
+		// consulting a trial date, so the write would be just as empty.
+		if cur.Present {
+			if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.isFloor() {
+				return Record{}, ErrTrialOnGrantedPlan
+			}
 		}
 		next := cur
 		next.Present = true
@@ -279,6 +240,15 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	w := dbwrite.New(tx)
+	// The same lock mutate takes, for the same reason: without it a concurrent
+	// SetPlan can insert a row between this delete and its commit, leaving a stored
+	// entitlement whose newest history entry says it was cleared.
+	if err := w.LockBillingEntitlementOrg(ctx, orgID); err != nil {
+		slog.ErrorContext(ctx, "failed to lock the org for a billing clear", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
 	n, err := w.DeleteBillingEntitlement(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to delete the entitlement", slogx.Error(err), slog.String("org_id", orgID))
@@ -288,7 +258,9 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	// Deleting nothing is not success: it is either a typo'd org or a row that was
 	// never there, and both would otherwise print as "cleared".
 	if n == 0 {
-		if _, err := s.read.GetOrgEntitlement(ctx, orgID); err != nil {
+		// Through the tx, not s.read: against a real replica, a lagging read would
+		// report ErrOrgNotFound for an org that was just created.
+		if _, err := w.GetOrgByID(ctx, orgID); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrOrgNotFound
 			}
@@ -355,7 +327,7 @@ func (s *Service) mutate(ctx context.Context, orgID, actor string, edit func(Rec
 }
 
 func (s *Service) begin(ctx context.Context) (pgx.Tx, error) {
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin the billing tx", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -406,9 +378,8 @@ func currentRecord(ctx context.Context, w *dbwrite.Queries, orgID string) (Recor
 func recordFromWriteRow(row dbwrite.BillingEntitlement) Record {
 	rec := Record{
 		Present:             true,
-		AnchorDay:           anchorDay(row.AnchorDay),
+		AnchorDay:           postgres.Int2ToInt(row.AnchorDay),
 		ContractEndsAt:      row.ContractEndsAt.Time,
-		CurrencyOverride:    row.CurrencyOverride.String,
 		DisplayNameOverride: row.DisplayNameOverride.String,
 		Note:                row.Note,
 		PlanSlug:            row.PlanSlug,
@@ -417,10 +388,6 @@ func recordFromWriteRow(row dbwrite.BillingEntitlement) Record {
 	if row.IncludedEventsOverride.Valid {
 		rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
 	}
-	if row.PriceCentsOverride.Valid {
-		v := row.PriceCentsOverride.Int64
-		rec.PriceCentsOverride = &v
-	}
 	return rec
 }
 
@@ -428,30 +395,19 @@ func applyChange(cur Record, c Change) Record {
 	next := cur
 	next.Present = true
 	next.PlanSlug = c.PlanSlug
-	next.IncludedEventsOverride = c.IncludedEvents.Apply(cur.IncludedEventsOverride)
-	next.DisplayNameOverride = c.DisplayName.Apply(cur.DisplayNameOverride)
-	next.CurrencyOverride = c.Currency.Apply(cur.CurrencyOverride)
-	next.AnchorDay = c.AnchorDay.Apply(cur.AnchorDay)
-	next.ContractEndsAt = c.ContractEndsAt.Apply(cur.ContractEndsAt)
-	next.Note = c.Note.Apply(cur.Note)
+	next.IncludedEventsOverride = orKeep(c.IncludedEvents, cur.IncludedEventsOverride)
+	next.DisplayNameOverride = orKeep(c.DisplayName, cur.DisplayNameOverride)
+	next.AnchorDay = orKeep(c.AnchorDay, cur.AnchorDay)
+	next.ContractEndsAt = orKeep(c.ContractEndsAt, cur.ContractEndsAt)
+	next.Note = orKeep(c.Note, cur.Note)
 
-	switch {
-	case c.PriceCents.set:
-		v := c.PriceCents.val
-		next.PriceCentsOverride = &v
-	case c.PriceCents.clear:
-		// The currency goes with it: it is only ever the unit of this price, and
-		// leaving it behind would violate the row's currency-needs-price constraint.
-		next.PriceCentsOverride = nil
-		next.CurrencyOverride = ""
-	}
 	if plan, ok := PlanBySlug(next.PlanSlug); ok {
 		if !plan.isFloor() {
 			// Converting to a paid tier ends the trial: leaving a future trial_ends_at
 			// behind would make an entitlement whose state depends on which of two dates
 			// the resolver consults first.
 			next.TrialEndsAt = time.Time{}
-		} else if !c.ContractEndsAt.set {
+		} else if c.ContractEndsAt == nil {
 			// The mirror: the contract belongs to the granted plan, so falling back to a
 			// floor tier ends it. Unless this change names one, which is a time-boxed
 			// comped grant on the floor.
@@ -463,15 +419,13 @@ func applyChange(cur Record, c Change) Record {
 
 func upsertParams(orgID string, rec Record) dbwrite.UpsertBillingEntitlementParams {
 	return dbwrite.UpsertBillingEntitlementParams{
-		AnchorDay:              nullableInt2(rec.AnchorDay),
+		AnchorDay:              postgres.NewOptionalInt2(rec.AnchorDay),
 		ContractEndsAt:         postgres.NewOptionalTimestamptz(rec.ContractEndsAt),
-		CurrencyOverride:       postgres.NewOptionalText(rec.CurrencyOverride),
 		DisplayNameOverride:    postgres.NewOptionalText(rec.DisplayNameOverride),
-		IncludedEventsOverride: nullableInt8(rec.IncludedEventsOverride),
+		IncludedEventsOverride: postgres.NewOptionalInt8(rec.IncludedEventsOverride),
 		Note:                   rec.Note,
 		OrgID:                  orgID,
 		PlanSlug:               rec.PlanSlug,
-		PriceCentsOverride:     pointerInt8(rec.PriceCentsOverride),
 		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 }
@@ -479,16 +433,14 @@ func upsertParams(orgID string, rec Record) dbwrite.UpsertBillingEntitlementPara
 func appendHistory(ctx context.Context, w *dbwrite.Queries, orgID, actor string, rec Record) error {
 	params := dbwrite.InsertBillingEntitlementHistoryParams{
 		Actor:                  actor,
-		AnchorDay:              nullableInt2(rec.AnchorDay),
+		AnchorDay:              postgres.NewOptionalInt2(rec.AnchorDay),
 		ContractEndsAt:         postgres.NewOptionalTimestamptz(rec.ContractEndsAt),
-		CurrencyOverride:       postgres.NewOptionalText(rec.CurrencyOverride),
 		DisplayNameOverride:    postgres.NewOptionalText(rec.DisplayNameOverride),
 		ID:                     xid.New().String(),
-		IncludedEventsOverride: nullableInt8(rec.IncludedEventsOverride),
+		IncludedEventsOverride: postgres.NewOptionalInt8(rec.IncludedEventsOverride),
 		Note:                   rec.Note,
 		OrgID:                  orgID,
 		PlanSlug:               postgres.NewOptionalText(rec.PlanSlug),
-		PriceCentsOverride:     pointerInt8(rec.PriceCentsOverride),
 		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 	if err := w.InsertBillingEntitlementHistory(ctx, params); err != nil {
@@ -512,8 +464,8 @@ type HistoryEntry struct {
 const MaxHistoryRows = 200
 
 // History is operator and support data — no RPC serves it.
-func (r *Reader) History(ctx context.Context, orgID string) ([]HistoryEntry, error) {
-	rows, err := r.read.ListBillingEntitlementHistory(ctx, dbread.ListBillingEntitlementHistoryParams{
+func (s *Service) History(ctx context.Context, orgID string) ([]HistoryEntry, error) {
+	rows, err := s.read.ListBillingEntitlementHistory(ctx, dbread.ListBillingEntitlementHistoryParams{
 		OrgID:    orgID,
 		RowLimit: MaxHistoryRows,
 	})
@@ -527,9 +479,8 @@ func (r *Reader) History(ctx context.Context, orgID string) ([]HistoryEntry, err
 	for _, row := range rows {
 		rec := Record{
 			Present:             row.PlanSlug.Valid,
-			AnchorDay:           anchorDay(row.AnchorDay),
+			AnchorDay:           postgres.Int2ToInt(row.AnchorDay),
 			ContractEndsAt:      row.ContractEndsAt.Time,
-			CurrencyOverride:    row.CurrencyOverride.String,
 			DisplayNameOverride: row.DisplayNameOverride.String,
 			Note:                row.Note,
 			PlanSlug:            row.PlanSlug.String,
@@ -538,58 +489,9 @@ func (r *Reader) History(ctx context.Context, orgID string) ([]HistoryEntry, err
 		if row.IncludedEventsOverride.Valid {
 			rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
 		}
-		if row.PriceCentsOverride.Valid {
-			v := row.PriceCentsOverride.Int64
-			rec.PriceCentsOverride = &v
-		}
 		out = append(out, HistoryEntry{Actor: row.Actor, ChangedAt: row.ChangedAt.Time, Record: rec})
 	}
 	return out, nil
-}
-
-// anchorDay unpacks the nullable column, mirroring nullableInt2 in the other
-// direction: 0 is "no override", which is what NULL means here.
-func anchorDay(v pgtype.Int2) int {
-	if !v.Valid {
-		return 0
-	}
-	return int(v.Int16)
-}
-
-func nullableInt2(v int) pgtype.Int2 {
-	if v == 0 {
-		return pgtype.Int2{}
-	}
-	return pgtype.Int2{Int16: int16(v), Valid: true}
-}
-
-func nullableInt8(v int64) pgtype.Int8 {
-	if v == 0 {
-		return pgtype.Int8{}
-	}
-	return pgtype.Int8{Int64: v, Valid: true}
-}
-
-func pointerInt8(v *int64) pgtype.Int8 {
-	if v == nil {
-		return pgtype.Int8{}
-	}
-	return pgtype.Int8{Int64: *v, Valid: true}
-}
-
-// isCurrencyCode reports a well-formed ISO 4217 code. Shape only — the list of
-// live codes is not pug's to police; the column's own ^[A-Z]{3}$ check would
-// otherwise surface a typo as a raw SQLSTATE logged as a pug fault.
-func isCurrencyCode(s string) bool {
-	if len(s) != 3 {
-		return false
-	}
-	for _, r := range s {
-		if r < 'A' || r > 'Z' {
-			return false
-		}
-	}
-	return true
 }
 
 // isOrgFKViolation reports the upsert failing because no such org exists, which

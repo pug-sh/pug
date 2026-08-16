@@ -19,17 +19,13 @@ import (
 // Role gating is enforced by rpc.AuthzInterceptor before any handler runs, so a
 // request reaching here proves the caller is a member. Not that the org still
 // exists: it can be deleted between the two reads.
-//
-// Holds a corebilling.Reader, not a Service: entitlements are changed by
-// `pug billing` alone, so the endpoint serving them has no reachable path to a
-// write.
 type Server struct {
-	service *corebilling.Reader
+	service *corebilling.Service
 }
 
-func NewServer(service *corebilling.Reader) *Server {
+func NewServer(service *corebilling.Service) *Server {
 	if service == nil {
-		panic("billing: reader is nil")
+		panic("billing: service is nil")
 	}
 	return &Server{service: service}
 }
@@ -48,8 +44,7 @@ func (s *Server) GetBillingStatus(
 		if errors.Is(err, corebilling.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
 		}
-		// The service logs and records at source, so the handler only translates.
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return nil, internalErr()
 	}
 
 	resp := &billingv1.GetBillingStatusResponse{
@@ -75,6 +70,11 @@ func (s *Server) GetBillingStatus(
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// The service logs and records at source, so the handler only translates.
+func internalErr() error {
+	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 }
 
 // int64Value keeps an absent number absent on the wire. Both fields are wrappers

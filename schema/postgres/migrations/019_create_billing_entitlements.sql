@@ -21,14 +21,11 @@ create table billing_entitlements (
   -- does not make March's window a year long.
   contract_ends_at timestamptz,
   create_time timestamptz not null default now(),
-  -- Paired with price_cents_override below: an amount without its unit is only
-  -- unambiguous while there is exactly one currency. varchar rather than char(3)
-  -- so a short code cannot be silently blank-padded into the value a client
-  -- formats against; the shape is checked here because this column is the only
-  -- way a non-USD amount enters pug.
-  currency_override varchar(3)
-    constraint billing_entitlements_currency_check
-      check (currency_override is null or currency_override ~ '^[A-Z]{3}$'),
+  -- NO price or currency column, deliberately (docs/architecture/payments.md
+  -- section 4): the amount a deal is charged lives in the payments provider,
+  -- which is the only thing that can charge it. A copy here would be a second
+  -- authority that goes stale the first time a deal is repriced. What the deal
+  -- was agreed at goes in note, which is honest about being a record.
   display_name_override varchar(150),
   -- The negotiated quota. NULL means "use the plan's". Checked > 0 because 0
   -- would read as a quota of zero rather than as "no override"; unlimited is
@@ -47,10 +44,6 @@ create table billing_entitlements (
   -- documented reprice workflow, which mints a new slug, would fail against the
   -- stale copy with a raw SQLSTATE.
   plan_slug varchar(50) not null,
-  -- 0 is allowed: a comped account is a real deal.
-  price_cents_override bigint
-    constraint billing_entitlements_price_override_check
-      check (price_cents_override is null or price_cents_override >= 0),
   -- Set only by extend-trial. NULL means the trial window derives from
   -- orgs.create_time, which is the ordinary case.
   trial_ends_at timestamptz,
@@ -59,9 +52,7 @@ create table billing_entitlements (
   -- unrepresentable without this. Enforced here rather than in the CLI: the row
   -- is what every read trusts.
   constraint billing_entitlements_custom_needs_quota
-    check (plan_slug <> 'custom' or included_events_override is not null),
-  constraint billing_entitlements_currency_needs_price
-    check (currency_override is null or price_cents_override is not null)
+    check (plan_slug <> 'custom' or included_events_override is not null)
 );
 
 create trigger update_timestamp before
@@ -79,7 +70,6 @@ create table billing_entitlement_history (
   anchor_day smallint,
   changed_at timestamptz not null default now(),
   contract_ends_at timestamptz,
-  currency_override varchar(3),
   display_name_override varchar(150),
   id char(20) primary key,
   included_events_override bigint,
@@ -91,7 +81,6 @@ create table billing_entitlement_history (
   -- NULL across the value columns is a deletion: the org returned to the derived
   -- floors.
   plan_slug varchar(50),
-  price_cents_override bigint,
   trial_ends_at timestamptz
 );
 

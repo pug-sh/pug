@@ -52,7 +52,7 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
 	orgID, projectID := seedOrgProject(t, pg)
-	srv := NewServer(svc.Reader)
+	srv := NewServer(svc)
 
 	resp, err := srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
 		OrgId: &orgID,
@@ -66,6 +66,9 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 	if resp.Msg.UsedEvents != nil {
 		t.Errorf("used_events = %d on an unmetered org, want absent — a client would render it as 0",
 			resp.Msg.GetUsedEvents())
+	}
+	if resp.Msg.GetCounted() {
+		t.Error("counted is true on an org the meter has never run for")
 	}
 	if resp.Msg.GetPeriodStart() == nil || resp.Msg.GetPeriodEnd() == nil {
 		t.Error("period bounds should be returned regardless of metering")
@@ -90,6 +93,10 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 	}
 	if resp.Msg.GetUsedEvents() != 0 {
 		t.Errorf("used_events = %d, want 0", resp.Msg.GetUsedEvents())
+	}
+	// This zero is a measurement; the rollover case below produces one that isn't.
+	if !resp.Msg.GetCounted() {
+		t.Error("counted is false after a metering pass; a metered zero is a real total")
 	}
 
 	// And a real count round-trips with its daily series.
@@ -138,7 +145,7 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
 	}
 
-	resp, err := getUsage(t, NewServer(svc.Reader), orgID)
+	resp, err := getUsage(t, NewServer(svc), orgID)
 	if err != nil {
 		t.Fatalf("GetUsage: %v", err)
 	}
@@ -148,6 +155,11 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 	if resp.Msg.UsedEvents != nil {
 		t.Errorf("used_events = %d, want ABSENT — a period the meter has not reached has no total, "+
 			"and a present zero is a number the server has no basis for", resp.Msg.GetUsedEvents())
+	}
+	// The state the flag exists for: used_events' absence does not survive
+	// protoc-gen-es, so this is what a TypeScript client reads instead.
+	if resp.Msg.GetCounted() {
+		t.Error("counted is true for a period the meter has not reached")
 	}
 }
 
@@ -173,7 +185,7 @@ func TestGetUsageRangeWindowsOnlyTheDailySeries(t *testing.T) {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
 	}
 
-	srv := NewServer(svc.Reader)
+	srv := NewServer(svc)
 	resp, err := srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
 		OrgId: &orgID,
 		Range: &commonv1.TimeRange{
@@ -219,7 +231,7 @@ func TestGetUsageRangeSnapsToWholeDays(t *testing.T) {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
-	resp, err := NewServer(svc.Reader).GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
+	resp, err := NewServer(svc).GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
 		OrgId: &orgID,
 		Range: &commonv1.TimeRange{
 			From: timestamppb.New(day.Add(9 * time.Hour)),
@@ -256,7 +268,7 @@ func TestGetUsageFailsWhenTheReadFails(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
 	orgID, _ := seedOrgProject(t, pg)
-	srv := NewServer(svc.Reader)
+	srv := NewServer(svc)
 
 	pg.PgRO.Close()
 
@@ -279,7 +291,7 @@ func TestGetUsageOnACancelledRequest(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	orgID, _ := seedOrgProject(t, pg)
-	srv := NewServer(coreusage.NewReader(pg.PgRO))
+	srv := NewServer(coreusage.NewService(pg.PgRO, pg.PgW))
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

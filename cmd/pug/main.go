@@ -49,7 +49,7 @@ var (
 // run creates a signal-aware context, loads .env, and runs fn.
 func run(fn func(ctx context.Context) error) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		ctx, done := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
@@ -67,7 +67,7 @@ func run(fn func(ctx context.Context) error) func(cmd *cobra.Command, args []str
 // validates direction, and calls the appropriate up/down function.
 func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		ctx, done := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
@@ -266,8 +266,7 @@ var billingCmd = &cobra.Command{
 	Short: "Inspect and grant org entitlements (plans, quotas, trials)",
 	Long: "Operator tool for an org's entitlement. Postgres only — no payments\n" +
 		"provider is involved, and nothing here charges anybody. Every write is\n" +
-		"recorded in the entitlement history, attributed to the OS user and host\n" +
-		"it ran as.",
+		"recorded in the entitlement history, attributed to the --actor you pass.",
 }
 
 // Both the resolved entitlement and the row behind it, because the interesting
@@ -310,12 +309,14 @@ var billingSetCmd = &cobra.Command{
 		"because the common re-set is a renewal — a new --until on terms that have\n" +
 		"not changed — and silently reverting a negotiated quota to a catalog\n" +
 		"number is the worst thing this command could do. Pass the empty value\n" +
-		"(--events 0, --name \"\", --price -1, --anchor-day 0, --until \"\") to clear\n" +
-		"an override.\n\n" +
+		"(--events 0, --name \"\", --anchor-day 0, --until \"\") to clear an override.\n\n" +
+		"This grants the QUOTA. What the deal is charged lives in the payments\n" +
+		"provider and is not stored here — record it in --note if you want it\n" +
+		"written down.\n\n" +
 		"A custom deal is one call:\n" +
 		"  pug billing set o_2f9k --plan custom --events 5000000 \\\n" +
-		"      --name \"Acme Enterprise\" --price 40000 --currency USD \\\n" +
-		"      --until 2027-01-01 --note \"annual wire, INV-123\"",
+		"      --name \"Acme Enterprise\" --until 2027-01-01 \\\n" +
+		"      --note \"$400/mo, INV-123\" --actor rita@pug.sh",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Before the pools: a flag typo should not need a reachable database.
@@ -333,6 +334,7 @@ var billingSetCmd = &cobra.Command{
 				return err
 			}
 			printStoredRecord(args[0], rec)
+			printBillingFlagNote(ctx)
 			return nil
 		})
 	},
@@ -343,10 +345,14 @@ var billingExtendTrialCmd = &cobra.Command{
 	Short: "Move the org's trial end to N days from now",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		days, _ := cmd.Flags().GetInt("days")
+		// Before the pools: a flag typo should not need a reachable database.
 		actor, err := billingActor(cmd)
 		if err != nil {
 			return err
+		}
+		days, _ := cmd.Flags().GetInt("days")
+		if days <= 0 || days > corebilling.MaxTrialDays {
+			return fmt.Errorf("--days must be between 1 and %d", corebilling.MaxTrialDays)
 		}
 		return withBilling(cmd, func(ctx context.Context, svc *corebilling.Service) error {
 			rec, err := svc.ExtendTrial(ctx, args[0], actor, days, time.Now())
@@ -354,6 +360,7 @@ var billingExtendTrialCmd = &cobra.Command{
 				return err
 			}
 			printStoredRecord(args[0], rec)
+			printBillingFlagNote(ctx)
 			return nil
 		})
 	},
@@ -377,6 +384,7 @@ var billingClearCmd = &cobra.Command{
 				return err
 			}
 			fmt.Printf("%s: entitlement cleared; the org is back on the derived floors\n", args[0])
+			printBillingFlagNote(ctx)
 			return nil
 		})
 	},
@@ -410,16 +418,21 @@ func withBilling(cmd *cobra.Command, fn func(context.Context, *corebilling.Servi
 	}
 	defer pool.Close()
 
-	return fn(ctx, corebilling.NewService(pool, pool, true))
+	svc, err := corebilling.NewService(pool, pool, true)
+	if err != nil {
+		return err
+	}
+	return fn(ctx, svc)
 }
 
-// billingChange maps `set`'s flags onto the tri-state change. Kept out of RunE
-// so the clear-vs-set mapping is testable without a database.
+// billingChange maps `set`'s flags onto the change. A flag that was not passed
+// stays nil and leaves the stored value alone; the empty value clears it. Kept
+// out of RunE so the mapping is testable without a database.
 func billingChange(cmd *cobra.Command) (corebilling.Change, error) {
 	var change corebilling.Change
 	plan, _ := cmd.Flags().GetString("plan")
 	if plan == "" {
-		return change, fmt.Errorf("--plan is required")
+		return change, errors.New("--plan is required")
 	}
 	change.PlanSlug = plan
 
@@ -428,69 +441,72 @@ func billingChange(cmd *cobra.Command) (corebilling.Change, error) {
 		// Only 0 clears. A negative is a typo, and treating it as a clear would
 		// silently revert a negotiated quota to the catalog number.
 		if v < 0 {
-			return change, fmt.Errorf("--events must be 0 or more (0 clears the override)")
+			return change, errors.New("--events must be 0 or more (0 clears the override)")
 		}
-		change.IncludedEvents = setOrClear(v > 0, v)
+		change.IncludedEvents = new(v)
 	}
 	if cmd.Flags().Changed("name") {
 		v, _ := cmd.Flags().GetString("name")
-		change.DisplayName = setOrClear(v != "", v)
-	}
-	if cmd.Flags().Changed("price") {
-		v, _ := cmd.Flags().GetInt64("price")
-		// Negative is the clear, since 0 is a real price: a comped deal.
-		change.PriceCents = setOrClear(v >= 0, v)
-	}
-	if cmd.Flags().Changed("currency") {
-		v, _ := cmd.Flags().GetString("currency")
-		change.Currency = setOrClear(v != "", v)
+		// Mirrors display_name_override's varchar(150), which would otherwise fail
+		// inside the transaction and be logged as a pug fault rather than a typo.
+		if len(v) > billingNameMaxLen {
+			return change, fmt.Errorf("--name is limited to %d characters", billingNameMaxLen)
+		}
+		change.DisplayName = new(v)
 	}
 	if cmd.Flags().Changed("anchor-day") {
 		v, _ := cmd.Flags().GetInt("anchor-day")
 		if v < 0 || v > 31 {
-			return change, fmt.Errorf("--anchor-day must be between 1 and 31 (0 clears it)")
+			return change, errors.New("--anchor-day must be between 1 and 31 (0 clears it)")
 		}
-		change.AnchorDay = setOrClear(v > 0, v)
+		change.AnchorDay = new(v)
 	}
 	if cmd.Flags().Changed("until") {
 		v, _ := cmd.Flags().GetString("until")
 		if v == "" {
-			change.ContractEndsAt = corebilling.Clear[time.Time]()
+			change.ContractEndsAt = new(time.Time)
 		} else {
 			at, err := time.Parse(time.DateOnly, v)
 			if err != nil {
 				return change, fmt.Errorf("--until must be YYYY-MM-DD: %w", err)
 			}
-			change.ContractEndsAt = corebilling.Set(corebilling.ContractEndExclusive(at))
+			end := corebilling.ContractEndExclusive(at)
+			// A past date stores a grant that resolves straight back to free, and
+			// `set` echoes only the stored row, so the operator would see success.
+			if !end.After(time.Now()) {
+				return change, fmt.Errorf("--until %s has already passed; the grant would lapse immediately", v)
+			}
+			change.ContractEndsAt = &end
 		}
 	}
 	if cmd.Flags().Changed("note") {
 		v, _ := cmd.Flags().GetString("note")
-		change.Note = setOrClear(v != "", v)
+		change.Note = new(v)
 	}
 	return change, nil
-}
-
-// setOrClear maps a passed flag to the tri-state: present values set, the empty
-// value clears.
-func setOrClear[T any](isSet bool, v T) corebilling.Opt[T] {
-	if isSet {
-		return corebilling.Set(v)
-	}
-	return corebilling.Clear[T]()
 }
 
 // billingSetFlags is shared with the tests, so a flag can't be exercised in a
 // shape the real command never offers.
 func billingSetFlags(cmd *cobra.Command) {
-	cmd.Flags().String("plan", "", "plan slug (starter, growth, scale, custom, free)")
+	cmd.Flags().String("plan", "", "plan slug ("+billingPlanSlugs()+")")
 	cmd.Flags().Int64("events", 0, "negotiated monthly event quota (0 clears the override)")
 	cmd.Flags().String("name", "", "negotiated plan name shown to the org (empty clears)")
-	cmd.Flags().Int64("price", -1, "negotiated price in minor units; 0 is comped, negative clears")
-	cmd.Flags().String("currency", "", "ISO 4217 code for --price (empty clears)")
 	cmd.Flags().Int("anchor-day", 0, "day of month the quota window starts (0 uses the org's signup day)")
-	cmd.Flags().String("until", "", "date the plan lapses back to free, YYYY-MM-DD (empty clears)")
+	cmd.Flags().String("until", "", "last day the plan runs before lapsing back to free, YYYY-MM-DD (empty clears)")
 	cmd.Flags().String("note", "", "operator remark recorded on the row and in its history")
+}
+
+// billingPlanSlugs keeps --plan's help from drifting off the catalog. Trial is
+// omitted: it is derived, never granted.
+func billingPlanSlugs() string {
+	out := make([]string, 0, len(corebilling.Plans()))
+	for _, p := range corebilling.Plans() {
+		if p.Slug != corebilling.SlugTrial {
+			out = append(out, p.Slug)
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 // billingActor is stated rather than detected: this runs from a pod, where the
@@ -513,6 +529,9 @@ func billingActor(cmd *cobra.Command) (string, error) {
 // Matches billing_entitlement_history.actor.
 const billingActorMaxLen = 150
 
+// Matches billing_entitlements.display_name_override.
+const billingNameMaxLen = 150
+
 // billingActorFlag is registered on every mutating command; cobra enforces its
 // presence, billingActor enforces its shape.
 func billingActorFlag(cmd *cobra.Command) {
@@ -525,7 +544,9 @@ func printEntitlement(orgID string, ent corebilling.Entitlement) {
 	fmt.Printf("plan          %s (%s)\n", ent.DisplayName, ent.Slug)
 	fmt.Printf("status        %s\n", ent.Status)
 	fmt.Printf("quota         %s\n", quotaText(ent.IncludedEvents))
-	fmt.Printf("price         %s\n", priceText(ent.PriceCents, ent.Currency))
+	// List price, not what this org is charged — a negotiated amount lives in the
+	// payments provider and pug does not store it.
+	fmt.Printf("list price    %s\n", priceText(ent.PriceCents, ent.Currency))
 	fmt.Printf("period        %s -> %s\n", isoDay(ent.PeriodStart), isoDay(ent.PeriodEnd))
 	if !ent.TrialEndsAt.IsZero() {
 		fmt.Printf("trial ends    %s\n", isoDay(ent.TrialEndsAt))
@@ -547,11 +568,6 @@ func printStoredRecord(orgID string, rec corebilling.Record) {
 	fmt.Printf("  plan          %s\n", rec.PlanSlug)
 	fmt.Printf("  events        %s\n", overrideText(rec.IncludedEventsOverride > 0, rec.IncludedEventsOverride))
 	fmt.Printf("  name          %s\n", textOrNone(rec.DisplayNameOverride))
-	if rec.PriceCentsOverride != nil {
-		fmt.Printf("  price         %d %s\n", *rec.PriceCentsOverride, rec.CurrencyOverride)
-	} else {
-		fmt.Printf("  price         none\n")
-	}
 	fmt.Printf("  anchor day    %s\n", overrideText(rec.AnchorDay > 0, int64(rec.AnchorDay)))
 	fmt.Printf("  contract ends %s\n", dateOrNone(rec.ContractEndsAt))
 	fmt.Printf("  trial ends    %s\n", dateOrNone(rec.TrialEndsAt))
@@ -563,7 +579,7 @@ func printStoredRecord(orgID string, rec corebilling.Record) {
 // answer above, and an operator preparing rows needs to know the server is
 // ignoring them.
 func printBillingFlagNote(ctx context.Context) {
-	var cfg server.BillingConfig
+	var cfg corebilling.Config
 	// A value the server refuses to start on must not read here as "billing is on".
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		fmt.Printf("\nnote: PUG_BILLING_ENABLED could not be read (%v), so what the server\n"+

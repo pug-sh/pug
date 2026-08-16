@@ -180,12 +180,14 @@ func TestBillingChangeRefusesAnAnchorDayOutOfRange(t *testing.T) {
 	}
 }
 
-func TestBillingChangeMapsFlagsToTheTriState(t *testing.T) {
+func TestBillingChangeMapsFlagsToTheChange(t *testing.T) {
+	// Relative, because --until now refuses a date that has already passed.
+	lastDay := time.Now().UTC().AddDate(1, 0, 0).Truncate(24 * time.Hour)
+
 	cmd := newSetCmd(t)
 	setFlags(t, cmd, map[string]string{
-		"plan": "custom", "events": "5000000", "name": "Acme",
-		"price": "40000", "currency": "USD", "anchor-day": "17",
-		"until": "2027-01-01", "note": "INV-123",
+		"plan": "custom", "events": "5000000", "name": "Acme", "anchor-day": "17",
+		"until": lastDay.Format(time.DateOnly), "note": "INV-123",
 	})
 
 	change, err := billingChange(cmd)
@@ -195,62 +197,64 @@ func TestBillingChangeMapsFlagsToTheTriState(t *testing.T) {
 	if change.PlanSlug != "custom" {
 		t.Errorf("plan = %s, want custom", change.PlanSlug)
 	}
-	if got := change.IncludedEvents.Apply(0); got != 5_000_000 {
-		t.Errorf("events = %d, want 5000000", got)
+	if change.IncludedEvents == nil || *change.IncludedEvents != 5_000_000 {
+		t.Errorf("events = %v, want 5000000", change.IncludedEvents)
 	}
-	if got := change.PriceCents.Apply(-1); got != 40_000 {
-		t.Errorf("price = %d, want 40000", got)
+	if change.AnchorDay == nil || *change.AnchorDay != 17 {
+		t.Errorf("anchor day = %v, want 17", change.AnchorDay)
 	}
-	if got := change.AnchorDay.Apply(0); got != 17 {
-		t.Errorf("anchor day = %d, want 17", got)
-	}
-	if got := change.Note.Apply(""); got != "INV-123" {
-		t.Errorf("note = %q, want INV-123", got)
+	if change.Note == nil || *change.Note != "INV-123" {
+		t.Errorf("note = %v, want INV-123", change.Note)
 	}
 	// Parsed and pushed to the following midnight; that the day stays covered is
 	// pinned against the resolver in core.
-	want := time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC)
-	if got := change.ContractEndsAt.Apply(time.Time{}); !got.Equal(want) {
-		t.Errorf("contract ends at %s, want %s", got, want)
+	want := lastDay.AddDate(0, 0, 1)
+	if change.ContractEndsAt == nil || !change.ContractEndsAt.Equal(want) {
+		t.Errorf("contract ends at %v, want %s", change.ContractEndsAt, want)
 	}
 }
 
-// Zero is a real price — a comped deal — so only a negative clears it, and 0
-// events is the clear rather than a quota of none.
+// A back-dated grant resolves straight back to free, and `set` echoes only the
+// stored row — so the operator would read a typo'd year as success.
+func TestBillingChangeRefusesAnUntilThatHasPassed(t *testing.T) {
+	cmd := newSetCmd(t)
+	setFlags(t, cmd, map[string]string{"plan": "custom", "events": "1", "until": "2017-01-01"})
+	if _, err := billingChange(cmd); err == nil {
+		t.Error("a past --until was accepted; the grant would lapse immediately")
+	}
+}
+
+// Mirrors display_name_override's varchar(150), which would otherwise fail inside
+// the transaction and be recorded as a pug fault rather than an operator typo.
+func TestBillingChangeRefusesAnOverlongName(t *testing.T) {
+	cmd := newSetCmd(t)
+	setFlags(t, cmd, map[string]string{"plan": "growth", "name": strings.Repeat("a", billingNameMaxLen+1)})
+	if _, err := billingChange(cmd); err == nil {
+		t.Errorf("a %d-character --name was accepted", billingNameMaxLen+1)
+	}
+}
+
+// 0 events is the clear rather than a quota of none.
 func TestBillingChangeClearsOnTheEmptyValue(t *testing.T) {
 	cmd := newSetCmd(t)
 	setFlags(t, cmd, map[string]string{
-		"plan": "growth", "events": "0", "name": "", "price": "-1", "until": "",
+		"plan": "growth", "events": "0", "name": "", "until": "",
 	})
 
 	change, err := billingChange(cmd)
 	if err != nil {
 		t.Fatalf("billingChange: %v", err)
 	}
-	if got := change.IncludedEvents.Apply(999); got != 0 {
-		t.Errorf("--events 0 left %d in place, want it cleared", got)
+	// Set to the zero value, not left nil: nil would leave the stored override in
+	// place, which is the opposite of what the operator asked for.
+	if change.IncludedEvents == nil || *change.IncludedEvents != 0 {
+		t.Errorf("--events 0 gave %v, want a pointer to 0", change.IncludedEvents)
 	}
-	if got := change.DisplayName.Apply("Acme"); got != "" {
-		t.Errorf(`--name "" left %q in place, want it cleared`, got)
+	if change.DisplayName == nil || *change.DisplayName != "" {
+		t.Errorf(`--name "" gave %v, want a pointer to ""`, change.DisplayName)
 	}
-	if got := change.PriceCents.Apply(999); got != 0 {
-		t.Errorf("--price -1 left %d in place, want it cleared", got)
-	}
-	if got := change.ContractEndsAt.Apply(time.Now()); !got.IsZero() {
-		t.Errorf(`--until "" left %s in place, want it cleared`, got)
-	}
-}
-
-func TestBillingChangeKeepsAZeroPrice(t *testing.T) {
-	cmd := newSetCmd(t)
-	setFlags(t, cmd, map[string]string{"plan": "growth", "price": "0", "currency": "USD"})
-
-	change, err := billingChange(cmd)
-	if err != nil {
-		t.Fatalf("billingChange: %v", err)
-	}
-	if got := change.PriceCents.Apply(999); got != 0 {
-		t.Errorf("--price 0 = %d, want a stored zero (a comped deal), not the old value", got)
+	if change.ContractEndsAt == nil || !change.ContractEndsAt.IsZero() {
+		t.Errorf(`--until "" gave %v, want a pointer to the zero time`, change.ContractEndsAt)
 	}
 }
 
@@ -264,11 +268,11 @@ func TestBillingChangeLeavesUnpassedFlagsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("billingChange: %v", err)
 	}
-	if got := change.IncludedEvents.Apply(5_000_000); got != 5_000_000 {
-		t.Errorf("an un-passed --events changed the stored quota to %d", got)
+	if change.IncludedEvents != nil {
+		t.Errorf("an un-passed --events would write %d over the stored quota", *change.IncludedEvents)
 	}
-	if got := change.Currency.Apply("EUR"); got != "EUR" {
-		t.Errorf("an un-passed --currency changed the stored value to %q", got)
+	if change.DisplayName != nil {
+		t.Errorf("an un-passed --name would write %q over the stored value", *change.DisplayName)
 	}
 }
 
@@ -401,20 +405,17 @@ func TestPrintStoredRecordHandlesAnAbsentRow(t *testing.T) {
 }
 
 func TestPrintStoredRecordShowsTheOverridesAndNote(t *testing.T) {
-	price := int64(40_000)
 	out := capture(t, func() {
 		printStoredRecord("o_1", corebilling.Record{
 			Present:                true,
 			PlanSlug:               "custom",
 			IncludedEventsOverride: 5_000_000,
 			DisplayNameOverride:    "Acme Enterprise",
-			PriceCentsOverride:     &price,
-			CurrencyOverride:       "USD",
 			AnchorDay:              17,
-			Note:                   "annual wire, INV-123",
+			Note:                   "$400/mo, INV-123",
 		})
 	})
-	for _, want := range []string{"custom", "5000000", "Acme Enterprise", "40000 USD", "17", "INV-123"} {
+	for _, want := range []string{"custom", "5000000", "Acme Enterprise", "17", "INV-123"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("printStoredRecord output is missing %q:\n%s", want, out)
 		}

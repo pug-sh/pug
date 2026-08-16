@@ -203,12 +203,15 @@ func start(ctx context.Context, d *deps) error {
 	// Read-only by construction: no ClickHouse (the server only reads what
 	// `pug cron usage` stored) and no write pool at all.
 	usagePath, usageHandler := usagev1connect.NewUsageServiceHandler(
-		usage.NewServer(coreusage.NewReader(d.pgRo)), handlerOpts)
+		usage.NewServer(coreusage.NewService(d.pgRo, d.pgW)), handlerOpts)
 
-	// Also read-only by construction: entitlements are written by `pug billing`,
-	// never by an RPC.
+	// GetBillingStatus is the only RPC here; every write is `pug billing`.
+	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingEnabled)
+	if err != nil {
+		return err
+	}
 	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
-		billingrpc.NewServer(corebilling.NewReader(d.pgRo, d.billingEnabled)), handlerOpts)
+		billingrpc.NewServer(billingSvc), handlerOpts)
 
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(

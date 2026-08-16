@@ -201,13 +201,10 @@ func TestResolveExpiresAFloorPlansOverrides(t *testing.T) {
 }
 
 func TestResolveAppliesNegotiatedOverrides(t *testing.T) {
-	price := int64(40_000)
 	ent := corebilling.Resolve(created, corebilling.Record{
 		Present: true, PlanSlug: corebilling.SlugCustom,
 		IncludedEventsOverride: 5_000_000,
 		DisplayNameOverride:    "Acme Enterprise",
-		PriceCentsOverride:     &price,
-		CurrencyOverride:       "INR",
 	}, later, true)
 
 	if got := quota(t, ent); got != 5_000_000 {
@@ -216,11 +213,20 @@ func TestResolveAppliesNegotiatedOverrides(t *testing.T) {
 	if ent.DisplayName != "Acme Enterprise" {
 		t.Errorf("display_name = %q, want the negotiated name", ent.DisplayName)
 	}
-	if ent.PriceCents == nil || *ent.PriceCents != price || ent.Currency != "INR" {
-		t.Errorf("price = %v %s, want 40000 INR", ent.PriceCents, ent.Currency)
-	}
 	if ent.Slug != corebilling.SlugCustom {
 		t.Errorf("slug = %q, want the tier the deal names", ent.Slug)
+	}
+}
+
+// The deal's own price is the payments provider's (docs/architecture/payments.md
+// section 4), so the custom tier reports none rather than a stale copy.
+func TestResolveReportsNoPriceForACustomDeal(t *testing.T) {
+	ent := corebilling.Resolve(created, corebilling.Record{
+		Present: true, PlanSlug: corebilling.SlugCustom, IncludedEventsOverride: 5_000_000,
+	}, later, true)
+
+	if ent.PriceCents != nil {
+		t.Errorf("price = %d; a deal's price is not pug's to report", *ent.PriceCents)
 	}
 }
 
@@ -239,16 +245,12 @@ func TestResolveOverridesAreIndependent(t *testing.T) {
 	}
 }
 
-// A comped deal is a real price of zero, which must survive as zero rather than
-// collapsing into "no price recorded".
-func TestResolveKeepsAZeroPriceOverride(t *testing.T) {
-	zero := int64(0)
-	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth", PriceCentsOverride: &zero, CurrencyOverride: "USD",
-	}, later, true)
+// The floor tiers are free, which is a price of zero and not the absence of one.
+func TestResolveKeepsTheFloorPriceOfZero(t *testing.T) {
+	ent := corebilling.Resolve(created, corebilling.Record{}, later, true)
 
 	if ent.PriceCents == nil {
-		t.Fatal("a comped deal reports no price at all; want a price of 0")
+		t.Fatal("the free tier reports no price at all; want a price of 0")
 	}
 	if *ent.PriceCents != 0 {
 		t.Errorf("price = %d, want 0", *ent.PriceCents)
@@ -274,6 +276,13 @@ func TestResolveWithBillingOffHasNoQuota(t *testing.T) {
 	// The window is still real: usage is metered whether or not billing is on.
 	if ent.PeriodStart.IsZero() || ent.PeriodEnd.IsZero() {
 		t.Error("period bounds are missing with billing off")
+	}
+	// Absent price is the wire encoding for the custom tier, so a self-hosted
+	// install must report the free floor's 0 rather than nothing.
+	if ent.PriceCents == nil {
+		t.Error("price is absent with billing off, which reads as a negotiated deal")
+	} else if *ent.PriceCents != 0 {
+		t.Errorf("price = %d with billing off, want the free floor's 0", *ent.PriceCents)
 	}
 }
 

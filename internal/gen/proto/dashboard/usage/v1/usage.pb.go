@@ -152,28 +152,33 @@ func (x *UsageDay) GetEventCount() int64 {
 type GetUsageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Distinct events recorded across all of the org's projects this period.
-	// ABSENT until the meter has actually summed this period — never render its
-	// absence as 0. Present implies usage_computed_at is present; the reverse does
-	// not hold.
+	// MEANINGLESS unless `counted` is true — never render it as 0 on its own.
+	//
+	// It is absent on the wire until the meter has summed this period, but do not
+	// rely on that: protoc-gen-es renders an edition-2023 singular scalar as a
+	// non-optional bigint, so absence reaches a TypeScript client as 0.
 	UsedEvents  *int64                 `protobuf:"varint,1,opt,name=used_events,json=usedEvents" json:"used_events,omitempty"`
 	PeriodStart *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=period_start,json=periodStart" json:"period_start,omitempty"`
 	PeriodEnd   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=period_end,json=periodEnd" json:"period_end,omitempty"`
 	// When the meter last ran for this org, in any period. ABSENT means it never
 	// has — there is no answer at all, which a deployment not running
 	// `pug cron usage` must render as "unknown" rather than "0".
-	//
-	// Present WITH used_events absent is the third state: the meter is alive but has
-	// not reached this period yet (just after the org's anniversary, before the first
-	// pass, when this stamp is still the previous period's). Render that as
-	// "computing". The
-	// two fields carry the distinction on their own — no comparison against
-	// period_start is required, and none should be relied on.
 	UsageComputedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=usage_computed_at,json=usageComputedAt" json:"usage_computed_at,omitempty"`
 	// Per-project daily counts over the requested window, oldest first, capped at
 	// 10,000 rows. A row is (day x project), so a wide window on an org with many
 	// projects can reach the cap and lose its newest days; narrow the range if the
 	// series looks short.
-	Daily         []*UsageDay `protobuf:"bytes,5,rep,name=daily" json:"daily,omitempty"`
+	Daily []*UsageDay `protobuf:"bytes,5,rep,name=daily" json:"daily,omitempty"`
+	// Whether used_events is a measurement of THIS period. With
+	// usage_computed_at it carries three states:
+	//
+	//   - no stamp: the meter has never run. Render "unknown".
+	//   - stamp, not counted: it has not reached this period yet (just after a
+	//     period boundary, when the stamp is the previous period's). "Computing".
+	//   - stamp, counted: used_events is a real total, and a 0 there is a real 0.
+	//
+	// Read this rather than comparing usage_computed_at against period_start.
+	Counted       *bool `protobuf:"varint,6,opt,name=counted" json:"counted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -243,6 +248,13 @@ func (x *GetUsageResponse) GetDaily() []*UsageDay {
 	return nil
 }
 
+func (x *GetUsageResponse) GetCounted() bool {
+	if x != nil && x.Counted != nil {
+		return *x.Counted
+	}
+	return false
+}
+
 var File_dashboard_usage_v1_usage_proto protoreflect.FileDescriptor
 
 const file_dashboard_usage_v1_usage_proto_rawDesc = "" +
@@ -257,7 +269,7 @@ const file_dashboard_usage_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1f\n" +
 	"\vevent_count\x18\x03 \x01(\x03R\n" +
-	"eventCount\"\xa9\x02\n" +
+	"eventCount\"\xc3\x02\n" +
 	"\x10GetUsageResponse\x12\x1f\n" +
 	"\vused_events\x18\x01 \x01(\x03R\n" +
 	"usedEvents\x12=\n" +
@@ -265,7 +277,8 @@ const file_dashboard_usage_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"period_end\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\x12F\n" +
 	"\x11usage_computed_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0fusageComputedAt\x122\n" +
-	"\x05daily\x18\x05 \x03(\v2\x1c.dashboard.usage.v1.UsageDayR\x05daily2g\n" +
+	"\x05daily\x18\x05 \x03(\v2\x1c.dashboard.usage.v1.UsageDayR\x05daily\x12\x18\n" +
+	"\acounted\x18\x06 \x01(\bR\acounted2g\n" +
 	"\fUsageService\x12W\n" +
 	"\bGetUsage\x12#.dashboard.usage.v1.GetUsageRequest\x1a$.dashboard.usage.v1.GetUsageResponse\"\x00BEZCgithub.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1;usagev1b\beditionsp\xe8\a"
 

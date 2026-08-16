@@ -45,9 +45,10 @@ type BillingServiceClient interface {
 	// has been used — that is UsageService.GetUsage, and a client rendering
 	// "X of Y" makes both calls.
 	//
-	// The plan fields are already resolved: a negotiated deal's name, price and
-	// quota have replaced the catalog tier's, so nothing downstream recombines a
-	// base plan with overrides.
+	// The plan fields are already resolved: a negotiated deal's name and quota
+	// have replaced the catalog tier's, so nothing downstream recombines a base
+	// plan with overrides. Price is never overridden — what a deal is charged
+	// lives in the payments provider, not here.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
 }
 
@@ -88,9 +89,10 @@ type BillingServiceHandler interface {
 	// has been used — that is UsageService.GetUsage, and a client rendering
 	// "X of Y" makes both calls.
 	//
-	// The plan fields are already resolved: a negotiated deal's name, price and
-	// quota have replaced the catalog tier's, so nothing downstream recombines a
-	// base plan with overrides.
+	// The plan fields are already resolved: a negotiated deal's name and quota
+	// have replaced the catalog tier's, so nothing downstream recombines a base
+	// plan with overrides. Price is never overridden — what a deal is charged
+	// lives in the payments provider, not here.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
 }
 

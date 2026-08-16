@@ -32,7 +32,10 @@ func TestRetiredPlanCannotBeGrantedToANewOrg(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	svc := NewService(pg.PgRO, pg.PgW, true)
+	svc, err := NewService(pg.PgRO, pg.PgW, true)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
 
 	newOrg := seedOrg(t, pg)
 	if _, err := svc.SetPlan(ctx, newOrg, "tester", Change{PlanSlug: "growth-v0"}); !errors.Is(err, ErrPlanRetired) {
@@ -58,7 +61,10 @@ func TestRetiredPlanIsStillRenewableByItsHolder(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	svc := NewService(pg.PgRO, pg.PgW, true)
+	svc, err := NewService(pg.PgRO, pg.PgW, true)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
 
 	incumbent := seedOrg(t, pg)
 	if _, err := svc.SetPlan(ctx, incumbent, "tester", Change{PlanSlug: "growth"}); err != nil {
@@ -78,7 +84,7 @@ func TestRetiredPlanIsStillRenewableByItsHolder(t *testing.T) {
 	// A renewal is a re-set with a new end date on unchanged terms.
 	if _, err := svc.SetPlan(ctx, incumbent, "tester", Change{
 		PlanSlug:       "growth",
-		ContractEndsAt: Set(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+		ContractEndsAt: new(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}); err != nil {
 		t.Errorf("renewing a holder of a now-retired tier: %v", err)
 	}

@@ -40,7 +40,6 @@ type Record struct {
 
 	AnchorDay           int
 	ContractEndsAt      time.Time
-	CurrencyOverride    string
 	DisplayNameOverride string
 	Note                string
 	PlanSlug            string
@@ -49,9 +48,6 @@ type Record struct {
 	// 0 means no override: the column is checked > 0, so zero cannot be a stored
 	// quota and needs no pointer to stay distinguishable.
 	IncludedEventsOverride int64
-	// A pointer, unlike the quota above, because 0 IS a valid negotiated price —
-	// a comped account — and would otherwise be indistinguishable from "unset".
-	PriceCentsOverride *int64
 }
 
 // Entitlement is the resolved answer: the plan as this org actually holds it,
@@ -63,8 +59,10 @@ type Entitlement struct {
 	Currency    string
 	Status      Status
 
-	// nil means no price to show, which is a custom deal with no price recorded.
-	// Distinct from a zero price.
+	// The catalog's list price, and only ever that: what a negotiated deal is
+	// actually charged lives in the payments provider (docs/architecture/payments.md
+	// § 4). nil is the custom tier, which has no list price — distinct from zero,
+	// which is the free and trial tiers.
 	PriceCents *int64
 	// nil means NO QUOTA — billing is switched off, or the row names a plan the
 	// catalog no longer knows. Never render it as zero.
@@ -98,6 +96,9 @@ func Resolve(orgCreateTime time.Time, rec Record, now time.Time, billingEnabled 
 	if !billingEnabled {
 		free := mustPlan(SlugFree)
 		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
+		// The free tier's price of 0, not nil: absent means the custom tier, and a
+		// client reading the documented rule would call this a negotiated deal.
+		ent.PriceCents = free.PriceCents
 		ent.Status = StatusFree
 		return ent
 	}
@@ -181,13 +182,6 @@ func applyOverrides(ent *Entitlement, rec Record, now time.Time) {
 	}
 	if rec.DisplayNameOverride != "" {
 		ent.DisplayName = rec.DisplayNameOverride
-	}
-	if rec.PriceCentsOverride != nil {
-		v := *rec.PriceCentsOverride
-		ent.PriceCents = &v
-	}
-	if rec.CurrencyOverride != "" {
-		ent.Currency = rec.CurrencyOverride
 	}
 }
 

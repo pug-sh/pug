@@ -28,6 +28,15 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 	return org.ID
 }
 
+func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
+	t.Helper()
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, billingEnabled)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return NewServer(svc)
+}
+
 func getStatus(t *testing.T, srv *Server, orgID string) *billingv1.GetBillingStatusResponse {
 	t.Helper()
 	resp, err := srv.GetBillingStatus(t.Context(), connect.NewRequest(&billingv1.GetBillingStatusRequest{
@@ -50,7 +59,7 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 
-	off := getStatus(t, NewServer(corebilling.NewReader(pg.PgRO, false)), orgID)
+	off := getStatus(t, newServer(t, pg, false), orgID)
 	if off.GetBillingEnabled() {
 		t.Error("billing_enabled is true with the switch off")
 	}
@@ -63,7 +72,7 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 		t.Error("period bounds are missing; usage is metered whether or not billing is on")
 	}
 
-	on := getStatus(t, NewServer(corebilling.NewReader(pg.PgRO, true)), orgID)
+	on := getStatus(t, newServer(t, pg, true), orgID)
 	if !on.GetBillingEnabled() {
 		t.Error("billing_enabled is false with the switch on")
 	}
@@ -86,7 +95,7 @@ func TestGetBillingStatusReportsATrial(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, 0, -2))
 
-	msg := getStatus(t, NewServer(corebilling.NewReader(pg.PgRO, true)), orgID)
+	msg := getStatus(t, newServer(t, pg, true), orgID)
 	if msg.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_TRIALING {
 		t.Errorf("status = %s two days after signup, want TRIALING", msg.GetStatus())
 	}
@@ -115,7 +124,7 @@ func TestGetBillingStatusReportsAnUnknownOrg(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	srv := NewServer(corebilling.NewReader(pg.PgRO, true))
+	srv := newServer(t, pg, true)
 
 	unknown := xid.New().String()
 	_, err := srv.GetBillingStatus(t.Context(), connect.NewRequest(&billingv1.GetBillingStatusRequest{

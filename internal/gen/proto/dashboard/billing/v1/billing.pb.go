@@ -132,10 +132,17 @@ type Plan struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// Minor units of `currency`, which is not always hundredths — format from the
-	// pair, never by assuming two decimal places. ABSENT means there is no price
-	// to show (a negotiated deal with none recorded), which is not the same as a
-	// price of zero.
+	// The tier's LIST price, in minor units of `currency` — never what a
+	// negotiated deal is charged, which belongs to the payments provider and is
+	// not stored in pug at all. ABSENT is the custom tier, which has no list
+	// price; that is not the same as a price of zero, which is the free and trial
+	// floors.
+	//
+	// Named `cents` because pug sells in USD only, enforced rather than assumed
+	// (docs/architecture/payments.md section 3). Format from the (amount,
+	// currency) pair regardless: the day a second currency is presented, minor
+	// units stop being hundredths (JPY has none) and this field is renamed with
+	// that change, not after it.
 	//
 	// A wrapper rather than a bare int64: protoc-gen-es renders an edition-2023
 	// singular scalar as a NON-optional bigint, so absence would reach the

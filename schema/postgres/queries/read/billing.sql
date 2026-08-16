@@ -6,12 +6,10 @@ select
   o.create_time as org_create_time,
   e.anchor_day,
   e.contract_ends_at,
-  e.currency_override,
   e.display_name_override,
   e.included_events_override,
   e.note,
   e.plan_slug,
-  e.price_cents_override,
   e.trial_ends_at
 from orgs o
 left join billing_entitlements e on e.org_id = o.id

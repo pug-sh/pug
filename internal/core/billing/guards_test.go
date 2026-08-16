@@ -7,51 +7,8 @@ import (
 	"time"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
-
-func TestClearingAPriceClearsItsCurrency(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:   "growth",
-		PriceCents: corebilling.Set(int64(40_000)),
-		Currency:   corebilling.Set("EUR"),
-	}); err != nil {
-		t.Fatalf("set price: %v", err)
-	}
-
-	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:   "growth",
-		PriceCents: corebilling.Clear[int64](),
-	})
-	if err != nil {
-		t.Fatalf("clear price: %v", err)
-	}
-	if rec.PriceCentsOverride != nil {
-		t.Errorf("price = %d after clearing, want none", *rec.PriceCentsOverride)
-	}
-	if rec.CurrencyOverride != "" {
-		t.Errorf("currency = %q after clearing the price, want it cleared too", rec.CurrencyOverride)
-	}
-}
-
-func TestCurrencyWithoutAPriceIsRefused(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug: "growth",
-		Currency: corebilling.Set("EUR"),
-	})
-	if !errors.Is(err, corebilling.ErrCurrencyNeedsPrice) {
-		t.Errorf("err = %v, want ErrCurrencyNeedsPrice rather than a raw constraint violation", err)
-	}
-}
 
 func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	if testing.Short() {
@@ -64,7 +21,7 @@ func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	for _, day := range []int{32, 65537, -1} {
 		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
 			PlanSlug:  "growth",
-			AnchorDay: corebilling.Set(day),
+			AnchorDay: new(day),
 		})
 		if !errors.Is(err, corebilling.ErrAnchorDayRange) {
 			t.Errorf("anchor day %d: err = %v, want ErrAnchorDayRange", day, err)
@@ -86,6 +43,27 @@ func TestExtendTrialIsRefusedOnAGrantedPlan(t *testing.T) {
 
 	// A granted plan resolves ahead of any trial date, so the write would store a
 	// date that changes nothing and still print as a success.
+	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, time.Now())
+	if !errors.Is(err, corebilling.ErrTrialOnGrantedPlan) {
+		t.Errorf("err = %v, want ErrTrialOnGrantedPlan", err)
+	}
+}
+
+// A slug the catalog has dropped resolves free without ever consulting a trial
+// date, so extending one would store a date that changes nothing — the same
+// silent success the guard above exists to prevent.
+func TestExtendTrialIsRefusedOnAnUnknownPlan(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	// Past SetPlan, which rejects the slug: only a catalog removal produces this.
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		"insert into billing_entitlements (org_id, plan_slug) values ($1, 'growth-v0')", f.orgID); err != nil {
+		t.Fatalf("seed an unknown slug: %v", err)
+	}
+
 	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, time.Now())
 	if !errors.Is(err, corebilling.ErrTrialOnGrantedPlan) {
 		t.Errorf("err = %v, want ErrTrialOnGrantedPlan", err)
@@ -116,38 +94,6 @@ func TestExtendTrialWillNotShortenOne(t *testing.T) {
 	}
 }
 
-// char(3) blank-pads anything shorter and rejects anything longer as a raw
-// SQLSTATE, and this flag is the only way a non-USD amount enters pug.
-func TestCurrencyMustBeAThreeLetterCode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	for _, code := range []string{"EU", "USDX", "US1"} {
-		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-			PlanSlug:   "growth",
-			PriceCents: corebilling.Set(int64(40_000)),
-			Currency:   corebilling.Set(code),
-		})
-		if !errors.Is(err, corebilling.ErrCurrencyInvalid) {
-			t.Errorf("currency %q: err = %v, want ErrCurrencyInvalid", code, err)
-		}
-	}
-
-	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:   "growth",
-		PriceCents: corebilling.Set(int64(40_000)),
-		Currency:   corebilling.Set("eur"),
-	})
-	if err != nil {
-		t.Fatalf("set eur: %v", err)
-	}
-	if rec.CurrencyOverride != "EUR" {
-		t.Errorf("currency = %q, want it normalized to EUR", rec.CurrencyOverride)
-	}
-}
-
 // The contract belongs to the granted plan, so a downgrade must not leave a
 // future date behind for a dashboard to render as "your Free plan ends...".
 func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
@@ -159,7 +105,7 @@ func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
 	until := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
 		PlanSlug:       "growth",
-		ContractEndsAt: corebilling.Set(until),
+		ContractEndsAt: new(until),
 	}); err != nil {
 		t.Fatalf("set growth: %v", err)
 	}
@@ -175,8 +121,8 @@ func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
 	// A comped pilot names its own end date, and that one is kept.
 	pilot, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugFree,
-		IncludedEvents: corebilling.Set(int64(5_000_000)),
-		ContractEndsAt: corebilling.Set(until),
+		IncludedEvents: new(int64(5_000_000)),
+		ContractEndsAt: new(until),
 	})
 	if err != nil {
 		t.Fatalf("set comped pilot: %v", err)
@@ -209,9 +155,9 @@ func TestStoredRecordShowsAnOverrideThatIsNotInForce(t *testing.T) {
 	lapsed := time.Now().Add(-time.Hour)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
 		PlanSlug:       "scale",
-		IncludedEvents: corebilling.Set(int64(5_000_000)),
-		ContractEndsAt: corebilling.Set(lapsed),
-		Note:           corebilling.Set("annual wire, INV-123"),
+		IncludedEvents: new(int64(5_000_000)),
+		ContractEndsAt: new(lapsed),
+		Note:           new("annual wire, INV-123"),
 	}); err != nil {
 		t.Fatalf("set scale: %v", err)
 	}
@@ -261,5 +207,83 @@ func TestAFailedHistoryAppendRollsBackTheChange(t *testing.T) {
 	}
 	if rows != 0 {
 		t.Errorf("%d entitlement rows survived a failed history append, want 0", rows)
+	}
+}
+
+// The mirror of the contract clear: converting a trial to a paid tier must drop
+// the stored trial date, or a later downgrade to free resurrects it and the org
+// resolves TRIALING on the trial's much larger quota.
+func TestConvertingATrialToAPaidPlanClearsTheTrialDate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	if _, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 90, time.Now()); err != nil {
+		t.Fatalf("extend trial: %v", err)
+	}
+
+	converted, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"})
+	if err != nil {
+		t.Fatalf("convert to growth: %v", err)
+	}
+	if !converted.TrialEndsAt.IsZero() {
+		t.Errorf("trial_ends_at = %s after converting to growth, want it cleared", converted.TrialEndsAt)
+	}
+
+	// The date must stay gone through a later downgrade, which is where a stale
+	// one would actually bite.
+	back, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugFree})
+	if err != nil {
+		t.Fatalf("downgrade: %v", err)
+	}
+	if !back.TrialEndsAt.IsZero() {
+		t.Fatalf("trial_ends_at = %s after downgrading, want it cleared", back.TrialEndsAt)
+	}
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Status != corebilling.StatusFree {
+		t.Errorf("status = %s, want FREE; a stale trial date restored a trial quota", ent.Status)
+	}
+}
+
+// Clear takes the same org lock mutate does. Without it a concurrent SetPlan can
+// insert between the delete and the commit, leaving a stored entitlement whose
+// newest history entry says it was cleared.
+func TestClearTakesTheOrgLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+		t.Fatalf("set growth: %v", err)
+	}
+
+	tx, err := f.pg.PgW.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	if err := dbwrite.New(tx).LockBillingEntitlementOrg(t.Context(), f.orgID); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- f.svc.Clear(t.Context(), f.orgID, actor) }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("Clear finished (%v) while the org lock was held; it is not taking the lock", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if err := tx.Rollback(t.Context()); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Clear after the lock was released: %v", err)
 	}
 }

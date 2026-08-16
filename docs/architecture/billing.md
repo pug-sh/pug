@@ -65,9 +65,9 @@ Four properties everything below preserves.
 | Billing tenant | **Org** | Orgs already own projects, members and the admin boundary, and `usage_periods` already sums per org. One entitlement per org, quota spanning all its projects. |
 | Plan catalog | **Go, not rows** | A tier is (slug, name, price, quota) — static product config with revenue consequences, so it belongs in review and deploy, not in a table an operator edits at 2am. It also means no seed step and no catalog row a signup could depend on. Revisit when provider product ids arrive (§11). |
 | Repricing a tier | **Never in place — mint a new slug** (§4.2) | A Go catalog has no plan versions, so editing a sold tier's numbers changes what every existing customer on it gets, retroactively, on deploy. A commercial change disguised as a one-line edit is the most dangerous thing this design could allow. |
-| Money amounts | **Always (integer minor units + ISO 4217 code)** | A price without a currency is only unambiguous while there is exactly one, and a merchant of record presents local currency by design. Adding the code later means auditing every stored amount to guess what it meant. |
+| Money amounts | **Not stored per org at all** ([`payments.md`](payments.md) §4) | The only amounts here are the catalog's list prices. What a *deal* is charged belongs to the payments provider, which is the only thing that can charge it; a copy on the org's row is a second authority that goes stale the first time a deal is repriced. Catalog amounts stay (integer minor units + ISO 4217 code), because a price without its unit is only unambiguous while there is exactly one. |
 | Entitlement changes | **Append-only history** (§5.1) | Invariant 4. |
-| Negotiated deals | **Overrides on the org's own row** (§4.1) | A bespoke deal is name, price, quota and term for exactly one org. Nullable columns layered over a catalog plan hold that, where a private-plan catalog or a discount percentage recombined with a base price would both need a table and a join to say the same thing. |
+| Negotiated deals | **Quota overrides on the org's own row** (§4.1) | A bespoke deal is a name, a quota and a term for exactly one org. Nullable columns layered over a catalog plan hold that, where a private-plan catalog or a discount percentage recombined with a base price would both need a table and a join to say the same thing. The deal's price is not here (§4.1). |
 | Entitlement state | **Derived, never stored** | A `status` column is a second source of truth that can disagree with the timestamps beside it, and keeping it honest costs a worker. Every state this slice has is a comparison against `now`. |
 | Quota window | **Billing anniversary**, anchored to `orgs.create_time` | An org's month runs from the day it signed up, which is the date its trial already runs from. The alternative — a calendar month — is one line of code cheaper but resets everyone on the 1st regardless of when they bought, which is a support conversation the day a card is charged. §6.1. |
 | Anchor representation | **Day-of-month integer, UTC midnight** | The meter's period sum is exact only for midnight-aligned windows. An anchor stored as an instant would silently drop a partial day from the total while leaving it in the daily series. §6.1. |
@@ -106,10 +106,11 @@ Currency, PriceCents, IncludedEvents, Retired}`, with `PlanBySlug` for lookup.
   operator-assignable and will never appear in a purchase catalog, and that
   second distinction belongs to checkout, which does not exist yet — so nothing
   here carries it.
-- `PriceCents` is **display copy** in this slice — nothing charges it. When a
-  provider lands it becomes a mirror of the provider's price, and the trap that
-  comes with that (editing it in pug does not reprice a live subscription) is
-  §11's problem, not this slice's.
+- `PriceCents` is the tier's **list price**, and display copy in this slice —
+  nothing charges it. When a provider lands it becomes a mirror of the provider's
+  price, and the trap that comes with that (editing it in pug does not reprice a
+  live subscription) is §11's problem, not this slice's. A *negotiated* amount is
+  never stored anywhere in pug ([`payments.md`](payments.md) §4).
 - **The marketing site's pricing page is a second copy of this table**, hand-
   maintained in a different repo. Nothing enforces that they agree; a price
   change is two PRs, and this one is the one customers are actually held to.
@@ -125,31 +126,32 @@ Currency, PriceCents, IncludedEvents, Retired}`, with `PlanBySlug` for lookup.
 
 ### 4.1 Negotiated deals
 
-A deal we agree with one customer — "Acme, 5M events, $400/mo, annual, invoiced
-by wire" — is **not** a catalog entry. It is the org's own row, carrying up to
-three overrides that layer over whichever plan it names:
+A deal we agree with one customer — "Acme, 5M events, $400/mo, annual" — is
+**not** a catalog entry. It is the org's own row, carrying two overrides that
+layer over whichever plan it names:
 
 | Field | Column | NULL means |
 |---|---|---|
 | Quota | `included_events_override` | use the plan's number |
 | Display name | `display_name_override` | use the plan's name |
-| Price shown | `price_cents_override` + `currency_override` | use the plan's price and currency |
 
 Term is `contract_ends_at`, and the paperwork lives in `note`. Nothing about a
 bespoke deal needs a deploy, a catalog row or a join.
 
-The two price columns **travel together** — a check constraint rejects a currency
-without an amount — because a deal denominated in another currency is exactly the
-case that makes a bare `price_cents` wrong, and it is the enterprise case, not an
-exotic one.
+**The deal's price is deliberately absent.** pug stores what the org may *send*;
+what it *pays* lives in the payments provider, which is the only system that can
+charge it — see [`payments.md`](payments.md) §4 for the full argument. Storing
+both would mean two authorities on one number, disagreeing the first time a deal
+is repriced, with the dashboard rendering the stale one as fact. The agreed
+amount goes in `note` if an operator wants it written down, which is honest about
+being a record rather than a source of truth.
 
 The `custom` slug exists for a deal that is not a variation on a tier: it has no
 quota of its own, so **`plan_slug = 'custom'` requires
 `included_events_override`**, enforced by a check constraint rather than by the
-CLI remembering to ask. Its price is whatever `price_cents_override` says, and
-NULL there means the dashboard shows no price at all — which is usually right for
-a contract nobody buys from a page. `custom` is never purchasable and never
-appears in a future `ListPlans`.
+CLI remembering to ask. It has no list price either, so the dashboard shows none
+— which is right for a contract nobody buys from a page. `custom` is never
+purchasable and never appears in a future `ListPlans`.
 
 **Where this stops being the right shape:** overrides describe *one* org. Sell
 the same bespoke terms to twenty customers and there are twenty rows to keep in
@@ -200,11 +202,8 @@ create table billing_entitlements (
       check (anchor_day is null or anchor_day between 1 and 31),
   contract_ends_at timestamptz,
   create_time timestamptz not null default now(),
-  -- varchar, not char(3): char blank-pads a short code into the value a client
-  -- formats against, and this column is the only way a non-USD amount enters pug.
-  currency_override varchar(3)
-    constraint billing_entitlements_currency_check
-      check (currency_override is null or currency_override ~ '^[A-Z]{3}$'),
+  -- NO price or currency column, deliberately (payments.md section 4): a deal's
+  -- amount belongs to the payments provider, the only thing that can charge it.
   display_name_override varchar(150),
   included_events_override bigint
     constraint billing_entitlements_override_check
@@ -214,20 +213,13 @@ create table billing_entitlements (
   -- No slug check: the catalog is Go (plans.go) and SetPlan already rejects an
   -- unknown slug. A list here would be a second catalog to migrate in lockstep.
   plan_slug varchar(50) not null,
-  price_cents_override bigint
-    constraint billing_entitlements_price_override_check
-      check (price_cents_override is null or price_cents_override >= 0),
   trial_ends_at timestamptz,
   update_time timestamptz not null default now(),
   -- A custom plan has no catalog quota to fall back on, so the deal is
   -- unrepresentable without this. Enforced here rather than in the CLI: the row
   -- is what every read trusts.
   constraint billing_entitlements_custom_needs_quota
-    check (plan_slug <> 'custom' or included_events_override is not null),
-  -- An amount is meaningless without its unit, so the currency can only exist
-  -- alongside one.
-  constraint billing_entitlements_currency_needs_price
-    check (currency_override is null or price_cents_override is not null)
+    check (plan_slug <> 'custom' or included_events_override is not null)
 );
 ```
 
@@ -240,12 +232,10 @@ create table billing_entitlements (
   quota window — an annual contract ending in March does not make March's quota
   window a year long. Keeping the two apart is why `anchor_day` exists as its own
   column rather than being read off whichever date happens to be nearby.
-- **The `*_override` columns** — a negotiated deal's quota, name, price and
-  currency (§4.1). NULL means "use the plan's" in each case.
-  `included_events_override` is checked `> 0` because 0 would read as a quota of
-  zero rather than as "no override", and because "unlimited" is deliberately not
-  expressible here; `price_cents_override` allows 0, since a comped account is a
-  real deal.
+- **The `*_override` columns** — a negotiated deal's quota and name (§4.1). NULL
+  means "use the plan's" in each case. `included_events_override` is checked
+  `> 0` because 0 would read as a quota of zero rather than as "no override", and
+  because "unlimited" is deliberately not expressible here.
 - **`trial_ends_at`** — set only by `extend-trial`. NULL means the trial window
   is derived from `orgs.create_time`, which is the ordinary case for every org.
 - **`note`** — the operator's record of why ("annual wire, INV-123"). Never
@@ -271,7 +261,6 @@ create table billing_entitlement_history (
   -- is a deletion: the org returned to the derived floors.
   anchor_day smallint,
   contract_ends_at timestamptz,
-  currency_override varchar(3),
   display_name_override varchar(150),
   included_events_override bigint,
   note text not null default '',
@@ -279,7 +268,6 @@ create table billing_entitlement_history (
   -- answer to a question after the org is gone.
   org_id char(20) not null,
   plan_slug varchar(50),
-  price_cents_override bigint,
   trial_ends_at timestamptz
 );
 
@@ -335,8 +323,8 @@ rarely coexist — the ordering is what makes the resolver's answer independent 
 whether that write happened.
 
 Then each present override replaces the corresponding field of the resolved plan
-(§4.1) — quota, display name, price, currency — patching whatever steps 3–5
-produced, so a deal survives a catalog reprice untouched.
+(§4.1) — quota and display name — patching whatever steps 3–5 produced, so a deal
+survives a catalog reprice untouched.
 
 The overrides apply **only while the granted plan the row names is still the one
 resolved.** They describe a deal on *that* tier, so a lapsed contract or an
@@ -348,7 +336,7 @@ comped free-tier bump is not wiped by the org still being in its trial (§10).
 
 An **unknown `plan_slug`** — only reachable if a slug is removed from Go while
 rows still point at it — resolves to `IncludedEvents` nil (no quota). `Resolve`
-stays pure, so the log happens in `Reader.GetEntitlement`, which has a ctx to
+stays pure, so the log happens in `Service.GetEntitlement`, which has a ctx to
 attach it to; it is a `WarnContext` and deliberately **not** a
 `telemetry.RecordError`, which would record an exception on every dashboard load
 for as long as the drift lasts. Failing to "free, 10,000" would tell a paying
@@ -434,7 +422,7 @@ gone, replaced by `PeriodFor(now, anchorDay)`.
   start more than ~31 days back, so the daily full pass scans the same order of
   days as before — roughly double on average (~15d → ~30d), which can touch one
   extra monthly ClickHouse partition.
-- **`usage.Reader.GetOrgPeriod`** is the single derivation both `GetUsage`'s
+- **`usage.Service.GetOrgPeriod`** is the single derivation both `GetUsage`'s
   handler and the meter call. Two independent derivations of the same window is
   how they drift; `TestQuotaWindowMatchesTheMeters` pins that they agree across a
   full year for a derived, a mid-month and a clamping anchor.
@@ -468,7 +456,7 @@ ordering by start would hand back its frozen stamp at every rollover. The same
 applies after an `--anchor-day` change. Between the deploy and that pass, an org whose anniversary
 row does not exist yet reads as "computing", not as zero —
 `periodNotReached` already covers exactly this. No backfill is required, because
-`usage_daily` keeps day grain and re-sums any window inside the 400-day
+`usage_daily` keeps day grain and re-sums any window inside the 390-day
 retention.
 
 **Migration 019 must be applied before the server and `cron-usage` images roll.**
@@ -510,8 +498,9 @@ from the pair rather than assuming two decimal places (§4).
   NON-optional bigint, so absence would reach the dashboard as `0`. This is the
   one place billing diverges from `GetUsageResponse.used_events`, which is a bare
   `int64` a client can pair with `usage_computed_at` to detect absence — quota has
-  no such companion field. The same applies to `Plan.price_cents`, where absent
-  means "no price recorded" and 0 means comped.
+  no such companion field. The same applies to `Plan.price_cents` — the tier's
+  list price — where absent is the `custom` tier, which has none, and 0 is the
+  free and trial floors.
   A client consuming these from `../app` must check presence rather than
   truthiness — `0` is a real value for both.
 - **No `ListPlans`.** A price list whose buy button does not exist yet is a
@@ -522,19 +511,19 @@ from the pair rather than assuming two decimal places (§4).
   ActionRead)` putting it on the viewer floor for member and admin to inherit.
   No create/update/delete action is granted, because no RPC performs one.
 
-Two of the three wiring points fail a contract test if missed: the entry in
-`authz_served.go` and the procedure entry in `authz_registry.go`. The third —
-`handle(...)` in `server.go` — is not enforced by anything: nothing enumerates
-the mux's routes, so omitting it 404s silently.
+All three wiring points are enforced at build or startup: the entry in
+`authz_served.go` and the procedure entry in `authz_registry.go` fail a contract
+test if missed, and `handle(...)` in `server.go` records the mounted service so
+`assertServedServicesMatch` fails startup on a service that is served but not
+mounted.
 
 ## 8. Operator CLI
 
 ```
 pug billing show <org-id> [--history]
 pug billing set  <org-id> --plan <slug> --actor <who> [--events N]
-                          [--name "Acme Enterprise"]
-                          [--price 40000 --currency USD] [--anchor-day 17]
-                          [--until 2027-01-01] [--note "annual wire, INV-123"]
+                          [--name "Acme Enterprise"] [--anchor-day 17]
+                          [--until 2027-01-01] [--note "$400/mo, INV-123"]
 pug billing extend-trial <org-id> --days 30 --actor <who>
 pug billing clear <org-id> --actor <who>
 ```
@@ -555,22 +544,26 @@ Three boundary rules the flags do not spell out:
 - **`extend-trial` never shortens.** It sets an absolute `now + days`, so a small
   `--days` against a trial with longer to run is refused (`ErrTrialNotExtended`)
   rather than silently cutting it. Capped at `MaxTrialDays`.
-- **A `set` does not cancel a running trial.** The trial is the org's age (§6),
-  derived identically whether or not a row exists, so recording an anchor day or
-  a note on a three-day-old org leaves it trialing.
+- **A `set` to a FLOOR plan does not cancel a running trial.** The trial is the
+  org's age (§6), derived identically whether a row exists, so recording an
+  anchor day or a note on a three-day-old org leaves it trialing. A `set` to a
+  *granted* plan does end the trial state — the plan resolves ahead of the trial
+  date (§6), and `applyChange` clears `trial_ends_at` with it.
 
 A negotiated deal (§4.1) is one `set`:
 
 ```
 pug billing set o_2f9k --plan custom --events 5000000 --name "Acme Enterprise" \
-                       --price 40000 --currency USD --actor "praveen/INV-123" \
-                       --until 2027-01-01 --note "annual wire, INV-123"
+                       --actor "praveen/INV-123" --until 2027-01-01 \
+                       --note "$400/mo, INV-123"
 ```
 
-`--events`, `--name`, `--price`/`--currency` and `--anchor-day` write the
-override columns; omitting one on a re-`set` leaves the stored value alone, and
-passing the empty value (`--events 0`, `--name ""`, `--price -1`,
-`--anchor-day 0`) clears it back to the plan's. Leaving them alone is the right
+There is no `--price`: what the deal is charged lives in the payments provider
+(§4.1), and `--note` is where an operator writes it down.
+
+`--events`, `--name` and `--anchor-day` write the override columns; omitting one
+on a re-`set` leaves the stored value alone, and passing the empty value
+(`--events 0`, `--name ""`, `--anchor-day 0`) clears it back to the plan's. Leaving them alone is the right
 default because the common re-`set` is a renewal — a new `--until` on terms that
 have not changed — and a flag that silently reverted a customer's negotiated
 quota to a catalog number would be the most expensive bug this CLI could have.
@@ -578,10 +571,11 @@ quota to a catalog number would be the most expensive bug this CLI could have.
 Guards on `set`, all refusing rather than guessing: an unknown slug; the `trial`
 slug (`extend-trial` is its only writer); a **retired** tier (§4) unless the org
 already holds it, so it cannot be handed to someone new by autocomplete; `custom`
-without an `--events` quota; `--currency` without a price, and a price without a
-currency — clearing `--price` clears the currency with it, since the two are one
-stored pair. `--events` refuses a negative rather than reading it as a clear, and
-`--anchor-day` is range-checked in both the CLI and the service.
+without an `--events` quota. `--events` refuses a negative rather than reading it
+as a clear, and `--anchor-day` is range-checked in both the CLI and the service.
+`extend-trial` refuses an org holding a granted plan — including a slug the
+catalog no longer knows, which resolves free without ever consulting a trial date
+— since the write would store a date that changes nothing.
 
 Every write appends to the history (§5.1) in the same transaction, attributed to
 the `--actor` it was given. `show --history` prints the org's
@@ -597,7 +591,7 @@ conveniences over the same two columns.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PUG_BILLING_ENABLED` | `false` | The single switch. Off ⇒ `billing_enabled=false` and no quota anywhere (§6.1). Set it on every pod of a billed deployment. |
+| `PUG_BILLING_ENABLED` | `false` | The single switch. Off ⇒ `billing_enabled=false` and no quota anywhere (§6). Set it on every pod of a billed deployment. |
 
 It follows `PUG_DEMO_ENABLED` exactly: `envconfig` on the server, which rejects
 a malformed bool outright. There is no worker and no CLI gate — `pug billing`
@@ -639,15 +633,15 @@ table is a plain unit test.
   is what `EarliestPeriodStart` widens the cron's full rescan to
   (`TestOrgPeriodsUsesEachOrgsOwnAnchor`).
 - **Storage** — every slug in the Go catalog except `trial`, which is never
-  stored, inserts successfully, which is the
-  test that catches the catalog and the check constraint drifting apart; a
-  `custom` row without `included_events_override` and a currency without an
-  amount are both rejected by the database, not merely by the CLI.
+  stored, inserts successfully, which is the test that catches a slug outgrowing
+  `varchar(50)` or being rejected by the service; a `custom` row without
+  `included_events_override` is rejected by the database, not merely by the CLI.
+  There is deliberately no `plan_slug` check constraint (§5).
 - **History** — every mutating CLI path appends exactly one snapshot in the same
   transaction, `clear` included; a failed write appends nothing; the history
   survives its org being deleted. The last of those is the one a foreign key
   would quietly break, so it is a test rather than a comment.
-- **Catalog immutability** (§4.2) — a golden test pins every sellable tier's
+- **Catalog immutability** (§4.2) — a golden test pins every tier's
   `PriceCents`, `Currency` and `IncludedEvents`, so editing a live tier fails CI
   and the fix is to mint a new slug. This is the only guard that exists against
   a one-line quota cut, since nothing else in the system can tell an intended
@@ -668,7 +662,8 @@ rewrites what this one stores.
    it needs no server change. **Plus the email half** — a customer who does not
    log in never sees a banner, so the quota warning has to reach them; a banner
    alone is a notification only for people already looking.
-2. **Checkout** (payments provider): products, checkout sessions, a signed
+2. **Checkout** (payments provider) — designed in [`payments.md`](payments.md),
+   which supersedes the sketch below where the two differ: products, checkout sessions, a signed
    webhook inbox and the provider-reported states this slice has no way to
    derive (`PAST_DUE`, `CANCELLED`). It brings its own tables and a `status`
    column — the entitlement row keeps meaning exactly what it means today, and

@@ -42,6 +42,26 @@ func NewOptionalTimestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()}
 }
 
+// NewOptionalInt2 stores 0 as NULL, for a column whose check constraint puts 0
+// outside its range — so zero is "no value" rather than a value.
+func NewOptionalInt2(v int) pgtype.Int2 {
+	return pgtype.Int2{Int16: int16(v), Valid: v != 0}
+}
+
+// NewOptionalInt8 is NewOptionalInt2 for a bigint column.
+func NewOptionalInt8(v int64) pgtype.Int8 {
+	return pgtype.Int8{Int64: v, Valid: v != 0}
+}
+
+// Int2ToInt reads the column back, mapping NULL to the 0 the writers treat as
+// absent.
+func Int2ToInt(v pgtype.Int2) int {
+	if !v.Valid {
+		return 0
+	}
+	return int(v.Int16)
+}
+
 // TimestampToTimestamptz converts a proto timestamp to pgtype, returning Valid: false for nil.
 func TimestampToTimestamptz(ts *timestamppb.Timestamp) pgtype.Timestamptz {
 	if ts == nil {

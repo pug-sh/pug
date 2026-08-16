@@ -11,8 +11,8 @@ type Plan struct {
 	// units are not always hundredths (JPY has none, KWD has three), so nothing
 	// may format an amount without it.
 	Currency string
-	// nil means there is no price to show — the custom tier, whose price lives on
-	// the org's own row. Distinct from 0, which is a real price (a comped deal).
+	// nil means there is no price to show — the custom tier, whose price lives in
+	// the payments provider. Distinct from 0, which is a real price (the floors).
 	PriceCents *int64
 	// nil means the tier carries no quota of its own, again only the custom tier.
 	// Never a sentinel: a number that reads as a quota invites arithmetic that
@@ -61,9 +61,8 @@ var catalog = []Plan{
 	{Slug: SlugCustom, DisplayName: "Custom", Currency: "USD"},
 }
 
-// mustPlan is for the floors only. A missing floor resolves EVERY org to a blank
-// plan with no quota at all, silently and with a 200, so it is not a miss any
-// caller can sensibly handle.
+// mustPlan is for the floors only, inside the pure Resolve path, which has no
+// error to return. NewService has already refused a catalog missing one.
 func mustPlan(slug string) Plan {
 	p, ok := PlanBySlug(slug)
 	if !ok {

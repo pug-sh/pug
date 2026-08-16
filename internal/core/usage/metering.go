@@ -296,7 +296,7 @@ func (s *Service) OrgPeriods(ctx context.Context, now time.Time) ([]OrgPeriod, e
 
 	out := make([]OrgPeriod, 0, len(orgs))
 	for _, o := range orgs {
-		start, end := PeriodFor(now, AnchorDay(o.CreateTime.Time, anchorOverride(o.AnchorDay)))
+		start, end := PeriodFor(now, AnchorDay(o.CreateTime.Time, postgres.Int2ToInt(o.AnchorDay)))
 		out = append(out, OrgPeriod{OrgID: o.ID, Start: start, End: end})
 	}
 	return out, nil

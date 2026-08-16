@@ -14,23 +14,19 @@ select * from billing_entitlements where org_id = @org_id for update;
 -- Full replace, never partial: the caller has already merged its flags over the
 -- locked row, so a coalesce here would be a second, disagreeing merge.
 insert into billing_entitlements (
-  anchor_day, contract_ends_at, currency_override, display_name_override,
-  included_events_override, note, org_id, plan_slug, price_cents_override,
-  trial_ends_at
+  anchor_day, contract_ends_at, display_name_override,
+  included_events_override, note, org_id, plan_slug, trial_ends_at
 ) values (
-  @anchor_day, @contract_ends_at, @currency_override, @display_name_override,
-  @included_events_override, @note, @org_id, @plan_slug, @price_cents_override,
-  @trial_ends_at
+  @anchor_day, @contract_ends_at, @display_name_override,
+  @included_events_override, @note, @org_id, @plan_slug, @trial_ends_at
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
     contract_ends_at = excluded.contract_ends_at,
-    currency_override = excluded.currency_override,
     display_name_override = excluded.display_name_override,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
-    price_cents_override = excluded.price_cents_override,
     trial_ends_at = excluded.trial_ends_at
 returning *;
 
@@ -41,11 +37,9 @@ delete from billing_entitlements where org_id = @org_id;
 -- Append-only, written in the same transaction as the change it records. NULL
 -- across the value columns is a deletion.
 insert into billing_entitlement_history (
-  actor, anchor_day, contract_ends_at, currency_override, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, price_cents_override,
-  trial_ends_at
+  actor, anchor_day, contract_ends_at, display_name_override,
+  id, included_events_override, note, org_id, plan_slug, trial_ends_at
 ) values (
-  @actor, @anchor_day, @contract_ends_at, @currency_override, @display_name_override,
-  @id, @included_events_override, @note, @org_id, @plan_slug, @price_cents_override,
-  @trial_ends_at
+  @actor, @anchor_day, @contract_ends_at, @display_name_override,
+  @id, @included_events_override, @note, @org_id, @plan_slug, @trial_ends_at
 );

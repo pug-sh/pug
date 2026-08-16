@@ -70,17 +70,19 @@ make clickstack
 ./bin/pug cron usage
 
 # Operator tool for an org's billing entitlement: its plan, event quota, trial and
-# any negotiated deal. Postgres only — no payments provider exists, nothing here
-# charges anybody, and ingestion never reads what it writes. An org with NO row is
-# the normal state (trial for 14 days from orgs.create_time, free after), so this
-# is only ever used to grant something else. Every write appends a snapshot to
+# any negotiated deal's QUOTA — never its price, which belongs to the payments
+# provider (docs/architecture/payments.md). Postgres only — no payments provider
+# exists yet, nothing here charges anybody, and ingestion never reads what it
+# writes. An org with NO row is the normal state (with billing enabled: trial for
+# 14 days from orgs.create_time, free after; with it disabled every org resolves
+# free with no quota at all), so this is only ever used to grant something else. Every write appends a snapshot to
 # billing_entitlement_history, attributed to the required --actor (stated, not
 # detected: these run from a pod whose OS user is the image's uid).
 # Deliberately NOT gated on PUG_BILLING_ENABLED (that flag hides billing from a
 # deployment's users; an operator still has to be able to prepare rows before it
 # goes on).
 ./bin/pug billing show <org-id> [--history]
-./bin/pug billing set <org-id> --plan <slug> --actor <who> [--events N] [--name "..."] [--price N --currency USD] [--anchor-day D] [--until YYYY-MM-DD] [--note "..."]
+./bin/pug billing set <org-id> --plan <slug> --actor <who> [--events N] [--name "..."] [--anchor-day D] [--until YYYY-MM-DD] [--note "..."]
 ./bin/pug billing extend-trial <org-id> --days 30 --actor <who>
 ./bin/pug billing clear <org-id> --actor <who>
 
@@ -261,8 +263,8 @@ Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architectu
 - **Compliance (GDPR/DPDP)** — data-subject erasure: a synchronous prelude + the generalized `compliance` worker that hard-deletes events, derived rollups, and the profile; the unified `compliance_requests` DSAR ledger; idempotent re-drive on retry, NATS retry-to-DLQ for the async hard delete
 - **Event ingestion enrichment** — geo, user-agent, bot-management, and web-attribution auto-properties (`internal/attribution`: pathname/hostname/referrer-domain/channel/UTM/locale/screen-size derivation); **cookieless visitor identity** (`internal/cookieless`: server-derived daily-rotating HMAC ids prefixed `cookieless-` for consent-rejecting GDPR/DPDP visitors — Redis daily salt with TTL-deletion as the privacy guarantee, Redis-stitched sessions, resolved first in the ingest chain; the prefix is the downstream single source of truth) → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
 - **Web analytics** — promoted web columns, event/session rollup dimensions, channel taxonomy, live-rollup-extension migrations 008–010 → [`docs/architecture/web-analytics.md`](docs/architecture/web-analytics.md)
-- **Billing entitlement** — what an org is *allowed* to send: a Go plan catalog, one nullable `billing_entitlements` row per org (absent for almost every org — the trial and free floors derive from `orgs.create_time`), negotiated deals as per-org overrides, and an append-only history. Status is derived at read time, never stored, so there is no sweep job. **Quota windows are per-org billing anniversaries**, which is where `internal/core/usage`'s per-org period windows come from. One read-only RPC (`GetBillingStatus`, viewer floor); every write is `pug billing`. No payments, no checkout, no enforcement — ingestion never imports it → [`docs/architecture/billing.md`](docs/architecture/billing.md)
-- **Event usage metering** — exact `uniqExact(event_id)` counts at (project, day) grain (never the over-counting rollup, never approximate `uniq()`), the `pug cron usage` one-shot pass under an advisory lock, and the org-scoped `GetUsage` read. Counting only: no plans, quotas, limits or enforcement, and ingestion never consults it. An absent `usage_computed_at` means "never metered" and must not render as zero → [`docs/architecture/usage.md`](docs/architecture/usage.md)
+- **Billing entitlement** — what an org is *allowed* to send: a Go plan catalog, one nullable `billing_entitlements` row per org (absent for almost every org — the trial and free floors derive from `orgs.create_time`), negotiated deals as per-org **quota** overrides — never a price, which the payments provider owns — and an append-only history. Status is derived at read time, never stored, so there is no sweep job. **Quota windows are per-org billing anniversaries**, which is where `internal/core/usage`'s per-org period windows come from. One read-only RPC (`GetBillingStatus`, viewer floor); every write is `pug billing`. No payments, no checkout, no enforcement — ingestion never imports it → [`docs/architecture/billing.md`](docs/architecture/billing.md). Taking money (Dodo, checkout, webhooks) is the next slice and is **designed but not implemented** → [`docs/architecture/payments.md`](docs/architecture/payments.md)
+- **Event usage metering** — exact `uniqExact(event_id)` counts at (project, day) grain (never the over-counting rollup, never approximate `uniq()`), the `pug cron usage` one-shot pass under an advisory lock, and the org-scoped `GetUsage` read. Counting only: no plans, quotas, limits or enforcement, and ingestion never consults it. `GetUsage` carries three states across `usage_computed_at` + `counted`: no stamp is "never metered", a stamp without `counted` is "computing" (the meter has not reached this period), and only both together make `used_events` a real total — none of which may render as zero. `counted` exists because protoc-gen-es renders an edition-2023 singular scalar as a non-optional bigint, so `used_events`' own absence reaches the dashboard as 0 → [`docs/architecture/usage.md`](docs/architecture/usage.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
 - **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
 - **MCP server** — the read-only shared analytics API (insights + activity + profile reads = 12 tools) exposed as Model Context Protocol tools at `/mcp`. A thin adapter in `internal/app/server/mcp/`: every tool call re-enters the real Connect stack in-process via a loopback client, so validation/auth/authz run identically to an external API call (no duplicated logic).
