@@ -14,9 +14,13 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1
 service InsightsService {
   // Query runs a product-analytics insight over the project's events and returns
   // the computed result. A single call covers every insight type — trends,
-  // segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
+  // segmentation, funnel, retention, user flow (Sankey), top-K and map (a metric
+  // per country, returned as top_k rows keyed by ISO alpha-2) — chosen by the
   // InsightQuerySpec (its insight_type, events, breakdowns and filters, among
-  // others). The request also carries the time range and granularity, and it is the
+  // others). Map, user flow, top-K and session each carry their own sub-message
+  // (spec.map / spec.user_flow / spec.top_k / spec.session) and take no events or
+  // breakdowns; a map's country dimension is implicit, so spec.map may be empty.
+  // The request also carries the time range and granularity, and it is the
   // right tool for any project-wide or over-time question; per-granularity range
   // caps apply.
   // Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
@@ -222,6 +226,9 @@ message InsightQuerySpec {
   // and all session metrics always count all traffic regardless of this flag.
   bool include_cookieless = 12;
 
+  // Country-choropleth query. Only valid when insight_type == MAP.
+  MapQuery map = 13;
+
   option (buf.validate.message).cel = {
     id: "insight_query_spec.user_flow_only_for_user_flow"
     message: "user_flow is only valid for user flow insight type"
@@ -386,6 +393,77 @@ message InsightQuerySpec {
       "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_PER_USER_AVG"
       "])"
   };
+
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_only_for_map"
+    message: "map is only valid for map insight type"
+    expression:
+      "!has(this.map)"
+      "|| this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_required"
+    message: "map insight type requires map"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+      "|| has(this.map)"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_no_events"
+    message: "map insights cannot specify events"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+      "|| this.events.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_no_session"
+    message: "map insights cannot specify session"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+      "|| !has(this.session)"
+  };
+  // The country dimension is implied by the insight type, so there is nothing to
+  // break down by — and no top-N to bound. Every country with traffic is returned.
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_no_breakdowns"
+    message: "breakdowns are not supported for map insight type"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+      "|| this.breakdowns.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_no_breakdown_limit"
+    message: "breakdown_limit is not supported for map insight type"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+      "|| this.breakdown_limit == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_metric_property_required"
+    message: "metric_property is required for SUM, AVG, MIN, and MAX metrics"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+      "|| !(this.map.metric in ["
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX"
+      "]) || this.map.metric_property != ''"
+  };
+  // metric_property with a counting metric is silently ignored — likely a client mistake.
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.map_metric_property_only_for_numeric"
+    message: "metric_property is only valid for SUM, AVG, MIN, and MAX metrics"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_MAP"
+      "|| this.map.metric_property == ''"
+      "|| this.map.metric in ["
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX"
+      "]"
+  };
 }
 
 message QueryRequest {
@@ -495,6 +573,7 @@ enum InsightType {
   INSIGHT_TYPE_RETENTION = 4;
   INSIGHT_TYPE_USER_FLOW = 5;
   INSIGHT_TYPE_TOP_K = 6;
+  INSIGHT_TYPE_MAP = 7;
 }
 
 // Granularity values are listed finest → coarsest by source-order convention.
@@ -675,6 +754,27 @@ message TopKRow {
   // resolved to a profile. Absent for the $others bucket and for
   // unidentified distinct_ids.
   TopKProfile profile = 4;
+}
+
+// MapQuery measures a metric per country for a choropleth. The dimension is
+// fixed to the $country auto-property, which is what makes this an insight type
+// rather than a chart style.
+//
+// Results arrive as QueryResponse.top_k, with no $others bucket. Every key is an
+// assigned ISO 3166-1 alpha-2 code; rows the server cannot confirm as one are
+// dropped — unresolved traffic, and any value a client wrote to $country
+// directly — so the rows do not sum to the project's total.
+message MapQuery {
+  // Optional event scope (kind and/or per-event filters), same reuse as
+  // TopKQuery.scope. Empty scope means all events participate.
+  common.v1.EventFilter scope = 1;
+
+  // Metric to measure per country. Defaults to TOTAL when unspecified.
+  AggregationType metric = 2 [(buf.validate.field).enum.defined_only = true];
+
+  // Property to aggregate. Required for SUM/AVG/MIN/MAX; ignored otherwise.
+  // Pattern uses * (not +) because this field may be empty for count-based metrics.
+  string metric_property = 3 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
 }
 
 // TopKProfile is the profile enrichment attached to a DIMENSION_USER row.

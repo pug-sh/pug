@@ -1259,6 +1259,76 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	// A map insight executes as a top K over $country. The two things worth proving end to end are
+	// that it answers in top_k rows keyed by country, and that the day-aligned (rollup) and
+	// misaligned (raw) windows agree — the rewrite is the only thing standing between the two.
+	t.Run("map", func(t *testing.T) {
+		mapReq := func(metric insightsv1.AggregationType, from, to time.Time) *insightsv1.QueryRequest {
+			return &insightsv1.QueryRequest{
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_MAP.Enum(),
+					Map: &insightsv1.MapQuery{
+						Scope:  &commonv1.EventFilter{Kind: proto.String("page_view")},
+						Metric: metric.Enum(),
+					},
+				},
+				TimeRange:   &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			}
+		}
+		countryCounts := func(t *testing.T, resp *insightsv1.QueryResponse) map[string]float64 {
+			t.Helper()
+			rows := resp.GetTopK().GetRows()
+			if rows == nil {
+				t.Fatalf("map answered in %T, want a top_k result", resp.GetResult())
+			}
+			out := map[string]float64{}
+			for _, row := range rows {
+				if row.GetIsOthers() {
+					t.Errorf("map returned an $others row (%v) — it cannot be drawn on a map", row.GetValue())
+					continue
+				}
+				out[row.GetDimensionValue()] = row.GetValue()
+			}
+			return out
+		}
+
+		dayStart := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		dayEnd := time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)
+		// Every seeded event is at 12:00, so a 06:00 start selects the same events — it only
+		// misaligns the window, which is what forces the raw builder.
+		midDayStart := time.Date(2024, 1, 1, 6, 0, 0, 0, time.UTC)
+
+		for _, tc := range []struct {
+			name   string
+			metric insightsv1.AggregationType
+			want   map[string]float64
+		}{
+			// alice(US) ×3 + charlie(US) ×1, bob(GB) ×2 → US 4 / GB 2 by event, 2 / 1 by person.
+			{"total", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, map[string]float64{"US": 4, "GB": 2}},
+			{"unique_users", insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS, map[string]float64{"US": 2, "GB": 1}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				rollupResp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, mapReq(tc.metric, dayStart, dayEnd), time.Now())
+				if err != nil {
+					t.Fatalf("ExecuteQuery (day-aligned): %v", err)
+				}
+				rollup := countryCounts(t, rollupResp)
+				if !reflect.DeepEqual(rollup, tc.want) {
+					t.Errorf("day-aligned counts = %v, want %v", rollup, tc.want)
+				}
+
+				rawResp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, mapReq(tc.metric, midDayStart, dayEnd), time.Now())
+				if err != nil {
+					t.Fatalf("ExecuteQuery (misaligned): %v", err)
+				}
+				if raw := countryCounts(t, rawResp); !reflect.DeepEqual(raw, rollup) {
+					t.Errorf("raw vs rollup mismatch: raw=%v rollup=%v", raw, rollup)
+				}
+			})
+		}
+	})
+
 	t.Run("rollup_table_populated_by_mv", func(t *testing.T) {
 		var total uint64
 		if err := ch.Conn.QueryRow(ctx,

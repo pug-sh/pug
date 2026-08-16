@@ -51,7 +51,7 @@ Start by discovering what data exists:
 - get_insights_property_values (or get_activity_property_values) lists the observed values for a given property key.
 
 Project-wide questions ("how many", "what is trending", "where do users drop off"):
-- query_insights is the main analysis tool: trends, funnel, retention, segmentation, user flow (Sankey) and top-K over the project's events. Reach for this for anything aggregate or over-time.
+- query_insights is the main analysis tool: trends, funnel, retention, segmentation, user flow (Sankey), top-K and map (a metric per country) over the project's events. Reach for this for anything aggregate or over-time.
 - explore_events browses the raw event stream across all users.
 
 Individual users:
