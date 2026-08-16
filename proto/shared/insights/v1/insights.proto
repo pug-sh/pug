@@ -760,10 +760,10 @@ message TopKRow {
 // fixed to the $country auto-property, which is what makes this an insight type
 // rather than a chart style.
 //
-// Results arrive as QueryResponse.top_k, keyed by ISO alpha-2, with no $others
-// bucket. Rows that are not a country the server itself resolved are dropped —
-// unresolved traffic, and any value a client wrote to $country directly — so the
-// rows do not sum to the project's total.
+// Results arrive as QueryResponse.top_k, with no $others bucket. Every key is an
+// assigned ISO 3166-1 alpha-2 code; rows the server cannot confirm as one are
+// dropped — unresolved traffic, and any value a client wrote to $country
+// directly — so the rows do not sum to the project's total.
 message MapQuery {
   // Optional event scope (kind and/or per-event filters), same reuse as
   // TopKQuery.scope. Empty scope means all events participate.

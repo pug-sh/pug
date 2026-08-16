@@ -156,7 +156,11 @@ func TestKeepISOCountries(t *testing.T) {
 		return &insightsv1.TopKRow{DimensionValue: proto.String(v), Value: proto.Float64(1)}
 	}
 	got := keepISOCountries(&insightsv1.TopKResult{
-		Rows: []*insightsv1.TopKRow{row("US"), row(""), row("USA"), row("unknown"), row("us"), row("G1"), row("GB")},
+		// ZZ is the case a two-letter shape check would have let through: correctly
+		// shaped, but not an assigned code, so no map can place it.
+		Rows: []*insightsv1.TopKRow{
+			row("US"), row(""), row("USA"), row("unknown"), row("us"), row("G1"), row("ZZ"), row("GB"),
+		},
 	})
 	var kept []string
 	for _, r := range got.GetRows() {

@@ -34,26 +34,20 @@ func topKRequestForMap(req *insightsv1.QueryRequest) *insightsv1.QueryRequest {
 }
 
 // keepISOCountries drops every row a choropleth cannot place, so the response
-// matches the ISO alpha-2 contract it advertises. Two kinds get dropped: the
-// empty-country row top K keeps on purpose (traffic whose geo never resolved),
-// and anything client-shaped like "USA" or "unknown" — the enricher overwrites
-// $country only when the geo provider resolves one, so a client-supplied value
-// survives ingestion.
+// matches the ISO alpha-2 contract it advertises. That means membership in the
+// real code set, not a two-letter shape check: the enricher overwrites $country
+// only when the geo provider resolves one, so "USA", "unknown" and unassigned
+// codes like "ZZ" all survive ingestion from a client payload.
 //
 // Ranking happens before this filter, so a project flooded with junk codes can
 // still push real countries past mapCountryLimit.
 func keepISOCountries(result *insightsv1.TopKResult) *insightsv1.TopKResult {
 	kept := result.GetRows()[:0]
 	for _, row := range result.GetRows() {
-		if isISOAlpha2(row.GetDimensionValue()) {
+		if geo.IsCountryCode(row.GetDimensionValue()) {
 			kept = append(kept, row)
 		}
 	}
 	result.Rows = kept
 	return result
-}
-
-// isISOAlpha2 matches the shape the geo enricher writes: two uppercase letters.
-func isISOAlpha2(v string) bool {
-	return len(v) == 2 && v[0] >= 'A' && v[0] <= 'Z' && v[1] >= 'A' && v[1] <= 'Z'
 }
