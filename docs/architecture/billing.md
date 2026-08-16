@@ -65,7 +65,7 @@ Four properties everything below preserves.
 | Billing tenant | **Org** | Orgs already own projects, members and the admin boundary, and `usage_periods` already sums per org. One entitlement per org, quota spanning all its projects. |
 | Plan catalog | **Go, not rows** | A tier is (slug, name, price, quota) — static product config with revenue consequences, so it belongs in review and deploy, not in a table an operator edits at 2am. It also means no seed step and no catalog row a signup could depend on. Revisit when provider product ids arrive (§11). |
 | Repricing a tier | **Never in place — mint a new slug** (§4.2) | A Go catalog has no plan versions, so editing a sold tier's numbers changes what every existing customer on it gets, retroactively, on deploy. A commercial change disguised as a one-line edit is the most dangerous thing this design could allow. |
-| Money amounts | **Not stored per org at all** ([`payments.md`](payments.md) §4) | The only amounts here are the catalog's list prices. What a *deal* is charged belongs to the payments provider, which is the only thing that can charge it; a copy on the org's row is a second authority that goes stale the first time a deal is repriced. Catalog amounts stay (integer minor units + ISO 4217 code), because a price without its unit is only unambiguous while there is exactly one. |
+| Money amounts | **No structured amount per org** ([`payments.md`](payments.md) §4) | The only amounts here are the catalog's list prices. What a *deal* is charged belongs to the payments provider, which is the only thing that can charge it; a copy on the org's row is a second authority that goes stale the first time a deal is repriced. An operator may still write the agreed amount into `note`, which is prose no query reads as a number. Catalog amounts stay (integer minor units + ISO 4217 code), because a price without its unit is only unambiguous while there is exactly one. |
 | Entitlement changes | **Append-only history** (§5.1) | Invariant 4. |
 | Negotiated deals | **Quota overrides on the org's own row** (§4.1) | A bespoke deal is a name, a quota and a term for exactly one org. Nullable columns layered over a catalog plan hold that, where a private-plan catalog or a discount percentage recombined with a base price would both need a table and a join to say the same thing. The deal's price is not here (§4.1). |
 | Entitlement state | **Derived, never stored** | A `status` column is a second source of truth that can disagree with the timestamps beside it, and keeping it honest costs a worker. Every state this slice has is a comparison against `now`. |
@@ -109,8 +109,9 @@ Currency, PriceCents, IncludedEvents, Retired}`, with `PlanBySlug` for lookup.
 - `PriceCents` is the tier's **list price**, and display copy in this slice —
   nothing charges it. When a provider lands it becomes a mirror of the provider's
   price, and the trap that comes with that (editing it in pug does not reprice a
-  live subscription) is §11's problem, not this slice's. A *negotiated* amount is
-  never stored anywhere in pug ([`payments.md`](payments.md) §4).
+  live subscription) is §11's problem, not this slice's. A *negotiated* amount
+  never becomes a field in pug — only, at most, prose in `note`
+  ([`payments.md`](payments.md) §4).
 - **The marketing site's pricing page is a second copy of this table**, hand-
   maintained in a different repo. Nothing enforces that they agree; a price
   change is two PRs, and this one is the one customers are actually held to.
@@ -519,7 +520,7 @@ mounted.
 
 ## 8. Operator CLI
 
-```
+```shell
 pug billing show <org-id> [--history]
 pug billing set  <org-id> --plan <slug> --actor <who> [--events N]
                           [--name "Acme Enterprise"] [--anchor-day 17]
@@ -552,7 +553,7 @@ Three boundary rules the flags do not spell out:
 
 A negotiated deal (§4.1) is one `set`:
 
-```
+```shell
 pug billing set o_2f9k --plan custom --events 5000000 --name "Acme Enterprise" \
                        --actor "praveen/INV-123" --until 2027-01-01 \
                        --note "$400/mo, INV-123"
@@ -571,7 +572,9 @@ quota to a catalog number would be the most expensive bug this CLI could have.
 Guards on `set`, all refusing rather than guessing: an unknown slug; the `trial`
 slug (`extend-trial` is its only writer); a **retired** tier (§4) unless the org
 already holds it, so it cannot be handed to someone new by autocomplete; `custom`
-without an `--events` quota. `--events` refuses a negative rather than reading it
+left with no quota. That last one is checked against the *merged* row, not the
+flags, so a re-`set` on a deal that already carries an override needs no
+`--events`. `--events` refuses a negative rather than reading it
 as a clear, and `--anchor-day` is range-checked in both the CLI and the service.
 `extend-trial` refuses an org holding a granted plan — including a slug the
 catalog no longer knows, which resolves free without ever consulting a trial date

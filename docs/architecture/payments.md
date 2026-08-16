@@ -28,9 +28,10 @@ the pug dashboard rather than from a link we send (§5.2).
 per-seat pricing; multi-currency (§3); an in-dashboard plan switcher (Dodo's
 customer portal does that); revenue reporting.
 
-**Unchanged:** `Resolve`, the quota window, the plan catalog's quotas, and every
-existing test. `billing_entitlements` gains exactly one nullable column (§6) and
-`pug billing set` one flag. This slice is
+**Unchanged:** the quota window, the plan catalog's quotas, and every existing
+test. `Resolve` gains one argument — a nullable subscription (§7) — and every
+branch it already has survives beneath it. `billing_entitlements` gains exactly
+one nullable column (§6) and `pug billing set` one flag. This slice is
 additive. If it were reverted, orgs would keep resolving exactly as they do
 today.
 
@@ -160,7 +161,7 @@ A custom product is not in the catalog, so nothing generic can offer it. Rather
 than emailing a payment link, the operator records the product id on the org and
 lets the dashboard do the rest:
 
-```
+```shell
 pug billing set o_2f9k --plan custom --events 5000000 \
                        --provider-product prod_2f9k... \
                        --name "Acme Enterprise" --actor "praveen/INV-123"
@@ -209,7 +210,7 @@ self-serve customer sees too.
 
 One new table, one new inbox, and one new column on `billing_entitlements`:
 
-```
+```text
 billing_entitlements
   provider_product_id  text          -- nullable; the Dodo product a custom deal
                                      -- is bought against (section 5.2). Operator-
@@ -217,16 +218,18 @@ billing_entitlements
 ```
 
 NULL is every org that is not a negotiated deal — the catalog tiers get their
-product ids from config (section 16), not from the row.
+product ids from config (section 13), not from the row: `PUG_DODO_PRODUCT_<SLUG>`,
+one key per purchasable tier, mapping a catalog slug to a Dodo product id.
 
-```
+```text
 billing_subscriptions
   org_id                char(20) primary key references orgs(id) on delete cascade
   provider              text not null default 'dodo'
   provider_customer_id  text not null
   provider_sub_id       text not null unique
   plan_slug             varchar(50) not null      -- resolved from the product id
-  status                text not null             -- provider vocabulary, narrowed on read
+  status                text not null             -- pug's vocabulary; §7
+  provider_status       text not null             -- Dodo's, verbatim; support reads this
   price_cents           bigint not null           -- mirror; §4
   currency              varchar(3) not null       -- always USD while §3 holds
   current_period_start  timestamptz
@@ -240,7 +243,7 @@ billing_subscriptions
 same reasoning as the entitlement row. `provider_sub_id` is unique so a webhook
 cannot attach one Dodo subscription to two orgs.
 
-```
+```text
 billing_webhook_deliveries
   webhook_id     text primary key      -- Dodo's, so a retry collides
   event_type     text not null
@@ -253,11 +256,26 @@ billing_webhook_deliveries
 The inbox is kept because it is the only thing that makes Dodo's retries safe
 (§8), and because a payload that failed to apply is otherwise unrecoverable.
 
+`payload` is the delivery as sent, which for a subscription event carries the
+customer's name, email, billing address and any tax id — personal data pug does
+not otherwise store. Replay needs the bytes, so the controls are on the row
+rather than on the fields: no RPC or MCP tool reads this table, `pug cron
+billing-reconcile` prunes rows **90 days** after `processed_at`, and an org
+erasure (`compliance`) deletes its deliveries with the rest. Anything long-lived
+that a query wants — status, period, amount — belongs on
+`billing_subscriptions`, which outlives the payload it came from.
+
 ## 7. Resolution with a subscription
 
-`Resolve` grows one input. The order, most specific first:
+`Resolve` grows one input: a `*Subscription` beside `rec Record`, nil for the
+orgs that have none. A separate argument rather than a field on `Record` because
+the two rows have different writers (invariant 2) and different readers — a
+`Record` is what `pug billing` produces, and folding a webhook-owned row into it
+would put the operator's type in the provider's write path.
 
-1. A **live subscription** (`active`, `on_hold`, `past_due`) supplies the plan.
+The order, most specific first:
+
+1. A **live subscription** supplies the plan.
 2. An **operator grant** (`billing_entitlements.plan_slug`, non-floor) supplies
    the plan when there is no live subscription — this is how a comped deal and a
    pre-paid grant keep working with no money involved.
@@ -265,9 +283,27 @@ The inbox is kept because it is the only thing that makes Dodo's retries safe
    makes a `custom` subscription's quota come from pug.
 4. Otherwise the derived trial, then free, exactly as today.
 
-A `cancelled` or `expired` subscription supplies nothing and the org falls to
-whatever is beneath it — usually free, because the trial is long past. The row
-is kept rather than deleted: "when did this lapse" is a question support asks.
+"Live" is pug's word, not Dodo's. The webhook normalizes on write and stores both
+columns (§6), so this rule is one comparison against a vocabulary we control and
+support can still see what Dodo actually said:
+
+| Dodo `status` | pug `status` | Live |
+|---|---|---|
+| `active` | `active` | yes |
+| `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11) |
+| `paused` | `paused` | no |
+| `cancelled`, `expired`, `failed` | same word | no |
+| anything else | stored verbatim, treated as not live | no |
+
+`subscription.paused` and `.unpaused` run the same apply path as every other
+`subscription.*` — the payload's status is what moves the row, so pausing drops
+the org to whatever is beneath the subscription and unpausing restores it, with
+no event-name-specific branch. An unrecognized status is not live: a state we
+have never seen must not silently grant a plan.
+
+A not-live subscription supplies nothing and the org falls to whatever is beneath
+it — usually free, because the trial is long past. The row is kept rather than
+deleted: "when did this lapse" is a question support asks.
 
 Every existing rule in [`billing.md`](billing.md) §6 survives unchanged. An org
 with no subscription row resolves exactly as it does today, which is what makes
@@ -315,6 +351,17 @@ Attribution is `metadata.org_id`, set on every checkout and every custom product
 link, falling back to `provider_customer_id`. A delivery that resolves to no org
 is stored, marked processed, and logged — never applied to a guess.
 
+**A product pug cannot place is the same case.** If `product_id` maps to no
+configured tier (§13) and does not match the attributed org's
+`provider_product_id`, there is no `plan_slug` to write, so the delivery is
+stored, marked processed, logged as an error, and **not applied** — the same
+disposition as a foreign currency (§3) and an unattributable delivery, for the
+same reason: retrying cannot fix a mapping that lives in config, and 8 retries
+would only delay the alert. Reconcile (§9) reports it as a third inconsistency —
+a live Dodo subscription against a product pug does not know — which is the
+signal that a deploy is missing a `PUG_DODO_PRODUCT_*` key or that an operator
+created a product without pasting its id.
+
 ## 9. Reconcile
 
 A `pug cron billing-reconcile` pass, shaped like `pug cron usage`: one-shot,
@@ -328,6 +375,8 @@ CAS. Then two consistency reports, which are the point of invariant 3:
 - A subscription Dodo says is live that pug has no row for.
 - An entitlement granting a paid or `custom` plan with no live subscription
   behind it — including the §5.2 case of a paid custom deal with no quota.
+- A live subscription against a product no config key and no org row maps to
+  (§8), which is a delivery that could not be applied.
 
 Both are logged and counted, not auto-fixed. An automatic repair here would be
 writing to the money side of the system from a guess.
@@ -362,9 +411,14 @@ quota banner stays on the viewer floor but starting a checkout is spending money
   `provider_customer_id` — trialing, free and comped orgs have never checked out.
 
 `GetBillingStatus` gains `subscription_status`, `current_period_end` and a
-`purchasable` bool (true for a catalog tier, or for `custom` once the org has a
-`provider_product_id`) — the last is what the FE renders the buy button from,
-without ever seeing a product id. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
+`purchasable` bool — what the FE renders the buy button from, without ever
+seeing a product id. It is true only when the checkout would actually open:
+billing enabled, a Dodo API key configured, and a product to check out against
+(a configured catalog tier, or `custom` once the org has a
+`provider_product_id`). It is the same condition `CreateCheckoutSession` returns
+`Unavailable` / `FailedPrecondition` on, read from one helper so the two cannot
+drift — a button that cannot work is worse than no button. Tested both
+configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
 portal; no `ChangePlan` RPC in this slice.
 
 ## 13. Configuration
@@ -375,6 +429,7 @@ portal; no `ChangePlan` RPC in this slice.
 | `PUG_DODO_API_KEY` | — | Absent ⇒ no provider. Checkout returns `Unavailable`; everything else works. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
+| `PUG_DODO_PRODUCT_<SLUG>` | — | One per purchasable catalog tier (`..._STARTER`, `..._GROWTH`, `..._SCALE`), mapping the slug to a Dodo product id. Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A tier with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
 
 Billing enabled with no Dodo credentials is a supported mode, not a broken one:
 quotas, grants and comped deals all work, and only the buy button is missing.
@@ -386,8 +441,9 @@ That is the self-hosted configuration.
 ([`CLAUDE.md`](../../CLAUDE.md) § Testing); the additions follow. The provider is
 an interface (`billing.PaymentProvider`) with a fake in tests — no container
 talks to Dodo. What must be tested against Postgres: the CAS on out-of-order
-deliveries, the retry that re-applies an unprocessed row, and resolution with
-every (subscription status × entitlement) pair from §7.
+deliveries, the retry that re-applies an unprocessed row, every Dodo status in
+§7's table reaching its normalized value, and resolution with every (subscription
+status × entitlement) pair from §7.
 
 Signature verification gets a table test with a known-good vector, a tampered
 body, a stale timestamp and a multi-signature header. This is the code most
