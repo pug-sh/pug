@@ -226,7 +226,7 @@ func ExecuteQuery(
 			return nil, queryFailed(err)
 		}
 		if isMap {
-			result = dropUnresolvedCountry(result)
+			result = keepISOCountries(result)
 		}
 		resp.Result = &insightsv1.QueryResponse_TopK{TopK: result}
 

@@ -149,12 +149,14 @@ func TestTopKRequestForMap(t *testing.T) {
 	})
 }
 
-func TestDropUnresolvedCountry(t *testing.T) {
+// $country is client-writable whenever geo enrichment resolves nothing, so the junk
+// cases here are reachable from an untrusted caller, not hypothetical.
+func TestKeepISOCountries(t *testing.T) {
 	row := func(v string) *insightsv1.TopKRow {
 		return &insightsv1.TopKRow{DimensionValue: proto.String(v), Value: proto.Float64(1)}
 	}
-	got := dropUnresolvedCountry(&insightsv1.TopKResult{
-		Rows: []*insightsv1.TopKRow{row("US"), row(""), row("GB")},
+	got := keepISOCountries(&insightsv1.TopKResult{
+		Rows: []*insightsv1.TopKRow{row("US"), row(""), row("USA"), row("unknown"), row("us"), row("G1"), row("GB")},
 	})
 	var kept []string
 	for _, r := range got.GetRows() {

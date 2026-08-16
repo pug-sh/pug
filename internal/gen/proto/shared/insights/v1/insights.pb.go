@@ -1384,8 +1384,9 @@ func (x *TopKRow) GetProfile() *TopKProfile {
 // rather than a chart style.
 //
 // Results arrive as QueryResponse.top_k, keyed by ISO alpha-2, with no $others
-// bucket. Traffic whose country did not resolve is dropped rather than returned
-// under an empty key, so the rows do not sum to the project's total.
+// bucket. Rows that are not a country the server itself resolved are dropped —
+// unresolved traffic, and any value a client wrote to $country directly — so the
+// rows do not sum to the project's total.
 type MapQuery struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional event scope (kind and/or per-event filters), same reuse as
