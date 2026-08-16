@@ -2,6 +2,7 @@ package insights
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -52,7 +53,7 @@ func (q TopKQuery) Dimension() insightsv1.TopKQuery_Dimension { return q.dimensi
 func BuildTopKQuery(req *insightsv1.QueryRequest, projectID string) (TopKQuery, error) {
 	tk := req.GetSpec().GetTopK()
 	if tk == nil {
-		return TopKQuery{}, fmt.Errorf("top k: top_k is required")
+		return TopKQuery{}, errors.New("top_k is required")
 	}
 	limit := int(tk.GetLimit())
 	if limit == 0 {
@@ -67,10 +68,10 @@ func BuildTopKQuery(req *insightsv1.QueryRequest, projectID string) (TopKQuery, 
 	case insightsv1.TopKQuery_DIMENSION_USER:
 		q, err = buildTopKUsers(req, projectID, limit)
 	default:
-		return TopKQuery{}, fmt.Errorf("top k: unsupported dimension %s", tk.GetDimension())
+		return TopKQuery{}, fmt.Errorf("unsupported dimension %s", tk.GetDimension())
 	}
 	if err != nil {
-		return TopKQuery{}, fmt.Errorf("top k: %w", err)
+		return TopKQuery{}, err
 	}
 
 	sql, args, err := q.
@@ -78,7 +79,7 @@ func BuildTopKQuery(req *insightsv1.QueryRequest, projectID string) (TopKQuery, 
 		WithSpillThreshold(insightsSpillThresholdBytes).
 		Build()
 	if err != nil {
-		return TopKQuery{}, fmt.Errorf("top k: %w", err)
+		return TopKQuery{}, err
 	}
 	return TopKQuery{
 		sql:       sql,

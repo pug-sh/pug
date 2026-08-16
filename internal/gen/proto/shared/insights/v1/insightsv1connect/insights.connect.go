@@ -51,9 +51,13 @@ const (
 type InsightsServiceClient interface {
 	// Query runs a product-analytics insight over the project's events and returns
 	// the computed result. A single call covers every insight type — trends,
-	// segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
+	// segmentation, funnel, retention, user flow (Sankey), top-K and map (a metric
+	// per country, returned as top_k rows keyed by ISO alpha-2) — chosen by the
 	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
-	// others). The request also carries the time range and granularity, and it is the
+	// others). Map, user flow, top-K and session each carry their own sub-message
+	// (spec.map / spec.user_flow / spec.top_k / spec.session) and take no events or
+	// breakdowns; a map's country dimension is implicit, so spec.map may be empty.
+	// The request also carries the time range and granularity, and it is the
 	// right tool for any project-wide or over-time question; per-granularity range
 	// caps apply.
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
@@ -150,9 +154,13 @@ func (c *insightsServiceClient) GetPropertyValues(ctx context.Context, req *conn
 type InsightsServiceHandler interface {
 	// Query runs a product-analytics insight over the project's events and returns
 	// the computed result. A single call covers every insight type — trends,
-	// segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
+	// segmentation, funnel, retention, user flow (Sankey), top-K and map (a metric
+	// per country, returned as top_k rows keyed by ISO alpha-2) — chosen by the
 	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
-	// others). The request also carries the time range and granularity, and it is the
+	// others). Map, user flow, top-K and session each carry their own sub-message
+	// (spec.map / spec.user_flow / spec.top_k / spec.session) and take no events or
+	// breakdowns; a map's country dimension is implicit, so spec.map may be empty.
+	// The request also carries the time range and granularity, and it is the
 	// right tool for any project-wide or over-time question; per-granularity range
 	// caps apply.
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.

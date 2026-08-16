@@ -205,10 +205,17 @@ func ExecuteQuery(
 		result := GroupUserFlowResult(ctx, rows, q.MaxNodes(), q.MaxLinks())
 		resp.Result = &insightsv1.QueryResponse_UserFlow{UserFlow: result}
 
-	case insightsv1.InsightType_INSIGHT_TYPE_TOP_K:
-		q, usedRollup, err := topKQueryForExecution(req, projectID, now)
+	case insightsv1.InsightType_INSIGHT_TYPE_TOP_K, insightsv1.InsightType_INSIGHT_TYPE_MAP:
+		// A map is a top K over $country, so it shares the whole path — builders,
+		// rollup eligibility, result assembly — and answers in top_k rows.
+		topKReq, insight := req, "top k"
+		isMap := req.GetSpec().GetInsightType() == insightsv1.InsightType_INSIGHT_TYPE_MAP
+		if isMap {
+			topKReq, insight = topKRequestForMap(req), "map"
+		}
+		q, usedRollup, err := topKQueryForExecution(topKReq, projectID, now)
 		if err != nil {
-			return nil, buildQueryError(ctx, projectID, "top k", usedRollup, err)
+			return nil, buildQueryError(ctx, projectID, insight, usedRollup, err)
 		}
 		rows, err := executor.QueryTopK(ctx, projectID, q)
 		if err != nil {
@@ -217,6 +224,9 @@ func ExecuteQuery(
 		result, err := buildTopKResult(ctx, executor, projectID, q, rows)
 		if err != nil {
 			return nil, queryFailed(err)
+		}
+		if isMap {
+			result = dropUnresolvedCountry(result)
 		}
 		resp.Result = &insightsv1.QueryResponse_TopK{TopK: result}
 
@@ -250,7 +260,9 @@ func buildQueryError(ctx context.Context, projectID, insight string, usedRollup 
 	}
 	slog.WarnContext(ctx, "failed to build query", slogx.Error(err),
 		slog.String("project_id", projectID), slog.String("insight", insight))
-	return &InvalidQueryError{Message: err.Error(), err: err}
+	// The label is the caller's, not the builder's: a map is built by the top-K
+	// builder but must not report itself as one.
+	return &InvalidQueryError{Message: insight + ": " + err.Error(), err: err}
 }
 
 // queryFailed is the client-facing translation of an execution failure. The
