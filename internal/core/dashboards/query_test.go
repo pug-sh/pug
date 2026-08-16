@@ -658,3 +658,76 @@ func TestRenderDashboard_UserFlowTile(t *testing.T) {
 		t.Fatalf("links = %d, want 2", len(result.GetLinks()))
 	}
 }
+
+type topKConn struct {
+	driver.Conn
+	rows [][3]any // dim_value, is_others, value
+}
+
+func (c topKConn) Query(_ context.Context, _ string, _ ...any) (driver.Rows, error) {
+	return &topKRows{rows: c.rows}, nil
+}
+
+type topKRows struct {
+	driver.Rows
+	rows [][3]any
+	idx  int
+}
+
+func (r *topKRows) Next() bool { return r.idx < len(r.rows) }
+
+func (r *topKRows) Scan(dest ...any) error {
+	if len(dest) != 3 {
+		return errors.New("topKRows: expected 3 scan destinations")
+	}
+	row := r.rows[r.idx]
+	r.idx++
+	*dest[0].(*string) = row[0].(string)
+	*dest[1].(*uint8) = row[1].(uint8)
+	*dest[2].(*float64) = row[2].(float64)
+	return nil
+}
+
+func (r *topKRows) Err() error   { return nil }
+func (r *topKRows) Close() error { return nil }
+
+// A map tile is the one insight type whose stored spec is rewritten before execution,
+// so this proves the spec survives the JSONB round-trip and per-tile revalidation, and
+// that the unresolved-country row is dropped on the render path too.
+func TestRenderDashboard_MapTile(t *testing.T) {
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_MAP.Enum(),
+		Map:         &insightsv1.MapQuery{},
+	}
+	queryJSON, err := SpecMessageToMap(spec)
+	if err != nil {
+		t.Fatalf("SpecMessageToMap: %v", err)
+	}
+	dashboard := DashboardWithTiles{
+		Dashboard: dbread.Dashboard{ProjectID: "proj", DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"},
+		Tiles: []dbread.DashboardTile{
+			{ID: "map", Kind: int16(TileKindInsight), InsightQuery: queryJSON},
+		},
+	}
+	executor := coreinsights.NewExecutor(topKConn{rows: [][3]any{
+		{"US", uint8(0), float64(4)},
+		{"", uint8(0), float64(3)},
+		{"GB", uint8(0), float64(2)},
+	}})
+
+	rendered, err := RenderDashboard(context.Background(), executor, dashboard, DashboardQueryOverrides{})
+	if err != nil {
+		t.Fatalf("RenderDashboard returned error: %v", err)
+	}
+	tile := rendered.Tiles[0]
+	if tile.ErrorMessage != "" {
+		t.Fatalf("unexpected error: %q", tile.ErrorMessage)
+	}
+	rows := tile.Result.GetTopK().GetRows()
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2 (the unresolved-country row should be dropped)", len(rows))
+	}
+	if rows[0].GetDimensionValue() != "US" || rows[1].GetDimensionValue() != "GB" {
+		t.Errorf("rows = %v", rows)
+	}
+}
