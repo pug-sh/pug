@@ -10,7 +10,6 @@ streams:
     max_bytes: -1
     max_age: 720h  # 30 days
     storage: "file"
-    num_replicas: 1
 
   # Stream for GDPR/DPDP compliance jobs (erasure, export, retention)
   - name: "compliance"
@@ -22,7 +21,6 @@ streams:
     max_bytes: -1
     max_age: 720h  # 30 days
     storage: "file"
-    num_replicas: 1
 
   # Stream for analytics events
   - name: "events"
@@ -34,7 +32,6 @@ streams:
     max_bytes: -1
     max_age: 720h  # 30 days
     storage: "file"
-    num_replicas: 1
 
   - name: "misc"
     subjects: ["misc.>"]
@@ -45,7 +42,6 @@ streams:
     max_bytes: -1
     max_age: 720h  # 30 days
     storage: "file"
-    num_replicas: 1
 
   - name: "dlq-events"
     subjects: ["dlq.events.>"]
@@ -59,7 +55,6 @@ streams:
     # Reject new dead-letters when full rather than silently dropping the oldest
     # evidence; the failed publish surfaces as nats.dlq_messages_total{outcome=dropped}.
     discard: "new"
-    num_replicas: 1
 
   - name: "dlq-profiles"
     subjects: ["dlq.profiles.>"]
@@ -71,7 +66,6 @@ streams:
     max_age: 720h  # 30 days
     storage: "file"
     discard: "new"
-    num_replicas: 1
 
   - name: "dlq-compliance"
     subjects: ["dlq.compliance.>"]
@@ -82,7 +76,6 @@ streams:
     max_bytes: 1000000000  # ~1GB
     max_age: 720h  # 30 days
     storage: "file"
-    num_replicas: 1
 
   - name: "dlq-misc"
     subjects: ["dlq.misc.>"]
@@ -94,4 +87,3 @@ streams:
     max_age: 720h  # 30 days
     storage: "file"
     discard: "new"
-    num_replicas: 1

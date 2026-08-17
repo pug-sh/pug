@@ -37,7 +37,9 @@ func Run(ctx context.Context) error {
 
 func (n *initializer) run(ctx context.Context) error {
 	slog.InfoContext(ctx, "Starting NATS initialization",
-		slog.String("nats_url", n.client.GetConfig().NATSUrl))
+		slog.String("nats_url", n.client.GetConfig().NATSUrl),
+		slog.String("cluster", n.client.ClusterName()),
+		slog.Int("stream_replicas", n.client.GetConfig().StreamReplicas))
 
 	streamConfig, err := n.client.ReadStreamConfig()
 	if err != nil {
@@ -47,6 +49,10 @@ func (n *initializer) run(ctx context.Context) error {
 	consumerConfig, err := n.client.ReadConsumerConfig()
 	if err != nil {
 		return fmt.Errorf("failed to read consumer configuration: %w", err)
+	}
+
+	if err := checkReplicaSupport(n.client.GetConfig().StreamReplicas, n.client.ClusterName()); err != nil {
+		return err
 	}
 
 	if err := n.createStreams(ctx, streamConfig); err != nil {
@@ -60,11 +66,30 @@ func (n *initializer) run(ctx context.Context) error {
 	return nil
 }
 
+// checkReplicaSupport runs before any stream is touched. A standalone server
+// rejects a replicated stream *create* but silently accepts an update of an
+// existing single-replica stream, then fails to recreate it on its next restart —
+// so a misconfigured single-node install would deploy green and lose every stream
+// hours later.
+func checkReplicaSupport(replicas int, clusterName string) error {
+	// A blank NATS_STREAM_REPLICAS parses to 0, which the server coerces to 1.
+	if replicas < 1 {
+		return fmt.Errorf("NATS_STREAM_REPLICAS=%d: a replica count below 1 is not a scale-down, it reaches the server as an unset field and every stream falls back to 1", replicas)
+	}
+	if replicas > 1 && clusterName == "" {
+		return fmt.Errorf("NATS_STREAM_REPLICAS=%d, but the server reports no cluster name: replicas above 1 need a clustered JetStream, and a standalone server must stay at 1", replicas)
+	}
+	return nil
+}
+
 func (n *initializer) createStreams(ctx context.Context, streams []natsdeps.StreamConfig) error {
+	replicas := n.client.GetConfig().StreamReplicas
+
 	for _, streamConfig := range streams {
 		slog.InfoContext(ctx, "Creating stream",
 			slog.String("name", streamConfig.Name),
-			slog.Any("subjects", streamConfig.Subjects))
+			slog.Any("subjects", streamConfig.Subjects),
+			slog.Int("replicas", replicas))
 
 		// Convert retention policy string to jetstream.RetentionPolicy
 		var retention jetstream.RetentionPolicy
@@ -118,7 +143,7 @@ func (n *initializer) createStreams(ctx context.Context, streams []natsdeps.Stre
 			MaxAge:       streamConfig.MaxAge,
 			Storage:      storage,
 			Discard:      discard,
-			Replicas:     streamConfig.NumReplicas,
+			Replicas:     replicas,
 		}
 
 		js := n.client.GetJetStream()
