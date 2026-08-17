@@ -20,6 +20,11 @@ type Config struct {
 	CredsFile       string `env:"NATS_CREDS_FILE"`
 	StreamsConfig   string `env:"NATS_STREAMS_CONFIG,default=schema/nats/streams.yaml"`
 	ConsumersConfig string `env:"NATS_CONSUMERS_CONFIG,default=schema/nats/consumers.yaml"`
+	// StreamReplicas is the replica count the migrate job applies to every stream.
+	// It lives in the environment rather than streams.yaml because the correct
+	// value differs per deployment — a standalone server rejects anything above 1,
+	// and streams.yaml is baked into the image, so it cannot vary.
+	StreamReplicas int `env:"NATS_STREAM_REPLICAS,default=1"`
 }
 
 type StreamConfig struct {
@@ -37,8 +42,7 @@ type StreamConfig struct {
 	// publishes. DLQ streams use "new" so a full DLQ fails the publish loudly
 	// (surfaced via the nats.dlq_messages_total outcome=dropped metric) instead of
 	// silently overwriting the oldest dead-letter evidence.
-	Discard     string `yaml:"discard"`
-	NumReplicas int    `yaml:"num_replicas"`
+	Discard string `yaml:"discard"`
 }
 
 type ConsumerConfig struct {
@@ -96,6 +100,16 @@ func New(ctx context.Context) (*NATSClient, error) {
 // established. Used by readiness probes; a closed/reconnecting conn is not ready.
 func (nc *NATSClient) IsConnected() bool {
 	return nc.conn != nil && nc.conn.IsConnected()
+}
+
+// ClusterName returns the connected server's cluster name, or "" when the server
+// is standalone. Callers use it to tell a real JetStream cluster from a single
+// server that would accept a replicated stream and then lose it on restart.
+func (nc *NATSClient) ClusterName() string {
+	if nc.conn == nil {
+		return ""
+	}
+	return nc.conn.ConnectedClusterName()
 }
 
 // Close closes the NATS connection
