@@ -22,8 +22,9 @@ type Config struct {
 	ConsumersConfig string `env:"NATS_CONSUMERS_CONFIG,default=schema/nats/consumers.yaml"`
 	// StreamReplicas is the replica count the migrate job applies to every stream.
 	// It lives in the environment rather than streams.yaml because the correct
-	// value differs per deployment — a standalone server rejects anything above 1,
-	// and streams.yaml is baked into the image, so it cannot vary.
+	// value differs per deployment — a standalone server must stay at 1 (enforced
+	// by checkReplicaSupport, not by the server), and streams.yaml is baked into
+	// the image, so it cannot vary.
 	StreamReplicas int `env:"NATS_STREAM_REPLICAS,default=1"`
 }
 
