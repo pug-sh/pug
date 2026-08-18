@@ -35,17 +35,30 @@ update on billing_entitlements for each row execute procedure moddatetime(update
 create table billing_entitlement_history (
   actor varchar(150) not null
     constraint billing_entitlement_history_actor_check check (actor <> ''),
-  anchor_day smallint,
+  anchor_day smallint
+    constraint billing_entitlement_history_anchor_day_check
+      check (anchor_day between 1 and 31),
   changed_at timestamptz not null default now(),
   contract_ends_at timestamptz,
   display_name_override varchar(150),
   id char(20) primary key,
-  included_events_override bigint,
+  included_events_override bigint
+    constraint billing_entitlement_history_override_check
+      check (included_events_override > 0),
   note text not null default '',
   org_id char(20) not null,
   plan_slug varchar(50)
     constraint billing_entitlement_history_plan_slug_check check (plan_slug <> ''),
-  trial_ends_at timestamptz
+  trial_ends_at timestamptz,
+  -- A snapshot must be one a live row could have held.
+  constraint billing_entitlement_history_custom_needs_quota
+    check (plan_slug <> 'custom' or included_events_override is not null),
+  -- A deletion is every value column NULL; actor and note still describe it.
+  constraint billing_entitlement_history_deletion_is_empty
+    check (plan_slug is not null
+      or (anchor_day is null and contract_ends_at is null
+          and display_name_override is null and included_events_override is null
+          and trial_ends_at is null))
 );
 
 create index billing_entitlement_history_org_idx

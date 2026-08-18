@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -43,8 +44,12 @@ func NewOptionalTimestamptz(t time.Time) pgtype.Timestamptz {
 }
 
 // NewOptionalInt2 stores 0 as NULL, for a column whose check constraint puts 0
-// outside its range — so zero is "no value" rather than a value.
+// outside its range — so zero is "no value" rather than a value. Panics instead
+// of narrowing: a wrapped value lands back inside the range the check enforces.
 func NewOptionalInt2(v int) pgtype.Int2 {
+	if int(int16(v)) != v {
+		panic(fmt.Sprintf("postgres: %d overflows int2", v))
+	}
 	return pgtype.Int2{Int16: int16(v), Valid: v != 0}
 }
 

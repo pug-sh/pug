@@ -61,11 +61,9 @@ type TestPostgres struct {
 	PgW  *pgxpool.Pool
 }
 
-// SetOrgCreateTime backdates an org, which no write query exposes because
-// nothing in production sets it. Tests need it because create_time is what the
-// trial clock and the quota anchor both derive from: an org created "now" has a
-// quota window anchored on whatever day of the month the suite happens to run,
-// so a test asserting fixed period bounds would pass or fail by the calendar.
+// SetOrgCreateTime backdates an org: the trial clock and the quota anchor both
+// derive from create_time, so fixed period assertions would otherwise pass or
+// fail by the calendar. Raw SQL because no write query updates it.
 func SetOrgCreateTime(t *testing.T, pool *pgxpool.Pool, orgID string, at time.Time) {
 	t.Helper()
 	tag, err := pool.Exec(t.Context(),
@@ -73,8 +71,6 @@ func SetOrgCreateTime(t *testing.T, pool *pgxpool.Pool, orgID string, at time.Ti
 	if err != nil {
 		t.Fatalf("backdate org %s: %v", orgID, err)
 	}
-	// A miss would leave create_time at now(), which anchors the org on whatever
-	// day the suite ran — a failure that only shows up on some dates.
 	if tag.RowsAffected() != 1 {
 		t.Fatalf("backdate org %s: matched %d rows, want 1", orgID, tag.RowsAffected())
 	}

@@ -64,10 +64,13 @@ func TestInt2ToIntInvertsNewOptionalInt2(t *testing.T) {
 	}
 }
 
-// int→int16 narrowing is silent, so a value past the column's range lands inside
-// it: callers must range-check before this, and today SetPlan does.
-func TestNewOptionalInt2NarrowsSilently(t *testing.T) {
-	if got := NewOptionalInt2(65537); got.Int16 != 1 {
-		t.Errorf("65537 → Int16=%d, want 1", got.Int16)
-	}
+// Narrowing would put 65537 back inside the column's 1..31 check as 1, storing a
+// wrong anchor day that no constraint can catch.
+func TestNewOptionalInt2PanicsOnOverflow(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("65537 did not panic: it would store anchor_day=1")
+		}
+	}()
+	NewOptionalInt2(65537)
 }
