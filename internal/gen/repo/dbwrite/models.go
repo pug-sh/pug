@@ -19,6 +19,33 @@ type ApiKey struct {
 	UpdateTime  pgtype.Timestamptz
 }
 
+type BillingEntitlement struct {
+	AnchorDay              pgtype.Int2
+	ContractEndsAt         pgtype.Timestamptz
+	CreateTime             pgtype.Timestamptz
+	DisplayNameOverride    pgtype.Text
+	IncludedEventsOverride pgtype.Int8
+	Note                   string
+	OrgID                  string
+	PlanSlug               string
+	TrialEndsAt            pgtype.Timestamptz
+	UpdateTime             pgtype.Timestamptz
+}
+
+type BillingEntitlementHistory struct {
+	Actor                  string
+	AnchorDay              pgtype.Int2
+	ChangedAt              pgtype.Timestamptz
+	ContractEndsAt         pgtype.Timestamptz
+	DisplayNameOverride    pgtype.Text
+	ID                     string
+	IncludedEventsOverride pgtype.Int8
+	Note                   string
+	OrgID                  string
+	PlanSlug               pgtype.Text
+	TrialEndsAt            pgtype.Timestamptz
+}
+
 type Campaign struct {
 	CreateTime       pgtype.Timestamptz
 	EndTime          pgtype.Timestamptz
