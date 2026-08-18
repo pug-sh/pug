@@ -197,10 +197,10 @@ func start(ctx context.Context, d *deps) error {
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
 		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
 
-	// Read-only by construction: no ClickHouse (the server only reads what
-	// `pug cron usage` stored) and no write pool at all.
+	// No ClickHouse: the server only reads what `pug cron usage` stored, and
+	// MeterWindow is the one method that needs it.
 	usagePath, usageHandler := usagev1connect.NewUsageServiceHandler(
-		usage.NewServer(coreusage.NewReader(d.pgRo)), handlerOpts)
+		usage.NewServer(coreusage.NewService(d.pgRo, d.pgW)), handlerOpts)
 
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
