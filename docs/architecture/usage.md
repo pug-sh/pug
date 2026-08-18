@@ -295,11 +295,18 @@ a truncated series loses its newest days rather than an arbitrary slice.
 count the server has no basis for — invariant 2 is enforced by the wire shape
 rather than by client discipline:
 
-| `usage_computed_at` | `used_events` | Meaning |
+| `usage_computed_at` | `counted` | Meaning |
 |---|---|---|
-| absent | absent | The meter has never run. Render "unknown", never 0. |
-| present | absent | The meter is alive but has not summed this period yet. Render "computing". |
-| present | present | A real total. |
+| absent | false | The meter has never run. Render "unknown", never 0. |
+| present | false | The meter is alive but has not summed this period yet. Render "computing". |
+| present | true | `used_events` is a real total, and a 0 there is a real 0. |
+
+The discriminator is `counted` rather than `used_events`' own absence, because
+that absence does not survive every generator: protoc-gen-es renders an
+edition-2023 singular scalar as a **non-optional** bigint, so an absent
+`used_events` reaches the dashboard as `0`, indistinguishable from an org that
+genuinely sent nothing. A plain bool rather than swapping `used_events` for a
+wrapper, so the change stays additive on the wire.
 
 The middle state is the wrinkle the meter creates: at a period rollover the new
 period has no `usage_periods` row until the next pass, which is *not* "never
@@ -311,7 +318,9 @@ hitting every dashboard on the 1st.
 An earlier revision emitted a placeholder `used_events: 0` there and asked clients
 to notice that `usage_computed_at < period_start`; that was client discipline
 re-entering through the back door, and the gap it papered over grows without
-bound whenever the meter stops running.
+bound whenever the meter stops running. `counted` closes the same door a second
+time: without it a TypeScript client is pushed straight back to that comparison,
+because the field's absence is invisible to it.
 
 Authorization is `authz.ResourceUsage` + `ActionRead`, recorded in
 `authz_registry.go` and enforced by `rpc.AuthzInterceptor` before the handler

@@ -68,16 +68,15 @@ func (s *Server) GetUsage(
 		PeriodEnd:   timestamppb.New(periodEnd),
 		PeriodStart: timestamppb.New(periodStart),
 	}
-	// The two fields carry three states between them, so a client never has to
-	// derive one by comparing usage_computed_at against period_start: both absent
-	// means the meter has never run; stamp alone means it is alive but has not
-	// reached this period yet; both present means used_events is a real sum. A
-	// count is emitted only in the last case — the placeholder zero behind the
-	// second one was a number the server had no basis for.
+	// usage_computed_at and counted carry three states between them, so a client
+	// never has to compare the stamp against period_start: no stamp means the meter
+	// has never run, stamp alone means it has not reached this period yet, and both
+	// mean used_events is a real sum.
 	if !usage.UsageComputedAt.IsZero() {
 		resp.UsageComputedAt = timestamppb.New(usage.UsageComputedAt)
 	}
 	if usage.Counted {
+		resp.Counted = proto.Bool(true)
 		resp.UsedEvents = proto.Int64(usage.EventCount)
 	}
 	return connect.NewResponse(resp), nil
