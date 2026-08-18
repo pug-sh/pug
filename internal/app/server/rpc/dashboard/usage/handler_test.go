@@ -47,7 +47,7 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
 	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
-	srv := NewServer(svc.Reader)
+	srv := NewServer(svc)
 
 	resp, err := srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
 		OrgId: &orgID,
@@ -133,7 +133,7 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
 	}
 
-	resp, err := getUsage(t, NewServer(svc.Reader), orgID)
+	resp, err := getUsage(t, NewServer(svc), orgID)
 	if err != nil {
 		t.Fatalf("GetUsage: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestGetUsageRangeWindowsOnlyTheDailySeries(t *testing.T) {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
 	}
 
-	srv := NewServer(svc.Reader)
+	srv := NewServer(svc)
 	resp, err := srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
 		OrgId: &orgID,
 		Range: &commonv1.TimeRange{
@@ -214,7 +214,7 @@ func TestGetUsageRangeSnapsToWholeDays(t *testing.T) {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
-	resp, err := NewServer(svc.Reader).GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
+	resp, err := NewServer(svc).GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
 		OrgId: &orgID,
 		Range: &commonv1.TimeRange{
 			From: timestamppb.New(day.Add(9 * time.Hour)),
@@ -251,7 +251,7 @@ func TestGetUsageFailsWhenTheReadFails(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
 	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
-	srv := NewServer(svc.Reader)
+	srv := NewServer(svc)
 
 	pg.PgRO.Close()
 
@@ -274,7 +274,7 @@ func TestGetUsageOnACancelledRequest(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
-	srv := NewServer(coreusage.NewReader(pg.PgRO))
+	srv := NewServer(coreusage.NewService(pg.PgRO, pg.PgW))
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

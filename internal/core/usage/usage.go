@@ -21,26 +21,10 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// Reader answers the dashboard's two usage questions and nothing else.
-//
-// The RPC handler holds one of these rather than a Service, so the endpoint
-// serving a viewer-floor read has no reachable path to PruneUsage or
-// DeleteUnmeteredDays. The meter owns every write in this package; giving the
-// read side a type that cannot perform one is cheaper than trusting it not to.
-// It also takes no write pool, because it never had a use for one.
-type Reader struct {
-	read *dbread.Queries
-}
-
-func NewReader(pgRO *pgxpool.Pool) *Reader {
-	return &Reader{read: dbread.New(pgRO)}
-}
-
-// Service is the meter's view: everything a Reader can do, plus the writes and
-// the reconcile. Only `pug cron usage` builds one.
+// Service is the whole package: the dashboard's two reads, plus the writes and
+// the reconcile the meter owns.
 type Service struct {
-	*Reader
-
+	read  *dbread.Queries
 	write *dbwrite.Queries
 
 	// Nil until WithClickHouse; only MeterWindow needs it.
@@ -51,7 +35,7 @@ type Service struct {
 // live on the result; only MeterWindow is gated. Metering additionally requires
 // WithClickHouse.
 func NewService(pgRO, pgW *pgxpool.Pool) *Service {
-	return &Service{Reader: NewReader(pgRO), write: dbwrite.New(pgW)}
+	return &Service{read: dbread.New(pgRO), write: dbwrite.New(pgW)}
 }
 
 // WithClickHouse returns a copy with the metering connection attached. Only
@@ -82,7 +66,7 @@ type PeriodUsage struct {
 }
 
 // GetPeriodUsage reads the pre-summed period total.
-func (s *Reader) GetPeriodUsage(ctx context.Context, orgID string, start time.Time) (PeriodUsage, error) {
+func (s *Service) GetPeriodUsage(ctx context.Context, orgID string, start time.Time) (PeriodUsage, error) {
 	row, err := s.read.GetUsagePeriod(ctx, dbread.GetUsagePeriodParams{
 		OrgID:       orgID,
 		PeriodStart: postgres.NewTimestamptz(start),
@@ -107,7 +91,7 @@ func (s *Reader) GetPeriodUsage(ctx context.Context, orgID string, start time.Ti
 // org's last stamp — otherwise every dashboard reads "never metered" on the 1st.
 // Counted stays false: the stamp says the meter is alive, not that it has summed
 // this period.
-func (s *Reader) periodNotReached(ctx context.Context, orgID string) (PeriodUsage, error) {
+func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsage, error) {
 	at, err := s.read.GetLatestUsageComputedAt(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -130,7 +114,7 @@ const MaxDailyRows = 10_000
 // ListDailyUsage returns the org's stored (project, day) cells over [from, to),
 // oldest first, at most MaxDailyRows of them. Bounds snap outwards to whole UTC
 // days.
-func (s *Reader) ListDailyUsage(ctx context.Context, orgID string, from, to time.Time) ([]DailyUsage, error) {
+func (s *Service) ListDailyUsage(ctx context.Context, orgID string, from, to time.Time) ([]DailyUsage, error) {
 	rows, err := s.read.ListUsageDailyByOrgID(ctx, dbread.ListUsageDailyByOrgIDParams{
 		FromDay:  postgres.NewDate(FloorDayUTC(from)),
 		OrgID:    orgID,
