@@ -27,9 +27,7 @@ const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate 
 select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time from billing_entitlements where org_id = $1 for update
 `
 
-// Locks the row for a read-modify-write: the CLI leaves un-passed flags at their
-// stored values, so it has to read what is there before it can write what should
-// be. Returns no rows for an org that has never been touched, which is normal.
+// Returns no rows for an org that has never been touched, which is normal.
 func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID string) (BillingEntitlement, error) {
 	row := q.db.QueryRow(ctx, getBillingEntitlementForUpdate, orgID)
 	var i BillingEntitlement
@@ -71,8 +69,6 @@ type InsertBillingEntitlementHistoryParams struct {
 	TrialEndsAt            pgtype.Timestamptz
 }
 
-// Append-only, written in the same transaction as the change it records. NULL
-// across the value columns is a deletion.
 func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg InsertBillingEntitlementHistoryParams) error {
 	_, err := q.db.Exec(ctx, insertBillingEntitlementHistory,
 		arg.Actor,
@@ -93,9 +89,8 @@ const lockBillingEntitlementOrg = `-- name: LockBillingEntitlementOrg :exec
 select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))
 `
 
-// Serializes an org's entitlement writes. GetBillingEntitlementForUpdate below
-// locks nothing when the org has no row yet, so without this two concurrent
-// first writes both read an empty record and the second full-replaces the first.
+// Take this first, on the writing tx: the for-update read locks nothing when the
+// org has no row yet, and off a tx this lock dies with its own statement.
 func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) error {
 	_, err := q.db.Exec(ctx, lockBillingEntitlementOrg, orgID)
 	return err
@@ -131,8 +126,8 @@ type UpsertBillingEntitlementParams struct {
 	TrialEndsAt            pgtype.Timestamptz
 }
 
-// Full replace, never partial: the caller has already merged its flags over the
-// locked row, so a coalesce here would be a second, disagreeing merge.
+// Full replace, never coalesce: the caller has already merged its change over
+// the locked row.
 func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillingEntitlementParams) (BillingEntitlement, error) {
 	row := q.db.QueryRow(ctx, upsertBillingEntitlement,
 		arg.AnchorDay,

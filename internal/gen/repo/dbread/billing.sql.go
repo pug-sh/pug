@@ -37,9 +37,8 @@ type GetOrgEntitlementRow struct {
 	TrialEndsAt            pgtype.Timestamptz
 }
 
-// The org's create_time (the trial clock AND the default quota anchor) plus its
-// entitlement row, which is absent for almost every org -- a left join rather
-// than two reads, since "no row" is the ordinary answer and not an error.
+// Left join rather than two reads: most orgs have no entitlement row, and that
+// is the ordinary answer, not an error.
 func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEntitlementRow, error) {
 	row := q.db.QueryRow(ctx, getOrgEntitlement, orgID)
 	var i GetOrgEntitlementRow
@@ -68,7 +67,6 @@ type ListBillingEntitlementHistoryParams struct {
 	RowLimit int32
 }
 
-// Operator/support data, newest first. Not served by any RPC.
 func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBillingEntitlementHistoryParams) ([]BillingEntitlementHistory, error) {
 	rows, err := q.db.Query(ctx, listBillingEntitlementHistory, arg.OrgID, arg.RowLimit)
 	if err != nil {
