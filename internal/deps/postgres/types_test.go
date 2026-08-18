@@ -38,3 +38,36 @@ func TestNewNullableText(t *testing.T) {
 		t.Errorf("&%q → %+v, want {String:%q, Valid:true}", val, got, val)
 	}
 }
+
+func TestOptionalIntsTreatZeroAsAbsent(t *testing.T) {
+	if got := NewOptionalInt2(0); got.Valid {
+		t.Errorf("0 → Valid=true, want false (SQL NULL: the column's check excludes 0)")
+	}
+	if got := NewOptionalInt2(17); !got.Valid || got.Int16 != 17 {
+		t.Errorf("17 → %+v, want {Int16:17, Valid:true}", got)
+	}
+
+	if got := NewOptionalInt8(0); got.Valid {
+		t.Errorf("0 → Valid=true, want false (SQL NULL)")
+	}
+	if got := NewOptionalInt8(5_000_000); !got.Valid || got.Int64 != 5_000_000 {
+		t.Errorf("5000000 → %+v, want {Int64:5000000, Valid:true}", got)
+	}
+}
+
+func TestInt2ToIntInvertsNewOptionalInt2(t *testing.T) {
+	if got := Int2ToInt(NewOptionalInt2(0)); got != 0 {
+		t.Errorf("NULL → %d, want 0", got)
+	}
+	if got := Int2ToInt(NewOptionalInt2(31)); got != 31 {
+		t.Errorf("31 → %d, want 31", got)
+	}
+}
+
+// int→int16 narrowing is silent, so a value past the column's range lands inside
+// it: callers must range-check before this, and today SetPlan does.
+func TestNewOptionalInt2NarrowsSilently(t *testing.T) {
+	if got := NewOptionalInt2(65537); got.Int16 != 1 {
+		t.Errorf("65537 → Int16=%d, want 1", got.Int16)
+	}
+}
