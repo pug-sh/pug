@@ -193,11 +193,19 @@ TLD-shaped. Same product, two clients, one bucket.
 The set is deliberately those three and no more: every other google subdomain needs a judgement
 this set should not make on its own, and `news.google.com` is pinned Organic Search by
 `TestIsGoogleHost`. Migration 008's SQL mirror carries the same exception as a second anchored
-`match` (RE2 has no lookbehind); `TestGoogleHostSQLMirror` reads both regexes out of the migration
-and pins them against `isGoogleHost` with no ClickHouse, so the two sides cannot drift apart in
-either direction. Rows derived before this change keep their old channel — re-running 008 repairs
-only underived rows, by design — so history and live traffic disagree on these hosts until a
-reclassifying migration says otherwise.
+`match` (RE2 has no lookbehind).
+
+`TestGoogleHostSQLMirror` is what keeps the two sides from drifting, without a ClickHouse. It
+reads the regex literals out of the migration rather than restating them, checks **both** the
+`src` and the `ref` arm, asserts the exclusion alternation **equals** `googleNonSearchLabels`
+exactly rather than merely covering it, and derives its host corpus from that same set — so a
+label added on either side alone fails, and a label added to both brings its own cases with it.
+`TestIntegrationWebAnalytics/mutation_008_matches_attribution_derive` remains the authority on
+whether ClickHouse itself agrees.
+
+Rows derived before this change keep their old channel — re-running 008 repairs only underived
+rows, by design — so history and live traffic disagree on these hosts until a reclassifying
+migration says otherwise.
 
 ### Channel semantics: session-grain, not event-grain
 

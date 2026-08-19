@@ -1,8 +1,10 @@
 package attribution
 
 import (
+	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -14,11 +16,23 @@ import (
 // regexp is — so the comparison is of the shipped predicate, not of a
 // paraphrase of it.
 //
+// Three things have to hold, and each closes a way the two sides could drift
+// while the other two checks stayed green:
+//
+//  1. BOTH predicate arms are checked. The migration writes the rule twice, for
+//     src and for ref; reading one arm makes a src-only edit invisible.
+//  2. The exclusion alternation must equal googleNonSearchLabels EXACTLY. A
+//     label added on one side only is otherwise unreachable — a host list
+//     written out by hand here contains no case for a label nobody has added
+//     yet, so the set comparison is what catches a growing set, in both
+//     directions.
+//  3. The host corpus is DERIVED from googleNonSearchLabels, so a new label
+//     brings its own cases (bare, ccTLD, nested, non-adjacent) with it.
+//
 // TestIntegrationWebAnalytics/mutation_008_matches_attribution_derive is the
 // authority on whether ClickHouse agrees; it needs Docker and a corpus row per
 // case. This is the cheap guard that runs in `go test ./...` on every change to
-// either side, and it is the one that fires when googleNonSearchLabels grows a
-// label the SQL does not.
+// either side.
 func TestGoogleHostSQLMirror(t *testing.T) {
 	data, err := os.ReadFile("../../schema/clickhouse/migrations/008_add_web_analytics_columns.sql")
 	if err != nil {
@@ -26,44 +40,84 @@ func TestGoogleHostSQLMirror(t *testing.T) {
 	}
 	sql := string(data)
 
-	include := extractSQLRegexp(t, sql, `match\(ref, '(\(\^\|\\\\\.\)google[^']*)'\)`)
-	exclude := extractSQLRegexp(t, sql, `match\(ref, '(\(\^\|\\\\\.\)\(accounts[^']*)'\)`)
+	// Both arms, by the column each is written against.
+	for _, arm := range []string{"src", "ref"} {
+		include := extractSQLRegexp(t, sql, arm, `'(\(\^\|\\\\\.\)google[^']*)'`)
+		exclude := extractSQLRegexp(t, sql, arm, `'(\(\^\|\\\\\.\)\([a-z|]+\)\\\\\.google[^']*)'`)
 
-	// Every host TestIsGoogleHost and TestIsGoogleHostNonSearchProducts assert
-	// on, plus the shapes that separate the two implementations: a non-search
-	// label that is not adjacent to google.<tld>, a four-label host whose tail
-	// is not TLD-shaped, and the reverse-DNS app host.
-	hosts := []string{
-		"google.com", "www.google.com", "google.co.uk", "google.de",
-		"images.google.co.in", "news.google.com", "www.google.co.uk",
-		"accounts.google.com", "mail.google.com", "search.google.com",
-		"accounts.google.co.uk", "mail.google.de", "eu.mail.google.com",
-		"mail.example.google.com", "accounts.example.com.google.com",
-		"mail.google.com.example.co", "com.google.android.gm", "google.android.gm",
-		"googleusercontent.com", "notgoogle.com", "agoogle.de", "mailgoogle.com",
-		"searchgoogle.co.uk", "google.museum", "example.com", "",
-	}
-	for _, h := range hosts {
-		// The bare "google" utm_source is carried by the SQL's separate
-		// `ref = 'google'` / `src IN ('google', …)` terms, not by these regexes.
-		if h == "google" {
-			continue
+		// (2) the alternation IS the label set, not merely a superset of the
+		// labels this file happens to name.
+		if got := alternationLabels(t, exclude.String()); !slices.Equal(got, sortedLabels()) {
+			t.Errorf("migration 008 %s arm excludes %v, googleNonSearchLabels is %v", arm, got, sortedLabels())
 		}
-		want := isGoogleHost(h)
-		got := include.MatchString(h) && !exclude.MatchString(h)
-		if got != want {
-			t.Errorf("host %q: migration 008 says search=%v, isGoogleHost says %v", h, got, want)
+
+		for _, h := range mirrorHosts() {
+			// The bare "google" utm_source is carried by the SQL's separate
+			// `ref = 'google'` / `src IN ('google', …)` terms, not by these.
+			if h == "google" {
+				continue
+			}
+			want := isGoogleHost(h)
+			got := include.MatchString(h) && !exclude.MatchString(h)
+			if got != want {
+				t.Errorf("%s arm, host %q: migration 008 says search=%v, isGoogleHost says %v", arm, h, got, want)
+			}
 		}
 	}
 }
 
-// extractSQLRegexp pulls one regex literal out of the migration and undoes the
-// SQL string escaping ('\\.' in the file is the regex '\.').
-func extractSQLRegexp(t *testing.T, sql, pattern string) *regexp.Regexp {
+// mirrorHosts derives a corpus from googleNonSearchLabels — so a label added to
+// that set brings its own cases — plus the fixed shapes that separate the two
+// implementations regardless of which labels exist.
+func mirrorHosts() []string {
+	hosts := []string{
+		"google.com", "www.google.com", "google.co.uk", "google.de",
+		"images.google.co.in", "news.google.com", "www.google.co.uk",
+		"mail.google.com.example.co", "com.google.android.gm", "google.android.gm",
+		"googleusercontent.com", "notgoogle.com", "agoogle.de", "example.com",
+		"google.museum", "",
+	}
+	for _, l := range googleNonSearchLabels {
+		hosts = append(hosts,
+			l+".google.com",             // the plain case
+			l+".google.co.uk",           // per-ccTLD, not per-host
+			"eu."+l+".google.com",       // adjacency decides, not position
+			l+".example.google.com",     // same label, NOT adjacent: still Search
+			l+".example.com.google.com", // ditto, further away
+			l+"google.com",              // no label boundary: not an exception
+		)
+	}
+	return hosts
+}
+
+func sortedLabels() []string {
+	out := slices.Clone(googleNonSearchLabels)
+	slices.Sort(out)
+	return out
+}
+
+// alternationLabels pulls "accounts|mail|search" out of the exclusion regex and
+// returns it sorted, so the comparison is of sets rather than of spelling.
+func alternationLabels(t *testing.T, re string) []string {
 	t.Helper()
-	m := regexp.MustCompile(pattern).FindStringSubmatch(sql)
+	m := regexp.MustCompile(`\(([a-z|]+)\)\\\.google\\\.`).FindStringSubmatch(re)
 	if m == nil {
-		t.Fatalf("no regex literal in migration 008 matching %s — if the google branch was rewritten, this test must be rewritten with it, not deleted", pattern)
+		t.Fatalf("no label alternation in exclusion regex %q", re)
+	}
+	out := strings.Split(m[1], "|")
+	slices.Sort(out)
+	return out
+}
+
+// extractSQLRegexp pulls one regex literal out of the given match(<arm>, '…')
+// call in the migration and undoes the SQL string escaping ('\\.' in the file
+// is the regex '\.').
+func extractSQLRegexp(t *testing.T, sql, arm, pattern string) *regexp.Regexp {
+	t.Helper()
+	full := fmt.Sprintf(`match\(%s, %s\)`, arm, pattern)
+	m := regexp.MustCompile(full).FindStringSubmatch(sql)
+	if m == nil {
+		t.Fatalf("no regex literal in migration 008 matching %s — if the google branch was rewritten, this test must be rewritten with it, not deleted", full)
 	}
 	return regexp.MustCompile(strings.ReplaceAll(m[1], `\\`, `\`))
 }
