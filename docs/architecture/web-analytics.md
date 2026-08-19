@@ -175,11 +175,29 @@ youtu.be, vimeo, twitch, dailymotion…). That file is the **single normative ta
 `profiles.md`'s "no ad hoc channel" rule by defining the stable derivation it demanded; the
 profile API still exposes no channel field.
 
-Known refinement candidate: a referrer of `mail.google.com` (Gmail web) suffix-matches the google
-search family and classifies **Organic Search**; arguably it should be Email or Referral. The
-structural matcher already keeps `android-app://com.google.android.gm` (Gmail app) a Referral —
-its `google.android.gm` tail is not TLD-shaped. Left verbatim per the reviewed table; an
-exceptions set is a one-line taxonomy change if the Organic Search bucket looks inflated.
+**Google product hosts that are not Search** (resolved; this was the "known refinement
+candidate" above the `mail.google.com` line). The structural matcher recognises the ccTLD family
+but had no notion of *which* Google subdomain, so `accounts.google.com` (sign-in),
+`mail.google.com` (Gmail web) and `search.google.com` (Search Console) all booked **Organic
+Search**. Sign-in is the worst of the three because it is usually not an arrival at all — a
+visitor already on the site bounces through Google's consent screen and returns, and that return
+trip was counted as a fresh Google Search arrival; on one production project it was ~11% of all
+google-referred events, so the Organic Search bucket was inflated with the site's own traffic.
+
+`attribution.googleNonSearchLabels` is the exceptions set: the label immediately left of
+`google.<tld>` decides the product, matched per-ccTLD so `mail.google.co.uk` is covered without
+enumeration. Excluded, these fall to rule 11 — **Referral** — which is already where the Gmail
+*app* lands, since `android-app://com.google.android.gm`'s `google.android.gm` tail is not
+TLD-shaped. Same product, two clients, one bucket.
+
+The set is deliberately those three and no more: every other google subdomain needs a judgement
+this set should not make on its own, and `news.google.com` is pinned Organic Search by
+`TestIsGoogleHost`. Migration 008's SQL mirror carries the same exception as a second anchored
+`match` (RE2 has no lookbehind); `TestGoogleHostSQLMirror` reads both regexes out of the migration
+and pins them against `isGoogleHost` with no ClickHouse, so the two sides cannot drift apart in
+either direction. Rows derived before this change keep their old channel — re-running 008 repairs
+only underived rows, by design — so history and live traffic disagree on these hosts until a
+reclassifying migration says otherwise.
 
 ### Channel semantics: session-grain, not event-grain
 

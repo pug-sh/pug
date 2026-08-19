@@ -411,6 +411,18 @@ var mutationCorpus = []mutationCorpusRow{
 	{name: "utm_columns_win_over_url", url: "https://pugandpals.example.com/?utm_source=bing", utmSource: "google", utmMedium: "cpc", utmCampaign: "summer"},
 	{name: "paid_social", url: "https://pugandpals.example.com/x", referrer: "https://l.facebook.com/l.php", utmSource: "facebook", utmMedium: "paid_social"},
 	{name: "organic_search_subdomain_ref", url: "https://pugandpals.example.com/x", referrer: "https://images.google.co.in/search"},
+	// attribution.googleNonSearchLabels: a google.<tld> host whose adjacent
+	// label is a different Google product books Referral, not Organic Search.
+	// RE2 has no lookbehind, so the SQL says it as match(...) AND NOT match(...)
+	// where Go says slices.Contains — a shape divergent enough that it needs
+	// covering here, in both the excluded and the still-included direction, or
+	// the parity test passes with live traffic and backfilled history split.
+	{name: "google_signin_not_organic_search", url: "https://pugandpals.example.com/x", referrer: "https://accounts.google.com/signin/oauth"},
+	{name: "gmail_web_not_organic_search", url: "https://pugandpals.example.com/x", referrer: "https://mail.google.com/mail/u/0/"},
+	{name: "google_nonsearch_cctld", url: "https://pugandpals.example.com/x", referrer: "https://accounts.google.co.uk/signin"},
+	// Same label, NOT adjacent to google.<tld>: the exception must not fire.
+	{name: "google_nonsearch_label_not_adjacent", url: "https://pugandpals.example.com/x", referrer: "https://mail.example.google.com/x"},
+	{name: "gmail_as_domain_shaped_source", url: "https://pugandpals.example.com/x", utmSource: "mail.google.com"},
 	{name: "organic_social_ref", url: "https://pugandpals.example.com/x", referrer: "https://news.ycombinator.com/item?id=1"},
 	{name: "self_referral_www", url: "https://pugandpals.example.com/cart", referrer: "https://www.pugandpals.example.com/"},
 	{name: "subdomain_not_collapsed", url: "https://app.example.com/x", referrer: "https://www.example.com/"},

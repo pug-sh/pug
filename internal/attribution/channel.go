@@ -65,6 +65,18 @@ var (
 	displayMediums = []string{"display", "banner", "expandable", "interstitial", "cpm"}
 	socialMediums  = []string{"social", "social-network", "social-media", "sm"}
 	emailTokens    = []string{"email", "e-mail", "e_mail", "newsletter"}
+
+	// googleNonSearchLabels is the exceptions set web-analytics.md anticipated:
+	// subdomain labels sitting immediately left of google.<tld> that are a
+	// different Google product, not Google Search. Matched per-ccTLD by
+	// isGoogleHost, so mail.google.co.uk is covered without enumeration.
+	// Excluded here, these fall through the rule table to Referral (rule 11) —
+	// which is already where the Gmail *app* lands, since
+	// android-app://com.google.android.gm has never been TLD-shaped.
+	// Deliberately only these three: every other google subdomain needs a
+	// judgement this set should not make on its own, and news.google.com is
+	// pinned Organic Search by TestIsGoogleHost.
+	googleNonSearchLabels = []string{"accounts", "mail", "search"}
 )
 
 // classifyChannel implements the normative rule table, first match wins.
@@ -182,19 +194,25 @@ func matchesSource(src string, names, domains []string) bool {
 // contains the suffix "google.android.gm", whose tail ("android.gm") is not
 // TLD-shaped, so it stays a Referral per the taxonomy. "googleusercontent.com"
 // never matches (no "google." at a label boundary).
+//
+// The label immediately left of google.<tld> decides which Google product the
+// arrival came from, and googleNonSearchLabels names the ones that are not
+// Search. Without that check accounts.google.com (the sign-in bounce back to a
+// site the visitor was already on) books as a fresh Organic Search arrival.
 func isGoogleHost(host string) bool {
 	if host == "google" { // domain-ish bare "google" in utm_source
 		return true
 	}
+	prev := "" // label immediately left of the candidate; "" for a bare google.<tld>
 	for h := host; h != ""; {
 		if tail, ok := strings.CutPrefix(h, "google."); ok && tldShaped(tail) {
-			return true
+			return !slices.Contains(googleNonSearchLabels, prev)
 		}
 		i := strings.IndexByte(h, '.')
 		if i < 0 {
 			return false
 		}
-		h = h[i+1:]
+		prev, h = h[:i], h[i+1:]
 	}
 	return false
 }

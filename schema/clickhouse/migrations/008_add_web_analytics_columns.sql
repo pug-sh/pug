@@ -168,6 +168,13 @@ ALTER TABLE events
 --     utm_source, this does not. Each mis-books a UTM (hence a channel) into
 --     history that live traffic would never produce, but none occurs in a
 --     real SDK-emitted URL.
+--   * The negated google match mirrors attribution.googleNonSearchLabels: the
+--     label adjacent to google.<tld> decides which Google product an arrival
+--     came from, and accounts/mail/search are not Search. RE2 has no
+--     lookbehind, so it is expressed as a second anchored match rather than
+--     inline in the first — the two together are one predicate and must be
+--     edited together, and adding a label here without adding it in Go (or the
+--     reverse) splits live traffic from backfilled history.
 -- mutations_sync = 2 blocks until the mutation finishes on every replica
 -- (equivalent to 1 on a non-replicated table), so migration order is real.
 ALTER TABLE events UPDATE
@@ -219,10 +226,12 @@ ALTER TABLE events UPDATE
                 src != '' OR med != '' OR camp != '' OR term != '' OR cont != '' OR refunres, 'Unassigned',
                 'Direct'),
                 [(src IN ('google', 'bing', 'duckduckgo', 'ddg', 'yahoo', 'baidu', 'yandex', 'ecosia', 'brave', 'startpage', 'perplexity', 'qwant', 'kagi')
-                  OR match(src, '(^|\\.)google\\.[a-z]{2,3}(\\.[a-z]{2,3})?$')
+                  OR (match(src, '(^|\\.)google\\.[a-z]{2,3}(\\.[a-z]{2,3})?$')
+                      AND NOT match(src, '(^|\\.)(accounts|mail|search)\\.google\\.[a-z]{2,3}(\\.[a-z]{2,3})?$'))
                   OR arrayExists(d -> src = d OR endsWith(src, concat('.', d)), ['bing.com', 'duckduckgo.com', 'yahoo.com', 'yahoo.co.jp', 'baidu.com', 'yandex.com', 'yandex.ru', 'ecosia.org', 'search.brave.com', 'startpage.com', 'perplexity.ai', 'qwant.com', 'kagi.com'])
                   OR ref = 'google'
-                  OR match(ref, '(^|\\.)google\\.[a-z]{2,3}(\\.[a-z]{2,3})?$')
+                  OR (match(ref, '(^|\\.)google\\.[a-z]{2,3}(\\.[a-z]{2,3})?$')
+                      AND NOT match(ref, '(^|\\.)(accounts|mail|search)\\.google\\.[a-z]{2,3}(\\.[a-z]{2,3})?$'))
                   OR arrayExists(d -> ref = d OR endsWith(ref, concat('.', d)), ['bing.com', 'duckduckgo.com', 'yahoo.com', 'yahoo.co.jp', 'baidu.com', 'yandex.com', 'yandex.ru', 'ecosia.org', 'search.brave.com', 'startpage.com', 'perplexity.ai', 'qwant.com', 'kagi.com']))],
                 [(src IN ('facebook', 'fb', 'instagram', 'ig', 'twitter', 'x', 'linkedin', 'tiktok', 'pinterest', 'reddit', 'threads', 'bluesky', 'bsky', 'hackernews', 'hn', 'whatsapp', 'telegram', 'mastodon')
                   OR arrayExists(d -> src = d OR endsWith(src, concat('.', d)), ['facebook.com', 'fb.com', 'fb.me', 'messenger.com', 'instagram.com', 'twitter.com', 'x.com', 't.co', 'linkedin.com', 'lnkd.in', 'tiktok.com', 'pinterest.com', 'pin.it', 'reddit.com', 'redd.it', 'threads.net', 'bsky.app', 'news.ycombinator.com', 'mastodon.social', 'whatsapp.com', 'telegram.org', 't.me'])

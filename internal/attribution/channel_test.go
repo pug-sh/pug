@@ -39,6 +39,18 @@ func TestClassifyChannelRules(t *testing.T) {
 		{"organic search via perplexity ref", Input{URL: page, Referrer: "https://www.perplexity.ai/"}, ChannelOrganicSearch},
 		{"organic medium", Input{URL: page, UTMSource: "seo-tool", UTMMedium: "organic"}, ChannelOrganicSearch},
 		{"organic search via google ccTLD subdomain", Input{URL: page, Referrer: "https://images.google.co.in/x"}, ChannelOrganicSearch},
+		// A Google product that is not Search is rule 11, not rule 6. The
+		// sign-in case is usually not an arrival at all — the visitor was
+		// already on the site and bounced through accounts.google.com — so
+		// counting it as Organic Search inflates the bucket with the site's own
+		// traffic. Referral is where the Gmail *app* already lands.
+		{"google sign-in is referral not organic search", Input{URL: page, Referrer: "https://accounts.google.com/signin/oauth"}, ChannelReferral},
+		{"gmail web is referral not organic search", Input{URL: page, Referrer: "https://mail.google.com/mail/u/0/"}, ChannelReferral},
+		{"search console is referral not organic search", Input{URL: page, Referrer: "https://search.google.com/search-console"}, ChannelReferral},
+		{"google sign-in on a ccTLD is referral too", Input{URL: page, Referrer: "https://accounts.google.co.uk/signin"}, ChannelReferral},
+		// utm_source carrying the same host takes matchesSource's domain arm
+		// and must reach the same verdict as the referrer arm above.
+		{"gmail as domain-shaped source is not organic search", Input{URL: page, UTMSource: "mail.google.com"}, ChannelUnassigned},
 		// 7: Organic Social
 		{"organic social via ref", Input{URL: page, Referrer: "https://reddit.com/r/pugs"}, ChannelOrganicSocial},
 		{"organic social via t.co", Input{URL: page, Referrer: "https://t.co/abc"}, ChannelOrganicSocial},
@@ -176,7 +188,12 @@ func TestIsPaidMedium(t *testing.T) {
 }
 
 func TestIsGoogleHost(t *testing.T) {
-	yes := []string{"google.com", "google.co.uk", "google.de", "images.google.co.in", "news.google.com", "google"}
+	yes := []string{
+		"google.com", "google.co.uk", "google.de", "images.google.co.in", "news.google.com", "google",
+		// www is a search host, not an exception — the negative control for
+		// googleNonSearchLabels growing a label that swallows ordinary search.
+		"www.google.com", "www.google.co.uk",
+	}
 	for _, h := range yes {
 		if !isGoogleHost(h) {
 			t.Errorf("isGoogleHost(%q) = false, want true", h)
@@ -186,6 +203,34 @@ func TestIsGoogleHost(t *testing.T) {
 	for _, h := range no {
 		if isGoogleHost(h) {
 			t.Errorf("isGoogleHost(%q) = true, want false", h)
+		}
+	}
+}
+
+// TestIsGoogleHostNonSearchProducts pins googleNonSearchLabels: a Google
+// product that is not Search must not match, across ccTLDs and at any depth,
+// while the sibling search hosts around it still do. Dropping the exceptions
+// set fails the first block; applying it one label too far (matching on any
+// label rather than the one adjacent to google.<tld>) fails the second.
+func TestIsGoogleHostNonSearchProducts(t *testing.T) {
+	notSearch := []string{
+		"accounts.google.com",   // sign-in bounce: the visitor was already on the site
+		"mail.google.com",       // Gmail web; the Gmail app is already a Referral
+		"search.google.com",     // Search Console, not the search results page
+		"accounts.google.co.uk", // the exception is per-ccTLD, not per-host
+		"mail.google.de",
+		"eu.mail.google.com", // adjacency is what decides, not position
+	}
+	for _, h := range notSearch {
+		if isGoogleHost(h) {
+			t.Errorf("isGoogleHost(%q) = true, want false (not a Search surface)", h)
+		}
+	}
+	// Same labels, but not adjacent to google.<tld>: still Search.
+	stillSearch := []string{"mail.example.google.com", "accounts.example.com.google.com"}
+	for _, h := range stillSearch {
+		if !isGoogleHost(h) {
+			t.Errorf("isGoogleHost(%q) = false, want true", h)
 		}
 	}
 }
