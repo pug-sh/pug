@@ -526,8 +526,8 @@ func TestRetention(t *testing.T) {
 	}
 
 	// Event-scan conditions must use e.* aliases to avoid ambiguity under the identity join.
-	if !strings.Contains(sql, "e.kind") {
-		t.Errorf("expected e.kind alias in event-scan CTEs, got: %s", sql)
+	if got := strings.Count(sql, "e.kind"); got != 2 {
+		t.Errorf("expected e.kind alias in both event-scan CTEs, got %d: %s", got, sql)
 	}
 
 	// Identity CTEs (2) + cohorts (project_id, from, to, kind) + return_events (project_id, from, to, kind) = 10.

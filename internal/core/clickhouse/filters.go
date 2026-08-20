@@ -315,20 +315,19 @@ func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (
 //
 // It generates: [alias.]distinct_id IN (
 //
-//	SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND (p.external_id != '' AND <prop_op>)
+//	SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND <prop_op>
 //	UNION ALL
 //	SELECT p.external_id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND (p.external_id != '' AND <prop_op>)
 //	UNION ALL
 //	SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id=? AND pa.profile_id IN (
-//	    SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND (p.external_id != '' AND <prop_op>)
+//	    SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND <prop_op>
 //	)
 //
 // )
 //
-// The non-empty external_id guard stops an unidentified profile contributing
-// an empty string that would match blank distinct_ids. It applies to all three
-// branches, which narrows the set to profiles that have an external_id at all —
-// unlike IdentityUnionCTE, which resolves such a profile via its id and aliases.
+// The non-empty external_id guard is scoped to that branch alone, mirroring
+// IdentityUnionCTE's per-value arrayFilter: an anonymous profile (null
+// external_id) still resolves through its own id and aliases.
 func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias string) (Condition, error) {
 	if projectID == "" {
 		return Condition{}, fmt.Errorf("profile property filter requires a non-empty project ID")
@@ -344,8 +343,7 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 		distinctIDCol = alias + ".distinct_id"
 	}
 
-	nonemptyCond := RawCond("p.external_id != ''")
-	propertyCond := And(nonemptyCond, innerCond)
+	externalIDCond := And(RawCond("p.external_id != ''"), innerCond)
 
 	sql := fmt.Sprintf(`%s IN (
 		SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
@@ -355,14 +353,14 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 		SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id = ? AND pa.profile_id IN (
 			SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
 		)
-	)`, distinctIDCol, propertyCond.SQL(), propertyCond.SQL(), propertyCond.SQL())
+	)`, distinctIDCol, innerCond.SQL(), externalIDCond.SQL(), innerCond.SQL())
 
 	args := []any{projectID}
-	args = append(args, propertyCond.Args()...)
+	args = append(args, innerCond.Args()...)
 	args = append(args, projectID)
-	args = append(args, propertyCond.Args()...)
+	args = append(args, externalIDCond.Args()...)
 	args = append(args, projectID, projectID)
-	args = append(args, propertyCond.Args()...)
+	args = append(args, innerCond.Args()...)
 
 	if n := strings.Count(sql, "?"); n != len(args) {
 		return Condition{}, fmt.Errorf("internal: filter placeholder count mismatch (%d != %d)", n, len(args))

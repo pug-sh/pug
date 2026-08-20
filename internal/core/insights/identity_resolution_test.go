@@ -235,6 +235,53 @@ func TestIdentityResolution(t *testing.T) {
 		}
 	})
 
+	// A profile that never identified has an empty external_id, but its own id
+	// and its aliases are still distinct_ids events carry, so a profile filter
+	// must reach them. Only the external_id branch may take the non-empty guard.
+	t.Run("anonymous_profile_filter_resolves", func(t *testing.T) {
+		run := func(t *testing.T, groups []*insightsv1.FilterGroup) float64 {
+			t.Helper()
+			req := &insightsv1.QueryRequest{
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("ira_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					},
+					FilterGroups: groups,
+				},
+				TimeRange: &commonv1.TimeRange{
+					From: timestamppb.New(time.Date(2024, 6, 22, 0, 0, 0, 0, time.UTC)),
+					To:   timestamppb.New(time.Date(2024, 6, 23, 0, 0, 0, 0, time.UTC)),
+				},
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			}
+			q, err := insights.BuildTrendsQuery(req, testProjectID)
+			if err != nil {
+				t.Fatalf("BuildTrendsQuery: %v", err)
+			}
+			rows, err := executor.QueryTrends(ctx, testProjectID, q)
+			if err != nil {
+				t.Fatalf("QueryTrends: %v", err)
+			}
+			var total float64
+			for _, r := range rows {
+				total += r.Value
+			}
+			return total
+		}
+
+		if got := run(t, nil); got != 3 {
+			t.Fatalf("unfiltered ira_view: expected 3 (anon-only + anon-alias + anon-free), got %v — seed is wrong", got)
+		}
+
+		// 2 = the profile's own id + its alias. 0 would mean the external_id
+		// guard excluded the profile outright; 3 would mean no filtering.
+		if got := run(t, planProGroups()); got != 2 {
+			t.Errorf("plan=pro ira_view: expected 2 events, got %v — a profile with no "+
+				"external_id must still resolve by profile id and by alias", got)
+		}
+	})
+
 	// A profile filter and the identity union must agree on which events are a
 	// person's: split's two steps sit under different ids, and both must pass
 	// plan=pro for the chain to survive the filter.
@@ -420,11 +467,13 @@ func topKValue(rows []insights.TopKRow, dimension string) (float64, bool) {
 
 // Layout (project_id = testProjectID, June 2024). `split` is one person across
 // two ids; `whole` is the same behavior under one id; `other` is plan=free;
-// `gone` is soft-deleted, so its ids must stay unresolved.
+// `gone` is soft-deleted, so its ids must stay unresolved; `anon-only` never
+// identified, so it owns no external_id at all.
 //
 //	profiles     split/split_ext (pro), whole/whole_ext (pro), other/other_ext (free),
-//	             gone/gone_ext (pro, is_deleted=1)
-//	aliases      anon-split → split, anon-gone → gone
+//	             gone/gone_ext (pro, is_deleted=1), anon-only (pro, no external_id),
+//	             anon-free (free, no external_id)
+//	aliases      anon-split → split, anon-gone → gone, anon-alias → anon-only
 //	Jun 1        anon-split: ir_landing, ir_add_to_cart | split_ext: ir_purchase
 //	             whole_ext:  all three
 //	Jun 2        anon-split: irf_landing | split_ext: irf_purchase
@@ -435,6 +484,7 @@ func topKValue(rows []insights.TopKRow, dimension string) (float64, bool) {
 //	             other_ext:  irf_signup, irf_login
 //	Jun 20       anon-split, split_ext, whole_ext, other_ext, cookieless-abc: ir_view
 //	Jun 21       anon-gone, gone_ext: ird_view
+//	Jun 22       anon-only, anon-alias, anon-free: ira_view
 func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
 	t.Helper()
 
@@ -447,6 +497,8 @@ func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClick
 		{"whole", "whole_ext", `{"plan":"pro"}`, 0},
 		{"other", "other_ext", `{"plan":"free"}`, 0},
 		{"gone", "gone_ext", `{"plan":"pro"}`, 1},
+		{"anon-only", "", `{"plan":"pro"}`, 0},
+		{"anon-free", "", `{"plan":"free"}`, 0},
 	}
 	for _, p := range profiles {
 		if err := ch.Conn.Exec(ctx,
@@ -457,11 +509,15 @@ func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClick
 		}
 	}
 
-	aliases := [][2]string{{"anon-split", "split"}, {"anon-gone", "gone"}}
+	aliases := [][3]string{
+		{"anon-split", "split", "split_ext"},
+		{"anon-gone", "gone", "gone_ext"},
+		{"anon-alias", "anon-only", ""},
+	}
 	for _, a := range aliases {
 		if err := ch.Conn.Exec(ctx,
 			`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
-			a[0], a[1], a[1]+"_ext", testProjectID,
+			a[0], a[1], a[2], testProjectID,
 		); err != nil {
 			t.Fatalf("insert alias %s: %v", a[0], err)
 		}
@@ -503,6 +559,10 @@ func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClick
 
 		{"anon-gone", "ird_view", 21, 10},
 		{"gone_ext", "ird_view", 21, 11},
+
+		{"anon-only", "ira_view", 22, 10},
+		{"anon-alias", "ira_view", 22, 11},
+		{"anon-free", "ira_view", 22, 10},
 	}
 	for _, e := range events {
 		if err := insertAutoEvent(ctx, ch.Conn,

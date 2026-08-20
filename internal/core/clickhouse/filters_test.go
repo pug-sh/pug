@@ -396,12 +396,20 @@ func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 	if !strings.Contains(sql, "is_deleted = 0") {
 		t.Errorf("expected soft-delete guard, got: %s", sql)
 	}
-	if !strings.Contains(sql, "external_id != ''") {
-		t.Errorf("expected external_id filter, got: %s", sql)
+	// The non-empty guard belongs to the external_id branch alone; the id and
+	// alias branches must still resolve a profile whose external_id is empty.
+	if n := strings.Count(sql, "external_id != ''"); n != 1 {
+		t.Errorf("expected exactly 1 external_id guard, got %d: %s", n, sql)
+	}
+	const unguardedIDBranch = "SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND " +
+		"coalesce(CAST(properties.`plan` AS Nullable(String)), '') = ?"
+	if strings.Count(sql, unguardedIDBranch) != 2 {
+		t.Errorf("expected unguarded id and alias-inner branches, got: %s", sql)
 	}
 	// Exact args: [projectID, filterValue, projectID, filterValue, projectID, projectID, filterValue]
 	// Maps to: id branch (p.project_id=?, ...plan=?), external_id branch (p.project_id=?, ...plan=?),
-	// aliases (pa.project_id=?, inner p.project_id=?, ...plan=?)
+	// aliases (pa.project_id=?, inner p.project_id=?, ...plan=?). The external_id
+	// guard is argless, so scoping it to one branch leaves this list unchanged.
 	args := cond.Args()
 	wantArgs := []any{"proj_abc", "pro", "proj_abc", "pro", "proj_abc", "proj_abc", "pro"}
 	if len(args) != len(wantArgs) {
