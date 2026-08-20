@@ -256,7 +256,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 
 // LatestProfilesCTE projects the latest state of each profile row
 // (argMax by insert_time over the ReplacingMergeTree), project-scoped.
-// Exported for reuse by insights queries that resolve canonical users.
+// Registered by WithIdentityUnion; identity_union reads it by name.
 //
 // WARNING: personsCTE unions this projection by POSITION — keep this Select's
 // column order (create_time, external_id, id, project_id, properties,
@@ -279,8 +279,8 @@ func LatestProfilesCTE(projectID string) *chq.Query {
 }
 
 // LatestProfileAliasesCTE projects the latest alias_id -> profile_id mapping,
-// project-scoped. Exported for reuse by insights queries that resolve
-// canonical users.
+// project-scoped. Registered by WithIdentityUnion; identity_union reads it by
+// name.
 func LatestProfileAliasesCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(
@@ -299,15 +299,15 @@ func LatestProfileAliasesCTE(projectID string) *chq.Query {
 // `p` / `activity_summary` aliases that the caller-supplied filter conditions
 // bind against. Callers add WHERE / ORDER BY / LIMIT.
 //
-// CTE order is dependency order: claimed_ids reads the latest_* CTEs,
-// anon_persons reads claimed_ids, and persons / persons_activity read
-// anon_persons (plus identified_activity for the latter).
+// CTE order is dependency order: identity_union and claimed_ids read the
+// latest_* CTEs, anon_persons reads claimed_ids, identified_activity reads
+// identity_union, and persons / persons_activity read anon_persons (plus
+// identified_activity for the latter).
 func personsQuery(projectID string) *chq.Query {
-	return chq.NewQuery().
+	q := chq.NewQuery().
 		Select(profileSelectColumns()...).
-		From("persons p LEFT JOIN persons_activity activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id").
-		With("latest_profiles", LatestProfilesCTE(projectID)).
-		With("latest_profile_aliases", LatestProfileAliasesCTE(projectID)).
+		From("persons p LEFT JOIN persons_activity activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id")
+	return WithIdentityUnion(q, projectID).
 		With("claimed_ids", claimedIDsCTE()).
 		With("anon_persons", anonPersonsCTE(projectID)).
 		With("persons", personsCTE()).
@@ -487,16 +487,14 @@ func (s *Service) resolveAliasTarget(ctx context.Context, projectID, aliasID str
 // profileActivitySummaryCTE aggregates per-IDENTIFIED-profile activity
 // (registered as identified_activity in personsQuery; derived anonymous
 // persons carry their own single-distinct_id summary via anonPersonsCTE) by
-// unioning every distinct_id that maps to the profile — profile.id,
-// profile.external_id, and all alias_ids — then joining to the
-// distinct_id_activity_states rollup and re-aggregating to one row per
-// profile. The external_id != p.id guard avoids
-// double-merging the same state when an SDK uses the same UUID for both
-// columns. If a profile's external_id happens to coincide with one of its
-// alias_ids, the aggregate state is merged twice: the additive aggregates
-// (total_events, pageviews) double-count, while sessions (HyperLogLog) and
-// the min/max/argMax columns are idempotent under repeated merging and
-// remain correct.
+// joining the identity_union CTE — every distinct_id that maps to the profile
+// — to the distinct_id_activity_states rollup and re-aggregating to one row
+// per profile. identity_union dedups the id = external_id case structurally
+// (arrayDistinct), but if a profile's external_id happens to coincide with one
+// of its alias_ids the aggregate state is merged twice: the additive
+// aggregates (total_events, pageviews) double-count, while sessions
+// (HyperLogLog) and the min/max/argMax columns are idempotent under repeated
+// merging and remain correct.
 //
 // WARNING: personsActivityCTE unions this output by POSITION with anonPersonsCTE
 // — keep this Select's column order in sync with both, or the activity summary
@@ -520,32 +518,7 @@ func profileActivitySummaryCTE(projectID string) *chq.Query {
 			"argMaxMerge(states.latest_region_state) AS latest_region",
 			"argMaxMerge(states.latest_city_state) AS latest_city",
 		).
-		From(`(
-SELECT
-    p.project_id AS project_id,
-    p.id AS profile_id,
-    p.id AS distinct_id
-FROM latest_profiles p
-WHERE p.is_deleted = 0
-UNION ALL
-SELECT
-    p.project_id AS project_id,
-    p.id AS profile_id,
-    p.external_id AS distinct_id
-FROM latest_profiles p
-WHERE p.is_deleted = 0
-  AND p.external_id != ''
-  AND p.external_id != p.id
-UNION ALL
-SELECT
-    pa.project_id AS project_id,
-    pa.profile_id AS profile_id,
-    pa.alias_id AS distinct_id
-FROM latest_profile_aliases pa
-INNER JOIN latest_profiles p
-    ON p.project_id = pa.project_id AND p.id = pa.profile_id
-WHERE p.is_deleted = 0
-) identity INNER JOIN distinct_id_activity_states states ON states.project_id = identity.project_id AND states.distinct_id = identity.distinct_id`).
+		From("identity_union identity INNER JOIN distinct_id_activity_states states ON states.project_id = identity.project_id AND states.distinct_id = identity.distinct_id").
 		Where(chq.Eq("identity.project_id", projectID)).
 		GroupBy("identity.project_id", "identity.profile_id")
 }

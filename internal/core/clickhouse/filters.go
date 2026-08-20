@@ -307,18 +307,28 @@ func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (
 // The alias only prefixes the outer distinct_id reference; subquery columns reference
 // profiles/profile_aliases tables directly and are unaffected by the alias.
 //
+// The IN set is the full identity set of every matching profile — id,
+// external_id, and alias ids. It restates profiles.IdentityUnionCTE rather
+// than referencing it: a Condition is a self-contained fragment with no CTE to
+// register against, and the property predicate filters profiles before the
+// union. Keep the two definitions in step.
+//
 // It generates: [alias.]distinct_id IN (
 //
-//	SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND p.external_id != '' AND <prop_op>
+//	SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND (p.external_id != '' AND <prop_op>)
+//	UNION ALL
+//	SELECT p.external_id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND (p.external_id != '' AND <prop_op>)
 //	UNION ALL
 //	SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id=? AND pa.profile_id IN (
-//	    SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND p.external_id != '' AND <prop_op>
+//	    SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND (p.external_id != '' AND <prop_op>)
 //	)
 //
 // )
 //
-// The external_id guard excludes profiles with empty external_id, which cannot match
-// any distinct_id in the events table.
+// The non-empty external_id guard stops an unidentified profile contributing
+// an empty string that would match blank distinct_ids. It applies to all three
+// branches, which narrows the set to profiles that have an external_id at all —
+// unlike IdentityUnionCTE, which resolves such a profile via its id and aliases.
 func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias string) (Condition, error) {
 	if projectID == "" {
 		return Condition{}, fmt.Errorf("profile property filter requires a non-empty project ID")
@@ -340,12 +350,16 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 	sql := fmt.Sprintf(`%s IN (
 		SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
 		UNION ALL
+		SELECT p.external_id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
+		UNION ALL
 		SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id = ? AND pa.profile_id IN (
 			SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
 		)
-	)`, distinctIDCol, propertyCond.SQL(), propertyCond.SQL())
+	)`, distinctIDCol, propertyCond.SQL(), propertyCond.SQL(), propertyCond.SQL())
 
 	args := []any{projectID}
+	args = append(args, propertyCond.Args()...)
+	args = append(args, projectID)
 	args = append(args, propertyCond.Args()...)
 	args = append(args, projectID, projectID)
 	args = append(args, propertyCond.Args()...)

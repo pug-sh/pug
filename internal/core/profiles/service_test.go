@@ -80,8 +80,8 @@ func TestProfilesList_NoDoubleCountWhenIDEqualsExternalID(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	projectID := "proj-1"
 
-	// Same value for id and external_id — a common SDK convention. The CTE's
-	// external_id != p.id guard must prevent the state from being merged twice.
+	// Same value for id and external_id — a common SDK convention. identity_union's
+	// arrayDistinct must prevent the state from being merged twice.
 	id := "u-shared"
 	if err := ch.Conn.Exec(ctx,
 		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,

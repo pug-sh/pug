@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"github.com/pug-sh/pug/internal/core/profiles"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
@@ -326,8 +327,9 @@ func effectiveBreakdownLimit(limit int32) int {
 
 // rawArgMinExpr returns an aggregate SELECT expression that computes first-touch attribution
 // into a named column (breakdown_N). Use this in the aggregation CTE so argMin is evaluated once.
-func rawArgMinExpr(colExpr string, i int) string {
-	return fmt.Sprintf("argMin(%s, occur_time) AS breakdown_%d", colExpr, i)
+// timeExpr is the occur_time reference, qualified when the scan is aliased (e.g. "e.occur_time").
+func rawArgMinExpr(colExpr, timeExpr string, i int) string {
+	return fmt.Sprintf("argMin(%s, %s) AS breakdown_%d", colExpr, timeExpr, i)
 }
 
 func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
@@ -772,6 +774,10 @@ func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 // within the conversion window. A CROSS JOIN against a compact steps table produces
 // cumulative counts per step in a single pass — no UNION ALL, no repeated CTE evaluation.
 //
+// The scan is identity-joined and grouped by the canonical user key, so a
+// person split across ids by identify() converts as one windowFunnel chain.
+// Unidentified ids group as themselves (profiles.IdentityUnionCTE).
+//
 // Breakdown attribution: when breakdowns are requested, each user is assigned a breakdown
 // value from their earliest step-matching event in the time range (first-touch attribution). windowFunnel
 // then runs over the step-filtered events, and results are grouped by breakdown value.
@@ -782,7 +788,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 	}
 	breakdowns := req.GetSpec().GetBreakdowns()
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "e")
 	if err != nil {
 		return nil, fmt.Errorf("funnel: %w", err)
 	}
@@ -791,7 +797,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 	var stepArgs []any
 	orConds := make([]chq.Condition, len(steps))
 	for i, step := range steps {
-		cond, err := buildFunnelStepCondition(step, projectID, i)
+		cond, err := buildFunnelStepCondition(step, projectID, "e", i)
 		if err != nil {
 			return nil, err
 		}
@@ -809,26 +815,26 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 	}
 
 	windowFunnelExpr := fmt.Sprintf(
-		"windowFunnel(%d)(toDateTime(occur_time), %s) AS level",
+		"windowFunnel(%d)(toDateTime(e.occur_time), %s) AS level",
 		windowSec, strings.Join(stepExprs, ", "),
 	)
 
-	funnelCTE := chq.NewQuery().Select("distinct_id")
+	funnelCTE := chq.NewQuery().Select(profiles.IdentityUserKeyExpr() + " AS user_key")
 	for i, bd := range breakdowns {
-		funnelCTE.Select(rawArgMinExpr(chq.PropertyExpr(bd.GetProperty()), i))
+		funnelCTE.Select(rawArgMinExpr(chq.PropertyExprAliased(bd.GetProperty(), "e"), "e.occur_time", i))
 	}
 	funnelCTE.
 		SelectExpr(windowFunnelExpr, stepArgs...).
-		From("events").
+		From(profiles.IdentityJoinedEvents()).
 		Where(
-			chq.Eq("project_id", projectID),
-			chq.Gte("occur_time", from),
-			chq.Lt("occur_time", to),
-			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
+			chq.Eq("e.project_id", projectID),
+			chq.Gte("e.occur_time", from),
+			chq.Lt("e.occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
 			stepFilter,
 			topLevelFilterCond,
 		).
-		GroupBy("distinct_id")
+		GroupBy("user_key")
 
 	// Build a compact steps table: SELECT 0,'page_view' UNION ALL SELECT 1,'click' ...
 	// Event kinds are embedded as escaped SQL literals (validated by proto regex).
@@ -861,7 +867,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 		orderBy = append(orderBy, fmt.Sprintf("f.breakdown_%d ASC", j))
 	}
 
-	q := chq.NewQuery().
+	q := profiles.WithIdentityUnion(chq.NewQuery(), projectID).
 		With("funnel", funnelCTE).
 		Select(selectCols...).
 		From(fmt.Sprintf("funnel f CROSS JOIN (%s) AS s", stepsExpr)).
@@ -881,6 +887,10 @@ func sqlStringLiteral(s string) string {
 // Strategy: tag each event with which step it matches (via multiIf), aggregate into
 // per-user arrays, then Go walks the arrays to greedily match steps and compute intervals.
 //
+// Both scans (pre-filter and tagged CTE) are identity-joined and keyed on the
+// canonical user key: this builder is a second GROUP BY over people, so it
+// needs the same stitching as buildFunnelWindowFunnel.
+//
 // Performance: when >= 2 steps, a windowFunnel pre-filter IN subquery restricts the tagged
 // CTE to users who actually progressed past step 0. This dramatically reduces groupArray
 // output and data transfer for timing computation.
@@ -898,7 +908,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 	}
 	breakdowns := req.GetSpec().GetBreakdowns()
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "e")
 	if err != nil {
 		return nil, fmt.Errorf("funnel: %w", err)
 	}
@@ -917,7 +927,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 	}
 	sc := make([]stepCond, len(steps))
 	for i, step := range steps {
-		cond, err := buildFunnelStepCondition(step, projectID, i)
+		cond, err := buildFunnelStepCondition(step, projectID, "e", i)
 		if err != nil {
 			return nil, err
 		}
@@ -943,7 +953,8 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 
 	// Pre-filter: restrict to users who reached at least step 2 in windowFunnel.
 	// Scans events once with windowFunnel (fast), then the tagged CTE only processes
-	// events from users who have timing data to contribute.
+	// events from users who have timing data to contribute. Grouped by the canonical
+	// user key — a split person reaches step 2 only once stitched.
 	var preFilterCond chq.Condition
 	if len(steps) >= 2 {
 		pfStepSQLs := make([]string, len(sc))
@@ -954,24 +965,22 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 			pfHavingArgs = append(pfHavingArgs, s.args...)
 		}
 		wfHaving := fmt.Sprintf(
-			"windowFunnel(?)(toDateTime(occur_time), %s) >= 2",
+			"windowFunnel(?)(toDateTime(e.occur_time), %s) >= 2",
 			strings.Join(pfStepSQLs, ", "),
 		)
 
-		pfTopLevel, _ := buildTopLevelFilterCondition(
-			req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 		pfQuery := chq.NewQuery().
-			Select("distinct_id").
-			From("events").
+			Select(profiles.IdentityUserKeyExpr()+" AS user_key").
+			From(profiles.IdentityJoinedEvents()).
 			Where(
-				chq.Eq("project_id", projectID),
-				chq.Gte("occur_time", from),
-				chq.Lt("occur_time", to),
-				cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
+				chq.Eq("e.project_id", projectID),
+				chq.Gte("e.occur_time", from),
+				chq.Lt("e.occur_time", to),
+				cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
 				chq.Or(freshOrConds()...),
-				pfTopLevel,
+				topLevelFilterCond,
 			).
-			GroupBy("distinct_id").
+			GroupBy("user_key").
 			HavingExpr(wfHaving, pfHavingArgs...)
 
 		pfSQL, pfArgs, err := pfQuery.Build()
@@ -979,34 +988,34 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 			return nil, fmt.Errorf("funnel pre-filter: %w", err)
 		}
 		preFilterCond = chq.RawCond(
-			fmt.Sprintf("distinct_id IN (%s)", pfSQL),
+			fmt.Sprintf("%s IN (%s)", profiles.IdentityUserKeyExpr(), pfSQL),
 			pfArgs...,
 		)
 	}
 
 	// CTE: tag events with step index and raw breakdown property values.
 	taggedCTE := chq.NewQuery().
-		Select("distinct_id", "occur_time").
+		Select(profiles.IdentityUserKeyExpr()+" AS user_key", "e.occur_time AS occur_time").
 		SelectExpr(multiIfExpr, multiIfArgs...)
 	for i, bd := range breakdowns {
-		taggedCTE.Select(fmt.Sprintf("%s AS bd_%d", chq.PropertyExpr(bd.GetProperty()), i))
+		taggedCTE.Select(fmt.Sprintf("%s AS bd_%d", chq.PropertyExprAliased(bd.GetProperty(), "e"), i))
 	}
 	taggedCTE.
-		From("events").
+		From(profiles.IdentityJoinedEvents()).
 		Where(
-			chq.Eq("project_id", projectID),
-			chq.Gte("occur_time", from),
-			chq.Lt("occur_time", to),
-			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
+			chq.Eq("e.project_id", projectID),
+			chq.Gte("e.occur_time", from),
+			chq.Lt("e.occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
 			chq.Or(freshOrConds()...),
 			topLevelFilterCond,
 			preFilterCond,
 		)
 
-	q := chq.NewQuery().
+	q := profiles.WithIdentityUnion(chq.NewQuery(), projectID).
 		With("tagged", taggedCTE).
 		Select(
-			"distinct_id",
+			"user_key",
 			"arraySort(groupArray(occur_time)) AS times",
 			"arrayMap(x -> x.2, arraySort(x -> x.1, arrayZip(groupArray(occur_time), groupArray(toInt64(step_match))))) AS step_matches",
 		)
@@ -1015,7 +1024,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 	}
 	q.From("tagged").
 		Where(chq.RawCond("step_match >= 0")).
-		GroupBy("distinct_id")
+		GroupBy("user_key")
 	return q, nil
 }
 
@@ -1033,12 +1042,14 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		returnEvent = events[1]
 	}
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
+	// Both scans (cohorts and return_events) are identity-joined, so every
+	// event-scan condition binds "e" — a bare distinct_id is ambiguous there.
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "e")
 	if err != nil {
 		return nil, fmt.Errorf("retention: %w", err)
 	}
 
-	startCond, err := buildEventCondition([]*insightsv1.EventQuery{startEvent}, projectID)
+	startCond, err := buildEventConditionAliased([]*insightsv1.EventQuery{startEvent}, projectID, "e")
 	if err != nil {
 		return nil, fmt.Errorf("retention start event: %w", err)
 	}
@@ -1046,54 +1057,50 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		return nil, fmt.Errorf("retention start event: empty event filter")
 	}
 
-	// Build return event and top-level filter conditions with "e" alias for the JOINed CTE.
-	returnCondAliased, err := buildEventConditionAliased([]*insightsv1.EventQuery{returnEvent}, projectID, "e")
+	returnCond, err := buildEventConditionAliased([]*insightsv1.EventQuery{returnEvent}, projectID, "e")
 	if err != nil {
 		return nil, fmt.Errorf("retention return event: %w", err)
 	}
-	if returnCondAliased.IsZero() {
+	if returnCond.IsZero() {
 		return nil, fmt.Errorf("retention return event: empty event filter")
 	}
 
-	topLevelFilterCondAliased, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "e")
+	bucket, err := bucketExpr(req.GetGranularity(), "e.occur_time", req.GetTimezone())
 	if err != nil {
 		return nil, fmt.Errorf("retention: %w", err)
 	}
-
-	bucket, err := bucketExpr(req.GetGranularity(), "occur_time", req.GetTimezone())
-	if err != nil {
-		return nil, fmt.Errorf("retention: %w", err)
-	}
-	retainedBucket, err := bucketExpr(req.GetGranularity(), "e.occur_time", req.GetTimezone())
+	retainedBucket, err := bucketExpr(req.GetGranularity(), "re.occur_time", req.GetTimezone())
 	if err != nil {
 		return nil, fmt.Errorf("retention: %w", err)
 	}
 	from := req.GetTimeRange().GetFrom().AsTime()
 	to := req.GetTimeRange().GetTo().AsTime()
 
-	// cohorts: assign each user to a time bucket based on their first start event.
-	// first_event_time is the precise timestamp (not bucketed) — used to exclude
-	// return events that fall within the same bucket but before the actual start.
+	// cohorts: assign each user to a time bucket based on their first start event,
+	// keyed by the canonical user key so a person who enters as anon and returns
+	// as external_id stays one cohort member. first_event_time is the precise
+	// timestamp (not bucketed) — used to exclude return events that fall within
+	// the same bucket but before the actual start.
 	cohortsAgg := chq.NewQuery().
 		Select(
-			"distinct_id",
+			profiles.IdentityUserKeyExpr()+" AS user_key",
 			fmt.Sprintf("min(%s) AS cohort_time", bucket),
-			"min(occur_time) AS first_event_time",
+			"min(e.occur_time) AS first_event_time",
 		)
 	for i, bd := range breakdowns {
-		cohortsAgg.Select(rawArgMinExpr(chq.PropertyExpr(bd.GetProperty()), i))
+		cohortsAgg.Select(rawArgMinExpr(chq.PropertyExprAliased(bd.GetProperty(), "e"), "e.occur_time", i))
 	}
 	cohortsAgg.
-		From("events").
+		From(profiles.IdentityJoinedEvents()).
 		Where(
-			chq.Eq("project_id", projectID),
-			chq.Gte("occur_time", from),
-			chq.Lt("occur_time", to),
-			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
+			chq.Eq("e.project_id", projectID),
+			chq.Gte("e.occur_time", from),
+			chq.Lt("e.occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
 			startCond,
 			topLevelFilterCond,
 		).
-		GroupBy("distinct_id")
+		GroupBy("user_key")
 
 	// cohort_sizes: count users per (cohort_time[, breakdown...]).
 	cohortGroupBy := make([]string, 0, 1+len(breakdowns))
@@ -1108,13 +1115,32 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		From("cohorts").
 		GroupBy(cohortGroupBy...)
 
-	// retained: count return events per cohort per time bucket [per breakdown].
+	// return_events: the return-side event scan, identity-joined so its user_key
+	// matches the cohort key. A separate CTE because the cohort join must be on
+	// the canonical key, and ClickHouse JOIN ON wants plain columns on each side
+	// — so the key is projected here rather than computed in the join condition.
+	returnEvents := chq.NewQuery().
+		Select(
+			profiles.IdentityUserKeyExpr()+" AS user_key",
+			"e.occur_time AS occur_time",
+		).
+		From(profiles.IdentityJoinedEvents()).
+		Where(
+			chq.Eq("e.project_id", projectID),
+			chq.Gte("e.occur_time", from),
+			chq.Lt("e.occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
+			returnCond,
+			topLevelFilterCond,
+		)
+
+	// retained: count returning users per cohort per time bucket [per breakdown].
 	// Uses first_event_time (not bucketed cohort_time) to exclude return events
-	// before the user's actual start. Conditions use "e." alias to avoid ambiguity in the JOIN.
+	// before the user's actual start.
 	retainedSelect := []string{
 		"c.cohort_time",
 		retainedBucket + " AS t",
-		"toFloat64(uniq(e.distinct_id)) AS retained_users",
+		"toFloat64(uniq(re.user_key)) AS retained_users",
 	}
 	retainedGroupBy := []string{"c.cohort_time", "t"}
 	for j := range breakdowns {
@@ -1123,16 +1149,8 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	}
 	retained := chq.NewQuery().
 		Select(retainedSelect...).
-		From("cohorts c INNER JOIN events e ON e.distinct_id = c.distinct_id").
-		Where(
-			chq.Eq("e.project_id", projectID),
-			chq.Gte("e.occur_time", from),
-			chq.Lt("e.occur_time", to),
-			chq.RawCond("e.occur_time >= c.first_event_time"),
-			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
-			returnCondAliased,
-			topLevelFilterCondAliased,
-		).
+		From("cohorts c INNER JOIN return_events re ON re.user_key = c.user_key").
+		Where(chq.RawCond("re.occur_time >= c.first_event_time")).
 		GroupBy(retainedGroupBy...)
 
 	// Final join: retained × cohort_sizes on (cohort_time[, breakdown...]).
@@ -1159,9 +1177,10 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	}
 	orderBy = append(orderBy, "r.cohort_time ASC", "r.t ASC")
 
-	return chq.NewQuery().
+	return profiles.WithIdentityUnion(chq.NewQuery(), projectID).
 		With("cohorts", cohortsAgg).
 		With("cohort_sizes", cohortSizes).
+		With("return_events", returnEvents).
 		With("retained", retained).
 		Select(finalSelect...).
 		From(fmt.Sprintf("retained r INNER JOIN cohort_sizes cs ON %s", joinCond)).
@@ -1185,11 +1204,11 @@ func buildEventConditionAliased(events []*insightsv1.EventQuery, projectID, alia
 	return chq.EventConditionAliased(filters, projectID, alias)
 }
 
-func buildFunnelStepCondition(step *insightsv1.EventQuery, projectID string, idx int) (chq.Condition, error) {
+func buildFunnelStepCondition(step *insightsv1.EventQuery, projectID, alias string, idx int) (chq.Condition, error) {
 	if step == nil {
 		return chq.Condition{}, fmt.Errorf("funnel step[%d]: event is required", idx)
 	}
-	cond, err := buildEventCondition([]*insightsv1.EventQuery{step}, projectID)
+	cond, err := buildEventConditionAliased([]*insightsv1.EventQuery{step}, projectID, alias)
 	if err != nil {
 		return chq.Condition{}, fmt.Errorf("funnel step[%d]: %w", idx, err)
 	}
