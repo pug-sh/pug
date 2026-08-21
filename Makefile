@@ -57,6 +57,22 @@ lint-proto:
 lint:
 	go tool golangci-lint run --allow-parallel-runners --timeout 5m ./...
 
+# What CI gates on: only lines this branch changed since origin/main, so the
+# tree's existing findings don't block. `make lint` is the full sweep and is
+# currently red — see docs, it is a backlog, not a gate.
+.PHONY: lint-new
+lint-new:
+	go tool golangci-lint run --allow-parallel-runners --timeout 5m \
+		--new-from-merge-base=origin/main ./...
+
+.PHONY: lint-conventions
+lint-conventions:
+	go test ./internal/lint/ -count=1
+
+.PHONY: vuln
+vuln:
+	go tool govulncheck ./...
+
 .PHONY: rpc
 rpc: lint-proto
 	go tool buf generate

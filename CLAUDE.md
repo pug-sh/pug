@@ -115,8 +115,16 @@ make rpc
 # Generate templ email templates (after modifying .templ files)
 make templ
 
-# Lint Go code
+# Lint Go code. `lint` is the full sweep and currently reports pre-existing
+# findings, so CI gates on `lint-new` (only lines the branch changed since
+# origin/main) instead. `lint-conventions` runs internal/lint, the pug-specific
+# analyzers and checks that no off-the-shelf linter covers. `vuln` is
+# govulncheck, which is reachability-gated: a vulnerable module stays green
+# until something calls into it.
 make lint
+make lint-new
+make lint-conventions
+make vuln
 
 # Lint proto files
 make lint-proto
