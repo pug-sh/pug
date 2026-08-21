@@ -117,8 +117,11 @@ make templ
 
 # Lint Go code. `lint` is the full sweep and currently reports pre-existing
 # findings, so CI gates on `lint-new` (only lines the branch changed since
-# origin/main) instead. `lint-conventions` runs internal/lint, the pug-specific
-# analyzers and checks that no off-the-shelf linter covers. `vuln` is
+# origin/main) instead. Both first run `lint-conventions`, which is internal/lint
+# — the pug-specific analyzers and checks that no off-the-shelf linter covers.
+# They are written as Go tests because they need a typed package load, but they
+# are gated as a lint: a violation is a style failure, and `make test` running
+# the package too is only a backstop. `vuln` is
 # govulncheck, which is reachability-gated: a vulnerable module stays green
 # until something calls into it.
 make lint

@@ -159,7 +159,9 @@ func walkGo(root string, fn func(path string, body []byte)) error {
 }
 
 // importsOfDir unions the imports of every file in dir: which file of a package
-// holds an import is not something a convention should depend on.
+// holds an import is not something a convention should depend on. Test files
+// are excluded because reachability asks what a deployable binary links, and a
+// test-only import ships nothing.
 func importsOfDir(dir string) (map[string]bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -167,7 +169,7 @@ func importsOfDir(dir string) (map[string]bool, error) {
 	}
 	out := map[string]bool{}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
 		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, e.Name()), nil, parser.ImportsOnly)

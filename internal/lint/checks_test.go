@@ -86,11 +86,44 @@ func TestChecksDetectViolations(t *testing.T) {
 			want: "",
 		},
 		{
+			check: "sqlc-read-is-read-only",
+			files: map[string]string{
+				// A CTE puts the UPDATE mid-line, where a line-anchored pattern
+				// cannot see it.
+				"schema/postgres/queries/read/a.sql": "-- name: GetAndBump :many\nwith d as (select id from things) update things set n = n + 1 from d;\n",
+			},
+			want: "UPDATE statement in the read query set",
+		},
+		{
+			check: "sqlc-read-is-read-only",
+			files: map[string]string{
+				// Neither a locking clause nor a column called updated_at.
+				"schema/postgres/queries/read/a.sql": "-- name: LockThing :one\nselect updated_at from things for no key update;\n",
+			},
+			want: "",
+		},
+		{
 			check: "sqlc-query-naming",
 			files: map[string]string{
 				"schema/postgres/queries/read/a.sql": "-- name: GetThingById :one\nselect 1;\n",
 			},
 			want: `must spell ID in uppercase`,
+		},
+		{
+			check: "sqlc-query-naming",
+			files: map[string]string{
+				// A plural Ids mid-name is still a lowercase ID.
+				"schema/postgres/queries/read/a.sql": "-- name: ListIdsByProject :many\nselect 1;\n",
+			},
+			want: `must spell ID in uppercase`,
+		},
+		{
+			check: "sqlc-query-naming",
+			files: map[string]string{
+				// Id followed by a lowercase letter is a word, not an initialism.
+				"schema/postgres/queries/read/a.sql": "-- name: GetIdentityByEmail :one\nselect 1;\n",
+			},
+			want: "",
 		},
 		{
 			check: "sqlc-query-naming",
@@ -152,6 +185,16 @@ func TestChecksDetectViolations(t *testing.T) {
 			want: "internal/app/workers/orphan: declares an entrypoint",
 		},
 		{
+			check: "worker-reachable",
+			files: map[string]string{
+				// A test binary ships nothing, so its import is not evidence.
+				"cmd/pug/main.go":                  "package main\nfunc main() {}\n",
+				"cmd/pug/main_test.go":             "package main\nimport _ \"github.com/pug-sh/pug/internal/app/workers/orphan\"\n",
+				"internal/app/workers/orphan/w.go": "package orphan\nfunc StartWorker() {}\n",
+			},
+			want: "internal/app/workers/orphan: declares an entrypoint",
+		},
+		{
 			check: "cron-reachable",
 			files: map[string]string{
 				"internal/app/cron/orphan/c.go": "package orphan\nimport \"context\"\nfunc Run(ctx context.Context) error { return nil }\n",
@@ -172,6 +215,24 @@ func TestChecksDetectViolations(t *testing.T) {
 				".golangci.yml": "linters:\n  settings:\n    depguard:\n      rules:\n        moved:\n          files: [\"!$test\"]\n          deny:\n            - pkg: github.com/pug-sh/pug/internal/gone\n",
 			},
 			want: "denies no such package",
+		},
+		{
+			check: "depguard-targets-exist",
+			files: map[string]string{
+				// A filename component is not a directory; stat'ing the whole
+				// pattern would condemn a glob that matches.
+				"internal/core/x.go": "package core\n",
+				".golangci.yml":      "linters:\n  settings:\n    depguard:\n      rules:\n        ok:\n          files: [\"**/internal/core/**/*.go\"]\n          deny:\n            - pkg: connectrpc.com/connect\n",
+			},
+			want: "",
+		},
+		{
+			check: "depguard-targets-exist",
+			files: map[string]string{
+				"internal/core/x.go": "package core\n",
+				".golangci.yml":      "linters:\n  settings:\n    depguard:\n      rules:\n        typo:\n          files: [\"**/internal/coer/**/*.go\"]\n          deny:\n            - pkg: connectrpc.com/connect\n",
+			},
+			want: "matches no such path",
 		},
 		{
 			check: "property-pattern-pinned",

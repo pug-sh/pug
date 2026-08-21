@@ -8,11 +8,13 @@ import (
 	"strings"
 )
 
-// Anchored on `update` only at line start so `select ... for update` is not a
-// mutation, but unanchored on the rest so a data-modifying CTE — the way a
-// mutation actually sneaks into the read set — does not hide mid-line.
+// `update` is matched anywhere, not just at line start, so a data-modifying CTE
+// — the way a mutation actually sneaks into the read set — cannot hide behind
+// `with ... as (...) update`. Row locks are masked out first because
+// `select ... for update` is not a mutation.
 var (
-	mutatingStmt = regexp.MustCompile(`(?im)\binsert\s+into\b|\bdelete\s+from\b|\bmerge\s+into\b|\btruncate\s|^\s*update\s`)
+	mutatingStmt = regexp.MustCompile(`(?i)\binsert\s+into\b|\bdelete\s+from\b|\bmerge\s+into\b|\btruncate\s|\bupdate\s`)
+	rowLock      = regexp.MustCompile(`(?i)\bfor\s+(?:no\s+key\s+)?update\b`)
 	sqlComment   = regexp.MustCompile(`(?m)--.*$`)
 )
 
@@ -47,7 +49,8 @@ func checkSqlcReadOnly(root string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, m := range mutatingStmt.FindAll(sqlComment.ReplaceAll(body, nil), -1) {
+		scrubbed := rowLock.ReplaceAll(sqlComment.ReplaceAll(body, nil), []byte("for share"))
+		for _, m := range mutatingStmt.FindAll(scrubbed, -1) {
 			out = append(out, fmt.Sprintf("%s: %s statement in the read query set",
 				rel(root, f), strings.ToUpper(strings.Join(strings.Fields(string(m)), " "))))
 		}
@@ -58,7 +61,7 @@ func checkSqlcReadOnly(root string) ([]string, error) {
 var (
 	queryName    = regexp.MustCompile(`(?m)^--\s*name:\s*(\S+)`)
 	pascalWithID = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
-	lowercaseID  = regexp.MustCompile(`Id([A-Z]|s?$)`)
+	lowercaseID  = regexp.MustCompile(`Ids?([A-Z0-9]|$)`)
 )
 
 func checkSqlcNaming(root string) ([]string, error) {

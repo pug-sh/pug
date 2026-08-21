@@ -134,6 +134,23 @@ func exemptedMultiline(ctx context.Context, err error) {
 		slog.String("procedure", "p"),
 		slogx.Error(err)) // puglint:exempt
 }
+
+func recordedInOneBranchOnly(ctx context.Context, err, err2 error) {
+	if err != nil {
+		telemetry.RecordError(ctx, err)
+		slog.ErrorContext(ctx, "first failed", slogx.Error(err))
+	}
+	if err2 != nil {
+		slog.ErrorContext(ctx, "second failed", slogx.Error(err2))
+	}
+}
+
+func recordedAboveTheBranch(ctx context.Context, err error) {
+	telemetry.RecordError(ctx, err)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed", slogx.Error(err))
+	}
+}
 `
 
 // The fixture is overlaid into the real rpc package, so it calls the real
@@ -197,6 +214,41 @@ func aliasQualified(projectID string) *chq.Query {
 func exempted() *chq.Query {
 	return chq.NewQuery().From("events") // puglint:exempt
 }
+
+// One filtered query does not vouch for the unfiltered one beside it.
+func siblingQueryIsNotVouchedFor(projectID string) (*chq.Query, *chq.Query) {
+	scoped := chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID))
+	return scoped, chq.NewQuery().From("profiles")
+}
+
+// The tenant table is reached through the join, not the leading relation.
+func joinedTenantTable() *chq.Query {
+	return chq.NewQuery().From("per_user p JOIN events e ON e.user_key = p.user_key")
+}
+
+func scopedInALaterStatement(projectID string) *chq.Query {
+	q := chq.NewQuery().From("events")
+	q.Where(chq.Eq("project_id", projectID))
+	return q
+}
+
+func scopedThroughItsCTE(projectID string) *chq.Query {
+	agg := chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID))
+	return chq.NewQuery().With("agg", agg).From(joinFragment())
+}
+
+// A CTE is read only through the query that mounts it, even from a slice.
+func mountedOnAScopedQuery(projectID string) *chq.Query {
+	subs := make([]*chq.Query, 1)
+	subs[0] = chq.NewQuery().From(joinFragment())
+	return chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID)).With("sub", subs[0])
+}
+
+// Mounting excuses a fragment that cannot be read, never a named table.
+func mountingDoesNotExcuseALiteralTable(projectID string) *chq.Query {
+	sub := chq.NewQuery().From("profiles")
+	return chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID)).With("sub", sub)
+}
 `
 
 func TestChqTenant(t *testing.T) {
@@ -204,7 +256,10 @@ func TestChqTenant(t *testing.T) {
 	want := []string{
 		`27: selectsButNeverFilters selects from tenant-scoped table "events" without a project_id filter`,
 		"35: computedFromIsNotAPass selects from tenant-scoped table a computed FROM fragment without a project_id filter",
+		`49: siblingQueryIsNotVouchedFor selects from tenant-scoped table "profiles" without a project_id filter`,
+		`54: joinedTenantTable selects from tenant-scoped table "events" without a project_id filter`,
 		`6: leaky selects from tenant-scoped table "events" without a project_id filter`,
+		`77: mountingDoesNotExcuseALiteralTable selects from tenant-scoped table "profiles" without a project_id filter`,
 	}
 	assertDiagnostics(t, got, want)
 }
@@ -250,6 +305,9 @@ func TestRecordErr(t *testing.T) {
 	want := []string{
 		"17: unpaired logs an error without telemetry.RecordError; record it here or mark the line puglint:exempt",
 		"21: unpairedViaLogger logs an error without telemetry.RecordError; record it here or mark the line puglint:exempt",
+		// The sibling branch's RecordError does not cover this path; the one
+		// above recordedAboveTheBranch's if does cover its log.
+		"44: recordedInOneBranchOnly logs an error without telemetry.RecordError; record it here or mark the line puglint:exempt",
 	}
 	assertDiagnostics(t, got, want)
 }

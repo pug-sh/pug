@@ -63,11 +63,18 @@ func checkDepguardTargets(root string) ([]string, error) {
 	return out, nil
 }
 
-// globDir reduces "**/internal/core/**" to "internal/core". Negations and the
-// $test placeholder name no directory, so they are skipped.
+// globDir reduces "**/internal/core/**/*.go" to "internal/core", the literal
+// prefix the glob can never look outside of. Taking the prefix rather than
+// trimming the tail keeps a filename component ("*.go") from being stat'd as if
+// it were a directory. Negations and the $test placeholder name no directory,
+// so they are skipped.
 func globDir(pattern string) (string, bool) {
 	if strings.HasPrefix(pattern, "!") || strings.Contains(pattern, "$") {
 		return "", false
 	}
-	return strings.Trim(strings.TrimPrefix(pattern, "**/"), "/*"), true
+	p := strings.TrimPrefix(pattern, "**/")
+	if i := strings.IndexAny(p, "*?["); i >= 0 {
+		p = p[:i]
+	}
+	return strings.Trim(p, "/"), true
 }
