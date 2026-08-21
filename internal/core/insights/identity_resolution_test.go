@@ -727,11 +727,11 @@ func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	}
 }
 
-// A distinct_id can map to two identity rows — one profile's external_id
-// colliding with another's alias. LEFT ANY JOIN keeps that from multiplying
-// event rows, but which profile wins is arbitrary, and this PR's builders run
-// two identity joins per query (retention: cohorts + return_events; funnel
-// timing: pre-filter + tagged). If those two ever disagreed the failure is
+// A distinct_id can be claimed by two profiles — one's external_id is the
+// other's alias. identity_union resolves that to the lowest profile id, which
+// matters because the builders run two independent identity joins per query
+// (retention: cohorts + return_events; funnel timing: pre-filter + tagged):
+// were the winner arbitrary, the two could disagree and the failure would be
 // silent and total — retention drops to 0%, the person vanishes from timing.
 func TestIdentityResolutionCollision(t *testing.T) {
 	if testing.Short() {
@@ -808,7 +808,12 @@ func TestIdentityResolutionCollision(t *testing.T) {
 				"event rows; is the join still LEFT ANY JOIN?", total)
 		}
 		if len(rows) != 1 {
-			t.Errorf("expected the collision to resolve to exactly 1 user key, got %d: %+v", len(rows), rows)
+			t.Fatalf("expected the collision to resolve to exactly 1 user key, got %d: %+v", len(rows), rows)
+		}
+		// min(profile_id) over the two claimants.
+		if rows[0].DimensionValue != "pa" {
+			t.Errorf("collision resolved to %q, want \"pa\" — the owner must be the lowest "+
+				"profile id, not whichever row the join happened to pick", rows[0].DimensionValue)
 		}
 	})
 
@@ -834,8 +839,8 @@ func TestIdentityResolutionCollision(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		// cohorts and return_events each resolve "shared" independently. If they
-		// picked different profiles the join on user_key yields nothing.
+		// cohorts and return_events each resolve "shared" independently; the
+		// single-owner key is what makes them land on the same user_key.
 		var day1 float64
 		for _, r := range rows {
 			if r.Time.Sub(r.CohortTime) == 24*time.Hour {

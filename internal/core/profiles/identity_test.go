@@ -54,6 +54,21 @@ func TestIdentityUnionCTE_DedupsAcrossIDSources(t *testing.T) {
 	}
 }
 
+// identity_union must be a function of (project_id, distinct_id): an id
+// claimed by two profiles otherwise lets two joins in one query disagree.
+func TestIdentityUnionCTE_ResolvesCollisionsDeterministically(t *testing.T) {
+	sql, _, err := profiles.IdentityUnionCTE().Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(sql, "min(profile_id) AS profile_id") {
+		t.Errorf("expected a deterministic owner per distinct_id, got: %s", sql)
+	}
+	if !strings.Contains(sql, "GROUP BY project_id, dist_id") {
+		t.Errorf("expected one row per (project_id, distinct_id), got: %s", sql)
+	}
+}
+
 // The join must be tenant-scoped: identity_union is referenced by name, so a
 // caller registering a differently-scoped CTE would otherwise resolve a
 // distinct_id against another project's profiles.

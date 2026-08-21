@@ -10,6 +10,10 @@ import (
 // Join it onto an events scan (IdentityJoinedEvents) and group by
 // IdentityUserKeyExpr to stitch a person across the identify() boundary.
 //
+// One row per (project_id, distinct_id): ids can collide across profiles (one
+// profile's external_id is another's alias), and min(profile_id) resolves that
+// to a single owner so independent joins in one query cannot disagree.
+//
 // Register via WithIdentityUnion, which supplies the two CTEs read by name.
 // ClickHouse inlines a CTE per reference, so every reference re-runs both
 // aggregations; keep references per query to the minimum the shape needs.
@@ -25,7 +29,7 @@ import (
 // union is the *live* identity set.
 func IdentityUnionCTE() *chq.Query {
 	return chq.NewQuery().
-		Select("project_id", "dist_id AS distinct_id", "profile_id").
+		Select("project_id", "dist_id AS distinct_id", "min(profile_id) AS profile_id").
 		From(`(
 SELECT p.project_id AS project_id, p.id AS profile_id,
 arrayDistinct(arrayFilter(x -> x != '', arrayConcat([p.id, p.external_id], a.alias_ids))) AS dist_ids
@@ -36,7 +40,8 @@ FROM latest_profile_aliases
 GROUP BY project_id, profile_id
 ) a ON a.project_id = p.project_id AND a.profile_id = p.id
 WHERE p.is_deleted = 0
-) ARRAY JOIN dist_ids AS dist_id`)
+) ARRAY JOIN dist_ids AS dist_id`).
+		GroupBy("project_id", "dist_id")
 }
 
 // WithIdentityUnion registers the latest_profiles, latest_profile_aliases and
@@ -49,11 +54,9 @@ func WithIdentityUnion(q *chq.Query, projectID string) *chq.Query {
 }
 
 // IdentityJoinedEvents is the FROM fragment joining an events scan (alias e)
-// to the identity_union CTE (alias i). LEFT ANY JOIN picks one identity row
-// per event so pathological mappings (a distinct_id matching multiple identity
-// rows, e.g. one profile's external_id colliding with another's alias) cannot
-// multiply event rows and inflate metrics; which canonical id wins is then
-// arbitrary, and two joins in one query may disagree. Build the scan's
+// to the identity_union CTE (alias i). identity_union is keyed one row per
+// distinct_id, so the join cannot multiply event rows; ANY keeps that true by
+// construction rather than by trusting the CTE. Build the scan's
 // conditions with alias "e": ClickHouse resolves a bare distinct_id to the
 // left table silently, so a missed alias is right by luck, not caught.
 //
