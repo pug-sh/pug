@@ -489,12 +489,9 @@ func (s *Service) resolveAliasTarget(ctx context.Context, projectID, aliasID str
 // persons carry their own single-distinct_id summary via anonPersonsCTE) by
 // joining the identity_union CTE — every distinct_id that maps to the profile
 // — to the distinct_id_activity_states rollup and re-aggregating to one row
-// per profile. identity_union dedups the id = external_id case structurally
-// (arrayDistinct), but if a profile's external_id happens to coincide with one
-// of its alias_ids the aggregate state is merged twice: the additive
-// aggregates (total_events, pageviews) double-count, while sessions
-// (HyperLogLog) and the min/max/argMax columns are idempotent under repeated
-// merging and remain correct.
+// per profile. identity_union's arrayDistinct dedups across all three id
+// sources, so a value repeated between id, external_id and an alias_id yields
+// one row and its state is merged once.
 //
 // WARNING: personsActivityCTE unions this output by POSITION with anonPersonsCTE
 // — keep this Select's column order in sync with both, or the activity summary

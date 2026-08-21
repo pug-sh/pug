@@ -120,14 +120,13 @@ func TestProfilesList_NoDoubleCountWhenIDEqualsExternalID(t *testing.T) {
 	}
 }
 
-// TestProfilesList_DocumentedInflationWhenExternalIDEqualsAliasID pins the
-// documented edge case in profileActivitySummaryCTE: when a profile's
-// external_id coincides with one of its alias_ids, the additive aggregates
-// (total_events, pageviews) double-count, while the idempotent aggregates
-// (sessions HyperLogLog, argMax columns) remain correct. A future change
-// that adds an external_id != any-alias_id guard will trip this test loudly
-// rather than silently change values.
-func TestProfilesList_DocumentedInflationWhenExternalIDEqualsAliasID(t *testing.T) {
+// TestProfilesList_NoInflationWhenExternalIDEqualsAliasID pins the collision
+// case in profileActivitySummaryCTE: a profile whose external_id equals one of
+// its alias_ids must contribute that distinct_id once. Regressing
+// IdentityUnionCTE to per-source union branches double-counts the additive
+// aggregates here while sessions and the argMax columns stay correct, so
+// assert the additive ones.
+func TestProfilesList_NoInflationWhenExternalIDEqualsAliasID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -152,9 +151,9 @@ func TestProfilesList_DocumentedInflationWhenExternalIDEqualsAliasID(t *testing.
 		t.Fatalf("seed alias: %v", err)
 	}
 
-	// One event keyed by the colliding identifier. The UNION's external_id
-	// branch and alias branch both emit (project, profile, "shared-id"),
-	// joining the same states row twice.
+	// One event keyed by the colliding identifier. identity_union folds id,
+	// external_id and alias ids into one arrayDistinct, so "shared-id" is
+	// emitted once and its states row is merged once.
 	sessionID := uuid.NewString()
 	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "shared-id", "page_view", sessionID,
 		map[string]string{"$browser": "Chrome", "$country": "US"},
@@ -178,22 +177,19 @@ func TestProfilesList_DocumentedInflationWhenExternalIDEqualsAliasID(t *testing.
 		t.Fatal("expected non-nil Activity")
 	}
 
-	// Additive aggregates double-count.
-	if a.TotalEvents != 2 {
-		t.Errorf("TotalEvents = %d, want 2 (documented double-count when external_id == alias_id)", a.TotalEvents)
+	if a.TotalEvents != 1 {
+		t.Errorf("TotalEvents = %d, want 1 (external_id == alias_id must not merge the state twice)", a.TotalEvents)
 	}
-	if a.Pageviews != 2 {
-		t.Errorf("Pageviews = %d, want 2 (documented double-count)", a.Pageviews)
+	if a.Pageviews != 1 {
+		t.Errorf("Pageviews = %d, want 1 (external_id == alias_id must not merge the state twice)", a.Pageviews)
 	}
-
-	// HyperLogLog and argMax aggregates are idempotent under repeated merge.
 	if a.Sessions != 1 {
-		t.Errorf("Sessions = %d, want 1 (HyperLogLog idempotent under duplicate merge)", a.Sessions)
+		t.Errorf("Sessions = %d, want 1", a.Sessions)
 	}
 	if a.Browser != "Chrome" {
-		t.Errorf("Browser = %q, want \"Chrome\" (argMax idempotent under duplicate merge)", a.Browser)
+		t.Errorf("Browser = %q, want \"Chrome\"", a.Browser)
 	}
 	if a.Country != "US" {
-		t.Errorf("Country = %q, want \"US\" (argMax idempotent under duplicate merge)", a.Country)
+		t.Errorf("Country = %q, want \"US\"", a.Country)
 	}
 }

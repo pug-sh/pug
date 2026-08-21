@@ -393,8 +393,11 @@ func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 	if !strings.Contains(sql, "coalesce(CAST(properties.`plan` AS Nullable(String)), '')") {
 		t.Errorf("expected JSON subcolumn read for profile property, got: %s", sql)
 	}
-	if !strings.Contains(sql, "is_deleted = 0") {
-		t.Errorf("expected soft-delete guard, got: %s", sql)
+	// One guard per branch. A bare Contains would still pass with the
+	// external_id branch's guard dropped, re-admitting an erased profile's
+	// events into every profile-filtered insight.
+	if n := strings.Count(sql, "is_deleted = 0"); n != 3 {
+		t.Errorf("expected 3 soft-delete guards (one per branch), got %d: %s", n, sql)
 	}
 	// The non-empty guard belongs to the external_id branch alone; the id and
 	// alias branches must still resolve a profile whose external_id is empty.

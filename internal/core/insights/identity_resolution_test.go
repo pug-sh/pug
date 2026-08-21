@@ -2,6 +2,7 @@ package insights_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -182,6 +183,12 @@ func TestIdentityResolution(t *testing.T) {
 		if got != 2 {
 			t.Errorf("profile \"split\": expected 2 ir_views (anon-split + split_ext), got %v", got)
 		}
+
+		// The control guards the other direction: over-merging would fold
+		// whole's single view into another key.
+		if got, ok := topKValue(rows, "whole"); !ok || got != 1 {
+			t.Errorf("profile \"whole\": expected 1 ir_view, got %v (ok=%v)", got, ok)
+		}
 	})
 
 	t.Run("topk_cookieless_never_merges", func(t *testing.T) {
@@ -194,6 +201,142 @@ func TestIdentityResolution(t *testing.T) {
 		if got, ok := topKValue(rows, "split"); !ok || got != 2 {
 			t.Errorf("profile \"split\": expected 2 with cookieless included, got %v (present=%v) — "+
 				"cookieless traffic must not be absorbed into a profile", got, ok)
+		}
+	})
+
+	// First-touch breakdown attribution is now per canonical person, not per
+	// distinct_id: split lands as anon-split (US) and purchases as split_ext
+	// (DE), so the whole chain is attributed US. Unstitched this was US 1/1/0
+	// plus a stray DE 0/0/1.
+	t.Run("funnel_breakdown_attributes_to_the_person", func(t *testing.T) {
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("ir_landing")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("ir_add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("ir_purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				},
+				Breakdowns: []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			},
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 6, 2, 0, 0, 0, 0, time.UTC)),
+			},
+		}
+
+		q, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+		rows, err := executor.QueryFunnel(ctx, testProjectID, q)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		byBucket := map[string][]float64{}
+		for _, r := range rows {
+			bucket := ""
+			if len(r.Breakdowns) > 0 {
+				bucket = r.Breakdowns[0]
+			}
+			for len(byBucket[bucket]) <= int(r.StepIndex) {
+				byBucket[bucket] = append(byBucket[bucket], 0)
+			}
+			byBucket[bucket][r.StepIndex] = r.Value
+		}
+
+		// split and whole both attribute to US and both reach the final step.
+		want := []float64{2, 2, 2}
+		if got := byBucket["US"]; !slices.Equal(got, want) {
+			t.Errorf("US bucket = %v, want %v — first-touch must follow the person, "+
+				"so split's DE purchase counts under its US landing", got, want)
+		}
+		if got, ok := byBucket["DE"]; ok {
+			t.Errorf("DE bucket = %v, want absent — split_ext's purchase belongs to the "+
+				"person attributed at anon-split's first touch, not its own value", got)
+		}
+	})
+
+	// Trends UNIQUE_USERS deliberately does NOT stitch — the hottest path, where
+	// pre- and post-signup sessions arguably should count separately. Pinned so
+	// extending the identity join to trends is a decision, not an accident.
+	t.Run("trends_unique_users_deliberately_unstitched", func(t *testing.T) {
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("ir_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
+				},
+			},
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 6, 20, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 6, 21, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery: %v", err)
+		}
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
+		if err != nil {
+			t.Fatalf("QueryTrends: %v", err)
+		}
+
+		var total float64
+		for _, r := range rows {
+			total += r.Value
+		}
+		// Raw distinct_ids: anon-split, split_ext, whole_ext, other_ext
+		// (cookieless-abc excluded by default). Stitching would report 3.
+		if total != 4 {
+			t.Errorf("trends UNIQUE_USERS: expected 4 raw distinct_ids, got %v — trends counts "+
+				"distinct_id, not the canonical person; see the identity-resolution docs", total)
+		}
+	})
+
+	// The timing builder runs two identity-joined scans and this PR made both
+	// share one filter condition. A filter that reached only one scan would
+	// silently drop users from timing while funnel counts stayed right.
+	t.Run("funnel_timing_with_profile_filter", func(t *testing.T) {
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+				IncludeStepTiming: proto.Bool(true),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("irf_landing")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("irf_purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				},
+				FilterGroups: planProGroups(),
+			},
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 6, 3, 0, 0, 0, 0, time.UTC)),
+			},
+		}
+
+		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelTimingQuery: %v", err)
+		}
+		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, q)
+		if err != nil {
+			t.Fatalf("QueryFunnelUserEvents: %v", err)
+		}
+
+		// split (pro) lands as anon-split and purchases as split_ext, so only the
+		// stitched key has both steps; other (free) is filtered out entirely.
+		if len(users) != 1 {
+			t.Fatalf("expected 1 user, got %d: %+v", len(users), users)
+		}
+		if users[0].UserKey != "split" {
+			t.Errorf("UserKey = %q, want \"split\" — the filter must apply to both scans "+
+				"and both must key on the canonical person", users[0].UserKey)
+		}
+		if len(users[0].Times) != 2 {
+			t.Errorf("expected 2 timed events for the stitched person, got %d", len(users[0].Times))
 		}
 	})
 
@@ -523,46 +666,52 @@ func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClick
 		}
 	}
 
+	// $country differs across split's two ids so first-touch breakdown
+	// attribution is observable: anon-split (US) is the earlier id, split_ext
+	// (DE) the later one.
+	us := map[string]string{"$country": "US"}
+	de := map[string]string{"$country": "DE"}
 	events := []struct {
 		distinctID string
 		kind       string
 		day, hour  int
+		props      map[string]string
 	}{
-		{"anon-split", "ir_landing", 1, 10},
-		{"anon-split", "ir_add_to_cart", 1, 11},
-		{"split_ext", "ir_purchase", 1, 12},
-		{"whole_ext", "ir_landing", 1, 10},
-		{"whole_ext", "ir_add_to_cart", 1, 11},
-		{"whole_ext", "ir_purchase", 1, 12},
+		{"anon-split", "ir_landing", 1, 10, us},
+		{"anon-split", "ir_add_to_cart", 1, 11, us},
+		{"split_ext", "ir_purchase", 1, 12, de},
+		{"whole_ext", "ir_landing", 1, 10, us},
+		{"whole_ext", "ir_add_to_cart", 1, 11, us},
+		{"whole_ext", "ir_purchase", 1, 12, us},
 
-		{"anon-split", "ir_signup", 10, 10},
-		{"split_ext", "ir_login", 11, 10},
-		{"whole_ext", "ir_signup", 10, 10},
-		{"whole_ext", "ir_login", 11, 10},
+		{"anon-split", "ir_signup", 10, 10, nil},
+		{"split_ext", "ir_login", 11, 10, nil},
+		{"whole_ext", "ir_signup", 10, 10, nil},
+		{"whole_ext", "ir_login", 11, 10, nil},
 
-		{"anon-split", "ir_view", 20, 10},
-		{"split_ext", "ir_view", 20, 11},
-		{"whole_ext", "ir_view", 20, 10},
-		{"other_ext", "ir_view", 20, 10},
-		{"cookieless-abc", "ir_view", 20, 10},
+		{"anon-split", "ir_view", 20, 10, nil},
+		{"split_ext", "ir_view", 20, 11, nil},
+		{"whole_ext", "ir_view", 20, 10, nil},
+		{"other_ext", "ir_view", 20, 10, nil},
+		{"cookieless-abc", "ir_view", 20, 10, nil},
 
 		// plan=pro is split (stitched across both ids) and not other.
-		{"anon-split", "irf_landing", 2, 10},
-		{"split_ext", "irf_purchase", 2, 11},
-		{"other_ext", "irf_landing", 2, 10},
-		{"other_ext", "irf_purchase", 2, 11},
+		{"anon-split", "irf_landing", 2, 10, nil},
+		{"split_ext", "irf_purchase", 2, 11, nil},
+		{"other_ext", "irf_landing", 2, 10, nil},
+		{"other_ext", "irf_purchase", 2, 11, nil},
 
-		{"anon-split", "irf_signup", 12, 10},
-		{"split_ext", "irf_login", 13, 10},
-		{"other_ext", "irf_signup", 12, 10},
-		{"other_ext", "irf_login", 13, 10},
+		{"anon-split", "irf_signup", 12, 10, nil},
+		{"split_ext", "irf_login", 13, 10, nil},
+		{"other_ext", "irf_signup", 12, 10, nil},
+		{"other_ext", "irf_login", 13, 10, nil},
 
-		{"anon-gone", "ird_view", 21, 10},
-		{"gone_ext", "ird_view", 21, 11},
+		{"anon-gone", "ird_view", 21, 10, nil},
+		{"gone_ext", "ird_view", 21, 11, nil},
 
-		{"anon-only", "ira_view", 22, 10},
-		{"anon-alias", "ira_view", 22, 11},
-		{"anon-free", "ira_view", 22, 10},
+		{"anon-only", "ira_view", 22, 10, nil},
+		{"anon-alias", "ira_view", 22, 11, nil},
+		{"anon-free", "ira_view", 22, 10, nil},
 	}
 	for _, e := range events {
 		if err := insertAutoEvent(ctx, ch.Conn,
@@ -571,9 +720,131 @@ func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClick
 			e.kind,
 			e.distinctID,
 			time.Date(2024, 6, e.day, e.hour, 0, 0, 0, time.UTC),
-			variantStringMap(nil),
+			variantStringMap(e.props),
 		); err != nil {
 			t.Fatalf("insert event %s/%s: %v", e.distinctID, e.kind, err)
 		}
 	}
+}
+
+// A distinct_id can map to two identity rows — one profile's external_id
+// colliding with another's alias. LEFT ANY JOIN keeps that from multiplying
+// event rows, but which profile wins is arbitrary, and this PR's builders run
+// two identity joins per query (retention: cohorts + return_events; funnel
+// timing: pre-filter + tagged). If those two ever disagreed the failure is
+// silent and total — retention drops to 0%, the person vanishes from timing.
+func TestIdentityResolutionCollision(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// "shared" is pa's external_id AND an alias of pb.
+	for _, p := range [][2]string{{"pa", "shared"}, {"pb", "pb_ext"}} {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time, insert_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			p[0], testProjectID, p[1], `{"plan":"pro"}`, uint8(0), now, now, now,
+		); err != nil {
+			t.Fatalf("insert profile %s: %v", p[0], err)
+		}
+	}
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"shared", "pb", "pb_ext", testProjectID,
+	); err != nil {
+		t.Fatalf("insert alias: %v", err)
+	}
+
+	for _, e := range [][2]any{{"irc_signup", 1}, {"irc_login", 2}} {
+		if err := insertAutoEvent(ctx, ch.Conn, testProjectID, uuid.New().String(),
+			e[0].(string), "shared",
+			time.Date(2024, 6, e[1].(int), 10, 0, 0, 0, time.UTC),
+			variantStringMap(nil),
+		); err != nil {
+			t.Fatalf("insert event %v: %v", e[0], err)
+		}
+	}
+
+	executor := insights.NewExecutor(ch.Conn)
+	window := &commonv1.TimeRange{
+		From: timestamppb.New(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)),
+		To:   timestamppb.New(time.Date(2024, 6, 4, 0, 0, 0, 0, time.UTC)),
+	}
+
+	t.Run("does_not_multiply_events", func(t *testing.T) {
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum(),
+				TopK: &insightsv1.TopKQuery{
+					Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+					Metric:    insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+					Limit:     proto.Int32(10),
+				},
+			},
+			TimeRange:   window,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+
+		q, err := insights.BuildTopKQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildTopKQuery: %v", err)
+		}
+		rows, err := executor.QueryTopK(ctx, testProjectID, q)
+		if err != nil {
+			t.Fatalf("QueryTopK: %v", err)
+		}
+
+		var total float64
+		for _, r := range rows {
+			total += r.Value
+		}
+		// 2 events. Without ANY, "shared" matches two identity rows and the
+		// join emits each event twice.
+		if total != 2 {
+			t.Errorf("total = %v, want 2 — a colliding distinct_id must not multiply "+
+				"event rows; is the join still LEFT ANY JOIN?", total)
+		}
+		if len(rows) != 1 {
+			t.Errorf("expected the collision to resolve to exactly 1 user key, got %d: %+v", len(rows), rows)
+		}
+	})
+
+	t.Run("both_joins_in_one_query_agree", func(t *testing.T) {
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("irc_signup")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("irc_login")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				},
+			},
+			TimeRange:   window,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+
+		q, err := insights.BuildRetentionQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildRetentionQuery: %v", err)
+		}
+		rows, err := executor.QueryRetention(ctx, testProjectID, q)
+		if err != nil {
+			t.Fatalf("QueryRetention: %v", err)
+		}
+
+		// cohorts and return_events each resolve "shared" independently. If they
+		// picked different profiles the join on user_key yields nothing.
+		var day1 float64
+		for _, r := range rows {
+			if r.Time.Sub(r.CohortTime) == 24*time.Hour {
+				day1 = r.Value
+			}
+		}
+		if day1 != 100 {
+			t.Errorf("day-1 retention = %v, want 100 — the cohorts and return_events "+
+				"joins must resolve a colliding distinct_id to the same person", day1)
+		}
+	})
 }

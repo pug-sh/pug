@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -308,10 +309,16 @@ func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (
 // profiles/profile_aliases tables directly and are unaffected by the alias.
 //
 // The IN set is the full identity set of every matching profile — id,
-// external_id, and alias ids. It restates profiles.IdentityUnionCTE rather
-// than referencing it: a Condition is a self-contained fragment with no CTE to
-// register against, and the property predicate filters profiles before the
-// union. Keep the two definitions in step.
+// external_id, and alias ids. It restates profiles.IdentityUnionCTE's id
+// sources rather than referencing it: a Condition is a self-contained fragment
+// with no CTE to register against, and the property predicate filters profiles
+// before the union. Keep the id sources in step.
+//
+// The two are NOT equivalent relations: this reads the raw profiles table
+// while IdentityUnionCTE reads latest_profiles (argMax by insert_time). Under
+// ReplacingMergeTree a superseded row still matches until the parts merge, so
+// a soft-deleted or since-changed profile can pass this filter while the CTE
+// correctly drops it.
 //
 // It generates: [alias.]distinct_id IN (
 //
@@ -326,7 +333,7 @@ func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (
 // )
 //
 // The non-empty external_id guard is scoped to that branch alone, mirroring
-// IdentityUnionCTE's per-value arrayFilter: an anonymous profile (null
+// IdentityUnionCTE's per-value arrayFilter: an anonymous profile (empty
 // external_id) still resolves through its own id and aliases.
 func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias string) (Condition, error) {
 	if projectID == "" {
@@ -345,6 +352,16 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 
 	externalIDCond := And(RawCond("p.external_id != ''"), innerCond)
 
+	// Each branch yields its predicate SQL and that predicate's args together,
+	// so the two can't drift apart: the placeholder count below is a backstop,
+	// and a count check cannot see a swapped pair.
+	branch := func(cond Condition) (string, []any) {
+		return cond.SQL(), append([]any{projectID}, cond.Args()...)
+	}
+	idSQL, idArgs := branch(innerCond)
+	extSQL, extArgs := branch(externalIDCond)
+	aliasInnerSQL, aliasInnerArgs := branch(innerCond)
+
 	sql := fmt.Sprintf(`%s IN (
 		SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
 		UNION ALL
@@ -353,14 +370,9 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 		SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id = ? AND pa.profile_id IN (
 			SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
 		)
-	)`, distinctIDCol, innerCond.SQL(), externalIDCond.SQL(), innerCond.SQL())
+	)`, distinctIDCol, idSQL, extSQL, aliasInnerSQL)
 
-	args := []any{projectID}
-	args = append(args, innerCond.Args()...)
-	args = append(args, projectID)
-	args = append(args, externalIDCond.Args()...)
-	args = append(args, projectID, projectID)
-	args = append(args, innerCond.Args()...)
+	args := slices.Concat(idArgs, extArgs, []any{projectID}, aliasInnerArgs)
 
 	if n := strings.Count(sql, "?"); n != len(args) {
 		return Condition{}, fmt.Errorf("internal: filter placeholder count mismatch (%d != %d)", n, len(args))

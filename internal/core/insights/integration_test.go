@@ -31,6 +31,10 @@ func TestIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	seedEvents(t, ctx, ch)
+	// Seeded up front, not inside the subtests that filter on profiles: every
+	// funnel/retention subtest is identity-resolved now, so a mid-run profile
+	// insert would make earlier and later subtests see different worlds.
+	seedIntegrationProfiles(t, ctx, ch)
 	executor := insights.NewExecutor(ch.Conn)
 
 	t.Run("trends_daily", func(t *testing.T) {
@@ -428,7 +432,6 @@ func TestIntegration(t *testing.T) {
 		// alice(pro): 3 page_views; bob(free): 2; charlie(no profile): 1.
 		// Plus 1 event from alias "alice_anon" which maps to alice (plan=pro).
 		// Filter plan=pro → alice's 3 events + 1 alias event = 4.
-		seedIntegrationProfiles(t, ctx, ch)
 
 		// Insert an event with an alias distinct_id to exercise the alias branch of the IN set.
 		if err := insertAutoEvent(ctx, ch.Conn,
@@ -2060,7 +2063,6 @@ func TestIntegration(t *testing.T) {
 	t.Run("top_k", func(t *testing.T) {
 		// Sept 2024 window, isolated from every other seed (Jan–Jun).
 		seedTopKEvents(t, ctx, ch)
-		seedIntegrationProfiles(t, ctx, ch)
 		topKWindow := &commonv1.TimeRange{
 			From: timestamppb.New(time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)),
 			To:   timestamppb.New(time.Date(2024, 9, 8, 0, 0, 0, 0, time.UTC)),

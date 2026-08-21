@@ -1043,7 +1043,8 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	}
 
 	// Both scans (cohorts and return_events) are identity-joined, so every
-	// event-scan condition binds "e" — a bare distinct_id is ambiguous there.
+	// event-scan condition binds "e" (see profiles.IdentityJoinedEvents — a
+	// missed alias resolves to events silently rather than erroring).
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "e")
 	if err != nil {
 		return nil, fmt.Errorf("retention: %w", err)

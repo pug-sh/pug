@@ -180,7 +180,7 @@ func TestFunnel(t *testing.T) {
 	if !strings.Contains(sql, "windowFunnel(") {
 		t.Errorf("expected windowFunnel() in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "events e LEFT ANY JOIN identity_union i ON i.distinct_id = e.distinct_id") {
+	if !strings.Contains(sql, "events e LEFT ANY JOIN identity_union i ON i.project_id = e.project_id AND i.distinct_id = e.distinct_id") {
 		t.Errorf("expected identity join in funnel CTE, got: %s", sql)
 	}
 	if !strings.Contains(sql, "if(i.profile_id = '', e.distinct_id, i.profile_id) AS user_key") {
@@ -386,7 +386,7 @@ func TestFunnelWithStepTiming(t *testing.T) {
 	if !strings.Contains(sql, "windowFunnel(") {
 		t.Errorf("expected windowFunnel in pre-filter, got: %s", sql)
 	}
-	if got := strings.Count(sql, "events e LEFT ANY JOIN identity_union i ON i.distinct_id = e.distinct_id"); got != 2 {
+	if got := strings.Count(sql, "events e LEFT ANY JOIN identity_union i ON i.project_id = e.project_id AND i.distinct_id = e.distinct_id"); got != 2 {
 		t.Errorf("expected identity join in both scans (pre-filter + tagged), got %d: %s", got, sql)
 	}
 	if !strings.Contains(sql, "GROUP BY user_key") {
@@ -506,7 +506,7 @@ func TestRetention(t *testing.T) {
 
 	// Both event scans resolve identity and key on the canonical user key, so a
 	// person who signs up between cohort entry and return stays one person.
-	if got := strings.Count(sql, "events e LEFT ANY JOIN identity_union i ON i.distinct_id = e.distinct_id"); got != 2 {
+	if got := strings.Count(sql, "events e LEFT ANY JOIN identity_union i ON i.project_id = e.project_id AND i.distinct_id = e.distinct_id"); got != 2 {
 		t.Errorf("expected identity join in both scans (cohorts + return_events), got %d: %s", got, sql)
 	}
 	if !strings.Contains(sql, "cohorts c INNER JOIN return_events re ON re.user_key = c.user_key") {
