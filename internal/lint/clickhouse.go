@@ -40,7 +40,7 @@ func runChqTenant(pass *analysis.Pass) (any, error) {
 			q := &queryScopes{pass: pass, scoping: scoping, conds: map[types.Object]bool{}}
 			q.collect(body)
 			for _, f := range q.froms {
-				if q.scoped[f.key] || (f.computed && q.covered(f.key)) || w.exempt(f.call) {
+				if q.scoped[f.key] || q.readsMountedCTE(f) || w.exempt(f.call) {
 					continue
 				}
 				pass.Reportf(f.call.Pos(),
@@ -62,20 +62,22 @@ type queryScopes struct {
 	scoping map[*types.Func]bool
 	conds   map[types.Object]bool // locals holding a project_id condition
 	scoped  map[any]bool
-	viaCTE  map[any]bool // declares a CTE that is itself scoped
-	mounted map[any]any  // sub-query -> the query that mounts it as a CTE
+	cteName map[any]map[string]bool // CTE names a query mounts
+	mounted map[any]any             // sub-query -> the query that mounts it
 	froms   []fromSite
 }
 
 type fromSite struct {
-	call     *ast.CallExpr
-	key      any
-	table    string
-	computed bool
+	call  *ast.CallExpr
+	key   any
+	table string
+	// lead is the relation a FROM fragment starts at when the analyzer cannot
+	// read the fragment whole; empty when the table name was a plain constant.
+	lead string
 }
 
 func (q *queryScopes) collect(body *ast.BlockStmt) {
-	q.scoped, q.viaCTE, q.mounted = map[any]bool{}, map[any]bool{}, map[any]any{}
+	q.scoped, q.cteName, q.mounted = map[any]bool{}, map[any]map[string]bool{}, map[any]any{}
 	bound := boundQueries(q.pass, body)
 	handled := map[*ast.CallExpr]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -112,10 +114,15 @@ func (q *queryScopes) noteConditions(n ast.Node) {
 			continue
 		}
 		for _, lhs := range assign.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok {
-				if v, ok := q.pass.TypesInfo.ObjectOf(id).(*types.Var); ok {
-					q.conds[v] = true
-				}
+			id, ok := lhs.(*ast.Ident)
+			// A query built with a project_id filter is a scoped query, not a
+			// condition; treating it as one would let it vouch for every chain
+			// it is later passed to.
+			if !ok || isQueryExpr(q.pass, id) {
+				continue
+			}
+			if v, ok := q.pass.TypesInfo.ObjectOf(id).(*types.Var); ok {
+				q.conds[v] = true
 			}
 		}
 	}
@@ -133,16 +140,17 @@ func (q *queryScopes) visitLink(link *ast.CallExpr, key any) {
 			q.scoped[key] = true
 		}
 	}
-	// Mounting runs both ways: a query that mounts a scoped CTE reads that CTE's
-	// already-filtered rows, and a CTE mounted on a scoped query is read only
-	// through it. Either vouches for a FROM fragment the analyzer cannot read —
-	// a literal tenant table still has to carry its own filter.
 	if isMethod(fn, chqPkg, "Query", "With") && len(link.Args) == 2 {
-		sub := q.exprKey(link.Args[1])
-		if q.scoped[sub] {
-			q.viaCTE[key] = true
+		if q.cteName[key] == nil {
+			q.cteName[key] = map[string]bool{}
 		}
-		q.mounted[sub] = key
+		// Both spellings, because a FROM naming the CTE may spell it as the same
+		// expression ("topGrainNames[i]") or as the value it evaluates to.
+		q.cteName[key][types.ExprString(link.Args[0])] = true
+		if name, ok := stringConst(q.pass, link.Args[0]); ok {
+			q.cteName[key][name] = true
+		}
+		q.mounted[q.exprKey(link.Args[1])] = key
 	}
 	if !isMethod(fn, chqPkg, "Query", "From") || len(link.Args) != 1 {
 		return
@@ -151,11 +159,11 @@ func (q *queryScopes) visitLink(link *ast.CallExpr, key any) {
 	if !ok {
 		// A built FROM fragment cannot be read here; it still has to be scoped,
 		// so treat it as tenant-scoped rather than skip.
-		q.froms = append(q.froms, fromSite{link, key, "a computed FROM fragment", true})
+		q.froms = append(q.froms, fromSite{link, key, "a computed FROM fragment", q.fragmentLead(link.Args[0])})
 		return
 	}
 	if names := fromTables(table); len(names) > 0 {
-		q.froms = append(q.froms, fromSite{link, key, strings.Join(names, ", "), false})
+		q.froms = append(q.froms, fromSite{link, key, strings.Join(names, ", "), ""})
 	}
 }
 
@@ -194,11 +202,37 @@ func (q *queryScopes) exprKey(e ast.Expr) any {
 	return e
 }
 
-// covered reports whether a query is filtered, or is read only through one that
-// is. Bounded by the number of keys, so a cyclic mount cannot spin.
-func (q *queryScopes) covered(key any) bool {
-	for range len(q.mounted) + 1 {
-		if q.scoped[key] || q.viaCTE[key] {
+// fragmentLead names the relation an unreadable FROM fragment starts at, when
+// enough of it is constant to tell. A fragment built by Sprintf gives up its
+// leading relation through the format string; anything else is matched by the
+// expression itself, which is how a CTE held in a slice is recognised. A
+// constant part that names a tenant table yields nothing: the fragment reads
+// that table whatever it leads with.
+func (q *queryScopes) fragmentLead(e ast.Expr) string {
+	if call, ok := e.(*ast.CallExpr); ok && isFunc(callee(q.pass, call), "fmt", "Sprintf") && len(call.Args) > 0 {
+		format, ok := stringConst(q.pass, call.Args[0])
+		if !ok || len(fromTables(format)) > 0 {
+			return ""
+		}
+		for _, tok := range sqlTokens(format) {
+			return tok
+		}
+		return ""
+	}
+	return types.ExprString(e)
+}
+
+// readsMountedCTE reports whether an unreadable FROM fragment leads with a CTE
+// this query mounts, or one mounted by a query that mounts this one. Nothing
+// else clears it: a query that merely sits beside a filtered CTE is still
+// reading whatever its own fragment names. Bounded by the number of keys, so a
+// cyclic mount cannot spin.
+func (q *queryScopes) readsMountedCTE(f fromSite) bool {
+	if f.lead == "" {
+		return false
+	}
+	for key := f.key; ; {
+		if q.cteName[key][f.lead] {
 			return true
 		}
 		next, ok := q.mounted[key]
@@ -207,7 +241,6 @@ func (q *queryScopes) covered(key any) bool {
 		}
 		key = next
 	}
-	return false
 }
 
 func (q *queryScopes) isScopingExpr(e ast.Expr) bool {
@@ -312,15 +345,19 @@ func isQueryExpr(pass *analysis.Pass, e ast.Expr) bool {
 func fromTables(from string) []string {
 	var out []string
 	seen := map[string]bool{}
-	for _, tok := range strings.FieldsFunc(from, func(r rune) bool {
-		return unicode.IsSpace(r) || strings.ContainsRune("(),", r)
-	}) {
+	for _, tok := range sqlTokens(from) {
 		if tenantTables[tok] && !seen[tok] {
 			seen[tok] = true
 			out = append(out, strconv.Quote(tok))
 		}
 	}
 	return out
+}
+
+func sqlTokens(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("(),", r)
+	})
 }
 
 // scopingFuncs are the package's functions that build a project_id filter. The

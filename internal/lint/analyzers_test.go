@@ -172,7 +172,11 @@ func lintFixtureExempt(ctx context.Context) error {
 
 const fixtureChqTenant = `package fixtures
 
-import chq "github.com/pug-sh/pug/internal/core/clickhouse"
+import (
+	"fmt"
+
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+)
 
 func leaky() *chq.Query {
 	return chq.NewQuery().Select("count()").From("events")
@@ -232,19 +236,31 @@ func scopedInALaterStatement(projectID string) *chq.Query {
 	return q
 }
 
+func metaExpr() string {
+	return "SELECT 1 AS event_index"
+}
+
+// A fragment leading with a CTE this query mounts reads that CTE's rows.
 func scopedThroughItsCTE(projectID string) *chq.Query {
+	agg := chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID))
+	return chq.NewQuery().With("agg", agg).From(fmt.Sprintf("agg a CROSS JOIN (%s) AS s", metaExpr()))
+}
+
+// Mounting a scoped CTE says nothing about a fragment that reads a table.
+func mountingAScopedCTEIsNotEnough(projectID string) *chq.Query {
 	agg := chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID))
 	return chq.NewQuery().With("agg", agg).From(joinFragment())
 }
 
 // A CTE is read only through the query that mounts it, even from a slice.
 func mountedOnAScopedQuery(projectID string) *chq.Query {
+	names := make([]string, 1)
 	subs := make([]*chq.Query, 1)
-	subs[0] = chq.NewQuery().From(joinFragment())
-	return chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID)).With("sub", subs[0])
+	names[0], subs[0] = "sub_0", chq.NewQuery().From(names[0])
+	return chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID)).With(names[0], subs[0])
 }
 
-// Mounting excuses a fragment that cannot be read, never a named table.
+// Mounting excuses a fragment that names the CTE, never a named table.
 func mountingDoesNotExcuseALiteralTable(projectID string) *chq.Query {
 	sub := chq.NewQuery().From("profiles")
 	return chq.NewQuery().From("events").Where(chq.Eq("project_id", projectID)).With("sub", sub)
@@ -254,12 +270,13 @@ func mountingDoesNotExcuseALiteralTable(projectID string) *chq.Query {
 func TestChqTenant(t *testing.T) {
 	got := analyzeFixture(t, lint.ChqTenant, "internal/lint/fixtures", fixtureChqTenant)
 	want := []string{
-		`27: selectsButNeverFilters selects from tenant-scoped table "events" without a project_id filter`,
-		"35: computedFromIsNotAPass selects from tenant-scoped table a computed FROM fragment without a project_id filter",
-		`49: siblingQueryIsNotVouchedFor selects from tenant-scoped table "profiles" without a project_id filter`,
-		`54: joinedTenantTable selects from tenant-scoped table "events" without a project_id filter`,
-		`6: leaky selects from tenant-scoped table "events" without a project_id filter`,
-		`77: mountingDoesNotExcuseALiteralTable selects from tenant-scoped table "profiles" without a project_id filter`,
+		`10: leaky selects from tenant-scoped table "events" without a project_id filter`,
+		`31: selectsButNeverFilters selects from tenant-scoped table "events" without a project_id filter`,
+		"39: computedFromIsNotAPass selects from tenant-scoped table a computed FROM fragment without a project_id filter",
+		`53: siblingQueryIsNotVouchedFor selects from tenant-scoped table "profiles" without a project_id filter`,
+		`58: joinedTenantTable selects from tenant-scoped table "events" without a project_id filter`,
+		"80: mountingAScopedCTEIsNotEnough selects from tenant-scoped table a computed FROM fragment without a project_id filter",
+		`93: mountingDoesNotExcuseALiteralTable selects from tenant-scoped table "profiles" without a project_id filter`,
 	}
 	assertDiagnostics(t, got, want)
 }
