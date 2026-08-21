@@ -18,7 +18,7 @@
 ARG CMD=server
 
 # ---- build ----
-FROM --platform=$BUILDPLATFORM golang:1.26.3-trixie AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.6-trixie AS build
 WORKDIR /src
 
 # Module download as its own cached layer (only re-runs when go.mod/go.sum change).
