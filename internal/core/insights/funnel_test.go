@@ -18,19 +18,19 @@ func TestComputeFunnelTiming(t *testing.T) {
 	users := []insights.FunnelUserEvents{
 		{
 			// User completes all 3 steps: signup(t0) → cart(t1) → purchase(t2)
-			DistinctID:  "user-1",
+			UserKey:     "user-1",
 			Times:       []time.Time{t0, t1, t2},
 			StepMatches: []int64{0, 1, 2},
 		},
 		{
 			// User completes only step 0 and 1
-			DistinctID:  "user-2",
+			UserKey:     "user-2",
 			Times:       []time.Time{t0, t1},
 			StepMatches: []int64{0, 1},
 		},
 		{
 			// User completes only step 0
-			DistinctID:  "user-3",
+			UserKey:     "user-3",
 			Times:       []time.Time{t0},
 			StepMatches: []int64{0},
 		},
@@ -100,7 +100,7 @@ func TestComputeFunnelTiming_ConversionWindow(t *testing.T) {
 
 	users := []insights.FunnelUserEvents{
 		{
-			DistinctID:  "user-1",
+			UserKey:     "user-1",
 			Times:       []time.Time{t0, t1, t2},
 			StepMatches: []int64{0, 1, 2},
 		},
@@ -129,7 +129,7 @@ func TestComputeFunnelTiming_WindowExactBoundary(t *testing.T) {
 
 	users := []insights.FunnelUserEvents{
 		{
-			DistinctID:  "user-1",
+			UserKey:     "user-1",
 			Times:       []time.Time{t0, t1},
 			StepMatches: []int64{0, 1},
 		},
@@ -156,7 +156,7 @@ func TestComputeFunnelTiming_GreedyOutOfOrderSteps(t *testing.T) {
 		{
 			// Events: [step1_match, step0_match, step1_match]
 			// Greedy walk: skip step1@t0, match step0@t1, match step1@t2
-			DistinctID:  "user-1",
+			UserKey:     "user-1",
 			Times:       []time.Time{t0, t1, t2},
 			StepMatches: []int64{1, 0, 1},
 		},
@@ -218,7 +218,7 @@ func TestComputeFunnelTiming_EmptyKindsReturnsError(t *testing.T) {
 func TestComputeFunnelTiming_MismatchedArraysReturnsError(t *testing.T) {
 	users := []insights.FunnelUserEvents{
 		{
-			DistinctID:  "user-1",
+			UserKey:     "user-1",
 			Times:       []time.Time{time.Now(), time.Now()},
 			StepMatches: []int64{0}, // length 1 vs 2
 		},
@@ -246,12 +246,12 @@ func TestComputeFunnelTiming_WithBreakdowns(t *testing.T) {
 
 	users := []insights.FunnelUserEvents{
 		// US users: both complete both steps
-		{DistinctID: "user-1", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
-		{DistinctID: "user-2", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{UserKey: "user-1", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{UserKey: "user-2", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
 		// DE user: only completes step 0
-		{DistinctID: "user-3", Times: []time.Time{t0}, StepMatches: []int64{0}, Breakdowns: []string{"DE"}},
+		{UserKey: "user-3", Times: []time.Time{t0}, StepMatches: []int64{0}, Breakdowns: []string{"DE"}},
 		// DE user: completes both steps (2-hour gap)
-		{DistinctID: "user-4", Times: []time.Time{t0, t2}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+		{UserKey: "user-4", Times: []time.Time{t0, t2}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
 	}
 
 	kinds := []string{"signup", "purchase"}
@@ -317,7 +317,7 @@ func TestComputeFunnelTiming_SameKindSteps(t *testing.T) {
 	users := []insights.FunnelUserEvents{
 		{
 			// Both events tagged as step 0 by multiIf (same kind)
-			DistinctID:  "user-1",
+			UserKey:     "user-1",
 			Times:       []time.Time{t0, t1},
 			StepMatches: []int64{0, 0},
 		},
@@ -342,9 +342,9 @@ func TestComputeFunnelTiming_WithBreakdownsAndWindow(t *testing.T) {
 
 	users := []insights.FunnelUserEvents{
 		// US: completes within 1-hour window
-		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(30 * time.Minute)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{UserKey: "u1", Times: []time.Time{t0, t0.Add(30 * time.Minute)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
 		// DE: step 1 exceeds the 1-hour window → user counted at step 0 only
-		{DistinctID: "u2", Times: []time.Time{t0, t0.Add(2 * time.Hour)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+		{UserKey: "u2", Times: []time.Time{t0, t0.Add(2 * time.Hour)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
 	}
 
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 3600, 1)
@@ -368,8 +368,8 @@ func TestComputeFunnelTiming_MultiBreakdowns(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 
 	users := []insights.FunnelUserEvents{
-		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(time.Hour)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US", "Chrome"}},
-		{DistinctID: "u2", Times: []time.Time{t0, t0.Add(time.Hour)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US", "Safari"}},
+		{UserKey: "u1", Times: []time.Time{t0, t0.Add(time.Hour)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US", "Chrome"}},
+		{UserKey: "u2", Times: []time.Time{t0, t0.Add(time.Hour)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US", "Safari"}},
 	}
 
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 0, 2)
@@ -396,7 +396,7 @@ func TestComputeFunnelTiming_EmptyStringBreakdownNoCollision(t *testing.T) {
 
 	users := []insights.FunnelUserEvents{
 		{
-			DistinctID:  "u1",
+			UserKey:     "u1",
 			Times:       []time.Time{t0, t1},
 			StepMatches: []int64{0, 1},
 			Breakdowns:  []string{""},
@@ -426,8 +426,8 @@ func TestComputeFunnelTiming_BreakdownLengthMismatch(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 
 	users := []insights.FunnelUserEvents{
-		{DistinctID: "u1", Times: []time.Time{t0}, StepMatches: []int64{0}, Breakdowns: []string{"US"}},
-		{DistinctID: "u2", Times: []time.Time{t0}, StepMatches: []int64{0}, Breakdowns: []string{"DE", "Chrome"}},
+		{UserKey: "u1", Times: []time.Time{t0}, StepMatches: []int64{0}, Breakdowns: []string{"US"}},
+		{UserKey: "u2", Times: []time.Time{t0}, StepMatches: []int64{0}, Breakdowns: []string{"DE", "Chrome"}},
 	}
 
 	if _, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a"}, 0, 1); err == nil {
@@ -439,9 +439,9 @@ func TestComputeFunnelTiming_MedianOddCount(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	// 3 users with step-1 conversion times: 60s, 120s, 180s
 	users := []insights.FunnelUserEvents{
-		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
-		{DistinctID: "u2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}},
-		{DistinctID: "u3", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u3", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}},
 	}
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 0, 0)
 	if err != nil {
@@ -460,10 +460,10 @@ func TestComputeFunnelTiming_MedianEvenCount(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	// 4 users with step-1 conversion times: 60s, 120s, 180s, 240s → median = (120+180)/2 = 150
 	users := []insights.FunnelUserEvents{
-		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
-		{DistinctID: "u2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}},
-		{DistinctID: "u3", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}},
-		{DistinctID: "u4", Times: []time.Time{t0, t0.Add(240 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u3", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u4", Times: []time.Time{t0, t0.Add(240 * time.Second)}, StepMatches: []int64{0, 1}},
 	}
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 0, 0)
 	if err != nil {
@@ -485,7 +485,7 @@ func TestComputeFunnelTiming_DistributionBuckets(t *testing.T) {
 	users := make([]insights.FunnelUserEvents, len(deltaSecs))
 	for i, d := range deltaSecs {
 		users[i] = insights.FunnelUserEvents{
-			DistinctID:  "u" + string(rune('0'+i)),
+			UserKey:     "u" + string(rune('0'+i)),
 			Times:       []time.Time{t0, t0.Add(time.Duration(d) * time.Second)},
 			StepMatches: []int64{0, 1},
 		}
@@ -508,7 +508,7 @@ func TestComputeFunnelTiming_DistributionBuckets(t *testing.T) {
 func TestComputeFunnelTiming_StepZeroHasNoStats(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	users := []insights.FunnelUserEvents{
-		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
 	}
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 0, 0)
 	if err != nil {
@@ -524,7 +524,7 @@ func TestComputeFunnelTiming_NoConvertersStepHasZeroDistribution(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	// User only completes step 0; step 1 has count=0
 	users := []insights.FunnelUserEvents{
-		{DistinctID: "u1", Times: []time.Time{t0}, StepMatches: []int64{0}},
+		{UserKey: "u1", Times: []time.Time{t0}, StepMatches: []int64{0}},
 	}
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 0, 0)
 	if err != nil {
@@ -565,7 +565,7 @@ func TestComputeFunnelTiming_MidFunnelZeroConvertersHasZeroDistribution(t *testi
 	// 3-step funnel; user only completes step 0, so step 1 (mid-funnel) and step 2 (last)
 	// both have zero converters by greedy semantics.
 	users := []insights.FunnelUserEvents{
-		{DistinctID: "u1", Times: []time.Time{t0}, StepMatches: []int64{0}},
+		{UserKey: "u1", Times: []time.Time{t0}, StepMatches: []int64{0}},
 	}
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b", "c"}, 0, 0)
 	if err != nil {
@@ -599,11 +599,11 @@ func TestComputeFunnelTiming_WindowTruncationPerBreakdownIsolatesTiming(t *testi
 
 	users := []insights.FunnelUserEvents{
 		// US: u1 within window (10s delta), u2 truncated (120s delta)
-		{DistinctID: "us-1", Times: []time.Time{t0, t0.Add(10 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
-		{DistinctID: "us-2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{UserKey: "us-1", Times: []time.Time{t0, t0.Add(10 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{UserKey: "us-2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
 		// DE: d1 within window (50s delta), d2 truncated (180s delta)
-		{DistinctID: "de-1", Times: []time.Time{t0, t0.Add(50 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
-		{DistinctID: "de-2", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+		{UserKey: "de-1", Times: []time.Time{t0, t0.Add(50 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+		{UserKey: "de-2", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
 	}
 
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, windowSec, 1)
@@ -666,13 +666,13 @@ func TestComputeFunnelTiming_PerBreakdownTimingConvergence(t *testing.T) {
 
 	users := []insights.FunnelUserEvents{
 		// US: deltas 10s and 20s → median 15, p95 20, both in bucket 0 ("0-30s")
-		{DistinctID: "us-1", Times: []time.Time{t0, t0.Add(10 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
-		{DistinctID: "us-2", Times: []time.Time{t0, t0.Add(20 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{UserKey: "us-1", Times: []time.Time{t0, t0.Add(10 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{UserKey: "us-2", Times: []time.Time{t0, t0.Add(20 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
 
 		// DE: deltas 600s, 1200s, 7200s → median 1200, p95 7200, distribution spans buckets 2/4/6
-		{DistinctID: "de-1", Times: []time.Time{t0, t0.Add(600 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
-		{DistinctID: "de-2", Times: []time.Time{t0, t0.Add(1200 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
-		{DistinctID: "de-3", Times: []time.Time{t0, t0.Add(7200 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+		{UserKey: "de-1", Times: []time.Time{t0, t0.Add(600 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+		{UserKey: "de-2", Times: []time.Time{t0, t0.Add(1200 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+		{UserKey: "de-3", Times: []time.Time{t0, t0.Add(7200 * time.Second)}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
 	}
 
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"signup", "purchase"}, 0, 1)
@@ -744,9 +744,9 @@ func TestComputeFunnelTiming_WindowTruncationExcludesFromTiming(t *testing.T) {
 		//   user-A: step 2 at t0+60s   (delta 30s, within window) → contributes
 		//   user-B: step 2 at t0+3700s (delta 3670s, EXCEEDS window) → truncated, excluded from step 2
 		//   user-C: step 2 at t0+90s   (delta 60s, within window) → contributes
-		{DistinctID: "user-A", Times: []time.Time{t0, t0.Add(30 * time.Second), t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1, 2}},
-		{DistinctID: "user-B", Times: []time.Time{t0, t0.Add(30 * time.Second), t0.Add(3700 * time.Second)}, StepMatches: []int64{0, 1, 2}},
-		{DistinctID: "user-C", Times: []time.Time{t0, t0.Add(30 * time.Second), t0.Add(90 * time.Second)}, StepMatches: []int64{0, 1, 2}},
+		{UserKey: "user-A", Times: []time.Time{t0, t0.Add(30 * time.Second), t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1, 2}},
+		{UserKey: "user-B", Times: []time.Time{t0, t0.Add(30 * time.Second), t0.Add(3700 * time.Second)}, StepMatches: []int64{0, 1, 2}},
+		{UserKey: "user-C", Times: []time.Time{t0, t0.Add(30 * time.Second), t0.Add(90 * time.Second)}, StepMatches: []int64{0, 1, 2}},
 	}
 
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b", "c"}, windowSec, 0)
