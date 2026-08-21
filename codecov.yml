@@ -6,5 +6,6 @@ ignore:
   - "**/*_templ.go"                # generated templ email templates
   - "cmd/**"                       # binary entrypoints and CLI wiring
   - "internal/testutil/**"         # test helpers, not product code
+  - "internal/lint/**"             # convention analyzers, not product code
   - "internal/app/seed/**"         # demo-traffic seeders, not product code
   - "internal/app/workers/demo/**" # demo-traffic generator, not product code

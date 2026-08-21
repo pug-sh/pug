@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
   GOMODCACHE: /home/runner/go/pkg/mod
   GOCACHE: /home/runner/.cache/go-build
@@ -19,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v7
         with:
@@ -49,7 +54,14 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
+      # Full history so --new-from-merge-base can resolve the branch point.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch base branch
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 
       - uses: actions/setup-go@v7
         with:
@@ -67,13 +79,45 @@ jobs:
       - name: Download modules and compile tools
         run: go mod download && go install tool
 
+      # Gates the diff, not the tree: anything this branch touches is held to
+      # the full ruleset, the rest of the tree's existing findings are not.
+      # On a push to main the merge base is HEAD, so this is a no-op there and
+      # the PR is the real gate. `make lint` runs the full sweep locally.
       - name: Lint
-        run: make lint
+        run: make lint-new
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            /home/runner/go/pkg/mod
+            /home/runner/.cache/go-build
+          key: go-${{ hashFiles('go.sum') }}
+          restore-keys: go-
+
+      - name: Download modules and compile tools
+        run: go mod download && go install tool
+
+      - name: Vulnerability scan
+        run: make vuln
 
   drift:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v7
         with:

@@ -1,0 +1,145 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - depguard
+    - copyloopvar
+    - errorlint
+    - exhaustive
+    - fatcontext
+    - gosec
+    - intrange
+    - modernize
+    - nilnesserr
+    - noctx
+    - perfsprint
+    - recvcheck
+    - sloglint
+    - spancheck
+    - testifylint
+    - usetesting
+
+  settings:
+    depguard:
+      rules:
+        # Layering is asserted over the shipped graph only; an integration test
+        # that drives a handler from core is wiring layers together on purpose.
+        core-is-transport-free:
+          files: ["**/internal/core/**", "!$test"]
+          deny:
+            - pkg: connectrpc.com/connect
+              desc: business logic must not know the RPC transport; handlers translate errors
+            - pkg: github.com/pug-sh/pug/internal/app/
+              desc: core is imported by app, never the other way round
+        deps-is-domain-free:
+          files: ["**/internal/deps/**", "!**/internal/deps/email/**", "!$test"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/core
+              desc: infrastructure must not depend on domain logic
+            - pkg: github.com/pug-sh/pug/internal/app/
+              desc: infrastructure must not reach up into the app layer
+        # The email adapters are the one deps package that may see core, and only
+        # because core/email/spec is the port they implement.
+        deps-email-adapters:
+          files: ["**/internal/deps/email/**", "!$test"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/app/
+              desc: infrastructure must not reach up into the app layer
+        rpc-dashboard-boundary:
+          files: ["**/internal/app/server/rpc/dashboard/**", "!$test"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/sdk
+              desc: JWT handlers must not reuse code across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/shared
+              desc: JWT handlers must not reuse code across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/public
+              desc: JWT handlers must not reuse code across the auth boundary
+        rpc-sdk-boundary:
+          files: ["**/internal/app/server/rpc/sdk/**", "!$test"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/dashboard
+              desc: SDK handlers assume an untrusted caller; no reuse across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/shared
+              desc: SDK handlers assume an untrusted caller; no reuse across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/public
+              desc: SDK handlers assume an untrusted caller; no reuse across the auth boundary
+        rpc-shared-boundary:
+          files: ["**/internal/app/server/rpc/shared/**", "!$test"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/dashboard
+              desc: shared handlers must not reuse code across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/sdk
+              desc: shared handlers must not reuse code across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/public
+              desc: shared handlers must not reuse code across the auth boundary
+        # The unauthenticated boundary: nothing here may lean on a handler that
+        # assumed a caller was already authenticated.
+        rpc-public-boundary:
+          files: ["**/internal/app/server/rpc/public/**", "!$test"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/dashboard
+              desc: public handlers have no principal; no reuse across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/sdk
+              desc: public handlers have no principal; no reuse across the auth boundary
+            - pkg: github.com/pug-sh/pug/internal/app/server/rpc/shared
+              desc: public handlers have no principal; no reuse across the auth boundary
+        no-testutil-in-production:
+          files: ["!$test", "!**/internal/testutil/**"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/testutil
+              desc: the testcontainers harness must not link into a production binary
+    sloglint:
+      no-global: all
+      context: all
+      static-msg: false
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    exhaustive:
+      default-signifies-exhaustive: false
+      check:
+        - switch
+    spancheck:
+      checks:
+        - end
+        - record-error
+        - set-status
+    gosec:
+      excludes:
+        - G115
+    perfsprint:
+      strconcat: false
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    paths:
+      - internal/gen
+    rules:
+      # The convention checks read repo files by construction, and this package
+      # never links into a binary, so file-inclusion and symlink-TOCTOU findings
+      # have nothing to warn about here.
+      - path: ^internal/lint/
+        text: G304|G122
+        linters:
+          - gosec
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - contextcheck
+          - gosec
+          - noctx
+
+formatters:
+  enable:
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - internal/gen
