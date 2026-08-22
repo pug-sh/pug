@@ -10,11 +10,14 @@ import (
 	"github.com/pug-sh/pug/internal/lint"
 )
 
-// knownFindings are the violations that exist today, listed verbatim so a new
-// one fails the build and a fixed one fails too, prompting its removal here.
-// They come from one cause: devices, campaigns and scheduler are complete
-// worker packages that no command wires up and no image ships, and two of them
-// look up consumers that schema/nats/consumers.yaml never declared.
+// knownFindings pins work that is parked on purpose, not a cleanup backlog:
+// devices, campaigns and scheduler are complete worker packages held for a
+// later release, so no command wires them and no image ships them, and two look
+// up consumers schema/nats/consumers.yaml never declared. Listed verbatim so
+// drift fails the build in either direction — a new finding, or one of these
+// disappearing because the package was deleted rather than shipped. Their RPC
+// handlers (rpc/shared/campaigns, rpc/sdk/devices) are parked too but pinned by
+// nothing; no check covers an unmounted handler.
 var knownFindings = map[string][]string{
 	"nats-consumer-declared": {
 		`internal/app/workers/campaigns/worker.go: consumer "campaign-processor-durable" is not declared in schema/nats/consumers.yaml`,
