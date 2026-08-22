@@ -117,8 +117,9 @@ linters:
       ignore-check-signatures:
         - telemetry.RecordError
         - telemetry.RecordErrorOnSpan
-        # setupFailed is the cron pass's RecordError wrapper.
-        - setupFailed
+        # setupFailed is the cron pass's RecordError wrapper; spancheck matches the
+        # fully-qualified name, so an unqualified pattern would also match other packages.
+        - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
     gosec:
       excludes:
         - G115
