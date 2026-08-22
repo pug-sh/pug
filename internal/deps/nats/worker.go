@@ -298,7 +298,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 	for {
 		msg, err := msgs.Next()
 		if err != nil {
-			if err == jetstream.ErrMsgIteratorClosed {
+			if errors.Is(err, jetstream.ErrMsgIteratorClosed) {
 				return
 			}
 			consecutiveErrors++

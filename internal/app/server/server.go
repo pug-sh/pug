@@ -300,9 +300,12 @@ func start(ctx context.Context, d *deps) error {
 	// WithCorrelationID wraps the whole mux so a correlation id exists before the
 	// authn middleware runs on any route — auth rejections happen outside the
 	// Connect interceptor chain, and this lets them carry an error_id too.
+	// Only the header deadline is bounded: a full ReadTimeout would also cap the
+	// body, killing large SDK event batches on slow links.
 	server := &http.Server{
-		Addr:    ":" + d.port,
-		Handler: pogrpc.WithCorrelationID(mux),
+		Addr:              ":" + d.port,
+		Handler:           pogrpc.WithCorrelationID(mux),
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
 		return err
