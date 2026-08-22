@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 const exhaustiveIgnore = "//exhaustive:ignore"
@@ -109,7 +110,7 @@ func whyNotRejecting(pass *analysis.Pass, sw *ast.SwitchStmt) string {
 	switch {
 	case !allReject:
 		return "returns from its default without rejecting"
-	case !terminates(def.Body):
+	case !terminates(pass, def.Body):
 		// Rejecting on the paths that do return is not enough: a conditional
 		// return leaves a path that walks off the default and carries on.
 		return "has a default that can fall through"
@@ -119,8 +120,9 @@ func whyNotRejecting(pass *analysis.Pass, sw *ast.SwitchStmt) string {
 
 // terminates reports whether the body ends in something no path falls out of: a
 // return, which the caller has already proven rejecting, or a call that never
-// comes back.
-func terminates(body []ast.Stmt) bool {
+// comes back. Resolved by object identity, so a shadowed panic or a local named
+// os does not pass as one.
+func terminates(pass *analysis.Pass, body []ast.Stmt) bool {
 	last := body[len(body)-1]
 	if _, ok := last.(*ast.ReturnStmt); ok {
 		return true
@@ -133,19 +135,14 @@ func terminates(body []ast.Stmt) bool {
 	if !ok {
 		return false
 	}
-	if id, ok := call.Fun.(*ast.Ident); ok {
-		return id.Name == "panic"
+	if b, ok := typeutil.Callee(pass.TypesInfo, call).(*types.Builtin); ok {
+		return b.Name() == "panic"
 	}
-	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return false
+	fn := callee(pass, call)
+	if isFunc(fn, "os", "Exit") {
+		return true
 	}
-	pkg, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return false
-	}
-	return (pkg.Name == "os" && sel.Sel.Name == "Exit") ||
-		(pkg.Name == "log" && strings.HasPrefix(sel.Sel.Name, "Fatal"))
+	return fn != nil && fn.Pkg() != nil && fn.Pkg().Path() == "log" && strings.HasPrefix(fn.Name(), "Fatal")
 }
 
 // A bare return rejects nothing: it hands back whatever the named results or

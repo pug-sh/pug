@@ -54,14 +54,9 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      # Full history so --new-from-merge-base can resolve the branch point.
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Fetch base branch
-        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 
       - uses: actions/setup-go@v7
         with:

@@ -87,7 +87,8 @@ func TestShutdownOnExitDropsCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// Asserted inside the callback: ShutdownOnExit cancels on return.
+	// The callback is the only point the shutdown context is still live, so the
+	// assertions sit there.
 	called := false
 	ShutdownOnExit(ctx, func(c context.Context) error {
 		called = true
