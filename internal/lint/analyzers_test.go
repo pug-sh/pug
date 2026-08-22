@@ -463,6 +463,20 @@ func neitherReturnsNorPanics(k Kind) Kind {
 	}
 	return KindC
 }
+
+func fallsThroughPastRejection(k Kind) (Kind, error) {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		return KindA, nil
+	default:
+		if k == KindB {
+			return KindA, fmt.Errorf("unsupported kind: %v", k)
+		}
+		_ = k
+	}
+	return KindC, nil
+}
 `
 
 func TestExhaustiveIgnore(t *testing.T) {
@@ -470,7 +484,8 @@ func TestExhaustiveIgnore(t *testing.T) {
 	want := []string{
 		"101: //exhaustive:ignore on a switch that returns from its default without rejecting; name every member instead",
 		"114: //exhaustive:ignore on a switch that returns from its default without rejecting; name every member instead",
-		"126: //exhaustive:ignore on a switch that has a default that neither returns nor panics; name every member instead",
+		"126: //exhaustive:ignore on a switch that has a default that can fall through; name every member instead",
+		"137: //exhaustive:ignore on a switch that has a default that can fall through; name every member instead",
 		"34: //exhaustive:ignore on a switch that returns from its default without rejecting; name every member instead",
 		"44: //exhaustive:ignore on a switch that has an empty default; name every member instead",
 		"54: //exhaustive:ignore on a switch that has no default; name every member instead",

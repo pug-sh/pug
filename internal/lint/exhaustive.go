@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
+	"go/parser"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
@@ -17,7 +19,7 @@ const exhaustiveIgnore = "//exhaustive:ignore"
 
 var ExhaustiveIgnore = &analysis.Analyzer{
 	Name: "exhaustiveignore",
-	Doc:  "an //exhaustive:ignore is only valid on a switch whose default rejects: it panics, or every return in it yields zero values or an error",
+	Doc:  "an //exhaustive:ignore is only valid on a switch whose default rejects on every path: it panics, or ends in a return and every return in it yields zero values or an error",
 	Run:  runExhaustiveIgnore,
 }
 
@@ -90,14 +92,13 @@ func whyNotRejecting(pass *analysis.Pass, sw *ast.SwitchStmt) string {
 
 	// Every return must reject. Latching on the last one seen would let a real
 	// dispatch pass just by sitting above a rejecting fallback.
-	sawReturn, allReject := false, true
+	allReject := true
 	for _, stmt := range def.Body {
 		ast.Inspect(stmt, func(n ast.Node) bool {
 			switch x := n.(type) {
 			case *ast.FuncLit:
 				return false
 			case *ast.ReturnStmt:
-				sawReturn = true
 				if !rejectingResults(pass, x.Results) {
 					allReject = false
 				}
@@ -108,16 +109,23 @@ func whyNotRejecting(pass *analysis.Pass, sw *ast.SwitchStmt) string {
 	switch {
 	case !allReject:
 		return "returns from its default without rejecting"
-	case !sawReturn && !terminates(def.Body):
-		return "has a default that neither returns nor panics"
+	case !terminates(def.Body):
+		// Rejecting on the paths that do return is not enough: a conditional
+		// return leaves a path that walks off the default and carries on.
+		return "has a default that can fall through"
 	}
 	return ""
 }
 
-// terminates reports whether the body ends in a call that never returns, which
-// is the strongest rejection a default can make.
+// terminates reports whether the body ends in something no path falls out of: a
+// return, which the caller has already proven rejecting, or a call that never
+// comes back.
 func terminates(body []ast.Stmt) bool {
-	stmt, ok := body[len(body)-1].(*ast.ExprStmt)
+	last := body[len(body)-1]
+	if _, ok := last.(*ast.ReturnStmt); ok {
+		return true
+	}
+	stmt, ok := last.(*ast.ExprStmt)
 	if !ok {
 		return false
 	}
@@ -194,13 +202,18 @@ func checkExhaustiveIgnoreInTests(root string) ([]string, error) {
 		if strings.HasPrefix(rel(root, path), "internal/lint/") {
 			return nil
 		}
-		body, err := os.ReadFile(path)
+		// Parsed rather than grepped so a test holding the directive as fixture
+		// data is not accused of declaring one.
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			return err
 		}
-		for i, line := range strings.Split(string(body), "\n") {
-			if strings.Contains(line, exhaustiveIgnore) {
-				out = append(out, fmt.Sprintf("%s:%d: %s in a test is unchecked; name every member instead", rel(root, path), i+1, exhaustiveIgnore))
+		for _, g := range f.Comments {
+			for _, c := range g.List {
+				if strings.HasPrefix(c.Text, exhaustiveIgnore) {
+					out = append(out, fmt.Sprintf("%s:%d: %s in a test is unchecked; name every member instead", rel(root, path), fset.Position(c.Pos()).Line, exhaustiveIgnore))
+				}
 			}
 		}
 		return nil
