@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/pug-sh/pug/internal/core/email/spec"
 	"github.com/pug-sh/pug/internal/core/email/templates"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 type Config struct {
@@ -82,6 +85,9 @@ func NewServiceWithResolver(cfg Config, resolver ProviderResolver) (*Service, er
 func (s *Service) send(ctx context.Context, tenantID *string, msg Message) error {
 	provider, override, err := s.resolver.Resolve(ctx, tenantID)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to resolve email provider", slogx.Error(err),
+			slog.String("idempotency_key", msg.IdempotencyKey))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	if override.From != "" {
@@ -90,7 +96,14 @@ func (s *Service) send(ctx context.Context, tenantID *string, msg Message) error
 	if override.ReplyTo != "" {
 		msg.ReplyTo = override.ReplyTo
 	}
-	return provider.Send(ctx, msg)
+	if err := provider.Send(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "email provider failed to send", slogx.Error(err),
+			slog.String("idempotency_key", msg.IdempotencyKey),
+			slog.String("subject", msg.Subject))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	return nil
 }
 
 func (s *Service) baseMessage(idempotencyKey, to string) Message {
@@ -106,6 +119,9 @@ func (s *Service) SendMagicLink(ctx context.Context, emailAddr, token, idempoten
 	link := s.link("/magic-link", token)
 	htmlBody, text, err := s.renderer.MagicLink(ctx, link)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to render email", slogx.Error(err),
+			slog.String("template", "magic_link"))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	msg := s.baseMessage(idempotencyKey, emailAddr)
@@ -121,6 +137,9 @@ func (s *Service) SendOrgMemberInvite(ctx context.Context, orgID, emailAddr, org
 	safeInviter := sanitizeDisplay(inviterName)
 	htmlBody, text, err := s.renderer.Invite(ctx, safeOrg, safeInviter, link)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to render email", slogx.Error(err),
+			slog.String("template", "org_member_invite"))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	msg := s.baseMessage(idempotencyKey, emailAddr)
@@ -163,6 +182,9 @@ func sanitizeDisplay(s string) string {
 func (s *Service) SendTest(ctx context.Context, orgID, recipient, idempotencyKey string) error {
 	htmlBody, text, err := s.renderer.ProviderTest(ctx)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to render email", slogx.Error(err),
+			slog.String("template", "provider_test"))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	msg := s.baseMessage(idempotencyKey, recipient)

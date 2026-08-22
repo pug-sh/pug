@@ -50,7 +50,7 @@ func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyU
 	rows, err := s.ch.Query(ctx, meterQuery, from.UTC(), to.UTC())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to meter events", slogx.Error(err),
-			slog.Time("from", from), slog.Time("to", to))
+			slog.Time("from", from), slog.Time("to", to)) // puglint:exempt — chdb.Conn.Query recorded it on the query span
 		return nil, err
 	}
 	defer func() {
@@ -81,7 +81,7 @@ func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyU
 	}
 	// Recorded on the ClickHouse span by tracedRows.Err; log only.
 	if err := rows.Err(); err != nil {
-		slog.ErrorContext(ctx, "failed while iterating metered usage", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed while iterating metered usage", slogx.Error(err)) // puglint:exempt — tracedRows.Err recorded it on the ClickHouse span
 		return nil, err
 	}
 	return out, nil
@@ -122,7 +122,7 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 			failedChunkStart = start
 			slog.ErrorContext(ctx, "failed to upsert daily usage", slogx.Error(err),
 				slog.String("project_id", chunk[i].ProjectID),
-				slog.Time("day", chunk[i].Day))
+				slog.Time("day", chunk[i].Day)) // puglint:exempt — otelpgx records it on the batch span
 		})
 		// Exec's generated body closes the batch but throws Close's error away, and
 		// the trailing Sync/ReadyForQuery is read there rather than by any Exec. A
@@ -135,7 +135,7 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 			firstErr = closeErr
 			failedChunkStart = start
 			slog.ErrorContext(ctx, "daily usage batch failed at close", slogx.Error(closeErr),
-				slog.Int("chunk_start", start), slog.Int("chunk_size", len(chunk)))
+				slog.Int("chunk_start", start), slog.Int("chunk_size", len(chunk))) // puglint:exempt — otelpgx records it on the batch span
 		}
 	}
 	if firstErr != nil {

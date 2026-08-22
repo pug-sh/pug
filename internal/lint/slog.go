@@ -39,16 +39,22 @@ func runSlogxErr(pass *analysis.Pass) (any, error) {
 
 var RecordErr = &analysis.Analyzer{
 	Name: "recorderr",
-	Doc:  "slog.ErrorContext must be paired with telemetry.RecordError in the function that detects the error",
+	Doc:  "an error logged with slog.ErrorContext must be paired with telemetry.RecordError in the function that detects it",
 	Run:  runRecordErr,
 }
 
 func runRecordErr(pass *analysis.Pass) (any, error) {
-	if pass.Pkg.Path() == telemetryPkg {
+	// Entrypoints and package init run outside any span, so there is no trace for
+	// RecordError to reach.
+	if pass.Pkg.Path() == telemetryPkg || pass.Pkg.Name() == "main" {
 		return nil, nil
 	}
 	eachFile(pass, func(w *fileWalk, file *ast.File) {
+		inits := packageInitBodies(file)
 		eachFunc(file, func(name string, body *ast.BlockStmt) {
+			if inits[body] {
+				return
+			}
 			type site struct {
 				call  *ast.CallExpr
 				block *ast.BlockStmt
@@ -76,7 +82,9 @@ func runRecordErr(pass *analysis.Pass) (any, error) {
 				case *ast.CallExpr:
 					switch target := callee(pass, n); {
 					case isFunc(target, slogPkg, "ErrorContext"):
-						logged = append(logged, site{n, blocks[len(blocks)-1]})
+						if carriesError(pass, n) {
+							logged = append(logged, site{n, blocks[len(blocks)-1]})
+						}
 					case isFunc(target, telemetryPkg, "RecordError"), isFunc(target, telemetryPkg, "RecordErrorOnSpan"):
 						recorded[blocks[len(blocks)-1]] = true
 					}
@@ -94,6 +102,38 @@ func runRecordErr(pass *analysis.Pass) (any, error) {
 		})
 	})
 	return nil, nil
+}
+
+// packageInitBodies is the file's package-level init bodies. Receiver-checked
+// and keyed by body, so a method named init is still analyzed.
+func packageInitBodies(file *ast.File) map[*ast.BlockStmt]bool {
+	out := map[*ast.BlockStmt]bool{}
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "init" && fn.Body != nil {
+			out[fn.Body] = true
+		}
+	}
+	return out
+}
+
+// carriesError reports whether the log call has an error to record at all — an
+// ERROR line about a state change has nothing to pair with. Any error-typed
+// subexpression counts, and so does a spread argument list, which is opaque
+// here: the rule would rather ask for a needless pairing than miss one.
+func carriesError(pass *analysis.Pass, call *ast.CallExpr) bool {
+	if call.Ellipsis.IsValid() {
+		return true
+	}
+	found := false
+	for _, arg := range call.Args {
+		ast.Inspect(arg, func(n ast.Node) bool {
+			if e, ok := n.(ast.Expr); ok && isError(pass, e) {
+				found = true
+			}
+			return !found
+		})
+	}
+	return found
 }
 
 // recordedAtOrAbove reports whether a RecordError sits in this block or in one

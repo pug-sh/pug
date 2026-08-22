@@ -22,6 +22,8 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/sethvargo/go-envconfig"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 const (
@@ -86,6 +88,48 @@ const (
 // large tenant is minutes.
 const passTimeout = 30 * time.Minute
 
+const (
+	outcomeMetered     = "metered"
+	outcomeUnverified  = "unverified"
+	outcomeLockHeld    = "lock_held"
+	outcomeSetupFailed = "setup_failed"
+	outcomeFailed      = "failed"
+
+	reasonUnverifiedRead  = "unverified_read"
+	reasonUnknownProjects = "unknown_projects"
+)
+
+var (
+	passCounter        metric.Int64Counter
+	passDuration       metric.Float64Histogram
+	unrefreshedCounter metric.Int64Counter
+	droppedDayCounter  metric.Int64Counter
+)
+
+// Machine-readable companions to the pass's log lines. Registration errors are
+// dropped rather than fatal: the alert that matters is usage_computed_at going
+// stale (docs/architecture/usage.md section 7), which these only explain.
+func init() {
+	meter := otel.Meter("github.com/pug-sh/pug/internal/app/cron/usage")
+	passCounter, _ = meter.Int64Counter(
+		"usage.pass_total",
+		metric.WithDescription("Metering passes by outcome. metered and lock_held exit 0; unverified refreshed nothing and exits 0; setup_failed and failed exit non-zero. A telemetry setup failure emits no sample at all."),
+	)
+	passDuration, _ = meter.Float64Histogram(
+		"usage.pass_duration_seconds",
+		metric.WithUnit("s"),
+		metric.WithDescription("Wall time of one pass, tagged by outcome. Approaching passTimeout means every later pass finds the lock held and exits 0."),
+	)
+	unrefreshedCounter, _ = meter.Int64Counter(
+		"usage.unrefreshed_total",
+		metric.WithDescription("Passes that refreshed no period because the read could not be trusted. Any sustained non-zero rate means stamps are going stale behind a green CronJob."),
+	)
+	droppedDayCounter, _ = meter.Int64Counter(
+		"usage.dropped_days_total",
+		metric.WithDescription("Stored day cells reconciled away because ClickHouse no longer returns them. Expected on erasure or a dropped partition; also what a truncated read looks like."),
+	)
+}
+
 // setupFailed reports a dependency that would not come up. These all return
 // before the pass starts, so without an explicit log+record they reach only
 // main's stderr line — printed after closeOtel has swapped the handler back — and
@@ -118,6 +162,16 @@ func Run(ctx context.Context) error {
 
 	ctx, cancel := context.WithTimeout(ctx, passTimeout)
 	defer cancel()
+
+	// Registered after cancel so LIFO runs it first, on a context still live.
+	// Setup is the default: every return before the meter starts is one.
+	start := time.Now()
+	outcome := outcomeSetupFailed
+	defer func() {
+		attrs := metric.WithAttributes(attribute.String("outcome", outcome))
+		passCounter.Add(ctx, 1, attrs)
+		passDuration.Record(ctx, time.Since(start).Seconds(), attrs)
+	}()
 
 	var cfg Config
 	if err := envconfig.Process(ctx, &cfg); err != nil {
@@ -165,11 +219,13 @@ func Run(ctx context.Context) error {
 	// Logged here rather than in main, which runs after closeOtel has swapped the
 	// handler back to stderr.
 	// Recorded at the layer that detected it; this only reports the disposition.
+	outcome = outcomeFailed
 	if err := j.run(ctx); err != nil {
 		// Another pod is doing this work. Exit 0 — alerting on healthy overlap would
 		// alert on nothing — but say so, because "skipped" and "metered" are
 		// otherwise the same silent success.
 		if errors.Is(err, cron.ErrLockHeld) {
+			outcome = outcomeLockHeld
 			slog.InfoContext(ctx, "another pass holds the usage lock; nothing to do")
 			return nil
 		}
@@ -181,6 +237,10 @@ func Run(ctx context.Context) error {
 		telemetry.RecordErrorOnSpan(span, err)
 		return err
 	}
+	outcome = outcomeMetered
+	if j.unrefreshed {
+		outcome = outcomeUnverified
+	}
 	return nil
 }
 
@@ -189,6 +249,8 @@ type job struct {
 	state      *cron.State
 	pgW        *pgxpool.Pool
 	rescanDays int
+	// Set when meter refreshed no period, so Run does not label the pass metered.
+	unrefreshed bool
 }
 
 func (j *job) run(ctx context.Context) error {
@@ -249,6 +311,8 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 			slog.ErrorContext(ctx, "usage meter read nothing over stored days; refreshing no periods",
 				slogx.Error(err))
 			telemetry.RecordError(ctx, err)
+			unrefreshedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reasonUnverifiedRead)))
+			j.unrefreshed = true
 			return nil
 		}
 		slog.WarnContext(ctx, "usage meter read no cells and none are stored; treating the window as idle",
@@ -274,6 +338,8 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 			slog.ErrorContext(ctx, "usage meter read cells for no known project; refreshing no periods",
 				slogx.Error(err))
 			telemetry.RecordError(ctx, err)
+			unrefreshedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reasonUnknownProjects)))
+			j.unrefreshed = true
 			return nil
 		}
 		if known < int64(len(metered)) {
@@ -301,6 +367,7 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 				slog.Int64("dropped", dropped), slog.Int("metered_cells", len(usage)),
 				slog.Time("from", from), slog.Time("to", now))
 			telemetry.RecordError(ctx, err)
+			droppedDayCounter.Add(ctx, dropped)
 		}
 	}
 	// Stamping a read we would not reconcile on defers the next wide window 24h.
@@ -344,7 +411,7 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 	if failed > 0 {
 		// Each org's own failure was recorded at source; this reports the tally.
 		err := fmt.Errorf("usage meter left %d of %d orgs unrefreshed: %w", failed, len(windows), firstErr)
-		slog.ErrorContext(ctx, "failed to refresh period usage for some orgs", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to refresh period usage for some orgs", slogx.Error(err)) // puglint:exempt — each org's failure was recorded at source
 		return err
 	}
 

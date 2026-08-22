@@ -316,13 +316,13 @@ func start(ctx context.Context, d *deps) error {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err))
+			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err)) // puglint:exempt — no span at shutdown
 		}
 	}()
 
 	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt — no span at startup
 		return err
 	}
 

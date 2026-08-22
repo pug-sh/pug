@@ -15,7 +15,10 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
-func TestMain(m *testing.M) { testutil.Main(m) }
+func TestMain(m *testing.M) {
+	installTestMeterProvider()
+	testutil.Main(m)
+}
 
 // newJob builds a job with no ClickHouse, so metering cannot run. Tests that care
 // only about the scheduling gates use that to keep the pass cheap.
@@ -167,8 +170,23 @@ func TestMeterRefusesToReconcileWhenNoProjectIsKnown(t *testing.T) {
 	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), stranger, "user-1", "$pageview",
 		uuid.NewString(), nil, nil, now.Add(-time.Hour))
 
+	before, _ := unrefreshedCount(t, reasonUnknownProjects)
+
 	if err := j.meter(ctx, now); err != nil {
 		t.Fatalf("meter = %v, want nil (a bad pairing must not thrash the CronJob)", err)
+	}
+
+	// The pass exits 0, so this counter is the only machine signal that it
+	// verified nothing.
+	after, ok := unrefreshedCount(t, reasonUnknownProjects)
+	if !ok {
+		t.Fatal("usage.unrefreshed_total was never recorded")
+	}
+	if got := after - before; got != 1 {
+		t.Errorf("usage.unrefreshed_total{reason=%s} rose by %d, want 1", reasonUnknownProjects, got)
+	}
+	if !j.unrefreshed {
+		t.Error("j.unrefreshed = false; Run would label a pass that verified nothing as metered")
 	}
 
 	if got, ok := usageDayCount(t, pg, projectID, day); !ok || got != 42 {
@@ -538,8 +556,21 @@ func TestSuspiciousEmptyReadRefreshesNoPeriod(t *testing.T) {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
+	before, _ := unrefreshedCount(t, reasonUnverifiedRead)
+
 	if err := j.meter(ctx, now); err != nil {
 		t.Fatalf("meter: %v", err)
+	}
+
+	after, ok := unrefreshedCount(t, reasonUnverifiedRead)
+	if !ok {
+		t.Fatal("usage.unrefreshed_total was never recorded")
+	}
+	if got := after - before; got != 1 {
+		t.Errorf("usage.unrefreshed_total{reason=%s} rose by %d, want 1", reasonUnverifiedRead, got)
+	}
+	if !j.unrefreshed {
+		t.Error("j.unrefreshed = false; Run would label a pass that verified nothing as metered")
 	}
 
 	start, _ := coreusage.CalendarMonth(now)
@@ -573,8 +604,19 @@ func TestIdleEmptyReadStillRefreshesTheOrgPeriod(t *testing.T) {
 	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
 	orgID, _ := seedOrgProject(t, pg)
 
+	before, _ := unrefreshedCount(t, reasonUnverifiedRead)
+
 	if err := j.meter(ctx, now); err != nil {
 		t.Fatalf("meter: %v", err)
+	}
+
+	// Its suspicious twin above raises this; a verified idle read must not.
+	after, _ := unrefreshedCount(t, reasonUnverifiedRead)
+	if got := after - before; got != 0 {
+		t.Errorf("usage.unrefreshed_total{reason=%s} rose by %d on an idle read, want 0", reasonUnverifiedRead, got)
+	}
+	if j.unrefreshed {
+		t.Error("j.unrefreshed = true on a verified idle read; the pass should label as metered")
 	}
 
 	start, _ := coreusage.CalendarMonth(now)

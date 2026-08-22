@@ -20,31 +20,31 @@ func (c *Client) Unwrap() *redis.Client {
 func NewFromConfig(ctx context.Context, cfg *Config) (*Client, error) {
 	opts, err := redis.ParseURL(cfg.URL)
 	if err != nil {
-		slog.ErrorContext(ctx, "unable to parse redis URL", slogx.Error(err))
+		slog.ErrorContext(ctx, "unable to parse redis URL", slogx.Error(err)) // puglint:exempt — no span at startup
 		return nil, err
 	}
 
 	client := redis.NewClient(opts)
 
 	if err := redisotel.InstrumentTracing(client); err != nil {
-		slog.ErrorContext(ctx, "error instrumenting Redis tracing", slogx.Error(err))
+		slog.ErrorContext(ctx, "error instrumenting Redis tracing", slogx.Error(err)) // puglint:exempt — no span at startup
 		if closeErr := client.Close(); closeErr != nil {
-			slog.ErrorContext(ctx, "error closing redis after instrumentation failure", slogx.Error(closeErr))
+			slog.ErrorContext(ctx, "error closing redis after instrumentation failure", slogx.Error(closeErr)) // puglint:exempt — no span at startup
 		}
 		return nil, err
 	}
 	if err := redisotel.InstrumentMetrics(client); err != nil {
-		slog.ErrorContext(ctx, "error instrumenting Redis metrics", slogx.Error(err))
+		slog.ErrorContext(ctx, "error instrumenting Redis metrics", slogx.Error(err)) // puglint:exempt — no span at startup
 		if closeErr := client.Close(); closeErr != nil {
-			slog.ErrorContext(ctx, "error closing redis after instrumentation failure", slogx.Error(closeErr))
+			slog.ErrorContext(ctx, "error closing redis after instrumentation failure", slogx.Error(closeErr)) // puglint:exempt — no span at startup
 		}
 		return nil, err
 	}
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		slog.ErrorContext(ctx, "unable to connect to Redis", slogx.Error(err))
+		slog.ErrorContext(ctx, "unable to connect to Redis", slogx.Error(err)) // puglint:exempt — no span at startup
 		if closeErr := client.Close(); closeErr != nil {
-			slog.ErrorContext(ctx, "error closing redis after ping failure", slogx.Error(closeErr))
+			slog.ErrorContext(ctx, "error closing redis after ping failure", slogx.Error(closeErr)) // puglint:exempt — no span at startup
 		}
 		return nil, err
 	}
@@ -60,6 +60,6 @@ func (c *Client) Ping(ctx context.Context) error {
 func (c *Client) Close(ctx context.Context) {
 	slog.InfoContext(ctx, "Closing redis connection.")
 	if err := c.client.Close(); err != nil {
-		slog.ErrorContext(ctx, "error closing redis connection", slogx.Error(err))
+		slog.ErrorContext(ctx, "error closing redis connection", slogx.Error(err)) // puglint:exempt — no span at shutdown
 	}
 }

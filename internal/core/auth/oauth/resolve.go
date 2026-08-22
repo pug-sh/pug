@@ -70,6 +70,7 @@ func resolveAndFinalizeInTx(ctx context.Context, pool *pgxpool.Pool, provider Pr
 		if IsUniqueViolationOn(err, CustomerIdentitiesProviderSubjectUnique) {
 			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
 				slog.ErrorContext(ctx, "failed rolling back identity tx after provider-subject race", slogx.Error(rbErr))
+				telemetry.RecordError(ctx, rbErr)
 			}
 			lookedUp, lookupErr := lookupByProviderSubject(ctx, pool, provider, ident.Subject())
 			if lookupErr != nil {
@@ -151,6 +152,7 @@ func linkByEmailAndFinalize(ctx context.Context, pool *pgxpool.Pool, provider Pr
 		if IsUniqueViolationOn(err, CustomerIdentitiesProviderSubjectUnique) {
 			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
 				slog.ErrorContext(ctx, "failed rolling back oauth link retry tx", slogx.Error(rbErr))
+				telemetry.RecordError(ctx, rbErr)
 			}
 			lookedUp, lookupErr := lookupByProviderSubject(ctx, pool, provider, ident.Subject())
 			if lookupErr != nil {
