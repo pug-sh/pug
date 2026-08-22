@@ -168,10 +168,20 @@ linters:
         text: G118
         linters:
           - gosec
+      # startProducerSpan/startConsumerSpan hand the span back to the caller,
+      # where the deferred End() lives; spancheck can't follow it across the helper.
+      - path: ^internal/deps/nats/otel\.go$
+        text: span is unassigned
+        linters:
+          - spancheck
+      # A test asserting on a concrete *Error or on which context a callback saw
+      # is checking identity on purpose; wrapping is what it means to rule out.
       - path: _test\.go
         linters:
           - bodyclose
           - contextcheck
+          - errorlint
+          - fatcontext
           - gosec
           - noctx
 
