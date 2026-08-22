@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -9,9 +10,9 @@ import (
 	"github.com/rs/cors"
 )
 
-func WithCORS(allowedOrigins []string, connectHandler http.Handler) http.Handler {
+func WithCORS(ctx context.Context, allowedOrigins []string, connectHandler http.Handler) http.Handler {
 	if slices.Contains(allowedOrigins, "*") {
-		slog.Warn("CORS: using wildcard origin with credentials is insecure, set PUG_CORS_ORIGINS to specific origins in production")
+		slog.WarnContext(ctx, "CORS: using wildcard origin with credentials is insecure, set PUG_CORS_ORIGINS to specific origins in production")
 	}
 
 	c := cors.New(cors.Options{

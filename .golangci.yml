@@ -92,7 +92,8 @@ linters:
             - pkg: github.com/pug-sh/pug/internal/testutil
               desc: the testcontainers harness must not link into a production binary
     sloglint:
-      no-global: all
+      # no-global is deliberately unset: it wants a logger passed around, but
+      # pug calls slog.XxxContext directly everywhere. context is the rule we want.
       context: all
       static-msg: false
     errorlint:
