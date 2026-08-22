@@ -53,6 +53,7 @@ func buildSingleProfileFilterGroupCondition(group *profilesv1.FilterGroup) (chq.
 }
 
 func buildSingleProfileFilterCondition(f *commonv1.PropertyFilter) (chq.Condition, error) {
+	//exhaustive:ignore a source this builder has no expression for is rejected, not guessed
 	switch f.GetSource() {
 	case commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED, commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		return chq.ProfilePropertyCondition(f)

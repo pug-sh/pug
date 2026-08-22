@@ -82,3 +82,30 @@ func TestOnceShutdownUsesFirstContext(t *testing.T) {
 		t.Fatal("expected onceShutdown to execute with the first caller context")
 	}
 }
+
+func TestShutdownOnExitDropsCallerCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Asserted inside the callback: ShutdownOnExit cancels on return.
+	called := false
+	ShutdownOnExit(ctx, func(c context.Context) error {
+		called = true
+		if err := c.Err(); err != nil {
+			t.Errorf("shutdown context inherited cancellation: %v", err)
+		}
+		deadline, ok := c.Deadline()
+		if !ok {
+			t.Error("expected a shutdown deadline")
+			return nil
+		}
+		if budget := time.Until(deadline); budget <= 0 || budget > exitShutdownTimeout {
+			t.Errorf("deadline budget = %v, want (0, %v]", budget, exitShutdownTimeout)
+		}
+		return nil
+	})
+
+	if !called {
+		t.Fatal("shutdown func was not called")
+	}
+}

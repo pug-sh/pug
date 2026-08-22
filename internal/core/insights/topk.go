@@ -153,6 +153,7 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 	tk := req.GetSpec().GetTopK()
 
 	var dimExpr string
+	//exhaustive:ignore a dimension with no expression is rejected, not guessed
 	switch tk.GetDimension() {
 	case insightsv1.TopKQuery_DIMENSION_PROPERTY:
 		if tk.GetProperty() == "" {
@@ -366,6 +367,7 @@ func topKUserMetricExprs(tk *insightsv1.TopKQuery) (topKUserMetric, error) {
 	}
 	num := "toFloat64OrNull(" + chq.PropertyExprAliased(tk.GetMetricProperty(), "e") + ")"
 
+	//exhaustive:ignore a metric with no per-user shape is rejected, not defaulted
 	switch metric {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
 		return topKUserMetric{

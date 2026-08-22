@@ -79,12 +79,12 @@ jobs:
       - name: Download modules and compile tools
         run: go mod download && go install tool
 
-      # Gates the diff, not the tree: anything this branch touches is held to
-      # the full ruleset, the rest of the tree's existing findings are not.
-      # On a push to main the merge base is HEAD, so this is a no-op there and
-      # the PR is the real gate. `make lint` runs the full sweep locally.
+      # Gates the whole tree, not just the diff: --new-from-merge-base filters by
+      # the line a finding lands on, so adding an enum member — which never
+      # touches the switch that must name it — would slip through. `make lint-new`
+      # stays the fast local check.
       - name: Lint
-        run: make lint-new
+        run: make lint
 
   vuln:
     runs-on: ubuntu-latest

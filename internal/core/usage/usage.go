@@ -40,10 +40,12 @@ func NewService(pgRO, pgW *pgxpool.Pool) *Service {
 
 // WithClickHouse returns a copy with the metering connection attached. Only
 // `pug cron usage` needs it; the server answers every read from Postgres alone.
-// Value receiver so this really is the copy-returning builder it reads as.
-func (s Service) WithClickHouse(conn *chdb.Conn) *Service {
-	s.ch = conn
-	return &s
+// Copies explicitly so it stays the copy-returning builder it reads as while
+// every method on Service keeps a pointer receiver.
+func (s *Service) WithClickHouse(conn *chdb.Conn) *Service {
+	c := *s
+	c.ch = conn
+	return &c
 }
 
 // PeriodUsage is the stored per-period total plus how stale it is.

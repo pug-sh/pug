@@ -161,7 +161,7 @@ type PromotedAutoRow struct {
 }
 
 // AppendArgs returns promoted column values in EventsInsertPromotedColumns order.
-func (r PromotedAutoRow) AppendArgs() []any {
+func (r *PromotedAutoRow) AppendArgs() []any {
 	return []any{
 		r.BotScore,
 		r.VerifiedBot,
@@ -229,7 +229,7 @@ func (r *PromotedAutoRow) ScanDest() []any {
 // Nil nullable fields (BotScore, VerifiedBot) and zero-valued non-nullable
 // bools (Mobile=false) are skipped to match the pre-promotion behavior where
 // absent map keys did not appear.
-func (r PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]any {
+func (r *PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]any {
 	if m == nil {
 		m = make(map[string]any, len(promotedAutoColumns))
 	}
@@ -251,7 +251,7 @@ func (r PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]an
 	}
 	for _, col := range promotedAutoColumns {
 		if col.Str != nil {
-			setString(col.Property, *col.Str(&r))
+			setString(col.Property, *col.Str(r))
 		}
 	}
 	return m

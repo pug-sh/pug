@@ -107,13 +107,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := closeOtel(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
-		}
-	}()
+	defer telemetry.ShutdownOnExit(ctx, closeOtel)
 
 	// Started before config and pools rather than after: telemetry.RecordError
 	// resolves to the noop span until a root span exists, so anything recorded

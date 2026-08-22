@@ -53,16 +53,23 @@ templ:
 lint-proto:
 	go tool buf lint
 
+# What CI gates on. The tree is clean, so the whole of it is held to the ruleset.
+# --max-same-issues=0 --max-issues-per-linter=0 override golangci-lint's default
+# caps (3 per message, 50 per linter), which would report a moving subset of the
+# tree rather than all of it.
 .PHONY: lint
 lint: lint-conventions
-	go tool golangci-lint run --allow-parallel-runners --timeout 5m ./...
+	go tool golangci-lint run --allow-parallel-runners --timeout 5m \
+		--max-same-issues=0 --max-issues-per-linter=0 ./...
 
-# What CI gates on: only lines this branch changed since origin/main, so the
-# tree's existing findings don't block. `make lint` is the full sweep and is
-# currently red — see docs, it is a backlog, not a gate.
+# The fast local check while iterating: only lines this branch changed since
+# origin/main. It cannot see a regression on a line the branch did not touch —
+# adding an enum member never touches the switch that must name it — which is
+# why CI runs the full sweep instead.
 .PHONY: lint-new
 lint-new: lint-conventions
 	go tool golangci-lint run --allow-parallel-runners --timeout 5m \
+		--max-same-issues=0 --max-issues-per-linter=0 \
 		--new-from-merge-base=origin/main ./...
 
 # The conventions are written as analyzers but gated as a lint, not a test: a

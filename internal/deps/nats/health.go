@@ -81,7 +81,7 @@ func (r *healthRegistry) startServer(ctx context.Context) {
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			slog.WarnContext(shutdownCtx, "worker health server shutdown error", slogx.Error(err))

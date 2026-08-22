@@ -98,6 +98,15 @@ func isClientError(err error) bool {
 		connect.CodeOutOfRange,
 		connect.CodeCanceled:
 		return true
+	case connect.CodeUnknown,
+		connect.CodeDeadlineExceeded,
+		connect.CodeResourceExhausted,
+		connect.CodeAborted,
+		connect.CodeUnimplemented,
+		connect.CodeInternal,
+		connect.CodeUnavailable,
+		connect.CodeDataLoss:
+		return false
 	default:
 		return false
 	}

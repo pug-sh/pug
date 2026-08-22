@@ -329,6 +329,156 @@ func TestRecordErr(t *testing.T) {
 	assertDiagnostics(t, got, want)
 }
 
+const fixtureExhaustiveIgnore = `package fixtures
+
+import "fmt"
+
+type Kind int
+
+const (
+	KindA Kind = iota
+	KindB
+	KindC
+)
+
+func rejectsWithError(k Kind) (string, error) {
+	//exhaustive:ignore the default rejects every other member
+	switch k {
+	case KindA:
+		return "a", nil
+	default:
+		return "", fmt.Errorf("unsupported kind: %v", k)
+	}
+}
+
+func rejectsWithFalse(k Kind) bool {
+	//exhaustive:ignore not eligible falls back to the slow path
+	switch k {
+	case KindA, KindB:
+	default:
+		return false
+	}
+	return true
+}
+
+func dispatchesFromDefault(k Kind) Kind {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		return KindA
+	default:
+		return KindC
+	}
+}
+
+func emptyDefault(k Kind) Kind {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		return KindA
+	default:
+	}
+	return KindC
+}
+
+func noDefault(k Kind) Kind {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		return KindA
+	}
+	return KindC
+}
+
+func dangling(k Kind) Kind {
+	//exhaustive:ignore
+	if k == KindA {
+		return KindB
+	}
+	return KindC
+}
+
+func panics(k Kind) Kind {
+	//exhaustive:ignore the default cannot fall through
+	switch k {
+	case KindA:
+		return KindA
+	default:
+		panic("unhandled kind")
+	}
+}
+
+func rejectsWithNamedZero(k Kind) (Kind, error) {
+	//exhaustive:ignore KindA is the zero member, so this is a rejection
+	switch k {
+	case KindA:
+		return KindB, nil
+	default:
+		return KindA, fmt.Errorf("unsupported kind: %v", k)
+	}
+}
+
+func rejectsWithFloatZero(k Kind) float64 {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		return 1.5
+	default:
+		return 0.0
+	}
+}
+
+func dispatchesAboveRejection(k Kind) (Kind, error) {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		return KindA, nil
+	default:
+		if k == KindB {
+			return KindC, nil
+		}
+		return KindA, fmt.Errorf("unsupported kind: %v", k)
+	}
+}
+
+func bareReturn(k Kind, out *Kind) {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		*out = KindA
+		return
+	default:
+		*out = KindC
+		return
+	}
+}
+
+func neitherReturnsNorPanics(k Kind) Kind {
+	//exhaustive:ignore
+	switch k {
+	case KindA:
+		return KindA
+	default:
+		_ = k
+	}
+	return KindC
+}
+`
+
+func TestExhaustiveIgnore(t *testing.T) {
+	got := analyzeFixture(t, lint.ExhaustiveIgnore, "internal/lint/fixtures", fixtureExhaustiveIgnore)
+	want := []string{
+		"101: //exhaustive:ignore on a switch that returns from its default without rejecting; name every member instead",
+		"114: //exhaustive:ignore on a switch that returns from its default without rejecting; name every member instead",
+		"126: //exhaustive:ignore on a switch that has a default that neither returns nor panics; name every member instead",
+		"34: //exhaustive:ignore on a switch that returns from its default without rejecting; name every member instead",
+		"44: //exhaustive:ignore on a switch that has an empty default; name every member instead",
+		"54: //exhaustive:ignore on a switch that has no default; name every member instead",
+		"63: //exhaustive:ignore is not attached to a switch; delete it",
+	}
+	assertDiagnostics(t, got, want)
+}
+
 // analyzerDebt is the violations that predate a rule, per file. Keyed by file
 // rather than totalled, so fixing one site while adding another elsewhere does
 // not net out to a pass. It is a ratchet: fix sites and lower the number.
