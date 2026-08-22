@@ -89,11 +89,8 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	if err != nil {
-		// The mailer does not log or record, so a failed send reaches telemetry
-		// only here; magic links are a sign-in path.
 		slog.ErrorContext(ctx, "failed to send email", slogx.Error(err),
-			slog.String("dispatch_id", job.GetDispatchId()))
-		telemetry.RecordError(ctx, err)
+			slog.String("dispatch_id", job.GetDispatchId())) // puglint:exempt — the mailer recorded it at source
 		if coreemail.IsPermanentError(err) {
 			return natsworker.NewPermanentError(err).With("worker", "misc_email")
 		}
