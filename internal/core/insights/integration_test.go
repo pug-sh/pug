@@ -1444,7 +1444,7 @@ func TestIntegration(t *testing.T) {
 		// Insert the same event twice (identical dedup key): an at-least-once
 		// redelivery / client retry. Raw collapses these on merge; the incremental
 		// MV fires per insert and sums them.
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if err := insertAutoEvent(ctx, ch.Conn, dupProjectID, eventID, "page_view", "alice", occur,
 				variantStringMap(map[string]string{"$country": "US"})); err != nil {
 				t.Fatalf("seed dup event %d: %v", i, err)
@@ -1632,7 +1632,7 @@ func TestIntegration(t *testing.T) {
 		sessionID := "00000000-0000-0000-0000-0000000000e5"
 		eventID := uuid.New().String()
 		// Same event_id twice = an at-least-once redelivery of a one-event session.
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if err := insertSessionEvent(ctx, ch.Conn, dupProjectID, eventID,
 				"page_view", "alice", sessionID, occur, "/only", "US"); err != nil {
 				t.Fatalf("seed dup session event %d: %v", i, err)

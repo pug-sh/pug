@@ -317,7 +317,7 @@ func TestMigration010SessionRollupColumnsMatchDims(t *testing.T) {
 		t.Fatal("migration 010 Up missing the partial backfill INSERT column list")
 	}
 	var cols []string
-	for _, c := range strings.Split(m[1], ",") {
+	for c := range strings.SplitSeq(m[1], ",") {
 		cols = append(cols, strings.TrimSpace(c))
 	}
 	want := []string{"project_id", "kind", "session_id"}

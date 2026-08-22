@@ -1,6 +1,7 @@
 package insights_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -333,13 +334,7 @@ func TestBuildTopKQuery_ScopeAndFiltersInBothScans(t *testing.T) {
 		}
 	}
 	for _, v := range []any{"page_view", "US", "pro"} {
-		found := false
-		for _, a := range cteArgs {
-			if a == v {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(cteArgs, v)
 		if !found {
 			t.Errorf("expected arg %v in scan args, got: %v", v, cteArgs)
 		}

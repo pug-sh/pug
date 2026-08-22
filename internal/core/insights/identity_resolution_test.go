@@ -159,11 +159,8 @@ func TestIdentityResolution(t *testing.T) {
 		finalStep := int64(len(req.GetSpec().GetEvents()) - 1)
 		reachedFinal := 0
 		for _, u := range users {
-			for _, m := range u.StepMatches {
-				if m == finalStep {
-					reachedFinal++
-					break
-				}
+			if slices.Contains(u.StepMatches, finalStep) {
+				reachedFinal++
 			}
 		}
 		if reachedFinal != 2 {

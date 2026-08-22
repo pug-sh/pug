@@ -1063,7 +1063,7 @@ func TestResendInviteHandler_SendLimitReturnsFailedPrecondition(t *testing.T) {
 
 	// The fixture's invitation was already sent once, so the window allows
 	// maxInviteSendsPerWindow-1 resends before it trips.
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		if _, err := srv.ResendInvite(ctx, req()); err != nil {
 			t.Fatalf("ResendInvite %d: %v", i, err)
 		}
