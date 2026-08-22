@@ -19,6 +19,10 @@ import (
 
 const shutdownTimeout = 5 * time.Second
 
+// An exit flush arrives with this deadline already set, which shutdownContext
+// preserves — so it outranks that function's 5s no-deadline fallback.
+const exitShutdownTimeout = 10 * time.Second
+
 var (
 	setupOnce   sync.Once
 	setupResult func(context.Context) error
@@ -128,6 +132,17 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 		}
 		return errors.Join(errs...)
 	}), nil
+}
+
+// ShutdownOnExit flushes telemetry as a process exits, with cancellation
+// stripped: the caller's ctx is usually the already-cancelled shutdown signal,
+// and inheriting it would abort the final flush.
+func ShutdownOnExit(ctx context.Context, shutdown func(context.Context) error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), exitShutdownTimeout)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err))
+	}
 }
 
 // shutdownContext preserves the caller's deadline when present and applies a

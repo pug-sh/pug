@@ -41,10 +41,10 @@ type deps struct {
 }
 
 // close shuts down all deps. OTel must shut down last — it owns the slog backend,
-// so earlier components' shutdown logs are still captured. A fresh timeout context
-// is used internally so cleanup isn't aborted by a cancelled signal context.
-func (d *deps) close() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// so earlier components' shutdown logs are still captured. Cancellation is
+// stripped from ctx so cleanup isn't aborted by a cancelled signal context.
+func (d *deps) close(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
 	d.pgRo.Close()
@@ -84,7 +84,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		return nil, err
 	}
 	closers = append(closers, func() {
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := closeOtel(rollbackCtx); err != nil {
 			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err))
@@ -129,7 +129,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		return nil, err
 	}
 	closers = append(closers, func() {
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		redisClient.Close(rollbackCtx)
 	})

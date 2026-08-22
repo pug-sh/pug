@@ -23,7 +23,7 @@ func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 
 	dbPoolConfig.ConnConfig.Tracer = otelpgx.NewTracer()
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), dbPoolConfig)
+	pool, err := pgxpool.NewWithConfig(ctx, dbPoolConfig)
 	if err != nil {
 		slog.ErrorContext(ctx, "unable to create connection pool", slogx.Error(err))
 		return nil, err

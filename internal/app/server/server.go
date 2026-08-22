@@ -65,7 +65,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer d.close()
+	defer d.close(ctx)
 
 	return start(ctx, d)
 }
@@ -313,7 +313,7 @@ func start(ctx context.Context, d *deps) error {
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err))

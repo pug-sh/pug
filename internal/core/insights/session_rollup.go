@@ -70,6 +70,7 @@ func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Gran
 		return false
 	}
 
+	//exhaustive:ignore an insight type the rollup cannot serve falls back to the raw builder
 	switch spec.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 		insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
@@ -77,6 +78,7 @@ func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Gran
 		return false
 	}
 
+	//exhaustive:ignore a granularity finer than the day-keyed rollup falls back to raw
 	switch gran {
 	case insightsv1.Granularity_GRANULARITY_DAY,
 		insightsv1.Granularity_GRANULARITY_WEEK,

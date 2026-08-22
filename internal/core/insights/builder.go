@@ -1553,6 +1553,7 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
 		insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
 		numeric := "toFloat64OrNull(" + chq.PropertyExpr(property) + ")"
+		//exhaustive:ignore unreachable: the outer case already narrowed to these four
 		switch agg {
 		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
 			return "sum(" + numeric + ")", nil
@@ -1574,8 +1575,11 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		return "toFloat64(uniq(distinct_id))", nil
 	case insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG:
 		return "if(uniq(distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(uniq(distinct_id)))", nil
-	default: // TOTAL and UNSPECIFIED
+	case insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+		insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED:
 		return "toFloat64(count(*))", nil
+	default:
+		return "", fmt.Errorf("unsupported aggregation type %s", agg)
 	}
 }
 
@@ -1593,6 +1597,7 @@ func aggregationExprIf(cond chq.Condition, agg insightsv1.AggregationType, prope
 		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
 		insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
 		numeric := "toFloat64OrNull(" + chq.PropertyExpr(property) + ")"
+		//exhaustive:ignore unreachable: the outer case already narrowed to these four
 		switch agg {
 		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
 			return "sumIf(" + numeric + ", " + c + ")", a, nil
@@ -1614,7 +1619,10 @@ func aggregationExprIf(cond chq.Condition, agg insightsv1.AggregationType, prope
 		args = append(args, a...)
 		args = append(args, a...)
 		return expr, args, nil
-	default: // TOTAL and UNSPECIFIED
+	case insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+		insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED:
 		return "toFloat64(countIf(" + c + "))", a, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported aggregation type %s", agg)
 	}
 }

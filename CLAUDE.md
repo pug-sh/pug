@@ -115,9 +115,11 @@ make rpc
 # Generate templ email templates (after modifying .templ files)
 make templ
 
-# Lint Go code. `lint` is the full sweep and currently reports pre-existing
-# findings, so CI gates on `lint-new` (only lines the branch changed since
-# origin/main) instead. Both first run `lint-conventions`, which is internal/lint
+# Lint Go code. `lint` is the full sweep and what CI gates on; the tree is clean,
+# so a finding anywhere fails. `lint-new` (only lines the branch changed since
+# origin/main) is the fast local check while iterating — it cannot see a
+# regression on an untouched line, which is why CI runs the full sweep.
+# Both first run `lint-conventions`, which is internal/lint
 # — the pug-specific analyzers and checks that no off-the-shelf linter covers.
 # They are written as Go tests because they need a typed package load, but they
 # are gated as a lint: a violation is a style failure, and `make test` running

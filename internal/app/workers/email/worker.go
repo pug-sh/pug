@@ -3,7 +3,6 @@ package email
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,7 +13,6 @@ import (
 	pugredis "github.com/pug-sh/pug/internal/deps/redis"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"github.com/pug-sh/pug/internal/slogx"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -24,13 +22,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := closeOtel(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
-		}
-	}()
+	defer telemetry.ShutdownOnExit(ctx, closeOtel)
 
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
@@ -66,7 +58,7 @@ func Run(ctx context.Context) error {
 			return err
 		}
 		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			defer cancel()
 			rdClient.Close(shutdownCtx)
 		}()

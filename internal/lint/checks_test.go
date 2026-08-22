@@ -271,6 +271,21 @@ func TestChecksDetectViolations(t *testing.T) {
 			},
 			want: "uses unreviewed pattern",
 		},
+		{
+			check: "exhaustive-ignore-not-in-tests",
+			files: map[string]string{
+				"internal/core/x/a_test.go": "package x\n\n//exhaustive:ignore\nvar _ = 1\n",
+			},
+			want: "in a test is unchecked",
+		},
+		{
+			check: "exhaustive-ignore-not-in-tests",
+			files: map[string]string{
+				// The directive as fixture data declares nothing.
+				"internal/core/x/a_test.go": "package x\n\nconst src = `//exhaustive:ignore`\n",
+			},
+			want: "",
+		},
 	}
 
 	for _, tt := range tests {

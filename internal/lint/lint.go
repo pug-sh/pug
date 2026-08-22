@@ -28,7 +28,7 @@ type Check struct {
 // Analyzers is the registry the enforcement test iterates, so a new analyzer is
 // enforced the moment it is added here.
 func Analyzers() []*analysis.Analyzer {
-	return []*analysis.Analyzer{SlogxErr, SentinelErr, Principal, RecordErr, ChqTenant}
+	return []*analysis.Analyzer{SlogxErr, SentinelErr, Principal, RecordErr, ChqTenant, ExhaustiveIgnore}
 }
 
 func Checks() []Check {
@@ -42,5 +42,6 @@ func Checks() []Check {
 		{"cron-reachable", "every cron package must have a cmd/cron binary to ship it", checkCronReachable},
 		{"depguard-targets-exist", "every depguard glob and denied package names a real path; depguard reports nothing when a pattern matches no file", checkDepguardTargets},
 		{"property-pattern-pinned", "property fields keep the pattern that makes PropertyExpr injection-safe", checkPropertyPattern},
+		{"exhaustive-ignore-not-in-tests", "//exhaustive:ignore in a _test.go silences exhaustive where the analyzer cannot see it", checkExhaustiveIgnoreInTests},
 	}
 }

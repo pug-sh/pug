@@ -162,18 +162,25 @@ linters:
         text: G101
         linters:
           - gosec
-      # Both sites wait on ctx.Done() before deriving a shutdown deadline —
-      # inheriting the cancelled parent would make Shutdown return immediately.
-      - path: ^internal/app/server/server\.go$|^internal/deps/nats/health\.go$
-        text: G118
+      # startProducerSpan/startConsumerSpan hand the span back to the caller,
+      # where the deferred End() lives; spancheck can't follow it across the helper.
+      - path: ^internal/deps/nats/otel\.go$
+        text: span is unassigned
         linters:
-          - gosec
+          - spancheck
       - path: _test\.go
         linters:
           - bodyclose
           - contextcheck
           - gosec
           - noctx
+      # Identity is the assertion: a concrete *Error, the un-wrapped error
+      # slogx.Error stored, the exact context a callback saw. Wrapping is what
+      # they rule out, so it stays scoped to these three packages.
+      - path: ^internal/(apperr|slogx|deps/telemetry)/.*_test\.go$
+        linters:
+          - errorlint
+          - fatcontext
 
 formatters:
   enable:
