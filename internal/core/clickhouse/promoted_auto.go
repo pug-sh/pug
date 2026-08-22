@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 
@@ -267,7 +268,7 @@ func botScoreString(v *uint8) string {
 	if v == nil {
 		return ""
 	}
-	return fmt.Sprintf("%d", *v)
+	return strconv.FormatUint(uint64(*v), 10)
 }
 
 // SplitPromotedAutoProperties extracts promoted keys from a proto auto-property

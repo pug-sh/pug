@@ -156,7 +156,7 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 	switch tk.GetDimension() {
 	case insightsv1.TopKQuery_DIMENSION_PROPERTY:
 		if tk.GetProperty() == "" {
-			return nil, fmt.Errorf("property is required for PROPERTY dimension")
+			return nil, errors.New("property is required for PROPERTY dimension")
 		}
 		dimExpr = chq.PropertyExpr(tk.GetProperty())
 	case insightsv1.TopKQuery_DIMENSION_EVENT_KIND:

@@ -57,7 +57,7 @@ func TestParseRoleRejectsUnknown(t *testing.T) {
 // would compile and pass the table-driven test above but fail here.
 func TestParseRoleAcceptsAllProtoEnumValues(t *testing.T) {
 	values := orgsv1.OrgRole(0).Descriptor().Values()
-	for i := 0; i < values.Len(); i++ {
+	for i := range values.Len() {
 		v := values.Get(i)
 		name := string(v.Name())
 		if name == orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED.String() {

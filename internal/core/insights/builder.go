@@ -1,7 +1,9 @@
 package insights
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
@@ -595,7 +597,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 func buildSessionTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	session := req.GetSpec().GetSession()
 	if session == nil {
-		return nil, fmt.Errorf("session trends: session is required")
+		return nil, errors.New("session trends: session is required")
 	}
 	bucket, err := bucketExpr(req.GetGranularity(), "start_time", req.GetTimezone())
 	if err != nil {
@@ -639,7 +641,7 @@ func buildSessionTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Qu
 func buildSessionSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	session := req.GetSpec().GetSession()
 	if session == nil {
-		return nil, fmt.Errorf("session segmentation: session is required")
+		return nil, errors.New("session segmentation: session is required")
 	}
 
 	sessionsCTE, err := buildSessionRowsCTE(req, projectID)
@@ -684,7 +686,7 @@ func buildSessionRowsCTE(req *insightsv1.QueryRequest, projectID string) (*chq.Q
 	spec := req.GetSpec()
 	session := spec.GetSession()
 	if session == nil {
-		return nil, fmt.Errorf("session is required")
+		return nil, errors.New("session is required")
 	}
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(spec.GetFilterGroups(), spec.GetFilterGroupsOperator(), projectID, "")
@@ -784,7 +786,7 @@ func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	steps := req.GetSpec().GetEvents()
 	if len(steps) == 0 {
-		return nil, fmt.Errorf("funnel: at least one step required")
+		return nil, errors.New("funnel: at least one step required")
 	}
 	breakdowns := req.GetSpec().GetBreakdowns()
 
@@ -904,7 +906,7 @@ func sqlStringLiteral(s string) string {
 func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	steps := req.GetSpec().GetEvents()
 	if len(steps) == 0 {
-		return nil, fmt.Errorf("funnel: at least one step required")
+		return nil, errors.New("funnel: at least one step required")
 	}
 	breakdowns := req.GetSpec().GetBreakdowns()
 
@@ -1033,7 +1035,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	breakdowns := req.GetSpec().GetBreakdowns()
 
 	if len(events) == 0 {
-		return nil, fmt.Errorf("retention: requires at least one event")
+		return nil, errors.New("retention: requires at least one event")
 	}
 
 	startEvent := events[0]
@@ -1055,7 +1057,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		return nil, fmt.Errorf("retention start event: %w", err)
 	}
 	if startCond.IsZero() {
-		return nil, fmt.Errorf("retention start event: empty event filter")
+		return nil, errors.New("retention start event: empty event filter")
 	}
 
 	returnCond, err := buildEventConditionAliased([]*insightsv1.EventQuery{returnEvent}, projectID, "e")
@@ -1063,7 +1065,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		return nil, fmt.Errorf("retention return event: %w", err)
 	}
 	if returnCond.IsZero() {
-		return nil, fmt.Errorf("retention return event: empty event filter")
+		return nil, errors.New("retention return event: empty event filter")
 	}
 
 	bucket, err := bucketExpr(req.GetGranularity(), "e.occur_time", req.GetTimezone())
@@ -1109,10 +1111,10 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	for j := range breakdowns {
 		cohortGroupBy = append(cohortGroupBy, fmt.Sprintf("breakdown_%d", j))
 	}
-	// Use a three-index slice so that append allocates a new backing array
-	// instead of modifying cohortGroupBy's elements in-place.
+	// Clip so that append allocates a new backing array instead of modifying
+	// cohortGroupBy's elements in-place.
 	cohortSizes := chq.NewQuery().
-		Select(append(cohortGroupBy[:len(cohortGroupBy):len(cohortGroupBy)], "toFloat64(count(*)) AS cohort_size")...).
+		Select(append(slices.Clip(cohortGroupBy), "toFloat64(count(*)) AS cohort_size")...).
 		From("cohorts").
 		GroupBy(cohortGroupBy...)
 
@@ -1340,7 +1342,7 @@ func buildTopLevelFilterCondition(
 
 func buildSingleFilterGroupCondition(group *insightsv1.FilterGroup, projectID, alias string) (chq.Condition, error) {
 	if len(group.GetFilters()) == 0 {
-		return chq.Condition{}, fmt.Errorf("group must contain at least one filter")
+		return chq.Condition{}, errors.New("group must contain at least one filter")
 	}
 
 	conds := make([]chq.Condition, 0, len(group.GetFilters()))
@@ -1581,7 +1583,7 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 // multi-event trends query (countIf, uniqIf, sumIf, …).
 func aggregationExprIf(cond chq.Condition, agg insightsv1.AggregationType, property string) (expr string, args []any, err error) {
 	if cond.IsZero() {
-		return "", nil, fmt.Errorf("empty event condition")
+		return "", nil, errors.New("empty event condition")
 	}
 	c := cond.SQL()
 	a := cond.Args()

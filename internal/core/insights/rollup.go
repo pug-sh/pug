@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -422,7 +423,7 @@ func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
 	events := req.GetSpec().GetEvents()
 	if len(events) == 0 {
-		return ScalarQuery{}, fmt.Errorf("segmentation rollup: no events")
+		return ScalarQuery{}, errors.New("segmentation rollup: no events")
 	}
 	aggExpr, ok := rollupAggExpr(aggregationType(req))
 	if !ok {

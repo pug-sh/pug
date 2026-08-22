@@ -377,13 +377,13 @@ func (r *Reader) getExternalIDForProfile(ctx context.Context, projectID, profile
 // guaranteed by MustGetPrincipalWithProject and proto validation (required = true).
 func (r *Reader) resolveProfileIDs(ctx context.Context, projectID, distinctID string) ([]string, error) {
 	if projectID == "" {
-		err := fmt.Errorf("resolveProfileIDs: projectID must not be empty")
+		err := errors.New("resolveProfileIDs: projectID must not be empty")
 		slog.ErrorContext(ctx, "resolveProfileIDs called with empty project_id", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	if distinctID == "" {
-		err := fmt.Errorf("resolveProfileIDs: distinctID must not be empty")
+		err := errors.New("resolveProfileIDs: distinctID must not be empty")
 		slog.ErrorContext(ctx, "resolveProfileIDs called with empty distinct_id", slogx.Error(err),
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
@@ -458,7 +458,7 @@ func DecodeEventCursor(token string) (*EventCursor, error) {
 		return nil, fmt.Errorf("invalid page token: %w", err)
 	}
 	if c.OccurTime.IsZero() || c.EventID == "" {
-		return nil, fmt.Errorf("invalid page token: missing required cursor fields")
+		return nil, errors.New("invalid page token: missing required cursor fields")
 	}
 	return &c, nil
 }
@@ -799,7 +799,7 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 	var from, to time.Time
 	if params.TimeRange != nil {
 		if params.TimeRange.GetFrom() == nil || params.TimeRange.GetTo() == nil {
-			err := fmt.Errorf("GetActivityHeatmap: TimeRange.From and TimeRange.To must be set when TimeRange is provided")
+			err := errors.New("GetActivityHeatmap: TimeRange.From and TimeRange.To must be set when TimeRange is provided")
 			slog.ErrorContext(ctx, "GetActivityHeatmap called with partial TimeRange", slogx.Error(err),
 				slog.String("project_id", params.ProjectID))
 			telemetry.RecordError(ctx, err)
@@ -884,7 +884,7 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("queryProfileStats: row iteration failed: %w", err)
 		}
-		err := fmt.Errorf("queryProfileStats: aggregate query returned no rows (unexpected)")
+		err := errors.New("queryProfileStats: aggregate query returned no rows (unexpected)")
 		slog.ErrorContext(ctx, "queryProfileStats: aggregate returned zero rows", slogx.Error(err),
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)

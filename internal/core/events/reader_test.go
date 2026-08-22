@@ -1486,7 +1486,7 @@ func TestGetActivityHeatmap(t *testing.T) {
 		{"signup", now.AddDate(0, 0, -3), 1},
 	}
 	for _, se := range seedEvents {
-		for i := 0; i < se.count; i++ {
+		for i := range se.count {
 			testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", se.kind, uuid.NewString(),
 				map[string]string{},
 				map[string]string{},
