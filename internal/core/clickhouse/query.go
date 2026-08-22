@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -327,7 +328,7 @@ func (q *Query) Build() (string, []any, error) {
 
 	// SELECT
 	if len(q.selects) == 0 {
-		return "", nil, fmt.Errorf("SELECT expressions are required")
+		return "", nil, errors.New("SELECT expressions are required")
 	}
 	sb.WriteString("SELECT ")
 	sb.WriteString(strings.Join(q.selects, ",\n"))
@@ -336,7 +337,7 @@ func (q *Query) Build() (string, []any, error) {
 
 	// FROM
 	if q.from == "" {
-		return "", nil, fmt.Errorf("FROM table is required")
+		return "", nil, errors.New("FROM table is required")
 	}
 	sb.WriteString("FROM ")
 	sb.WriteString(q.from)
@@ -448,7 +449,7 @@ func (u *UnionQuery) WithQueryCache(ttlSeconds int) *UnionQuery {
 // Build assembles the UNION ALL SQL and positional args.
 func (u *UnionQuery) Build() (string, []any, error) {
 	if len(u.queries) == 0 {
-		return "", nil, fmt.Errorf("UnionAll requires at least one query")
+		return "", nil, errors.New("UnionAll requires at least one query")
 	}
 
 	parts := make([]string, len(u.queries))

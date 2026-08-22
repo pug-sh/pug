@@ -1,6 +1,7 @@
 package profiles
 
 import (
+	"errors"
 	"fmt"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
@@ -33,7 +34,7 @@ func buildProfileFilterCondition(
 
 func buildSingleProfileFilterGroupCondition(group *profilesv1.FilterGroup) (chq.Condition, error) {
 	if len(group.GetFilters()) == 0 {
-		return chq.Condition{}, fmt.Errorf("group must contain at least one filter")
+		return chq.Condition{}, errors.New("group must contain at least one filter")
 	}
 
 	conds := make([]chq.Condition, 0, len(group.GetFilters()))

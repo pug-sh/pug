@@ -174,7 +174,7 @@ func migrateClickHouse(ctx context.Context, connStr string) error {
 
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
-		return fmt.Errorf("unable to determine source file path")
+		return errors.New("unable to determine source file path")
 	}
 	dir := filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "clickhouse", "migrations")
 

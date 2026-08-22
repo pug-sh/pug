@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"strings"
+
 	"github.com/google/uuid"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
-	"strings"
 
 	"github.com/pug-sh/pug/internal/cookieless"
 	"github.com/pug-sh/pug/internal/core/profiles"

@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -188,7 +189,7 @@ func buildSessionSegmentationFromRollup(req *insightsv1.QueryRequest, projectID 
 func buildSessionRollupRowsCTE(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	session := req.GetSpec().GetSession()
 	if session == nil {
-		return nil, fmt.Errorf("session is required")
+		return nil, errors.New("session is required")
 	}
 
 	kind := ""

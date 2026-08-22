@@ -3161,7 +3161,7 @@ func seedTopKEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHou
 	}{
 		{"big", 3}, {"$others", 2}, {"small", 1},
 	} {
-		for i := 0; i < l.n; i++ {
+		for i := range l.n {
 			events = append(events, event{
 				kind: "tk_lit", user: fmt.Sprintf("l_%s_%d", l.label, i),
 				custom: map[string]chcol.Variant{"label": chcol.NewVariantWithType(l.label, "String")},
@@ -3295,7 +3295,7 @@ func seedTopKCollisionProfiles(t *testing.T, ctx context.Context, ch *testutil.T
 		user  string
 		count int
 	}{{"collide", 3}, {"solo", 1}} {
-		for i := 0; i < e.count; i++ {
+		for range e.count {
 			occurTime := time.Date(2024, 11, 1+n%3, 12, 0, 0, 0, time.UTC)
 			n++
 			batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)

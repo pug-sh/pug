@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -113,7 +114,7 @@ func propertyNumericExpr(name, alias string) string {
 // equivalence holding.
 func ValidateProfilePropertyName(name string) error {
 	if name == "" {
-		return fmt.Errorf("profile property name must not be empty")
+		return errors.New("profile property name must not be empty")
 	}
 	if !profilePropertyNamePattern.MatchString(name) {
 		return fmt.Errorf("profile property name %q does not match %s", name, profilePropertyNamePattern)
@@ -337,7 +338,7 @@ func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (
 // external_id) still resolves through its own id and aliases.
 func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias string) (Condition, error) {
 	if projectID == "" {
-		return Condition{}, fmt.Errorf("profile property filter requires a non-empty project ID")
+		return Condition{}, errors.New("profile property filter requires a non-empty project ID")
 	}
 
 	innerCond, err := profilePropertyOperatorCondition(f)
@@ -527,7 +528,7 @@ func singleEventCondition(ev *commonv1.EventFilter, projectID string, idx int, a
 		if idx >= 0 {
 			return Condition{}, fmt.Errorf("event[%d]: event filter is nil", idx)
 		}
-		return Condition{}, fmt.Errorf("event filter is nil")
+		return Condition{}, errors.New("event filter is nil")
 	}
 
 	kindCol := "kind"

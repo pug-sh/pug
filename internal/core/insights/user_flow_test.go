@@ -29,7 +29,7 @@ func resolveEdges(res *insightsv1.UserFlowResult) []edge {
 		out = append(out, edge{
 			srcDepth: s.GetDepth(), srcLabel: s.GetLabel(),
 			tgtDepth: t.GetDepth(), tgtLabel: t.GetLabel(),
-			value:    l.GetValue(),
+			value: l.GetValue(),
 		})
 	}
 	return out

@@ -85,7 +85,7 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 		return wrappedErr
 	}
 	if sent == nil || sent.MessageId == nil || *sent.MessageId == "" {
-		return emailspec.NewPermanentError(fmt.Errorf("ses send email: empty response"))
+		return emailspec.NewPermanentError(errors.New("ses send email: empty response"))
 	}
 	return nil
 }

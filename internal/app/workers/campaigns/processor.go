@@ -3,6 +3,7 @@ package campaigns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -41,7 +42,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	if msg.CampaignID == "" {
-		err := fmt.Errorf("campaign message missing campaign_id")
+		err := errors.New("campaign message missing campaign_id")
 		slog.ErrorContext(ctx, "campaign message missing campaign_id", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).With("worker", "campaigns")

@@ -92,7 +92,8 @@ linters:
             - pkg: github.com/pug-sh/pug/internal/testutil
               desc: the testcontainers harness must not link into a production binary
     sloglint:
-      no-global: all
+      # no-global is deliberately unset: it wants a logger passed around, but
+      # pug calls slog.XxxContext directly everywhere. context is the rule we want.
       context: all
       static-msg: false
     errorlint:
@@ -101,6 +102,9 @@ linters:
       comparison: true
     exhaustive:
       default-signifies-exhaustive: false
+      # Every proto enum carries an UNSPECIFIED zero value that a fail-closed
+      # default already covers; a switch missing a real member is the signal.
+      ignore-enum-members: ".*_UNSPECIFIED$"
       check:
         - switch
     spancheck:
@@ -108,6 +112,14 @@ linters:
         - end
         - record-error
         - set-status
+      # telemetry.RecordError sets the error status itself; spancheck can't see
+      # through the helper and reports every call site as a missing SetStatus.
+      ignore-check-signatures:
+        - telemetry.RecordError
+        - telemetry.RecordErrorOnSpan
+        # setupFailed is the cron pass's RecordError wrapper; spancheck matches the
+        # fully-qualified name, so an unqualified pattern would also match other packages.
+        - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
     gosec:
       excludes:
         - G115
@@ -131,6 +143,29 @@ linters:
       # have nothing to warn about here.
       - path: ^internal/lint/
         text: G304|G122
+        linters:
+          - gosec
+      # The seeders want reproducible fake traffic, not unpredictability — the
+      # PCG streams are seeded on purpose so a rerun replays the same demo data.
+      - path: ^internal/app/seed/
+        text: G404
+        linters:
+          - gosec
+      # Same reason as internal/lint: the harness reads schema/nats/*.yaml from
+      # the repo and never links into a binary.
+      - path: ^internal/testutil/
+        text: G304
+        linters:
+          - gosec
+      # G101 fires on apiKeyGenCachePrefix, a Redis key prefix, not a secret.
+      - path: ^internal/core/projects/repo\.go$
+        text: G101
+        linters:
+          - gosec
+      # Both sites wait on ctx.Done() before deriving a shutdown deadline —
+      # inheriting the cancelled parent would make Shutdown return immediately.
+      - path: ^internal/app/server/server\.go$|^internal/deps/nats/health\.go$
+        text: G118
         linters:
           - gosec
       - path: _test\.go

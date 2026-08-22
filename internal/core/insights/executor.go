@@ -403,7 +403,7 @@ func (e *Executor) QueryTopK(ctx context.Context, projectID string, q TopKQuery)
 	if sql == "" {
 		// Defensive: a zero-value TopKQuery means a builder's (TopKQuery, error)
 		// error went unchecked. Fail locally rather than send empty SQL to CH.
-		return nil, fmt.Errorf("QueryTopK: empty SQL (unchecked zero-value TopKQuery)")
+		return nil, errors.New("QueryTopK: empty SQL (unchecked zero-value TopKQuery)")
 	}
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)

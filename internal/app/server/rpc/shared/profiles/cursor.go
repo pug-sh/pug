@@ -3,6 +3,7 @@ package profiles
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -36,7 +37,7 @@ func decodeProfileListCursor(token string) (*profileListCursor, error) {
 		return nil, fmt.Errorf("invalid page token: %w", err)
 	}
 	if c.CreateTime.IsZero() || c.ID == "" {
-		return nil, fmt.Errorf("invalid page token: missing required cursor fields")
+		return nil, errors.New("invalid page token: missing required cursor fields")
 	}
 	return &c, nil
 }

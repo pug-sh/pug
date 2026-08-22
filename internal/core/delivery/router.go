@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -40,13 +41,13 @@ func (r *Router) SendNotification(ctx context.Context, campaign dbread.Campaign,
 		slog.WarnContext(ctx, "APN delivery not implemented yet",
 			slog.String("device_id", device.ID),
 			slog.String("platform", device.Platform))
-		return fmt.Errorf("APN delivery not implemented yet")
+		return errors.New("APN delivery not implemented yet")
 	case "web":
 		// TODO: Implement web push delivery
 		slog.WarnContext(ctx, "web push delivery not implemented yet",
 			slog.String("device_id", device.ID),
 			slog.String("platform", device.Platform))
-		return fmt.Errorf("web push delivery not implemented yet")
+		return errors.New("web push delivery not implemented yet")
 	default:
 		slog.WarnContext(ctx, "Unknown platform for delivery",
 			slog.String("device_id", device.ID),

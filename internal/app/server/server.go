@@ -245,21 +245,21 @@ func start(ctx context.Context, d *deps) error {
 	}
 
 	// Public (CORS, no auth)
-	handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
-	handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
+	handle(authPath, pogrpc.WithCORS(ctx, d.corsOrigins, authHandler))
+	handle(sharedDashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedDashboardsHandler))
 
 	// Dashboard only (CORS + JWT auth)
-	handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
-	handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
-	handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
-	handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
-	handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
-	handle(usagePath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(usageHandler)))
+	handle(orgsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
+	handle(projectsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
+	handle(dashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
+	handle(orgEmailProvidersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
+	handle(customersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(customersHandler)))
+	handle(usagePath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(usageHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
-	handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
-	handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
-	handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
+	handle(insightsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(insightsHandler)))
+	handle(activityPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(activityHandler)))
+	handle(sharedProfilesPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
 	// SDK only (API key auth). CORS is wildcard with credentials disabled because
 	// customer sites embedding the SDK have arbitrary origins; auth lives entirely
@@ -300,9 +300,12 @@ func start(ctx context.Context, d *deps) error {
 	// WithCorrelationID wraps the whole mux so a correlation id exists before the
 	// authn middleware runs on any route — auth rejections happen outside the
 	// Connect interceptor chain, and this lets them carry an error_id too.
+	// Only the header deadline is bounded: a full ReadTimeout would also cap the
+	// body, killing large SDK event batches on slow links.
 	server := &http.Server{
-		Addr:    ":" + d.port,
-		Handler: pogrpc.WithCorrelationID(mux),
+		Addr:              ":" + d.port,
+		Handler:           pogrpc.WithCorrelationID(mux),
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
 		return err
