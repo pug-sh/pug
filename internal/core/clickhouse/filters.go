@@ -280,6 +280,15 @@ func isNumericOperator(op commonv1.FilterOperator) bool {
 		commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
 		commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
 		return true
+	case commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS,
+		commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS,
+		commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS,
+		commonv1.FilterOperator_FILTER_OPERATOR_IS_SET,
+		commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET,
+		commonv1.FilterOperator_FILTER_OPERATOR_IN,
+		commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN:
+		return false
 	}
 	return false
 }

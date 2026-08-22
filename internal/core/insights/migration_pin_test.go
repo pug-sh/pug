@@ -68,9 +68,8 @@ func TestMigration001VariantSlotsCoveredByGoSwitch(t *testing.T) {
 
 	for _, slot := range slots {
 		got := variantTypeToPropertyValueType(slot)
-		switch got {
-		case commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED,
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER:
+		if got == commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED ||
+			got == commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER {
 			t.Errorf("migration slot %q maps to %v — add a case to variantTypeToPropertyValueType", slot, got)
 		}
 	}
