@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -71,8 +72,8 @@ func newDeps(ctx context.Context) (*deps, error) {
 	success := false
 	defer func() {
 		if !success {
-			for i := len(closers) - 1; i >= 0; i-- {
-				closers[i]()
+			for _, closer := range slices.Backward(closers) {
+				closer()
 			}
 		}
 	}()

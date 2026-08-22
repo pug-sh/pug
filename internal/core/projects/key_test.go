@@ -46,7 +46,7 @@ func TestKeyUniqueness(t *testing.T) {
 	const n = 100
 	seen := make(map[string]struct{}, n*2)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		prv, err := newPrivateKey()
 		if err != nil {
 			t.Fatalf("newPrivateKey iteration %d: %v", i, err)

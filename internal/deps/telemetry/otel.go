@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -60,8 +61,8 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	success := false
 	defer func() {
 		if !success {
-			for i := len(shutdowns) - 1; i >= 0; i-- {
-				if err := shutdowns[i](ctx); err != nil {
+			for _, shutdown := range slices.Backward(shutdowns) {
+				if err := shutdown(ctx); err != nil {
 					slog.ErrorContext(ctx, "cleanup error during init rollback", slogx.Error(err))
 				}
 			}

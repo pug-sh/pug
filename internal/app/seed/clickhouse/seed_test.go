@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -238,13 +239,7 @@ func TestAppVersionAdoption(t *testing.T) {
 	for range 5000 {
 		v := appVersionAt(at)
 		counts[v]++
-		found := false
-		for _, rv := range released {
-			if v == rv {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(released, v)
 		if !found {
 			t.Fatalf("appVersionAt returned unreleased version %s", v)
 		}
@@ -548,7 +543,7 @@ func TestToLiveEventsCopiesAllFields(t *testing.T) {
 	if le.AutoProperties["$k"] != "v" || le.CustomProperties["amount"] != 1.0 {
 		t.Fatalf("property maps not copied: %+v", le)
 	}
-	if ne, nl := reflect.TypeOf(event{}).NumField(), reflect.TypeOf(LiveEvent{}).NumField(); ne != nl {
+	if ne, nl := reflect.TypeFor[event]().NumField(), reflect.TypeFor[LiveEvent]().NumField(); ne != nl {
 		t.Errorf("event has %d fields, LiveEvent has %d — toLiveEvents must map all of them", ne, nl)
 	}
 }

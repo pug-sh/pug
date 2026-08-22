@@ -1751,7 +1751,7 @@ func TestGetProfileStats(t *testing.T) {
 	)
 
 	// Day 0: 2 events with latest props.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "page_view", uuid.NewString(),
 			latestProps,
 			map[string]string{},

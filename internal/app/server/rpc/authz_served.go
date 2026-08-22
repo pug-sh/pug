@@ -53,8 +53,8 @@ var servedServices = []struct {
 func servedProcedures() map[string]bool {
 	procs := map[string]bool{}
 	for _, svc := range servedServices {
-		for i := 0; i < svc.handler.NumMethod(); i++ {
-			procs["/"+svc.name+"/"+svc.handler.Method(i).Name] = true
+		for method := range svc.handler.Methods() {
+			procs["/"+svc.name+"/"+method.Name] = true
 		}
 	}
 	return procs

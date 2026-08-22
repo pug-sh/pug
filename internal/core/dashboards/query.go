@@ -173,8 +173,7 @@ func renderInsightTile(
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, "", err // request lifecycle, not a tile fault — propagate
 		}
-		var invalid *coreinsights.InvalidQueryError
-		if errors.As(err, &invalid) {
+		if invalid, ok := errors.AsType[*coreinsights.InvalidQueryError](err); ok {
 			return nil, "invalid query parameters: " + invalid.Message, nil
 		}
 		return nil, "query failed", nil

@@ -20,8 +20,8 @@ import (
 // dashboard_shares structs drift in field count — a forgotten field in
 // dbwriteShareToDbread compiles cleanly but silently zeroes a column.
 func TestDbwriteShareToDbread_FieldParity(t *testing.T) {
-	r := reflect.TypeOf(dbread.DashboardShare{}).NumField()
-	w := reflect.TypeOf(dbwrite.DashboardShare{}).NumField()
+	r := reflect.TypeFor[dbread.DashboardShare]().NumField()
+	w := reflect.TypeFor[dbwrite.DashboardShare]().NumField()
 	if r != w {
 		t.Fatalf("dbread.DashboardShare has %d fields, dbwrite has %d — keep dbwriteShareToDbread in sync", r, w)
 	}

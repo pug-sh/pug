@@ -1102,10 +1102,7 @@ const chBatchSize = 1000
 // chunk, stopping at the first error. An empty slice invokes fn zero times.
 func forEachBatch(values []string, fn func(batch []string) error) error {
 	for start := 0; start < len(values); start += chBatchSize {
-		end := start + chBatchSize
-		if end > len(values) {
-			end = len(values)
-		}
+		end := min(start+chBatchSize, len(values))
 		if err := fn(values[start:end]); err != nil {
 			return err
 		}

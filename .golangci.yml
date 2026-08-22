@@ -113,6 +113,10 @@ linters:
         - G115
     perfsprint:
       strconcat: false
+    modernize:
+      # newexpr would rewrite every proto.String/Bool helper into new(x): ~1350
+      # call sites of churn, and new(x) loses the idiom that marks an optional field.
+      disable: [newexpr]
 
   exclusions:
     generated: lax

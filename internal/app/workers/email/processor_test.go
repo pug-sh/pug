@@ -54,7 +54,7 @@ func TestProcessorMagicLinkIdempotencyKeyIsStableOnRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("proto.Marshal: %v", err)
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if err := processor.ProcessMessage(context.Background(), data); err != nil {
 			t.Fatalf("ProcessMessage attempt %d: %v", i, err)
 		}

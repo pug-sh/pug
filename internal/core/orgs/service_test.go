@@ -504,7 +504,7 @@ func TestResendInviteEnforcesSendLimit(t *testing.T) {
 
 	// The invitation was already sent once, so the window allows
 	// maxInviteSendsPerWindow-1 resends before it trips.
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); err != nil {
 			t.Fatalf("ResendInvite %d: %v", i, err)
 		}
@@ -525,7 +525,7 @@ func TestResendInviteSendLimitClearsAfterWindow(t *testing.T) {
 	f := newInviteFixture(t, "recovers@example.com")
 	ctx := context.Background()
 
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); err != nil {
 			t.Fatalf("ResendInvite %d: %v", i, err)
 		}
@@ -1275,7 +1275,7 @@ func TestLeaveTwoAdminsRaceExactlyOneSucceeds(t *testing.T) {
 	// silently allowed both goroutines through could pass a single trial by
 	// coincidence of scheduling. Five iterations make that hard.
 	const iterations = 5
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		a := seedCustomer(t, ctx, write, "racer-a")
 		b := seedCustomer(t, ctx, write, "racer-b")
 		org, err := svc.CreateOrgWithDefaults(ctx, a, "race-org")
