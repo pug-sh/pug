@@ -273,7 +273,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 		slog.ErrorContext(ctx, "failed to start message iterator",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err))
+			slogx.Error(err)) // puglint:exempt — the message loop runs outside any span
 		w.healthy.Store(false)
 		return
 	}
@@ -310,7 +310,8 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 			if consecutiveErrors >= maxConsecutiveErrors {
 				slog.ErrorContext(ctx, "too many consecutive message errors, restarting worker goroutine",
 					slog.String("stream", w.config.StreamName),
-					slog.String("consumer", w.config.ConsumerName))
+					slog.String("consumer", w.config.ConsumerName),
+					slogx.Error(err)) // puglint:exempt — the message loop runs outside any span
 				w.healthy.Store(false)
 				return
 			}
@@ -367,7 +368,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		slog.ErrorContext(procCtx, "terminating poison message",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err))
+			slogx.Error(err)) // puglint:exempt — disposition log; the processor recorded the cause
 		dlqCtx, dlqCancel := dlqContext(procCtx)
 		published := w.publishToDLQ(dlqCtx, msg, meta, err)
 		dlqCancel()
@@ -388,7 +389,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		slog.ErrorContext(procCtx, "message processing failed",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err))
+			slogx.Error(err)) // puglint:exempt — disposition log; the processor recorded the cause
 
 		if w.isLastDelivery(numDelivered, metaOK) {
 			// Distinguish "burned all retries" from "couldn't read metadata, so

@@ -151,6 +151,44 @@ func recordedAboveTheBranch(ctx context.Context, err error) {
 		slog.ErrorContext(ctx, "failed", slogx.Error(err))
 	}
 }
+
+func stateChangeIsNotAnError(ctx context.Context, stream string) {
+	slog.ErrorContext(ctx, "too many consecutive failures, restarting", slog.String("stream", stream))
+}
+
+func errorUnderAnotherKey(ctx context.Context, err error) {
+	slog.ErrorContext(ctx, "failed", slog.Any("cause", err))
+}
+
+func spreadArgsAreOpaque(ctx context.Context, args []any) {
+	slog.ErrorContext(ctx, "rpc error", args...)
+}
+
+func init() {
+	slog.ErrorContext(context.Background(), "counter registration failed", slogx.Error(context.Canceled))
+}
+
+type registry struct{}
+
+func (registry) init(ctx context.Context, err error) {
+	slog.ErrorContext(ctx, "registry init failed", slogx.Error(err))
+}
+`
+
+// Overlaid into a real entrypoint package: the same body flagged in fixtures
+// above must go quiet in package main.
+const fixtureRecordErrMain = `package main
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/pug-sh/pug/internal/slogx"
+)
+
+func lintFixtureFatal(ctx context.Context, err error) {
+	slog.ErrorContext(ctx, "fatal error", slogx.Error(err))
+}
 `
 
 // The fixture is overlaid into the real rpc package, so it calls the real
@@ -325,8 +363,20 @@ func TestRecordErr(t *testing.T) {
 		// The sibling branch's RecordError does not cover this path; the one
 		// above recordedAboveTheBranch's if does cover its log.
 		"44: recordedInOneBranchOnly logs an error without telemetry.RecordError; record it here or mark the line puglint:exempt",
+		// stateChangeIsNotAnError above these two carries nothing to record; an
+		// error under any key, or hidden in a spread, still has to be recorded.
+		"60: errorUnderAnotherKey logs an error without telemetry.RecordError; record it here or mark the line puglint:exempt",
+		"64: spreadArgsAreOpaque logs an error without telemetry.RecordError; record it here or mark the line puglint:exempt",
+		// The package init above is skipped; a method that happens to be named
+		// init is not.
+		"74: init logs an error without telemetry.RecordError; record it here or mark the line puglint:exempt",
 	}
 	assertDiagnostics(t, got, want)
+}
+
+func TestRecordErrSkipsEntrypoints(t *testing.T) {
+	got := analyzeFixture(t, lint.RecordErr, "cmd/pug", fixtureRecordErrMain)
+	assertDiagnostics(t, got, nil)
 }
 
 const fixtureExhaustiveIgnore = `package fixtures
@@ -567,47 +617,17 @@ func TestExhaustiveIgnore(t *testing.T) {
 	assertDiagnostics(t, got, want)
 }
 
-// analyzerDebt is the violations that predate a rule, per file. Keyed by file
-// rather than totalled, so fixing one site while adding another elsewhere does
-// not net out to a pass. It is a ratchet: fix sites and lower the number.
-var analyzerDebt = map[string]map[string]int{
-	"recorderr": recordErrDebt,
-}
-
 // Driven by lint.Analyzers() rather than a hand-written list, so an analyzer
 // added to the registry is enforced without touching this test.
 func TestAnalyzersAcrossRepo(t *testing.T) {
 	found := analyzeAll(t, lint.Analyzers(), nil, "./...")
 	for _, a := range lint.Analyzers() {
 		t.Run(a.Name, func(t *testing.T) {
-			want := analyzerDebt[a.Name]
-			got := map[string]int{}
-			for _, d := range found[a.Name] {
-				got[d[:strings.Index(d, ":")]]++
-			}
-			for file, n := range got {
-				if n > want[file] {
-					t.Errorf("%s: %d violation(s), baseline %d:\n%s",
-						file, n, want[file], strings.Join(violationsIn(found[a.Name], file), "\n"))
-				}
-			}
-			for file, n := range want {
-				if got[file] < n {
-					t.Errorf("%s: improved to %d; lower analyzerDebt[%q][%q] to match", file, got[file], a.Name, file)
-				}
+			if v := found[a.Name]; len(v) > 0 {
+				t.Errorf("%d violation(s):\n%s", len(v), strings.Join(v, "\n"))
 			}
 		})
 	}
-}
-
-func violationsIn(all []string, file string) []string {
-	var out []string
-	for _, d := range all {
-		if strings.HasPrefix(d, file+":") {
-			out = append(out, d)
-		}
-	}
-	return out
 }
 
 func analyzeFixture(t *testing.T, a *analysis.Analyzer, dir, src string) []string {

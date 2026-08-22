@@ -67,7 +67,7 @@ func logRPC(ctx context.Context, err error, args []any) {
 	if isClientError(err) {
 		slog.WarnContext(ctx, "rpc error", args...)
 	} else {
-		slog.ErrorContext(ctx, "rpc error", args...)
+		slog.ErrorContext(ctx, "rpc error", args...) // puglint:exempt — access log; the detecting layer recorded it
 	}
 }
 

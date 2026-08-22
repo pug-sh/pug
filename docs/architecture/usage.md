@@ -326,7 +326,20 @@ Three layers that do work, in order of usefulness:
    a verified count rather than a missing one.
 2. **The CronJob's own Job objects** — start/completion times and exit codes, which
    is why `Run` propagates the error rather than swallowing it.
-3. **OTLP** — the pass logs and `telemetry.RecordError`s at source.
+3. **OTLP** — the pass logs and `telemetry.RecordError`s at source, and emits four
+   instruments from `internal/app/cron/usage`:
+
+   | Metric | What it says |
+   | --- | --- |
+   | `usage.pass_total{outcome}` | `metered` \| `unverified` \| `lock_held` \| `setup_failed` \| `failed`. The first three exit 0, the last two exit non-zero. `unverified` is a pass that refreshed nothing, so a green `metered` never covers for one. |
+   | `usage.pass_duration_seconds{outcome}` | Wall time. Approaching `passTimeout` means every later pass finds the lock held and exits 0. |
+   | `usage.unrefreshed_total{reason}` | `unverified_read` \| `unknown_projects` — the two section-4 dispositions that refresh nothing. The pass still exits 0 unless the prune half also failed. A sustained non-zero rate means layer 1 is about to fire; this says why, a stale-stamp window earlier. |
+   | `usage.dropped_days_total` | Day cells reconciled away (section 4). Expected on erasure; also what a truncated read looks like. |
+
+   These explain layer 1, they do not replace it — and a missing series is not
+   proof of a missing run. Instrument registration errors are discarded, a
+   binding failure at SDK startup silently leaves an instrument inert, and a
+   `SetupSDK` failure returns before the pass emits anything at all.
 
 ## 8. Known imprecision
 
