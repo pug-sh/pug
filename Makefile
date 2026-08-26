@@ -62,16 +62,6 @@ lint: lint-conventions
 	go tool golangci-lint run --allow-parallel-runners --timeout 5m \
 		--max-same-issues=0 --max-issues-per-linter=0 ./...
 
-# The fast local check while iterating: only lines this branch changed since
-# origin/main. It cannot see a regression on a line the branch did not touch —
-# adding an enum member never touches the switch that must name it — which is
-# why CI runs the full sweep instead.
-.PHONY: lint-new
-lint-new: lint-conventions
-	go tool golangci-lint run --allow-parallel-runners --timeout 5m \
-		--max-same-issues=0 --max-issues-per-linter=0 \
-		--new-from-merge-base=origin/main ./...
-
 # The conventions are written as analyzers but gated as a lint, not a test: a
 # violation is a style failure, and reading it off the lint job is what makes
 # that legible. `make test` runs the package too, as a backstop.

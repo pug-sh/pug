@@ -116,10 +116,11 @@ make rpc
 make templ
 
 # Lint Go code. `lint` is the full sweep and what CI gates on; the tree is clean,
-# so a finding anywhere fails. `lint-new` (only lines the branch changed since
-# origin/main) is the fast local check while iterating — it cannot see a
-# regression on an untouched line, which is why CI runs the full sweep.
-# Both first run `lint-conventions`, which is internal/lint
+# so a finding anywhere fails. There is deliberately no diff-scoped variant: a
+# --new-from-* filter still analyzes every package (so it is not faster) while
+# hiding a regression on a line the branch did not touch, e.g. adding an enum
+# member never touches the switch that must name it.
+# `lint` first runs `lint-conventions`, which is internal/lint
 # — the pug-specific analyzers and checks that no off-the-shelf linter covers.
 # They are written as Go tests because they need a typed package load, but they
 # are gated as a lint: a violation is a style failure, and `make test` running
@@ -127,7 +128,6 @@ make templ
 # govulncheck, which is reachability-gated: a vulnerable module stays green
 # until something calls into it.
 make lint
-make lint-new
 make lint-conventions
 make vuln
 
