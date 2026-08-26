@@ -34,7 +34,7 @@ const (
 // are matched against the lowercased utm_source verbatim, plus the same
 // domain suffix match for utm_source values that are themselves domains.
 // Google's ccTLD family (google.com, google.co.uk, images.google.de, …) is
-// matched structurally by isGoogleHost instead of enumeration.
+// matched structurally by isGoogleSearchHost instead of enumeration.
 var (
 	searchDomains = []string{
 		"bing.com", "duckduckgo.com", "yahoo.com", "yahoo.co.jp", "baidu.com",
@@ -65,6 +65,26 @@ var (
 	displayMediums = []string{"display", "banner", "expandable", "interstitial", "cpm"}
 	socialMediums  = []string{"social", "social-network", "social-media", "sm"}
 	emailTokens    = []string{"email", "e-mail", "e_mail", "newsletter"}
+
+	// googleSearchSubdomains are the labels that may precede "google.<tld>" on a
+	// search surface; "" is the apex. An allow-list, so an unlisted subdomain
+	// (accounts, mail, search — and whatever google ships next) books a visible
+	// Referral instead of silently re-inflating Organic Search. gemini and lens
+	// are here because perplexity.ai is a searchDomain: same kind of surface.
+	googleSearchSubdomains = []string{
+		"", "www", "m", "images", "news", "maps", "scholar", "books", "video", "cse",
+		"gemini", "lens",
+	}
+
+	// webmailDomains are webmail clients: a click there is a click inside an
+	// email, so it books Email. The mail.yahoo/mail.yandex hosts also suffix-match
+	// a search domain — one entry per such sibling, or the Organic Search defect
+	// survives on the host left out.
+	webmailDomains = []string{
+		"mail.google.com", "mail.yahoo.com", "mail.yahoo.co.jp", "mail.yandex.ru",
+		"mail.yandex.com", "mail.aol.com", "outlook.live.com", "outlook.office.com",
+		"outlook.office365.com", "mail.proton.me", "mail.zoho.com",
+	}
 )
 
 // classifyChannel implements the normative rule table, first match wins.
@@ -91,6 +111,7 @@ var (
 //	   |   social-network, social-media, sm}                   |
 //	 8 | video source/ref, or medium = video                   | Organic Video
 //	 9 | source or medium ∈ {email, e-mail, e_mail, newsletter}| Email
+//	   |   or a webmail referrer                               |
 //	10 | medium = affiliate                                    | Affiliate
 //	11 | ref != ""                                             | Referral
 //	12 | any UTM, or an unresolvable referrer, but             | Unassigned
@@ -100,8 +121,12 @@ func classifyChannel(ref, src, med string, anySignal bool) string {
 	src = strings.ToLower(src)
 	med = strings.ToLower(med)
 
-	search := matchesSource(src, searchSources, searchDomains) || isGoogleHost(src) ||
-		matchesHost(ref, searchDomains) || isGoogleHost(ref)
+	// A webmail ref is an email click, not the provider's search engine:
+	// mail.yahoo.com would otherwise suffix-match yahoo.com. Guards the ref arms
+	// only — a search utm_source still wins.
+	webmail := matchesHost(ref, webmailDomains)
+	search := matchesSource(src, searchSources, searchDomains) || isGoogleSearchHost(src) ||
+		(!webmail && (matchesHost(ref, searchDomains) || isGoogleSearchHost(ref)))
 	social := matchesSource(src, socialSources, socialDomains) || matchesHost(ref, socialDomains)
 	video := matchesSource(src, videoSources, videoDomains) || matchesHost(ref, videoDomains)
 	paid := isPaidMedium(med)
@@ -123,7 +148,7 @@ func classifyChannel(ref, src, med string, anySignal bool) string {
 		return ChannelOrganicSocial
 	case video || med == "video":
 		return ChannelOrganicVideo
-	case slices.Contains(emailTokens, src) || slices.Contains(emailTokens, med):
+	case webmail || slices.Contains(emailTokens, src) || slices.Contains(emailTokens, med):
 		return ChannelEmail
 	case med == "affiliate":
 		return ChannelAffiliate
@@ -156,7 +181,7 @@ func matchesHost(host string, domains []string) bool {
 	for _, d := range domains {
 		// Suffix first, then check the boundary in place. The obvious
 		// HasSuffix(host, "."+d) concatenates once per set entry per event,
-		// and these sets are scanned ~40 deep for every referred pageview.
+		// and these sets are scanned ~50 deep for every referred pageview.
 		if !strings.HasSuffix(host, d) {
 			continue
 		}
@@ -174,29 +199,34 @@ func matchesSource(src string, names, domains []string) bool {
 	return slices.Contains(names, src) || matchesHost(src, domains)
 }
 
-// isGoogleHost matches google's search domains across ccTLDs without
-// enumerating them: some dot-boundary suffix of the host must be "google."
-// followed by a TLD-shaped tail (one or two labels of 2–3 alphabetic chars) —
-// google.com, google.co.uk, images.google.de all match. The tail-shape check
-// is what keeps reverse-DNS app hosts out: android-app://com.google.android.gm
+// isGoogleSearchHost matches google's SEARCH hosts without enumerating the
+// ccTLDs: a dot-boundary suffix of the host must be "google." followed by a
+// TLD-shaped tail (one or two labels of 2–3 alphabetic chars), AND the whole
+// prefix before it must be a googleSearchSubdomains entry —
+// google.com, google.co.uk and images.google.de match; accounts.google.com,
+// mail.google.com and search.google.com do not. The tail-shape check is what
+// keeps reverse-DNS app hosts out: android-app://com.google.android.gm
 // contains the suffix "google.android.gm", whose tail ("android.gm") is not
 // TLD-shaped, so it stays a Referral per the taxonomy. "googleusercontent.com"
 // never matches (no "google." at a label boundary).
-func isGoogleHost(host string) bool {
+func isGoogleSearchHost(host string) bool {
 	if host == "google" { // domain-ish bare "google" in utm_source
 		return true
 	}
-	for h := host; h != ""; {
-		if tail, ok := strings.CutPrefix(h, "google."); ok && tldShaped(tail) {
-			return true
+	// Walk label boundaries to the first "google.<tld>": everything walked past
+	// is the subdomain — ALL of it, not the last label, or evil.www.google.com
+	// would read as "www" and pass.
+	for i := 0; ; {
+		if tail, ok := strings.CutPrefix(host[i:], "google."); ok && tldShaped(tail) {
+			sub := strings.TrimSuffix(host[:i], ".") // i is past the boundary dot; "" at the apex
+			return slices.Contains(googleSearchSubdomains, sub)
 		}
-		i := strings.IndexByte(h, '.')
-		if i < 0 {
+		dot := strings.IndexByte(host[i:], '.')
+		if dot < 0 {
 			return false
 		}
-		h = h[i+1:]
+		i += dot + 1
 	}
-	return false
 }
 
 // tldShaped reports whether tail looks like a public-suffix tail of google's
