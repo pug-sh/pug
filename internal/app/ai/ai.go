@@ -49,7 +49,7 @@ func (d *deps) close() {
 	}
 	if d.closeOtel != nil {
 		if err := d.closeOtel(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err))
+			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err)) // puglint:exempt — nothing left to record it on
 		}
 	}
 }
@@ -81,14 +81,14 @@ func newDeps(ctx context.Context) (*deps, error) {
 
 	otelInterceptor, closeOtel, err := telemetry.NewOtelInterceptor(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err)) // puglint:exempt — nothing to record it on yet
 		return nil, err
 	}
 	closers = append(closers, func() {
 		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := closeOtel(rollbackCtx); err != nil {
-			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err))
+			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err)) // puglint:exempt — nothing left to record it on
 		}
 	})
 
@@ -151,6 +151,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 // server's mux). NEVER add validate.WithValidateResponses() here — flagged
 // TileOps are deliberately invalid protos the client must receive.
 func buildMux(
+	ctx context.Context,
 	svc *assistant.Service,
 	jwtKey []byte,
 	corsOrigins []string,
@@ -189,13 +190,13 @@ func buildMux(
 
 	path, connectHandler := aidashboardsv1connect.NewDashboardAssistantServiceHandler(&handler{svc: svc}, handlerOpts)
 	middleware := authn.NewMiddleware(WithAssistantAuth(jwtKey))
-	mux.Handle(path, pogrpc.WithCORS(corsOrigins, middleware.Wrap(connectHandler)))
+	mux.Handle(path, pogrpc.WithCORS(ctx, corsOrigins, middleware.Wrap(connectHandler)))
 
 	return mux
 }
 
 func start(ctx context.Context, d *deps) error {
-	mux := buildMux(d.svc, []byte(d.cfg.JWTKey), strings.Split(d.cfg.CORSOrigins, ","), d.otelInterceptor, d.redis.Ping)
+	mux := buildMux(ctx, d.svc, []byte(d.cfg.JWTKey), strings.Split(d.cfg.CORSOrigins, ","), d.otelInterceptor, d.redis.Ping)
 
 	server := &http.Server{
 		Addr:    ":" + d.cfg.Port,
@@ -210,13 +211,13 @@ func start(ctx context.Context, d *deps) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "ai server shutdown error", slogx.Error(err))
+			slog.ErrorContext(shutdownCtx, "ai server shutdown error", slogx.Error(err)) // puglint:exempt — no span at shutdown
 		}
 	}()
 
 	slog.InfoContext(ctx, "Starting ai service", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt — no span at startup
 		return err
 	}
 	return nil

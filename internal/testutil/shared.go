@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -146,8 +147,8 @@ func (r *teardownRegistry) run() error {
 		if len(fns) == 0 {
 			break
 		}
-		for i := len(fns) - 1; i >= 0; i-- {
-			errs = append(errs, runTeardown(fns[i]))
+		for _, fn := range slices.Backward(fns) {
+			errs = append(errs, runTeardown(fn))
 		}
 	}
 	return errors.Join(errs...)

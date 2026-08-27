@@ -203,27 +203,27 @@ func TestTileViewModeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
 	}
 }
 
+// A view mode has to be listed in two independent switches — normalizedTileViewModeProto on the
+// write path, TileViewModeToRPC on the read path — and a value missing from either silently
+// degrades the tile to LINE rather than failing. Enumerating the enum descriptor instead of a
+// hand-kept table is what makes the next mode added to the proto fail here rather than in
+// production; the table this replaced covered only the read path.
 func TestTileViewModeToRPC_AllInsightModes(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want dashboardsv1.DashboardTileViewMode
-	}{
-		{"line", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
-		{"area", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA},
-		{"bar_grouped", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED},
-		{"bar_stacked", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED},
-		{"table", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE},
-		{"kpi", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI},
-		{"sankey", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY},
-		{"pie", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := TileViewModeToRPC(context.Background(), TileKindInsight, tc.raw)
-			if got != tc.want {
-				t.Fatalf("TileViewModeToRPC(insight, %q) = %v, want %v", tc.raw, got, tc.want)
+	values := dashboardsv1.DashboardTileViewMode(0).Descriptor().Values()
+	for i := range values.Len() {
+		value := values.Get(i)
+		mode := dashboardsv1.DashboardTileViewMode(value.Number())
+		// UNSPECIFIED is the one mode that must NOT round-trip: both paths default it to LINE,
+		// covered by their own tests.
+		if mode == dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED {
+			continue
+		}
+		t.Run(strings.ToLower(string(value.Name())), func(t *testing.T) {
+			if got := TileViewModeToRPC(context.Background(), TileKindInsight, mode.String()); got != mode {
+				t.Errorf("TileViewModeToRPC(insight, %q) = %v, want %v", mode, got, mode)
+			}
+			if got := normalizedTileViewModeProto(TileKindInsight, mode); got != mode {
+				t.Errorf("normalizedTileViewModeProto(insight, %v) = %v, want %v", mode, got, mode)
 			}
 		})
 	}

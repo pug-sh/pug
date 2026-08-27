@@ -365,7 +365,7 @@ func TestTilePayload_HashContractCoversEveryInputField(t *testing.T) {
 		}
 	}
 	fields := desc.Fields()
-	for i := 0; i < fields.Len(); i++ {
+	for i := range fields.Len() {
 		name := string(fields.Get(i).Name())
 		if !covered[name] {
 			t.Errorf("DashboardTileInput field %q is not covered by the hash contract test — decide whether it should affect the hash and update either computeTilePayloadHash or this test", name)

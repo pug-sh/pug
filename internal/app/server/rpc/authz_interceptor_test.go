@@ -31,8 +31,7 @@ func mustAuthorizer(t *testing.T) *authz.Authorizer {
 // path) or a plain *connect.Error — connect.CodeOf alone returns Unknown for the
 // former.
 func apperrCode(err error) connect.Code {
-	var ae *apperr.Error
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*apperr.Error](err); ok {
 		return ae.Code()
 	}
 	return connect.CodeOf(err)

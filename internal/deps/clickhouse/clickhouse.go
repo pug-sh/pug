@@ -293,19 +293,23 @@ func createConnection(ctx context.Context, cfg *Config) (*Conn, error) {
 	opts, err := ch.ParseDSN(cfg.URL)
 	if err != nil {
 		slog.ErrorContext(ctx, "Unable to parse ClickHouse DSN", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 
 	conn, err := ch.Open(opts)
 	if err != nil {
 		slog.ErrorContext(ctx, "Unable to create ClickHouse connection", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 
 	if err := conn.Ping(ctx); err != nil {
 		slog.ErrorContext(ctx, "Unable to ping ClickHouse", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		if closeErr := conn.Close(); closeErr != nil {
 			slog.ErrorContext(ctx, "failed to close ClickHouse after ping failure", slogx.Error(closeErr))
+			telemetry.RecordError(ctx, closeErr)
 		}
 		return nil, err
 	}
@@ -337,6 +341,7 @@ func (db *DB) Close(ctx context.Context) error {
 		err := db.Conn.Close()
 		if err != nil {
 			slog.ErrorContext(ctx, "Error closing ClickHouse connection", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 			return fmt.Errorf("error closing ClickHouse connection: %w", err)
 		}
 	}

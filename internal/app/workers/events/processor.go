@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -116,7 +117,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 				With("worker", "events").
 				With("project_id", batch.GetProjectId()).
 				With("event_id", e.GetEventId()).
-				With("event_index", fmt.Sprintf("%d", i))
+				With("event_index", strconv.Itoa(i))
 		}
 	}
 

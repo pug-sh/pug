@@ -31,6 +31,10 @@ func TestIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	seedEvents(t, ctx, ch)
+	// Seeded up front, not inside the subtests that filter on profiles: every
+	// funnel/retention subtest is identity-resolved now, so a mid-run profile
+	// insert would make earlier and later subtests see different worlds.
+	seedIntegrationProfiles(t, ctx, ch)
 	executor := insights.NewExecutor(ch.Conn)
 
 	t.Run("trends_daily", func(t *testing.T) {
@@ -428,9 +432,8 @@ func TestIntegration(t *testing.T) {
 		// alice(pro): 3 page_views; bob(free): 2; charlie(no profile): 1.
 		// Plus 1 event from alias "alice_anon" which maps to alice (plan=pro).
 		// Filter plan=pro → alice's 3 events + 1 alias event = 4.
-		seedIntegrationProfiles(t, ctx, ch)
 
-		// Insert an event with an alias distinct_id to exercise the UNION ALL alias branch.
+		// Insert an event with an alias distinct_id to exercise the alias branch of the IN set.
 		if err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID, uuid.New().String(), "page_view", "alice_anon",
 			time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC),
@@ -1259,6 +1262,76 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	// A map insight executes as a top K over $country. The two things worth proving end to end are
+	// that it answers in top_k rows keyed by country, and that the day-aligned (rollup) and
+	// misaligned (raw) windows agree — the rewrite is the only thing standing between the two.
+	t.Run("map", func(t *testing.T) {
+		mapReq := func(metric insightsv1.AggregationType, from, to time.Time) *insightsv1.QueryRequest {
+			return &insightsv1.QueryRequest{
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_MAP.Enum(),
+					Map: &insightsv1.MapQuery{
+						Scope:  &commonv1.EventFilter{Kind: proto.String("page_view")},
+						Metric: metric.Enum(),
+					},
+				},
+				TimeRange:   &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			}
+		}
+		countryCounts := func(t *testing.T, resp *insightsv1.QueryResponse) map[string]float64 {
+			t.Helper()
+			rows := resp.GetTopK().GetRows()
+			if rows == nil {
+				t.Fatalf("map answered in %T, want a top_k result", resp.GetResult())
+			}
+			out := map[string]float64{}
+			for _, row := range rows {
+				if row.GetIsOthers() {
+					t.Errorf("map returned an $others row (%v) — it cannot be drawn on a map", row.GetValue())
+					continue
+				}
+				out[row.GetDimensionValue()] = row.GetValue()
+			}
+			return out
+		}
+
+		dayStart := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		dayEnd := time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)
+		// Every seeded event is at 12:00, so a 06:00 start selects the same events — it only
+		// misaligns the window, which is what forces the raw builder.
+		midDayStart := time.Date(2024, 1, 1, 6, 0, 0, 0, time.UTC)
+
+		for _, tc := range []struct {
+			name   string
+			metric insightsv1.AggregationType
+			want   map[string]float64
+		}{
+			// alice(US) ×3 + charlie(US) ×1, bob(GB) ×2 → US 4 / GB 2 by event, 2 / 1 by person.
+			{"total", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, map[string]float64{"US": 4, "GB": 2}},
+			{"unique_users", insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS, map[string]float64{"US": 2, "GB": 1}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				rollupResp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, mapReq(tc.metric, dayStart, dayEnd), time.Now())
+				if err != nil {
+					t.Fatalf("ExecuteQuery (day-aligned): %v", err)
+				}
+				rollup := countryCounts(t, rollupResp)
+				if !reflect.DeepEqual(rollup, tc.want) {
+					t.Errorf("day-aligned counts = %v, want %v", rollup, tc.want)
+				}
+
+				rawResp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, mapReq(tc.metric, midDayStart, dayEnd), time.Now())
+				if err != nil {
+					t.Fatalf("ExecuteQuery (misaligned): %v", err)
+				}
+				if raw := countryCounts(t, rawResp); !reflect.DeepEqual(raw, rollup) {
+					t.Errorf("raw vs rollup mismatch: raw=%v rollup=%v", raw, rollup)
+				}
+			})
+		}
+	})
+
 	t.Run("rollup_table_populated_by_mv", func(t *testing.T) {
 		var total uint64
 		if err := ch.Conn.QueryRow(ctx,
@@ -1371,7 +1444,7 @@ func TestIntegration(t *testing.T) {
 		// Insert the same event twice (identical dedup key): an at-least-once
 		// redelivery / client retry. Raw collapses these on merge; the incremental
 		// MV fires per insert and sums them.
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if err := insertAutoEvent(ctx, ch.Conn, dupProjectID, eventID, "page_view", "alice", occur,
 				variantStringMap(map[string]string{"$country": "US"})); err != nil {
 				t.Fatalf("seed dup event %d: %v", i, err)
@@ -1559,7 +1632,7 @@ func TestIntegration(t *testing.T) {
 		sessionID := "00000000-0000-0000-0000-0000000000e5"
 		eventID := uuid.New().String()
 		// Same event_id twice = an at-least-once redelivery of a one-event session.
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if err := insertSessionEvent(ctx, ch.Conn, dupProjectID, eventID,
 				"page_view", "alice", sessionID, occur, "/only", "US"); err != nil {
 				t.Fatalf("seed dup session event %d: %v", i, err)
@@ -1990,7 +2063,6 @@ func TestIntegration(t *testing.T) {
 	t.Run("top_k", func(t *testing.T) {
 		// Sept 2024 window, isolated from every other seed (Jan–Jun).
 		seedTopKEvents(t, ctx, ch)
-		seedIntegrationProfiles(t, ctx, ch)
 		topKWindow := &commonv1.TimeRange{
 			From: timestamppb.New(time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)),
 			To:   timestamppb.New(time.Date(2024, 9, 8, 0, 0, 0, 0, time.UTC)),
@@ -2253,12 +2325,9 @@ func TestIntegration(t *testing.T) {
 
 		t.Run("user_profile_filter", func(t *testing.T) {
 			// PROPERTY_SOURCE_PROFILE plan=pro restricts the ranking to alice's
-			// events. Note the existing profileFilterCondition contract: it
-			// matches events by distinct_id IN (profile ids ∪ alias ids) — NOT
-			// external_id — so alice's event keyed by "alice_ext" is excluded by
-			// the filter even though the top-K identity union resolves it to her.
-			// The surviving events ("alice" + "alice_anon") still group to the
-			// canonical key.
+			// events. The filter matches distinct_id against her full identity
+			// set (id ∪ external_id ∪ aliases), so all three of her tk_purchase
+			// keys pass and group to the canonical key.
 			req := topKReq(&insightsv1.TopKQuery{
 				Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(),
 				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_purchase")},
@@ -2279,9 +2348,9 @@ func TestIntegration(t *testing.T) {
 			if len(rows) != 1 {
 				t.Fatalf("expected 1 row (alice only), got %d: %v", len(rows), rows)
 			}
-			// TOTAL metric (default): 2 events pass the filter (id + alias).
-			if rows[0].GetDimensionValue() != "alice" || rows[0].GetValue() != 2 {
-				t.Errorf("expected alice/2, got %v", rows[0])
+			// TOTAL metric (default): 3 events pass the filter (id + external_id + alias).
+			if rows[0].GetDimensionValue() != "alice" || rows[0].GetValue() != 3 {
+				t.Errorf("expected alice/3, got %v", rows[0])
 			}
 		})
 
@@ -2788,7 +2857,7 @@ func seedRetentionEvents(t *testing.T, ctx context.Context, ch *testutil.TestCli
 //
 // Aliases:
 //
-//	alice_anon → alice (exercises UNION ALL alias branch)
+//	alice_anon → alice (exercises the alias branch of the IN set)
 func seedIntegrationProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
 	t.Helper()
 
@@ -2812,7 +2881,7 @@ func seedIntegrationProfiles(t *testing.T, ctx context.Context, ch *testutil.Tes
 		}
 	}
 
-	// Seed an alias so the UNION ALL branch in profileFilterCondition is exercised.
+	// Seed an alias so profileFilterCondition's alias branch is exercised.
 	if err := ch.Conn.Exec(ctx,
 		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
 		"alice_anon", "alice", "alice_ext", testProjectID,
@@ -3092,7 +3161,7 @@ func seedTopKEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHou
 	}{
 		{"big", 3}, {"$others", 2}, {"small", 1},
 	} {
-		for i := 0; i < l.n; i++ {
+		for i := range l.n {
 			events = append(events, event{
 				kind: "tk_lit", user: fmt.Sprintf("l_%s_%d", l.label, i),
 				custom: map[string]chcol.Variant{"label": chcol.NewVariantWithType(l.label, "String")},
@@ -3226,7 +3295,7 @@ func seedTopKCollisionProfiles(t *testing.T, ctx context.Context, ch *testutil.T
 		user  string
 		count int
 	}{{"collide", 3}, {"solo", 1}} {
-		for i := 0; i < e.count; i++ {
+		for range e.count {
 			occurTime := time.Date(2024, 11, 1+n%3, 12, 0, 0, 0, time.UTC)
 			n++
 			batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)

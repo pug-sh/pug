@@ -57,14 +57,10 @@ func excludeCookielessForPersons(spec *insightsv1.InsightQuerySpec) bool {
 }
 
 // cookielessExclusionCond is the raw-path predicate. alias "" targets an
-// unaliased events scan; a non-empty alias qualifies the column where `events`
-// is joined under a name — retention and top K both join it as `e`. Note `e` is
-// the raw events table, NOT a CTE, and the predicate must land on those event
-// rows: in retention the CTE is `c` (the cohort side of `cohorts c INNER JOIN
-// events e`), while in top K `e` is joined to an identity subquery aliased `i`
-// over `latest_profiles`/`latest_profile_aliases` — the `per_user` and `ranked`
-// CTEs sit above that join, not inside it. Returns the zero Condition when
-// exclude is false, which Where skips.
+// unaliased events scan; identity-joined scans pass "e", the raw events table
+// under profiles.IdentityJoinedEvents — never a CTE sitting above that join,
+// or the predicate filters already-aggregated rows. Returns the zero Condition
+// when exclude is false, which Where skips.
 func cookielessExclusionCond(exclude bool, alias string) chq.Condition {
 	col := "distinct_id"
 	if alias != "" {

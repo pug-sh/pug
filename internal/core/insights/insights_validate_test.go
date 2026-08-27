@@ -86,6 +86,20 @@ func validTopKQueryRequest() *insightsv1.QueryRequest {
 	}
 }
 
+func validMapQueryRequest() *insightsv1.QueryRequest {
+	return &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_MAP.Enum(),
+			Map:         &insightsv1.MapQuery{},
+		},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		TimeRange: &commonv1.TimeRange{
+			From: timestamppb.New(validQueryAnchor),
+			To:   timestamppb.New(validQueryAnchor.Add(24 * time.Hour)),
+		},
+	}
+}
+
 // TestInsightTypeValidation exercises the required + defined_only constraints on InsightType.
 func TestInsightTypeValidation(t *testing.T) {
 	tests := []struct {
@@ -99,6 +113,7 @@ func TestInsightTypeValidation(t *testing.T) {
 		{name: "valid_segmentation", insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION, wantErr: false},
 		{name: "valid_user_flow", insightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW, wantErr: false},
 		{name: "valid_top_k", insightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K, wantErr: false},
+		{name: "valid_map", insightType: insightsv1.InsightType_INSIGHT_TYPE_MAP, wantErr: false},
 		{name: "unspecified_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_UNSPECIFIED, wantErr: true},
 		{name: "undefined_value_rejected", insightType: 999, wantErr: true},
 	}
@@ -110,6 +125,9 @@ func TestInsightTypeValidation(t *testing.T) {
 			}
 			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_TOP_K {
 				req = validTopKQueryRequest()
+			}
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_MAP {
+				req = validMapQueryRequest()
 			}
 			req.Spec.InsightType = tt.insightType.Enum()
 			err := protovalidate.Validate(req)
@@ -287,6 +305,105 @@ func TestUserFlowQueryValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMapQueryValidation exercises the map-specific CEL rules on
+// InsightQuerySpec. The country dimension is implied by the insight type, so the
+// rules exist to keep everything that would compete with it unrepresentable.
+func TestMapQueryValidation(t *testing.T) {
+	t.Run("valid_bare_map", func(t *testing.T) {
+		if err := protovalidate.Validate(validMapQueryRequest()); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+	})
+
+	t.Run("valid_scoped_map_with_metric", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.Map = &insightsv1.MapQuery{
+			Scope:  &commonv1.EventFilter{Kind: proto.String("page_view")},
+			Metric: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum(),
+		}
+		if err := protovalidate.Validate(req); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+	})
+
+	t.Run("map_required_when_insight_type_is_map", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.Map = nil
+		if err := protovalidate.Validate(req); !hasRule(err, "map_required") {
+			t.Errorf("expected map_required, got: %v", err)
+		}
+	})
+
+	t.Run("map_rejected_for_other_insight_type", func(t *testing.T) {
+		req := validQueryRequest()
+		req.Spec.Map = &insightsv1.MapQuery{}
+		if err := protovalidate.Validate(req); !hasRule(err, "map_only_for_map") {
+			t.Errorf("expected map_only_for_map, got: %v", err)
+		}
+	})
+
+	t.Run("map_rejects_events", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.Events = []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}},
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "map_no_events") {
+			t.Errorf("expected map_no_events, got: %v", err)
+		}
+	})
+
+	t.Run("map_rejects_session", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.Session = &insightsv1.SessionQuery{
+			Metric: insightsv1.SessionMetric_SESSION_METRIC_SESSIONS.Enum(),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "map_no_session") {
+			t.Errorf("expected map_no_session, got: %v", err)
+		}
+	})
+
+	t.Run("map_rejects_breakdowns", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$browser")}}
+		if err := protovalidate.Validate(req); !hasRule(err, "map_no_breakdowns") {
+			t.Errorf("expected map_no_breakdowns, got: %v", err)
+		}
+	})
+
+	t.Run("map_rejects_breakdown_limit", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.BreakdownLimit = proto.Int32(25)
+		if err := protovalidate.Validate(req); !hasRule(err, "map_no_breakdown_limit") {
+			t.Errorf("expected map_no_breakdown_limit, got: %v", err)
+		}
+	})
+
+	t.Run("map_numeric_metric_requires_metric_property", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.Map = &insightsv1.MapQuery{
+			Metric: insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "map_metric_property_required") {
+			t.Errorf("expected map_metric_property_required, got: %v", err)
+		}
+		req.Spec.Map.MetricProperty = proto.String("order_amount")
+		if err := protovalidate.Validate(req); err != nil {
+			t.Fatalf("expected valid with metric_property, got error: %v", err)
+		}
+	})
+
+	t.Run("map_counting_metric_rejects_metric_property", func(t *testing.T) {
+		req := validMapQueryRequest()
+		req.Spec.Map = &insightsv1.MapQuery{
+			Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum(),
+			MetricProperty: proto.String("order_amount"),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "map_metric_property_only_for_numeric") {
+			t.Errorf("expected map_metric_property_only_for_numeric, got: %v", err)
+		}
+	})
 }
 
 // TestTopKQueryValidation exercises top-k-specific CEL rules on InsightQuerySpec
@@ -719,12 +836,16 @@ func TestQueryRequest_GranularityMaxRange_AllInsightTypes(t *testing.T) {
 		{name: "funnel", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, events: twoEvents},
 		{name: "retention", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, events: twoEvents},
 		{name: "top_k", insightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K, events: nil},
+		{name: "map", insightType: insightsv1.InsightType_INSIGHT_TYPE_MAP, events: nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
 			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_TOP_K {
 				req = validTopKQueryRequest()
+			}
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_MAP {
+				req = validMapQueryRequest()
 			}
 			req.Spec.InsightType = tt.insightType.Enum()
 			req.Spec.Events = tt.events

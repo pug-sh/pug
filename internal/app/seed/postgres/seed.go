@@ -2,6 +2,7 @@ package seed
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -508,7 +509,7 @@ func randomPushToken(platform string) string {
 		for i := range b {
 			b[i] = byte(rand.IntN(256))
 		}
-		return fmt.Sprintf("%x", b)
+		return hex.EncodeToString(b)
 	case "android":
 		// FCM tokens are ~152 base64url chars; approximate with a random string
 		const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"

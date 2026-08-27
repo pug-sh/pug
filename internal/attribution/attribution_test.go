@@ -31,8 +31,8 @@ func TestOutputPairsCoversEveryField(t *testing.T) {
 		}
 		seen[p.Value] = true
 	}
-	for i := range rt.NumField() {
-		if name := rt.Field(i).Name; !seen[name] {
+	for field := range rt.Fields() {
+		if name := field.Name; !seen[name] {
 			t.Errorf("Output.%s never reaches Pairs, so no caller can ever write it", name)
 		}
 	}
@@ -378,9 +378,9 @@ func TestStripServerOnly(t *testing.T) {
 // This test turns that omission into a build failure instead of a silent leak.
 func TestServerOnlyKeysMatchDerivedOnlyFields(t *testing.T) {
 	inputFields := make(map[string]bool)
-	it := reflect.TypeOf(Input{})
-	for i := range it.NumField() {
-		inputFields[it.Field(i).Name] = true
+	it := reflect.TypeFor[Input]()
+	for field := range it.Fields() {
+		inputFields[field.Name] = true
 	}
 
 	// Output field name → its canonical Prop* key, via the Pairs table: stamp
@@ -397,8 +397,8 @@ func TestServerOnlyKeysMatchDerivedOnlyFields(t *testing.T) {
 	}
 
 	want := make(map[string]bool)
-	for i := range ot.NumField() {
-		name := ot.Field(i).Name
+	for field := range ot.Fields() {
+		name := field.Name
 		if inputFields[name] {
 			continue // client can supply it: derive-if-absent, not server-only
 		}

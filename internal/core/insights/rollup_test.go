@@ -87,11 +87,11 @@ func cteBody(t *testing.T, sql, name string) string {
 		t.Fatalf("CTE %s not found in:\n%s", name, sql)
 	}
 	rest := sql[i+len(open):]
-	j := strings.Index(rest, "\n)")
-	if j < 0 {
+	before, _, ok := strings.Cut(rest, "\n)")
+	if !ok {
 		t.Fatalf("unterminated CTE %s in:\n%s", name, sql)
 	}
-	return rest[:j]
+	return before
 }
 
 // TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN pins the three axes on

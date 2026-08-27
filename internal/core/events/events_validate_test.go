@@ -19,8 +19,7 @@ import (
 // coercion), which protovalidate wraps as plain errors but include the rule id
 // in the message text.
 func hasRule(err error, ruleSubstring string) bool {
-	var ve *protovalidate.ValidationError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*protovalidate.ValidationError](err); ok {
 		for _, v := range ve.Violations {
 			if strings.Contains(v.Proto.GetRuleId(), ruleSubstring) {
 				return true

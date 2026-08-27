@@ -101,12 +101,10 @@ func TestRefreshSession(t *testing.T) {
 		sessions := make([]auth.Session, n)
 		errs := make([]error, n)
 		for i := range n {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				<-start
 				sessions[i], errs[i] = svc.RefreshSession(ctx, session.RefreshToken)
-			}()
+			})
 		}
 		close(start) // release together to maximize overlap
 		wg.Wait()

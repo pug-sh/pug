@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"time"
 
 	"connectrpc.com/connect"
@@ -204,9 +205,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 
 func mapToStruct(m map[string]any) (*structpb.Struct, error) {
 	fields := make(map[string]any, len(m))
-	for k, v := range m {
-		fields[k] = v
-	}
+	maps.Copy(fields, m)
 	return structpb.NewStruct(fields)
 }
 

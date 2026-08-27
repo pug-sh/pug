@@ -91,6 +91,8 @@ func promotedAutoNumericSQL(col PromotedAutoColumn, alias string) string {
 		return fmt.Sprintf("CAST(%s%s AS Nullable(Float64))", prefix, col.Column)
 	case PromotedString:
 		return fmt.Sprintf("toFloat64OrNull(%s)", promotedAutoStringSQL(col, alias))
+	case PromotedBool, PromotedNullableBool:
+		return ""
 	default:
 		return ""
 	}

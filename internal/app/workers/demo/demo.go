@@ -113,13 +113,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := closeOtel(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
-		}
-	}()
+	defer telemetry.ShutdownOnExit(ctx, closeOtel)
 
 	var cfg Config
 	if err := envconfig.Process(ctx, &cfg); err != nil {
@@ -334,7 +328,8 @@ func healDemoProfiles(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, pro
 		return fmt.Errorf("check postgres demo profiles: %w", err)
 	}
 
-	switch decideProfileHeal(chProfiles, pgProfiles) {
+	action := decideProfileHeal(chProfiles, pgProfiles)
+	switch action {
 	case profileHealNoSource:
 		slog.WarnContext(ctx, "demo events present but no postgres profiles; a prior seed likely crashed before seeding profiles",
 			slog.String("project_id", projectID),
@@ -350,12 +345,14 @@ func healDemoProfiles(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, pro
 		if err := seed.CopyProfilesToClickHouse(ctx, pg, ch, projectID); err != nil {
 			return fmt.Errorf("re-copy profiles to clickhouse: %w", err)
 		}
-	default: // profileHealOK
+	case profileHealOK:
 		slog.InfoContext(ctx, "demo data present, skipping backfill",
 			slog.String("project_id", projectID),
 			slog.Uint64("events", events),
 			slog.Uint64("profiles", chProfiles),
 		)
+	default:
+		return fmt.Errorf("unhandled profile heal action %d", action)
 	}
 	return nil
 }

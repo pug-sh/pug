@@ -80,6 +80,9 @@ enum DashboardTileViewMode {
   DASHBOARD_TILE_VIEW_MODE_KPI = 6;
   DASHBOARD_TILE_VIEW_MODE_SANKEY = 7;
   DASHBOARD_TILE_VIEW_MODE_PIE = 8;
+  // The only view a map insight can take, the way SANKEY is for user flow.
+  // FE-enforced; the server stores and echoes the pairing without validating it.
+  DASHBOARD_TILE_VIEW_MODE_MAP = 9;
 }
 
 // ComparePeriod selects an automatic comparison window for KPI / trend tiles.

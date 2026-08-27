@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
   GOMODCACHE: /home/runner/go/pkg/mod
   GOCACHE: /home/runner/.cache/go-build
@@ -19,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v7
         with:
@@ -50,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v7
         with:
@@ -67,13 +74,45 @@ jobs:
       - name: Download modules and compile tools
         run: go mod download && go install tool
 
+      # Gates the whole tree, not just the diff: a --new-from-* filter matches by
+      # the line a finding lands on, so adding an enum member — which never
+      # touches the switch that must name it — would slip through. Run the same
+      # `make lint` locally; there is no diff-scoped variant.
       - name: Lint
         run: make lint
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            /home/runner/go/pkg/mod
+            /home/runner/.cache/go-build
+          key: go-${{ hashFiles('go.sum') }}
+          restore-keys: go-
+
+      - name: Download modules and compile tools
+        run: go mod download && go install tool
+
+      - name: Vulnerability scan
+        run: make vuln
 
   drift:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v7
         with:

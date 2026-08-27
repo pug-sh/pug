@@ -75,6 +75,9 @@ func sanitizeError(ctx context.Context, procedure string, err error) error {
 	slog.ErrorContext(ctx, "unhandled error",
 		slog.String("procedure", procedure),
 		slogx.Error(err))
+	// Last resort for an error no layer classified: otelconnect sets span status
+	// but never an exception event, so without this the span carries no cause.
+	telemetry.RecordError(ctx, err)
 	cerr := connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	attachDetails(ctx, cerr, apperr.ReasonInternal)
 	return cerr

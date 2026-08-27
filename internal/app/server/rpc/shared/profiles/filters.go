@@ -1,6 +1,7 @@
 package profiles
 
 import (
+	"errors"
 	"fmt"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
@@ -33,7 +34,7 @@ func buildProfileFilterCondition(
 
 func buildSingleProfileFilterGroupCondition(group *profilesv1.FilterGroup) (chq.Condition, error) {
 	if len(group.GetFilters()) == 0 {
-		return chq.Condition{}, fmt.Errorf("group must contain at least one filter")
+		return chq.Condition{}, errors.New("group must contain at least one filter")
 	}
 
 	conds := make([]chq.Condition, 0, len(group.GetFilters()))
@@ -52,6 +53,7 @@ func buildSingleProfileFilterGroupCondition(group *profilesv1.FilterGroup) (chq.
 }
 
 func buildSingleProfileFilterCondition(f *commonv1.PropertyFilter) (chq.Condition, error) {
+	//exhaustive:ignore a source this builder has no expression for is rejected, not guessed
 	switch f.GetSource() {
 	case commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED, commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		return chq.ProfilePropertyCondition(f)

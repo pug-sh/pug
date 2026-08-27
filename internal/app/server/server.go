@@ -65,7 +65,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer d.close()
+	defer d.close(ctx)
 
 	return start(ctx, d)
 }
@@ -112,6 +112,8 @@ func start(ctx context.Context, d *deps) error {
 			pogrpc.AuthzInterceptor(d.authz, orgsSvc),
 		),
 		connect.WithRecover(pogrpc.RecoverHandlerPanic),
+		// The decompressed message — WithRequestLimits only sees the gzipped wire bytes.
+		connect.WithReadMaxBytes(pogrpc.MaxRequestBytes),
 	)
 
 	// Middleware
@@ -197,10 +199,10 @@ func start(ctx context.Context, d *deps) error {
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
 		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
 
-	// Read-only by construction: no ClickHouse (the server only reads what
-	// `pug cron usage` stored) and no write pool at all.
+	// No ClickHouse: the server only reads what `pug cron usage` stored, and
+	// MeterWindow is the one method that needs it.
 	usagePath, usageHandler := usagev1connect.NewUsageServiceHandler(
-		usage.NewServer(coreusage.NewReader(d.pgRo)), handlerOpts)
+		usage.NewServer(coreusage.NewService(d.pgRo, d.pgW)), handlerOpts)
 
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
@@ -245,21 +247,21 @@ func start(ctx context.Context, d *deps) error {
 	}
 
 	// Public (CORS, no auth)
-	handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
-	handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
+	handle(authPath, pogrpc.WithCORS(ctx, d.corsOrigins, authHandler))
+	handle(sharedDashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedDashboardsHandler))
 
 	// Dashboard only (CORS + JWT auth)
-	handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
-	handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
-	handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
-	handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
-	handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
-	handle(usagePath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(usageHandler)))
+	handle(orgsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
+	handle(projectsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
+	handle(dashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
+	handle(orgEmailProvidersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
+	handle(customersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(customersHandler)))
+	handle(usagePath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(usageHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
-	handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
-	handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
-	handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
+	handle(insightsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(insightsHandler)))
+	handle(activityPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(activityHandler)))
+	handle(sharedProfilesPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
 	// SDK only (API key auth). CORS is wildcard with credentials disabled because
 	// customer sites embedding the SDK have arbitrary origins; auth lives entirely
@@ -300,9 +302,12 @@ func start(ctx context.Context, d *deps) error {
 	// WithCorrelationID wraps the whole mux so a correlation id exists before the
 	// authn middleware runs on any route — auth rejections happen outside the
 	// Connect interceptor chain, and this lets them carry an error_id too.
+	// ReadTimeout stays unset because it would cap the body as tightly as the
+	// headers; WithRequestLimits bounds the body's size and time separately.
 	server := &http.Server{
-		Addr:    ":" + d.port,
-		Handler: pogrpc.WithCorrelationID(mux),
+		Addr:              ":" + d.port,
+		Handler:           pogrpc.WithCorrelationID(pogrpc.WithRequestLimits(mux)),
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
 		return err
@@ -310,16 +315,16 @@ func start(ctx context.Context, d *deps) error {
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err))
+			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err)) // puglint:exempt — no span at shutdown
 		}
 	}()
 
 	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt — no span at startup
 		return err
 	}
 

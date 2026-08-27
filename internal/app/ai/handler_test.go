@@ -39,7 +39,7 @@ func newTestServer(t *testing.T, rdb *redis.Client, scripts [][]provider.StreamP
 	if err != nil {
 		t.Fatalf("otel interceptor: %v", err)
 	}
-	mux := buildMux(svc, testJWTKey, []string{"*"}, otelI, func(ctx context.Context) error {
+	mux := buildMux(t.Context(), svc, testJWTKey, []string{"*"}, otelI, func(ctx context.Context) error {
 		return rdb.Ping(ctx).Err()
 	})
 

@@ -1,0 +1,31 @@
+name: CodeRabbit gate
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  label:
+    # No COLLABORATOR: an org member reads as MEMBER, so that value only ever means an outside
+    # collaborator. dependabot reads as `CONTRIBUTOR`, so it needs the login check; its branches are ours.
+    if: >-
+      github.event.pull_request.draft == false
+      && (contains(fromJSON('["OWNER", "MEMBER"]'),
+      github.event.pull_request.author_association)
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    steps:
+      # pull_request_target, since a fork PR's token is read-only. Nothing is checked out, so no PR
+      # code runs against this one.
+      - name: Opt the PR into review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh label create coderabbit --repo "$GITHUB_REPOSITORY" --color BFD4F2 \
+            --description "CodeRabbit reviews this PR" --force
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --add-label coderabbit

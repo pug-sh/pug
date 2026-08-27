@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -37,7 +38,7 @@ func init() {
 // recorded.
 func propertyValueToVariant(pv *commonv1.PropertyValue) (chcol.Variant, error) {
 	if pv == nil {
-		return chcol.Variant{}, fmt.Errorf("propertyValueToVariant: nil PropertyValue")
+		return chcol.Variant{}, errors.New("propertyValueToVariant: nil PropertyValue")
 	}
 	switch v := pv.GetValue().(type) {
 	case *commonv1.PropertyValue_StringValue:

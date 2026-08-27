@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -141,19 +142,19 @@ type natsWorker struct {
 
 func NewWorker(config WorkerConfig, processor MessageProcessor, client *NATSClient) (Worker, error) {
 	if config.StreamName == "" {
-		return nil, fmt.Errorf("nats: WorkerConfig.StreamName is required")
+		return nil, errors.New("nats: WorkerConfig.StreamName is required")
 	}
 	if config.ConsumerName == "" {
-		return nil, fmt.Errorf("nats: WorkerConfig.ConsumerName is required")
+		return nil, errors.New("nats: WorkerConfig.ConsumerName is required")
 	}
 	if config.DurableName == "" {
-		return nil, fmt.Errorf("nats: WorkerConfig.DurableName is required")
+		return nil, errors.New("nats: WorkerConfig.DurableName is required")
 	}
 	if processor == nil {
-		return nil, fmt.Errorf("nats: processor must not be nil")
+		return nil, errors.New("nats: processor must not be nil")
 	}
 	if config.DLQSubject == "" {
-		return nil, fmt.Errorf("nats: WorkerConfig.DLQSubject is required")
+		return nil, errors.New("nats: WorkerConfig.DLQSubject is required")
 	}
 	if config.Concurrency <= 0 {
 		config.Concurrency = DefaultConcurrency
@@ -218,7 +219,7 @@ func (w *natsWorker) Start(ctx context.Context) error {
 	// means a worker only appears on the endpoints once it is genuinely consuming.
 	registerHealth(ctx, w)
 
-	for i := 0; i < w.config.Concurrency; i++ {
+	for range w.config.Concurrency {
 		w.wg.Add(1)
 		go w.processMessages(ctx)
 	}
@@ -235,7 +236,7 @@ func (w *natsWorker) Start(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-time.After(5 * time.Second):
-		return fmt.Errorf("timeout waiting for workers to finish")
+		return errors.New("timeout waiting for workers to finish")
 	}
 }
 
@@ -272,7 +273,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 		slog.ErrorContext(ctx, "failed to start message iterator",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err))
+			slogx.Error(err)) // puglint:exempt — the message loop runs outside any span
 		w.healthy.Store(false)
 		return
 	}
@@ -297,7 +298,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 	for {
 		msg, err := msgs.Next()
 		if err != nil {
-			if err == jetstream.ErrMsgIteratorClosed {
+			if errors.Is(err, jetstream.ErrMsgIteratorClosed) {
 				return
 			}
 			consecutiveErrors++
@@ -309,7 +310,8 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 			if consecutiveErrors >= maxConsecutiveErrors {
 				slog.ErrorContext(ctx, "too many consecutive message errors, restarting worker goroutine",
 					slog.String("stream", w.config.StreamName),
-					slog.String("consumer", w.config.ConsumerName))
+					slog.String("consumer", w.config.ConsumerName),
+					slogx.Error(err)) // puglint:exempt — the message loop runs outside any span
 				w.healthy.Store(false)
 				return
 			}
@@ -366,7 +368,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		slog.ErrorContext(procCtx, "terminating poison message",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err))
+			slogx.Error(err)) // puglint:exempt — disposition log; the processor recorded the cause
 		dlqCtx, dlqCancel := dlqContext(procCtx)
 		published := w.publishToDLQ(dlqCtx, msg, meta, err)
 		dlqCancel()
@@ -387,7 +389,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		slog.ErrorContext(procCtx, "message processing failed",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err))
+			slogx.Error(err)) // puglint:exempt — disposition log; the processor recorded the cause
 
 		if w.isLastDelivery(numDelivered, metaOK) {
 			// Distinguish "burned all retries" from "couldn't read metadata, so
@@ -563,8 +565,8 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, meta *
 	// so skip these headers rather than re-read and double-log — the message still
 	// gets DLQ'd either way.
 	if meta != nil {
-		dlqMsg.Header.Set("delivery_count", fmt.Sprintf("%d", meta.NumDelivered))
-		dlqMsg.Header.Set("stream_sequence", fmt.Sprintf("%d", meta.Sequence.Stream))
+		dlqMsg.Header.Set("delivery_count", strconv.FormatUint(meta.NumDelivered, 10))
+		dlqMsg.Header.Set("stream_sequence", strconv.FormatUint(meta.Sequence.Stream, 10))
 	}
 
 	if _, err := w.js.PublishMsg(ctx, dlqMsg); err != nil {

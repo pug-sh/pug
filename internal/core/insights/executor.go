@@ -403,7 +403,7 @@ func (e *Executor) QueryTopK(ctx context.Context, projectID string, q TopKQuery)
 	if sql == "" {
 		// Defensive: a zero-value TopKQuery means a builder's (TopKQuery, error)
 		// error went unchecked. Fail locally rather than send empty SQL to CH.
-		return nil, fmt.Errorf("QueryTopK: empty SQL (unchecked zero-value TopKQuery)")
+		return nil, errors.New("QueryTopK: empty SQL (unchecked zero-value TopKQuery)")
 	}
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
@@ -498,7 +498,7 @@ func (e *Executor) QueryTopKProfiles(ctx context.Context, projectID string, sql 
 
 // QueryFunnelUserEvents executes the array-based funnel query and returns per-user
 // event arrays for Go-side step matching and timing computation.
-// Columns: (distinct_id, times, step_matches[, breakdown_0..N]).
+// Columns: (user_key, times, step_matches[, breakdown_0..N]).
 func (e *Executor) QueryFunnelUserEvents(ctx context.Context, projectID string, q FunnelTimingQuery) ([]FunnelUserEvents, error) {
 	sql := q.SQL()
 	args := q.Args()
@@ -519,7 +519,7 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, projectID string, 
 	for rows.Next() {
 		row := FunnelUserEvents{Breakdowns: make([]string, q.NumBreakdowns())}
 		dest := make([]any, 0, 3+q.NumBreakdowns())
-		dest = append(dest, &row.DistinctID, &row.Times, &row.StepMatches)
+		dest = append(dest, &row.UserKey, &row.Times, &row.StepMatches)
 		for i := range row.Breakdowns {
 			dest = append(dest, &row.Breakdowns[i])
 		}

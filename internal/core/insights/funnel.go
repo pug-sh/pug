@@ -18,7 +18,7 @@ import (
 // StepMatches[i] is the step index (0-based) that event i matches via multiIf tagging.
 // Breakdowns holds the per-dimension breakdown values for this user (empty when no breakdown).
 type FunnelUserEvents struct {
-	DistinctID  string
+	UserKey     string
 	Times       []time.Time
 	StepMatches []int64
 	Breakdowns  []string
@@ -68,9 +68,9 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 	for _, u := range users {
 		if len(u.Breakdowns) != expectedBDs {
 			err := fmt.Errorf("user %s: has %d breakdowns but expected %d",
-				u.DistinctID, len(u.Breakdowns), expectedBDs)
+				u.UserKey, len(u.Breakdowns), expectedBDs)
 			slog.ErrorContext(ctx, "ComputeFunnelTiming: breakdown length mismatch", slogx.Error(err),
-				slog.String("project_id", projectID), slog.String("distinct_id", u.DistinctID))
+				slog.String("project_id", projectID), slog.String("user_key", u.UserKey))
 			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
@@ -85,9 +85,9 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 	for _, u := range users {
 		if len(u.Times) != len(u.StepMatches) {
 			err := fmt.Errorf("user %s: mismatched array lengths (times=%d, step_matches=%d)",
-				u.DistinctID, len(u.Times), len(u.StepMatches))
+				u.UserKey, len(u.Times), len(u.StepMatches))
 			slog.ErrorContext(ctx, "ComputeFunnelTiming: array length mismatch", slogx.Error(err),
-				slog.String("project_id", projectID), slog.String("distinct_id", u.DistinctID))
+				slog.String("project_id", projectID), slog.String("user_key", u.UserKey))
 			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
@@ -132,9 +132,9 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 				if delta < 0 {
 					// Defense against upstream regressions that drop the SQL-side arraySort.
 					// time.Time.Sub on a sorted-ascending slice cannot produce negative deltas.
-					err := fmt.Errorf("user %s: negative delta at step %d (events not sorted)", u.DistinctID, s)
+					err := fmt.Errorf("user %s: negative delta at step %d (events not sorted)", u.UserKey, s)
 					slog.ErrorContext(ctx, "ComputeFunnelTiming: negative delta", slogx.Error(err),
-						slog.String("project_id", projectID), slog.String("distinct_id", u.DistinctID), slog.Int("step", s))
+						slog.String("project_id", projectID), slog.String("user_key", u.UserKey), slog.Int("step", s))
 					telemetry.RecordError(ctx, err)
 					return nil, err
 				}

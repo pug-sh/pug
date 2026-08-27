@@ -53,9 +53,25 @@ templ:
 lint-proto:
 	go tool buf lint
 
+# What CI gates on. The tree is clean, so the whole of it is held to the ruleset.
+# --max-same-issues=0 --max-issues-per-linter=0 override golangci-lint's default
+# caps (3 per message, 50 per linter), which would report a moving subset of the
+# tree rather than all of it.
 .PHONY: lint
-lint:
-	go tool golangci-lint run --allow-parallel-runners --timeout 5m ./...
+lint: lint-conventions
+	go tool golangci-lint run --allow-parallel-runners --timeout 5m \
+		--max-same-issues=0 --max-issues-per-linter=0 ./...
+
+# The conventions are written as analyzers but gated as a lint, not a test: a
+# violation is a style failure, and reading it off the lint job is what makes
+# that legible. `make test` runs the package too, as a backstop.
+.PHONY: lint-conventions
+lint-conventions:
+	go test ./internal/lint/ -count=1
+
+.PHONY: vuln
+vuln:
+	go tool govulncheck ./...
 
 .PHONY: rpc
 rpc: lint-proto
@@ -88,7 +104,7 @@ fmt:
 
 .PHONY: test
 test:
-	go test ./... -race -count=1
+	go test ./... -race -count=1 -shuffle=on
 
 .PHONY: cover
 cover:

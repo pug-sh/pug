@@ -35,13 +35,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := closeOtel(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
-		}
-	}()
+	defer telemetry.ShutdownOnExit(ctx, closeOtel)
 
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
@@ -195,11 +189,12 @@ func permanentEraseError(err error, msg *workercompliancev1.EraseMessage) error 
 // markEraseFailed records the failure on the ledger row before the message is
 // dead-lettered. The cause is already recorded at source; if the ledger write
 // itself fails the row stays 'processing' until a re-request re-drives it, so
-// this only logs the secondary failure.
+// this logs the secondary failure and goes no further.
 func markEraseFailed(ctx context.Context, svc erasureExecutor, msg *workercompliancev1.EraseMessage, cause error) {
 	if err := svc.MarkErasureFailed(ctx, msg.GetProjectId(), msg.GetRequestId(), cause); err != nil {
 		slog.ErrorContext(ctx, "could not mark erasure failed before dead-lettering",
 			slog.String("request_id", msg.GetRequestId()),
-			slog.String("project_id", msg.GetProjectId()), slogx.Error(err))
+			slog.String("project_id", msg.GetProjectId()),
+			slogx.Error(err)) // puglint:exempt — MarkErasureFailed recorded this write failure
 	}
 }

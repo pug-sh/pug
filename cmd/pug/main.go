@@ -236,7 +236,7 @@ var emailPreviewCmd = &cobra.Command{
 			out = text
 		}
 		if emailPreviewOut != "" {
-			return os.WriteFile(emailPreviewOut, []byte(out), 0o644)
+			return os.WriteFile(emailPreviewOut, []byte(out), 0o600)
 		}
 		_, err = os.Stdout.WriteString(out)
 		return err

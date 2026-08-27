@@ -425,9 +425,7 @@ func TestResolver_ConcurrentUse(t *testing.T) {
 	var wg sync.WaitGroup
 	ids := make([]string, goroutines)
 	for i := range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// Alternate the day so both accepted-window entries are written and
 			// read concurrently, and the prune runs while others are reading.
 			day := Day("20260720")
@@ -441,7 +439,7 @@ func TestResolver_ConcurrentUse(t *testing.T) {
 			}
 			ids[i] = id
 			r.SessionID(ctx, "p1", id, day, now)
-		}()
+		})
 	}
 	wg.Wait()
 

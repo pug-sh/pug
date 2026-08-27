@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -403,6 +404,8 @@ func (r mutationCorpusRow) deriveInput() attribution.Input {
 	}
 }
 
+// Rows must stay inside what frozen 008 can also derive — see
+// TestMutationCorpusStaysWithin008Semantics below before adding one.
 var mutationCorpus = []mutationCorpusRow{
 	{name: "plain_page", url: "https://pugandpals.example.com/products/ball", locale: "en-us", screenW: 1920, screenH: 1080, pageTitle: "Ball"},
 	{name: "bare_host_root_path", url: "https://pugandpals.example.com", referrer: "https://www.google.com/"},
@@ -519,6 +522,35 @@ var mutationCorpus = []mutationCorpusRow{
 	// the mutation is a one-shot irreversible rewrite.
 	{name: "non_ascii_uppercase_host", url: "https://ÜBER.example.de/x"},
 	{name: "non_ascii_uppercase_referrer", url: "https://pugandpals.example.com/x", referrer: "https://ÜBER.example.de/from"},
+}
+
+// TestMutationCorpusStaysWithin008Semantics keeps the corpus off the hosts where
+// Go and the frozen 008 mirror deliberately disagree since issue #81 (008 books
+// every google.<tld> host as Organic Search and has no webmail rule). Parity is
+// green only because no row uses one; failing here, cheaply, is what stops a red
+// parity test from reading like 008 needs re-syncing.
+func TestMutationCorpusStaysWithin008Semantics(t *testing.T) {
+	// 008's own google rule, verbatim (008_add_web_analytics_columns.sql:225).
+	googleFamily := regexp.MustCompile(`(^|\.)google\.[a-z]{2,3}(\.[a-z]{2,3})?$`)
+	// The mutation's only path to Email is a UTM token; a referrer cannot reach it.
+	emailTokens := []string{"email", "e-mail", "e_mail", "newsletter"}
+	for _, row := range mutationCorpus {
+		out := attribution.Derive(row.deriveInput())
+		// An unparseable $url derives no channel in either implementation.
+		if out.Channel == "" {
+			continue
+		}
+		if googleFamily.MatchString(out.ReferrerDomain) && out.Channel != attribution.ChannelOrganicSearch {
+			t.Errorf("%s: referrer %q derives %q in Go but Organic Search in frozen 008 — drop the row, do not edit the migration",
+				row.name, out.ReferrerDomain, out.Channel)
+		}
+		byUTM := slices.Contains(emailTokens, strings.ToLower(out.UTMSource)) ||
+			slices.Contains(emailTokens, strings.ToLower(out.UTMMedium))
+		if out.Channel == attribution.ChannelEmail && !byUTM {
+			t.Errorf("%s: referrer %q derives Email in Go (webmail) but 008 has no webmail rule — drop the row, do not edit the migration",
+				row.name, out.ReferrerDomain)
+		}
+	}
 }
 
 func testMutation008DeriveParity(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {

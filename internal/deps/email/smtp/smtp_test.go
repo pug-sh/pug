@@ -37,9 +37,11 @@ type fakeSMTPServer struct {
 // them after newFakeSMTPServer returns would race the goroutine.
 type fakeOption func(*fakeSMTPServer)
 
-func withDropOnQuit() fakeOption        { return func(s *fakeSMTPServer) { s.dropOnQuit = true } }
-func withHangAfterGreeting() fakeOption { return func(s *fakeSMTPServer) { s.hangAfterGreeting = true } }
-func withSilentOnAccept() fakeOption    { return func(s *fakeSMTPServer) { s.silentOnAccept = true } }
+func withDropOnQuit() fakeOption { return func(s *fakeSMTPServer) { s.dropOnQuit = true } }
+func withHangAfterGreeting() fakeOption {
+	return func(s *fakeSMTPServer) { s.hangAfterGreeting = true }
+}
+func withSilentOnAccept() fakeOption { return func(s *fakeSMTPServer) { s.silentOnAccept = true } }
 
 func newFakeSMTPServer(t *testing.T, opts ...fakeOption) *fakeSMTPServer {
 	t.Helper()
@@ -213,7 +215,7 @@ func TestSMTPProviderSanitizesHeaders(t *testing.T) {
 	// The dangerous outcome is a standalone Bcc: header line. The CRLF must
 	// have been stripped so the malicious payload is collapsed into the
 	// Subject value (where it's harmless content, not a header).
-	for _, line := range strings.Split(body, "\r\n") {
+	for line := range strings.SplitSeq(body, "\r\n") {
 		if strings.HasPrefix(line, "Bcc:") {
 			t.Fatalf("Bcc header injected on its own line: %q", line)
 		}
