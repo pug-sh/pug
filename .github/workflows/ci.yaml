@@ -74,10 +74,10 @@ jobs:
       - name: Download modules and compile tools
         run: go mod download && go install tool
 
-      # Gates the whole tree, not just the diff: --new-from-merge-base filters by
+      # Gates the whole tree, not just the diff: a --new-from-* filter matches by
       # the line a finding lands on, so adding an enum member — which never
-      # touches the switch that must name it — would slip through. `make lint-new`
-      # stays the fast local check.
+      # touches the switch that must name it — would slip through. Run the same
+      # `make lint` locally; there is no diff-scoped variant.
       - name: Lint
         run: make lint
 
