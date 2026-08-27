@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/provider"
+	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/core/assistant/assistanttest"
@@ -142,5 +143,31 @@ func TestRunLoop_EmitFailureStopsForwardingButDrainsStream(t *testing.T) {
 	}
 	if forwarded != 1 {
 		t.Fatalf("forwarded = %d, want 1 (stop after first failure)", forwarded)
+	}
+}
+
+// The prompt is large and re-sent on every step, so the system block must
+// carry a cache breakpoint the anthropic provider recognises.
+func TestRunLoop_SystemPromptCarriesCacheBreakpoint(t *testing.T) {
+	model := &assistanttest.ScriptedModel{Scripts: [][]provider.StreamPart{
+		assistanttest.TextScript("ok"),
+	}}
+
+	var trace []ToolCallRecord
+	if _, err := runLoop(context.Background(), model, nil, nil, nil, "q",
+		nil, nil, &trace, func(string) error { return nil }); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	system := model.Calls[0].Prompt[0]
+	if system.Role != provider.RoleSystem {
+		t.Fatalf("prompt[0].Role = %s, want system", system.Role)
+	}
+	cc, ok := system.ProviderOptions["anthropic"].(anthropicprovider.AnthropicCacheControl)
+	if !ok {
+		t.Fatalf("system message provider options = %#v, want an anthropic cache control", system.ProviderOptions)
+	}
+	if cc.CacheType != "ephemeral" {
+		t.Fatalf("cache type = %q, want ephemeral", cc.CacheType)
 	}
 }

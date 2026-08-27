@@ -157,7 +157,7 @@ var propertyValuesInputSchema = mustSchema(`{
 var queryInsightsInputSchema = mustSchema(`{
 	"type": "object",
 	"properties": {
-		"spec": {"type": "object", "description": "An InsightQuerySpec as JSON."},
+		"spec": {"type": "object", "description": "An InsightQuerySpec as JSON — the insight.spec shape from the system prompt."},
 		"fromIso": {"type": "string", "description": "Window start, RFC3339."},
 		"toIso": {"type": "string", "description": "Window end, RFC3339."},
 		"granularity": {"type": "string", "enum": ["MINUTE", "HOUR", "DAY", "WEEK", "MONTH"]}

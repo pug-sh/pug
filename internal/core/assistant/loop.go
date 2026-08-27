@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"strings"
+	"sync"
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
@@ -43,6 +44,19 @@ asked for something to be removed.
 
 Keep replies short. Say what you changed and why — not how the tools work.`
 
+// buildSystemPrompt appends the tile shape and its cross-field rules to the
+// prompt. Both are rendered from the generated types, so a proto change
+// reshapes them instead of leaving a stale string behind.
+var buildSystemPrompt = sync.OnceValue(func() string {
+	return systemPrompt + `
+
+A tile is proto3 JSON matching this schema:
+` + tileShapeJSON() + `
+
+The schema cannot express these rules, but a tile that breaks one is rejected:
+` + tileRules()
+})
+
 // runLoop drives one model conversation: streams text deltas to onText as they
 // arrive, records every tool result into toolTrace, and returns the
 // accumulated reply once the stream has fully completed — at which point every
@@ -78,7 +92,10 @@ func runLoop(
 
 	opts := make([]aisdk.StreamOption, 0, len(callOpts)+5)
 	opts = append(opts,
-		aisdk.WithSystem(systemPrompt),
+		aisdk.WithSystemMessages(aisdk.SystemModelMessage{
+			Content:         buildSystemPrompt(),
+			ProviderOptions: systemCacheOptions,
+		}),
 		aisdk.WithModelMessages(msgs...),
 		aisdk.WithTools(tools),
 		aisdk.WithStopWhen(aisdk.StepCountIs(maxSteps)),

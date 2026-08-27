@@ -46,6 +46,13 @@ var rejectsSampling = map[string]bool{
 	"openai-compatible": false,
 }
 
+// systemCacheOptions marks the system prompt as an Anthropic cache breakpoint,
+// which caches the tool definitions and prompt ahead of it — together ~13KB of
+// tile shape and rules re-sent on every one of maxSteps rounds. Providers other
+// than anthropic ignore a provider-options key that is not theirs; openai and
+// openai-compatible cache a stable prefix server-side with no marker.
+var systemCacheOptions = provider.BuildProviderOptions(anthropicprovider.CacheControl("ephemeral"))
+
 // Route is a parsed MODEL_<STAGE> value.
 type Route struct {
 	Provider string

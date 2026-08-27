@@ -45,7 +45,9 @@ var exampleTileJSON = sync.OnceValue(func() string {
 			},
 		}},
 	}
-	raw, err := protojson.Marshal(tile)
+	// Proto names, not camelCase: the schema in the system prompt is rendered
+	// from the proto and uses them, and the two must not disagree.
+	raw, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(tile)
 	if err != nil {
 		// Unreachable for a well-formed generated message; the self-check test
 		// pins validity of the rendered example.
