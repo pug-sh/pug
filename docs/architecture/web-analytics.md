@@ -1,14 +1,14 @@
 # Web Analytics
 
-> **Status: CODE COMPLETE, NOT SHIPPED (2026-07-17).** Written and green in dev/CI; **nothing here
-> is committed, and migrations 008–010 have NOT been applied to production** — the deploy runbook
-> below is pending, not history. Includes the review amendments recorded inline (timezone gate,
-> panel scopes, locale normalization, picker widening, UTM column completion in the 008 mutation,
-> mutation↔Derive parity test). The resolved
-> open-questions log is at the bottom. Defines which event properties get promoted to dedicated
-> ClickHouse columns and which become rollup dimensions so pug can serve a privacy-first
-> web-analytics dashboard. Companion to [`insights.md`](insights.md),
-> [`clickhouse.md`](clickhouse.md), [`ingestion.md`](ingestion.md).
+> **Status: SHIPPED.** The code landed in v0.0.4 (2026-07-19) and migrations 008–010 have been
+> applied to production — the deploy runbook below is history, not a plan. The taxonomy has changed
+> once since, in v0.0.18 (2026-08-27, issue #81); what that did to the channel data already stored
+> is in the divergence section. The review amendments are recorded inline (timezone gate, panel
+> scopes, locale normalization, picker widening, UTM column completion in the 008 mutation,
+> mutation↔Derive parity test) and the resolved open-questions log is at the bottom. Defines which
+> event properties get promoted to dedicated ClickHouse columns and which become rollup dimensions
+> so pug can serve a privacy-first web-analytics dashboard. Companion to
+> [`insights.md`](insights.md), [`clickhouse.md`](clickhouse.md), [`ingestion.md`](ingestion.md).
 
 ## Goal and serving model
 
@@ -208,13 +208,17 @@ has no webmail concept at all:
 | `mail.google.com`, `mail.yahoo.com`, `mail.yandex.*` | Organic Search | Email |
 | `outlook.*`, `mail.aol/proton/zoho` | Referral | Email |
 
-008's mutation is one-shot over pre-008 rows, so the divergence lands wherever that mutation has
-already run — and per the status banner at the top of this file it has **not** yet run in
-production. The choice is therefore still open, and is a release decision rather than a code one:
-re-derive `channel` in a NEW migration alongside the first 008 run, or accept that pre-008 history
-carries the inflated Organic Search bucket permanently (the 009/010 backfills copy it into the
-rollups, where it is not repairable in place). Either way the mutation→DELETE→backfill repair
-runbook below re-derives gap rows the old way.
+008's mutation is one-shot over pre-008 rows and **has already run in production**, so that
+rewrite is history rather than a choice: pre-008 rows carry the inflated Organic Search bucket, and
+the 009/010 backfills copied it into the rollups, where it is not repairable in place. So does
+everything Go ingested between v0.0.4 (2026-07-19) and v0.0.18 (2026-08-27) — the classifier of
+that era had no subdomain gate and no webmail set either. **The boundary in the stored data is the
+v0.0.18 deploy, not 008's mutation**: every channel value written before it follows the left-hand
+column, every one after it the right. Repairing the history means a NEW migration re-deriving
+`channel` over the events table plus a rollup rebuild from it. **Decided 2026-08-27: not worth
+doing** — pug is in open beta, so the inflated bucket stays in the history and the split is simply
+a known one. The mutation→DELETE→backfill repair runbook below still re-derives gap rows the old
+way.
 
 008's own header still says the `multiIf` "must be kept in sync" and that a taxonomy edit means
 updating it. That instruction is **stale as of #81** and cannot be edited out of a shipped
