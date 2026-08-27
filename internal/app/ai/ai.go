@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,8 +41,10 @@ type deps struct {
 
 // close shuts down all deps. OTel must shut down last — it owns the slog
 // backend, so earlier components' shutdown logs are still captured.
-func (d *deps) close() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// Cancellation is stripped from ctx so cleanup isn't aborted by a cancelled
+// signal context.
+func (d *deps) close(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
 	if d.redis != nil {
@@ -59,7 +62,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer d.close()
+	defer d.close(ctx)
 
 	return start(ctx, d)
 }
@@ -73,8 +76,8 @@ func newDeps(ctx context.Context) (*deps, error) {
 	success := false
 	defer func() {
 		if !success {
-			for i := len(closers) - 1; i >= 0; i-- {
-				closers[i]()
+			for _, closer := range slices.Backward(closers) {
+				closer()
 			}
 		}
 	}()
@@ -85,7 +88,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		return nil, err
 	}
 	closers = append(closers, func() {
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := closeOtel(rollbackCtx); err != nil {
 			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err)) // puglint:exempt — nothing left to record it on
@@ -122,7 +125,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		return nil, err
 	}
 	closers = append(closers, func() {
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		redisClient.Close(rollbackCtx)
 	})
@@ -199,8 +202,9 @@ func start(ctx context.Context, d *deps) error {
 	mux := buildMux(ctx, d.svc, []byte(d.cfg.JWTKey), strings.Split(d.cfg.CORSOrigins, ","), d.otelInterceptor, d.redis.Ping)
 
 	server := &http.Server{
-		Addr:    ":" + d.cfg.Port,
-		Handler: pogrpc.WithCorrelationID(mux),
+		Addr:              ":" + d.cfg.Port,
+		Handler:           pogrpc.WithCorrelationID(mux),
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
 		return err
@@ -208,7 +212,7 @@ func start(ctx context.Context, d *deps) error {
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			slog.ErrorContext(shutdownCtx, "ai server shutdown error", slogx.Error(err)) // puglint:exempt — no span at shutdown

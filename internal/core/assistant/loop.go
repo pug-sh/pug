@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	aisdk "github.com/grafana/ai-sdk"
@@ -72,12 +73,8 @@ func runLoop(
 	msgs = append(msgs, provider.UserText(message))
 
 	tools := make(aisdk.ToolSet, len(insightTools)+len(opTools))
-	for name, tool := range insightTools {
-		tools[name] = tool
-	}
-	for name, tool := range opTools {
-		tools[name] = tool
-	}
+	maps.Copy(tools, insightTools)
+	maps.Copy(tools, opTools)
 
 	opts := make([]aisdk.StreamOption, 0, len(callOpts)+5)
 	opts = append(opts,

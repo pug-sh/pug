@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -10,8 +11,8 @@ import (
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
-	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
+	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 // Per-stage model selection, ported from the TS service. Each stage reads
@@ -79,7 +80,7 @@ func parseStageRoute(envKey, raw string) (Route, error) {
 
 	values, err := url.ParseQuery(query)
 	if err != nil {
-		return Route{}, fmt.Errorf("%s has an unparseable query string: %v", envKey, err)
+		return Route{}, fmt.Errorf("%s has an unparseable query string: %w", envKey, err)
 	}
 	options := map[string]string{}
 	for k, vs := range values {
@@ -131,7 +132,7 @@ func NewModel(route Route) (provider.LanguageModel, CallOptions, error) {
 	case "openai-compatible":
 		baseURL := route.Options["base_url"]
 		if baseURL == "" {
-			return nil, nil, fmt.Errorf(`the "openai-compatible" provider requires a base_url query option (e.g. MODEL_AGENT=openai-compatible:mistral-small-latest?base_url=https://api.mistral.ai/v1&api_key_env=MISTRAL_API_KEY)`)
+			return nil, nil, errors.New(`the "openai-compatible" provider requires a base_url query option (e.g. MODEL_AGENT=openai-compatible:mistral-small-latest?base_url=https://api.mistral.ai/v1&api_key_env=MISTRAL_API_KEY)`)
 		}
 		opts := []openaicompatible.Option{openaicompatible.WithBaseURL(baseURL)}
 		// api_key_env is optional so local servers (Ollama, vLLM) that don't

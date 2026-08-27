@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -115,10 +116,10 @@ var queryInsightsInputSchema = mustSchema(`{
 // service outage rather than a wiring bug here.
 func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds CallerCredentials) (aisdk.ToolSet, error) {
 	if creds.JWT == "" {
-		return nil, fmt.Errorf("assistant: missing caller JWT")
+		return nil, errors.New("assistant: missing caller JWT")
 	}
 	if creds.ProjectID == "" {
-		return nil, fmt.Errorf("assistant: missing x-project-id")
+		return nil, errors.New("assistant: missing x-project-id")
 	}
 
 	return aisdk.ToolSet{
@@ -192,7 +193,7 @@ func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds Cal
 					}
 					source, ok := propertySourceByName[args.Source]
 					if !ok {
-						return "", fmt.Errorf("source must be one of AUTO, CUSTOM, PROFILE")
+						return "", errors.New("source must be one of AUTO, CUSTOM, PROFILE")
 					}
 					res, err := client.GetPropertyValues(ctx, authedRequest(&insightsv1.GetPropertyValuesRequest{
 						PropertyKey: &args.PropertyKey,
@@ -236,11 +237,11 @@ func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds Cal
 					from, errFrom := time.Parse(time.RFC3339, args.FromIso)
 					to, errTo := time.Parse(time.RFC3339, args.ToIso)
 					if errFrom != nil || errTo != nil {
-						return "", fmt.Errorf("fromIso and toIso must be RFC3339 timestamps")
+						return "", errors.New("fromIso and toIso must be RFC3339 timestamps")
 					}
 					granularity, ok := granularityByName[args.Granularity]
 					if !ok {
-						return "", fmt.Errorf("granularity must be one of MINUTE, HOUR, DAY, WEEK, MONTH")
+						return "", errors.New("granularity must be one of MINUTE, HOUR, DAY, WEEK, MONTH")
 					}
 					spec := &insightsv1.InsightQuerySpec{}
 					if err := protojson.Unmarshal(args.Spec, spec); err != nil {

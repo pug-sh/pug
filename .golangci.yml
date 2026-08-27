@@ -28,10 +28,18 @@ linters:
         # Layering is asserted over the shipped graph only; an integration test
         # that drives a handler from core is wiring layers together on purpose.
         core-is-transport-free:
-          files: ["**/internal/core/**", "!$test"]
+          files: ["**/internal/core/**", "!**/internal/core/assistant/**", "!$test"]
           deny:
             - pkg: connectrpc.com/connect
               desc: business logic must not know the RPC transport; handlers translate errors
+            - pkg: github.com/pug-sh/pug/internal/app/
+              desc: core is imported by app, never the other way round
+        # The assistant is an outbound client of pug's own API, not a handler:
+        # it calls insights on the chatting user's behalf, so it must stamp
+        # their credentials on the wire. The app-import ban still applies.
+        core-assistant-is-an-rpc-client:
+          files: ["**/internal/core/assistant/**", "!$test"]
+          deny:
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: core is imported by app, never the other way round
         deps-is-domain-free:

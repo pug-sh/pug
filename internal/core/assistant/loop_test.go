@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -134,7 +135,7 @@ func TestRunLoop_EmitFailureStopsForwardingButDrainsStream(t *testing.T) {
 	_, err := runLoop(context.Background(), model, nil, nil, nil, "hi",
 		nil, nil, &trace, func(string) error {
 			forwarded++
-			return fmt.Errorf("client gone")
+			return errors.New("client gone")
 		})
 	if err == nil || !strings.Contains(err.Error(), "client gone") {
 		t.Fatalf("err = %v", err)
