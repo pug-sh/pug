@@ -22,11 +22,11 @@ func TestHistory_RoundTrip(t *testing.T) {
 		{Role: aidashboardsv1.Message_ROLE_USER.Enum(), Content: proto.String("hi")},
 		{Role: aidashboardsv1.Message_ROLE_ASSISTANT.Enum(), Content: proto.String("hello")},
 	}
-	if err := saveHistory(ctx, rd.Client, "conv_1", messages); err != nil {
+	if err := saveHistory(ctx, rd.Client, testCreds, "conv_1", messages); err != nil {
 		t.Fatalf("saveHistory: %v", err)
 	}
 
-	loaded, err := loadHistory(ctx, rd.Client, "conv_1")
+	loaded, err := loadHistory(ctx, rd.Client, testCreds, "conv_1")
 	if err != nil {
 		t.Fatalf("loadHistory: %v", err)
 	}
@@ -41,9 +41,9 @@ func TestHistory_RoundTrip(t *testing.T) {
 	}
 }
 
-// The stored value must stay byte-compatible with the TS service —
-// [{"role":1,"content":"hi"}] — so in-flight conversations survive cutover.
-func TestHistory_StoredShapeIsTSCompatible(t *testing.T) {
+// The stored value is shared across a rolling deploy: old and new pods read the
+// same Redis, so the shape cannot change without a migration.
+func TestHistory_StoredShapeIsStable(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -53,10 +53,10 @@ func TestHistory_StoredShapeIsTSCompatible(t *testing.T) {
 	messages := []*aidashboardsv1.Message{
 		{Role: aidashboardsv1.Message_ROLE_USER.Enum(), Content: proto.String("hi")},
 	}
-	if err := saveHistory(ctx, rd.Client, "conv_shape", messages); err != nil {
+	if err := saveHistory(ctx, rd.Client, testCreds, "conv_shape", messages); err != nil {
 		t.Fatalf("saveHistory: %v", err)
 	}
-	raw, err := rd.Client.Get(ctx, "conversation:conv_shape:messages").Result()
+	raw, err := rd.Client.Get(ctx, historyKey(testCreds, "conv_shape")).Result()
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestHistory_LoadAbsentKeyReturnsEmpty(t *testing.T) {
 	}
 	rd := testutil.SetupRedis(t)
 
-	loaded, err := loadHistory(context.Background(), rd.Client, "conv_unseen")
+	loaded, err := loadHistory(context.Background(), rd.Client, testCreds, "conv_unseen")
 	if err != nil {
 		t.Fatalf("loadHistory: %v", err)
 	}
@@ -89,10 +89,10 @@ func TestHistory_MalformedStoredJSONIsAnError(t *testing.T) {
 	rd := testutil.SetupRedis(t)
 	ctx := context.Background()
 
-	if err := rd.Client.Set(ctx, "conversation:conv_bad:messages", "{not json", 0).Err(); err != nil {
+	if err := rd.Client.Set(ctx, historyKey(testCreds, "conv_bad"), "{not json", 0).Err(); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if _, err := loadHistory(ctx, rd.Client, "conv_bad"); err == nil {
+	if _, err := loadHistory(ctx, rd.Client, testCreds, "conv_bad"); err == nil {
 		t.Fatal("expected an error for malformed history")
 	}
 }
@@ -104,10 +104,10 @@ func TestHistory_SaveSetsAndRefreshesTTL(t *testing.T) {
 	rd := testutil.SetupRedis(t)
 	ctx := context.Background()
 
-	if err := saveHistory(ctx, rd.Client, "conv_ttl", nil); err != nil {
+	if err := saveHistory(ctx, rd.Client, testCreds, "conv_ttl", nil); err != nil {
 		t.Fatalf("saveHistory: %v", err)
 	}
-	ttl, err := rd.Client.TTL(ctx, "conversation:conv_ttl:messages").Result()
+	ttl, err := rd.Client.TTL(ctx, historyKey(testCreds, "conv_ttl")).Result()
 	if err != nil {
 		t.Fatalf("ttl: %v", err)
 	}
@@ -117,17 +117,53 @@ func TestHistory_SaveSetsAndRefreshesTTL(t *testing.T) {
 
 	// Age the key, then save again: the TTL must reset to the full window so an
 	// in-use conversation never expires mid-session.
-	if err := rd.Client.Expire(ctx, "conversation:conv_ttl:messages", time.Hour).Err(); err != nil {
+	if err := rd.Client.Expire(ctx, historyKey(testCreds, "conv_ttl"), time.Hour).Err(); err != nil {
 		t.Fatalf("expire: %v", err)
 	}
-	if err := saveHistory(ctx, rd.Client, "conv_ttl", nil); err != nil {
+	if err := saveHistory(ctx, rd.Client, testCreds, "conv_ttl", nil); err != nil {
 		t.Fatalf("saveHistory: %v", err)
 	}
-	ttl, err = rd.Client.TTL(ctx, "conversation:conv_ttl:messages").Result()
+	ttl, err = rd.Client.TTL(ctx, historyKey(testCreds, "conv_ttl")).Result()
 	if err != nil {
 		t.Fatalf("ttl: %v", err)
 	}
 	if ttl <= 6*24*time.Hour {
 		t.Fatalf("ttl = %v, want refreshed to ~7d", ttl)
+	}
+}
+
+// conversation_id is client-minted, so the key scope is the only thing keeping
+// one caller's conversation out of another's reach.
+func TestHistory_IsolatedByProjectAndCustomer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	mine := CallerCredentials{JWT: "j", ProjectID: "prj_1", CustomerID: "cus_1"}
+	messages := []*aidashboardsv1.Message{
+		{Role: aidashboardsv1.Message_ROLE_USER.Enum(), Content: proto.String("secret")},
+	}
+	if err := saveHistory(ctx, rd.Client, mine, "shared_id", messages); err != nil {
+		t.Fatalf("saveHistory: %v", err)
+	}
+
+	for name, theirs := range map[string]CallerCredentials{
+		"other customer": {JWT: "j", ProjectID: "prj_1", CustomerID: "cus_2"},
+		"other project":  {JWT: "j", ProjectID: "prj_2", CustomerID: "cus_1"},
+	} {
+		loaded, err := loadHistory(ctx, rd.Client, theirs, "shared_id")
+		if err != nil {
+			t.Fatalf("%s: loadHistory: %v", name, err)
+		}
+		if len(loaded) != 0 {
+			t.Fatalf("%s: read %d messages from another caller's conversation", name, len(loaded))
+		}
+	}
+
+	// Pinned as a literal so the scope cannot be reverted without a failure.
+	if got, want := historyKey(mine, "shared_id"), "conversation:prj_1:cus_1:shared_id:messages"; got != want {
+		t.Fatalf("historyKey = %q, want %q", got, want)
 	}
 }

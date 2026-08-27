@@ -155,7 +155,18 @@ func TestWithAssistantAuth_ValidTokenYieldsCaller(t *testing.T) {
 	if !ok {
 		t.Fatalf("info is %T", info)
 	}
-	if caller.JWT != token || caller.ProjectID != "prj_1" {
+	if caller.JWT != token || caller.ProjectID != "prj_1" || caller.CustomerID != "cust_test" {
 		t.Fatalf("caller = %+v", caller)
 	}
+}
+
+// The subject scopes this caller's Redis keys, so a token without one must not
+// authenticate into a namespace shared with every other subject-less caller.
+func TestWithAssistantAuth_SubjectlessToken(t *testing.T) {
+	authFn := WithAssistantAuth(testJWTKey)
+	token := mintTestJWT(t, testJWTKey, func(c *jwt.RegisteredClaims) { c.Subject = "" })
+	_, err := authFn(context.Background(), authReq(t, map[string]string{
+		"Authorization": "Bearer " + token, "x-project-id": "prj_1",
+	}))
+	wantUnauthenticated(t, err, "invalid authorization")
 }

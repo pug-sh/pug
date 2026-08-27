@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	aisdk "github.com/grafana/ai-sdk"
+	"github.com/grafana/ai-sdk/schema"
 	"google.golang.org/protobuf/proto"
 
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
@@ -63,6 +66,22 @@ func TestAddTile_ValidTileAcceptedAndEmittedUnflagged(t *testing.T) {
 	}
 	if len(sink[0].op.GetViolations()) != 0 {
 		t.Fatalf("violations = %v", sink[0].op.GetViolations())
+	}
+}
+
+// Remove is the one destructive op, so a hallucinated id must come back to the
+// model rather than reach the client as a confident removal.
+func TestRemoveTile_RejectsUnknownID(t *testing.T) {
+	var sink []emittedOp
+	tools := buildOpTools(draftWithTiles("tile_x"), &sink)
+
+	reply := execOpTool(t, tools["remove_tile"], `{"tileId":"tile_ghost"}`)
+
+	if !strings.HasPrefix(reply, "ERROR:") {
+		t.Fatalf("reply = %q, want an ERROR", reply)
+	}
+	if len(sink) != 0 {
+		t.Fatalf("emitted %d ops for a tile the draft does not have", len(sink))
 	}
 }
 
@@ -222,9 +241,19 @@ func TestUpdateTile_WrapsTileIdAndReplacementTile(t *testing.T) {
 	}
 }
 
-func TestRemoveTile_EmitsWithoutValidation(t *testing.T) {
+// draftWithTiles is a draft holding tiles with the given ids and no positions.
+func draftWithTiles(ids ...string) *dashboardsv1.Dashboard {
+	draft := &dashboardsv1.Dashboard{DisplayName: proto.String("d")}
+	for _, id := range ids {
+		draft.Tiles = append(draft.Tiles, &dashboardsv1.DashboardTile{Id: proto.String(id)})
+	}
+	return draft
+}
+
+// A remove carries no tile to validate, so the id is the only thing checked.
+func TestRemoveTile_EmitsForATileInTheDraft(t *testing.T) {
 	var sink []emittedOp
-	tools := buildOpTools(emptyDraft(), &sink)
+	tools := buildOpTools(draftWithTiles("tile_x"), &sink)
 
 	reply := execOpTool(t, tools["remove_tile"], `{"tileId":"tile_x"}`)
 
@@ -248,7 +277,7 @@ func TestExampleTileJSON_IsItselfValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("example does not parse: %v", err)
 	}
-	tile.Position = placeTile(nil, nil)
+	tile.Position = placeBelow(0, nil)
 	if result := validateTile(tile); !result.OK {
 		t.Fatalf("example does not validate: %s", result.Formatted)
 	}
@@ -261,5 +290,161 @@ func TestExampleTileJSON_EmbeddedInToolDescriptions(t *testing.T) {
 		if !strings.Contains(tools[name].Description, exampleTileJSON()) {
 			t.Fatalf("%s description missing the worked example", name)
 		}
+	}
+}
+
+// execOpToolAsync mirrors execOpTool for worker goroutines: FailNow must run on
+// the test goroutine, so failures are reported with Errorf instead.
+func execOpToolAsync(t *testing.T, tool aisdk.Tool, args string) {
+	t.Helper()
+	if _, err := tool.Execute(context.Background(), json.RawMessage(args), aisdk.ToolExecutionOptions{}); err != nil {
+		t.Errorf("Execute returned an error: %v", err)
+	}
+}
+
+// Mirrors the SDK's per-tool-call goroutines: several op tools from one step
+// reaching the shared turn state at once.
+func TestOpTools_ConcurrentCallsRaceFreeAndLoseNoOps(t *testing.T) {
+	var sink []emittedOp
+	tools := buildOpTools(draftWithTiles("tile_0", "tile_1", "tile_2", "tile_3"), &sink)
+
+	const adds, removes = 8, 4
+	var wg sync.WaitGroup
+	wg.Add(adds + removes)
+	for i := range adds {
+		go func() {
+			defer wg.Done()
+			execOpToolAsync(t, tools["add_tile"], addTileArgs(fmt.Sprintf("tile %d", i), validTileJSON))
+		}()
+	}
+	for i := range removes {
+		go func() {
+			defer wg.Done()
+			execOpToolAsync(t, tools["remove_tile"], fmt.Sprintf(`{"tileId":"tile_%d"}`, i))
+		}()
+	}
+	wg.Wait()
+
+	if len(sink) != adds+removes {
+		t.Fatalf("sink has %d ops, want %d — concurrent appends dropped some", len(sink), adds+removes)
+	}
+
+	// The cursor advances under the same lock, so the placements must not
+	// overlap either — the count alone would pass on a torn cursor.
+	var placed []*dashboardsv1.GridPosition
+	for _, entry := range sink {
+		if pos := entry.op.GetAdd().GetTile().GetPosition(); pos != nil {
+			placed = append(placed, pos)
+		}
+	}
+	slices.SortFunc(placed, func(a, b *dashboardsv1.GridPosition) int { return int(a.GetY() - b.GetY()) })
+	for i := 1; i < len(placed); i++ {
+		if placed[i].GetY() < placed[i-1].GetY()+placed[i-1].GetH() {
+			t.Fatalf("tiles overlap: y=%d after y=%d h=%d",
+				placed[i].GetY(), placed[i-1].GetY(), placed[i-1].GetH())
+		}
+	}
+}
+
+func TestAddTile_TilesInOneTurnDoNotOverlap(t *testing.T) {
+	var sink []emittedOp
+	// A non-empty draft: the cursor must start below what is already there, not
+	// at zero.
+	draft := &dashboardsv1.Dashboard{
+		DisplayName: proto.String("d"),
+		Tiles: []*dashboardsv1.DashboardTile{
+			{Id: proto.String("t0"), Position: &dashboardsv1.GridPosition{
+				X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(36), H: proto.Int32(30),
+			}},
+		},
+	}
+	add := buildOpTools(draft, &sink)["add_tile"]
+
+	for i := range 3 {
+		execOpTool(t, add, addTileArgs(fmt.Sprintf("tile %d", i), validTileJSON))
+	}
+
+	var prevBottom int32 = 30
+	for i, entry := range sink {
+		pos := entry.op.GetAdd().GetTile().GetPosition()
+		if pos.GetY() < prevBottom {
+			t.Fatalf("tile %d at y=%d overlaps the tile above it (bottom=%d)", i, pos.GetY(), prevBottom)
+		}
+		prevBottom = pos.GetY() + pos.GetH()
+	}
+}
+
+// The cursor does not advance on a failed attempt — otherwise every repair
+// round would leave a blank row in the finished dashboard.
+func TestAddTile_RepairRetryDoesNotLeaveAGap(t *testing.T) {
+	var sink []emittedOp
+	add := buildOpTools(emptyDraft(), &sink)["add_tile"]
+
+	execOpTool(t, add, addTileArgs("first", validTileJSON))
+	execOpTool(t, add, addTileArgs("second", invalidTileJSON))
+	execOpTool(t, add, addTileArgs("second", validTileJSON))
+
+	if len(sink) != 2 {
+		t.Fatalf("sink has %d ops, want 2", len(sink))
+	}
+	first := sink[0].op.GetAdd().GetTile().GetPosition()
+	second := sink[1].op.GetAdd().GetTile().GetPosition()
+	if got, want := second.GetY(), first.GetY()+first.GetH(); got != want {
+		t.Fatalf("second tile at y=%d, want %d — the failed attempt consumed a row", got, want)
+	}
+}
+
+// The repair budget is keyed on intent, and the SDK enforces InputSchema before
+// Execute — so the schema is where an empty intent has to be stopped.
+func TestOpToolSchemas_RejectEmptyIntent(t *testing.T) {
+	for name, s := range map[string]schema.Schema{
+		"add_tile":    addTileInputSchema,
+		"update_tile": updateTileInputSchema,
+	} {
+		if err := s.Validate(json.RawMessage(`{"intent":"","tileId":"t1","tile":{}}`)); err == nil {
+			t.Fatalf("%s: empty intent accepted", name)
+		}
+		if err := s.Validate(json.RawMessage(`{"intent":"actives","tileId":"t1","tile":{}}`)); err != nil {
+			t.Fatalf("%s: valid intent rejected: %v", name, err)
+		}
+	}
+}
+
+// An update edits a tile in place — "make this a bar chart" must not move it to
+// the bottom of the board.
+func TestUpdateTile_KeepsTheExistingPosition(t *testing.T) {
+	existing := &dashboardsv1.GridPosition{
+		X: proto.Int32(0), Y: proto.Int32(40), W: proto.Int32(36), H: proto.Int32(20),
+	}
+	draft := &dashboardsv1.Dashboard{
+		DisplayName: proto.String("d"),
+		Tiles:       []*dashboardsv1.DashboardTile{{Id: proto.String("t1"), Position: existing}},
+	}
+	var sink []emittedOp
+	tools := buildOpTools(draft, &sink)
+
+	execOpTool(t, tools["update_tile"], fmt.Sprintf(`{"intent":"recolour","tileId":"t1","tile":%s}`, validTileJSON))
+
+	got := sink[0].op.GetUpdate().GetTile().GetPosition()
+	if got.GetY() != existing.GetY() || got.GetX() != existing.GetX() {
+		t.Fatalf("update moved the tile to x=%d y=%d, want x=0 y=40", got.GetX(), got.GetY())
+	}
+
+	// And it must not consume a row: a tile added after keeps the draft's bottom.
+	execOpTool(t, tools["add_tile"], addTileArgs("new", validTileJSON))
+	if y := sink[1].op.GetAdd().GetTile().GetPosition().GetY(); y != 60 {
+		t.Fatalf("added tile at y=%d, want 60", y)
+	}
+}
+
+// An unknown id has no position to keep, so it falls back to append-below.
+func TestUpdateTile_UnknownIDFallsBackToPlacement(t *testing.T) {
+	var sink []emittedOp
+	tools := buildOpTools(emptyDraft(), &sink)
+
+	execOpTool(t, tools["update_tile"], fmt.Sprintf(`{"intent":"x","tileId":"missing","tile":%s}`, validTileJSON))
+
+	if pos := sink[0].op.GetUpdate().GetTile().GetPosition(); pos == nil || pos.W == nil {
+		t.Fatalf("position = %+v, want a complete placement", pos)
 	}
 }

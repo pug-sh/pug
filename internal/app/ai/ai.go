@@ -31,6 +31,10 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
+// insightsCallTimeout bounds one insight tool call — generous because a cold
+// ClickHouse query over a wide window is legitimately slow, but finite.
+const insightsCallTimeout = 60 * time.Second
+
 type deps struct {
 	cfg             config
 	closeOtel       func(context.Context) error
@@ -130,9 +134,10 @@ func newDeps(ctx context.Context) (*deps, error) {
 		redisClient.Close(rollbackCtx)
 	})
 
-	// Plain HTTP/1.1 client: the insight RPCs are unary Connect calls; per-call
-	// deadlines ride the turn's context.
-	insightsClient := insightsv1connect.NewInsightsServiceClient(&http.Client{}, cfg.APIBaseURL)
+	// The turn's context carries no deadline, so without this a hung upstream
+	// holds the turn open until the caller disconnects.
+	insightsClient := insightsv1connect.NewInsightsServiceClient(
+		&http.Client{Timeout: insightsCallTimeout}, cfg.APIBaseURL)
 
 	success = true
 	return &deps{
@@ -201,10 +206,14 @@ func buildMux(
 func start(ctx context.Context, d *deps) error {
 	mux := buildMux(ctx, d.svc, []byte(d.cfg.JWTKey), strings.Split(d.cfg.CORSOrigins, ","), d.otelInterceptor, d.redis.Ping)
 
+	// ReadTimeout/WriteTimeout stay unset: Turn is a long-lived server stream and
+	// both would truncate a turn mid-flight. ReadHeaderTimeout and IdleTimeout
+	// bound a half-open or idle connection without touching an active stream.
 	server := &http.Server{
 		Addr:              ":" + d.cfg.Port,
 		Handler:           pogrpc.WithCorrelationID(mux),
 		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
 		return err

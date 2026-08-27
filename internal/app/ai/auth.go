@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"connectrpc.com/authn"
@@ -15,12 +16,20 @@ import (
 )
 
 // Caller is the per-request identity the auth boundary stashes for the
-// handler: the raw JWT to forward downstream and the project scope. No
-// customer row — this service never touches the database.
+// handler: the raw JWT to forward downstream, the project scope, and the JWT
+// subject. No customer row — this service never touches the database.
 type Caller struct {
-	JWT       string
-	ProjectID string
+	JWT        string
+	ProjectID  string
+	CustomerID string
 }
+
+// Project ids are xid strings. Bounded and charset-checked because the value
+// becomes a Redis key segment: unchecked, a header allows a ~1MB key (and a ":"
+// would blur the segment boundary).
+const maxProjectIDLen = 64
+
+var projectIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func unauthenticated(msg string) error {
 	return connect.NewError(connect.CodeUnauthenticated, errors.New(msg))
@@ -70,7 +79,18 @@ func WithAssistantAuth(jwtKey []byte) authn.AuthFunc {
 		if projectID == "" {
 			return nil, unauthenticated("x-project-id header is required")
 		}
+		if len(projectID) > maxProjectIDLen || !projectIDPattern.MatchString(projectID) {
+			return nil, unauthenticated("x-project-id header is malformed")
+		}
 
-		return &Caller{JWT: token, ProjectID: projectID}, nil
+		// The subject scopes this caller's conversation history in Redis, so an
+		// unusable one has to fail here rather than collapse every such caller
+		// into a shared namespace.
+		customerID, err := parsedJWT.Claims.GetSubject()
+		if err != nil || customerID == "" {
+			return nil, unauthenticated("invalid authorization")
+		}
+
+		return &Caller{JWT: token, ProjectID: projectID, CustomerID: customerID}, nil
 	}
 }

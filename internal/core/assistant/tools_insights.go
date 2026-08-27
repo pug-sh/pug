@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"connectrpc.com/connect"
@@ -13,18 +14,37 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // CallerCredentials is the caller's forwarded identity for the turn. The
 // service holds no credentials of its own and has no standing access to any
 // project — every backend call is scoped by these, so authorization is exactly
 // the user's; a viewer cannot escalate through the assistant.
+//
+// CustomerID is the JWT subject. It is never forwarded anywhere: its only job
+// is to scope this caller's Redis keys.
 type CallerCredentials struct {
-	JWT       string
-	ProjectID string
+	JWT        string
+	ProjectID  string
+	CustomerID string
+}
+
+// missingField names the first empty field, or "" when the scope is complete.
+func (c CallerCredentials) missingField() string {
+	switch {
+	case c.JWT == "":
+		return "jwt"
+	case c.ProjectID == "":
+		return "project_id"
+	case c.CustomerID == "":
+		return "customer_id"
+	}
+	return ""
 }
 
 // mustSchema compiles a JSON Schema literal at package init. Panics only on a
@@ -47,14 +67,50 @@ func jsonString(s string) (json.RawMessage, error) {
 // safely converts a failure into a model-visible "ERROR: ..." string. A tool
 // must never return a Go error: the SDK would wrap it in its own error-result
 // shape, and (in the TS SDK this was ported from) a thrown error aborted the
-// whole turn. Backend failures here are usually authorization or a typo'd key,
-// both of which the model can act on.
-func safely(fn func() (string, error)) (json.RawMessage, error) {
+// whole turn.
+//
+// The model-visible string is the repair channel, not the operator one — an
+// insights outage would otherwise be entirely silent — so failures are also
+// logged here, the layer that detects them. Client-class codes are the model's
+// to fix (a typo'd key, a project it cannot read) and stay at warn; the rest
+// are ours and are recorded.
+func safely(ctx context.Context, tool string, fn func() (string, error)) (json.RawMessage, error) {
 	out, err := fn()
 	if err != nil {
+		if modelRepairable(err) {
+			slog.WarnContext(ctx, "insight tool rejected", slog.String("tool", tool), slogx.Error(err))
+		} else {
+			slog.ErrorContext(ctx, "insight tool failed", slog.String("tool", tool), slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
 		return jsonString("ERROR: " + err.Error())
 	}
 	return jsonString(out)
+}
+
+// modelRepairable reports whether a failure is the model's to correct rather
+// than an operator's. A bare (non-Connect) error is a local input/decode
+// failure, which the model can also fix. Every code is named so a new one has
+// to be classified rather than silently defaulting; anything unclassified falls
+// through to false, the side that alerts.
+func modelRepairable(err error) bool {
+	var cerr *connect.Error
+	if !errors.As(err, &cerr) {
+		return true
+	}
+	switch cerr.Code() {
+	// The model asked for something wrong, or for something this caller cannot
+	// have. Both are answerable by calling differently; neither is an outage.
+	case connect.CodeInvalidArgument, connect.CodeNotFound, connect.CodeAlreadyExists,
+		connect.CodePermissionDenied, connect.CodeUnauthenticated,
+		connect.CodeFailedPrecondition, connect.CodeOutOfRange, connect.CodeCanceled:
+		return true
+	case connect.CodeUnknown, connect.CodeDeadlineExceeded, connect.CodeResourceExhausted,
+		connect.CodeAborted, connect.CodeUnimplemented, connect.CodeInternal,
+		connect.CodeUnavailable, connect.CodeDataLoss:
+		return false
+	}
+	return false
 }
 
 // authedRequest builds a Connect request carrying the caller's credentials.
@@ -110,18 +166,9 @@ var queryInsightsInputSchema = mustSchema(`{
 }`)
 
 // buildInsightTools builds the three read tools closed over (client, creds).
-// Credentials are checked once here, so a missing credential fails when the
-// turn is set up rather than midway through the model's first tool call — an
-// anonymous call rejected by pug's authn boundary reads to an operator like a
-// service outage rather than a wiring bug here.
-func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds CallerCredentials) (aisdk.ToolSet, error) {
-	if creds.JWT == "" {
-		return nil, errors.New("assistant: missing caller JWT")
-	}
-	if creds.ProjectID == "" {
-		return nil, errors.New("assistant: missing x-project-id")
-	}
-
+// Turn's scope guard has already rejected an incomplete creds, so there is no
+// credential check here.
+func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds CallerCredentials) aisdk.ToolSet {
 	return aisdk.ToolSet{
 		// Description adapted from insights.proto GetFilterSchema — the same
 		// text pug's MCP server ships as this tool's description.
@@ -131,7 +178,7 @@ func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds Cal
 				"exist in this project.",
 			InputSchema: filterSchemaInputSchema,
 			Execute: func(ctx context.Context, input json.RawMessage, _ aisdk.ToolExecutionOptions) (json.RawMessage, error) {
-				return safely(func() (string, error) {
+				return safely(ctx, "get_insights_filter_schema", func() (string, error) {
 					var args struct {
 						EventKind string `json:"eventKind"`
 					}
@@ -182,7 +229,7 @@ func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds Cal
 				"query_insights.",
 			InputSchema: propertyValuesInputSchema,
 			Execute: func(ctx context.Context, input json.RawMessage, _ aisdk.ToolExecutionOptions) (json.RawMessage, error) {
-				return safely(func() (string, error) {
+				return safely(ctx, "get_insights_property_values", func() (string, error) {
 					var args struct {
 						PropertyKey string `json:"propertyKey"`
 						Source      string `json:"source"`
@@ -224,7 +271,7 @@ func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds Cal
 				"and property keys with get_insights_filter_schema first.",
 			InputSchema: queryInsightsInputSchema,
 			Execute: func(ctx context.Context, input json.RawMessage, _ aisdk.ToolExecutionOptions) (json.RawMessage, error) {
-				return safely(func() (string, error) {
+				return safely(ctx, "query_insights", func() (string, error) {
 					var args struct {
 						Spec        json.RawMessage `json:"spec"`
 						FromIso     string          `json:"fromIso"`
@@ -263,5 +310,5 @@ func buildInsightTools(client insightsv1connect.InsightsServiceClient, creds Cal
 				})
 			},
 		},
-	}, nil
+	}
 }

@@ -30,7 +30,14 @@ import (
 var (
 	ErrHistoryLoad = errors.New("assistant: conversation history load failed")
 	ErrHistorySave = errors.New("assistant: conversation history save failed")
+	// An incomplete scope is an identity defect, not an internal fault — the
+	// handler maps it to Unauthenticated so a client can tell it apart.
+	ErrIncompleteScope = errors.New("assistant: incomplete caller scope")
 )
+
+// turnTimeout bounds a whole turn. A stream has no deadline of its own, and
+// maxSteps rounds of insight calls compose to far longer than any real turn.
+const turnTimeout = 5 * time.Minute
 
 // Service orchestrates assistant turns. It holds no caller credentials — they
 // arrive per turn and are never stored or logged.
@@ -80,22 +87,26 @@ func (s *Service) Turn(
 ) error {
 	startedAt := time.Now()
 
-	history, err := loadHistory(ctx, s.rdb, conversationID)
+	ctx, cancel := context.WithTimeout(ctx, turnTimeout)
+	defer cancel()
+
+	// Fail closed: an unscoped key would put this turn in a namespace shared
+	// with every other caller whose scope is likewise incomplete.
+	if missing := creds.missingField(); missing != "" {
+		err := fmt.Errorf("%w: %s", ErrIncompleteScope, missing)
+		slog.ErrorContext(ctx, "assistant turn rejected", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+
+	history, err := loadHistory(ctx, s.rdb, creds, conversationID)
 	if err != nil {
 		slog.ErrorContext(ctx, "conversation history load failed", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("%w: %w", ErrHistoryLoad, err)
 	}
 
-	// Built once per turn so a missing credential fails at setup, not midway
-	// through the model's first tool call. Unreachable when the authn boundary
-	// did its job (it requires both values), so this is defense in depth.
-	insightTools, err := buildInsightTools(s.insights, creds)
-	if err != nil {
-		slog.ErrorContext(ctx, "assistant tool setup failed", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
+	insightTools := buildInsightTools(s.insights, creds)
 
 	var sink []emittedOp
 	opTools := buildOpTools(draft, &sink)
@@ -110,30 +121,33 @@ func (s *Service) Turn(
 		return err
 	}
 
+	var ops []*aidashboardsv1.TileOp
 	var failed []*aidashboardsv1.FailedOp
-	ops := 0
 	for _, entry := range sink {
 		if entry.op != nil {
-			ops++
-			if err := emit(opChunk(entry.op)); err != nil {
-				return err
-			}
+			ops = append(ops, entry.op)
 		}
 		if entry.failed != nil {
 			failed = append(failed, entry.failed)
 		}
 	}
 
+	// Ahead of op emission: an op the client has applied is a durable draft
+	// change, so a save failure has to precede it.
 	updated := append(history,
 		&aidashboardsv1.Message{Role: aidashboardsv1.Message_ROLE_USER.Enum(), Content: proto.String(message)},
 		&aidashboardsv1.Message{Role: aidashboardsv1.Message_ROLE_ASSISTANT.Enum(), Content: proto.String(reply)},
 	)
-	if err := saveHistory(ctx, s.rdb, conversationID, updated); err != nil {
+	if err := saveHistory(ctx, s.rdb, creds, conversationID, updated); err != nil {
 		slog.ErrorContext(ctx, "conversation history save failed", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("%w: %w", ErrHistorySave, err)
 	}
 
+	// Written before the ops go out: an emit failure past this point diverges
+	// the client from the history just committed, and the trace is the only
+	// record of that turn.
+	//
 	// Best-effort: the debug trace is observability, not correctness. Losing
 	// one trace entry to a transient Redis hiccup should not fail a turn that
 	// otherwise succeeded.
@@ -141,12 +155,12 @@ func (s *Service) Turn(
 	for _, f := range failed {
 		failedEntries = append(failedEntries, FailedIntent{Intent: f.GetIntent(), Violations: f.GetViolations()})
 	}
-	if err := recordTurnTrace(ctx, s.rdb, conversationID, TurnTrace{
+	if err := recordTurnTrace(ctx, s.rdb, creds, conversationID, TurnTrace{
 		ProjectID:  creds.ProjectID,
 		Message:    message,
 		Reply:      reply,
 		ToolCalls:  toolTrace,
-		Ops:        ops,
+		Ops:        len(ops),
 		Failed:     failedEntries,
 		Model:      s.modelDesc,
 		DurationMs: time.Since(startedAt).Milliseconds(),
@@ -155,8 +169,18 @@ func (s *Service) Turn(
 		telemetry.RecordError(ctx, err)
 	}
 
+	// History is already committed, so a failure here leaves the client without
+	// ops the conversation claims were made — the one turn worth recording.
+	for _, op := range ops {
+		if err := emit(opChunk(op)); err != nil {
+			slog.ErrorContext(ctx, "op emission failed after history commit", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return err
+		}
+	}
+
 	slog.InfoContext(ctx, "turn complete",
-		slog.String("project_id", creds.ProjectID), slog.Int("ops", ops), slog.Int("failed", len(failed)))
+		slog.String("project_id", creds.ProjectID), slog.Int("ops", len(ops)), slog.Int("failed", len(failed)))
 
 	return emit(doneChunk(failed))
 }

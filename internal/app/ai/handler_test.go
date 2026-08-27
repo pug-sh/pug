@@ -124,14 +124,16 @@ func TestTurn_ValidateInterceptorRejectsBadRequests(t *testing.T) {
 	rd := testutil.SetupRedis(t)
 	_, client := newTestServer(t, rd.Client, nil)
 
-	// Empty message violates TurnRequest.message min_len; nil state violates
-	// the required rule from Task 1; empty conversation_id violates min_len.
 	// All must be CodeInvalidArgument from the validate interceptor — the
-	// handler never runs.
+	// handler never runs. The conversation_id cases are load-bearing beyond
+	// hygiene: a ":" in the id would blur the Redis key's scope boundary, and
+	// that constraint lives only in the proto.
 	bad := []*aidashboardsv1.TurnRequest{
 		{ConversationId: proto.String("c"), State: &aidashboardsv1.ConversationState{}, Message: proto.String("")},
 		{ConversationId: proto.String("c"), Message: proto.String("hi")},
 		{ConversationId: proto.String(""), State: &aidashboardsv1.ConversationState{}, Message: proto.String("hi")},
+		{ConversationId: proto.String("a:b"), State: &aidashboardsv1.ConversationState{}, Message: proto.String("hi")},
+		{ConversationId: proto.String(strings.Repeat("c", 129)), State: &aidashboardsv1.ConversationState{}, Message: proto.String("hi")},
 	}
 	for i, msg := range bad {
 		req := connect.NewRequest(msg)
@@ -190,8 +192,11 @@ func TestTurn_HappyPathStreamsInContractOrder(t *testing.T) {
 		t.Fatalf("text = %q", text.String())
 	}
 
-	// The conversation persisted server-side under the client's id.
-	raw, err := rd.Client.Get(context.Background(), "conversation:conv_happy:messages").Result()
+	// The conversation persisted server-side, scoped to the authenticated caller
+	// (x-project-id + the JWT subject), not to the client's id alone. Spelled out
+	// rather than built from the assistant package so the key shape is pinned
+	// from outside it.
+	raw, err := rd.Client.Get(context.Background(), "conversation:prj_1:cust_test:conv_happy:messages").Result()
 	if err != nil {
 		t.Fatalf("history read: %v", err)
 	}
@@ -251,5 +256,28 @@ func TestReadyzFailsWhenRedisDown(t *testing.T) {
 	}
 	if res.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", res.StatusCode)
+	}
+}
+
+// The project id is a Redis key segment, so the auth boundary bounds it the way
+// the proto bounds conversation_id.
+func TestTurn_MalformedProjectIDRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	_, client := newTestServer(t, rd.Client, nil)
+
+	for _, projectID := range []string{"prj:1", strings.Repeat("p", 65)} {
+		req := turnRequest("conv_bad_project", "hi")
+		req.Header().Set("Authorization", "Bearer "+mintTestJWT(t, testJWTKey, nil))
+		req.Header().Set("x-project-id", projectID)
+		stream, err := client.Turn(context.Background(), req)
+		if err == nil {
+			_, err = receiveAll(t, stream)
+		}
+		if connect.CodeOf(err) != connect.CodeUnauthenticated {
+			t.Fatalf("%q: code = %v (err=%v)", projectID, connect.CodeOf(err), err)
+		}
 	}
 }

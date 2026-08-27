@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -16,6 +17,8 @@ import (
 type ScriptedModel struct {
 	Scripts [][]provider.StreamPart
 	Calls   []provider.CallOptions
+	// CallDeadlines holds each call's context deadline, zero when it had none.
+	CallDeadlines []time.Time
 }
 
 var _ provider.LanguageModel = (*ScriptedModel)(nil)
@@ -29,9 +32,11 @@ func (m *ScriptedModel) DoGenerate(context.Context, provider.CallOptions) (*prov
 	return nil, errors.New("assistanttest: DoGenerate not scripted")
 }
 
-func (m *ScriptedModel) DoStream(_ context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
+func (m *ScriptedModel) DoStream(ctx context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
 	call := len(m.Calls)
 	m.Calls = append(m.Calls, params)
+	deadline, _ := ctx.Deadline()
+	m.CallDeadlines = append(m.CallDeadlines, deadline)
 	if call >= len(m.Scripts) {
 		return nil, errors.New("assistanttest: DoStream called more times than scripted")
 	}

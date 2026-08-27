@@ -17,7 +17,7 @@ import (
 	"github.com/pug-sh/pug/internal/testutil"
 )
 
-var serviceTestCreds = CallerCredentials{JWT: "test-jwt-value", ProjectID: "prj_1"}
+var serviceTestCreds = CallerCredentials{JWT: "test-jwt-value", ProjectID: "prj_1", CustomerID: "cus_1"}
 
 func newTestService(rdb *redis.Client, scripts [][]provider.StreamPart) (*Service, *assistanttest.ScriptedModel) {
 	model := &assistanttest.ScriptedModel{Scripts: scripts}
@@ -104,7 +104,7 @@ func TestServiceTurn_PersistsHistoryAndServesItNextTurn(t *testing.T) {
 	}
 
 	// And the stored history has TTL.
-	ttl, err := rd.Client.TTL(context.Background(), "conversation:conv_hist:messages").Result()
+	ttl, err := rd.Client.TTL(context.Background(), historyKey(serviceTestCreds, "conv_hist")).Result()
 	if err != nil || ttl <= 6*24*time.Hour {
 		t.Fatalf("ttl = %v err = %v", ttl, err)
 	}
@@ -122,7 +122,7 @@ func TestServiceTurn_RecordsTraceWithoutCredential(t *testing.T) {
 
 	collectTurn(t, svc, "conv_trace", "add a tile")
 
-	raw, err := rd.Client.LIndex(context.Background(), "debug:conv_trace", 0).Result()
+	raw, err := rd.Client.LIndex(context.Background(), traceKey(serviceTestCreds, "conv_trace"), 0).Result()
 	if err != nil {
 		t.Fatalf("lindex: %v", err)
 	}
@@ -195,5 +195,141 @@ func TestServiceTurn_HistoryLoadFailureFailsClosed(t *testing.T) {
 	}
 	if len(model.Calls) != 0 {
 		t.Fatal("model must not be called when history is unavailable")
+	}
+}
+
+func TestTurn_RejectsIncompleteCallerScope(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	svc, model := newTestService(rd.Client, [][]provider.StreamPart{assistanttest.TextScript("hi")})
+
+	for name, creds := range map[string]CallerCredentials{
+		"no jwt":      {ProjectID: "prj_1", CustomerID: "cus_1"},
+		"no project":  {JWT: "j", CustomerID: "cus_1"},
+		"no customer": {JWT: "j", ProjectID: "prj_1"},
+	} {
+		var emitted int
+		err := svc.Turn(context.Background(), "conv", nil, "hi", creds,
+			func(*aidashboardsv1.TurnResponse) error { emitted++; return nil })
+
+		// Identity, not merely non-nil: the guard has to be what rejected this,
+		// and it has to run before Redis or the model is touched.
+		if !errors.Is(err, ErrIncompleteScope) {
+			t.Fatalf("%s: err = %v, want ErrIncompleteScope", name, err)
+		}
+		if emitted != 0 {
+			t.Fatalf("%s: emitted %d chunks", name, emitted)
+		}
+		if len(model.Calls) != 0 {
+			t.Fatalf("%s: model was called with an unscoped caller", name)
+		}
+	}
+}
+
+// failSetHook fails only SET, so history loads normally and the save at the
+// end of the turn is the single thing that breaks.
+type failSetHook struct{}
+
+func (failSetHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+
+func (failSetHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if cmd.Name() == "set" {
+			return errors.New("redis: set refused")
+		}
+		return next(ctx, cmd)
+	}
+}
+
+func (failSetHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+// A save failure must fail the turn before any op reaches the client —
+// otherwise the client applies tiles the persisted conversation never records.
+func TestServiceTurn_HistorySaveFailureEmitsNoOps(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	rd.Client.AddHook(failSetHook{})
+	svc, _ := newTestService(rd.Client, [][]provider.StreamPart{
+		assistanttest.ToolCallScript("c1", "add_tile", fmt.Sprintf(`{"intent":"actives","tile":%s}`, validTileJSON)),
+		assistanttest.TextScript("Added it."),
+	})
+
+	var ops, done int
+	err := svc.Turn(context.Background(), "conv_save_fail", nil, "add a tile", serviceTestCreds,
+		func(chunk *aidashboardsv1.TurnResponse) error {
+			if chunk.GetOp() != nil {
+				ops++
+			}
+			if chunk.GetDone() != nil {
+				done++
+			}
+			return nil
+		})
+
+	if !errors.Is(err, ErrHistorySave) {
+		t.Fatalf("err = %v, want ErrHistorySave", err)
+	}
+	if ops != 0 || done != 0 {
+		t.Fatalf("emitted %d ops and %d done chunks after a failed save", ops, done)
+	}
+}
+
+// History is committed by the time ops go out, so an emit failure there is the
+// one turn that diverges the client from the record — it must still be traced.
+func TestServiceTurn_EmitFailureAfterCommitIsStillTraced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	svc, _ := newTestService(rd.Client, [][]provider.StreamPart{
+		assistanttest.ToolCallScript("c1", "add_tile", fmt.Sprintf(`{"intent":"actives","tile":%s}`, validTileJSON)),
+		assistanttest.TextScript("Added it."),
+	})
+
+	boom := errors.New("client gone")
+	err := svc.Turn(context.Background(), "conv_emit_fail", nil, "add a tile", serviceTestCreds,
+		func(chunk *aidashboardsv1.TurnResponse) error {
+			if chunk.GetOp() != nil {
+				return boom
+			}
+			return nil
+		})
+
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want the emit error", err)
+	}
+	entries, err := rd.Client.LRange(context.Background(),
+		traceKey(serviceTestCreds, "conv_emit_fail"), 0, -1).Result()
+	if err != nil {
+		t.Fatalf("lrange: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("%d traces, want 1 — the diverged turn left no record", len(entries))
+	}
+}
+
+// A stream carries no deadline of its own, so the turn imposes one — otherwise
+// maxSteps rounds of insight calls compose to far longer than any real turn.
+func TestServiceTurn_BoundsItsOwnDuration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	svc, model := newTestService(rd.Client, [][]provider.StreamPart{assistanttest.TextScript("hi")})
+
+	collectTurn(t, svc, "conv_deadline", "hi")
+
+	deadline := model.CallDeadlines[0]
+	if deadline.IsZero() {
+		t.Fatal("the model ran with no deadline")
+	}
+	if left := time.Until(deadline); left <= 0 || left > turnTimeout {
+		t.Fatalf("deadline is %v away, want within %v", left, turnTimeout)
 	}
 }

@@ -7,8 +7,8 @@ import "dashboard/dashboards/v1/dashboards.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/ai/dashboards/v1;aidashboardsv1";
 
 // DashboardAssistantService turns a conversation into validated edits to a
-// dashboard draft. Message history is persisted server-side, keyed by
-// conversation_id; only the draft round-trips through the client each turn.
+// dashboard draft. Message history is persisted server-side, scoped to the
+// authenticated caller; only the draft round-trips through the client each turn.
 //
 // The service is implemented by the ai role in this repo (internal/app/ai +
 // internal/core/assistant) and calls back into shared.insights.v1 with the
@@ -22,7 +22,14 @@ service DashboardAssistantService {
 message TurnRequest {
   // Identifies which persisted conversation this turn belongs to. The caller
   // mints one (e.g. per dashboard-builder session) and reuses it across turns.
-  string conversation_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Bounded and pattern-constrained because the value is the last segment of a
+  // Redis key: a ":" here would blur the boundary with the caller scope in
+  // front of it.
+  string conversation_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[A-Za-z0-9_-]+$"
+  }];
   ConversationState state = 2 [(buf.validate.field).required = true];
   string message = 3 [(buf.validate.field).string = {
     min_len: 1
@@ -34,7 +41,7 @@ message ConversationState {
   // The draft the operations apply to. Reuses Dashboard so it is the same
   // message the webapp's draft state already holds and buildUpsertRequest
   // already consumes. This is still client-supplied every turn — message
-  // history is not; it is persisted server-side under conversation_id.
+  // history is not; it is persisted server-side, scoped to the caller.
   dashboard.dashboards.v1.Dashboard draft = 1;
 }
 

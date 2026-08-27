@@ -28,57 +28,56 @@ func gridPos(x, y, w, h int32) *dashboardsv1.GridPosition {
 	}
 }
 
-func TestPlaceTile_FirstTileAtOrigin(t *testing.T) {
-	pos := placeTile(&dashboardsv1.Dashboard{DisplayName: proto.String("d")}, nil)
+func TestPlaceBelow_FirstTileAtOrigin(t *testing.T) {
+	pos := placeBelow(draftBottom(&dashboardsv1.Dashboard{DisplayName: proto.String("d")}), nil)
 	if pos.GetX() != 0 || pos.GetY() != 0 || pos.GetW() != defaultTileWidth || pos.GetH() != defaultTileHeight {
 		t.Fatalf("got x=%d y=%d w=%d h=%d", pos.GetX(), pos.GetY(), pos.GetW(), pos.GetH())
 	}
 }
 
-func TestPlaceTile_AbsentDraftTreatedAsEmpty(t *testing.T) {
-	pos := placeTile(nil, nil)
+func TestPlaceBelow_AbsentDraftTreatedAsEmpty(t *testing.T) {
+	pos := placeBelow(draftBottom(nil), nil)
 	if pos.GetX() != 0 || pos.GetY() != 0 {
 		t.Fatalf("got x=%d y=%d", pos.GetX(), pos.GetY())
 	}
 }
 
-func TestPlaceTile_AppendsBelowLowestTile(t *testing.T) {
-	pos := placeTile(draftWithPositions([]*dashboardsv1.GridPosition{gridPos(0, 0, 36, 200)}), nil)
+func TestPlaceBelow_AppendsBelowLowestTile(t *testing.T) {
+	pos := placeBelow(draftBottom(draftWithPositions([]*dashboardsv1.GridPosition{gridPos(0, 0, 36, 200)})), nil)
 	if pos.GetY() != 200 {
 		t.Fatalf("y = %d, want 200", pos.GetY())
 	}
 }
 
-func TestPlaceTile_UsesLowestEdgeNotLastTile(t *testing.T) {
-	pos := placeTile(draftWithPositions([]*dashboardsv1.GridPosition{
+func TestPlaceBelow_UsesLowestEdgeNotLastTile(t *testing.T) {
+	pos := placeBelow(draftBottom(draftWithPositions([]*dashboardsv1.GridPosition{
 		gridPos(0, 0, 36, 500),
 		gridPos(36, 0, 36, 200),
-	}), nil)
+	})), nil)
 	if pos.GetY() != 500 {
 		t.Fatalf("y = %d, want 500", pos.GetY())
 	}
 }
 
-// The property that makes this strategy worth choosing.
-func TestPlaceTile_ConsecutivePlacementsNeverOverlap(t *testing.T) {
-	draft := draftWithPositions(nil)
-	first := placeTile(draft, nil)
-	draft.Tiles = append(draft.Tiles, &dashboardsv1.DashboardTile{Position: first})
-	second := placeTile(draft, nil)
+// Advancing the cursor by the placed tile's own height is what keeps successive
+// placements apart; TestAddTile_TilesInOneTurnDoNotOverlap covers the real path.
+func TestPlaceBelow_AdvancedCursorNeverOverlaps(t *testing.T) {
+	first := placeBelow(0, nil)
+	second := placeBelow(first.GetY()+first.GetH(), nil)
 	if second.GetY() < first.GetY()+first.GetH() {
 		t.Fatalf("second.y = %d overlaps first (y=%d h=%d)", second.GetY(), first.GetY(), first.GetH())
 	}
 }
 
-func TestPlaceTile_HonoursSaneProposedSize(t *testing.T) {
-	pos := placeTile(nil, &dashboardsv1.GridPosition{W: proto.Int32(72), H: proto.Int32(40)})
+func TestPlaceBelow_HonoursSaneProposedSize(t *testing.T) {
+	pos := placeBelow(draftBottom(nil), &dashboardsv1.GridPosition{W: proto.Int32(72), H: proto.Int32(40)})
 	if pos.GetW() != 72 || pos.GetH() != 40 {
 		t.Fatalf("got w=%d h=%d", pos.GetW(), pos.GetH())
 	}
 }
 
-func TestPlaceTile_ClampsOutOfBoundsProposal(t *testing.T) {
-	pos := placeTile(nil, &dashboardsv1.GridPosition{W: proto.Int32(9999), H: proto.Int32(9999)})
+func TestPlaceBelow_ClampsOutOfBoundsProposal(t *testing.T) {
+	pos := placeBelow(draftBottom(nil), &dashboardsv1.GridPosition{W: proto.Int32(9999), H: proto.Int32(9999)})
 	if pos.GetW() != gridColumns {
 		t.Fatalf("w = %d, want %d", pos.GetW(), gridColumns)
 	}
@@ -90,19 +89,19 @@ func TestPlaceTile_ClampsOutOfBoundsProposal(t *testing.T) {
 // Real tiles range 16 rows (KPI) to 40 rows (retention table). A bare add_tile
 // should render like a normal chart, not a multi-screen placeholder; the clamp
 // ceiling sits above real tiles but far below the proto max of 800.
-func TestPlaceTile_DefaultAndCeilingMatchRealTiles(t *testing.T) {
-	if h := placeTile(nil, nil).GetH(); h > 40 {
+func TestPlaceBelow_DefaultAndCeilingMatchRealTiles(t *testing.T) {
+	if h := placeBelow(draftBottom(nil), nil).GetH(); h > 40 {
 		t.Fatalf("default h = %d, want <= 40", h)
 	}
-	clamped := placeTile(nil, &dashboardsv1.GridPosition{W: proto.Int32(9999), H: proto.Int32(9999)})
+	clamped := placeBelow(draftBottom(nil), &dashboardsv1.GridPosition{W: proto.Int32(9999), H: proto.Int32(9999)})
 	if clamped.GetH() > 80 {
 		t.Fatalf("ceiling h = %d, want <= 80", clamped.GetH())
 	}
 }
 
-func TestPlaceTile_IgnoresProposedXY(t *testing.T) {
-	pos := placeTile(
-		draftWithPositions([]*dashboardsv1.GridPosition{gridPos(0, 0, 36, 200)}),
+func TestPlaceBelow_IgnoresProposedXY(t *testing.T) {
+	pos := placeBelow(
+		draftBottom(draftWithPositions([]*dashboardsv1.GridPosition{gridPos(0, 0, 36, 200)})),
 		&dashboardsv1.GridPosition{X: proto.Int32(40), Y: proto.Int32(0)},
 	)
 	if pos.GetX() != 0 || pos.GetY() != 200 {
@@ -110,17 +109,17 @@ func TestPlaceTile_IgnoresProposedXY(t *testing.T) {
 	}
 }
 
-func TestPlaceTile_ZeroOrNegativeProposalFallsBackToDefaults(t *testing.T) {
-	pos := placeTile(nil, &dashboardsv1.GridPosition{W: proto.Int32(0), H: proto.Int32(-5)})
+func TestPlaceBelow_ZeroOrNegativeProposalFallsBackToDefaults(t *testing.T) {
+	pos := placeBelow(draftBottom(nil), &dashboardsv1.GridPosition{W: proto.Int32(0), H: proto.Int32(-5)})
 	if pos.GetW() != defaultTileWidth || pos.GetH() != defaultTileHeight {
 		t.Fatalf("got w=%d h=%d", pos.GetW(), pos.GetH())
 	}
 }
 
-// The grid_position.complete CEL rule rejects a partial position, so placeTile
+// The grid_position.complete CEL rule rejects a partial position, so placeBelow
 // must always return all four fields set.
-func TestPlaceTile_AlwaysReturnsCompletePosition(t *testing.T) {
-	pos := placeTile(nil, nil)
+func TestPlaceBelow_AlwaysReturnsCompletePosition(t *testing.T) {
+	pos := placeBelow(draftBottom(nil), nil)
 	if pos.X == nil || pos.Y == nil || pos.W == nil || pos.H == nil {
 		t.Fatalf("incomplete position: %+v", pos)
 	}

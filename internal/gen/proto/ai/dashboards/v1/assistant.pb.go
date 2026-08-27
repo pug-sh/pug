@@ -76,6 +76,9 @@ type TurnRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Identifies which persisted conversation this turn belongs to. The caller
 	// mints one (e.g. per dashboard-builder session) and reuses it across turns.
+	// Bounded and pattern-constrained because the value is the last segment of a
+	// Redis key: a ":" here would blur the boundary with the caller scope in
+	// front of it.
 	ConversationId *string            `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId" json:"conversation_id,omitempty"`
 	State          *ConversationState `protobuf:"bytes,2,opt,name=state" json:"state,omitempty"`
 	Message        *string            `protobuf:"bytes,3,opt,name=message" json:"message,omitempty"`
@@ -139,7 +142,7 @@ type ConversationState struct {
 	// The draft the operations apply to. Reuses Dashboard so it is the same
 	// message the webapp's draft state already holds and buildUpsertRequest
 	// already consumes. This is still client-supplied every turn — message
-	// history is not; it is persisted server-side under conversation_id.
+	// history is not; it is persisted server-side, scoped to the caller.
 	Draft         *v1.Dashboard `protobuf:"bytes,1,opt,name=draft" json:"draft,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -705,9 +708,9 @@ var File_ai_dashboards_v1_assistant_proto protoreflect.FileDescriptor
 
 const file_ai_dashboards_v1_assistant_proto_rawDesc = "" +
 	"\n" +
-	" ai/dashboards/v1/assistant.proto\x12\x10ai.dashboards.v1\x1a\x1bbuf/validate/validate.proto\x1a(dashboard/dashboards/v1/dashboards.proto\"\xa8\x01\n" +
-	"\vTurnRequest\x120\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x0econversationId\x12A\n" +
+	" ai/dashboards/v1/assistant.proto\x12\x10ai.dashboards.v1\x1a\x1bbuf/validate/validate.proto\x1a(dashboard/dashboards/v1/dashboards.proto\"\xbd\x01\n" +
+	"\vTurnRequest\x12E\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tB\x1c\xbaH\x19r\x17\x10\x01\x18\x80\x012\x10^[A-Za-z0-9_-]+$R\x0econversationId\x12A\n" +
 	"\x05state\x18\x02 \x01(\v2#.ai.dashboards.v1.ConversationStateB\x06\xbaH\x03\xc8\x01\x01R\x05state\x12$\n" +
 	"\amessage\x18\x03 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x90NR\amessage\"M\n" +

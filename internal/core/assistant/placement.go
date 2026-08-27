@@ -23,31 +23,8 @@ func clampInt32(n, lo, hi int32) int32 {
 	return min(hi, max(lo, n))
 }
 
-// placeTile chooses a grid position for a newly added tile.
-//
-// Append-below placement: every new tile starts at x=0 on the row after the
-// lowest existing tile. Chosen because it is the only strategy that cannot
-// produce a broken layout — no overlap is representable. "Add three tiles"
-// comes out coherent, just tall. Gap-filling would use the horizontal space
-// better but needs collision logic, and the model's own x/y suggestions would
-// need overlap resolution anyway.
-//
-// The model's proposed WIDTH and HEIGHT are honoured when sane (clamped to
-// bounds) — it knows a table wants full width and a KPI wants to be short. Its
-// proposed x/y are ignored; that is what makes overlap unrepresentable.
-//
-// MUST return a complete position: the `grid_position.complete` CEL rule
-// rejects a partial one, so x, y, w and h all have to be set.
-func placeTile(draft *dashboardsv1.Dashboard, proposed *dashboardsv1.GridPosition) *dashboardsv1.GridPosition {
-	w := defaultTileWidth
-	if proposed.GetW() > 0 {
-		w = clampInt32(proposed.GetW(), 1, gridColumns)
-	}
-	h := defaultTileHeight
-	if proposed.GetH() > 0 {
-		h = clampInt32(proposed.GetH(), 1, maxTileHeight)
-	}
-
+// draftBottom is the first free row below every positioned tile in the draft.
+func draftBottom(draft *dashboardsv1.Dashboard) int32 {
 	var bottom int32
 	for _, tile := range draft.GetTiles() {
 		pos := tile.GetPosition()
@@ -58,6 +35,24 @@ func placeTile(draft *dashboardsv1.Dashboard, proposed *dashboardsv1.GridPositio
 			bottom = edge
 		}
 	}
+	return bottom
+}
+
+// placeBelow puts a tile at x=0 on row `bottom`, honouring the model's proposed
+// w/h (clamped) and ignoring its x/y — which is what makes overlap
+// unrepresentable. Gap-filling would pack better but needs collision logic.
+//
+// MUST return a complete position: the `grid_position.complete` CEL rule
+// rejects a partial one, so x, y, w and h all have to be set.
+func placeBelow(bottom int32, proposed *dashboardsv1.GridPosition) *dashboardsv1.GridPosition {
+	w := defaultTileWidth
+	if proposed.GetW() > 0 {
+		w = clampInt32(proposed.GetW(), 1, gridColumns)
+	}
+	h := defaultTileHeight
+	if proposed.GetH() > 0 {
+		h = clampInt32(proposed.GetH(), 1, maxTileHeight)
+	}
 
 	return &dashboardsv1.GridPosition{
 		X: proto.Int32(0),
@@ -65,4 +60,24 @@ func placeTile(draft *dashboardsv1.Dashboard, proposed *dashboardsv1.GridPositio
 		W: proto.Int32(w),
 		H: proto.Int32(h),
 	}
+}
+
+func draftHasTile(draft *dashboardsv1.Dashboard, tileID string) bool {
+	for _, tile := range draft.GetTiles() {
+		if tile.GetId() == tileID {
+			return true
+		}
+	}
+	return false
+}
+
+// existingPosition is the position of the draft tile with this id, or nil when
+// the draft has no such tile.
+func existingPosition(draft *dashboardsv1.Dashboard, tileID string) *dashboardsv1.GridPosition {
+	for _, tile := range draft.GetTiles() {
+		if tile.GetId() == tileID {
+			return tile.GetPosition()
+		}
+	}
+	return nil
 }

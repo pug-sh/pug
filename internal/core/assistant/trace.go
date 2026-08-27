@@ -36,14 +36,14 @@ type TurnTrace struct {
 	DurationMs int64            `json:"durationMs"`
 }
 
-func traceKey(conversationID string) string {
-	return "debug:" + conversationID
+func traceKey(creds CallerCredentials, conversationID string) string {
+	return "debug:" + keyScope(creds, conversationID)
 }
 
 // recordTurnTrace appends one turn's trace and refreshes the key's TTL.
 // Callers treat failures as best-effort: observability must not fail a turn
 // that otherwise succeeded.
-func recordTurnTrace(ctx context.Context, rdb *redis.Client, conversationID string, trace TurnTrace) error {
+func recordTurnTrace(ctx context.Context, rdb *redis.Client, creds CallerCredentials, conversationID string, trace TurnTrace) error {
 	if trace.ToolCalls == nil {
 		trace.ToolCalls = []ToolCallRecord{}
 	}
@@ -54,7 +54,7 @@ func recordTurnTrace(ctx context.Context, rdb *redis.Client, conversationID stri
 	if err != nil {
 		return err
 	}
-	key := traceKey(conversationID)
+	key := traceKey(creds, conversationID)
 	if err := rdb.RPush(ctx, key, payload).Err(); err != nil {
 		return err
 	}

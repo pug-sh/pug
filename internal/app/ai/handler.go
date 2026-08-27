@@ -39,12 +39,20 @@ func (h *handler) Turn(
 		req.Msg.GetConversationId(),
 		req.Msg.GetState().GetDraft(),
 		req.Msg.GetMessage(),
-		assistant.CallerCredentials{JWT: caller.JWT, ProjectID: caller.ProjectID},
+		assistant.CallerCredentials{JWT: caller.JWT, ProjectID: caller.ProjectID, CustomerID: caller.CustomerID},
 		stream.Send,
 	)
 	switch {
 	case err == nil:
 		return nil
+	// A disconnect is the client's doing, not a server fault; without this the
+	// logging interceptor records every abandoned stream as an Internal error.
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, errors.New("turn cancelled"))
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, errors.New("turn exceeded its time limit"))
+	case errors.Is(err, assistant.ErrIncompleteScope):
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("incomplete caller identity"))
 	case errors.Is(err, assistant.ErrHistoryLoad):
 		return connect.NewError(connect.CodeUnavailable, errors.New("conversation storage unavailable (load)"))
 	case errors.Is(err, assistant.ErrHistorySave):

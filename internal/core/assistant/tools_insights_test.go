@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -68,7 +69,7 @@ func stubInsightsClient() *fakeInsightsClient {
 	}
 }
 
-var testCreds = CallerCredentials{JWT: "j", ProjectID: "p"}
+var testCreds = CallerCredentials{JWT: "j", ProjectID: "p", CustomerID: "c"}
 
 // execToolString runs a tool and decodes its JSON-string output.
 func execToolString(t *testing.T, tool aisdk.Tool, args string) string {
@@ -85,10 +86,7 @@ func execToolString(t *testing.T, tool aisdk.Tool, args string) string {
 }
 
 func TestBuildInsightTools_ExposesExactlyThreeReadTools(t *testing.T) {
-	tools, err := buildInsightTools(stubInsightsClient(), testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(stubInsightsClient(), testCreds)
 	for _, name := range []string{"get_insights_filter_schema", "get_insights_property_values", "query_insights"} {
 		if _, ok := tools[name]; !ok {
 			t.Fatalf("missing tool %s", name)
@@ -99,20 +97,23 @@ func TestBuildInsightTools_ExposesExactlyThreeReadTools(t *testing.T) {
 	}
 }
 
-func TestBuildInsightTools_RefusesMissingCredentials(t *testing.T) {
-	if _, err := buildInsightTools(stubInsightsClient(), CallerCredentials{ProjectID: "p"}); err == nil || !strings.Contains(err.Error(), "missing caller JWT") {
-		t.Fatalf("err = %v", err)
-	}
-	if _, err := buildInsightTools(stubInsightsClient(), CallerCredentials{JWT: "j"}); err == nil || !strings.Contains(err.Error(), "missing x-project-id") {
-		t.Fatalf("err = %v", err)
+// Turn's guard is the single credential check; every field must be named so an
+// operator learns which one was empty.
+func TestCallerCredentials_MissingField(t *testing.T) {
+	for want, creds := range map[string]CallerCredentials{
+		"jwt":         {ProjectID: "p", CustomerID: "c"},
+		"project_id":  {JWT: "j", CustomerID: "c"},
+		"customer_id": {JWT: "j", ProjectID: "p"},
+		"":            testCreds,
+	} {
+		if got := creds.missingField(); got != want {
+			t.Fatalf("missingField() = %q, want %q", got, want)
+		}
 	}
 }
 
 func TestFilterSchemaTool_ReturnsKindsAndKeys(t *testing.T) {
-	tools, err := buildInsightTools(stubInsightsClient(), testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(stubInsightsClient(), testCreds)
 	out := execToolString(t, tools["get_insights_filter_schema"], `{"eventKind":""}`)
 	for _, want := range []string{"page_view", "$country", "plan"} {
 		if !strings.Contains(out, want) {
@@ -131,10 +132,7 @@ func TestInsightTools_ForwardCallerHeaders(t *testing.T) {
 		return inner(ctx, req)
 	}
 
-	tools, err := buildInsightTools(client, testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(client, testCreds)
 	execToolString(t, tools["get_insights_filter_schema"], `{"eventKind":""}`)
 	if gotAuth != "Bearer j" || gotProject != "p" {
 		t.Fatalf("headers = %q / %q", gotAuth, gotProject)
@@ -142,10 +140,7 @@ func TestInsightTools_ForwardCallerHeaders(t *testing.T) {
 }
 
 func TestPropertyValuesTool_ReturnsObservedValues(t *testing.T) {
-	tools, err := buildInsightTools(stubInsightsClient(), testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(stubInsightsClient(), testCreds)
 	out := execToolString(t, tools["get_insights_property_values"],
 		`{"propertyKey":"$country","source":"AUTO","eventKind":""}`)
 	if !strings.Contains(out, "IN") || !strings.Contains(out, "US") {
@@ -161,10 +156,7 @@ func TestInsightTools_BackendErrorReturnedToModelNotThrown(t *testing.T) {
 	client.getFilterSchema = func(context.Context, *connect.Request[commonv1.GetFilterSchemaRequest]) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
 		return nil, errors.New("permission denied")
 	}
-	tools, err := buildInsightTools(client, testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(client, testCreds)
 	out := execToolString(t, tools["get_insights_filter_schema"], `{"eventKind":""}`)
 	if !strings.HasPrefix(out, "ERROR: ") || !strings.Contains(out, "permission denied") {
 		t.Fatalf("output = %q", out)
@@ -172,10 +164,7 @@ func TestInsightTools_BackendErrorReturnedToModelNotThrown(t *testing.T) {
 }
 
 func TestQueryTool_RejectsNonRFC3339Window(t *testing.T) {
-	tools, err := buildInsightTools(stubInsightsClient(), testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(stubInsightsClient(), testCreds)
 	out := execToolString(t, tools["query_insights"],
 		`{"spec":{"insightType":"INSIGHT_TYPE_TRENDS"},"fromIso":"yesterday","toIso":"today","granularity":"DAY"}`)
 	if out != "ERROR: fromIso and toIso must be RFC3339 timestamps" {
@@ -199,10 +188,7 @@ func TestQueryTool_RunsSpecAndReturnsResult(t *testing.T) {
 		}), nil
 	}
 
-	tools, err := buildInsightTools(client, testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(client, testCreds)
 	out := execToolString(t, tools["query_insights"],
 		`{"spec":{"insightType":"INSIGHT_TYPE_SEGMENTATION","events":[{"event":{"kind":"page_view"}}]},"fromIso":"2026-08-01T00:00:00Z","toIso":"2026-08-08T00:00:00Z","granularity":"DAY"}`)
 	if gotGranularity != insightsv1.Granularity_GRANULARITY_DAY {
@@ -217,13 +203,34 @@ func TestQueryTool_RunsSpecAndReturnsResult(t *testing.T) {
 }
 
 func TestQueryTool_UnparseableSpecIsAnErrorString(t *testing.T) {
-	tools, err := buildInsightTools(stubInsightsClient(), testCreds)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
+	tools := buildInsightTools(stubInsightsClient(), testCreds)
 	out := execToolString(t, tools["query_insights"],
 		`{"spec":{"notAField":1},"fromIso":"2026-08-01T00:00:00Z","toIso":"2026-08-08T00:00:00Z","granularity":"DAY"}`)
 	if !strings.HasPrefix(out, "ERROR: ") {
 		t.Fatalf("output = %q", out)
+	}
+}
+
+// A failing insight tool must reach an operator, not only the model. The split
+// is by disposition: the model's mistakes are warnings, ours are errors.
+func TestModelRepairable_SplitsByDisposition(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"bad argument":  {connect.NewError(connect.CodeInvalidArgument, errors.New("x")), true},
+		"not found":     {connect.NewError(connect.CodeNotFound, errors.New("x")), true},
+		"forbidden":     {connect.NewError(connect.CodePermissionDenied, errors.New("x")), true},
+		"upstream down": {connect.NewError(connect.CodeUnavailable, errors.New("x")), false},
+		"timed out":     {connect.NewError(connect.CodeDeadlineExceeded, errors.New("x")), false},
+		"internal":      {connect.NewError(connect.CodeInternal, errors.New("x")), false},
+		"unimplemented": {connect.NewError(connect.CodeUnimplemented, errors.New("x")), false},
+		"out of range":  {connect.NewError(connect.CodeOutOfRange, errors.New("x")), true},
+		"local decode":  {errors.New("invalid tool input"), true},
+		"wrapped":       {fmt.Errorf("q: %w", connect.NewError(connect.CodeUnavailable, errors.New("x"))), false},
+	} {
+		if got := modelRepairable(tc.err); got != tc.want {
+			t.Fatalf("%s: modelRepairable = %v, want %v", name, got, tc.want)
+		}
 	}
 }
