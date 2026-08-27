@@ -227,7 +227,7 @@ func TestAddTile_ParseAndValidationFailuresShareTheBudget(t *testing.T) {
 
 func TestUpdateTile_WrapsTileIdAndReplacementTile(t *testing.T) {
 	var sink []emittedOp
-	tools := buildOpTools(emptyDraft(), &sink)
+	tools := buildOpTools(draftWithTiles("tile_9"), &sink)
 
 	reply := execOpTool(t, tools["update_tile"],
 		fmt.Sprintf(`{"intent":"rename","tileId":"tile_9","tile":%s}`, validTileJSON))
@@ -437,14 +437,18 @@ func TestUpdateTile_KeepsTheExistingPosition(t *testing.T) {
 	}
 }
 
-// An unknown id has no position to keep, so it falls back to append-below.
-func TestUpdateTile_UnknownIDFallsBackToPlacement(t *testing.T) {
+// Upsert rejects a populated id matching no tile, so emitting the update would
+// hand the client an op it could never save.
+func TestUpdateTile_RejectsUnknownID(t *testing.T) {
 	var sink []emittedOp
-	tools := buildOpTools(emptyDraft(), &sink)
+	tools := buildOpTools(draftWithTiles("tile_x"), &sink)
 
-	execOpTool(t, tools["update_tile"], fmt.Sprintf(`{"intent":"x","tileId":"missing","tile":%s}`, validTileJSON))
+	reply := execOpTool(t, tools["update_tile"], fmt.Sprintf(`{"intent":"x","tileId":"missing","tile":%s}`, validTileJSON))
 
-	if pos := sink[0].op.GetUpdate().GetTile().GetPosition(); pos == nil || pos.W == nil {
-		t.Fatalf("position = %+v, want a complete placement", pos)
+	if !strings.HasPrefix(reply, "ERROR:") {
+		t.Fatalf("reply = %q, want an ERROR", reply)
+	}
+	if len(sink) != 0 {
+		t.Fatalf("emitted %d ops for a tile the draft does not have", len(sink))
 	}
 }

@@ -220,6 +220,13 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 				if err := json.Unmarshal(input, &args); err != nil {
 					return jsonString("ERROR: invalid tool input: " + err.Error())
 				}
+				// Upsert rejects a populated id matching no existing tile, so an
+				// update the draft cannot place is an op the client could never
+				// save. Same check remove_tile makes.
+				if !draftHasTile(draft, args.TileID) {
+					return jsonString(fmt.Sprintf(
+						"ERROR: the draft has no tile with id %q. Use add_tile for a new tile.", args.TileID))
+				}
 				return jsonString(submit(args.Intent, args.Tile, existingPosition(draft, args.TileID), func(tile *dashboardsv1.DashboardTileInput, flagged []string) *aidashboardsv1.TileOp {
 					return &aidashboardsv1.TileOp{
 						Op: &aidashboardsv1.TileOp_Update{Update: &aidashboardsv1.UpdateTile{
