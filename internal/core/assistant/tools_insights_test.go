@@ -234,3 +234,14 @@ func TestModelRepairable_SplitsByDisposition(t *testing.T) {
 		}
 	}
 }
+
+func TestCapResult_TruncatesOversizedOutput(t *testing.T) {
+	small := strings.Repeat("a", maxToolResultBytes)
+	if capResult(small) != small {
+		t.Fatal("result within the cap was altered")
+	}
+	got := capResult(small + "b")
+	if !strings.HasPrefix(got, small) || !strings.Contains(got, "truncated") || strings.HasSuffix(got, "b") {
+		t.Fatalf("capResult = ...%q", got[len(got)-40:])
+	}
+}

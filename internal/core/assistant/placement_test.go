@@ -124,3 +124,20 @@ func TestPlaceBelow_AlwaysReturnsCompletePosition(t *testing.T) {
 		t.Fatalf("incomplete position: %+v", pos)
 	}
 }
+
+// A tile stored without a position is rendered at the FE default (0,0,36,18),
+// so it occupies that slot and an update leaves it there.
+func TestUnpositionedTile_OccupiesTheDefaultSlot(t *testing.T) {
+	draft := draftWithPositions([]*dashboardsv1.GridPosition{nil})
+
+	if got := draftBottom(draft); got != 18 {
+		t.Fatalf("draftBottom = %d, want 18", got)
+	}
+	pos := existingPosition(draft, "t0")
+	if pos == nil || pos.GetW() != 36 || pos.GetH() != 18 {
+		t.Fatalf("existingPosition = %v", pos)
+	}
+	if existingPosition(draft, "missing") != nil {
+		t.Fatal("missing tile should have no position")
+	}
+}

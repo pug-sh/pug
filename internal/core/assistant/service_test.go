@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -228,15 +229,16 @@ func TestTurn_RejectsIncompleteCallerScope(t *testing.T) {
 	}
 }
 
-// failSetHook fails only SET, so history loads normally and the save at the
-// end of the turn is the single thing that breaks.
+// failSetHook fails only a plain SET (not the turn lock's SET NX), so history
+// loads normally and the save at the end of the turn is the single thing that
+// breaks.
 type failSetHook struct{}
 
 func (failSetHook) DialHook(next redis.DialHook) redis.DialHook { return next }
 
 func (failSetHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
-		if cmd.Name() == "set" {
+		if cmd.Name() == "set" && !slices.Contains(cmd.Args(), any("nx")) {
 			return errors.New("redis: set refused")
 		}
 		return next(ctx, cmd)
@@ -331,5 +333,29 @@ func TestServiceTurn_BoundsItsOwnDuration(t *testing.T) {
 	}
 	if left := time.Until(deadline); left <= 0 || left > turnTimeout {
 		t.Fatalf("deadline is %v away, want within %v", left, turnTimeout)
+	}
+}
+
+func TestServiceTurn_RejectsAConcurrentTurnOnTheSameConversation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	svc, _ := newTestService(rd.Client, [][]provider.StreamPart{assistanttest.TextScript("ok")})
+	ctx := context.Background()
+
+	if err := rd.Client.Set(ctx, turnLockKey(serviceTestCreds, "conv_busy"), "1", time.Minute).Err(); err != nil {
+		t.Fatal(err)
+	}
+	err := svc.Turn(ctx, "conv_busy", nil, "hi", serviceTestCreds,
+		func(*aidashboardsv1.TurnResponse) error { return nil })
+	if !errors.Is(err, ErrTurnInProgress) {
+		t.Fatalf("err = %v, want ErrTurnInProgress", err)
+	}
+
+	// A completed turn releases the lock.
+	collectTurn(t, svc, "conv_free", "hi")
+	if n, _ := rd.Client.Exists(ctx, turnLockKey(serviceTestCreds, "conv_free")).Result(); n != 0 {
+		t.Fatal("turn lock not released")
 	}
 }

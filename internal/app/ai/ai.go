@@ -157,7 +157,9 @@ func newDeps(ctx context.Context) (*deps, error) {
 // service has its own auth boundary (WithAssistantAuth) and is deliberately
 // NOT in the server's authz registry (those contract checks cover only the
 // server's mux). NEVER add validate.WithValidateResponses() here — flagged
-// TileOps are deliberately invalid protos the client must receive.
+// TileOps are deliberately invalid protos the client must receive. The request
+// draft is likewise unvalidated (assistant.proto), for the same reason on the
+// way in.
 func buildMux(
 	ctx context.Context,
 	svc *assistant.Service,
@@ -165,7 +167,7 @@ func buildMux(
 	corsOrigins []string,
 	otelInterceptor *otelconnect.Interceptor,
 	readyPing func(context.Context) error,
-) *http.ServeMux {
+) http.Handler {
 	handlerOpts := connect.WithHandlerOptions(
 		connect.WithInterceptors(
 			pogrpc.CorrelationInterceptor(),
@@ -175,6 +177,7 @@ func buildMux(
 			validate.NewInterceptor(validate.WithoutErrorDetails()),
 		),
 		connect.WithRecover(pogrpc.RecoverHandlerPanic),
+		connect.WithReadMaxBytes(pogrpc.MaxRequestBytes),
 	)
 
 	mux := http.NewServeMux()
@@ -200,7 +203,7 @@ func buildMux(
 	middleware := authn.NewMiddleware(WithAssistantAuth(jwtKey))
 	mux.Handle(path, pogrpc.WithCORS(ctx, corsOrigins, middleware.Wrap(connectHandler)))
 
-	return mux
+	return pogrpc.WithRequestLimits(mux)
 }
 
 func start(ctx context.Context, d *deps) error {

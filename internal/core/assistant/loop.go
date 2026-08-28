@@ -78,6 +78,11 @@ func runLoop(
 	msgs := make([]provider.Message, 0, len(history)+2)
 	msgs = append(msgs, provider.UserText(summarizeDraft(draft)))
 	for _, m := range history {
+		// A turn that only called tools leaves an empty reply; the provider
+		// forwards an empty text block and the API rejects the whole call.
+		if m.GetContent() == "" {
+			continue
+		}
 		if m.GetRole() == aidashboardsv1.Message_ROLE_ASSISTANT {
 			msgs = append(msgs, provider.AssistantText(m.GetContent()))
 		} else {

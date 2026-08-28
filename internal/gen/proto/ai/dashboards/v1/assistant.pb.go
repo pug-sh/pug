@@ -143,6 +143,10 @@ type ConversationState struct {
 	// message the webapp's draft state already holds and buildUpsertRequest
 	// already consumes. This is still client-supplied every turn — message
 	// history is not; it is persisted server-side, scoped to the caller.
+	//
+	// Not validated: the draft may legitimately hold a tile that fails
+	// DashboardTile rules — the flagged TileOp the assistant itself emitted, which
+	// the user is now asking it to fix. The server only reads the draft.
 	Draft         *v1.Dashboard `protobuf:"bytes,1,opt,name=draft" json:"draft,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -713,9 +717,9 @@ const file_ai_dashboards_v1_assistant_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x01 \x01(\tB\x1c\xbaH\x19r\x17\x10\x01\x18\x80\x012\x10^[A-Za-z0-9_-]+$R\x0econversationId\x12A\n" +
 	"\x05state\x18\x02 \x01(\v2#.ai.dashboards.v1.ConversationStateB\x06\xbaH\x03\xc8\x01\x01R\x05state\x12$\n" +
 	"\amessage\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x90NR\amessage\"M\n" +
-	"\x11ConversationState\x128\n" +
-	"\x05draft\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardR\x05draft\"\xa4\x01\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x90NR\amessage\"U\n" +
+	"\x11ConversationState\x12@\n" +
+	"\x05draft\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardB\x06\xbaH\x03\xd8\x01\x03R\x05draft\"\xa4\x01\n" +
 	"\aMessage\x12>\n" +
 	"\x04role\x18\x01 \x01(\x0e2\x1e.ai.dashboards.v1.Message.RoleB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x04role\x12\x18\n" +

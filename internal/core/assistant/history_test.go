@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,5 +166,22 @@ func TestHistory_IsolatedByProjectAndCustomer(t *testing.T) {
 	// Pinned as a literal so the scope cannot be reverted without a failure.
 	if got, want := historyKey(mine, "shared_id"), "conversation:prj_1:cus_1:shared_id:messages"; got != want {
 		t.Fatalf("historyKey = %q, want %q", got, want)
+	}
+}
+
+func TestTrimHistory_KeepsNewestWithinBudget(t *testing.T) {
+	big := strings.Repeat("x", historyByteBudget/2+1)
+	msgs := []*aidashboardsv1.Message{
+		{Role: aidashboardsv1.Message_ROLE_USER.Enum(), Content: proto.String(big)},
+		{Role: aidashboardsv1.Message_ROLE_ASSISTANT.Enum(), Content: proto.String("old")},
+		{Role: aidashboardsv1.Message_ROLE_USER.Enum(), Content: proto.String(big)},
+		{Role: aidashboardsv1.Message_ROLE_ASSISTANT.Enum(), Content: proto.String("new")},
+	}
+	got := trimHistory(msgs)
+	if len(got) != 3 || got[0].GetContent() != "old" {
+		t.Fatalf("trimHistory kept %d messages", len(got))
+	}
+	if small := trimHistory(msgs[1:2]); len(small) != 1 {
+		t.Fatalf("under-budget history was trimmed")
 	}
 }

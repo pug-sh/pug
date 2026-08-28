@@ -452,3 +452,45 @@ func TestUpdateTile_RejectsUnknownID(t *testing.T) {
 		t.Fatalf("emitted %d ops for a tile the draft does not have", len(sink))
 	}
 }
+
+func TestAddTile_DropsModelSuppliedID(t *testing.T) {
+	var sink []emittedOp
+	tools := buildOpTools(emptyDraft(), &sink)
+
+	withID := strings.Replace(validTileJSON, `"displayName"`, `"id":"abc123","displayName"`, 1)
+	if reply := execOpTool(t, tools["add_tile"], addTileArgs("actives", withID)); reply != "Accepted." {
+		t.Fatalf("reply = %q", reply)
+	}
+	if id := sink[0].op.GetAdd().GetTile().GetId(); id != "" {
+		t.Fatalf("emitted id = %q, want empty", id)
+	}
+}
+
+// The budget is per target, not per label: a flagged add must not block a
+// later update of an existing tile that happens to reuse the intent.
+func TestUpdateTile_NotBlockedByFlaggedAddWithSameIntent(t *testing.T) {
+	var sink []emittedOp
+	tools := buildOpTools(draftWithTiles("tile_9"), &sink)
+
+	for range maxRepairAttempts {
+		execOpTool(t, tools["add_tile"], addTileArgs("signups", invalidTileJSON))
+	}
+	reply := execOpTool(t, tools["update_tile"],
+		fmt.Sprintf(`{"intent":"signups","tileId":"tile_9","tile":%s}`, validTileJSON))
+	if reply != "Accepted." {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestAddTile_SuccessResetsTheIntentBudget(t *testing.T) {
+	var sink []emittedOp
+	tools := buildOpTools(emptyDraft(), &sink)
+
+	execOpTool(t, tools["add_tile"], addTileArgs("kpi", invalidTileJSON))
+	execOpTool(t, tools["add_tile"], addTileArgs("kpi", validTileJSON))
+	// A fresh tile under the same label gets the full budget again.
+	reply := execOpTool(t, tools["add_tile"], addTileArgs("kpi", invalidTileJSON))
+	if !strings.Contains(reply, "call the tool again") {
+		t.Fatalf("reply = %q", reply)
+	}
+}

@@ -42,7 +42,11 @@ message ConversationState {
   // message the webapp's draft state already holds and buildUpsertRequest
   // already consumes. This is still client-supplied every turn — message
   // history is not; it is persisted server-side, scoped to the caller.
-  dashboard.dashboards.v1.Dashboard draft = 1;
+  //
+  // Not validated: the draft may legitimately hold a tile that fails
+  // DashboardTile rules — the flagged TileOp the assistant itself emitted, which
+  // the user is now asking it to fix. The server only reads the draft.
+  dashboard.dashboards.v1.Dashboard draft = 1 [(buf.validate.field).ignore = IGNORE_ALWAYS];
 }
 
 message Message {

@@ -2,6 +2,8 @@ package ai
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,11 +16,13 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
+	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/core/assistant"
 	"github.com/pug-sh/pug/internal/core/assistant/assistanttest"
 	aidashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/ai/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/ai/dashboards/v1/aidashboardsv1connect"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -278,6 +282,72 @@ func TestTurn_MalformedProjectIDRejected(t *testing.T) {
 		}
 		if connect.CodeOf(err) != connect.CodeUnauthenticated {
 			t.Fatalf("%q: code = %v (err=%v)", projectID, connect.CodeOf(err), err)
+		}
+	}
+}
+
+// The draft may hold a tile that fails DashboardTile rules — typically the
+// flagged op the assistant itself just emitted and is now being asked to fix.
+func TestTurn_InvalidDraftTileIsNotRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	_, client := newTestServer(t, rd.Client, [][]provider.StreamPart{assistanttest.TextScript("ok")})
+
+	req := authedTurnRequest(t, "conv_bad_draft", "fix that funnel")
+	req.Msg.State.Draft.Tiles = []*dashboardsv1.DashboardTile{{
+		Id: proto.String("t1"),
+		Content: &dashboardsv1.DashboardTile_Insight{Insight: &dashboardsv1.InsightTileContent{
+			Spec: &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()},
+		}},
+	}}
+	stream, err := client.Turn(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Turn: %v", err)
+	}
+	if _, err := receiveAll(t, stream); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+}
+
+func TestTurn_OversizedBodyIsResourceExhausted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	_, client := newTestServer(t, rd.Client, nil)
+
+	req := authedTurnRequest(t, "conv_big", "hi")
+	req.Msg.State.Draft.Tiles = []*dashboardsv1.DashboardTile{{
+		Id: proto.String("t1"),
+		Content: &dashboardsv1.DashboardTile_Markdown{Markdown: &dashboardsv1.MarkdownTileContent{
+			Body: proto.String(strings.Repeat("x", pogrpc.MaxRequestBytes+1)),
+		}},
+	}}
+	stream, err := client.Turn(context.Background(), req)
+	if err == nil {
+		_, err = receiveAll(t, stream)
+	}
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("code = %v (err=%v)", connect.CodeOf(err), err)
+	}
+}
+
+func TestTurnError_Mapping(t *testing.T) {
+	cases := []struct {
+		err  error
+		want connect.Code
+	}{
+		{context.Canceled, connect.CodeCanceled},
+		// What a failed stream.Send returns after the client went away.
+		{connect.NewError(connect.CodeCanceled, &net.OpError{Op: "write", Err: errors.New("broken pipe")}), connect.CodeCanceled},
+		{assistant.ErrTurnInProgress, connect.CodeAborted},
+		{errors.New("boom"), connect.CodeInternal},
+	}
+	for _, tc := range cases {
+		if got := connect.CodeOf(turnError(tc.err)); got != tc.want {
+			t.Fatalf("turnError(%v) = %v, want %v", tc.err, got, tc.want)
 		}
 	}
 }

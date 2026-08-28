@@ -99,8 +99,9 @@ var removeTileInputSchema = mustSchema(`{
 // recover catches.
 func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSet {
 	var mu sync.Mutex
-	// Attempts are counted per intent, so one struggling tile cannot consume
-	// another's budget.
+	// Attempts are counted per target (add: the intent; update: the tile id), so
+	// one struggling tile cannot consume another's budget. Reset on success so
+	// a later tile reusing the label starts fresh.
 	attempts := map[string]int{}
 	// Intents already resolved to a terminal outcome (flagged-emitted or
 	// failed). Without this, a model that keeps retrying past the repair budget
@@ -113,11 +114,11 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 	bottom := draftBottom(draft)
 
 	// keep is the position an update must preserve; nil places below the cursor.
-	submit := func(intent string, rawTile json.RawMessage, keep *dashboardsv1.GridPosition, wrap func(tile *dashboardsv1.DashboardTileInput, flagged []string) *aidashboardsv1.TileOp) string {
+	submit := func(key, intent string, rawTile json.RawMessage, keep *dashboardsv1.GridPosition, wrap func(tile *dashboardsv1.DashboardTileInput, flagged []string) *aidashboardsv1.TileOp) string {
 		mu.Lock()
 		defer mu.Unlock()
 
-		if givenUp[intent] {
+		if givenUp[key] {
 			return fmt.Sprintf(
 				"%q was already flagged for manual correction after %d failed attempts. Do not call add_tile or update_tile again for this intent.",
 				intent, maxRepairAttempts)
@@ -126,8 +127,8 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 		// Shared across the parse and validation paths, so a model that keeps
 		// sending unparseable JSON exhausts the same budget as one that sends
 		// parseable-but-invalid tiles, instead of retrying forever.
-		attempts[intent]++
-		attempt := attempts[intent]
+		attempts[key]++
+		attempt := attempts[key]
 
 		tile, err := tileFromJSON(rawTile)
 		if err != nil {
@@ -137,13 +138,15 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 			if attempt < maxRepairAttempts {
 				return fmt.Sprintf("That tile could not be parsed: %v\nFix the shape and call the tool again.", err)
 			}
-			givenUp[intent] = true
+			givenUp[key] = true
 			*sink = append(*sink, emittedOp{failed: &aidashboardsv1.FailedOp{
 				Intent:     proto.String(intent),
 				Violations: []string{fmt.Sprintf("malformed tile: %v", err)},
 			}})
 			return fmt.Sprintf("Could not build that tile: %v", err)
 		}
+		// Upsert assigns ids; one the model copied or invented would be rejected.
+		tile.Id = nil
 		// An update keeps where it already is — "make this a bar chart" must not
 		// move the tile. Otherwise the model's proposed position is a hint: w/h
 		// honoured (clamped), x/y ignored.
@@ -160,6 +163,7 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 		result := validateTile(tile)
 		if result.OK {
 			advance()
+			delete(attempts, key)
 			*sink = append(*sink, emittedOp{op: wrap(tile, nil)})
 			return "Accepted."
 		}
@@ -172,11 +176,11 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 			return outcome.RetryPrompt
 		}
 		if outcome.Failed != nil {
-			givenUp[intent] = true
+			givenUp[key] = true
 			*sink = append(*sink, emittedOp{failed: outcome.Failed})
 			return "Could not build that tile: " + strings.Join(outcome.Failed.GetViolations(), "; ")
 		}
-		givenUp[intent] = true
+		givenUp[key] = true
 		advance()
 		*sink = append(*sink, emittedOp{op: outcome.Op})
 		return fmt.Sprintf(
@@ -199,7 +203,7 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 				if err := json.Unmarshal(input, &args); err != nil {
 					return jsonString("ERROR: invalid tool input: " + err.Error())
 				}
-				return jsonString(submit(args.Intent, args.Tile, nil, func(tile *dashboardsv1.DashboardTileInput, flagged []string) *aidashboardsv1.TileOp {
+				return jsonString(submit("add:"+args.Intent, args.Intent, args.Tile, nil, func(tile *dashboardsv1.DashboardTileInput, flagged []string) *aidashboardsv1.TileOp {
 					return &aidashboardsv1.TileOp{
 						Op:         &aidashboardsv1.TileOp_Add{Add: &aidashboardsv1.AddTile{Tile: tile}},
 						Violations: flagged,
@@ -229,7 +233,7 @@ func buildOpTools(draft *dashboardsv1.Dashboard, sink *[]emittedOp) aisdk.ToolSe
 					return jsonString(fmt.Sprintf(
 						"ERROR: the draft has no tile with id %q. Use add_tile for a new tile.", args.TileID))
 				}
-				return jsonString(submit(args.Intent, args.Tile, existingPosition(draft, args.TileID), func(tile *dashboardsv1.DashboardTileInput, flagged []string) *aidashboardsv1.TileOp {
+				return jsonString(submit("update:"+args.TileID, args.Intent, args.Tile, existingPosition(draft, args.TileID), func(tile *dashboardsv1.DashboardTileInput, flagged []string) *aidashboardsv1.TileOp {
 					return &aidashboardsv1.TileOp{
 						Op: &aidashboardsv1.TileOp_Update{Update: &aidashboardsv1.UpdateTile{
 							TileId: proto.String(args.TileID),

@@ -23,14 +23,20 @@ func clampInt32(n, lo, hi int32) int32 {
 	return min(hi, max(lo, n))
 }
 
-// draftBottom is the first free row below every positioned tile in the draft.
+// tilePosition is where the FE renders the tile: its position, or for a tile
+// stored without one, DEFAULT_POSITION from the app's draft-state.ts.
+func tilePosition(tile *dashboardsv1.DashboardTile) *dashboardsv1.GridPosition {
+	if pos := tile.GetPosition(); pos != nil {
+		return pos
+	}
+	return &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(36), H: proto.Int32(18)}
+}
+
+// draftBottom is the first free row below every tile in the draft.
 func draftBottom(draft *dashboardsv1.Dashboard) int32 {
 	var bottom int32
 	for _, tile := range draft.GetTiles() {
-		pos := tile.GetPosition()
-		if pos == nil {
-			continue
-		}
+		pos := tilePosition(tile)
 		if edge := pos.GetY() + pos.GetH(); edge > bottom {
 			bottom = edge
 		}
@@ -71,12 +77,12 @@ func draftHasTile(draft *dashboardsv1.Dashboard, tileID string) bool {
 	return false
 }
 
-// existingPosition is the position of the draft tile with this id, or nil when
-// the draft has no such tile.
+// existingPosition is where the draft tile with this id sits, or nil when the
+// draft has no such tile.
 func existingPosition(draft *dashboardsv1.Dashboard, tileID string) *dashboardsv1.GridPosition {
 	for _, tile := range draft.GetTiles() {
 		if tile.GetId() == tileID {
-			return tile.GetPosition()
+			return tilePosition(tile)
 		}
 	}
 	return nil

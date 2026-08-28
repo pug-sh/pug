@@ -74,6 +74,18 @@ func jsonString(s string) (json.RawMessage, error) {
 // logged here, the layer that detects them. Client-class codes are the model's
 // to fix (a typo'd key, a project it cannot read) and stay at warn; the rest
 // are ours and are recorded.
+// maxToolResultBytes caps what one insight result feeds back to the model. The
+// result rides in every later step of the turn and in the debug trace, and a
+// fine-grained breakdown over a long window serialises to megabytes.
+const maxToolResultBytes = 32 << 10
+
+func capResult(s string) string {
+	if len(s) <= maxToolResultBytes {
+		return s
+	}
+	return s[:maxToolResultBytes] + "\n…[truncated: result too large — use a shorter window, coarser granularity or fewer breakdowns]"
+}
+
 func safely(ctx context.Context, tool string, fn func() (string, error)) (json.RawMessage, error) {
 	out, err := fn()
 	if err != nil {
@@ -85,7 +97,7 @@ func safely(ctx context.Context, tool string, fn func() (string, error)) (json.R
 		}
 		return jsonString("ERROR: " + err.Error())
 	}
-	return jsonString(out)
+	return jsonString(capResult(out))
 }
 
 // modelRepairable reports whether a failure is the model's to correct rather

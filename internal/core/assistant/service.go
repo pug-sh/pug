@@ -33,6 +33,8 @@ var (
 	// An incomplete scope is an identity defect, not an internal fault — the
 	// handler maps it to Unauthenticated so a client can tell it apart.
 	ErrIncompleteScope = errors.New("assistant: incomplete caller scope")
+	// Another turn holds this conversation's lock; the handler maps it to Aborted.
+	ErrTurnInProgress = errors.New("assistant: turn already in progress")
 )
 
 // turnTimeout bounds a whole turn. A stream has no deadline of its own, and
@@ -99,6 +101,18 @@ func (s *Service) Turn(
 		return err
 	}
 
+	release, err := acquireTurn(ctx, s.rdb, creds, conversationID)
+	if errors.Is(err, ErrTurnInProgress) {
+		slog.WarnContext(ctx, "assistant turn rejected: conversation busy", slog.String("project_id", creds.ProjectID))
+		return err
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "conversation turn lock failed", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return fmt.Errorf("%w: %w", ErrHistoryLoad, err)
+	}
+	defer release()
+
 	history, err := loadHistory(ctx, s.rdb, creds, conversationID)
 	if err != nil {
 		slog.ErrorContext(ctx, "conversation history load failed", slogx.Error(err))
@@ -116,8 +130,7 @@ func (s *Service) Turn(
 		insightTools, opTools, &toolTrace,
 		func(delta string) error { return emit(textChunk(delta)) })
 	if err != nil {
-		slog.ErrorContext(ctx, "assistant turn failed", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
+		logTurnFailure(ctx, "assistant turn failed", err)
 		return err
 	}
 
@@ -173,8 +186,7 @@ func (s *Service) Turn(
 	// ops the conversation claims were made — the one turn worth recording.
 	for _, op := range ops {
 		if err := emit(opChunk(op)); err != nil {
-			slog.ErrorContext(ctx, "op emission failed after history commit", slogx.Error(err))
-			telemetry.RecordError(ctx, err)
+			logTurnFailure(ctx, "op emission failed after history commit", err)
 			return err
 		}
 	}
@@ -183,4 +195,15 @@ func (s *Service) Turn(
 		slog.String("project_id", creds.ProjectID), slog.Int("ops", len(ops)), slog.Int("failed", len(failed)))
 
 	return emit(doneChunk(failed))
+}
+
+// logTurnFailure records a turn failure, except that a client disconnect is
+// the client's doing: a warning, not an exception on the span.
+func logTurnFailure(ctx context.Context, msg string, err error) {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		slog.WarnContext(ctx, msg+" (client disconnected)", slogx.Error(err))
+		return
+	}
+	slog.ErrorContext(ctx, msg, slogx.Error(err))
+	telemetry.RecordError(ctx, err)
 }

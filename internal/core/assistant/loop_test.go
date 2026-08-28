@@ -171,3 +171,29 @@ func TestRunLoop_SystemPromptCarriesCacheBreakpoint(t *testing.T) {
 		t.Fatalf("cache type = %q, want ephemeral", cc.CacheType)
 	}
 }
+
+// A tools-only turn stores an empty reply; replaying it as an empty text block
+// makes the provider reject every later call on the conversation.
+func TestRunLoop_EmptyMessagesAreNotReplayed(t *testing.T) {
+	model := &assistanttest.ScriptedModel{Scripts: [][]provider.StreamPart{assistanttest.TextScript("ok")}}
+	history := []*aidashboardsv1.Message{
+		{Role: aidashboardsv1.Message_ROLE_USER.Enum(), Content: proto.String("remove it")},
+		{Role: aidashboardsv1.Message_ROLE_ASSISTANT.Enum(), Content: proto.String("")},
+	}
+
+	var trace []ToolCallRecord
+	if _, err := runLoop(context.Background(), model, nil, nil, history, "next",
+		nil, nil, &trace, func(string) error { return nil }); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	prompt := model.Calls[0].Prompt
+	if len(prompt) != 4 { // system, summary, "remove it", "next"
+		t.Fatalf("len(prompt) = %d, want 4", len(prompt))
+	}
+	for _, m := range prompt {
+		if m.Role == provider.RoleAssistant {
+			t.Fatal("empty assistant message was replayed")
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -17,6 +18,11 @@ import (
 // in-use conversation never expires mid-session.
 const conversationTTL = 7 * 24 * time.Hour
 
+// historyByteBudget bounds the replayed history by content bytes; oldest
+// messages are dropped first. Without it a long-lived conversation grows past
+// the model's context and every later turn fails.
+const historyByteBudget = 64 << 10
+
 // keyScope prefixes every Redis key with the authenticated caller and project.
 // conversation_id is client-minted, so without this any authenticated caller
 // who learns another's id reads and appends to their conversation.
@@ -26,6 +32,27 @@ func keyScope(creds CallerCredentials, conversationID string) string {
 
 func historyKey(creds CallerCredentials, conversationID string) string {
 	return "conversation:" + keyScope(creds, conversationID) + ":messages"
+}
+
+func turnLockKey(creds CallerCredentials, conversationID string) string {
+	return "conversation:" + keyScope(creds, conversationID) + ":turn"
+}
+
+// acquireTurn takes the conversation's turn lock. History is a plain GET at
+// turn start and SET at turn end, so a second concurrent turn (another tab, a
+// client retry while the first stream is still running) would drop one turn's
+// exchange. The TTL matches turnTimeout so a crashed process cannot wedge the
+// conversation.
+func acquireTurn(ctx context.Context, rdb *redis.Client, creds CallerCredentials, conversationID string) (release func(), err error) {
+	key := turnLockKey(creds, conversationID)
+	ok, err := rdb.SetNX(ctx, key, "1", turnTimeout).Result()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrTurnInProgress
+	}
+	return func() { _ = rdb.Del(context.WithoutCancel(ctx), key).Err() }, nil
 }
 
 // storedMessage is the persisted JSON shape: the proto enum number for role
@@ -62,6 +89,7 @@ func loadHistory(ctx context.Context, rdb *redis.Client, creds CallerCredentials
 }
 
 func saveHistory(ctx context.Context, rdb *redis.Client, creds CallerCredentials, conversationID string, messages []*aidashboardsv1.Message) error {
+	messages = trimHistory(messages)
 	plain := make([]storedMessage, 0, len(messages))
 	for _, m := range messages {
 		plain = append(plain, storedMessage{Role: int32(m.GetRole()), Content: m.GetContent()})
@@ -71,4 +99,16 @@ func saveHistory(ctx context.Context, rdb *redis.Client, creds CallerCredentials
 		return err
 	}
 	return rdb.Set(ctx, historyKey(creds, conversationID), payload, conversationTTL).Err()
+}
+
+// trimHistory keeps the newest messages that fit historyByteBudget.
+func trimHistory(messages []*aidashboardsv1.Message) []*aidashboardsv1.Message {
+	total := 0
+	for i, m := range slices.Backward(messages) {
+		total += len(m.GetContent())
+		if total > historyByteBudget {
+			return messages[i+1:]
+		}
+	}
+	return messages
 }
