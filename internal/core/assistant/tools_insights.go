@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	aisdk "github.com/grafana/ai-sdk"
@@ -74,16 +75,21 @@ func jsonString(s string) (json.RawMessage, error) {
 // logged here, the layer that detects them. Client-class codes are the model's
 // to fix (a typo'd key, a project it cannot read) and stay at warn; the rest
 // are ours and are recorded.
-// maxToolResultBytes caps what one insight result feeds back to the model. The
-// result rides in every later step of the turn and in the debug trace, and a
-// fine-grained breakdown over a long window serialises to megabytes.
+// maxToolResultBytes caps what one insight result feeds back to the model
+// (approximately: a context budget, not a wire limit). The result rides in
+// every later step of the turn and in the debug trace, and a fine-grained
+// breakdown over a long window serialises to megabytes.
 const maxToolResultBytes = 32 << 10
 
 func capResult(s string) string {
 	if len(s) <= maxToolResultBytes {
 		return s
 	}
-	return s[:maxToolResultBytes] + "\n…[truncated: result too large — use a shorter window, coarser granularity or fewer breakdowns]"
+	cut := maxToolResultBytes
+	for !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "\n…[truncated: result too large — use a shorter window, coarser granularity or fewer breakdowns]"
 }
 
 func safely(ctx context.Context, tool string, fn func() (string, error)) (json.RawMessage, error) {

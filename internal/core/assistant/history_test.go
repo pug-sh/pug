@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -183,5 +184,39 @@ func TestTrimHistory_KeepsNewestWithinBudget(t *testing.T) {
 	}
 	if small := trimHistory(msgs[1:2]); len(small) != 1 {
 		t.Fatalf("under-budget history was trimmed")
+	}
+}
+
+func TestAcquireTurn_ReleaseOnlyDeletesItsOwnLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+	key := turnLockKey(testCreds, "conv_lock")
+
+	release, err := acquireTurn(ctx, rd.Client, testCreds, "conv_lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acquireTurn(ctx, rd.Client, testCreds, "conv_lock"); !errors.Is(err, ErrTurnInProgress) {
+		t.Fatalf("second acquire err = %v", err)
+	}
+	release()
+	if n, _ := rd.Client.Exists(ctx, key).Result(); n != 0 {
+		t.Fatal("lock not released")
+	}
+
+	// The lock expired and a newer turn took it: the stale release is a no-op.
+	release, err = acquireTurn(ctx, rd.Client, testCreds, "conv_lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rd.Client.Set(ctx, key, "newer-turn", time.Minute).Err(); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if got, _ := rd.Client.Get(ctx, key).Result(); got != "newer-turn" {
+		t.Fatalf("stale release deleted the newer lock (value=%q)", got)
 	}
 }

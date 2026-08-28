@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -45,15 +46,21 @@ func turnLockKey(creds CallerCredentials, conversationID string) string {
 // conversation.
 func acquireTurn(ctx context.Context, rdb *redis.Client, creds CallerCredentials, conversationID string) (release func(), err error) {
 	key := turnLockKey(creds, conversationID)
-	ok, err := rdb.SetNX(ctx, key, "1", turnTimeout).Result()
+	token := rand.Text()
+	ok, err := rdb.SetNX(ctx, key, token, turnTimeout).Result()
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, ErrTurnInProgress
 	}
-	return func() { _ = rdb.Del(context.WithoutCancel(ctx), key).Err() }, nil
+	return func() { _ = releaseTurnScript.Run(context.WithoutCancel(ctx), rdb, []string{key}, token).Err() }, nil
 }
+
+// A turn that overran turnTimeout finds its lock expired and possibly re-taken;
+// a plain DEL would release the newer turn's lock.
+var releaseTurnScript = redis.NewScript(
+	`if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) end return 0`)
 
 // storedMessage is the persisted JSON shape: the proto enum number for role
 // ({"role":1,"content":"hi"}).

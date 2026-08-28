@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	aisdk "github.com/grafana/ai-sdk"
@@ -243,5 +244,10 @@ func TestCapResult_TruncatesOversizedOutput(t *testing.T) {
 	got := capResult(small + "b")
 	if !strings.HasPrefix(got, small) || !strings.Contains(got, "truncated") || strings.HasSuffix(got, "b") {
 		t.Fatalf("capResult = ...%q", got[len(got)-40:])
+	}
+	// The cut lands on a rune boundary, never inside a multi-byte sequence.
+	straddle := strings.Repeat("a", maxToolResultBytes-1) + "éé"
+	if got := capResult(straddle); !utf8.ValidString(got) || strings.Contains(got, "é") {
+		t.Fatalf("capResult split a rune: ...%q", got[maxToolResultBytes-4:maxToolResultBytes+4])
 	}
 }
