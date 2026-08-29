@@ -383,11 +383,12 @@ scope. → [`insights.md`](insights.md) (Property discovery).
 ## Testing strategy (as implemented)
 
 - **Contract pins, repointed at the latest MV definition:** `TestMaterializedDimsMatchMigration`
-  and `TestMigration011PromotedDimExprsMatch` parse **011's** Up section — the migration that
-  currently defines the MV. 011 restates the MODIFY QUERY block only (full 21-tuple ↔
-  `materializedDims`+`$__total__`) and carries **no backfill**, which the tests assert by
+  and `TestMigration012PromotedDimExprsMatch` parse **012's** Up section — the migration that
+  currently defines the MV. 011 and 012 restate the MODIFY QUERY block only (full 21-tuple ↔
+  `materializedDims`+`$__total__`) and carry **no backfill**, which the tests assert by
   requiring exactly one `ARRAY JOIN` block; 009's two-block shape — MODIFY QUERY plus a delta
-  backfill of `eventRollupDims009` exactly — is now pinned by `TestMigration009Frozen`.
+  backfill of `eventRollupDims009` exactly — is pinned by `TestMigration009Frozen`, and 011 by
+  `TestMigration011Frozen`.
   `TestMigration006Frozen` / `TestMigration007Frozen` pin the shipped migrations to their
   historical content (guards against editing them). `TestMigration010SessionRollup
   {ColumnsMatchDims,DimExprsMatch}` do the same for the session rollup (old dims stated once in

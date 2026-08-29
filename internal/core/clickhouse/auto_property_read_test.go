@@ -193,3 +193,12 @@ func TestPropertyNumericExprPromotedBotScore(t *testing.T) {
 		t.Fatalf("unexpected SQL: %s", cond.SQL())
 	}
 }
+
+func TestAutoPropertyProjectionForPromotedBot(t *testing.T) {
+	if got := clickhouse.AutoPropertyProjectionFor("$bot", "").StringSQL; got != "if(bot, 'true', 'false')" {
+		t.Fatalf("$bot StringSQL = %q", got)
+	}
+	if got := clickhouse.AutoPropertyProjectionFor("$bot_reason", "e").StringSQL; got != "coalesce(e.bot_reason, '')" {
+		t.Fatalf("$bot_reason StringSQL = %q", got)
+	}
+}

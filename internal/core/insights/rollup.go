@@ -13,8 +13,8 @@ import (
 )
 
 // rollupTable is the daily dimensional rollup populated by
-// dashboard_event_rollup_daily_mv (migration 006; MV query extended by 009 and
-// restated by 011, which is what currently defines it).
+// dashboard_event_rollup_daily_mv (migration 006; the newest restatement of
+// its query, currently 012, is what defines it).
 const rollupTable = "dashboard_event_rollup_daily"
 
 // totalDimName is the synthetic dimension whose single empty-string value per
@@ -50,11 +50,11 @@ var (
 
 // materializedDims are the auto-property breakdown dimensions backed by the
 // rollup: the union of every applied migration's group, so it matches the
-// LATEST MV definition (011's MODIFY QUERY — 011 adds no dims, but it is the
-// migration that now defines the MV) by construction rather than by a list
-// restated a third time. TestMaterializedDimsMatchMigration checks the dim names
-// against that MV; TestMigration011PromotedDimExprsMatch checks that every dim's
-// value expression reads its promoted column.
+// newest MV restatement (currently 012's MODIFY QUERY; 011 and 012 added key
+// columns, no dims) by construction rather than by a list restated a third
+// time. TestMaterializedDimsMatchMigration checks the dim names against that
+// MV; TestMigration012PromotedDimExprsMatch checks that every dim's value
+// expression reads its promoted column.
 var materializedDims = slices.Concat(eventRollupDims006, eventRollupDims009)
 
 func isMaterializedDim(prop string) bool {

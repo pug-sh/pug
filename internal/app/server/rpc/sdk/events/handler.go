@@ -20,6 +20,7 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/attribution"
 	"github.com/pug-sh/pug/internal/autoprop"
+	"github.com/pug-sh/pug/internal/botdetect"
 	"github.com/pug-sh/pug/internal/cookieless"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -34,6 +35,7 @@ import (
 const (
 	cfHeaderBotScore    = "CF-Bot-Score"
 	cfHeaderVerifiedBot = "CF-Verified-Bot"
+	cfHeaderASN         = "CF-ASN"
 )
 
 var (
@@ -43,6 +45,7 @@ var (
 	cookielessDroppedCounter         metric.Int64Counter
 	cookielessSessionDegradedCounter metric.Int64Counter
 	cookielessIdentitySourceCounter  metric.Int64Counter
+	botTaggedCounter                 metric.Int64Counter
 )
 
 func init() {
@@ -70,6 +73,10 @@ func init() {
 	cookielessSessionDegradedCounter, _ = meter.Int64Counter(
 		"events.cookieless_session_degraded_total",
 		metric.WithDescription("A cookieless event could not be stitched from Redis session state. reason=get_failed/mint_failed/write_failed fell back to the deterministic one-session-per-visitor-day id; reason=slide_failed kept the correct id but could not advance its last-activity watermark (reads working while writes fail — OOM or a read-only replica — which re-splits the session on later events). Data is intact either way; session metrics coarsen. A sustained mint_failed means Redis < 7.0, which rejects SET NX GET outright."),
+	)
+	botTaggedCounter, _ = meter.Int64Counter(
+		"events.bot_tagged_total",
+		metric.WithDescription("Events tagged $bot=true at ingest. signal=user_agent: the User-Agent matched the crawler-user-agents list ($bot_reason is the matched name, e.g. HeadlessChrome). signal=asn: CF-ASN named a datacenter-only network ($bot_reason=asn:<n>). Only $platform=web events on public-key requests are ever tagged; nothing is dropped."),
 	)
 }
 
@@ -215,6 +222,7 @@ func (s *Server) BatchCreate(
 	}
 	s.enrichGeo(ctx, projectID, req.Header(), events)
 	s.enrichUserAgent(ctx, projectID, req.Header(), events)
+	s.enrichBot(ctx, projectID, principal.AuthType, req.Header(), events)
 	s.enrichBotScore(ctx, projectID, req.Header(), events)
 	s.enrichVerifiedBot(ctx, projectID, req.Header(), events)
 	s.enrichAttribution(ctx, projectID, events)
@@ -645,4 +653,70 @@ func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, h http
 			Value: &commonv1.PropertyValue_BoolValue{BoolValue: verified},
 		}
 	}
+}
+
+// enrichBot tags web-SDK events sent by automation the server can recognise
+// (botdetect). Public-key requests only: a private key is the customer's own
+// server, and non-web SDKs send an HTTP-client User-Agent the crawler list names.
+func (s *Server) enrichBot(ctx context.Context, projectID string, authType rpc.AuthType, h http.Header, events []*eventsv1.Event) {
+	for _, event := range events {
+		delete(event.AutoProperties, autoprop.PropBot)
+		delete(event.AutoProperties, autoprop.PropBotReason)
+	}
+	if authType != rpc.AuthTypePublicKey {
+		return
+	}
+
+	signal := "user_agent"
+	reason, ok := botdetect.MatchUserAgent(h.Get("User-Agent"))
+	if !ok {
+		signal = "asn"
+		reason, ok = datacenterReason(ctx, projectID, h, len(events))
+	}
+	if !ok {
+		return
+	}
+
+	tagged := 0
+	for _, event := range events {
+		if autoPropString(event.AutoProperties, autoprop.PropPlatform) != autoprop.PlatformWeb {
+			continue
+		}
+		event.AutoProperties[autoprop.PropBot] = &commonv1.PropertyValue{
+			Value: &commonv1.PropertyValue_BoolValue{BoolValue: true},
+		}
+		event.AutoProperties[autoprop.PropBotReason] = &commonv1.PropertyValue{
+			Value: &commonv1.PropertyValue_StringValue{StringValue: reason},
+		}
+		tagged++
+	}
+	if tagged > 0 {
+		botTaggedCounter.Add(ctx, int64(tagged), metric.WithAttributes(
+			attribute.String("project_id", projectID),
+			attribute.String("signal", signal),
+		))
+	}
+}
+
+// datacenterReason reads the origin network from CF-ASN, which a Cloudflare
+// Transform Rule sets to ip.src.asnum; absent the rule the signal is simply off.
+func datacenterReason(ctx context.Context, projectID string, h http.Header, batchSize int) (string, bool) {
+	raw := h.Get(cfHeaderASN)
+	if raw == "" {
+		return "", false
+	}
+	asn, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to parse ASN from CDN header",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("asn", raw),
+			slog.Int("batch_size", batchSize))
+		cdnHeaderParseFailedCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("project_id", projectID),
+			attribute.String("header", cfHeaderASN),
+		))
+		return "", false
+	}
+	return botdetect.MatchASN(asn)
 }
