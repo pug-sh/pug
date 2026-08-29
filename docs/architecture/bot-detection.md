@@ -1,11 +1,11 @@
 # Bot detection
 
-> **Status: PLUMBING BUILT, TOGGLE PENDING.** Written 2026-08-29; the storage
-> and tagging half was built the same day — migration 012, `internal/botdetect`,
-> `enrichBot`. Still to do, in order: the Cloudflare Transform Rule that turns
-> signal 2 on, the `include_bots` toggle, the SDK check. One thing changed in
-> implementation and is marked **Amended** below: the signals are scoped to
-> browser traffic.
+> **Status: TAGGING AND TOGGLE BUILT.** Written 2026-08-29; migration 012,
+> `internal/botdetect`, `enrichBot` and the `include_bots` toggle
+> (`internal/core/insights/bot.go`) were built the same day. Still to do: the
+> Cloudflare Transform Rule that turns signal 2 on, the FE control for the
+> toggle, the SDK check. One thing changed in implementation and is marked
+> **Amended** below: the signals are scoped to browser traffic.
 
 ## The problem
 
@@ -127,20 +127,27 @@ is dropped.
 `include_bots` on `InsightQuerySpec` (field 14), default false = bots excluded.
 It mirrors `include_cookieless` but is wider: it applies to every metric and
 every insight, because a monitor's pageviews are wrong in a pageview count just
-as much as in a visitor count. The raw path is `WHERE bot = 0`. The rollup fast
-path needs `bot` as a key column on `dashboard_event_rollup_daily` and the
-session rollup — migration 012 added it exactly the way 011 added `cookieless`
-(new UInt8 in the ORDER BY, no DEFAULT, MODIFY QUERY on the MV, computed as
-`toUInt8(bot)`). Rows from before the migration read `bot = 0`, so older history
-counts as human — the same kind of split as the channel history, accepted the
-same way. Until the toggle exists nothing reads the key column; unpredicated
-reads merge both values (`TestIntegrationBotTagging`). The session rollup's key
-is per event, so a session whose events straddle `bot = 0/1` — `$platform` is
-client-supplied, sessions are in flight at the deploy, the ASN is per request —
-sits in two rows. The toggle's session predicate must therefore be
-session-level, `HAVING max(bot) = 0` after the merge: a row-level
-`WHERE bot = 0` would return half a session, with a false bounce and truncated
-entry/exit values.
+as much as in a visitor count. `internal/core/insights/bot.go` holds the three
+pieces: `excludeBots(spec)`, `botExclusionCond` (row-level `bot = 0`, `e.bot`
+under the identity join) and `botSessionHaving` (session-level, below). The raw
+path is `WHERE bot = 0`. The rollup fast path reads the `bot` key column
+migration 012 added to `dashboard_event_rollup_daily` and the session rollup
+exactly the way 011 added `cookieless` (new UInt8 in the ORDER BY, no DEFAULT,
+MODIFY QUERY on the MV, computed as `toUInt8(bot)`): exclusion is `WHERE bot =
+0`, inclusion is no predicate (states merge across both key values), so both
+toggle states stay fast-path. Rows from before the migration read `bot = 0`, so
+older history counts as human — the same kind of split as the channel history,
+accepted the same way. The session rollup's key is per event, so a session
+whose events straddle `bot = 0/1` — `$platform` is client-supplied, sessions
+are in flight at the deploy, the ASN is per request — sits in two rows. The
+session predicate is therefore session-level, `HAVING max(bot) = 0` after the
+merge, on the session rollup, the raw session CTE and user flow alike: a
+row-level `WHERE bot = 0` would return half a session, with a false bounce and
+truncated entry/exit values. `SegmentUsers` carries no spec and excludes
+unconditionally, like cookieless. Pinned per builder by `TestBotExclusion_EveryInsightType`
+and `TestBotExclusion_EverySessionMetric` and end to end by
+`TestIntegrationBotTagging` (counts, toggle, rollup↔raw parity, a straddling
+session dropped whole).
 
 ## What it misses, and what it gets wrong
 
@@ -164,11 +171,13 @@ not a smaller global one.
    images, or the new INSERT fails `NO_SUCH_COLUMN` and every batch goes to
    the DLQ while SDKs still see 200 (see web-analytics.md's deploy runbook).
 2. ✅ Server: the dependency, `datacenterASNs`, `enrichBot`, the two
-   auto-properties, the counter. Tagging starts; no query changes yet.
+   auto-properties, the counter. Tagging starts; queries unchanged until step 4.
 3. Cloudflare: the Transform Rule. Signal 2 goes live by itself.
-4. API + FE: `include_bots` and its predicate on both paths. This is the one
-   step where dashboards change — worth a release note.
-5. SDK: the webdriver check, on the SDK's own release cadence.
+4. ✅ API: `include_bots` and its predicate on both paths. This is the one
+   step where dashboards change — the default applies at this deploy with no
+   FE change — worth a release note.
+5. FE: the toggle control, so a project owner can see the tagged traffic.
+6. SDK: the webdriver check, on the SDK's own release cadence.
 
 ## Later, separately: hostname allowlist
 

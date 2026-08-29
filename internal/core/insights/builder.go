@@ -433,6 +433,7 @@ func buildTrendsBranchQuery(
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			chq.When(ev.GetEvent().GetKind() != "", chq.Eq("kind", ev.GetEvent().GetKind())),
 			cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), agg), ""),
+			botExclusionCond(excludeBots(req.GetSpec()), ""),
 			topLevelFilterCond,
 		)
 
@@ -520,6 +521,7 @@ func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, event
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			botExclusionCond(excludeBots(req.GetSpec()), ""),
 			topLevelFilterCond,
 			chq.Or(orConds...),
 		).
@@ -585,6 +587,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), ""),
+			botExclusionCond(excludeBots(req.GetSpec()), ""),
 			topLevelFilterCond,
 			eventCond,
 		), nil
@@ -720,6 +723,7 @@ func buildSessionRowsCTE(req *insightsv1.QueryRequest, projectID string) (*chq.Q
 		HavingExpr("start_time >= ? AND start_time < ?",
 			req.GetTimeRange().GetFrom().AsTime(),
 			req.GetTimeRange().GetTo().AsTime())
+	botSessionHaving(q, excludeBots(spec))
 
 	for j, bd := range spec.GetBreakdowns() {
 		q.Select(fmt.Sprintf("%s(%s, occur_time) AS breakdown_%d", attrFn, chq.PropertyExpr(bd.GetProperty()), j))
@@ -833,6 +837,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
 			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
+			botExclusionCond(excludeBots(req.GetSpec()), "e"),
 			stepFilter,
 			topLevelFilterCond,
 		).
@@ -979,6 +984,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 				chq.Gte("e.occur_time", from),
 				chq.Lt("e.occur_time", to),
 				cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
+				botExclusionCond(excludeBots(req.GetSpec()), "e"),
 				chq.Or(freshOrConds()...),
 				topLevelFilterCond,
 			).
@@ -1009,6 +1015,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
 			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
+			botExclusionCond(excludeBots(req.GetSpec()), "e"),
 			chq.Or(freshOrConds()...),
 			topLevelFilterCond,
 			preFilterCond,
@@ -1100,6 +1107,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
 			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
+			botExclusionCond(excludeBots(req.GetSpec()), "e"),
 			startCond,
 			topLevelFilterCond,
 		).
@@ -1133,6 +1141,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
 			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
+			botExclusionCond(excludeBots(req.GetSpec()), "e"),
 			returnCond,
 			topLevelFilterCond,
 		)
@@ -1224,12 +1233,12 @@ func buildFunnelStepCondition(step *insightsv1.EventQuery, projectID, alias stri
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.
 // The generated query returns a paginated, cursor-keyed list of distinct user IDs.
 //
-// Cookieless ids are excluded unconditionally. This is the one builder that
-// enumerates people directly, and SegmentUsersRequest carries no
-// InsightQuerySpec — so there is no include_cookieless toggle to consult, and
-// admitting them would contradict every other read surface: migration 011 keeps
-// cookieless ids out of distinct_id_activity_states_mv, so a caller resolving one
-// of these ids through profiles.GetByID gets ErrProfileNotFound.
+// Cookieless ids and bot-tagged events are excluded unconditionally:
+// SegmentUsersRequest carries no InsightQuerySpec, so there is no toggle to
+// consult and the list matches every insight's default population (an
+// opted-in tile has no matching drill-down). Cookieless ids could not be
+// admitted anyway — migration 011 keeps them out of
+// distinct_id_activity_states_mv, so profiles.GetByID returns ErrProfileNotFound.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
@@ -1256,6 +1265,7 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 			topLevelFilterCond,
 			eventCond,
 			cookielessExclusionCond(true, ""),
+			botExclusionCond(true, ""),
 			chq.When(req.GetPageToken() != "", chq.Gt("distinct_id", req.GetPageToken())),
 		).
 		OrderBy("distinct_id ASC").

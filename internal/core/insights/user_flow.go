@@ -92,6 +92,7 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 			userFlowNonEmptySessionKeyCond(),
 		).
 		GroupBy(groupKeyCol)
+	botSessionHaving(sessionNodesCTE, excludeBots(req.GetSpec()))
 
 	// idx is 1-based (arrayEnumerate); toInt32(idx-1) is the 0-based depth of the
 	// source node — the Sankey column. The edge connects depth (idx-1) → idx.

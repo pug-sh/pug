@@ -114,6 +114,7 @@ func topKBaseConditions(req *insightsv1.QueryRequest, projectID, alias string) (
 	excludeCookieless := excludeCookielessForAgg(spec, topKMetric(tk)) ||
 		(tk.GetDimension() == insightsv1.TopKQuery_DIMENSION_USER && excludeCookielessForPersons(spec))
 	conds = append(conds, cookielessExclusionCond(excludeCookieless, alias))
+	conds = append(conds, botExclusionCond(excludeBots(spec), alias))
 
 	if tk.GetScope() != nil {
 		scopeCond, err := chq.EventConditionAliased([]*commonv1.EventFilter{tk.GetScope()}, projectID, alias)

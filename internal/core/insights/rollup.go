@@ -277,6 +277,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 					chq.Lte("day", toDay),
 					// Rank over the same population THIS event's metric counts.
 					chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+					botExclusionCond(excludeBots(spec), ""),
 				).
 				GroupBy("dim_value", "t")
 
@@ -316,6 +317,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				// Exclusion = cookieless-0 rows only; inclusion = no predicate
 				// (states merge across both key values). Both stay fast-path.
 				chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+				botExclusionCond(excludeBots(spec), ""),
 			)
 
 		groupBy := []string{"t", "event_kind"}
@@ -448,6 +450,7 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 			chq.Gte("day", fromDay),
 			chq.Lte("day", toDay),
 			chq.When(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), chq.Eq("cookieless", uint8(0))),
+			botExclusionCond(excludeBots(req.GetSpec()), ""),
 			chq.Or(kindConds...),
 		).
 		WithQueryCache(analyticsCacheTTL).
@@ -589,6 +592,7 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 		// feeding the un-normalised value keeps a needless difference alive
 		// between two paths whose whole contract is producing identical answers.
 		chq.When(excludeCookielessForAgg(req.GetSpec(), topKMetric(tk)), chq.Eq("cookieless", uint8(0))),
+		botExclusionCond(excludeBots(req.GetSpec()), ""),
 	}
 
 	// Omit-$others fast path mirrors buildTopKEvents: a single aggregation with

@@ -22,7 +22,8 @@ service InsightsService {
   // breakdowns; a map's country dimension is implicit, so spec.map may be empty.
   // The request also carries the time range and granularity, and it is the
   // right tool for any project-wide or over-time question; per-granularity range
-  // caps apply.
+  // caps apply. Traffic tagged as a bot at ingest is excluded unless
+  // spec.include_bots is true.
   // Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
   rpc Query(QueryRequest) returns (QueryResponse);
   // SegmentUsers returns a paginated page of the distinct ids of the users who
@@ -228,6 +229,12 @@ message InsightQuerySpec {
 
   // Country-choropleth query. Only valid when insight_type == MAP.
   MapQuery map = 13;
+
+  // Traffic tagged as automated at ingest ($bot: crawler user agents and
+  // datacenter networks) is EXCLUDED by default from every insight and every
+  // metric. Session metrics and user flow judge a session whole: one tagged
+  // event excludes the session. Set true to include bots.
+  bool include_bots = 14;
 
   option (buf.validate.message).cel = {
     id: "insight_query_spec.user_flow_only_for_user_flow"
