@@ -215,6 +215,7 @@ func buildSessionRollupRowsCTE(req *insightsv1.QueryRequest, projectID string) (
 		).
 		GroupBy("session_id").
 		HavingExpr("start_time >= ? AND start_time < ?", req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
+	botSessionHaving(q, excludeBots(req.GetSpec()))
 
 	breakdowns := req.GetSpec().GetBreakdowns()
 	if len(breakdowns) == 1 {

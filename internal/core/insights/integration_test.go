@@ -3326,10 +3326,10 @@ func variantStringMap(props map[string]string) map[string]chcol.Variant {
 	return out
 }
 
-func insertAutoEvent(
+func insertEventInSession(
 	ctx context.Context,
 	conn driver.Conn,
-	projectID, eventID, kind, distinctID string,
+	projectID, eventID, kind, distinctID, sessionID string,
 	occurTime time.Time,
 	autoProps map[string]chcol.Variant,
 ) error {
@@ -3340,11 +3340,21 @@ func insertAutoEvent(
 	if err := batch.Append(chq.PrepareEventInsertArgs(
 		eventID, projectID, distinctID, kind,
 		autoProps, nil,
-		occurTime, uuid.NewString(),
+		occurTime, sessionID,
 	)...); err != nil {
 		return err
 	}
 	return batch.Send()
+}
+
+func insertAutoEvent(
+	ctx context.Context,
+	conn driver.Conn,
+	projectID, eventID, kind, distinctID string,
+	occurTime time.Time,
+	autoProps map[string]chcol.Variant,
+) error {
+	return insertEventInSession(ctx, conn, projectID, eventID, kind, distinctID, uuid.NewString(), occurTime, autoProps)
 }
 
 // insertSessionEvent inserts one event with an explicit session_id and $url, so
