@@ -106,7 +106,7 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 		Where(chq.RawCond("idx < length(nodes)"))
 
 	// Group by step as well as source/target: the same label at two positions is
-	// two distinct nodes, so transitions are position-scoped (Rybbit-style steps).
+	// two distinct nodes, so transitions are position-scoped.
 	// No "source != target" filter — a session that fires the same event twice in a
 	// row is a legitimate depth d → d+1 step, never a self-loop (the endpoints sit
 	// at different depths).
