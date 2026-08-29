@@ -96,12 +96,13 @@ type ProfileActivitySummary struct {
 }
 
 type ListParams struct {
-	ProjectID  string
-	HasCursor  bool
-	CursorTime time.Time
-	CursorID   string
-	PageSize   int32
-	Filter     chq.Condition
+	ProjectID   string
+	HasCursor   bool
+	CursorTime  time.Time
+	CursorID    string
+	PageSize    int32
+	Filter      chq.Condition
+	IncludeBots bool
 }
 
 type Service struct {
@@ -132,8 +133,8 @@ func NewService(pgW *pgxpool.Pool, ch driver.Conn, producer *natsdeps.NATSClient
 // anonymous person (the id IS the distinct_id), or — when the id is an alias
 // claimed by an identify merge — the canonical profile it was merged into, so
 // pre-identify URLs and event links keep working after the merge.
-func (s *Service) GetByID(ctx context.Context, projectID, id string) (Profile, error) {
-	profile, err := s.getSingle(ctx, projectID, chq.Eq("p.id", id))
+func (s *Service) GetByID(ctx context.Context, projectID, id string, includeBots bool) (Profile, error) {
+	profile, err := s.getSingle(ctx, projectID, includeBots, chq.Eq("p.id", id))
 	if err == nil || !errors.Is(err, ErrProfileNotFound) {
 		return profile, err
 	}
@@ -147,25 +148,25 @@ func (s *Service) GetByID(ctx context.Context, projectID, id string) (Profile, e
 	if !ok || canonicalID == id {
 		return Profile{}, ErrProfileNotFound
 	}
-	return s.getSingle(ctx, projectID, chq.Eq("p.id", canonicalID))
+	return s.getSingle(ctx, projectID, includeBots, chq.Eq("p.id", canonicalID))
 }
 
-func (s *Service) GetByExternalID(ctx context.Context, projectID, externalID string) (Profile, error) {
+func (s *Service) GetByExternalID(ctx context.Context, projectID, externalID string, includeBots bool) (Profile, error) {
 	// An empty string is never a legitimate external_id, so treat it as a miss
 	// rather than a lookup: anonymous persons carry an empty external_id by
 	// construction, and matching one arbitrarily would be wrong.
 	if externalID == "" {
 		return Profile{}, ErrProfileNotFound
 	}
-	return s.getSingle(ctx, projectID, chq.Eq("p.external_id", externalID))
+	return s.getSingle(ctx, projectID, includeBots, chq.Eq("p.external_id", externalID))
 }
 
-func (s *Service) getSingle(ctx context.Context, projectID string, extra chq.Condition) (Profile, error) {
+func (s *Service) getSingle(ctx context.Context, projectID string, includeBots bool, extra chq.Condition) (Profile, error) {
 	if s == nil || s.ch == nil {
 		return Profile{}, errors.New("profiles: clickhouse conn is nil")
 	}
 
-	sql, args, err := personsQuery(projectID).
+	sql, args, err := personsQuery(projectID, includeBots).
 		Where(
 			chq.Eq("p.is_deleted", uint8(0)),
 			extra,
@@ -220,7 +221,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 		wheres = append(wheres, params.Filter)
 	}
 
-	sql, args, err := personsQuery(params.ProjectID).
+	sql, args, err := personsQuery(params.ProjectID, params.IncludeBots).
 		Where(wheres...).
 		OrderBy("p.create_time DESC", "p.id DESC").
 		Limit(int64(params.PageSize)).
@@ -303,15 +304,15 @@ func LatestProfileAliasesCTE(projectID string) *chq.Query {
 // latest_* CTEs, anon_persons reads claimed_ids, identified_activity reads
 // identity_union, and persons / persons_activity read anon_persons (plus
 // identified_activity for the latter).
-func personsQuery(projectID string) *chq.Query {
+func personsQuery(projectID string, includeBots bool) *chq.Query {
 	q := chq.NewQuery().
 		Select(profileSelectColumns()...).
 		From("persons p LEFT JOIN persons_activity activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id")
 	return WithIdentityUnion(q, projectID).
 		With("claimed_ids", claimedIDsCTE()).
-		With("anon_persons", anonPersonsCTE(projectID)).
+		With("anon_persons", anonPersonsCTE(projectID, includeBots)).
 		With("persons", personsCTE()).
-		With("identified_activity", profileActivitySummaryCTE(projectID)).
+		With("identified_activity", profileActivitySummaryCTE(projectID, includeBots)).
 		With("persons_activity", personsActivityCTE())
 }
 
@@ -361,7 +362,7 @@ SELECT external_id AS claimed_id FROM latest_profiles WHERE external_id != ''
 // It is O(project distinct_ids) per query — same class as the identified
 // summary CTE — with a dedicated first-seen-ordered person index as the
 // documented escape hatch if per-project cardinality outgrows it.
-func anonPersonsCTE(projectID string) *chq.Query {
+func anonPersonsCTE(projectID string, includeBots bool) *chq.Query {
 	return chq.NewQuery().
 		Select(
 			"states.project_id AS project_id",
@@ -387,6 +388,7 @@ func anonPersonsCTE(projectID string) *chq.Query {
 			// materialize a single id='' person; keep it out of the person set.
 			chq.RawCond("states.distinct_id != ''"),
 			chq.RawCond("states.distinct_id NOT IN claimed_ids"),
+			chq.BotFilter(includeBots, "states"),
 		).
 		GroupBy("states.project_id", "states.distinct_id")
 }
@@ -496,7 +498,7 @@ func (s *Service) resolveAliasTarget(ctx context.Context, projectID, aliasID str
 // WARNING: personsActivityCTE unions this output by POSITION with anonPersonsCTE
 // — keep this Select's column order in sync with both, or the activity summary
 // will silently bind to the wrong columns.
-func profileActivitySummaryCTE(projectID string) *chq.Query {
+func profileActivitySummaryCTE(projectID string, includeBots bool) *chq.Query {
 	return chq.NewQuery().
 		Select(
 			"identity.project_id",
@@ -516,7 +518,10 @@ func profileActivitySummaryCTE(projectID string) *chq.Query {
 			"argMaxMerge(states.latest_city_state) AS latest_city",
 		).
 		From("identity_union identity INNER JOIN distinct_id_activity_states states ON states.project_id = identity.project_id AND states.distinct_id = identity.distinct_id").
-		Where(chq.Eq("identity.project_id", projectID)).
+		Where(
+			chq.Eq("identity.project_id", projectID),
+			chq.BotFilter(includeBots, "states"),
+		).
 		GroupBy("identity.project_id", "identity.profile_id")
 }
 

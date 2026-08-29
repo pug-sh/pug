@@ -61,6 +61,7 @@ func (s *server) GetActivityFeed(
 		PropertyFilters: req.Msg.GetPropertyFilters(),
 		EventFilters:    req.Msg.GetEvents(),
 		PageSize:        req.Msg.GetPageSize(),
+		IncludeBots:     req.Msg.GetIncludeBots(),
 	}
 
 	if req.Msg.GetPageToken() != "" {
@@ -124,6 +125,7 @@ func (s *server) GetEventExplorer(
 		PropertyFilters: req.Msg.GetPropertyFilters(),
 		EventFilters:    req.Msg.GetEvents(),
 		PageSize:        req.Msg.GetPageSize(),
+		IncludeBots:     req.Msg.GetIncludeBots(),
 	}
 
 	if req.Msg.GetPageToken() != "" {
@@ -232,9 +234,10 @@ func (s *server) GetActivityHeatmap(
 	}
 
 	days, err := s.eventsReader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
-		ProjectID:  principal.Project.ID,
-		DistinctID: req.Msg.GetDistinctId(),
-		TimeRange:  tr,
+		ProjectID:   principal.Project.ID,
+		DistinctID:  req.Msg.GetDistinctId(),
+		TimeRange:   tr,
+		IncludeBots: req.Msg.GetIncludeBots(),
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -261,7 +264,11 @@ func (s *server) GetProfileStats(
 		return nil, err
 	}
 
-	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, principal.Project.ID, req.Msg.GetDistinctId())
+	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, events.ProfileStatsParams{
+		ProjectID:   principal.Project.ID,
+		DistinctID:  req.Msg.GetDistinctId(),
+		IncludeBots: req.Msg.GetIncludeBots(),
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

@@ -102,7 +102,7 @@ func TestProfilesList_IncludesAnonymousPersons(t *testing.T) {
 	}
 
 	// Get resolves the derived person by its distinct_id.
-	single, err := service.GetByID(ctx, projectID, "anon-1")
+	single, err := service.GetByID(ctx, projectID, "anon-1", false)
 	if err != nil {
 		t.Fatalf("GetByID(anon-1): %v", err)
 	}
@@ -111,10 +111,10 @@ func TestProfilesList_IncludesAnonymousPersons(t *testing.T) {
 	}
 
 	// Unknown ids still 404, and the empty external_id can never match a person.
-	if _, err := service.GetByID(ctx, projectID, "nope"); !errors.Is(err, profiles.ErrProfileNotFound) {
+	if _, err := service.GetByID(ctx, projectID, "nope", false); !errors.Is(err, profiles.ErrProfileNotFound) {
 		t.Errorf("GetByID(nope) err = %v, want ErrProfileNotFound", err)
 	}
-	if _, err := service.GetByExternalID(ctx, projectID, ""); !errors.Is(err, profiles.ErrProfileNotFound) {
+	if _, err := service.GetByExternalID(ctx, projectID, "", false); !errors.Is(err, profiles.ErrProfileNotFound) {
 		t.Errorf("GetByExternalID(\"\") err = %v, want ErrProfileNotFound", err)
 	}
 }
@@ -191,7 +191,7 @@ func TestProfilesList_ClaimedIdentityExclusion(t *testing.T) {
 	assertOnlyCanonical("after late event", 3)
 
 	// The claimed id's URL keeps working: Get redirects to the canonical profile.
-	redirected, err := service.GetByID(ctx, projectID, "anon-1")
+	redirected, err := service.GetByID(ctx, projectID, "anon-1", false)
 	if err != nil {
 		t.Fatalf("GetByID(anon-1): %v", err)
 	}
@@ -448,7 +448,7 @@ func TestErasure_ByID_AnonymousPerson(t *testing.T) {
 	}
 
 	// The person is gone from the read path...
-	if _, err := svc.GetByID(ctx, projectID, eraseID); !errors.Is(err, profiles.ErrProfileNotFound) {
+	if _, err := svc.GetByID(ctx, projectID, eraseID, false); !errors.Is(err, profiles.ErrProfileNotFound) {
 		t.Errorf("GetByID(erased) err = %v, want ErrProfileNotFound", err)
 	}
 	got, err := svc.List(ctx, profiles.ListParams{ProjectID: projectID, PageSize: 100})
@@ -702,7 +702,7 @@ func TestProfilesList_CrossProjectIsolation(t *testing.T) {
 	}
 
 	// Get for the shared id in A must see only A's single event.
-	singleA, err := service.GetByID(ctx, projectA, sharedAnon)
+	singleA, err := service.GetByID(ctx, projectA, sharedAnon, false)
 	if err != nil {
 		t.Fatalf("GetByID(A): %v", err)
 	}
@@ -1200,7 +1200,84 @@ func TestAnonPersons_CookielessIDsNeverBecomePersons(t *testing.T) {
 		t.Errorf("persons = %v, want exactly [anon-real]", ids)
 	}
 
-	if _, err := service.GetByID(ctx, projectID, cookieless.IDPrefix+"ghost"); !errors.Is(err, profiles.ErrProfileNotFound) {
+	if _, err := service.GetByID(ctx, projectID, cookieless.IDPrefix+"ghost", false); !errors.Is(err, profiles.ErrProfileNotFound) {
 		t.Errorf("GetByID(cookieless id) err = %v, want ErrProfileNotFound", err)
+	}
+}
+
+// TestProfilesBotExclusion pins both halves of the profiles toggle: a crawler must not list as a
+// person by default, and an identified profile's summary must not count its bot-tagged events.
+func TestProfilesBotExclusion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	projectID := "proj-bot-persons"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	human := map[string]string{"$browser": "Chrome"}
+	crawler := map[string]string{"$browser": "Chrome", "$bot": "true", "$bot_reason": "user_agent"}
+
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "anon-human", "page_view", uuid.NewString(),
+		human, map[string]string{}, now.Add(-time.Hour))
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "anon-crawler", "page_view", uuid.NewString(),
+		crawler, map[string]string{}, now.Add(-time.Hour))
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"u-1", projectID, "ext-1", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "ext-1", "page_view", uuid.NewString(),
+		human, map[string]string{}, now.Add(-time.Hour))
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "ext-1", "page_view", uuid.NewString(),
+		crawler, map[string]string{}, now.Add(-30*time.Minute))
+
+	service := profiles.NewService(nil, ch.Conn, nil)
+
+	ids := func(t *testing.T, includeBots bool) map[string]int64 {
+		t.Helper()
+		got, err := service.List(ctx, profiles.ListParams{ProjectID: projectID, PageSize: 100, IncludeBots: includeBots})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		out := make(map[string]int64, len(got))
+		for _, p := range got {
+			out[p.ID] = p.Activity.TotalEvents
+		}
+		return out
+	}
+
+	excluded := ids(t, false)
+	if _, ok := excluded["anon-crawler"]; ok {
+		t.Error("a bot-only distinct_id must not list as a person by default")
+	}
+	if excluded["anon-human"] != 1 {
+		t.Errorf("anon-human total_events = %d, want 1", excluded["anon-human"])
+	}
+	if excluded["u-1"] != 1 {
+		t.Errorf("identified total_events = %d, want 1 (bot event excluded)", excluded["u-1"])
+	}
+
+	included := ids(t, true)
+	if included["anon-crawler"] != 1 {
+		t.Errorf("anon-crawler total_events = %d with bots included, want 1", included["anon-crawler"])
+	}
+	if included["u-1"] != 2 {
+		t.Errorf("identified total_events = %d with bots included, want 2", included["u-1"])
+	}
+
+	single, err := service.GetByID(ctx, projectID, "u-1", false)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if single.Activity.TotalEvents != 1 {
+		t.Errorf("GetByID total_events = %d, want 1", single.Activity.TotalEvents)
+	}
+	if _, err := service.GetByID(ctx, projectID, "anon-crawler", false); !errors.Is(err, profiles.ErrProfileNotFound) {
+		t.Errorf("GetByID of a bot-only id = %v, want ErrProfileNotFound", err)
 	}
 }

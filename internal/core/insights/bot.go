@@ -11,14 +11,8 @@ func excludeBots(spec *insightsv1.InsightQuerySpec) bool {
 	return !spec.GetIncludeBots()
 }
 
-// botExclusionCond is the row-level `bot = 0`. bot is a key column on both
-// rollups, so the same predicate serves the fast path; inclusion is no predicate.
 func botExclusionCond(exclude bool, alias string) chq.Condition {
-	col := "bot"
-	if alias != "" {
-		col = alias + ".bot"
-	}
-	return chq.When(exclude, chq.RawCond(col+" = 0"))
+	return chq.BotFilter(!exclude, alias)
 }
 
 // botSessionHaving excludes at the session level: a row-level WHERE would keep

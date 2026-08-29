@@ -172,7 +172,7 @@ func (s *Server) Get(
 		return nil, err
 	}
 
-	pbProfile, err := s.getProfile(ctx, principal.Project.ID, req.Msg.GetId())
+	pbProfile, err := s.getProfile(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetIncludeBots())
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +191,7 @@ func (s *Server) GetByExternalId(
 		return nil, err
 	}
 
-	pbProfile, err := s.getProfileByExternalID(ctx, principal.Project.ID, req.Msg.GetExternalId())
+	pbProfile, err := s.getProfileByExternalID(ctx, principal.Project.ID, req.Msg.GetExternalId(), req.Msg.GetIncludeBots())
 	if err != nil {
 		return nil, err
 	}
@@ -243,12 +243,13 @@ func (s *Server) List(
 		}
 
 		chProfiles, err := s.service.List(ctx, coreprofiles.ListParams{
-			ProjectID:  principal.Project.ID,
-			HasCursor:  hasCursor,
-			CursorTime: cursorTime.Time,
-			CursorID:   cursorID,
-			PageSize:   pageSize + 1,
-			Filter:     chFilterCond,
+			ProjectID:   principal.Project.ID,
+			HasCursor:   hasCursor,
+			CursorTime:  cursorTime.Time,
+			CursorID:    cursorID,
+			PageSize:    pageSize + 1,
+			Filter:      chFilterCond,
+			IncludeBots: req.Msg.GetIncludeBots(),
 		})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -352,11 +353,11 @@ func buildProfilePage(ctx context.Context, profiles []coreprofiles.Profile) (pro
 	}, nil
 }
 
-func (s *Server) getProfile(ctx context.Context, projectID, id string) (*profilesv1.Profile, error) {
+func (s *Server) getProfile(ctx context.Context, projectID, id string, includeBots bool) (*profilesv1.Profile, error) {
 	if s.service == nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("profiles read is unavailable"))
 	}
-	profile, err := s.service.GetByID(ctx, projectID, id)
+	profile, err := s.service.GetByID(ctx, projectID, id, includeBots)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found", apperr.Resource("profile", id))
@@ -374,11 +375,11 @@ func (s *Server) getProfile(ctx context.Context, projectID, id string) (*profile
 	return pbProfile, nil
 }
 
-func (s *Server) getProfileByExternalID(ctx context.Context, projectID, externalID string) (*profilesv1.Profile, error) {
+func (s *Server) getProfileByExternalID(ctx context.Context, projectID, externalID string, includeBots bool) (*profilesv1.Profile, error) {
 	if s.service == nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("profiles read is unavailable"))
 	}
-	profile, err := s.service.GetByExternalID(ctx, projectID, externalID)
+	profile, err := s.service.GetByExternalID(ctx, projectID, externalID, includeBots)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found", apperr.Resource("profile", externalID))

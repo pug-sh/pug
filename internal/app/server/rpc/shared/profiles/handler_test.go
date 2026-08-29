@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
@@ -840,4 +841,94 @@ func newProfilesTestClient(t *testing.T, svc *Server, projectID string) profiles
 	t.Cleanup(ts.Close)
 
 	return profilesv1connect.NewProfilesServiceClient(http.DefaultClient, ts.URL)
+}
+
+// TestIncludeBots_ReachesTheReader pins the proto field through the handler for all
+// three profiles RPCs. The core-layer toggle is covered by TestProfilesBotExclusion;
+// what is untested without this is the plumbing — a handler that drops the field or
+// hardcodes it passes every core test.
+func TestIncludeBots_ReachesTheReader(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+	profileID := xid.New().String()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	crawler := map[string]string{"$bot": "true", "$bot_reason": "user_agent"}
+	human := map[string]string{}
+
+	seedCHProfileWithID(t, ctx, ch, projectID, profileID, "mixed@example.com", map[string]any{})
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "mixed@example.com", "page_view",
+		uuid.NewString(), human, map[string]string{}, now.Add(-time.Hour))
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "mixed@example.com", "page_view",
+		uuid.NewString(), crawler, map[string]string{}, now.Add(-30*time.Minute))
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "anon-crawler", "page_view",
+		uuid.NewString(), crawler, map[string]string{}, now.Add(-time.Hour))
+
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
+
+	listIDs := func(includeBots bool) map[string]bool {
+		t.Helper()
+		stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{IncludeBots: proto.Bool(includeBots)}))
+		if err != nil {
+			t.Fatalf("List(include_bots=%v): %v", includeBots, err)
+		}
+		out := map[string]bool{}
+		for stream.Receive() {
+			for _, p := range stream.Msg().GetProfiles() {
+				out[p.GetId()] = true
+			}
+		}
+		if err := stream.Err(); err != nil {
+			t.Fatalf("List stream(include_bots=%v): %v", includeBots, err)
+		}
+		return out
+	}
+	if listIDs(false)["anon-crawler"] {
+		t.Error("List: bot-only person present with include_bots=false — the field is not reaching the reader")
+	}
+	if !listIDs(true)["anon-crawler"] {
+		t.Error("List: bot-only person absent with include_bots=true — the field is not reaching the reader")
+	}
+
+	// Get and GetByExternalId go straight at the server: the test client carries no apperr
+	// interceptor, so a NotFound would arrive as connect's "unknown".
+	srv := NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{}))
+	srvCtx := authCtx(projectID)
+
+	_, err := srv.Get(srvCtx, connect.NewRequest(&profilesv1.GetRequest{Id: proto.String("anon-crawler")}))
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) || appErr.Code() != connect.CodeNotFound {
+		t.Errorf("Get(bot-only, include_bots=false) err = %v, want NotFound", err)
+	}
+	got, err := srv.Get(srvCtx, connect.NewRequest(&profilesv1.GetRequest{
+		Id: proto.String("anon-crawler"), IncludeBots: proto.Bool(true),
+	}))
+	if err != nil {
+		t.Fatalf("Get(bot-only, include_bots=true): %v", err)
+	}
+	if got.Msg.GetProfile().GetId() != "anon-crawler" {
+		t.Errorf("Get id = %q, want anon-crawler", got.Msg.GetProfile().GetId())
+	}
+
+	byExt := func(includeBots bool) int64 {
+		t.Helper()
+		resp, err := srv.GetByExternalId(srvCtx, connect.NewRequest(&profilesv1.GetByExternalIdRequest{
+			ExternalId: proto.String("mixed@example.com"), IncludeBots: proto.Bool(includeBots),
+		}))
+		if err != nil {
+			t.Fatalf("GetByExternalId(include_bots=%v): %v", includeBots, err)
+		}
+		return resp.Msg.GetProfile().GetActivity().GetTotalEvents()
+	}
+	if got := byExt(false); got != 1 {
+		t.Errorf("GetByExternalId total_events = %d with bots excluded, want 1", got)
+	}
+	if got := byExt(true); got != 2 {
+		t.Errorf("GetByExternalId total_events = %d with bots included, want 2", got)
+	}
 }

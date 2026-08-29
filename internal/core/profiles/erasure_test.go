@@ -669,3 +669,66 @@ func TestErasure_ByID_CookielessIsErasable(t *testing.T) {
 		t.Errorf("control events = %d, want 1 (untouched by the cookieless erase)", got)
 	}
 }
+
+// Erasure is deliberately bot-blind: hasErasableActivity and the rollup DELETE name
+// no `bot`, so a crawler's id stays discoverable and erasable even though every read
+// path hides it by default. Migration 013 keys the activity rollup by bot, which is
+// exactly what would tempt someone to add `bot = 0` to the probe and 404 an Art. 17
+// request for data the system still holds.
+func TestErasure_ByID_BotTaggedIsErasable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	tn := testutil.SetupNATS(t)
+	t.Setenv("NATS_URL", tn.URL)
+
+	natsClient, err := natsdeps.New(ctx)
+	if err != nil {
+		t.Fatalf("create nats client: %v", err)
+	}
+	defer natsClient.Close()
+
+	projectID := seedProject(t, ctx, pg)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	const botID = "anon-crawler-erase"
+	crawler := map[string]string{"$bot": "true", "$bot_reason": "user_agent"}
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, botID, "page_view",
+		uuid.NewString(), crawler, map[string]string{}, now)
+
+	// The id sits in the rollup under bot = 1, so a probe that filtered on bot = 0
+	// would see nothing and report ErrProfileNotFound.
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ? AND bot = 1",
+		projectID, botID); got != 1 {
+		t.Fatalf("bot activity rows = %d, want 1 (migration 013 splits by bot)", got)
+	}
+
+	svc := profiles.NewService(pg.PgW, ch.Conn, natsClient)
+
+	requestID, status, err := svc.RequestErasureByID(ctx, projectID, botID, "")
+	if err != nil {
+		t.Fatalf("RequestErasureByID(bot-tagged) = %v, want success — erasure must stay bot-blind", err)
+	}
+	if status != profiles.ComplianceStatusPending {
+		t.Errorf("status = %q, want pending", status)
+	}
+
+	if err := svc.ExecuteErasure(ctx, projectID, requestID); err != nil {
+		t.Fatalf("ExecuteErasure: %v", err)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?",
+		projectID, botID); got != 0 {
+		t.Errorf("bot events = %d after erasure, want 0", got)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?",
+		projectID, botID); got != 0 {
+		t.Errorf("bot activity rows = %d after erasure, want 0 (the bot = 1 row must go too)", got)
+	}
+}
