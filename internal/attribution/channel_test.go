@@ -33,6 +33,8 @@ func TestClassifyChannelRules(t *testing.T) {
 		// 5: Paid Other
 		{"paid other", Input{URL: page, UTMSource: "partnerx", UTMMedium: "cpc"}, ChannelPaidOther},
 		{"paid prefix medium", Input{URL: page, UTMSource: "partnerx", UTMMedium: "paid-placement"}, ChannelPaidOther},
+		// A blanked auth ref leaves no source, so a paid medium takes rule 5.
+		{"paid medium with auth ref is paid other", Input{URL: page, Referrer: "https://accounts.google.com/x", UTMMedium: "cpc"}, ChannelPaidOther},
 		// 6: Organic Search
 		{"organic search via ref", Input{URL: page, Referrer: "https://www.google.com/"}, ChannelOrganicSearch},
 		{"organic search via duckduckgo ref", Input{URL: page, Referrer: "https://duckduckgo.com/"}, ChannelOrganicSearch},
@@ -40,17 +42,11 @@ func TestClassifyChannelRules(t *testing.T) {
 		{"organic medium", Input{URL: page, UTMSource: "seo-tool", UTMMedium: "organic"}, ChannelOrganicSearch},
 		{"organic search via google ccTLD subdomain", Input{URL: page, Referrer: "https://images.google.co.in/x"}, ChannelOrganicSearch},
 		{"organic search via google news", Input{URL: page, Referrer: "https://news.google.com/x"}, ChannelOrganicSearch},
-		// Google's non-search products are NOT search. accounts.google.com is
-		// the worst of them: the OAuth bounce returns a visitor who was already
-		// on the site, so booking it Organic Search invents acquisition.
-		{"google sign-in is referral not search", Input{URL: page, Referrer: "https://accounts.google.com/o/oauth2/v2/auth"}, ChannelReferral},
+		// Google product hosts fail the subdomain gate: Referral, not Search.
 		{"search console is referral not search", Input{URL: page, Referrer: "https://search.google.com/search-console"}, ChannelReferral},
 		{"google docs is referral not search", Input{URL: page, Referrer: "https://docs.google.com/document/d/1"}, ChannelReferral},
 		{"multi-label google subdomain is referral not search", Input{URL: page, Referrer: "https://console.cloud.google.com/x"}, ChannelReferral},
 		{"google ccTLD sign-in is referral not search", Input{URL: page, Referrer: "https://accounts.google.co.uk/x"}, ChannelReferral},
-		// A paid medium still wins over the referrer (rules 1-5 precede 11), but
-		// the sign-in bounce is no longer a SEARCH source, so it is Paid Other.
-		{"paid medium with google sign-in ref is paid other", Input{URL: page, Referrer: "https://accounts.google.com/x", UTMMedium: "cpc"}, ChannelPaidOther},
 		// 7: Organic Social
 		{"organic social via ref", Input{URL: page, Referrer: "https://reddit.com/r/pugs"}, ChannelOrganicSocial},
 		{"organic social via t.co", Input{URL: page, Referrer: "https://t.co/abc"}, ChannelOrganicSocial},
@@ -118,6 +114,7 @@ func TestClassifyChannelRules(t *testing.T) {
 		{"utm campaign only", Input{URL: page, UTMCampaign: "summer-sale"}, ChannelUnassigned},
 		{"utm term only via url", Input{URL: page + "?utm_term=dog+food"}, ChannelUnassigned},
 		{"unrecognized source+medium", Input{URL: page, UTMSource: "mystery", UTMMedium: "carrier-pigeon"}, ChannelUnassigned},
+		{"auth ref with unmatched source is unassigned not direct", Input{URL: page, Referrer: "https://accounts.google.com/x", UTMSource: "partnerx"}, ChannelUnassigned},
 		// 12, via an unresolvable referrer. url.Parse reads a schemeless string
 		// as a path, so these yield no host and no error; booking them Direct
 		// would hide real referred traffic inside the one bucket nobody
@@ -134,6 +131,8 @@ func TestClassifyChannelRules(t *testing.T) {
 		// Direct — it is not an unclassifiable signal.
 		{"self-referral collapses to direct", Input{URL: page, Referrer: "https://pugandpals.example.com/"}, ChannelDirect},
 		{"self-referral with www collapses to direct", Input{URL: page, Referrer: "https://www.pugandpals.example.com/"}, ChannelDirect},
+		// Auth bounce: blanked before classification, so Direct like a self-referral.
+		{"auth bounce collapses to direct", Input{URL: page, Referrer: "https://accounts.google.com/o/oauth2/v2/auth"}, ChannelDirect},
 		// Precedence: search ref + email medium → Organic Search (rule 6 before 9).
 		{"search ref beats email medium", Input{URL: page, Referrer: "https://www.google.com", UTMMedium: "email"}, ChannelOrganicSearch},
 		// Precedence: social ref + affiliate medium → Organic Social (7 before 10).
@@ -162,6 +161,15 @@ func TestClassifyChannelRules(t *testing.T) {
 // MIGRATION, not a refactor — the same freeze contract as the migration-scoped
 // dim lists in insights. 008 itself is shipped and must NOT be edited to
 // re-sync: a value change needs a NEW migration re-deriving the column.
+func TestAuthIntermediaryHostsBlankToDirect(t *testing.T) {
+	for _, host := range authIntermediaryHosts {
+		out := Derive(Input{URL: "https://pugandpals.example.com/x", Referrer: "https://" + host + "/authorize"})
+		if out.ReferrerDomain != "" || out.Channel != ChannelDirect {
+			t.Errorf("%s: referrerDomain %q channel %q, want blank and %s", host, out.ReferrerDomain, out.Channel, ChannelDirect)
+		}
+	}
+}
+
 func TestChannelValuesFrozen(t *testing.T) {
 	frozen := map[string]string{
 		ChannelPaidSearch:    "Paid Search",
