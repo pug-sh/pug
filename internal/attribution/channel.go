@@ -100,7 +100,7 @@ var (
 // unresolvable referrer books as Unassigned, which is visible on a dashboard,
 // rather than hiding inside the Direct bucket that is expected to be large.
 // A self-referral or an authIntermediaryHosts bounce is deliberately NOT a
-// signal — both blank to Direct via 13.
+// signal: with no UTM left, both land on Direct via 13.
 //
 //	 # | rule                                                  | channel
 //	 1 | paid medium AND search source/ref                     | Paid Search

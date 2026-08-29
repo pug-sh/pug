@@ -207,9 +207,9 @@ deliberate). Membership test: the host must serve no page anyone could link from
 `facebook.com`, `linkedin.com` and `x.com` run OAuth on their content hosts and stay out, since
 blanking them would delete real referrals. Matching is exact after lowercasing and the `www.` strip,
 never suffix: per-tenant identity hosts (`acme.okta.com`, Auth0, Keycloak) cannot be enumerated and
-are out of scope. Google's ccTLD account hosts (`accounts.google.co.uk`) are absent on purpose — the
-redirect back to the relying party always originates from `accounts.google.com`, so they never
-appear as referrers, and the ccTLD row stays a visible Referral pinning the subdomain gate. Before
+are out of scope. Google's ccTLD account hosts (`accounts.google.co.uk`) are absent on purpose: the
+redirect back to the relying party originates from `accounts.google.com`, so they are not expected
+as referrers, and one that does arrive stays a visible Referral, which pins the subdomain gate. Before
 the list, `login.yahoo.com`, `accounts.youtube.com` and `oauth.telegram.org` suffix-matched the
 search/video/social sets and booked Organic Search/Video/Social. The paid rules still precede the
 blank's rule 13, so a paid medium with an auth referrer is Paid Other, and an unmatched
