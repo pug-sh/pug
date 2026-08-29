@@ -1,7 +1,7 @@
 // Package autoprop provides server-controlled typed enrichment for
 // auto-property values. Maps each known auto-property key to its expected
 // typed PropertyValue / Variant slot — bot scores → Int64, lat/long →
-// Float64, verified-bot/mobile → Bool — so downstream Variant columns get
+// Float64, verified-bot/mobile/bot → Bool — so downstream Variant columns get
 // correctly-typed slots and the dashboard's filter UI surfaces the right
 // type per property.
 //
@@ -36,7 +36,15 @@ const (
 	PropScreenWidth  = "$screenWidth"
 	PropScreenHeight = "$screenHeight"
 	PropMobile       = "$mobile"
+	PropPlatform     = "$platform"
+	// Server-only: enrichBot strips client-sent values before tagging.
+	PropBot       = "$bot"
+	PropBotReason = "$bot_reason"
 )
+
+// PlatformWeb is the $platform every browser SDK sends; native and server SDKs
+// send their OS name or "server".
+const PlatformWeb = "web"
 
 // Lat/long key strings are owned by the geo package. Re-exporting them here
 // (instead of redefining) keeps a single source of truth so a rename in geo
@@ -62,7 +70,7 @@ func init() {
 // against the supplied ctx.
 func PropertyValue(ctx context.Context, projectID, key, value string) *commonv1.PropertyValue {
 	switch key {
-	case PropVerifiedBot, PropMobile:
+	case PropVerifiedBot, PropMobile, PropBot:
 		if b, err := strconv.ParseBool(value); err == nil {
 			return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_BoolValue{BoolValue: b}}
 		}

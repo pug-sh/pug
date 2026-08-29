@@ -16,6 +16,7 @@ func TestPropertyValue(t *testing.T) {
 		{PropMobile, "true", assertBool(true)},
 		{PropMobile, "false", assertBool(false)},
 		{PropVerifiedBot, "true", assertBool(true)},
+		{PropBot, "true", assertBool(true)},
 		{PropBotScore, "99", assertInt(99)},
 		{PropBotScore, "0", assertInt(0)},
 		{PropScreenWidth, "390", assertInt(390)},
@@ -44,6 +45,7 @@ func TestPropertyValue_ParseFailureFallback(t *testing.T) {
 		{PropBotScore, "not-a-number"},
 		{PropLatitude, "34.5°N"},
 		{PropMobile, "yes"},
+		{PropBot, "yes"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key+"="+tt.value, func(t *testing.T) {
