@@ -43,10 +43,11 @@ matching is bounded on a user agent an attacker controls; `botdetect` also caps
 the scanned length at 2 KB, since those few regexps rescan per literal hit.
 It knows HeadlessChrome, Playwright, Puppeteer, Selenium, Datadog Synthetics,
 Checkly and Lighthouse — the things that actually run our JavaScript. Checked once per request (a batch shares one `User-Agent`), not once
-per event. The reason recorded is the crawler name as it appears in the user
-agent (`HeadlessChrome`, `Googlebot`, `DatadogSynthetics`), never the pattern
-itself: the list stores regex source (`Googlebot\/`, `S[eE][mM]rushBot`), which
-must not show up in a breakdown.
+per event. The reason recorded is one stable name per list entry
+(`HeadlessChrome`, `Googlebot`, `DatadogSynthetics`), derived at startup from the
+entry's own example user agent — never the pattern itself (the list stores regex
+source, `Googlebot\/`, `S[eE][mM]rushBot`) and never text from the live request,
+which would be attacker-chosen.
 
 ### Signal 2 — datacenter network (server, via Cloudflare)
 
@@ -110,8 +111,8 @@ bot that runs the web SDK cannot avoid `$platform = web` — the SDK re-asserts 
 
 Two promoted columns on `events` (migration 012), written by `enrichBot` right
 after `enrichUserAgent` in the chain: `bot Bool DEFAULT false` and
-`bot_reason LowCardinality(String) DEFAULT ''` — the crawler name matched in the
-user agent (`HeadlessChrome`, `Googlebot`, …) or `asn:24940`; the user-agent wins
+`bot_reason LowCardinality(String) DEFAULT ''` — the crawler's name
+(`HeadlessChrome`, `Googlebot`, …) or `asn:24940`; the user-agent wins
 when both signals fire. Both are server-only auto-properties (`$bot`,
 `$bot_reason`): a client-sent value is stripped before enrichment, like
 `$referrerDomain`. `$bot_reason` is a promoted string column, so the filter

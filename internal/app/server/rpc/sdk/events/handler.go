@@ -76,7 +76,7 @@ func init() {
 	)
 	botTaggedCounter, _ = meter.Int64Counter(
 		"events.bot_tagged_total",
-		metric.WithDescription("Events tagged $bot=true at ingest. signal=user_agent: the User-Agent matched the crawler-user-agents list ($bot_reason is the matched name, e.g. HeadlessChrome). signal=asn: CF-ASN named a datacenter-only network ($bot_reason=asn:<n>). Only $platform=web events on public-key requests are ever tagged; nothing is dropped."),
+		metric.WithDescription("Events tagged $bot=true at ingest. signal=user_agent: the User-Agent matched the crawler-user-agents list ($bot_reason is the crawler's name, e.g. HeadlessChrome). signal=asn: CF-ASN named a datacenter-only network ($bot_reason=asn:<n>). Only $platform=web events on public-key requests are ever tagged; nothing is dropped."),
 	)
 }
 

@@ -35,13 +35,22 @@ var datacenterASNs = map[uint64]bool{
 	132203: true, // Tencent Cloud
 }
 
-// patterns are the list's regexps, compiled once so a hit can report the text
-// it matched: Crawler.Pattern is regex source (`Googlebot\/`, `S[eE][mM]rushBot`)
-// and must never reach a dashboard.
-var patterns = func() []*regexp.Regexp {
-	out := make([]*regexp.Regexp, len(agents.Crawlers))
+// names are one stable label per list entry (its pattern matched against its
+// own example user agent): Crawler.Pattern is regex source, and a span over the
+// live User-Agent would be request-chosen text with unbounded cardinality.
+var names = func() []string {
+	strip := strings.NewReplacer(`\`, "", "^", "", "$", "", "(", "", ")", "")
+	out := make([]string, len(agents.Crawlers))
 	for i, c := range agents.Crawlers {
-		out[i] = regexp.MustCompile(c.Pattern)
+		re := regexp.MustCompile(c.Pattern)
+		for _, ua := range c.Instances {
+			if out[i] = trimName(re.FindString(ua)); out[i] != "" {
+				break
+			}
+		}
+		if out[i] == "" {
+			out[i] = trimName(strip.Replace(c.Pattern))
+		}
 	}
 	return out
 }()
@@ -50,8 +59,8 @@ var patterns = func() []*regexp.Regexp {
 // whole string per literal hit, so an attacker-sized User-Agent is quadratic.
 const maxUALen = 2048
 
-// MatchUserAgent returns the crawler name as it appears in ua when ua matches
-// the crawler-user-agents list.
+// MatchUserAgent returns the crawler's name when ua matches the
+// crawler-user-agents list.
 func MatchUserAgent(ua string) (string, bool) {
 	if len(ua) > maxUALen {
 		ua = ua[:maxUALen]
@@ -60,8 +69,11 @@ func MatchUserAgent(ua string) (string, bool) {
 	if len(hits) == 0 {
 		return "", false
 	}
-	name := patterns[hits[0]].FindString(ua)
-	return strings.TrimFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), true
+	return names[hits[0]], true
+}
+
+func trimName(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 }
 
 // MatchASN returns "asn:<n>" when asn is a datacenter-only network.

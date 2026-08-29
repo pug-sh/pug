@@ -40,10 +40,14 @@ func TestMatchUserAgent(t *testing.T) {
 	}
 }
 
-// TestMatchUserAgentReasonsAreNames runs every example user agent the list
-// ships: a reason is never empty and never the pattern's regex source.
+// TestMatchUserAgentReasonsAreNames pins every entry's label and runs every
+// example user agent the list ships: a reason is never empty and never the
+// pattern's regex source.
 func TestMatchUserAgentReasonsAreNames(t *testing.T) {
-	for _, c := range agents.Crawlers {
+	for i, c := range agents.Crawlers {
+		if names[i] == "" || strings.Contains(names[i], `\`) {
+			t.Errorf("names[%d] = %q (pattern %q)", i, names[i], c.Pattern)
+		}
 		for _, ua := range c.Instances {
 			reason, ok := MatchUserAgent(ua)
 			if !ok || reason == "" || strings.Contains(reason, `\`) {
