@@ -129,7 +129,9 @@ It mirrors `include_cookieless` but is wider: it applies to every metric and
 every insight, because a monitor's pageviews are wrong in a pageview count just
 as much as in a visitor count. `internal/core/insights/bot.go` holds the three
 pieces: `excludeBots(spec)`, `botExclusionCond` (row-level `bot = 0`, `e.bot`
-under the identity join) and `botSessionHaving` (session-level, below). The raw
+under the identity join) and `botSessionHaving` (session-level, below);
+`botExclusionCond` delegates to `chq.BotFilter` in
+`internal/core/clickhouse/bot.go`, shared with the activity readers. The raw
 path is `WHERE bot = 0`. The rollup fast path reads the `bot` key column
 migration 012 added to `dashboard_event_rollup_daily` and the session rollup
 exactly the way 011 added `cookieless` (new UInt8 in the ORDER BY, no DEFAULT,
@@ -148,6 +150,34 @@ unconditionally, like cookieless. Pinned per builder by `TestBotExclusion_EveryI
 and `TestBotExclusion_EverySessionMetric` and end to end by
 `TestIntegrationBotTagging` (counts, toggle, rollup↔raw parity, a straddling
 session dropped whole).
+
+`shared.activity.v1` carries the same toggle as a per-request field on its four
+event reads (`GetActivityFeed`, `GetEventExplorer`, `GetActivityHeatmap`,
+`GetProfileStats`), sharing the row-level predicate via `chq.BotFilter`.
+Three consequences are deliberate. All four are row-level — including when the
+request scopes to one `session_id` — so an event list shows the human half of a
+straddling session that session *metrics* drop whole: an event list is not a
+session judgement, and the four reads agree with each other on the same profile
+page. `GetFilterSchema` and `GetPropertyValues` carry no toggle at all: they
+enumerate what exists in the project, not what a metric counts. And
+`GetProfileStats` returns no stats for a profile whose every event is tagged —
+close to indistinguishable from an id that does not exist, though profile
+properties still come back for an identified one; the RPC comment says so, since
+it ships to MCP clients.
+
+`ProfilesService` carries it too — `Get`, `GetByExternalId` and `List` — because
+012 keyed only the two dashboard rollups, so a crawler still materialized as a
+derived anonymous person with unfiltered counts sitting above the bot-filtered
+heatmap and event list on the same profile page. **Migration 013** adds the
+`bot` key column and `MODIFY QUERY` to `distinct_id_activity_states`, the shape
+012 used for the dashboard rollups. Here a row-level `bot = 0` is exact: the
+table is keyed per `distinct_id`, not per session, so an id with both kinds of
+traffic splits into two rows that merge back when bots are included. A bot-only
+distinct_id therefore stops listing as a person by default, and an identified
+profile's summary stops counting its tagged events. Erasure stays deliberately
+bot-blind — `hasErasableActivity` and the `ALTER … DELETE` name no `bot`, so a
+tagged id is still discoverable and erasable. Pinned by
+`TestProfilesBotExclusion` and `TestErasure_ByID_BotTaggedIsErasable`.
 
 ## What it misses, and what it gets wrong
 
@@ -173,9 +203,12 @@ not a smaller global one.
 2. ✅ Server: the dependency, `datacenterASNs`, `enrichBot`, the two
    auto-properties, the counter. Tagging starts; queries unchanged until step 4.
 3. Cloudflare: the Transform Rule. Signal 2 goes live by itself.
-4. ✅ API: `include_bots` and its predicate on both paths. This is the one
+4. ✅ API: `include_bots` and its predicate on the raw and rollup paths, in
+   insights and then on the four `shared.activity` event reads plus
+   `shared.profiles` (migration 013). This is the one
    step where dashboards change — the default applies at this deploy with no
-   FE change — worth a release note.
+   FE change — worth a release note. `proto/shared` is private-key or JWT, so
+   external API consumers and the MCP tools change with it.
 5. FE: the toggle control, so a project owner can see the tagged traffic.
 6. SDK: the webdriver check, on the SDK's own release cadence.
 

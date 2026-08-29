@@ -430,8 +430,11 @@ func (x *GetDeletionRequestResponse) GetError() string {
 }
 
 type GetByExternalIdRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    *string                `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ExternalId *string                `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	IncludeBots   *bool `protobuf:"varint,2,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -471,6 +474,13 @@ func (x *GetByExternalIdRequest) GetExternalId() string {
 		return *x.ExternalId
 	}
 	return ""
+}
+
+func (x *GetByExternalIdRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 type GetByExternalIdResponse struct {
@@ -518,8 +528,11 @@ func (x *GetByExternalIdResponse) GetProfile() *Profile {
 }
 
 type GetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	IncludeBots   *bool `protobuf:"varint,2,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -559,6 +572,13 @@ func (x *GetRequest) GetId() string {
 		return *x.Id
 	}
 	return ""
+}
+
+func (x *GetRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 type GetResponse struct {
@@ -663,8 +683,14 @@ type ListRequest struct {
 	PageToken            *string             `protobuf:"bytes,1,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	FilterGroups         []*FilterGroup      `protobuf:"bytes,2,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
 	FilterGroupsOperator *v1.LogicalOperator `protobuf:"varint,3,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// A derived anonymous person's create_time — the sort and cursor key — is
+	// computed after this filter, so changing it mid-pagination skips rows. Keep it
+	// constant for a page_token run and restart from an empty token to flip it.
+	IncludeBots   *bool `protobuf:"varint,4,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListRequest) Reset() {
@@ -716,6 +742,13 @@ func (x *ListRequest) GetFilterGroupsOperator() v1.LogicalOperator {
 		return *x.FilterGroupsOperator
 	}
 	return v1.LogicalOperator(0)
+}
+
+func (x *ListRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 type ListResponse struct {
@@ -786,8 +819,12 @@ type ProfileActivitySummary struct {
 	Country        *string                `protobuf:"bytes,11,opt,name=country" json:"country,omitempty"`
 	Region         *string                `protobuf:"bytes,12,opt,name=region" json:"region,omitempty"`
 	City           *string                `protobuf:"bytes,13,opt,name=city" json:"city,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// True when EVERY event counted in this summary was tagged as automated at
+	// ingest ($bot) — a crawler, not a user with one tagged event. Only ever true
+	// on a read that set include_bots, since bot traffic is otherwise excluded.
+	Bot           *bool `protobuf:"varint,14,opt,name=bot" json:"bot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProfileActivitySummary) Reset() {
@@ -909,6 +946,13 @@ func (x *ProfileActivitySummary) GetCity() string {
 		return *x.City
 	}
 	return ""
+}
+
+func (x *ProfileActivitySummary) GetBot() bool {
+	if x != nil && x.Bot != nil {
+		return *x.Bot
+	}
+	return false
 }
 
 type Profile struct {
@@ -1035,28 +1079,31 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\x11events_identified\x18\x05 \x01(\x03R\x10eventsIdentified\x12=\n" +
 	"\frequested_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vrequestedAt\x12=\n" +
 	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
-	"\x05error\x18\b \x01(\tR\x05error\"A\n" +
+	"\x05error\x18\b \x01(\tR\x05error\"d\n" +
 	"\x16GetByExternalIdRequest\x12'\n" +
 	"\vexternal_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"externalId\"P\n" +
+	"externalId\x12!\n" +
+	"\finclude_bots\x18\x02 \x01(\bR\vincludeBots\"P\n" +
 	"\x17GetByExternalIdResponse\x125\n" +
-	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"$\n" +
+	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"G\n" +
 	"\n" +
 	"GetRequest\x12\x16\n" +
-	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\"D\n" +
+	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\x12!\n" +
+	"\finclude_bots\x18\x02 \x01(\bR\vincludeBots\"D\n" +
 	"\vGetResponse\x125\n" +
 	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"\x84\x01\n" +
 	"\vFilterGroup\x12=\n" +
 	"\afilters\x18\x01 \x03(\v2\x19.common.v1.PropertyFilterB\b\xbaH\x05\x92\x01\x02\b\x01R\afilters\x126\n" +
-	"\boperator\x18\x02 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\boperator\"\xc4\x01\n" +
+	"\boperator\x18\x02 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\boperator\"\xe7\x01\n" +
 	"\vListRequest\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x01 \x01(\tR\tpageToken\x12D\n" +
 	"\rfilter_groups\x18\x02 \x03(\v2\x1f.shared.profiles.v1.FilterGroupR\ffilterGroups\x12P\n" +
-	"\x16filter_groups_operator\x18\x03 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\x14filterGroupsOperator\"o\n" +
+	"\x16filter_groups_operator\x18\x03 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\x14filterGroupsOperator\x12!\n" +
+	"\finclude_bots\x18\x04 \x01(\bR\vincludeBots\"o\n" +
 	"\fListResponse\x127\n" +
 	"\bprofiles\x18\x01 \x03(\v2\x1b.shared.profiles.v1.ProfileR\bprofiles\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xb9\x03\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xcb\x03\n" +
 	"\x16ProfileActivitySummary\x129\n" +
 	"\n" +
 	"first_seen\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tfirstSeen\x127\n" +
@@ -1073,7 +1120,8 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	" \x01(\tR\x06device\x12\x18\n" +
 	"\acountry\x18\v \x01(\tR\acountry\x12\x16\n" +
 	"\x06region\x18\f \x01(\tR\x06region\x12\x12\n" +
-	"\x04city\x18\r \x01(\tR\x04city\"\xd4\x02\n" +
+	"\x04city\x18\r \x01(\tR\x04city\x12\x10\n" +
+	"\x03bot\x18\x0e \x01(\bR\x03bot\"\xd4\x02\n" +
 	"\aProfile\x12;\n" +
 	"\vcreate_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12\x1f\n" +

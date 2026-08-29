@@ -14,9 +14,11 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1
 service ActivityService {
   // GetActivityFeed returns a paginated, filterable list of events for a user profile.
   // Resolves profile aliases so merged anonymous events are included.
+  // Traffic tagged as a bot at ingest is excluded unless include_bots is true.
   rpc GetActivityFeed(GetActivityFeedRequest) returns (GetActivityFeedResponse);
   // GetEventExplorer returns a paginated, filterable list of events across all users
   // in a project. Does not resolve aliases.
+  // Traffic tagged as a bot at ingest is excluded unless include_bots is true.
   rpc GetEventExplorer(GetEventExplorerRequest) returns (GetEventExplorerResponse);
   // GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
   // The filter-schema concept is service-agnostic; both shared.activity and
@@ -29,10 +31,14 @@ service ActivityService {
   rpc GetPropertyValues(GetPropertyValuesRequest) returns (GetPropertyValuesResponse);
   // GetActivityHeatmap returns per-day event counts for a user profile over a time window.
   // Defaults to the last 60 days when no time_range is provided.
+  // Traffic tagged as a bot at ingest is excluded unless include_bots is true.
   rpc GetActivityHeatmap(GetActivityHeatmapRequest) returns (GetActivityHeatmapResponse);
   // GetProfileStats returns aggregate statistics, device/browser/location context from the
   // latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
   // Resolves aliases so merged anonymous events are included.
+  // Traffic tagged as a bot at ingest is excluded unless include_bots is true, so a
+  // profile whose events are all bot-tagged omits stats entirely and returns no heatmap
+  // days — not a NotFound, and profile properties are still returned.
   rpc GetProfileStats(GetProfileStatsRequest) returns (GetProfileStatsResponse);
 }
 
@@ -63,6 +69,9 @@ message GetActivityFeedRequest {
   string page_token = 6;
   // Optional. Filter by multiple event types with per-event property filters.
   repeated common.v1.EventFilter events = 7 [(buf.validate.field).repeated.max_items = 50];
+  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  bool include_bots = 8;
 }
 
 message ActivityEvent {
@@ -110,6 +119,9 @@ message GetEventExplorerRequest {
   string page_token = 6;
   // Optional. Filter by multiple event types with per-event property filters.
   repeated common.v1.EventFilter events = 7 [(buf.validate.field).repeated.max_items = 50];
+  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  bool include_bots = 8;
 }
 
 message GetEventExplorerResponse {
@@ -141,6 +153,9 @@ message GetActivityHeatmapRequest {
   string distinct_id = 1 [(buf.validate.field).required = true];
   // Optional. Defaults to the last 60 days when omitted.
   common.v1.TimeRange time_range = 2;
+  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  bool include_bots = 3;
 }
 
 // HeatmapDay holds the event count for a single calendar day.
@@ -156,6 +171,9 @@ message GetActivityHeatmapResponse {
 
 message GetProfileStatsRequest {
   string distinct_id = 1 [(buf.validate.field).required = true];
+  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  bool include_bots = 2;
 }
 
 // ProfileStats holds aggregate event statistics and device/location context

@@ -55,12 +55,18 @@ type ProfilesServiceClient interface {
 	// Get returns a single user profile by its pug profile id, including identity
 	// properties and an activity summary. A claimed anonymous id is redirected to
 	// its canonical profile.
+	// Traffic tagged as a bot at ingest is excluded from the activity summary
+	// unless include_bots is true.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	// GetByExternalId returns a single user profile looked up by the external_id your
 	// application assigned to its end user, rather than by pug's internal profile id.
+	// Traffic tagged as a bot at ingest is excluded from the activity summary
+	// unless include_bots is true.
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// List returns a page of user profiles for the project. Server-streaming, so it
-	// is not exposed as an MCP tool.
+	// is not exposed as an MCP tool. Derived anonymous persons whose traffic is all
+	// bot-tagged are omitted unless include_bots is true; an identified profile is
+	// always listed, with bot-tagged events left out of its activity summary.
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.ServerStreamForClient[v1.ListResponse], error)
 	// Delete erases a data subject identified by profile id. Like
 	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
@@ -172,12 +178,18 @@ type ProfilesServiceHandler interface {
 	// Get returns a single user profile by its pug profile id, including identity
 	// properties and an activity summary. A claimed anonymous id is redirected to
 	// its canonical profile.
+	// Traffic tagged as a bot at ingest is excluded from the activity summary
+	// unless include_bots is true.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	// GetByExternalId returns a single user profile looked up by the external_id your
 	// application assigned to its end user, rather than by pug's internal profile id.
+	// Traffic tagged as a bot at ingest is excluded from the activity summary
+	// unless include_bots is true.
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// List returns a page of user profiles for the project. Server-streaming, so it
-	// is not exposed as an MCP tool.
+	// is not exposed as an MCP tool. Derived anonymous persons whose traffic is all
+	// bot-tagged are omitted unless include_bots is true; an identified profile is
+	// always listed, with bot-tagged events left out of its activity summary.
 	List(context.Context, *connect.Request[v1.ListRequest], *connect.ServerStream[v1.ListResponse]) error
 	// Delete erases a data subject identified by profile id. Like
 	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the

@@ -40,7 +40,10 @@ type GetActivityFeedRequest struct {
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
 	PageToken *string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
-	Events        []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
+	Events []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	IncludeBots   *bool `protobuf:"varint,8,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -122,6 +125,13 @@ func (x *GetActivityFeedRequest) GetEvents() []*v1.EventFilter {
 		return x.Events
 	}
 	return nil
+}
+
+func (x *GetActivityFeedRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 type ActivityEvent struct {
@@ -287,7 +297,10 @@ type GetEventExplorerRequest struct {
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
 	PageToken *string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
-	Events        []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
+	Events []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	IncludeBots   *bool `protobuf:"varint,8,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -369,6 +382,13 @@ func (x *GetEventExplorerRequest) GetEvents() []*v1.EventFilter {
 		return x.Events
 	}
 	return nil
+}
+
+func (x *GetEventExplorerRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 type GetEventExplorerResponse struct {
@@ -532,7 +552,10 @@ type GetActivityHeatmapRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	DistinctId *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	// Optional. Defaults to the last 60 days when omitted.
-	TimeRange     *v1.TimeRange `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	TimeRange *v1.TimeRange `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	IncludeBots   *bool `protobuf:"varint,3,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -579,6 +602,13 @@ func (x *GetActivityHeatmapRequest) GetTimeRange() *v1.TimeRange {
 		return x.TimeRange
 	}
 	return nil
+}
+
+func (x *GetActivityHeatmapRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 // HeatmapDay holds the event count for a single calendar day.
@@ -680,8 +710,11 @@ func (x *GetActivityHeatmapResponse) GetDays() []*HeatmapDay {
 }
 
 type GetProfileStatsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DistinctId    *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	DistinctId *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	IncludeBots   *bool `protobuf:"varint,2,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -721,6 +754,13 @@ func (x *GetProfileStatsRequest) GetDistinctId() string {
 		return *x.DistinctId
 	}
 	return ""
+}
+
+func (x *GetProfileStatsRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 // ProfileStats holds aggregate event statistics and device/location context
@@ -919,7 +959,7 @@ var File_shared_activity_v1_activity_proto protoreflect.FileDescriptor
 
 const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\n" +
-	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb5\x04\n" +
+	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd8\x04\n" +
 	"\x16GetActivityFeedRequest\x12'\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"distinctId\x12\x1d\n" +
@@ -932,7 +972,8 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x06 \x01(\tR\tpageToken\x128\n" +
-	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events:\xcb\x01\xbaH\xc7\x01\x1a\xc4\x01\n" +
+	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\x12!\n" +
+	"\finclude_bots\x18\b \x01(\bR\vincludeBots:\xcb\x01\xbaH\xc7\x01\x1a\xc4\x01\n" +
 	"'activity_feed.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"\xc1\x02\n" +
 	"\rActivityEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x12\n" +
@@ -947,7 +988,7 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x11custom_properties\x18\a \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"|\n" +
 	"\x17GetActivityFeedResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xaf\x04\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd2\x04\n" +
 	"\x17GetEventExplorerRequest\x12\x1f\n" +
 	"\vdistinct_id\x18\x01 \x01(\tR\n" +
 	"distinctId\x12\x1d\n" +
@@ -960,7 +1001,8 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x06 \x01(\tR\tpageToken\x128\n" +
-	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events:\xcc\x01\xbaH\xc8\x01\x1a\xc5\x01\n" +
+	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\x12!\n" +
+	"\finclude_bots\x18\b \x01(\bR\vincludeBots:\xcc\x01\xbaH\xc8\x01\x1a\xc5\x01\n" +
 	"(event_explorer.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
@@ -971,21 +1013,23 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +
 	"\x19GetPropertyValuesResponse\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values\"y\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"\x9c\x01\n" +
 	"\x19GetActivityHeatmapRequest\x12'\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"distinctId\x123\n" +
 	"\n" +
-	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\"6\n" +
+	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12!\n" +
+	"\finclude_bots\x18\x03 \x01(\bR\vincludeBots\"6\n" +
 	"\n" +
 	"HeatmapDay\x12\x12\n" +
 	"\x04date\x18\x01 \x01(\tR\x04date\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\"P\n" +
 	"\x1aGetActivityHeatmapResponse\x122\n" +
-	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days\"A\n" +
+	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days\"d\n" +
 	"\x16GetProfileStatsRequest\x12'\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"distinctId\"\xdd\x02\n" +
+	"distinctId\x12!\n" +
+	"\finclude_bots\x18\x02 \x01(\bR\vincludeBots\"\xdd\x02\n" +
 	"\fProfileStats\x129\n" +
 	"\n" +
 	"first_seen\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tfirstSeen\x127\n" +
