@@ -14,6 +14,10 @@
 -- without `bot` and read as 0 afterwards — a crawler active in that window
 -- keeps listing as a person. AggregatingMergeTree never rewrites states, so the
 -- window is permanent; it is ~1 day of traffic and accepted rather than rebuilt.
+-- Do not "fix" it with an additive INSERT..SELECT: the window's events would
+-- land under a new bot = 1 key while the old bot = 0 rows still hold them, so
+-- include_bots reads double-count and excluded reads are unchanged. A correct
+-- rebuild is TRUNCATE + full reinsert, which blanks live profile activity.
 -- `SELECT count() FROM events WHERE bot = 1 AND occur_time < '<013 deploy>'`
 -- sizes it if that ever needs revisiting.
 
