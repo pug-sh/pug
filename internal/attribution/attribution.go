@@ -1,14 +1,15 @@
 // Package attribution derives web-analytics auto-properties from the
 // navigation properties a client sends: URL decomposition ($pathname,
-// $hostname), referrer domain with self-referral blanking ($referrerDomain),
-// UTM completion from the URL query string, screen-size formatting
-// ($screenSize), locale casing normalization ($locale), and marketing-channel
-// classification ($channel — see channel.go for the normative taxonomy).
+// $hostname), referrer domain with self-referral and auth-intermediary
+// blanking ($referrerDomain), UTM completion from the URL query string,
+// screen-size formatting ($screenSize), locale casing normalization ($locale),
+// and marketing-channel classification ($channel — see channel.go for the
+// normative taxonomy).
 //
-// The package is a stdlib-only leaf (net/url, strings, strconv) so the SDK
-// ingest handler, internal/core/clickhouse, and the demo seeder can all import
-// it — demo data and production traffic classify identically because they run
-// the same Derive.
+// The package is a stdlib-only leaf so the SDK ingest handler,
+// internal/core/clickhouse, and the demo seeder can all import it — demo data
+// and production traffic classify identically because they run the same
+// Derive.
 //
 // Derive is pure: it never mutates its input and consults no providers. Which
 // derived value wins over a client-sent one (the per-key overwrite policy) is
@@ -27,6 +28,7 @@ package attribution
 
 import (
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -298,8 +300,9 @@ func completeUTM(dst *string, q url.Values, param string) {
 
 // referrerDomain extracts the referrer's host — any scheme qualifies as long
 // as a host is present — lowercased, with one leading "www." stripped, and
-// blanked when it equals the event's own hostname after the same "www." strip
-// (a self-referral). Subdomains are deliberately NOT collapsed to a
+// blanked either when it equals the event's own hostname after the same "www."
+// strip (a self-referral) or when it is an authIntermediaryHosts entry (an
+// OAuth bounce). Subdomains are deliberately NOT collapsed to a
 // registrable domain: app.example.com referred from www.example.com stays a
 // referral in v1 (no publicsuffix dependency).
 //
@@ -308,9 +311,9 @@ func completeUTM(dst *string, q url.Values, param string) {
 // path, so "www.google.com/search" and a bare "google.com" both parse without
 // error into no host — indistinguishable from "no referrer at all" unless it
 // is flagged here, and silently booking real referred traffic as Direct is
-// invisible precisely because Direct is expected to be large. A self-referral
-// is resolved, NOT unresolved: its blanking is deliberate and must keep
-// classifying as Direct.
+// invisible precisely because Direct is expected to be large. Both blanks are
+// resolved, NOT unresolved: they are deliberate and must keep classifying as
+// Direct.
 func referrerDomain(referrer, ownHostname string) (dom string, unresolved bool) {
 	if referrer == "" {
 		return "", false
@@ -326,7 +329,31 @@ func referrerDomain(referrer, ownHostname string) (dom string, unresolved bool) 
 	if own := stripOneWWW(strings.ToLower(ownHostname)); own != "" && dom == own {
 		return "", false
 	}
+	if slices.Contains(authIntermediaryHosts, dom) {
+		return "", false
+	}
 	return dom, false
+}
+
+// Sign-in-only hosts, bare (lowercase, no "www."). A referrer from one is a
+// bounce, not an acquisition, so it blanks like a self-referral. Never a host
+// that also serves pages (github.com): that would delete real referrals.
+var authIntermediaryHosts = []string{
+	"accounts.google.com",
+	"accounts.youtube.com",
+	"appleid.apple.com",
+	"auth.atlassian.com",
+	"id.atlassian.com",
+	"login.live.com",
+	"login.microsoft.com",
+	"login.microsoftonline.com",
+	"login.microsoftonline.us",
+	"login.okta.com",
+	"login.salesforce.com",
+	"login.windows.net",
+	"login.yahoo.com",
+	"oauth.telegram.org",
+	"signin.aws.amazon.com",
 }
 
 // stripOneWWW removes exactly one leading "www." label; "www.www.x.com" keeps
