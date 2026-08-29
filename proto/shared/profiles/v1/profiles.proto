@@ -154,6 +154,10 @@ message ProfileActivitySummary {
   string country = 11;
   string region = 12;
   string city = 13;
+  // True when EVERY event counted in this summary was tagged as automated at
+  // ingest ($bot) — a crawler, not a user with one tagged event. Only ever true
+  // on a read that set include_bots, since bot traffic is otherwise excluded.
+  bool bot = 14;
 }
 
 message Profile {

@@ -93,6 +93,7 @@ type ProfileActivitySummary struct {
 	Country        string
 	Region         string
 	City           string
+	Bot            bool
 }
 
 type ListParams struct {
@@ -380,6 +381,7 @@ func anonPersonsCTE(projectID string, includeBots bool) *chq.Query {
 			"argMaxMerge(states.latest_country_state) AS latest_country",
 			"argMaxMerge(states.latest_region_state) AS latest_region",
 			"argMaxMerge(states.latest_city_state) AS latest_city",
+			"min(states.bot) AS bot",
 		).
 		From("distinct_id_activity_states states").
 		Where(
@@ -436,21 +438,21 @@ func personsActivityCTE() *chq.Query {
 			"project_id", "profile_id", "first_seen", "last_seen",
 			"total_events", "pageviews", "sessions",
 			"latest_browser", "latest_browser_version", "latest_os", "latest_os_version",
-			"latest_device", "latest_country", "latest_region", "latest_city",
+			"latest_device", "latest_country", "latest_region", "latest_city", "bot",
 		).
 		From(`(
 SELECT
     project_id, profile_id, first_seen, last_seen,
     total_events, pageviews, sessions,
     latest_browser, latest_browser_version, latest_os, latest_os_version,
-    latest_device, latest_country, latest_region, latest_city
+    latest_device, latest_country, latest_region, latest_city, bot
 FROM identified_activity
 UNION ALL
 SELECT
     project_id, id AS profile_id, first_seen, last_seen,
     total_events, pageviews, sessions,
     latest_browser, latest_browser_version, latest_os, latest_os_version,
-    latest_device, latest_country, latest_region, latest_city
+    latest_device, latest_country, latest_region, latest_city, bot
 FROM anon_persons
 ) s`)
 }
@@ -516,6 +518,7 @@ func profileActivitySummaryCTE(projectID string, includeBots bool) *chq.Query {
 			"argMaxMerge(states.latest_country_state) AS latest_country",
 			"argMaxMerge(states.latest_region_state) AS latest_region",
 			"argMaxMerge(states.latest_city_state) AS latest_city",
+			"min(states.bot) AS bot",
 		).
 		From("identity_union identity INNER JOIN distinct_id_activity_states states ON states.project_id = identity.project_id AND states.distinct_id = identity.distinct_id").
 		Where(
@@ -532,6 +535,7 @@ func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 	var totalEvents uint64
 	var pageviews uint64
 	var sessions uint64
+	var bot uint8
 	if err := rows.Scan(
 		&profile.CreateTime,
 		&profile.ExternalID,
@@ -552,6 +556,7 @@ func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 		&activity.Country,
 		&activity.Region,
 		&activity.City,
+		&bot,
 	); err != nil {
 		return Profile{}, err
 	}
@@ -560,6 +565,8 @@ func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 		activity.TotalEvents = int64(totalEvents)
 		activity.Pageviews = int64(pageviews)
 		activity.Sessions = int64(sessions)
+		// min over the person's state rows: every counted event was tagged, not just one.
+		activity.Bot = bot == 1
 		profile.Activity = &activity
 	}
 	return profile, nil
@@ -695,5 +702,6 @@ func profileSelectColumns() []string {
 		"coalesce(activity_summary.latest_country, '') AS latest_country",
 		"coalesce(activity_summary.latest_region, '') AS latest_region",
 		"coalesce(activity_summary.latest_city, '') AS latest_city",
+		"toUInt8(coalesce(activity_summary.bot, 0)) AS bot",
 	}
 }

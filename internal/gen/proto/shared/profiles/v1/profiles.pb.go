@@ -819,8 +819,12 @@ type ProfileActivitySummary struct {
 	Country        *string                `protobuf:"bytes,11,opt,name=country" json:"country,omitempty"`
 	Region         *string                `protobuf:"bytes,12,opt,name=region" json:"region,omitempty"`
 	City           *string                `protobuf:"bytes,13,opt,name=city" json:"city,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// True when EVERY event counted in this summary was tagged as automated at
+	// ingest ($bot) — a crawler, not a user with one tagged event. Only ever true
+	// on a read that set include_bots, since bot traffic is otherwise excluded.
+	Bot           *bool `protobuf:"varint,14,opt,name=bot" json:"bot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProfileActivitySummary) Reset() {
@@ -942,6 +946,13 @@ func (x *ProfileActivitySummary) GetCity() string {
 		return *x.City
 	}
 	return ""
+}
+
+func (x *ProfileActivitySummary) GetBot() bool {
+	if x != nil && x.Bot != nil {
+		return *x.Bot
+	}
+	return false
 }
 
 type Profile struct {
@@ -1092,7 +1103,7 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\finclude_bots\x18\x04 \x01(\bR\vincludeBots\"o\n" +
 	"\fListResponse\x127\n" +
 	"\bprofiles\x18\x01 \x03(\v2\x1b.shared.profiles.v1.ProfileR\bprofiles\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xb9\x03\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xcb\x03\n" +
 	"\x16ProfileActivitySummary\x129\n" +
 	"\n" +
 	"first_seen\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tfirstSeen\x127\n" +
@@ -1109,7 +1120,8 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	" \x01(\tR\x06device\x12\x18\n" +
 	"\acountry\x18\v \x01(\tR\acountry\x12\x16\n" +
 	"\x06region\x18\f \x01(\tR\x06region\x12\x12\n" +
-	"\x04city\x18\r \x01(\tR\x04city\"\xd4\x02\n" +
+	"\x04city\x18\r \x01(\tR\x04city\x12\x10\n" +
+	"\x03bot\x18\x0e \x01(\bR\x03bot\"\xd4\x02\n" +
 	"\aProfile\x12;\n" +
 	"\vcreate_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12\x1f\n" +

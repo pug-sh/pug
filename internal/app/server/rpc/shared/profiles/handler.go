@@ -436,5 +436,6 @@ func convertActivitySummary(a *coreprofiles.ProfileActivitySummary) *profilesv1.
 		Country:        proto.String(a.Country),
 		Region:         proto.String(a.Region),
 		City:           proto.String(a.City),
+		Bot:            proto.Bool(a.Bot),
 	}
 }

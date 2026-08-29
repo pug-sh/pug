@@ -1270,6 +1270,33 @@ func TestProfilesBotExclusion(t *testing.T) {
 		t.Errorf("identified total_events = %d with bots included, want 2", included["u-1"])
 	}
 
+	bots := func(t *testing.T, includeBots bool) map[string]bool {
+		t.Helper()
+		got, err := service.List(ctx, profiles.ListParams{ProjectID: projectID, PageSize: 100, IncludeBots: includeBots})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		out := make(map[string]bool, len(got))
+		for _, p := range got {
+			out[p.ID] = p.Activity.Bot
+		}
+		return out
+	}
+
+	flagged := bots(t, true)
+	if !flagged["anon-crawler"] {
+		t.Error("a bot-only distinct_id must report activity.bot")
+	}
+	if flagged["anon-human"] {
+		t.Error("a human distinct_id must not report activity.bot")
+	}
+	if flagged["u-1"] {
+		t.Error("an identified profile with one tagged event among many is not a bot")
+	}
+	if bots(t, false)["anon-human"] {
+		t.Error("activity.bot must be false when bots are excluded")
+	}
+
 	single, err := service.GetByID(ctx, projectID, "u-1", false)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
