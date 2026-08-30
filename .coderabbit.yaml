@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
 reviews:
   auto_review:
-    # Deny by default: CodeRabbit sees the `opened` webhook before any workflow can run, so a
-    # missing label is the only gate that can win the race. coderabbit-gate.yaml grants it.
+    # On demand only, for everyone. With auto review off a positive label match still
+    # triggers, so the label below is the opt-in; `@coderabbitai review` also works.
     enabled: false
     labels:
       - coderabbit

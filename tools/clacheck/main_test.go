@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,14 @@ type fakeGitHub struct {
 	byEmail   map[string]Principal
 	lookupErr error
 	base      string // ref check should read the base file at; defaults to "base"
+
+	posted   []Comment
+	edits    int
+	listErr  error
+	writeErr error
+
+	labelled    []string
+	labelWrites int
 }
 
 func (f *fakeGitHub) signatureFile(_ context.Context, ref string) (*SignatureFile, error) {
@@ -57,6 +66,58 @@ func (f *fakeGitHub) userByEmail(_ context.Context, email string) (Principal, er
 		return p, nil
 	}
 	return Principal{}, errNotFound
+}
+
+func (f *fakeGitHub) comments(context.Context, int) ([]Comment, error) {
+	return f.posted, f.listErr
+}
+
+func (f *fakeGitHub) createComment(_ context.Context, _ int, body string) error {
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+	f.posted = append(f.posted, Comment{ID: int64(len(f.posted) + 1), Body: body})
+	return nil
+}
+
+func (f *fakeGitHub) updateComment(_ context.Context, id int64, body string) error {
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+	for i := range f.posted {
+		if f.posted[i].ID == id {
+			f.posted[i].Body = body
+			f.edits++
+			return nil
+		}
+	}
+	return errNotFound
+}
+
+func (f *fakeGitHub) labels(context.Context, int) ([]Label, error) {
+	out := make([]Label, len(f.labelled))
+	for i, n := range f.labelled {
+		out[i] = Label{Name: n}
+	}
+	return out, f.listErr
+}
+
+func (f *fakeGitHub) addLabel(_ context.Context, _ int, name string) error {
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+	f.labelWrites++
+	f.labelled = append(f.labelled, name)
+	return nil
+}
+
+func (f *fakeGitHub) removeLabel(_ context.Context, _ int, name string) error {
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+	f.labelWrites++
+	f.labelled = slices.DeleteFunc(f.labelled, func(n string) bool { return n == name })
+	return nil
 }
 
 var fixedNow = time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
@@ -289,10 +350,12 @@ func TestUnresolvableCoauthorIsReported(t *testing.T) {
 func TestAllBotPullRequestPasses(t *testing.T) {
 	var out bytes.Buffer
 	bot := &Principal{ID: 49699333, Login: "dependabot[bot]", Type: "Bot"}
-	c := newChecker(&fakeGitHub{
+	gh := &fakeGitHub{
 		files:   map[string]*SignatureFile{"head": file(), "base": file()},
 		commits: []Commit{commit("a1", bot, bot, "chore(deps): bump x")},
-	}, &out)
+		posted:  []Comment{{ID: 9, Body: commentMarker + "\n## Signature required"}},
+	}
+	c := newChecker(gh, &out)
 	c.cfg.opener = *bot
 
 	if err := c.check(t.Context()); err != nil {
@@ -300,6 +363,10 @@ func TestAllBotPullRequestPasses(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "nothing to sign") {
 		t.Fatalf("want the bot-only line, got %q", out.String())
+	}
+	// Rebasing a human commit away leaves nobody to demand a signature from.
+	if gh.edits != 1 || strings.Contains(gh.posted[0].Body, "Signature required") {
+		t.Fatalf("want the standing demand resolved, got %q", gh.posted[0].Body)
 	}
 }
 
@@ -358,5 +425,244 @@ func TestEscapeAnnotationEncodesTheSpecialCharacters(t *testing.T) {
 	got := escapeAnnotation("100% done\r\nnext")
 	if got != "100%25 done%0D%0Anext" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// An unsigned run must reach the contributor somewhere other than a job log, and
+// must name them in a form GitHub notifies on.
+func TestCheckCommentsMentioningTheUnsignedContributor(t *testing.T) {
+	gh := &fakeGitHub{
+		files:   map[string]*SignatureFile{"head": file(), "base": file()},
+		commits: []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+	}
+	c := newChecker(gh, &bytes.Buffer{})
+
+	if err := c.check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	if len(gh.posted) != 1 {
+		t.Fatalf("want one comment, got %d", len(gh.posted))
+	}
+	for _, want := range []string{commentMarker, "@alice", `"id": 1`} {
+		if !strings.Contains(gh.posted[0].Body, want) {
+			t.Fatalf("want %q in the comment, got %q", want, gh.posted[0].Body)
+		}
+	}
+}
+
+// A contributor pushing repeatedly must be notified once. The marked comment is
+// edited in place; a second one would be a new notification every push.
+func TestCheckEditsItsOwnCommentInsteadOfPostingAnother(t *testing.T) {
+	gh := &fakeGitHub{
+		files:   map[string]*SignatureFile{"head": file(), "base": file()},
+		commits: []Commit{commit("a1", user("bob", 2), user("bob", 2), "x")},
+		posted:  []Comment{{ID: 5, Body: "someone else's review"}, {ID: 9, Body: commentMarker + "\nstale"}},
+	}
+	c := newChecker(gh, &bytes.Buffer{})
+
+	if err := c.check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	if len(gh.posted) != 2 || gh.edits != 1 {
+		t.Fatalf("want the marked comment edited and none added, got %d comments and %d edits", len(gh.posted), gh.edits)
+	}
+	if !strings.Contains(gh.posted[1].Body, "bob") || strings.Contains(gh.posted[1].Body, "stale") {
+		t.Fatalf("want the marked comment replaced, got %q", gh.posted[1].Body)
+	}
+}
+
+// An unchanged report must not be rewritten: an edit bumps the comment's
+// timestamp and reads as news to everyone watching the pull request.
+func TestCheckLeavesAnUnchangedCommentAlone(t *testing.T) {
+	gh := &fakeGitHub{
+		files:   map[string]*SignatureFile{"head": file(), "base": file()},
+		commits: []Commit{commit("a1", user("bob", 2), user("bob", 2), "x")},
+	}
+	c := newChecker(gh, &bytes.Buffer{})
+	if err := c.check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	if err := c.check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned on the re-run, got %v", err)
+	}
+	if len(gh.posted) != 1 || gh.edits != 0 {
+		t.Fatalf("want the same comment untouched, got %d comments and %d edits", len(gh.posted), gh.edits)
+	}
+}
+
+// Once signed, the demand has been met: the comment is replaced rather than left
+// standing on a merged pull request. A pull request that was never asked gets no
+// comment at all.
+func TestCheckResolvesItsCommentOnceSigned(t *testing.T) {
+	gh := &fakeGitHub{
+		files:   map[string]*SignatureFile{"head": file(sig("alice", 1)), "base": file(sig("alice", 1))},
+		commits: []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		posted:  []Comment{{ID: 9, Body: commentMarker + "\n## Signature required"}},
+	}
+	c := newChecker(gh, &bytes.Buffer{})
+
+	if err := c.check(t.Context()); err != nil {
+		t.Fatalf("want a pass, got %v", err)
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, "CLA v1 signed") {
+		t.Fatalf("want the request replaced by the signed note, got %+v", gh.posted)
+	}
+
+	quiet := &fakeGitHub{
+		files:   map[string]*SignatureFile{"head": file(sig("alice", 1)), "base": file(sig("alice", 1))},
+		commits: []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+	}
+	if err := newChecker(quiet, &bytes.Buffer{}).check(t.Context()); err != nil {
+		t.Fatalf("want a pass, got %v", err)
+	}
+	if len(quiet.posted) != 0 {
+		t.Fatalf("a signed pull request must not be commented on, got %+v", quiet.posted)
+	}
+}
+
+// The comment is best-effort: a repository whose token cannot comment must still
+// fail on the signature, not on the notification.
+func TestCheckKeepsItsVerdictWhenCommentingFails(t *testing.T) {
+	gh := &fakeGitHub{
+		files:    map[string]*SignatureFile{"head": file(), "base": file()},
+		commits:  []Commit{commit("a1", user("bob", 2), user("bob", 2), "x")},
+		writeErr: errors.New("403 resource not accessible by integration"),
+	}
+	if err := newChecker(gh, &bytes.Buffer{}).check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+
+	signed := &fakeGitHub{
+		files:   map[string]*SignatureFile{"head": file(sig("alice", 1)), "base": file(sig("alice", 1))},
+		commits: []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		posted:  []Comment{{ID: 9, Body: commentMarker + "\n## Signature required"}},
+		listErr: errors.New("403 resource not accessible by integration"),
+	}
+	if err := newChecker(signed, &bytes.Buffer{}).check(t.Context()); err != nil {
+		t.Fatalf("a failed comment must not fail a signed pull request, got %v", err)
+	}
+
+	// A refused edit must annotate: the run exits 0, so its log is the one
+	// nobody opens and the gate would go quiet unnoticed.
+	var out bytes.Buffer
+	refused := &fakeGitHub{
+		files:    map[string]*SignatureFile{"head": file(sig("alice", 1)), "base": file(sig("alice", 1))},
+		commits:  []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		posted:   []Comment{{ID: 9, Body: commentMarker + "\n## Signature required"}},
+		writeErr: errors.New("403 resource not accessible by integration"),
+	}
+	if err := newChecker(refused, &out).check(t.Context()); err != nil {
+		t.Fatalf("a failed edit must not fail a signed pull request, got %v", err)
+	}
+	if !strings.Contains(out.String(), "::warning::") {
+		t.Fatalf("want a warning annotation, got %q", out.String())
+	}
+}
+
+// A comment that merely quotes the gate is not the gate's: GitHub's quote-reply
+// copies the marker in, and editing it would silence the gate for good.
+func TestCheckIgnoresAQuotedMarker(t *testing.T) {
+	gh := &fakeGitHub{
+		files:   map[string]*SignatureFile{"head": file(), "base": file()},
+		commits: []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		posted:  []Comment{{ID: 5, Body: "> " + commentMarker + "\n> ## Signature required\n\nwhy?"}},
+	}
+	if err := newChecker(gh, &bytes.Buffer{}).check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	if len(gh.posted) != 2 || gh.edits != 0 {
+		t.Fatalf("want its own comment posted and the quote untouched, got %d comments and %d edits", len(gh.posted), gh.edits)
+	}
+}
+
+// A gate that fell over must not leave "signed" standing on a red check, nor
+// repeat advice the contributor has just followed and failed on.
+func TestCheckReplacesItsCommentWhenTheGateCannotFinish(t *testing.T) {
+	// mallory signed but authored nothing here, so appendOnly rejects the file.
+	forged := func() *fakeGitHub {
+		return &fakeGitHub{
+			files:   map[string]*SignatureFile{"head": file(sig("mallory", 99)), "base": file()},
+			commits: []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		}
+	}
+
+	gh := forged()
+	gh.posted = []Comment{{ID: 9, Body: signedComment("v1")}}
+	if err := newChecker(gh, &bytes.Buffer{}).check(t.Context()); err == nil || errors.Is(err, errUnsigned) {
+		t.Fatalf("want an append-only failure, got %v", err)
+	}
+	if gh.edits != 1 || strings.Contains(gh.posted[0].Body, "signed") {
+		t.Fatalf("want the signed note replaced, got %q after %d edits", gh.posted[0].Body, gh.edits)
+	}
+
+	// Nothing standing means nothing to correct; a bare failure is not worth a comment.
+	quiet := forged()
+	if err := newChecker(quiet, &bytes.Buffer{}).check(t.Context()); err == nil {
+		t.Fatal("want an append-only failure")
+	}
+	if len(quiet.posted) != 0 {
+		t.Fatalf("want no comment, got %+v", quiet.posted)
+	}
+}
+
+// The label is what makes CLA status visible in the pull request list, and the
+// two are mutually exclusive: a signed pull request still carrying "not signed"
+// is worse than no label at all.
+func TestCheckLabelsEachOutcome(t *testing.T) {
+	unsignedPR := func() *fakeGitHub {
+		return &fakeGitHub{
+			files:    map[string]*SignatureFile{"head": file(), "base": file()},
+			commits:  []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+			labelled: []string{"enhancement", labelSigned},
+		}
+	}
+	gh := unsignedPR()
+	if err := newChecker(gh, &bytes.Buffer{}).check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	if !slices.Equal(gh.labelled, []string{"enhancement", labelUnsigned}) {
+		t.Fatalf("want the signed label swapped out and enhancement kept, got %v", gh.labelled)
+	}
+
+	signed := &fakeGitHub{
+		files:    map[string]*SignatureFile{"head": file(sig("alice", 1)), "base": file(sig("alice", 1))},
+		commits:  []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		labelled: []string{labelUnsigned},
+	}
+	if err := newChecker(signed, &bytes.Buffer{}).check(t.Context()); err != nil {
+		t.Fatalf("want a pass, got %v", err)
+	}
+	if !slices.Equal(signed.labelled, []string{labelSigned}) {
+		t.Fatalf("want only the signed label, got %v", signed.labelled)
+	}
+
+	// A gate that could not finish knows nothing, but must not leave "signed"
+	// standing on a red check.
+	broken := &fakeGitHub{
+		files:    map[string]*SignatureFile{"head": file(sig("mallory", 99)), "base": file()},
+		commits:  []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		labelled: []string{labelSigned},
+	}
+	if err := newChecker(broken, &bytes.Buffer{}).check(t.Context()); err == nil || errors.Is(err, errUnsigned) {
+		t.Fatalf("want an append-only failure, got %v", err)
+	}
+	if len(broken.labelled) != 0 {
+		t.Fatalf("want the signed label dropped, got %v", broken.labelled)
+	}
+}
+
+// A label event notifies everyone watching the pull request, so a run that
+// changes nothing must write nothing.
+func TestCheckDoesNotRewriteACorrectLabel(t *testing.T) {
+	gh := &fakeGitHub{
+		files:    map[string]*SignatureFile{"head": file(), "base": file()},
+		commits:  []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
+		labelled: []string{labelUnsigned},
+	}
+	if err := newChecker(gh, &bytes.Buffer{}).check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	if gh.labelWrites != 0 {
+		t.Fatalf("want no label write, got %d", gh.labelWrites)
 	}
 }
