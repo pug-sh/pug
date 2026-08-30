@@ -20,12 +20,12 @@ func TestUnsignedReportFillsInTheContributorsEntry(t *testing.T) {
 	if !strings.HasPrefix(r.text, "::error::CLA v1 not signed by: carol\n") {
 		t.Fatalf("the annotation must be the first line, got %q", r.text)
 	}
-	for _, want := range []string{`"login": "carol"`, `"id":    42`, `"date":  "2026-08-30"`, `"cla":   "v1"`} {
+	for _, want := range []string{`"login": "carol"`, `"id": 42`, `"date": "2026-08-30"`, `"cla": "v1"`} {
 		if !strings.Contains(r.text, want) {
 			t.Errorf("want %q in the log report", want)
 		}
 	}
-	for _, want := range []string{`"login": "carol"`, `"id":    42`, `"date":  "2026-08-30"`, `"cla":   "v1"`} {
+	for _, want := range []string{`"login": "carol"`, `"id": 42`, `"date": "2026-08-30"`, `"cla": "v1"`} {
 		if !strings.Contains(r.markdown, want) {
 			t.Errorf("want %q in the job summary", want)
 		}
@@ -113,7 +113,7 @@ func TestACoauthorIsNamedButGetsNoEntry(t *testing.T) {
 		if !strings.Contains(part, "dave") {
 			t.Errorf("the co-author must be named, got %q", part)
 		}
-		if strings.Contains(part, `"id":    7`) || strings.Contains(part, `"id": 7`) {
+		if strings.Contains(part, `"id": 7`) {
 			t.Errorf("the co-author must not be handed an entry to paste, got %q", part)
 		}
 		if !strings.Contains(part, "opened themselves") {
