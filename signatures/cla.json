@@ -1,5 +1,4 @@
 {
-  "_comment": "Signatures for CLA.md. Append yourself in your own pull request; that commit is the signature. This file is append-only and CI enforces it: an existing entry may not be edited in any field or removed, you may only add an entry for someone GitHub attributes a commit in the same pull request to, and cla_version is set on the base branch rather than by a contribution. You are matched on the immutable numeric GitHub id, once per cla_version.",
   "cla_version": "v1",
   "signatures": []
 }

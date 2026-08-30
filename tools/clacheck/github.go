@@ -167,28 +167,6 @@ func (c *client) userByLogin(ctx context.Context, login string) (Principal, erro
 	return p, nil
 }
 
-// userByEmail only accepts an unambiguous match. Anything else is reported as
-// unresolved so the contributor is asked, rather than the check quietly passing.
-func (c *client) userByEmail(ctx context.Context, email string) (Principal, error) {
-	endpoint := c.baseURL + "/search/users?q=" + url.QueryEscape(email+" in:email")
-	body, _, err := c.get(ctx, endpoint, "application/vnd.github+json")
-	if err != nil {
-		return Principal{}, err
-	}
-	var res struct {
-		Items []Principal `json:"items"`
-	}
-	if err := json.Unmarshal(body, &res); err != nil {
-		slog.ErrorContext(ctx, "an email search did not decode", errAttr(err))
-		return Principal{}, err
-	}
-	if len(res.Items) != 1 {
-		slog.DebugContext(ctx, "email search was not unambiguous", slog.Int("matches", len(res.Items)))
-		return Principal{}, errNotFound
-	}
-	return res.Items[0], nil
-}
-
 // Comment is the gate's own pull request comment, matched by its marker rather
 // than by author: the token's identity differs between a GitHub App and Actions.
 type Comment struct {

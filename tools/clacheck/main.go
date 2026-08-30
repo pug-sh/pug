@@ -4,7 +4,8 @@
 // commit author, committer, co-author, and the person who opened it — must appear
 // in signatures/cla.json. The file is read from the pull request's own head, so a
 // contributor signs in the same pull request; the edit must be append-only and may
-// only add people who authored one of its commits.
+// only add the person who opened it, so a co-author signs in a pull request of
+// their own.
 //
 // Commits and the signature file are read over the API, so no file the pull
 // request controls is read off the runner. The checker's own code and workflow are
@@ -87,20 +88,21 @@ func loadConfig() (config, error) {
 		return c, errors.New("GH_TOKEN is empty")
 	case c.opener.ID == 0:
 		return c, errors.New("PR_USER_ID is zero")
+	case c.opener.Login == "":
+		return c, errors.New("PR_USER_LOGIN is empty")
 	}
 	return c, nil
 }
 
 // githubAPI is the GitHub surface the gate depends on, named consumer-side so
 // the check can be unit-tested against a fake instead of the live API. Every
-// implementation must report a missing resource as errNotFound: check reads it
-// as the first-contributor case rather than a failure.
+// implementation must report a missing resource as errNotFound: resolveCoauthors
+// reads it as "no such account" rather than as an API failure.
 type githubAPI interface {
 	signatureFile(ctx context.Context, ref string) (*SignatureFile, error)
 	pullCommits(ctx context.Context, pr int) ([]Commit, error)
 	mergeBase(ctx context.Context, base, head string) (string, error)
 	userByLogin(ctx context.Context, login string) (Principal, error)
-	userByEmail(ctx context.Context, email string) (Principal, error)
 	comments(ctx context.Context, pr int) ([]Comment, error)
 	createComment(ctx context.Context, pr int, body string) error
 	updateComment(ctx context.Context, id int64, body string) error
@@ -168,7 +170,8 @@ func (c *checker) verdict(ctx context.Context) error {
 
 	head, err := c.gh.signatureFile(ctx, c.cfg.headSHA)
 	if err != nil {
-		return fmt.Errorf("reading signatures/cla.json at the pull request head: %w", err)
+		return fmt.Errorf("reading signatures/cla.json at the pull request head: %w\n"+
+			"If this branch predates the file, merging %s brings it in", err, c.cfg.baseRef)
 	}
 	if err := head.validate(); err != nil {
 		return fmt.Errorf("signatures/cla.json is invalid: %w", err)
@@ -192,11 +195,12 @@ func (c *checker) verdict(ctx context.Context) error {
 			strings.Join(unlinked, ", "), c.cfg.serverURL)
 	}
 
-	coauthors, unresolved := c.resolveCoauthors(ctx, commits)
-	if len(unresolved) > 0 {
-		return fmt.Errorf("these Co-authored-by addresses did not resolve to a GitHub account: %s\n"+
-			"A co-author holds copyright and must sign too; use their <id>+<login>@users.noreply.github.com address or drop the trailer. If GitHub's API was erroring, re-running the job is enough",
-			strings.Join(unresolved, ", "))
+	// An unidentified co-author blocks the gate like an unsigned one — a trailer
+	// names a copyright holder either way — but is reported rather than raised: it
+	// is the contributor's to fix, and a checker error would bury the report.
+	coauthors, unknown, err := c.resolveCoauthors(ctx, commits)
+	if err != nil {
+		return err
 	}
 	people = append(people, coauthors...)
 
@@ -204,17 +208,22 @@ func (c *checker) verdict(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	prIDs := make(map[int64]bool, len(people))
-	for _, p := range people {
-		prIDs[p.ID] = true
+	inForce, err := c.gh.signatureFile(ctx, c.cfg.baseSHA)
+	if err != nil {
+		return fmt.Errorf("reading signatures/cla.json on %s: %w", c.cfg.baseRef, err)
 	}
-	if err := appendOnly(base, head, prIDs); err != nil {
-		return err
+	if err := appendOnly(base, head, c.cfg.opener, inForce.CLAVersion); err != nil {
+		// A rejected edit is the contributor's to fix, like an unsigned CLA, so it
+		// takes the same label and comment rather than reading as a broken gate.
+		fmt.Fprintf(c.out, "::error::%s\n", escapeAnnotation(err.Error()))
+		c.upsertComment(ctx, rejectedComment(), true)
+		c.syncLabels(ctx, labelUnsigned, labelSigned)
+		return errUnsigned
 	}
 
 	missing, checked := unsigned(head, people)
-	if len(missing) > 0 {
-		report := unsignedReport(c.cfg, head, missing, c.now())
+	if len(missing) > 0 || len(unknown) > 0 {
+		report := unsignedReport(c.cfg, head, missing, unknown, c.now())
 		fmt.Fprint(c.out, report.text)
 		c.writeSummary(ctx, report.markdown)
 		c.upsertComment(ctx, report.comment, true)
@@ -312,10 +321,7 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 		return nil, fmt.Errorf("finding where this pull request left %s: %w", c.cfg.baseRef, err)
 	}
 	base, err := c.gh.signatureFile(ctx, mergeBase)
-	switch {
-	case errors.Is(err, errNotFound):
-		return &SignatureFile{Signatures: []Signature{}}, nil
-	case err != nil:
+	if err != nil {
 		return nil, fmt.Errorf("reading signatures/cla.json at %s: %w", mergeBase, err)
 	}
 	return base, nil
@@ -323,30 +329,39 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 
 // resolveCoauthors turns Co-authored-by trailers into principals. A trailer is
 // commit-message text, so nothing in it is taken on trust — the address only
-// chooses which lookup runs, and the id always comes back from the API.
-func (c *checker) resolveCoauthors(ctx context.Context, commits []Commit) (found []Principal, unresolved []string) {
+// chooses which login is looked up, and the id always comes back from the API.
+//
+// Only the noreply form is resolved. Any other address would have to go through
+// user search, which sees only emails public on a profile, so it answers for a
+// minority of people and spends the strictest rate limit we touch to do it; a
+// commit's own author needs none of this, because GitHub resolves that one
+// server-side against emails we cannot see.
+//
+// An unresolved address comes back as unknown for the report; an API that failed
+// to answer is an error instead, since "we could not reach GitHub" must not reach
+// the contributor as "your co-author has not signed". A known assistant is
+// neither: it names no copyright holder, so it is skipped rather than reported.
+func (c *checker) resolveCoauthors(ctx context.Context, commits []Commit) (found []Principal, unknown []string, err error) {
 	for _, email := range coauthorEmails(commits) {
-		var (
-			p   Principal
-			err error
-		)
-		if login := noreplyLogin(email); login != "" {
-			p, err = c.gh.userByLogin(ctx, login)
-		} else {
-			p, err = c.gh.userByEmail(ctx, email)
+		if isAssistant(email) {
+			continue
 		}
+		login := noreplyLogin(email)
+		if login == "" {
+			unknown = append(unknown, email)
+			continue
+		}
+		p, err := c.gh.userByLogin(ctx, login)
 		if err != nil && !errors.Is(err, errNotFound) {
-			// The contributor is told the same thing either way; only the log
-			// separates "no such account" from a rate limit or an outage.
-			slog.WarnContext(ctx, "co-author lookup failed", slog.String("email", email), errAttr(err))
+			return nil, nil, fmt.Errorf("resolving the co-author %s: %w\nIf GitHub's API was erroring, re-running the job is enough", email, err)
 		}
 		if err != nil || p.ID == 0 {
-			unresolved = append(unresolved, email)
+			unknown = append(unknown, email)
 			continue
 		}
 		found = append(found, p)
 	}
-	return found, unresolved
+	return found, unknown, nil
 }
 
 // writeSummary is best-effort: the summary is presentation, and the verdict is
