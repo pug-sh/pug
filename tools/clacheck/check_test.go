@@ -25,28 +25,34 @@ func commit(sha string, author, committer *Principal, msg string) Commit {
 	return c
 }
 
+// Each case takes a file that validates and breaks exactly one thing about it,
+// so what is under test is the field named in the case, not a wall of JSON.
 func TestValidateRejectsSignaturesThatRecordNothing(t *testing.T) {
 	tests := []struct {
-		name string
-		json string
-		want string
+		name    string
+		corrupt func(*SignatureFile)
+		want    string
 	}{
-		{"missing id", `{"cla_version":"v1","signatures":[{"login":"a","name":"N","date":"2026-01-01","cla":"v1"}]}`, "id is missing"},
-		{"empty login", `{"cla_version":"v1","signatures":[{"login":"","id":1,"name":"N","date":"2026-01-01","cla":"v1"}]}`, "login is empty"},
-		{"empty name", `{"cla_version":"v1","signatures":[{"login":"a","id":1,"name":"","date":"2026-01-01","cla":"v1"}]}`, "name is empty"},
-		{"bad date", `{"cla_version":"v1","signatures":[{"login":"a","id":1,"name":"N","date":"yesterday","cla":"v1"}]}`, "date is not YYYY-MM-DD"},
-		{"placeholder name", `{"cla_version":"v1","signatures":[{"login":"a","id":1,"name":"Your Name","date":"2026-01-01","cla":"v1"}]}`, "still the placeholder"},
-		{"multiline version", `{"cla_version":"v1\n::error::injected","signatures":[]}`, "must be one line"},
-		{"duplicate id", `{"cla_version":"v1","signatures":[{"login":"a","id":1,"name":"N","date":"2026-01-01","cla":"v1"},{"login":"b","id":1,"name":"N","date":"2026-01-01","cla":"v1"}]}`, "repeats the id and version"},
-		{"no cla_version", `{"signatures":[]}`, "cla_version is missing"},
-		{"signatures key absent", `{"cla_version":"v1"}`, "signatures is missing"},
+		{"missing id", func(f *SignatureFile) { f.Signatures[0].ID = 0 }, "id is missing"},
+		{"empty login", func(f *SignatureFile) { f.Signatures[0].Login = "" }, "login is empty"},
+		{"empty name", func(f *SignatureFile) { f.Signatures[0].Name = "" }, "name is empty"},
+		{"placeholder name", func(f *SignatureFile) { f.Signatures[0].Name = placeholderName }, "still the placeholder"},
+		{"bad date", func(f *SignatureFile) { f.Signatures[0].Date = "yesterday" }, "date is not YYYY-MM-DD"},
+		{"malformed cla", func(f *SignatureFile) { f.Signatures[0].CLA = "" }, "cla is missing or malformed"},
+		{"no cla_version", func(f *SignatureFile) { f.CLAVersion = "" }, "cla_version is missing"},
+		{"multiline cla_version", func(f *SignatureFile) { f.CLAVersion = "v1\n::error::injected" }, "must be one line"},
+		{"signatures absent", func(f *SignatureFile) { f.Signatures = nil }, "signatures is missing"},
+		{"same id twice at one version", func(f *SignatureFile) {
+			f.Signatures = append(f.Signatures, sig("b", 1))
+		}, "repeats the id and version"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var f SignatureFile
-			if err := json.Unmarshal([]byte(tt.json), &f); err != nil {
-				t.Fatalf("unmarshal: %v", err)
+			f := file(sig("a", 1))
+			if err := f.validate(); err != nil {
+				t.Fatalf("the starting file must be valid: %v", err)
 			}
+			tt.corrupt(f)
 			err := f.validate()
 			if err == nil {
 				t.Fatal("want an error, got none")
@@ -55,6 +61,21 @@ func TestValidateRejectsSignaturesThatRecordNothing(t *testing.T) {
 				t.Fatalf("want error containing %q, got %q", tt.want, err)
 			}
 		})
+	}
+}
+
+// The absent key must decode to nil rather than an empty array: that is the only
+// thing separating "this file has no signatures key" from "the array is empty".
+func TestAbsentSignaturesKeyDecodesToNil(t *testing.T) {
+	var f SignatureFile
+	if err := json.Unmarshal([]byte(`{"cla_version":"v1"}`), &f); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if f.Signatures != nil {
+		t.Fatalf("want nil, got %v", f.Signatures)
+	}
+	if err := f.validate(); err == nil || !strings.Contains(err.Error(), "signatures is missing") {
+		t.Fatalf("want the missing-signatures error, got %v", err)
 	}
 }
 
