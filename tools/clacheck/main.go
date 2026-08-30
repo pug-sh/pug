@@ -18,6 +18,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +101,12 @@ type githubAPI interface {
 	mergeBase(ctx context.Context, base, head string) (string, error)
 	userByLogin(ctx context.Context, login string) (Principal, error)
 	userByEmail(ctx context.Context, email string) (Principal, error)
+	comments(ctx context.Context, pr int) ([]Comment, error)
+	createComment(ctx context.Context, pr int, body string) error
+	updateComment(ctx context.Context, id int64, body string) error
+	labels(ctx context.Context, pr int) ([]Label, error)
+	addLabel(ctx context.Context, pr int, name string) error
+	removeLabel(ctx context.Context, pr int, name string) error
 }
 
 // checker is everything the gate talks to. run assembles it once so check itself
@@ -144,7 +151,18 @@ func run(ctx context.Context) error {
 	return c.check(ctx)
 }
 
+// A gate that fell over must not leave "signed — thanks!" standing on a red
+// check, nor advice the contributor has just followed and failed on.
 func (c *checker) check(ctx context.Context) error {
+	err := c.verdict(ctx)
+	if err != nil && !errors.Is(err, errUnsigned) {
+		c.upsertComment(ctx, problemComment(), false)
+		c.syncLabels(ctx, "", labelSigned)
+	}
+	return err
+}
+
+func (c *checker) verdict(ctx context.Context) error {
 	slog.InfoContext(ctx, "checking signatures",
 		slog.String("repo", c.cfg.repo), slog.Int("pr", c.cfg.pr), slog.String("head", c.cfg.headSHA))
 
@@ -196,15 +214,19 @@ func (c *checker) check(ctx context.Context) error {
 
 	missing, checked := unsigned(head, people)
 	if len(missing) > 0 {
-		report := unsignedReport(c.cfg, head.CLAVersion, missing, c.now())
+		report := unsignedReport(c.cfg, head, missing, c.now())
 		fmt.Fprint(c.out, report.text)
 		c.writeSummary(ctx, report.markdown)
+		c.upsertComment(ctx, report.comment, true)
+		c.syncLabels(ctx, labelUnsigned, labelSigned)
 		return errUnsigned
 	}
 	// A pull request authored entirely by bots — dependabot and friends — has no
 	// human copyright to license, so there is nothing to sign for.
 	if len(checked) == 0 {
 		fmt.Fprintf(c.out, "CLA %s: no human authors across %d commit(s); nothing to sign\n", head.CLAVersion, len(commits))
+		c.upsertComment(ctx, signedComment(head.CLAVersion), false)
+		c.syncLabels(ctx, labelSigned, labelUnsigned)
 		return nil
 	}
 
@@ -214,7 +236,70 @@ func (c *checker) check(ctx context.Context) error {
 	}
 	fmt.Fprintf(c.out, "CLA %s verified for %d principal(s) across %d commit(s): %s\n",
 		head.CLAVersion, len(checked), len(commits), strings.Join(logins, ", "))
+	c.upsertComment(ctx, signedComment(head.CLAVersion), false)
+	c.syncLabels(ctx, labelSigned, labelUnsigned)
 	return nil
+}
+
+// syncLabels reads first so a run that changes nothing writes nothing: a label
+// event fires every subscriber on the pull request. Best-effort, like the comment.
+func (c *checker) syncLabels(ctx context.Context, add, remove string) {
+	current, err := c.gh.labels(ctx, c.cfg.pr)
+	if err != nil {
+		c.writeFailed(ctx, "could not list the pull request labels", err)
+		return
+	}
+	has := func(name string) bool {
+		return slices.ContainsFunc(current, func(l Label) bool { return l.Name == name })
+	}
+	if remove != "" && has(remove) {
+		if err := c.gh.removeLabel(ctx, c.cfg.pr, remove); err != nil {
+			c.writeFailed(ctx, "could not remove the stale cla label", err)
+		}
+	}
+	if add != "" && !has(add) {
+		if err := c.gh.addLabel(ctx, c.cfg.pr, add); err != nil {
+			c.writeFailed(ctx, "could not add the cla label", err)
+		}
+	}
+}
+
+// upsertComment edits the marked comment in place, so a contributor pushing five
+// times is notified once. Best-effort: failing the gate because a comment did not
+// post would block a pull request that is signed.
+func (c *checker) upsertComment(ctx context.Context, body string, create bool) {
+	existing, err := c.gh.comments(ctx, c.cfg.pr)
+	if err != nil {
+		c.writeFailed(ctx, "could not list the pull request comments", err)
+		return
+	}
+	for _, cm := range existing {
+		// Prefix, not contains: quote-reply copies the marker into the quoting
+		// user's comment, and the token cannot edit that one anyway.
+		if !strings.HasPrefix(cm.Body, commentMarker) {
+			continue
+		}
+		if cm.Body == body {
+			return
+		}
+		if err := c.gh.updateComment(ctx, cm.ID, body); err != nil {
+			c.writeFailed(ctx, "could not update the signature comment", err)
+		}
+		return
+	}
+	if !create {
+		return
+	}
+	if err := c.gh.createComment(ctx, c.cfg.pr, body); err != nil {
+		c.writeFailed(ctx, "could not post the signature comment", err)
+	}
+}
+
+// Annotates too: the signed run that most needs this seen exits 0, and nobody
+// opens a green job's log.
+func (c *checker) writeFailed(ctx context.Context, msg string, err error) {
+	slog.ErrorContext(ctx, msg, slog.String("repo", c.cfg.repo), slog.Int("pr", c.cfg.pr), errAttr(err))
+	fmt.Fprintf(c.out, "::warning::%s\n", escapeAnnotation(msg))
 }
 
 // baseFile reads the signature file as it stands at the merge base. The event's
