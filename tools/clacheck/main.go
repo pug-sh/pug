@@ -268,7 +268,13 @@ func (c *checker) writeSummary(ctx context.Context, markdown string) {
 		slog.ErrorContext(ctx, "could not open the job summary", slog.String("path", c.cfg.summaryPath), errAttr(err))
 		return
 	}
-	defer f.Close()
+	defer func() {
+		// A write to the summary is only reported at close on some filesystems,
+		// so discarding this would hide the truncation it stands for.
+		if cerr := f.Close(); cerr != nil {
+			slog.ErrorContext(ctx, "could not close the job summary", slog.String("path", c.cfg.summaryPath), errAttr(cerr))
+		}
+	}()
 	if _, err := fmt.Fprint(f, markdown); err != nil {
 		slog.ErrorContext(ctx, "could not write the job summary", slog.String("path", c.cfg.summaryPath), errAttr(err))
 	}
