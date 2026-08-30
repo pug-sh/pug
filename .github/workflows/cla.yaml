@@ -17,7 +17,9 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  # write, so the gate can tell the contributor what to do in a comment rather
+  # than only in a log they have to go looking for.
+  pull-requests: write
 
 concurrency:
   group: cla-${{ github.event.pull_request.number }}
