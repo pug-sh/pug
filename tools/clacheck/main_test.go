@@ -19,7 +19,6 @@ type fakeGitHub struct {
 	files     map[string]*SignatureFile
 	commits   []Commit
 	byLogin   map[string]Principal
-	byEmail   map[string]Principal
 	lookupErr error
 	base      string // ref check should read the base file at; defaults to "base"
 
@@ -53,16 +52,6 @@ func (f *fakeGitHub) userByLogin(_ context.Context, login string) (Principal, er
 		return Principal{}, f.lookupErr
 	}
 	if p, ok := f.byLogin[login]; ok {
-		return p, nil
-	}
-	return Principal{}, errNotFound
-}
-
-func (f *fakeGitHub) userByEmail(_ context.Context, email string) (Principal, error) {
-	if f.lookupErr != nil {
-		return Principal{}, f.lookupErr
-	}
-	if p, ok := f.byEmail[email]; ok {
 		return p, nil
 	}
 	return Principal{}, errNotFound
@@ -171,10 +160,15 @@ func TestCheckReportsTheUnsignedContributor(t *testing.T) {
 	if !strings.HasPrefix(out.String(), "::error::") {
 		t.Fatalf("the report must open with the annotation, got %q", out.String())
 	}
-	for _, want := range []string{"alice", "bob", `"id":    2`} {
+	// alice opened it, so hers is the entry offered; bob authored the commit and
+	// is named, but only he can sign for himself.
+	for _, want := range []string{"alice", "bob", `"id":    1`, "opened themselves"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("want %q in the report, got %q", want, out.String())
 		}
+	}
+	if strings.Contains(out.String(), `"id":    2`) {
+		t.Fatalf("bob must not be handed an entry this pull request cannot add, got %q", out.String())
 	}
 }
 
@@ -207,22 +201,81 @@ func TestCheckWritesTheJobSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the summary: %v", err)
 	}
-	if !strings.Contains(string(body), "## Signature required") {
+	if !strings.Contains(string(body), "## CLA signature required") {
 		t.Fatalf("want the summary heading, got %q", body)
 	}
 }
 
-// A failed lookup and a genuinely unknown account reach the contributor as the
-// same message, so the failure must at least be counted as unresolved rather
-// than dropping the co-author from the check entirely.
-func TestResolveCoauthorsTreatsALookupFailureAsUnresolved(t *testing.T) {
+// A rate limit is not evidence that carol has no account, so it must not reach
+// her as "unidentified" — that sends the contributor off to fix an address that
+// was fine. It is the checker's fault and is raised as one.
+func TestResolveCoauthorsRaisesALookupFailure(t *testing.T) {
+	commits := []Commit{commit("a1", user("alice", 1), user("alice", 1),
+		"feat: thing\n\nCo-authored-by: Carol <carol@users.noreply.github.com>\n")}
+
+	c := newChecker(&fakeGitHub{lookupErr: errors.New("403 rate limit exceeded")}, &bytes.Buffer{})
+	_, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	if err == nil || len(unknown) != 0 {
+		t.Fatalf("want the failure raised, got unknown=%v err=%v", unknown, err)
+	}
+}
+
+// A plaintext address is not resolved at all: user search sees only emails made
+// public on a profile, so it answers for a minority and costs the strictest rate
+// limit we touch. It reaches the contributor through the report, not as a fault.
+func TestResolveCoauthorsReportsAPlaintextAddress(t *testing.T) {
 	commits := []Commit{commit("a1", user("alice", 1), user("alice", 1),
 		"feat: thing\n\nCo-authored-by: Carol <carol@example.com>\n")}
 
-	c := newChecker(&fakeGitHub{lookupErr: errors.New("403 rate limit exceeded")}, &bytes.Buffer{})
-	found, unresolved := c.resolveCoauthors(t.Context(), commits)
-	if len(found) != 0 || len(unresolved) != 1 || unresolved[0] != "carol@example.com" {
-		t.Fatalf("want carol unresolved, got found=%v unresolved=%v", found, unresolved)
+	c := newChecker(&fakeGitHub{}, &bytes.Buffer{})
+	found, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	if err != nil || len(found) != 0 || len(unknown) != 1 || unknown[0] != "carol@example.com" {
+		t.Fatalf("want the address reported, got found=%v unknown=%v err=%v", found, unknown, err)
+	}
+}
+
+// An assistant holds no copyright, so its trailer is skipped rather than blocking
+// — otherwise every contributor using one rewrites their branch to merge. The
+// pairing matters: an address that might belong to a person must still stop the
+// gate, or the exemption is a hole rather than a rule.
+func TestAnAssistantTrailerIsSkippedButAPersonsIsNot(t *testing.T) {
+	msg := "feat: thing\n\nCo-authored-by: Claude <noreply@anthropic.com>\n"
+	c := newChecker(&fakeGitHub{}, &bytes.Buffer{})
+	found, unknown, err := c.resolveCoauthors(t.Context(),
+		[]Commit{commit("a1", user("alice", 1), user("alice", 1), msg)})
+	if err != nil || len(found) != 0 || len(unknown) != 0 {
+		t.Fatalf("an assistant licenses nothing and must not block, got found=%v unknown=%v err=%v", found, unknown, err)
+	}
+
+	person := "feat: thing\n\nCo-authored-by: Carol <carol@anthropic.com>\n"
+	_, unknown, err = c.resolveCoauthors(t.Context(),
+		[]Commit{commit("a1", user("alice", 1), user("alice", 1), person)})
+	if err != nil || len(unknown) != 1 {
+		t.Fatalf("a colleague at the same domain still holds copyright, got unknown=%v err=%v", unknown, err)
+	}
+}
+
+// The gate still blocks — a trailer names a copyright holder either way — but the
+// contributor must meet the ordinary report, not an error that hides it.
+func TestUnidentifiedCoauthorBlocksThroughTheReport(t *testing.T) {
+	var out bytes.Buffer
+	gh := &fakeGitHub{
+		files: map[string]*SignatureFile{"head": file(sig("alice", 1)), "base": file(sig("alice", 1))},
+		commits: []Commit{commit("a1", user("alice", 1), user("alice", 1),
+			"feat\n\nCo-authored-by: Carol <carol@example.com>\n")},
+	}
+	c := newChecker(gh, &out)
+
+	if err := c.check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	for _, want := range []string{"::error::", "carol@example.com", "drop the trailer"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("want %q in the report, got %q", want, out.String())
+		}
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, "carol@example.com") {
+		t.Errorf("want the address in the comment too, got %+v", gh.posted)
 	}
 }
 
@@ -231,9 +284,9 @@ func TestResolveCoauthorsFallsBackToTheAPIForTheIDLessNoreplyForm(t *testing.T) 
 		"feat: thing\n\nCo-authored-by: Bob <bob@users.noreply.github.com>\n")}
 
 	c := newChecker(&fakeGitHub{byLogin: map[string]Principal{"bob": {ID: 99, Login: "bob", Type: "User"}}}, &bytes.Buffer{})
-	found, unresolved := c.resolveCoauthors(t.Context(), commits)
-	if len(unresolved) != 0 || len(found) != 1 || found[0].ID != 99 {
-		t.Fatalf("want bob resolved to id 99, got found=%v unresolved=%v", found, unresolved)
+	found, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	if err != nil || len(unknown) != 0 || len(found) != 1 || found[0].ID != 99 {
+		t.Fatalf("want bob resolved to id 99, got found=%v unknown=%v err=%v", found, unknown, err)
 	}
 }
 
@@ -281,6 +334,12 @@ func TestLoadConfigRejectsInputsItCannotCheckWithout(t *testing.T) {
 		{"no opener", map[string]string{"PR_USER_ID": ""}, "PR_USER_ID"},
 		{"no repo", map[string]string{"GITHUB_REPOSITORY": ""}, "GITHUB_REPOSITORY is empty"},
 		{"no head", map[string]string{"PR_HEAD_SHA": ""}, "PR_HEAD_SHA is empty"},
+		// "0" parses, so only the explicit guard catches it — and an id of zero is
+		// dropped by unsigned(), which would empty the check rather than fail it.
+		{"zero opener", map[string]string{"PR_USER_ID": "0"}, "PR_USER_ID is zero"},
+		// appendOnly matches the entry's login against the opener's, so an empty
+		// one refuses every signature the report hands out.
+		{"no opener login", map[string]string{"PR_USER_LOGIN": ""}, "PR_USER_LOGIN is empty"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -313,7 +372,7 @@ func TestForgedCoauthorTrailerCannotSignForAStranger(t *testing.T) {
 	var out bytes.Buffer
 	c := newChecker(&fakeGitHub{
 		files: map[string]*SignatureFile{
-			"head": file(sig("mallory", 2), Signature{Login: "victim", ID: 42, Name: "V", Date: "2026-08-30", CLA: "v1"}),
+			"head": file(sig("mallory", 2), Signature{Login: "victim", ID: 42, Date: "2026-08-30", CLA: "v1"}),
 			"base": file(sig("mallory", 2)),
 		},
 		commits: []Commit{commit("a1", user("mallory", 2), user("mallory", 2),
@@ -323,12 +382,54 @@ func TestForgedCoauthorTrailerCannotSignForAStranger(t *testing.T) {
 	c.cfg.opener = Principal{ID: 2, Login: "mallory", Type: "User"}
 
 	err := c.check(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "you may only sign for yourself") {
+	if !errors.Is(err, errUnsigned) || !strings.Contains(out.String(), "you may only sign for yourself") {
 		t.Fatalf("want the stranger signature rejected, got %v (out=%q)", err, out.String())
 	}
 }
 
-// An id-less or malformed co-author must be reported, not silently skipped:
+// The trailer above named a login that resolves to nobody. Naming a real one is
+// the sharper attack: the id then comes back from the API and is genuinely the
+// victim's, so only refusing every signature but the opener's stops it.
+func TestNamingARealCoauthorStillCannotSignForThem(t *testing.T) {
+	var out bytes.Buffer
+	c := newChecker(&fakeGitHub{
+		files: map[string]*SignatureFile{
+			"head": file(sig("mallory", 2), sig("victim", 777)),
+			"base": file(sig("mallory", 2)),
+		},
+		commits: []Commit{commit("a1", user("mallory", 2), user("mallory", 2),
+			"feat\n\nCo-authored-by: Victim <victim@users.noreply.github.com>\n")},
+		byLogin: map[string]Principal{"victim": {ID: 777, Login: "victim", Type: "User"}},
+	}, &out)
+	c.cfg.opener = Principal{ID: 2, Login: "mallory", Type: "User"}
+
+	err := c.check(t.Context())
+	if !errors.Is(err, errUnsigned) || !strings.Contains(out.String(), "who did not open it") {
+		t.Fatalf("want the stranger signature rejected, got %v (out=%q)", err, out.String())
+	}
+}
+
+// `git commit --author=` is free to set, so GitHub attributes the commit to
+// whoever the address belongs to. That made the commit author a second way to
+// name a victim as a principal and then sign for them.
+func TestForgedCommitAuthorCannotSignForAStranger(t *testing.T) {
+	var out bytes.Buffer
+	c := newChecker(&fakeGitHub{
+		files: map[string]*SignatureFile{
+			"head": file(sig("mallory", 2), sig("victim", 777)),
+			"base": file(sig("mallory", 2)),
+		},
+		commits: []Commit{commit("a1", user("victim", 777), user("mallory", 2), "feat")},
+	}, &out)
+	c.cfg.opener = Principal{ID: 2, Login: "mallory", Type: "User"}
+
+	err := c.check(t.Context())
+	if !errors.Is(err, errUnsigned) || !strings.Contains(out.String(), "who did not open it") {
+		t.Fatalf("want the stranger signature rejected, got %v (out=%q)", err, out.String())
+	}
+}
+
+// The noreply form resolving to nobody must block, not be silently skipped:
 // dropping it let the gate pass while never checking that person at all.
 func TestUnresolvableCoauthorIsReported(t *testing.T) {
 	var out bytes.Buffer
@@ -339,9 +440,11 @@ func TestUnresolvableCoauthorIsReported(t *testing.T) {
 	}, &out)
 	c.cfg.opener = Principal{ID: 2, Login: "mallory", Type: "User"}
 
-	err := c.check(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "did not resolve") {
-		t.Fatalf("want the co-author reported, got %v (out=%q)", err, out.String())
+	if err := c.check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want the co-author to block the gate, got %v (out=%q)", err, out.String())
+	}
+	if !strings.Contains(out.String(), "0+realperson@users.noreply.github.com") {
+		t.Fatalf("want the address named in the report, got %q", out.String())
 	}
 }
 
@@ -394,10 +497,10 @@ func TestStaleBranchIsNotAccusedOfDeletingASignature(t *testing.T) {
 // let one invalidate everyone's signature at once.
 func TestPullRequestCannotChangeTheCLAVersion(t *testing.T) {
 	head := &SignatureFile{CLAVersion: "v2", Signatures: []Signature{
-		{Login: "alice", ID: 1, Name: "A", Date: "2026-01-01", CLA: "v1"},
+		{Login: "alice", ID: 1, Date: "2026-01-01", CLA: "v1"},
 	}}
-	err := appendOnly(file(sig("alice", 1)), head, map[int64]bool{1: true})
-	if err == nil || !strings.Contains(err.Error(), "changes cla_version") {
+	err := appendOnly(file(sig("alice", 1)), head, Principal{ID: 1, Login: "alice", Type: "User"}, "v1")
+	if err == nil || !strings.Contains(err.Error(), "cla_version is") {
 		t.Fatalf("want the version change rejected, got %v", err)
 	}
 }
@@ -405,7 +508,7 @@ func TestPullRequestCannotChangeTheCLAVersion(t *testing.T) {
 // A login is contributor-controlled text out of signatures/cla.json. Emitted raw,
 // a newline in one starts a second workflow command on the line below it.
 func TestAnnotationEscapingKeepsAnErrorToOneCommand(t *testing.T) {
-	f := file(Signature{Login: "a\n::error::injected", ID: 1, Name: "N", Date: "bad", CLA: "v1"})
+	f := file(Signature{Login: "a\n::error::injected", ID: 1, Date: "bad", CLA: "v1"})
 	err := f.validate()
 	if err == nil {
 		t.Fatal("want a validation error to carry the login")
@@ -443,7 +546,7 @@ func TestCheckCommentsMentioningTheUnsignedContributor(t *testing.T) {
 	if len(gh.posted) != 1 {
 		t.Fatalf("want one comment, got %d", len(gh.posted))
 	}
-	for _, want := range []string{commentMarker, "@alice", `"id": 1`} {
+	for _, want := range []string{commentMarker, "@alice", `"id":    1`} {
 		if !strings.Contains(gh.posted[0].Body, want) {
 			t.Fatalf("want %q in the comment, got %q", want, gh.posted[0].Body)
 		}
@@ -578,10 +681,10 @@ func TestCheckIgnoresAQuotedMarker(t *testing.T) {
 // A gate that fell over must not leave "signed" standing on a red check, nor
 // repeat advice the contributor has just followed and failed on.
 func TestCheckReplacesItsCommentWhenTheGateCannotFinish(t *testing.T) {
-	// mallory signed but authored nothing here, so appendOnly rejects the file.
+	// No file at the head sha: the gate cannot read what it is meant to judge.
 	forged := func() *fakeGitHub {
 		return &fakeGitHub{
-			files:   map[string]*SignatureFile{"head": file(sig("mallory", 99)), "base": file()},
+			files:   map[string]*SignatureFile{"base": file()},
 			commits: []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
 		}
 	}
@@ -589,7 +692,7 @@ func TestCheckReplacesItsCommentWhenTheGateCannotFinish(t *testing.T) {
 	gh := forged()
 	gh.posted = []Comment{{ID: 9, Body: signedComment("v1")}}
 	if err := newChecker(gh, &bytes.Buffer{}).check(t.Context()); err == nil || errors.Is(err, errUnsigned) {
-		t.Fatalf("want an append-only failure, got %v", err)
+		t.Fatalf("want a checker fault, got %v", err)
 	}
 	if gh.edits != 1 || strings.Contains(gh.posted[0].Body, "signed") {
 		t.Fatalf("want the signed note replaced, got %q after %d edits", gh.posted[0].Body, gh.edits)
@@ -598,7 +701,7 @@ func TestCheckReplacesItsCommentWhenTheGateCannotFinish(t *testing.T) {
 	// Nothing standing means nothing to correct; a bare failure is not worth a comment.
 	quiet := forged()
 	if err := newChecker(quiet, &bytes.Buffer{}).check(t.Context()); err == nil {
-		t.Fatal("want an append-only failure")
+		t.Fatal("want a checker fault")
 	}
 	if len(quiet.posted) != 0 {
 		t.Fatalf("want no comment, got %+v", quiet.posted)
@@ -639,12 +742,12 @@ func TestCheckLabelsEachOutcome(t *testing.T) {
 	// A gate that could not finish knows nothing, but must not leave "signed"
 	// standing on a red check.
 	broken := &fakeGitHub{
-		files:    map[string]*SignatureFile{"head": file(sig("mallory", 99)), "base": file()},
+		files:    map[string]*SignatureFile{"base": file()},
 		commits:  []Commit{commit("a1", user("alice", 1), user("alice", 1), "x")},
 		labelled: []string{labelSigned},
 	}
 	if err := newChecker(broken, &bytes.Buffer{}).check(t.Context()); err == nil || errors.Is(err, errUnsigned) {
-		t.Fatalf("want an append-only failure, got %v", err)
+		t.Fatalf("want a checker fault, got %v", err)
 	}
 	if len(broken.labelled) != 0 {
 		t.Fatalf("want the signed label dropped, got %v", broken.labelled)
@@ -664,5 +767,72 @@ func TestCheckDoesNotRewriteACorrectLabel(t *testing.T) {
 	}
 	if gh.labelWrites != 0 {
 		t.Fatalf("want no label write, got %d", gh.labelWrites)
+	}
+}
+
+// The signature file is absent at the merge base only if the read failed, now
+// that it exists on the base branch. Treating that as an empty history disarmed
+// both append-only guards, so a pull request could name its own cla_version.
+func TestAMissingBaseFileIsAFailureNotAnEmptyHistory(t *testing.T) {
+	var out bytes.Buffer
+	c := newChecker(&fakeGitHub{
+		base: "mergebase", // no file there
+		files: map[string]*SignatureFile{
+			"base": file(),
+			"head": {CLAVersion: "vBOGUS", Signatures: []Signature{
+				{Login: "mallory", ID: 7, Date: "2026-08-30", CLA: "vBOGUS"}}},
+		},
+		commits: []Commit{commit("a1", user("mallory", 7), user("mallory", 7), "feat")},
+	}, &out)
+	c.cfg.opener = Principal{ID: 7, Login: "mallory", Type: "User"}
+
+	err := c.check(t.Context())
+	if err == nil || errors.Is(err, errUnsigned) {
+		t.Fatalf("want a read failure, not a verdict, got %v (out=%q)", err, out.String())
+	}
+	if strings.Contains(out.String(), "verified") {
+		t.Fatalf("a self-declared cla_version must never read as verified, got %q", out.String())
+	}
+}
+
+// A rejected edit is the contributor's to fix, so it takes the unsigned label and
+// a comment rather than reading as a gate that fell over.
+func TestARejectedEditIsReportedLikeAnUnsignedCLA(t *testing.T) {
+	var out bytes.Buffer
+	gh := &fakeGitHub{
+		files: map[string]*SignatureFile{
+			"head": file(sig("mallory", 2), sig("victim", 777)),
+			"base": file(sig("mallory", 2)),
+		},
+		commits:  []Commit{commit("a1", user("mallory", 2), user("mallory", 2), "feat")},
+		labelled: []string{labelSigned},
+	}
+	c := newChecker(gh, &out)
+	c.cfg.opener = Principal{ID: 2, Login: "mallory", Type: "User"}
+
+	if err := c.check(t.Context()); !errors.Is(err, errUnsigned) {
+		t.Fatalf("want errUnsigned, got %v", err)
+	}
+	if !slices.Equal(gh.labelled, []string{labelUnsigned}) {
+		t.Fatalf("want the not-signed label, got %v", gh.labelled)
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, "was rejected") {
+		t.Fatalf("want a comment naming the rejection, got %v", gh.posted)
+	}
+}
+
+// An assistant trailer names no copyright holder, so a pull request carrying one
+// and nothing else must go green without a history rewrite.
+func TestAnAssistantTrailerAloneDoesNotBlockTheGate(t *testing.T) {
+	for _, addr := range []string{"noreply@anthropic.com", "NoReply@Anthropic.COM"} {
+		var out bytes.Buffer
+		c := newChecker(&fakeGitHub{
+			files: map[string]*SignatureFile{"head": file(sig("alice", 1)), "base": file(sig("alice", 1))},
+			commits: []Commit{commit("a1", user("alice", 1), user("alice", 1),
+				"feat\n\nCo-authored-by: Claude <"+addr+">\n")},
+		}, &out)
+		if err := c.check(t.Context()); err != nil {
+			t.Fatalf("%s must not block: %v (out=%q)", addr, err, out.String())
+		}
 	}
 }

@@ -74,13 +74,37 @@ func TestGetSurfacesAnUnexpectedStatus(t *testing.T) {
 	}
 }
 
-// userByEmail deliberately refuses an ambiguous match rather than picking one.
-func TestUserByEmailRefusesAnAmbiguousMatch(t *testing.T) {
-	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"items":[{"id":1,"login":"a"},{"id":2,"login":"b"}]}`)
+// userByLogin is the whole of co-author identity now, and resolveCoauthors keys
+// its unknown-vs-error split on the errNotFound this returns.
+func TestUserByLoginResolvesAndReportsAMissingAccount(t *testing.T) {
+	var got string
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Path
+		if strings.Contains(r.URL.Path, "ghost") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		fmt.Fprint(w, `{"id":99,"login":"alice","type":"User"}`)
 	})
-	if _, err := c.userByEmail(t.Context(), "shared@example.com"); !errors.Is(err, errNotFound) {
-		t.Fatalf("want errNotFound for two matches, got %v", err)
+
+	p, err := c.userByLogin(t.Context(), "alice")
+	if err != nil || p.ID != 99 || p.Login != "alice" {
+		t.Fatalf("want alice resolved, got %+v %v", p, err)
+	}
+	if got != "/users/alice" {
+		t.Fatalf("want the users endpoint, got %q", got)
+	}
+
+	if _, err := c.userByLogin(t.Context(), "ghost"); !errors.Is(err, errNotFound) {
+		t.Fatalf("want errNotFound for a missing account, got %v", err)
+	}
+
+	// A bot co-author reaches here by design: noreplyRe keeps the [bot] suffix.
+	if _, err := c.userByLogin(t.Context(), "dependabot[bot]"); err != nil {
+		t.Fatalf("want the login path-escaped, got %v", err)
+	}
+	if got != "/users/dependabot[bot]" {
+		t.Fatalf("want the bot login escaped onto the path, got %q", got)
 	}
 }
 

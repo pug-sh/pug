@@ -193,7 +193,6 @@ Signing is a commit. Add yourself to
 ```json
 { "login": "your-github-username",
   "id":    12345678,
-  "name":  "Your Name",
   "date":  "YYYY-MM-DD",
   "cla":   "v1" }
 ```
@@ -212,15 +211,25 @@ that identifies you here, because usernames can be changed and re-registered.
 
 A status check verifies that the pull request author, every commit author and
 committer, and everyone named in a `Co-authored-by:` trailer appears in that file.
+A trailer has to carry the `<id>+<login>@users.noreply.github.com` address GitHub
+writes, since that is the only form the check can resolve to an account.
 The file is append-only: the check rejects a pull request that edits or removes an
-existing signature, or that signs on behalf of someone who authored none of its
-commits.
+existing signature.
+
+You sign for yourself, and only in a pull request you opened — the check accepts no
+other entry. A commit author, a committer and a `Co-authored-by:` trailer are all
+things the commit itself asserts, so a pull request that could sign for any of them
+could sign for anyone it chose to name. If you co-wrote a contribution with someone
+who has not signed, they sign in a pull request of their own. A trailer naming an
+AI assistant is ignored: an assistant holds no copyright, so there is nothing for
+it to license or to sign.
 
 If this Agreement is amended, the new text is published under a new version number
 and contributors are asked to sign again; a signature records the version it was
 given against and never carries over to a later one. Your earlier signature stays
 in the file as the record of what you agreed to then — you add an entry for the
-new version rather than editing the old one.
+new version rather than editing the old one, and the check accepts a new entry
+only at the version then in force.
 
 ## Third-party material
 
