@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -331,5 +332,31 @@ func TestPullRequestCannotChangeTheCLAVersion(t *testing.T) {
 	err := appendOnly(file(sig("alice", 1)), head, map[int64]bool{1: true})
 	if err == nil || !strings.Contains(err.Error(), "changes cla_version") {
 		t.Fatalf("want the version change rejected, got %v", err)
+	}
+}
+
+// A login is contributor-controlled text out of signatures/cla.json. Emitted raw,
+// a newline in one starts a second workflow command on the line below it.
+func TestAnnotationEscapingKeepsAnErrorToOneCommand(t *testing.T) {
+	f := file(Signature{Login: "a\n::error::injected", ID: 1, Name: "N", Date: "bad", CLA: "v1"})
+	err := f.validate()
+	if err == nil {
+		t.Fatal("want a validation error to carry the login")
+	}
+	// GitHub reads one command per line, so a single line is a single command —
+	// the injected "::error::" survives only as inert text after its newline goes.
+	line := fmt.Sprintf("::error::%s", escapeAnnotation(err.Error()))
+	if strings.ContainsAny(line, "\r\n") {
+		t.Fatalf("the annotation must stay on one line, got %q", line)
+	}
+	if !strings.Contains(line, "%0A") {
+		t.Fatalf("want the newline encoded, got %q", line)
+	}
+}
+
+func TestEscapeAnnotationEncodesTheSpecialCharacters(t *testing.T) {
+	got := escapeAnnotation("100% done\r\nnext")
+	if got != "100%25 done%0D%0Anext" {
+		t.Fatalf("got %q", got)
 	}
 }

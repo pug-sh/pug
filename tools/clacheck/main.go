@@ -120,10 +120,17 @@ func main() {
 	case errors.Is(err, errUnsigned):
 		os.Exit(1)
 	case err != nil:
-		fmt.Printf("::error::%s\n", err)
+		fmt.Printf("::error::%s\n", escapeAnnotation(err.Error()))
 		os.Exit(1)
 	}
 }
+
+// escapeAnnotation applies GitHub's workflow-command encoding. An error can carry
+// a value the pull request chose — a login out of signatures/cla.json — and a raw
+// newline in one would start a second command on the line below.
+var annotationEscaper = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
+
+func escapeAnnotation(s string) string { return annotationEscaper.Replace(s) }
 
 func run(ctx context.Context) error {
 	cfg, err := loadConfig()

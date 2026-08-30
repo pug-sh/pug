@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Signature is one contributor's entry in signatures/cla.json. Identity is the
@@ -43,12 +44,16 @@ type Commit struct {
 	} `json:"commit"`
 }
 
-var (
-	dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	// A version is echoed into the job log, where GitHub reads ::workflow::
-	// commands line by line, so it must not carry a newline.
-	versionRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-)
+// A version is echoed into the job log, where GitHub reads ::workflow:: commands
+// line by line, so it must not carry a newline.
+var versionRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// validDate wants a real calendar day, not the shape of one: time.Parse is strict
+// about both, so it rejects 2026-2-3 and 2026-02-30 alike.
+func validDate(s string) bool {
+	_, err := time.Parse(time.DateOnly, s)
+	return err == nil
+}
 
 // validate rejects a signature file that records agreement to nothing: a missing
 // id, or the placeholder name the report hands out left unedited.
@@ -74,8 +79,8 @@ func (f *SignatureFile) validate() error {
 			problem = "name is empty"
 		case s.Name == placeholderName:
 			problem = "name is still the placeholder; put your own name in"
-		case !dateRe.MatchString(s.Date):
-			problem = "date is not YYYY-MM-DD"
+		case !validDate(s.Date):
+			problem = "date is not a real YYYY-MM-DD date"
 		case !versionRe.MatchString(s.CLA):
 			problem = "cla is missing or malformed"
 		}
