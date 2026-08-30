@@ -90,11 +90,11 @@ from the failed check. You do it once per CLA version; it covers everything you
 contribute afterwards.
 
 A `Co-authored-by:` trailer naming a person means they have to sign too, in a pull
-request of their own. Use the `<id>+<login>@users.noreply.github.com` address
-GitHub itself writes — it is the only form the check can resolve to an account, and
-a trailer it cannot identify blocks the pull request whether or not that person has
-signed. One naming an AI assistant is ignored — it holds no copyright — so there is
-no need to rewrite commits to strip it.
+request of their own. Use a GitHub noreply address — `<login>@users.noreply.github.com`
+or the `<id>+<login>` form GitHub itself writes. That is the only shape the check
+can resolve to an account, and a trailer it cannot identify blocks the pull request
+whether or not that person has signed. One naming an AI assistant is ignored — it
+holds no copyright — so there is no need to rewrite commits to strip it.
 
 The file is append-only, and CI enforces it: an existing entry can't be edited or
 removed, the only entry you can add is your own — in a pull request you opened, so

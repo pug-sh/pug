@@ -211,8 +211,9 @@ that identifies you here, because usernames can be changed and re-registered.
 
 A status check verifies that the pull request author, every commit author and
 committer, and everyone named in a `Co-authored-by:` trailer appears in that file.
-A trailer has to carry the `<id>+<login>@users.noreply.github.com` address GitHub
-writes, since that is the only form the check can resolve to an account.
+A trailer has to carry a GitHub noreply address — `<login>@users.noreply.github.com`,
+or the `<id>+<login>` form GitHub writes itself — since that is the only shape the
+check can resolve to an account.
 The file is append-only: the check rejects a pull request that edits or removes an
 existing signature.
 
