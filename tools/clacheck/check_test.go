@@ -7,7 +7,7 @@ import (
 )
 
 func sig(login string, id int64) Signature {
-	return Signature{Login: login, ID: id, Name: "N", Date: "2026-01-01", CLA: "v1"}
+	return Signature{Login: login, ID: id, Date: "2026-01-01", CLA: "v1"}
 }
 
 func file(s ...Signature) *SignatureFile {
@@ -35,8 +35,6 @@ func TestValidateRejectsSignaturesThatRecordNothing(t *testing.T) {
 	}{
 		{"missing id", func(f *SignatureFile) { f.Signatures[0].ID = 0 }, "id is missing"},
 		{"empty login", func(f *SignatureFile) { f.Signatures[0].Login = "" }, "login is empty"},
-		{"empty name", func(f *SignatureFile) { f.Signatures[0].Name = "" }, "name is empty"},
-		{"placeholder name", func(f *SignatureFile) { f.Signatures[0].Name = placeholderName }, "still the placeholder"},
 		{"bad date", func(f *SignatureFile) { f.Signatures[0].Date = "yesterday" }, "date is not a real"},
 		{"impossible day", func(f *SignatureFile) { f.Signatures[0].Date = "2026-02-30" }, "date is not a real"},
 		{"impossible month", func(f *SignatureFile) { f.Signatures[0].Date = "2026-99-99" }, "date is not a real"},
@@ -218,8 +216,8 @@ func TestNoreplyLoginDiscardsTheEmbeddedID(t *testing.T) {
 // coexist; only an entry at the file's current version counts as signed.
 func TestSignedRequiresTheCurrentVersion(t *testing.T) {
 	f := &SignatureFile{CLAVersion: "v2", Signatures: []Signature{
-		{Login: "alice", ID: 1, Name: "A", Date: "2026-01-01", CLA: "v1"},
-		{Login: "bob", ID: 2, Name: "B", Date: "2026-01-01", CLA: "v2"},
+		{Login: "alice", ID: 1, Date: "2026-01-01", CLA: "v1"},
+		{Login: "bob", ID: 2, Date: "2026-01-01", CLA: "v2"},
 	}}
 	if err := f.validate(); err != nil {
 		t.Fatalf("v1 and v2 entries must coexist: %v", err)
@@ -242,22 +240,114 @@ func TestCoauthorTrailerStopsAtTheLineEnd(t *testing.T) {
 	}
 }
 
+// A version bump retires the old text. An entry added against it would record an
+// agreement never given, into a file that is append-only and is the record.
+func TestANewSignatureMustBeAtTheVersionInForce(t *testing.T) {
+	v1 := Signature{Login: "alice", ID: 1, Date: "2025-01-01", CLA: "v1"}
+	v2 := func(s ...Signature) *SignatureFile { return &SignatureFile{CLAVersion: "v2", Signatures: s} }
+	base := v2(v1)
+	bob := Principal{ID: 2, Login: "bob", Type: "User"}
+
+	stale := v2(v1, Signature{Login: "bob", ID: 2, Date: "2026-08-31", CLA: "v1"})
+	err := appendOnly(base, stale, bob, "v2")
+	if err == nil {
+		t.Fatal("a new signature against the retired version must be rejected")
+	}
+	if !strings.Contains(err.Error(), "version in force") {
+		t.Errorf("want the current version named, got %v", err)
+	}
+	// The bump does not invalidate what came before: alice's v1 entry is the
+	// record of what she agreed to then, and stays as it is.
+	current := v2(v1, Signature{Login: "bob", ID: 2, Date: "2026-08-31", CLA: "v2"})
+	if err := appendOnly(base, current, bob, "v2"); err != nil {
+		t.Fatalf("signing the version in force must be accepted: %v", err)
+	}
+	if err := current.validate(); err != nil {
+		t.Fatalf("a v1 entry must survive the bump alongside a v2 one: %v", err)
+	}
+}
+
 func TestAppendOnly(t *testing.T) {
 	base := file(sig("alice", 1))
-	mine := map[int64]bool{2: true}
+	bob := Principal{ID: 2, Login: "bob", Type: "User"}
 
-	if err := appendOnly(base, file(sig("alice", 1), sig("bob", 2)), mine); err != nil {
+	if err := appendOnly(base, file(sig("alice", 1), sig("bob", 2)), bob, "v1"); err != nil {
 		t.Fatalf("adding your own signature is the whole point: %v", err)
 	}
-	if err := appendOnly(base, file(sig("bob", 2)), mine); err == nil {
+	if err := appendOnly(base, file(sig("bob", 2)), bob, "v1"); err == nil {
 		t.Fatal("removing someone else's signature must be rejected")
 	}
 	edited := file(sig("alice", 1), sig("bob", 2))
-	edited.Signatures[0].Name = "Someone Else"
-	if err := appendOnly(base, edited, mine); err == nil {
+	edited.Signatures[0].Date = "2020-01-01"
+	if err := appendOnly(base, edited, bob, edited.CLAVersion); err == nil {
 		t.Fatal("editing someone else's signature must be rejected")
 	}
-	if err := appendOnly(base, file(sig("alice", 1), sig("stranger", 42)), mine); err == nil {
-		t.Fatal("signing for someone who authored nothing here must be rejected")
+	if err := appendOnly(base, file(sig("alice", 1), sig("stranger", 42)), bob, "v1"); err == nil {
+		t.Fatal("signing for anyone but the opener must be rejected")
+	}
+	// GitHub folds case in a login, and the report hands out the canonical form,
+	// so a difference in case is a typo rather than a different person.
+	if err := appendOnly(base, file(sig("alice", 1), sig("BoB", 2)), bob, "v1"); err != nil {
+		t.Fatalf("a login differing only in case is the same person: %v", err)
+	}
+}
+
+// The id is what signing is matched on, so an entry pairing the opener's id with
+// somebody else's login stood in the file as a signature by that other person.
+func TestSignatureLoginMustMatchTheIDItClaims(t *testing.T) {
+	base := file()
+	bob := Principal{ID: 2, Login: "bob", Type: "User"}
+
+	err := appendOnly(base, file(sig("torvalds", 2)), bob, "v1")
+	if err == nil || !strings.Contains(err.Error(), `belongs to "bob"`) {
+		t.Fatalf("want the mismatched login rejected, got %v", err)
+	}
+}
+
+// Only the noreply form is ever looked up, so an ordinary address is unidentified
+// rather than absent from GitHub — the report must not claim a search it skipped.
+func TestOnlyTheNoreplyFormYieldsALogin(t *testing.T) {
+	for _, addr := range []string{"someone@example.com", "woof@pug.sh", "1+alice@users.noreply.github.example"} {
+		if got := noreplyLogin(addr); got != "" {
+			t.Errorf("%q is not the noreply form, got login %q", addr, got)
+		}
+	}
+	// The id in the <id>+<login> form comes out of a commit message, so the login
+	// is all that is taken from it.
+	for addr, want := range map[string]string{
+		"alice@users.noreply.github.com":             "alice",
+		"12345+alice@users.noreply.github.com":       "alice",
+		"1+dependabot[bot]@users.noreply.github.com": "dependabot[bot]",
+	} {
+		if got := noreplyLogin(addr); got != want {
+			t.Errorf("noreplyLogin(%q) = %q, want %q", addr, got, want)
+		}
+	}
+}
+
+// A lone CR ends a line for the Actions log and, per CommonMark, for the comment
+// too — so a trailer carrying one could forge a workflow command and break out of
+// the code span the report renders it in.
+func TestTrailerAddressCannotCarryACarriageReturn(t *testing.T) {
+	got := coauthorEmails([]Commit{commit("a1", nil, nil,
+		"feat\n\nCo-authored-by: M <a\r\r[click](https://evil.example)@x>\n")})
+	if len(got) != 1 {
+		t.Fatalf("want the trailer captured, got %v", got)
+	}
+	if strings.ContainsAny(got[0], "\r\n") {
+		t.Fatalf("want no line ending in the address, got %q", got[0])
+	}
+}
+
+// The version in force is the base branch's, not the merge base's: a branch cut
+// before a bump would otherwise sign the retired version and pass.
+func TestABranchBehindAVersionBumpCannotSignTheRetiredOne(t *testing.T) {
+	mergeBase := file(sig("alice", 1))
+	head := file(sig("alice", 1), sig("bob", 2))
+	bob := Principal{ID: 2, Login: "bob", Type: "User"}
+
+	err := appendOnly(mergeBase, head, bob, "v2")
+	if err == nil || !strings.Contains(err.Error(), "merge the base branch") {
+		t.Fatalf("want the stale version rejected with the way out, got %v", err)
 	}
 }

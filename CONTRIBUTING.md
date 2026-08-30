@@ -89,6 +89,19 @@ check prints the entry for you, with your GitHub id already filled in — copy i
 from the failed check. You do it once per CLA version; it covers everything you
 contribute afterwards.
 
+A `Co-authored-by:` trailer naming a person means they have to sign too, in a pull
+request of their own. Use a GitHub noreply address — `<login>@users.noreply.github.com`
+or the `<id>+<login>` form GitHub itself writes. That is the only shape the check
+can resolve to an account, and a trailer it cannot identify blocks the pull request
+whether or not that person has signed. One naming an AI assistant is ignored — it
+holds no copyright — so there is no need to rewrite commits to strip it.
+
+The file is append-only, and CI enforces it: an existing entry can't be edited or
+removed, the only entry you can add is your own — in a pull request you opened, so
+a co-author signs in one of their own — and `cla_version` is set on the base branch
+rather than by a contribution, so a new signature is always recorded against the
+version in force.
+
 **You keep your copyright.** The CLA is a license, not an assignment — you stay
 free to use and relicense your own work however you like. What it adds on top of
 the AGPL is the right for us to also offer Pug under separate commercial terms to

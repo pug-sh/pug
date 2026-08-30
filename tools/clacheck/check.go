@@ -15,13 +15,11 @@ import (
 type Signature struct {
 	Login string `json:"login"`
 	ID    int64  `json:"id"`
-	Name  string `json:"name"`
 	Date  string `json:"date"`
 	CLA   string `json:"cla"`
 }
 
 type SignatureFile struct {
-	Comment    string      `json:"_comment,omitempty"`
 	CLAVersion string      `json:"cla_version"`
 	Signatures []Signature `json:"signatures"`
 }
@@ -55,8 +53,9 @@ func validDate(s string) bool {
 	return err == nil
 }
 
-// validate rejects a signature file that records agreement to nothing: a missing
-// id, or the placeholder name the report hands out left unedited.
+// validate rejects a signature file that records agreement to nothing: an entry
+// with no id names nobody. The version is held to versionRe for the reason given
+// at its declaration — report.go interpolates it into an annotation unescaped.
 func (f *SignatureFile) validate() error {
 	if f.CLAVersion == "" {
 		return errors.New("cla_version is missing or empty")
@@ -75,10 +74,6 @@ func (f *SignatureFile) validate() error {
 			problem = "login is empty"
 		case s.ID == 0:
 			problem = "id is missing or zero"
-		case s.Name == "":
-			problem = "name is empty"
-		case s.Name == placeholderName:
-			problem = "name is still the placeholder; put your own name in"
 		case !validDate(s.Date):
 			problem = "date is not a real YYYY-MM-DD date"
 		case !versionRe.MatchString(s.CLA):
@@ -142,12 +137,27 @@ func coauthorEmails(commits []Commit) []string {
 	var out []string
 	for _, c := range commits {
 		for _, m := range coauthorRe.FindAllStringSubmatch(c.Commit.Message, -1) {
-			out = append(out, strings.ToLower(strings.TrimSpace(m[1])))
+			// A lone CR ends a line for both the Actions log and CommonMark, so
+			// leaving one in would let a trailer forge a workflow command and
+			// break out of the code span the report renders it in.
+			out = append(out, strings.ToLower(strings.TrimSpace(strings.ReplaceAll(m[1], "\r", ""))))
 		}
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
 }
+
+// An assistant holds no copyright, so a trailer naming one names no principal and
+// there is nothing for it to sign. Blocking would make every contributor using one
+// rewrite their branch over a line that licenses nothing. Matched whole and
+// lowercased, which is how coauthorEmails hands an address over; add to this list
+// rather than loosening the check, so an address that might be a person still stops
+// the gate.
+var assistantEmails = []string{
+	"noreply@anthropic.com", // Claude Code's default Co-authored-by trailer
+}
+
+func isAssistant(email string) bool { return slices.Contains(assistantEmails, email) }
 
 var noreplyRe = regexp.MustCompile(`^(?:\d+\+)?([A-Za-z0-9-]+(?:\[bot\])?)@users\.noreply\.github\.com$`)
 
@@ -162,13 +172,17 @@ func noreplyLogin(email string) string {
 	return ""
 }
 
-// appendOnly enforces what the file's own comment promises: existing entries are
-// immutable, and a pull request may only sign for someone who authored part of it.
-// Without the second half, anyone could sign on a stranger's behalf.
-func appendOnly(base, head *SignatureFile, prIDs map[int64]bool) error {
-	if base.CLAVersion != "" && head.CLAVersion != base.CLAVersion {
-		return fmt.Errorf("this pull request changes cla_version from %q to %q; the version is set on the base branch, not in a contribution",
-			base.CLAVersion, head.CLAVersion)
+// appendOnly keeps existing entries immutable and takes only the opener's own
+// signature. The opener is the one principal that cannot be forged: an author, a
+// committer and a trailer are all self-asserted, so accepting a signature for any
+// principal would let a pull request sign for anyone it named.
+//
+// inForce comes from the base branch tip, not from base: a branch that predates a
+// version bump would otherwise sign the retired version and pass.
+func appendOnly(base, head *SignatureFile, signer Principal, inForce string) error {
+	if head.CLAVersion != inForce {
+		return fmt.Errorf("cla_version is %q on the base branch but %q here; it is set on the base branch, not by a contribution, so merge the base branch if this one is behind",
+			inForce, head.CLAVersion)
 	}
 	for _, b := range base.Signatures {
 		if !slices.Contains(head.Signatures, b) {
@@ -176,10 +190,20 @@ func appendOnly(base, head *SignatureFile, prIDs map[int64]bool) error {
 		}
 	}
 	for _, h := range head.Signatures {
-		if slices.Contains(base.Signatures, h) || prIDs[h.ID] {
-			continue
+		switch {
+		case slices.Contains(base.Signatures, h):
+		case h.ID != signer.ID:
+			return fmt.Errorf("this pull request adds a signature for %q, who did not open it; you may only sign for yourself, so a co-author signs in a pull request of their own", h.Login)
+		// Signing matches on the id, so a mismatched login would stand in the
+		// record as a signature by whoever it names.
+		case !strings.EqualFold(h.Login, signer.Login):
+			return fmt.Errorf("this signature records id %d under the login %q, but that id belongs to %q", h.ID, h.Login, signer.Login)
+		// You sign what is in force. A new entry at a retired version records an
+		// agreement never given, and signed() reads it as unsigned anyway.
+		case h.CLA != head.CLAVersion:
+			return fmt.Errorf("this signature is recorded against CLA %q, but %q is the version in force; sign the current one",
+				h.CLA, head.CLAVersion)
 		}
-		return fmt.Errorf("this pull request signs for %q, who authored none of its commits; you may only sign for yourself", h.Login)
 	}
 	return nil
 }
