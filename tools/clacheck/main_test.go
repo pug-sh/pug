@@ -162,12 +162,12 @@ func TestCheckReportsTheUnsignedContributor(t *testing.T) {
 	}
 	// alice opened it, so hers is the entry offered; bob authored the commit and
 	// is named, but only he can sign for himself.
-	for _, want := range []string{"alice", "bob", `"id":    1`, "opened themselves"} {
+	for _, want := range []string{"alice", "bob", `"id": 1`, "opened themselves"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("want %q in the report, got %q", want, out.String())
 		}
 	}
-	if strings.Contains(out.String(), `"id":    2`) {
+	if strings.Contains(out.String(), `"id": 2`) {
 		t.Fatalf("bob must not be handed an entry this pull request cannot add, got %q", out.String())
 	}
 }
@@ -546,7 +546,7 @@ func TestCheckCommentsMentioningTheUnsignedContributor(t *testing.T) {
 	if len(gh.posted) != 1 {
 		t.Fatalf("want one comment, got %d", len(gh.posted))
 	}
-	for _, want := range []string{commentMarker, "@alice", `"id":    1`} {
+	for _, want := range []string{commentMarker, "@alice", `"id": 1`} {
 		if !strings.Contains(gh.posted[0].Body, want) {
 			t.Fatalf("want %q in the comment, got %q", want, gh.posted[0].Body)
 		}

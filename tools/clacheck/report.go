@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -16,12 +17,17 @@ type report struct {
 // posting another. It is invisible in the rendered comment.
 const commentMarker = "<!-- clacheck:signature-request -->"
 
+// Marshalled from Signature rather than written out by hand, so the entry a
+// contributor is told to paste keeps whatever shape the gate parses back.
 func entryJSON(p Principal, version, indent string, now time.Time) string {
-	return fmt.Sprintf(`%s{ "login": %q,
-%s  "id":    %d,
-%s  "date":  %q,
-%s  "cla":   %q }`,
-		indent, p.Login, indent, p.ID, indent, now.UTC().Format(time.DateOnly), indent, version)
+	// Cannot fail: Signature is four scalar fields.
+	b, _ := json.MarshalIndent(Signature{
+		Login: p.Login,
+		ID:    p.ID,
+		Date:  now.UTC().Format(time.DateOnly),
+		CLA:   version,
+	}, indent, "  ")
+	return indent + string(b)
 }
 
 // unsignedReport is what a contributor actually meets when the gate fails. It
