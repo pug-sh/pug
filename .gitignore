@@ -21,3 +21,6 @@ docs/specs
 # Local deploy artifacts (not tracked)
 scripts/Caddyfile
 scripts/deploy.sh
+
+# clacheck build output; CI runs it with `go run`
+/tools/clacheck/clacheck

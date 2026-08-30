@@ -1,0 +1,62 @@
+name: CLA
+
+# Signing is a commit to signatures/cla.json under the contributor's own identity,
+# so the record lives in git history and no third party holds it.
+#
+# The checker reads the commits and the signature file over the API, so no
+# PR-controlled file is ever read off the runner's filesystem.
+
+on:
+  # pull_request_target, not pull_request: the workflow file itself would
+  # otherwise come from the pull request, which could edit or skip the gate. It is
+  # safe here only because nothing from the pull request is checked out or run.
+  # `edited` catches a pull request retargeted onto main after it was opened elsewhere.
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  signed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The base branch's copy of the checker, never the pull request's.
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tools/clacheck/go.mod
+          cache: false
+
+      - name: Test the checker
+        working-directory: tools/clacheck
+        run: go test ./...
+
+      - name: Check signatures
+        working-directory: tools/clacheck
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_USER_ID: ${{ github.event.pull_request.user.id }}
+          PR_USER_LOGIN: ${{ github.event.pull_request.user.login }}
+          PR_USER_TYPE: ${{ github.event.pull_request.user.type }}
+        run: go run .

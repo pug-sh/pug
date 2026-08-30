@@ -78,7 +78,22 @@ Do **not** hand-edit anything under `internal/gen/` — it is generated.
 - **Keep CI green** and add tests for new behavior (the suite runs with the race
   detector).
 
-## License
+## License and the CLA
 
-By contributing, you agree that your contributions will be licensed under the
-[GNU AGPL v3.0](LICENSE), the same license that covers the project.
+Pug is distributed under the [GNU AGPL v3.0](LICENSE).
+
+Before your first pull request is merged, you'll be asked to sign the
+[Contributor License Agreement](CLA.md). Signing is a commit: add yourself to
+[`signatures/cla.json`](signatures/cla.json) in the same pull request. The CLA
+check prints the entry for you, with your GitHub id already filled in — copy it
+from the failed check. You do it once per CLA version; it covers everything you
+contribute afterwards.
+
+**You keep your copyright.** The CLA is a license, not an assignment — you stay
+free to use and relicense your own work however you like. What it adds on top of
+the AGPL is the right for us to also offer Pug under separate commercial terms to
+organizations that can't adopt AGPL software. That funds the project's
+development. Section 2.3 is the limit on it: whatever else we license your
+contribution under, we must also keep licensing it under the license Pug was
+using when you submitted it — the AGPL. Keeping Pug as a whole under the AGPL is
+our intent, and section 2.3 is what guarantees it for your own work.
