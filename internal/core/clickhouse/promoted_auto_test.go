@@ -251,7 +251,7 @@ func TestScanDestAndAppendArgsAddressTheSameFields(t *testing.T) {
 	for i, col := range cols {
 		s, ok := args[i].(string)
 		if !ok {
-			continue // bot_score / verified_bot / mobile are not string columns
+			continue // bot_score / verified_bot / mobile / bot are not string columns
 		}
 		if s != col {
 			t.Errorf("slot %d is column %q: wrote it via ScanDest but AppendArgs emits %q there — the two address different fields", i, col, s)
@@ -261,11 +261,11 @@ func TestScanDestAndAppendArgsAddressTheSameFields(t *testing.T) {
 
 // TestPromotedStringAutoPropertiesSurfacesPickerKeys pins the keys the filter
 // picker depends on (insights.mergePromotedAutoDimensions injects this list).
-// $url/$referrer/$pageTitle are the load-bearing ones: they are promoted but
+// $url/$referrer/$pageTitle/$bot_reason are the load-bearing ones: they are promoted but
 // deliberately not rollup dimensions, so nothing else lists them.
 func TestPromotedStringAutoPropertiesSurfacesPickerKeys(t *testing.T) {
 	strProps := clickhouse.PromotedStringAutoProperties()
-	for _, want := range []string{"$url", "$referrer", "$pageTitle", "$pathname", "$channel"} {
+	for _, want := range []string{"$url", "$referrer", "$pageTitle", "$bot_reason", "$pathname", "$channel"} {
 		if !slices.Contains(strProps, want) {
 			t.Errorf("PromotedStringAutoProperties missing %s: %v", want, strProps)
 		}
@@ -274,5 +274,28 @@ func TestPromotedStringAutoPropertiesSurfacesPickerKeys(t *testing.T) {
 		if _, ok := clickhouse.PromotedColumnFor(key); !ok {
 			t.Errorf("%s is surfaced to the picker but maps to no promoted column", key)
 		}
+	}
+}
+
+func TestSplitPromotedAutoPropertiesBot(t *testing.T) {
+	row, rest := clickhouse.SplitPromotedAutoProperties(map[string]*commonv1.PropertyValue{
+		"$bot":        {Value: &commonv1.PropertyValue_BoolValue{BoolValue: true}},
+		"$bot_reason": {Value: &commonv1.PropertyValue_StringValue{StringValue: "HeadlessChrome"}},
+	})
+	if !row.Bot || row.BotReason != "HeadlessChrome" {
+		t.Fatalf("got Bot=%v BotReason=%q, want true/HeadlessChrome", row.Bot, row.BotReason)
+	}
+	if len(rest) != 0 {
+		t.Fatalf("expected both bot keys split out of the map, remainder: %#v", rest)
+	}
+}
+
+func TestPromotedAutoRowMergeBot(t *testing.T) {
+	m := (&clickhouse.PromotedAutoRow{Bot: true, BotReason: "asn:24940"}).MergeIntoAutoProperties(nil)
+	if m["$bot"] != "true" || m["$bot_reason"] != "asn:24940" {
+		t.Fatalf("unexpected merged map: %#v", m)
+	}
+	if _, ok := (&clickhouse.PromotedAutoRow{}).MergeIntoAutoProperties(nil)["$bot"]; ok {
+		t.Fatal("expected $bot absent for an untagged row")
 	}
 }

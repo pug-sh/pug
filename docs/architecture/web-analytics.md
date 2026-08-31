@@ -59,7 +59,7 @@ emitted `$referrer`/`$locale`/`$screenWidth`/`$screenHeight`/`$pageTitle`; it ga
 | `$pathname` | `pathname` | `String` | derived: `url.Parse($url).Path` (decoded, not `EscapedPath` — so the SQL mirror's `decodeURLComponent(path(...))` can reproduce it), empty → `/` | derive-if-absent (SDK may send logical/route paths) |
 | `$hostname` | `hostname` | `LowCardinality(String)` | derived: URL host, lowercased, port stripped | derive-if-absent |
 | `$referrer` | `referrer` | `String` | SDK (`document.referrer`) | as sent, never derived |
-| `$referrerDomain` | `referrer_domain` | `LowCardinality(String)` | derived: referrer host, lowercased, one leading `www.` stripped; **blanked on self-referral** (equals own hostname after `www.`-strip) | **always server-derived** (client value stripped first, like `$bot_score`) |
+| `$referrerDomain` | `referrer_domain` | `LowCardinality(String)` | derived: referrer host, lowercased, one leading `www.` stripped; **blanked on self-referral** (equals own hostname after `www.`-strip) **or an auth-intermediary host** (`authIntermediaryHosts`, see the channel section) | **always server-derived** (client value stripped first, like `$bot_score`) |
 | `$channel` | `channel` | `LowCardinality(String)` | derived: rule table over (referrerDomain, `$utmSource`, `$utmMedium`); only when `$url` present | **always server-derived** |
 | `$locale` | `locale` | `LowCardinality(String)` | SDK | casing/separator normalized before storage (`en-us`/`en_US` → `en-US`) — rollup rows are permanent, so variants must never fragment the Languages panel |
 | `$screenSize` | `screen_size` | `LowCardinality(String)` | derived: `"{w}x{h}"` when `$screenWidth`/`$screenHeight` both parse > 0 | derive-if-absent |
@@ -134,7 +134,7 @@ New leaf package (siblings: `internal/geo`, `internal/useragent`), stdlib-only (
 - **Owns the canonical `Prop*` constants** for `$url`, `$referrer`, UTM ×5, and every derived key
   above; `promoted_auto.go` swaps its string literals for them (same pattern as `geo.PropCountry`).
 - **`Derive(Input) Output`** is a pure function (no providers, no ctx): URL decomposition, referrer
-  domain + self-referral blanking, UTM extraction, screen-size formatting, channel classification.
+  domain + self-referral/auth-intermediary blanking, UTM extraction, screen-size formatting, channel classification.
   The seeder calls the same function so demo data and production classify identically.
 - **Handler wiring**: `enrichAttribution` appended after `enrichVerifiedBot` in the SDK events
   handler chain (header-independent, per-event). Per-key overwrite policy per the table above;
@@ -148,8 +148,8 @@ New leaf package (siblings: `internal/geo`, `internal/useragent`), stdlib-only (
 
 ### Channel taxonomy (normative)
 
-First match wins; inputs normalized (`src`/`med` lowercased, `ref` = post-self-blank referrer
-domain, suffix-matched against the domain sets so `l.facebook.com` matches `facebook.com`):
+First match wins; inputs normalized (`src`/`med` lowercased, `ref` = referrer domain after the
+self-referral/auth-intermediary blanks, suffix-matched against the domain sets so `l.facebook.com` matches `facebook.com`):
 
 | # | Rule | Channel |
 |---|---|---|
@@ -177,8 +177,8 @@ profile API still exposes no channel field.
 
 **Which google host is Search** (issue #81). The ccTLD matcher is structural, so it needs a second
 gate on the subdomain or the whole google product estate books as Organic Search:
-`accounts.google.com` (the OAuth bounce — a visitor already on the site who left to sign in and
-came straight back; ~11% of google-referred events on a production project), `mail.google.com`,
+`accounts.google.com` (the OAuth bounce; ~11% of google-referred events on a production project —
+now blanked outright, see **Auth intermediaries** below), `mail.google.com`,
 `search.google.com` (Search Console). `googleSearchSubdomains` is the gate, and it is an
 **allow-list** — apex, `www`, `m`, `images`, `news`, `maps`, `scholar`, `books`, `video`, `cse`
 (GA4's own enumerated google hosts collapsed over the ccTLDs), plus `gemini` and `lens`, which cite
@@ -198,15 +198,35 @@ guard covers the referrer side only: a search `utm_source` still takes rule 6. T
 webmail hosts move Referral → Email so this reads as one rule rather than a google carve-out, and
 untagged newsletter clicks land in Email beside the UTM-tagged ones.
 
-**Go and migration 008's SQL mirror deliberately disagree here.** Shipped migrations are frozen, so
-008's `multiIf` still books every `google.<tld>` host as Organic Search whatever the subdomain, and
-has no webmail concept at all:
+**Auth intermediaries blank to Direct.** `authIntermediaryHosts` (`attribution.go`) lists hosts that
+serve nothing but a sign-in redirect — `accounts.google.com`, `login.microsoftonline.com`,
+`appleid.apple.com`, `login.yahoo.com`, … A referrer from one is a visitor who bounced out to
+authenticate and came straight back, the same non-acquisition as a self-referral, so `referrerDomain`
+blanks it before classification and the event books Direct (resolved, not Unassigned — the blank is
+deliberate). Membership test: the host must serve no page anyone could link from. `github.com`,
+`facebook.com`, `linkedin.com` and `x.com` run OAuth on their content hosts and stay out, since
+blanking them would delete real referrals. Matching is exact after lowercasing and the `www.` strip,
+never suffix: per-tenant identity hosts (`acme.okta.com`, Auth0, Keycloak) cannot be enumerated and
+are out of scope. Google's ccTLD account hosts (`accounts.google.co.uk`) are absent on purpose: the
+redirect back to the relying party originates from `accounts.google.com`, so they are not expected
+as referrers, and one that does arrive stays a visible Referral, which pins the subdomain gate. Before
+the list, `login.yahoo.com`, `accounts.youtube.com` and `oauth.telegram.org` suffix-matched the
+search/video/social sets and booked Organic Search/Video/Social. The paid rules still precede the
+blank's rule 13, so a paid medium with an auth referrer is Paid Other, and an unmatched
+`utm_source` with one is Unassigned.
 
-| referrer | frozen 008 | Go, after #81 |
+**Go and migration 008's SQL mirror deliberately disagree here.** Shipped migrations are frozen, so
+008's `multiIf` still books every `google.<tld>` host as Organic Search whatever the subdomain, has
+no webmail concept at all, and blanks no auth intermediary:
+
+| referrer | frozen 008 | Go |
 |---|---|---|
-| `accounts.google.com`, `search.google.com`, `docs.google.com`, … | Organic Search | Referral |
+| `search.google.com`, `docs.google.com`, … | Organic Search | Referral |
 | `mail.google.com`, `mail.yahoo.com`, `mail.yandex.*` | Organic Search | Email |
 | `outlook.*`, `mail.aol/proton/zoho` | Referral | Email |
+| `accounts.google.com`, `login.yahoo.com` | Organic Search | Direct |
+| `accounts.youtube.com` / `oauth.telegram.org` | Organic Video / Organic Social | Direct |
+| `login.microsoftonline.com`, `appleid.apple.com`, … (rest of `authIntermediaryHosts`) | Referral | Direct |
 
 008's mutation is one-shot over pre-008 rows and **has already run in production**, so that
 rewrite is history rather than a choice: pre-008 rows carry the inflated Organic Search bucket, and
@@ -214,7 +234,10 @@ the 009/010 backfills copied it into the rollups, where it is not repairable in 
 everything Go ingested between v0.0.4 (2026-07-19) and v0.0.18 (2026-08-27) — the classifier of
 that era had no subdomain gate and no webmail set either. **The boundary in the stored data is the
 v0.0.18 deploy, not 008's mutation**: every channel value written before it follows the left-hand
-column, every one after it the right. Repairing the history means a NEW migration re-deriving
+column, every one after it the right. `authIntermediaryHosts` adds a second boundary of the same
+kind at the release carrying it — before it those hosts follow the pre-list column (Referral, or
+Organic Search/Video/Social for the three suffix-matched ones), after it Direct — under the same
+decision. Repairing the history means a NEW migration re-deriving
 `channel` over the events table plus a rollup rebuild from it. **Decided 2026-08-27: not worth
 doing** — pug is in open beta, so the inflated bucket stays in the history and the split is simply
 a known one. The mutation→DELETE→backfill repair runbook below still re-derives gap rows the old
@@ -383,11 +406,12 @@ scope. → [`insights.md`](insights.md) (Property discovery).
 ## Testing strategy (as implemented)
 
 - **Contract pins, repointed at the latest MV definition:** `TestMaterializedDimsMatchMigration`
-  and `TestMigration011PromotedDimExprsMatch` parse **011's** Up section — the migration that
-  currently defines the MV. 011 restates the MODIFY QUERY block only (full 21-tuple ↔
-  `materializedDims`+`$__total__`) and carries **no backfill**, which the tests assert by
+  and `TestMigration012PromotedDimExprsMatch` parse **012's** Up section — the migration that
+  currently defines the MV. 011 and 012 restate the MODIFY QUERY block only (full 21-tuple ↔
+  `materializedDims`+`$__total__`) and carry **no backfill**, which the tests assert by
   requiring exactly one `ARRAY JOIN` block; 009's two-block shape — MODIFY QUERY plus a delta
-  backfill of `eventRollupDims009` exactly — is now pinned by `TestMigration009Frozen`.
+  backfill of `eventRollupDims009` exactly — is pinned by `TestMigration009Frozen`, and 011 by
+  `TestMigration011Frozen`.
   `TestMigration006Frozen` / `TestMigration007Frozen` pin the shipped migrations to their
   historical content (guards against editing them). `TestMigration010SessionRollup
   {ColumnsMatchDims,DimExprsMatch}` do the same for the session rollup (old dims stated once in
@@ -411,7 +435,8 @@ scope. → [`insights.md`](insights.md) (Property discovery).
   `$referrerDomain`; AVG_EVENTS_PER_SESSION trends + segmentation with a pages-per-session sanity
   value). These run the real migrations via testutil, so MODIFY QUERY itself is exercised in CI.
 - **Unit:** `internal/attribution` table tests (URL edges, self-referral variants including the
-  pinned not-collapsed subdomain case and the pinned `android-app://` Referral, channel rules
+  pinned not-collapsed subdomain case, every `authIntermediaryHosts` entry blanking to Direct
+  (exact-match, so `acme.okta.com` stays a Referral), the pinned `android-app://` Referral, channel rules
   row-by-row + precedence, UTM extraction, locale normalization, Derive purity); handler tests for
   the enricher (server-only strip + rederive, if-absent semantics, non-web events untouched);
   promoted-column lockstep tests (`TestWebAnalyticsPromotedKeysRoundTrip`,
@@ -466,6 +491,6 @@ session rollup deleted row-level by `session_id`, new states ride along), protov
 The FE web-analytics page itself (`../app` — the BE contracts it needs are exactly this design);
 browser-SDK additions (confirm `@pug-sh/browser` sends `$referrer`/`$locale`/`$screenWidth`/
 `$screenHeight`/`$pageTitle`; UTM becomes server-derived either way); per-tile bot-exclusion
-toggles (works today as a filter → raw path). Cookieless visitor identity — formerly deferred here
+toggles — now the spec-level `include_bots` (migration 012, → [insights.md](insights.md)), fast-path in both states. Cookieless visitor identity — formerly deferred here
 as "compliance 4.10" — is now implemented (migration 011, `internal/cookieless`,
 `include_cookieless`; → [ingestion.md](ingestion.md), [insights.md](insights.md)).

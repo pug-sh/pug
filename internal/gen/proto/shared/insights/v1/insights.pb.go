@@ -491,7 +491,12 @@ type InsightQuerySpec struct {
 	// and all session metrics always count all traffic regardless of this flag.
 	IncludeCookieless *bool `protobuf:"varint,12,opt,name=include_cookieless,json=includeCookieless" json:"include_cookieless,omitempty"`
 	// Country-choropleth query. Only valid when insight_type == MAP.
-	Map           *MapQuery `protobuf:"bytes,13,opt,name=map" json:"map,omitempty"`
+	Map *MapQuery `protobuf:"bytes,13,opt,name=map" json:"map,omitempty"`
+	// Traffic tagged as automated at ingest ($bot: crawler user agents and
+	// datacenter networks) is EXCLUDED by default from every insight and every
+	// metric. Session metrics and user flow judge a session whole: one tagged
+	// event excludes the session. Set true to include bots.
+	IncludeBots   *bool `protobuf:"varint,14,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -615,6 +620,13 @@ func (x *InsightQuerySpec) GetMap() *MapQuery {
 		return x.Map
 	}
 	return nil
+}
+
+func (x *InsightQuerySpec) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
 }
 
 type QueryRequest struct {
@@ -2652,7 +2664,7 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc3W\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe6W\n" +
 	"\x10InsightQuerySpec\x12Q\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vinsightType\x126\n" +
@@ -2671,7 +2683,8 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	" \x01(\v2!.shared.insights.v1.UserFlowQueryR\buserFlow\x122\n" +
 	"\x05top_k\x18\v \x01(\v2\x1d.shared.insights.v1.TopKQueryR\x04topK\x12-\n" +
 	"\x12include_cookieless\x18\f \x01(\bR\x11includeCookieless\x12.\n" +
-	"\x03map\x18\r \x01(\v2\x1c.shared.insights.v1.MapQueryR\x03map:\xc4O\xbaH\xc0O\x1a\xa5\x02\n" +
+	"\x03map\x18\r \x01(\v2\x1c.shared.insights.v1.MapQueryR\x03map\x12!\n" +
+	"\finclude_bots\x18\x0e \x01(\bR\vincludeBots:\xc4O\xbaH\xc0O\x1a\xa5\x02\n" +
 	"2insight_query_spec.funnel_retention_require_events\x12=funnel and retention insight types require at least one event\x1a\xaf\x01(this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL&& this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION)|| this.events.size() > 0\x1a\xd3\x01\n" +
 	"0insight_query_spec.funnel_only_conversion_window\x127conversion_window is only valid for funnel insight type\x1afthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !has(this.conversion_window)\x1a\xcc\x01\n" +
 	"*insight_query_spec.funnel_only_step_timing\x129include_step_timing is only valid for funnel insight type\x1acthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !this.include_step_timing\x1a\x95\x02\n" +

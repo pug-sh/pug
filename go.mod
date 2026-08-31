@@ -31,6 +31,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/monperrus/crawler-user-agents v1.60.0
 	github.com/nats-io/nats.go v1.53.1
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/redis/go-redis/extra/redisotel/v9 v9.22.0

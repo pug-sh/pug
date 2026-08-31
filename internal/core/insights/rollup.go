@@ -13,8 +13,8 @@ import (
 )
 
 // rollupTable is the daily dimensional rollup populated by
-// dashboard_event_rollup_daily_mv (migration 006; MV query extended by 009 and
-// restated by 011, which is what currently defines it).
+// dashboard_event_rollup_daily_mv (migration 006; the newest restatement of
+// its query, currently 012, is what defines it).
 const rollupTable = "dashboard_event_rollup_daily"
 
 // totalDimName is the synthetic dimension whose single empty-string value per
@@ -50,11 +50,11 @@ var (
 
 // materializedDims are the auto-property breakdown dimensions backed by the
 // rollup: the union of every applied migration's group, so it matches the
-// LATEST MV definition (011's MODIFY QUERY — 011 adds no dims, but it is the
-// migration that now defines the MV) by construction rather than by a list
-// restated a third time. TestMaterializedDimsMatchMigration checks the dim names
-// against that MV; TestMigration011PromotedDimExprsMatch checks that every dim's
-// value expression reads its promoted column.
+// newest MV restatement (currently 012's MODIFY QUERY; 011 and 012 added key
+// columns, no dims) by construction rather than by a list restated a third
+// time. TestMaterializedDimsMatchMigration checks the dim names against that
+// MV; TestMigration012PromotedDimExprsMatch checks that every dim's value
+// expression reads its promoted column.
 var materializedDims = slices.Concat(eventRollupDims006, eventRollupDims009)
 
 func isMaterializedDim(prop string) bool {
@@ -277,6 +277,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 					chq.Lte("day", toDay),
 					// Rank over the same population THIS event's metric counts.
 					chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+					botExclusionCond(excludeBots(spec), ""),
 				).
 				GroupBy("dim_value", "t")
 
@@ -316,6 +317,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				// Exclusion = cookieless-0 rows only; inclusion = no predicate
 				// (states merge across both key values). Both stay fast-path.
 				chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+				botExclusionCond(excludeBots(spec), ""),
 			)
 
 		groupBy := []string{"t", "event_kind"}
@@ -448,6 +450,7 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 			chq.Gte("day", fromDay),
 			chq.Lte("day", toDay),
 			chq.When(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), chq.Eq("cookieless", uint8(0))),
+			botExclusionCond(excludeBots(req.GetSpec()), ""),
 			chq.Or(kindConds...),
 		).
 		WithQueryCache(analyticsCacheTTL).
@@ -589,6 +592,7 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 		// feeding the un-normalised value keeps a needless difference alive
 		// between two paths whose whole contract is producing identical answers.
 		chq.When(excludeCookielessForAgg(req.GetSpec(), topKMetric(tk)), chq.Eq("cookieless", uint8(0))),
+		botExclusionCond(excludeBots(req.GetSpec()), ""),
 	}
 
 	// Omit-$others fast path mirrors buildTopKEvents: a single aggregation with

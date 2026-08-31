@@ -58,9 +58,11 @@ const (
 type ActivityServiceClient interface {
 	// GetActivityFeed returns a paginated, filterable list of events for a user profile.
 	// Resolves profile aliases so merged anonymous events are included.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityFeed(context.Context, *connect.Request[v1.GetActivityFeedRequest]) (*connect.Response[v1.GetActivityFeedResponse], error)
 	// GetEventExplorer returns a paginated, filterable list of events across all users
 	// in a project. Does not resolve aliases.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
 	// GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
 	// The filter-schema concept is service-agnostic; both shared.activity and
@@ -73,10 +75,14 @@ type ActivityServiceClient interface {
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 	// GetActivityHeatmap returns per-day event counts for a user profile over a time window.
 	// Defaults to the last 60 days when no time_range is provided.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
 	// GetProfileStats returns aggregate statistics, device/browser/location context from the
 	// latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
 	// Resolves aliases so merged anonymous events are included.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true, so a
+	// profile whose events are all bot-tagged omits stats entirely and returns no heatmap
+	// days — not a NotFound, and profile properties are still returned.
 	GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error)
 }
 
@@ -174,9 +180,11 @@ func (c *activityServiceClient) GetProfileStats(ctx context.Context, req *connec
 type ActivityServiceHandler interface {
 	// GetActivityFeed returns a paginated, filterable list of events for a user profile.
 	// Resolves profile aliases so merged anonymous events are included.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityFeed(context.Context, *connect.Request[v1.GetActivityFeedRequest]) (*connect.Response[v1.GetActivityFeedResponse], error)
 	// GetEventExplorer returns a paginated, filterable list of events across all users
 	// in a project. Does not resolve aliases.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
 	// GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
 	// The filter-schema concept is service-agnostic; both shared.activity and
@@ -189,10 +197,14 @@ type ActivityServiceHandler interface {
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 	// GetActivityHeatmap returns per-day event counts for a user profile over a time window.
 	// Defaults to the last 60 days when no time_range is provided.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
 	// GetProfileStats returns aggregate statistics, device/browser/location context from the
 	// latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
 	// Resolves aliases so merged anonymous events are included.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true, so a
+	// profile whose events are all bot-tagged omits stats entirely and returns no heatmap
+	// days — not a NotFound, and profile properties are still returned.
 	GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error)
 }
 

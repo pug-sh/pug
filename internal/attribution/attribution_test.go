@@ -226,6 +226,13 @@ func TestDeriveReferrerDomain(t *testing.T) {
 		{"self-referral blanked", Input{URL: "https://example.com/x", Referrer: "https://example.com/prev"}, ""},
 		{"self-referral blanked across www", Input{URL: "https://www.example.com/x", Referrer: "https://example.com/prev"}, ""},
 		{"self-referral blanked www on referrer", Input{URL: "https://example.com/x", Referrer: "https://www.example.com/prev"}, ""},
+		{"auth host blanked", Input{URL: "https://example.com/x", Referrer: "https://accounts.google.com/o/oauth2/v2/auth"}, ""},
+		{"auth host blanked through www strip", Input{URL: "https://example.com/x", Referrer: "https://www.login.yahoo.com/x"}, ""},
+		{"auth host is exact-match", Input{URL: "https://example.com/x", Referrer: "https://evil.accounts.google.com/x"}, "evil.accounts.google.com"},
+		{"per-tenant idp stays a referral", Input{URL: "https://example.com/x", Referrer: "https://acme.okta.com/oauth2/v1/authorize"}, "acme.okta.com"},
+		{"google ccTLD sign-in stays a referral", Input{URL: "https://example.com/x", Referrer: "https://accounts.google.co.uk/x"}, "accounts.google.co.uk"},
+		// Pins the deliberate omission: github.com serves pages too.
+		{"github stays a referral", Input{URL: "https://example.com/x", Referrer: "https://github.com/login/oauth/authorize"}, "github.com"},
 		// Pinned v1 behavior: subdomains are NOT collapsed (no publicsuffix) —
 		// app.example.com referred from www.example.com stays a referral.
 		{"subdomain not collapsed", Input{URL: "https://app.example.com/x", Referrer: "https://www.example.com/"}, "example.com"},

@@ -29,10 +29,11 @@ const (
 	ChannelDirect        = "Direct"
 )
 
-// Domain sets are matched against the post-self-blank referrer domain by
-// dot-boundary suffix ("l.facebook.com" matches "facebook.com"). Source sets
-// are matched against the lowercased utm_source verbatim, plus the same
-// domain suffix match for utm_source values that are themselves domains.
+// Domain sets are matched against the referrer domain after referrerDomain's
+// blanks (self-referral, authIntermediaryHosts) by dot-boundary suffix
+// ("l.facebook.com" matches "facebook.com"). Source sets are matched against
+// the lowercased utm_source verbatim, plus the same domain suffix match for
+// utm_source values that are themselves domains.
 // Google's ccTLD family (google.com, google.co.uk, images.google.de, …) is
 // matched structurally by isGoogleSearchHost instead of enumeration.
 var (
@@ -88,16 +89,18 @@ var (
 )
 
 // classifyChannel implements the normative rule table, first match wins.
-// ref is the post-self-blank referrer domain (already lowercased by
-// referrerDomain); src/med are the EFFECTIVE utm_source/utm_medium (after URL
-// completion) and are lowercased here; anySignal reports that the event
-// carried SOME attribution signal — any of the five effective UTM values, or a
-// referrer that was sent but yielded no host (referrerDomain's unresolved).
+// ref is referrerDomain's output (lowercased; self-referrals and
+// authIntermediaryHosts already blanked); src/med are the EFFECTIVE
+// utm_source/utm_medium (after URL completion) and are lowercased here;
+// anySignal reports that the event carried SOME attribution signal — any of
+// the five effective UTM values, or a referrer that was sent but yielded no
+// host (referrerDomain's unresolved).
 //
 // Rule 12 is what keeps an unclassifiable signal OUT of Direct: an
 // unresolvable referrer books as Unassigned, which is visible on a dashboard,
 // rather than hiding inside the Direct bucket that is expected to be large.
-// A self-referral is deliberately NOT a signal — it blanks to Direct via 13.
+// A self-referral or an authIntermediaryHosts bounce is deliberately NOT a
+// signal: with no UTM left, both land on Direct via 13.
 //
 //	 # | rule                                                  | channel
 //	 1 | paid medium AND search source/ref                     | Paid Search

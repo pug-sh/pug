@@ -43,8 +43,8 @@ type PromotedAutoColumn struct {
 
 // promotedAutoColumns is the authoritative list of auto-properties extracted
 // from auto_properties at ingest. Keep in sync with
-// schema/clickhouse/migrations/001_create_events_table.sql and
-// 008_add_web_analytics_columns.sql.
+// schema/clickhouse/migrations/001_create_events_table.sql,
+// 008_add_web_analytics_columns.sql and 012_bot_tagging.sql.
 var promotedAutoColumns = []PromotedAutoColumn{
 	{Property: autoprop.PropBotScore, Column: "bot_score", Kind: PromotedNullableUInt8},
 	{Property: autoprop.PropVerifiedBot, Column: "verified_bot", Kind: PromotedNullableBool},
@@ -57,7 +57,7 @@ var promotedAutoColumns = []PromotedAutoColumn{
 	{Property: useragent.PropOS, Column: "os", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.OS }},
 	{Property: useragent.PropOSVersion, Column: "os_version", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.OSVersion }},
 	{Property: useragent.PropDevice, Column: "device", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Device }},
-	{Property: "$platform", Column: "platform", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Platform }},
+	{Property: autoprop.PropPlatform, Column: "platform", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Platform }},
 	{Property: attribution.PropURL, Column: "url", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.URL }},
 	{Property: attribution.PropUTMSource, Column: "utm_source", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMSource }},
 	{Property: attribution.PropUTMMedium, Column: "utm_medium", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMMedium }},
@@ -72,6 +72,8 @@ var promotedAutoColumns = []PromotedAutoColumn{
 	{Property: attribution.PropUTMTerm, Column: "utm_term", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMTerm }},
 	{Property: attribution.PropUTMContent, Column: "utm_content", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMContent }},
 	{Property: attribution.PropPageTitle, Column: "page_title", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.PageTitle }},
+	{Property: autoprop.PropBot, Column: "bot", Kind: PromotedBool},
+	{Property: autoprop.PropBotReason, Column: "bot_reason", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.BotReason }},
 }
 
 var promotedAutoByProperty map[string]PromotedAutoColumn
@@ -114,7 +116,7 @@ func PromotedStringAutoProperties() []string {
 
 // EventsInsertPromotedColumns lists promoted auto-property columns on the events
 // table, in PromotedAutoRow.AppendArgs / ScanDest order.
-const EventsInsertPromotedColumns = `bot_score, verified_bot, mobile, country, region, city, browser, browser_version, os, os_version, device, platform, url, utm_source, utm_medium, utm_campaign, pathname, hostname, referrer, referrer_domain, channel, locale, screen_size, utm_term, utm_content, page_title`
+const EventsInsertPromotedColumns = `bot_score, verified_bot, mobile, country, region, city, browser, browser_version, os, os_version, device, platform, url, utm_source, utm_medium, utm_campaign, pathname, hostname, referrer, referrer_domain, channel, locale, screen_size, utm_term, utm_content, page_title, bot, bot_reason`
 
 // EventsInsertColumns is the full INSERT column list for the events table.
 // insert_time is omitted; ClickHouse fills it via DEFAULT now64(3).
@@ -126,7 +128,7 @@ const EventsInsertStmt = `INSERT INTO events (` + EventsInsertColumns + `)`
 
 // PromotedAutoRow holds the typed values for promoted auto-property columns on
 // one events row. Zero values match ClickHouse DEFAULTs (empty strings; false
-// for Mobile; nil for BotScore and VerifiedBot).
+// for Mobile and Bot; nil for BotScore and VerifiedBot).
 type PromotedAutoRow struct {
 	BotScore *uint8
 	// VerifiedBot uses *bool because the CF-Verified-Bot header is opt-in:
@@ -158,6 +160,8 @@ type PromotedAutoRow struct {
 	UTMTerm        string
 	UTMContent     string
 	PageTitle      string
+	Bot            bool
+	BotReason      string
 }
 
 // AppendArgs returns promoted column values in EventsInsertPromotedColumns order.
@@ -189,6 +193,8 @@ func (r *PromotedAutoRow) AppendArgs() []any {
 		r.UTMTerm,
 		r.UTMContent,
 		r.PageTitle,
+		r.Bot,
+		r.BotReason,
 	}
 }
 
@@ -221,14 +227,16 @@ func (r *PromotedAutoRow) ScanDest() []any {
 		&r.UTMTerm,
 		&r.UTMContent,
 		&r.PageTitle,
+		&r.Bot,
+		&r.BotReason,
 	}
 }
 
 // MergeIntoAutoProperties overlays promoted column values onto m using the
 // canonical auto-property keys. Existing map entries win when non-empty.
-// Nil nullable fields (BotScore, VerifiedBot) and zero-valued non-nullable
-// bools (Mobile=false) are skipped to match the pre-promotion behavior where
-// absent map keys did not appear.
+// Nil nullable fields (BotScore, VerifiedBot) and false non-nullable bools
+// (Mobile, Bot) are skipped: ingest never writes a false value for them, so an
+// absent key stays absent.
 func (r *PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]any {
 	if m == nil {
 		m = make(map[string]any, len(promotedAutoColumns))
@@ -248,6 +256,9 @@ func (r *PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]a
 	}
 	if r.Mobile {
 		setString(autoprop.PropMobile, "true")
+	}
+	if r.Bot {
+		setString(autoprop.PropBot, "true")
 	}
 	for _, col := range promotedAutoColumns {
 		if col.Str != nil {
@@ -341,8 +352,11 @@ func setPromotedString(row *PromotedAutoRow, col PromotedAutoColumn, value strin
 }
 
 func setPromotedBool(row *PromotedAutoRow, property string, value bool) {
-	if property == autoprop.PropMobile {
+	switch property {
+	case autoprop.PropMobile:
 		row.Mobile = value
+	case autoprop.PropBot:
+		row.Bot = value
 	}
 }
 
