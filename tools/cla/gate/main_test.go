@@ -29,6 +29,57 @@ type fakeGitHub struct {
 
 	labelled    []string
 	labelWrites int
+
+	// the signer's surface
+	fileSHA      string
+	pr           PullRequest
+	putFile      *SignatureFile
+	putBranch    string
+	putAttempts  int
+	putConflicts int
+	putErr       error
+	runErr       error
+	rerunID      int64
+}
+
+func (f *fakeGitHub) signatureFileMeta(_ context.Context, ref string) (*SignatureFile, string, error) {
+	sf, ok := f.files[ref]
+	if !ok {
+		return nil, "", errNotFound
+	}
+	// A clone, because the signer appends to what it reads and a retry has to see
+	// the file as it stands rather than its own half-finished previous attempt.
+	clone := *sf
+	clone.Signatures = slices.Clone(sf.Signatures)
+	return &clone, f.fileSHA, nil
+}
+
+func (f *fakeGitHub) putSignatureFile(_ context.Context, branch string, sf *SignatureFile, _, _ string, _ Principal) error {
+	f.putAttempts++
+	if f.putConflicts > 0 {
+		f.putConflicts--
+		return errConflict
+	}
+	if f.putErr != nil {
+		return f.putErr
+	}
+	f.putBranch, f.putFile = branch, sf
+	f.files[branch] = sf
+	return nil
+}
+
+func (f *fakeGitHub) pullRequest(context.Context, int) (PullRequest, error) { return f.pr, nil }
+
+func (f *fakeGitHub) latestWorkflowRun(context.Context, string, string) (WorkflowRun, error) {
+	if f.runErr != nil {
+		return WorkflowRun{}, f.runErr
+	}
+	return WorkflowRun{ID: 991, Status: "completed"}, nil
+}
+
+func (f *fakeGitHub) rerunWorkflow(_ context.Context, id int64) error {
+	f.rerunID = id
+	return nil
 }
 
 func (f *fakeGitHub) signatureFile(_ context.Context, ref string) (*SignatureFile, error) {
@@ -223,7 +274,7 @@ func TestResolveCoauthorsRaisesALookupFailure(t *testing.T) {
 		"feat: thing\n\nCo-authored-by: Carol <carol@users.noreply.github.com>\n")}
 
 	c := newChecker(&fakeGitHub{lookupErr: errors.New("403 rate limit exceeded")}, &bytes.Buffer{})
-	_, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	_, unknown, err := resolveCoauthors(t.Context(), c.gh, commits)
 	if err == nil || len(unknown) != 0 {
 		t.Fatalf("want the failure raised, got unknown=%v err=%v", unknown, err)
 	}
@@ -237,7 +288,7 @@ func TestResolveCoauthorsReportsAPlaintextAddress(t *testing.T) {
 		"feat: thing\n\nCo-authored-by: Carol <carol@example.com>\n")}
 
 	c := newChecker(&fakeGitHub{}, &bytes.Buffer{})
-	found, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	found, unknown, err := resolveCoauthors(t.Context(), c.gh, commits)
 	if err != nil || len(found) != 0 || len(unknown) != 1 || unknown[0] != "carol@example.com" {
 		t.Fatalf("want the address reported, got found=%v unknown=%v err=%v", found, unknown, err)
 	}
@@ -250,14 +301,14 @@ func TestResolveCoauthorsReportsAPlaintextAddress(t *testing.T) {
 func TestAnAssistantTrailerIsSkippedButAPersonsIsNot(t *testing.T) {
 	msg := "feat: thing\n\nCo-authored-by: Claude <noreply@anthropic.com>\n"
 	c := newChecker(&fakeGitHub{}, &bytes.Buffer{})
-	found, unknown, err := c.resolveCoauthors(t.Context(),
+	found, unknown, err := resolveCoauthors(t.Context(), c.gh,
 		[]Commit{commit("a1", user("alice", 1), user("alice", 1), msg)})
 	if err != nil || len(found) != 0 || len(unknown) != 0 {
 		t.Fatalf("an assistant licenses nothing and must not block, got found=%v unknown=%v err=%v", found, unknown, err)
 	}
 
 	person := "feat: thing\n\nCo-authored-by: Carol <carol@anthropic.com>\n"
-	_, unknown, err = c.resolveCoauthors(t.Context(),
+	_, unknown, err = resolveCoauthors(t.Context(), c.gh,
 		[]Commit{commit("a1", user("alice", 1), user("alice", 1), person)})
 	if err != nil || len(unknown) != 1 {
 		t.Fatalf("a colleague at the same domain still holds copyright, got unknown=%v err=%v", unknown, err)
@@ -293,7 +344,7 @@ func TestResolveCoauthorsFallsBackToTheAPIForTheIDLessNoreplyForm(t *testing.T) 
 		"feat: thing\n\nCo-authored-by: Bob <bob@users.noreply.github.com>\n")}
 
 	c := newChecker(&fakeGitHub{byLogin: map[string]Principal{"bob": {ID: 99, Login: "bob", Type: "User"}}}, &bytes.Buffer{})
-	found, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	found, unknown, err := resolveCoauthors(t.Context(), c.gh, commits)
 	if err != nil || len(unknown) != 0 || len(found) != 1 || found[0].ID != 99 {
 		t.Fatalf("want bob resolved to id 99, got found=%v unknown=%v err=%v", found, unknown, err)
 	}

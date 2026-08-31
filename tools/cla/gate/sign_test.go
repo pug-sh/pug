@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadSignConfigReadsTheCommenter(t *testing.T) {
@@ -141,5 +143,131 @@ func TestMaySignRefusesABot(t *testing.T) {
 	err := maySign(Principal{ID: 49699333, Login: "dependabot[bot]", Type: "Bot"}, people, head, onBase, "v1")
 	if !errors.Is(err, errBotCommenter) {
 		t.Fatalf("maySign for a bot = %v, want errBotCommenter", err)
+	}
+}
+
+// signable builds a pull request opened by nullorm with one commit of their own,
+// nothing signed anywhere. The base branch and the head agree, which is the state
+// a first-time contributor's pull request is actually in.
+func signable() *fakeGitHub {
+	gh := &fakeGitHub{
+		files: map[string]*SignatureFile{
+			"main":     {CLAVersion: "v1", Signatures: []Signature{}},
+			"deadbeef": {CLAVersion: "v1", Signatures: []Signature{}},
+		},
+		fileSHA: "abc123",
+		pr:      PullRequest{Number: 107, State: "open", Commits: 1, User: Principal{ID: 78271873, Login: "nullorm", Type: "User"}},
+		commits: []Commit{{SHA: "c1", Author: &Principal{ID: 78271873, Login: "nullorm", Type: "User"}}},
+	}
+	gh.pr.Head.SHA = "deadbeef"
+	gh.pr.Base.Ref = "main"
+	return gh
+}
+
+func newSigner(gh githubAPI, commenter Principal) *signer {
+	return &signer{
+		cfg: signConfig{repo: "pug-sh/pug", pr: 107, token: "t", commenter: commenter},
+		gh:  gh,
+		now: func() time.Time { return fixedNow },
+	}
+}
+
+var nullorm = Principal{ID: 78271873, Login: "nullorm", Type: "User"}
+
+func TestSignAppendsTheCommenterAndCommitsToTheBaseBranch(t *testing.T) {
+	gh := signable()
+	if err := newSigner(gh, nullorm).sign(t.Context()); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	// The base branch, never the head: the token cannot push to a fork, which is
+	// the case the gate exists for.
+	if gh.putBranch != "main" {
+		t.Errorf("committed to %q, want main", gh.putBranch)
+	}
+	if gh.putFile == nil || len(gh.putFile.Signatures) != 1 {
+		t.Fatalf("wrote %+v, want one entry", gh.putFile)
+	}
+	got := gh.putFile.Signatures[0]
+	if got.ID != 78271873 || got.Login != "nullorm" || got.CLA != "v1" {
+		t.Errorf("entry = %+v, want nullorm at v1", got)
+	}
+	if got.Date != "2026-08-30" {
+		t.Errorf("date = %q, want the run's UTC date", got.Date)
+	}
+	if gh.rerunID != 991 {
+		t.Errorf("rerun id = %d, want the CLA run re-run", gh.rerunID)
+	}
+}
+
+// A conflict means another signature landed between the read and the write, so
+// the signer re-reads and appends to the file as it now stands.
+func TestSignRetriesOnceOnAConflict(t *testing.T) {
+	gh := signable()
+	gh.putConflicts = 1
+	if err := newSigner(gh, nullorm).sign(t.Context()); err != nil {
+		t.Fatalf("sign after one conflict: %v", err)
+	}
+	if gh.putAttempts != 2 {
+		t.Errorf("put attempts = %d, want 2", gh.putAttempts)
+	}
+}
+
+// Two in a row is not congestion, it is a bug, and spinning would hold the runner
+// while making it worse.
+func TestSignGivesUpAfterASecondConflict(t *testing.T) {
+	gh := signable()
+	gh.putConflicts = 2
+	if err := newSigner(gh, nullorm).sign(t.Context()); err == nil {
+		t.Fatal("sign returned nil after repeated conflicts")
+	}
+	if gh.putAttempts != 2 {
+		t.Errorf("put attempts = %d, want 2", gh.putAttempts)
+	}
+}
+
+func TestSignRefusesAStrangerAndWritesNothing(t *testing.T) {
+	gh := signable()
+	err := newSigner(gh, Principal{ID: 999, Login: "carol", Type: "User"}).sign(t.Context())
+	if !errors.Is(err, errNotAPrincipal) {
+		t.Fatalf("sign for a stranger = %v, want errNotAPrincipal", err)
+	}
+	if gh.putAttempts != 0 {
+		t.Errorf("wrote despite refusing: %d attempts", gh.putAttempts)
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, "@carol") {
+		t.Errorf("no reply naming the commenter: %+v", gh.posted)
+	}
+}
+
+// A double /sign must not paint the pull request red: the signature is there, so
+// the job is green and the reply just says so.
+func TestSignIsGreenAndSilentWhenAlreadySigned(t *testing.T) {
+	gh := signable()
+	gh.files["main"] = &SignatureFile{CLAVersion: "v1", Signatures: []Signature{
+		{Login: "nullorm", ID: 78271873, Date: "2026-08-30", CLA: "v1"},
+	}}
+	if err := newSigner(gh, nullorm).sign(t.Context()); err != nil {
+		t.Fatalf("sign when already signed = %v, want nil", err)
+	}
+	if gh.putAttempts != 0 {
+		t.Errorf("wrote a duplicate: %d attempts", gh.putAttempts)
+	}
+	if len(gh.posted) != 1 {
+		t.Fatalf("posted %d replies, want 1", len(gh.posted))
+	}
+}
+
+// A truncated commit list would drop principals and refuse someone who really is
+// one, so it is a fault rather than a refusal.
+func TestSignRefusesToActOnATruncatedCommitList(t *testing.T) {
+	gh := signable()
+	gh.pr.Commits = 3
+	err := newSigner(gh, nullorm).sign(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "commits") {
+		t.Fatalf("sign on a truncated list = %v, want a commit-count error", err)
+	}
+	if gh.putAttempts != 0 {
+		t.Errorf("wrote on an untrusted principal list: %d attempts", gh.putAttempts)
 	}
 }
