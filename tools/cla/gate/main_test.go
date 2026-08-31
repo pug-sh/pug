@@ -896,3 +896,17 @@ func TestAnAssistantTrailerAloneDoesNotBlockTheGate(t *testing.T) {
 		}
 	}
 }
+
+// A mistyped subcommand must not silently fall through to the checker: reporting
+// a signature that was never recorded is the one outcome worse than an error.
+func TestSubcommandRejectsAnUnknownArgument(t *testing.T) {
+	if _, ok := subcommand([]string{"gate", "sing"}); ok {
+		t.Error(`subcommand accepted "sing"`)
+	}
+	if _, ok := subcommand([]string{"gate"}); !ok {
+		t.Error("subcommand rejected a bare invocation, which is the checker")
+	}
+	if _, ok := subcommand([]string{"gate", "sign"}); !ok {
+		t.Error(`subcommand rejected "sign"`)
+	}
+}

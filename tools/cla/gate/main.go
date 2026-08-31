@@ -126,12 +126,32 @@ type checker struct {
 	now func() time.Time
 }
 
+// subcommand picks what to run. A bare invocation stays the checker, so cla.yaml
+// is untouched by the signer's arrival. Anything else unrecognised is a typo, not
+// a mode: falling through to the checker would report a signature that was never
+// recorded, which is worse than any error.
+func subcommand(args []string) (func(context.Context) error, bool) {
+	if len(args) < 2 {
+		return run, true
+	}
+	if args[1] == "sign" {
+		return runSign, true
+	}
+	return nil, false
+}
+
 func main() {
 	setupLogging()
 
+	do, ok := subcommand(os.Args)
+	if !ok {
+		fmt.Printf("::error::unknown subcommand %q; use `sign` or no argument\n", escapeAnnotation(os.Args[1]))
+		os.Exit(1)
+	}
+
 	// An unsigned CLA has already been reported with its own annotation; anything
 	// else is a checker fault that nothing has annotated yet.
-	switch err := run(context.Background()); {
+	switch err := do(context.Background()); {
 	case errors.Is(err, errUnsigned):
 		os.Exit(1)
 	case err != nil:

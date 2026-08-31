@@ -271,3 +271,11 @@ func TestSignRefusesToActOnATruncatedCommitList(t *testing.T) {
 		t.Errorf("wrote on an untrusted principal list: %d attempts", gh.putAttempts)
 	}
 }
+
+func TestRunSignRefusesAnEmptyConfiguration(t *testing.T) {
+	t.Setenv("GITHUB_REPOSITORY", "")
+	t.Setenv("PR_NUMBER", "")
+	if err := runSign(t.Context()); err == nil {
+		t.Fatal("runSign accepted an empty configuration")
+	}
+}
