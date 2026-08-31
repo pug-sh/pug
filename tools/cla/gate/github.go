@@ -178,6 +178,73 @@ func (c *client) putSignatureFile(ctx context.Context, branch string, f *Signatu
 	})
 }
 
+// PullRequest is the part of the pull request the signer needs and the
+// issue_comment payload does not carry: where to commit, and how many commits to
+// expect so a list truncated at GitHub's 250 cap is caught rather than silently
+// under-reporting who has work here.
+type PullRequest struct {
+	Number  int       `json:"number"`
+	State   string    `json:"state"`
+	Commits int       `json:"commits"`
+	User    Principal `json:"user"`
+	Head    struct {
+		SHA string `json:"sha"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+}
+
+func (c *client) pullRequest(ctx context.Context, pr int) (PullRequest, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/pulls/%d", c.baseURL, c.repo, pr)
+	body, _, err := c.get(ctx, endpoint, "application/vnd.github+json")
+	if err != nil {
+		return PullRequest{}, err
+	}
+	var out PullRequest
+	if err := json.Unmarshal(body, &out); err != nil {
+		slog.ErrorContext(ctx, "the pull request response did not decode", slog.Int("pr", pr), errAttr(err))
+		return PullRequest{}, fmt.Errorf("the pull request response did not decode: %w", err)
+	}
+	return out, nil
+}
+
+// WorkflowRun is one run of the checker's workflow. The signer re-runs an existing
+// run rather than dispatching a fresh one: only pull_request_target runs attach to
+// a pull request's checks, so a workflow_dispatch would execute happily and change
+// nothing the merge button can see.
+type WorkflowRun struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+}
+
+func (c *client) latestWorkflowRun(ctx context.Context, workflowFile, headSHA string) (WorkflowRun, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/actions/workflows/%s/runs?head_sha=%s&per_page=1",
+		c.baseURL, c.repo, url.PathEscape(workflowFile), url.QueryEscape(headSHA))
+	body, _, err := c.get(ctx, endpoint, "application/vnd.github+json")
+	if err != nil {
+		return WorkflowRun{}, err
+	}
+	var page struct {
+		Runs []WorkflowRun `json:"workflow_runs"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		slog.ErrorContext(ctx, "the workflow runs response did not decode", errAttr(err))
+		return WorkflowRun{}, fmt.Errorf("the workflow runs response did not decode: %w", err)
+	}
+	// A contributor can comment /sign before the checker has ever run, which is
+	// not a failure — errNotFound lets the caller say so rather than raise.
+	if len(page.Runs) == 0 {
+		return WorkflowRun{}, errNotFound
+	}
+	return page.Runs[0], nil
+}
+
+func (c *client) rerunWorkflow(ctx context.Context, runID int64) error {
+	endpoint := fmt.Sprintf("%s/repos/%s/actions/runs/%d/rerun", c.baseURL, c.repo, runID)
+	return c.send(ctx, http.MethodPost, endpoint, nil)
+}
+
 var nextPageRe = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
 
 // pullCommits walks every page. GitHub caps this endpoint at 250 commits and

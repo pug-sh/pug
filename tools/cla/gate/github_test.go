@@ -359,3 +359,74 @@ func TestPutSignatureFilePropagatesAConflict(t *testing.T) {
 		t.Fatalf("putSignatureFile on 409 = %v, want errConflict", err)
 	}
 }
+
+// issue_comment carries the issue, not the pull request, so the signer has
+// neither the base branch nor the commit count and must read both.
+func TestPullRequestDecodesBaseAndCommits(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"number":107,"state":"open","commits":3,
+			"user":{"id":876188,"login":"poluruprvn","type":"User"},
+			"head":{"sha":"deadbeef"},"base":{"ref":"main"}}`)
+	})
+	pr, err := c.pullRequest(t.Context(), 107)
+	if err != nil {
+		t.Fatalf("pullRequest: %v", err)
+	}
+	if pr.Base.Ref != "main" {
+		t.Errorf("base ref = %q, want main", pr.Base.Ref)
+	}
+	if pr.Head.SHA != "deadbeef" {
+		t.Errorf("head sha = %q, want deadbeef", pr.Head.SHA)
+	}
+	if pr.Commits != 3 {
+		t.Errorf("commits = %d, want 3", pr.Commits)
+	}
+	if pr.User.Login != "poluruprvn" || pr.User.ID != 876188 {
+		t.Errorf("opener = %+v, want poluruprvn/876188", pr.User)
+	}
+	if pr.State != "open" {
+		t.Errorf("state = %q, want open", pr.State)
+	}
+}
+
+func TestLatestWorkflowRunAndRerun(t *testing.T) {
+	var rerun int64
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/rerun"):
+			rerun = 991
+			w.WriteHeader(http.StatusCreated)
+		case strings.Contains(r.URL.Path, "/runs"):
+			if got := r.URL.Query().Get("head_sha"); got != "deadbeef" {
+				t.Errorf("head_sha = %q, want deadbeef", got)
+			}
+			fmt.Fprint(w, `{"workflow_runs":[{"id":991,"status":"completed"}]}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+	run, err := c.latestWorkflowRun(t.Context(), "cla.yaml", "deadbeef")
+	if err != nil {
+		t.Fatalf("latestWorkflowRun: %v", err)
+	}
+	if run.ID != 991 {
+		t.Fatalf("run id = %d, want 991", run.ID)
+	}
+	if err := c.rerunWorkflow(t.Context(), run.ID); err != nil {
+		t.Fatalf("rerunWorkflow: %v", err)
+	}
+	if rerun != 991 {
+		t.Errorf("rerun called for %d, want 991", rerun)
+	}
+}
+
+// No run yet is an ordinary outcome — a contributor can comment /sign before the
+// checker has ever run — so it must not read as an API failure.
+func TestLatestWorkflowRunReportsNoRunAsNotFound(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"workflow_runs":[]}`)
+	})
+	if _, err := c.latestWorkflowRun(t.Context(), "cla.yaml", "deadbeef"); !errors.Is(err, errNotFound) {
+		t.Fatalf("latestWorkflowRun with no runs = %v, want errNotFound", err)
+	}
+}
