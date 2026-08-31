@@ -23,4 +23,4 @@ scripts/Caddyfile
 scripts/deploy.sh
 
 # clacheck build output; CI runs it with `go run`
-/tools/clacheck/clacheck
+/cla/clacheck/clacheck

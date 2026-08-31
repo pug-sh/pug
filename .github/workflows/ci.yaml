@@ -139,7 +139,7 @@ jobs:
       - name: Check protobuf drift
         run: make rpc && git diff --exit-code internal/gen/proto/
 
-  # tools/clacheck is its own module, so the root ./... above never reaches it,
+  # cla/clacheck is its own module, so the root ./... above never reaches it,
   # and the CLA workflow only ever runs the base branch's copy. Without this a
   # broken change to the gate merges green and then blocks its own fix.
   clacheck:
@@ -151,9 +151,9 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: tools/clacheck/go.mod
+          go-version-file: cla/clacheck/go.mod
           cache: false
 
       - name: Vet and test
-        working-directory: tools/clacheck
+        working-directory: cla/clacheck
         run: go vet ./... && go test ./... -race -count=1
