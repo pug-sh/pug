@@ -15,7 +15,7 @@ type report struct {
 
 // commentMarker identifies the gate's own comment so a re-run edits it instead of
 // posting another. It is invisible in the rendered comment.
-const commentMarker = "<!-- clacheck:signature-request -->"
+const commentMarker = "<!-- cla-gate:signature-request -->"
 
 // Marshalled from Signature rather than written out by hand, so the entry a
 // contributor is told to paste keeps whatever shape the gate parses back.
@@ -47,7 +47,7 @@ func unsignedReport(cfg config, head *SignatureFile, missing []Principal, unknow
 	fmt.Fprintf(&text, "::error::CLA %s not signed by: %s\n", head.CLAVersion, escapeAnnotation(strings.Join(named, ", ")))
 	fmt.Fprintf(&text, "\nThe agreement: %s\n", claURL)
 	if mine != nil {
-		fmt.Fprintf(&text, "\nAdd this entry to signatures/cla.json, then commit and push — that\n")
+		fmt.Fprintf(&text, "\nAdd this entry to cla/signatures.json, then commit and push — that\n")
 		fmt.Fprintf(&text, "commit is your signature:\n\n")
 		fmt.Fprintf(&text, "%s\n", entryJSON(*mine, head.CLAVersion, "  ", now))
 	}
@@ -155,7 +155,7 @@ func signMarkdown(claURL string, head *SignatureFile, mine *Principal, blocks []
 		if mention {
 			name = "@" + name
 		}
-		fmt.Fprintf(&md, "\n**%s** — add this to the `signatures` array in `signatures/cla.json`, "+
+		fmt.Fprintf(&md, "\n**%s** — add this to the `signatures` array in `cla/signatures.json`, "+
 			"then commit and push. That commit is your signature.\n\n```json\n%s\n```\n",
 			name, entryJSON(*mine, head.CLAVersion, "", now))
 	}
@@ -181,7 +181,7 @@ func signedComment(version string) string {
 // Like problemComment, the reason stays in the log: it quotes a login out of the
 // pull request's own file. The comment only has to get the contributor there.
 func rejectedComment() string {
-	return commentMarker + "\nThe change to `signatures/cla.json` was rejected. See the job log on the checks tab for what to fix.\n"
+	return commentMarker + "\nThe change to `cla/signatures.json` was rejected. See the job log on the checks tab for what to fix.\n"
 }
 
 // The error itself is left to the log: it can quote a login out of the pull

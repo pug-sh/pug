@@ -1,8 +1,9 @@
-// Command clacheck gates a pull request on the Contributor License Agreement.
+// Command gate holds a pull request until everyone with work in it has signed
+// the Contributor License Agreement.
 //
 // Everyone whose copyright can reach the repository through the pull request —
 // commit author, committer, co-author, and the person who opened it — must appear
-// in signatures/cla.json. The file is read from the pull request's own head, so a
+// in cla/signatures.json. The file is read from the pull request's own head, so a
 // contributor signs in the same pull request; the edit must be append-only and may
 // only add the person who opened it, so a co-author signs in a pull request of
 // their own.
@@ -135,7 +136,7 @@ func main() {
 }
 
 // escapeAnnotation applies GitHub's workflow-command encoding. An error can carry
-// a value the pull request chose — a login out of signatures/cla.json — and a raw
+// a value the pull request chose — a login out of cla/signatures.json — and a raw
 // newline in one would start a second command on the line below.
 var annotationEscaper = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
 
@@ -170,11 +171,10 @@ func (c *checker) verdict(ctx context.Context) error {
 
 	head, err := c.gh.signatureFile(ctx, c.cfg.headSHA)
 	if err != nil {
-		return fmt.Errorf("reading signatures/cla.json at the pull request head: %w\n"+
-			"If this branch predates the file, merging %s brings it in", err, c.cfg.baseRef)
+		return fmt.Errorf("reading cla/signatures.json at the pull request head: %w", err)
 	}
 	if err := head.validate(); err != nil {
-		return fmt.Errorf("signatures/cla.json is invalid: %w", err)
+		return fmt.Errorf("cla/signatures.json is invalid: %w", err)
 	}
 
 	commits, err := c.gh.pullCommits(ctx, c.cfg.pr)
@@ -210,7 +210,7 @@ func (c *checker) verdict(ctx context.Context) error {
 	}
 	inForce, err := c.gh.signatureFile(ctx, c.cfg.baseSHA)
 	if err != nil {
-		return fmt.Errorf("reading signatures/cla.json on %s: %w", c.cfg.baseRef, err)
+		return fmt.Errorf("reading cla/signatures.json on %s: %w", c.cfg.baseRef, err)
 	}
 	if err := appendOnly(base, head, c.cfg.opener, inForce.CLAVersion); err != nil {
 		// A rejected edit is the contributor's to fix, like an unsigned CLA, so it
@@ -322,7 +322,7 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 	}
 	base, err := c.gh.signatureFile(ctx, mergeBase)
 	if err != nil {
-		return nil, fmt.Errorf("reading signatures/cla.json at %s: %w", mergeBase, err)
+		return nil, fmt.Errorf("reading cla/signatures.json at %s: %w", mergeBase, err)
 	}
 	return base, nil
 }
