@@ -84,7 +84,7 @@ Pug is distributed under the [GNU AGPL v3.0](LICENSE).
 
 Before your first pull request is merged, you'll be asked to sign the
 [Contributor License Agreement](CLA.md). Signing is a commit: add yourself to
-[`cla/signatures.json`](cla/signatures.json) in the same pull request. The CLA
+[`tools/cla/signatures.json`](tools/cla/signatures.json) in the same pull request. The CLA
 check prints the entry for you, with your GitHub id already filled in — copy it
 from the failed check. You do it once per CLA version; it covers everything you
 contribute afterwards.

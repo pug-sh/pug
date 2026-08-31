@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Signature is one contributor's entry in cla/signatures.json. Identity is the
+// Signature is one contributor's entry in tools/cla/signatures.json. Identity is the
 // numeric GitHub id: logins can be renamed and re-registered by someone else,
 // which would silently transfer a signature.
 type Signature struct {
@@ -186,7 +186,7 @@ func appendOnly(base, head *SignatureFile, signer Principal, inForce string) err
 	}
 	for _, b := range base.Signatures {
 		if !slices.Contains(head.Signatures, b) {
-			return fmt.Errorf("this pull request edits or removes the signature of %q; cla/signatures.json is append-only", b.Login)
+			return fmt.Errorf("this pull request edits or removes the signature of %q; tools/cla/signatures.json is append-only", b.Login)
 		}
 	}
 	for _, h := range head.Signatures {

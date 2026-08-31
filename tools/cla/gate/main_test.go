@@ -505,7 +505,7 @@ func TestPullRequestCannotChangeTheCLAVersion(t *testing.T) {
 	}
 }
 
-// A login is contributor-controlled text out of cla/signatures.json. Emitted raw,
+// A login is contributor-controlled text out of tools/cla/signatures.json. Emitted raw,
 // a newline in one starts a second workflow command on the line below it.
 func TestAnnotationEscapingKeepsAnErrorToOneCommand(t *testing.T) {
 	f := file(Signature{Login: "a\n::error::injected", ID: 1, Date: "bad", CLA: "v1"})

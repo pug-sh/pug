@@ -32,9 +32,9 @@ pr-*review.md
 .agents/
 .cache/
 
-# Dev-only infra and the legacy VM deploy script (not used by the image)
+# Dev-only infra and repo tooling (not used by the image)
 infra/dev/
-scripts/
+tools/
 
 # Proto sources & codegen config — generated Go is committed under internal/gen
 proto/
