@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,11 +83,16 @@ func (c *client) get(ctx context.Context, endpoint, accept string) ([]byte, http
 	return body, resp.Header, nil
 }
 
+// signaturesPath is the one place the file's location is written down. The gate
+// reads it two ways — raw for a decision, with metadata for a write — and a
+// disagreement between them would read one file and overwrite another.
+const signaturesPath = "tools/cla/signatures.json"
+
 // signatureFile reads tools/cla/signatures.json at a given ref over the API, so the
 // gate never depends on a checkout of the pull request's own tree.
 func (c *client) signatureFile(ctx context.Context, ref string) (*SignatureFile, error) {
-	endpoint := fmt.Sprintf("%s/repos/%s/contents/tools/cla/signatures.json?ref=%s",
-		c.baseURL, c.repo, url.QueryEscape(ref))
+	endpoint := fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s",
+		c.baseURL, c.repo, signaturesPath, url.QueryEscape(ref))
 	body, _, err := c.get(ctx, endpoint, "application/vnd.github.raw")
 	if err != nil {
 		return nil, err
@@ -97,6 +103,43 @@ func (c *client) signatureFile(ctx context.Context, ref string) (*SignatureFile,
 		return nil, fmt.Errorf("tools/cla/signatures.json is not valid JSON: %w", err)
 	}
 	return &f, nil
+}
+
+// signatureFileMeta reads the same file as JSON rather than raw, for the blob sha.
+// That sha is what makes the signer's write conditional: without it a signature
+// landing between the read and the write is silently overwritten instead of
+// rejected, and the loser never learns their signature is gone.
+func (c *client) signatureFileMeta(ctx context.Context, ref string) (*SignatureFile, string, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s",
+		c.baseURL, c.repo, signaturesPath, url.QueryEscape(ref))
+	body, _, err := c.get(ctx, endpoint, "application/vnd.github+json")
+	if err != nil {
+		return nil, "", err
+	}
+	var meta struct {
+		SHA      string `json:"sha"`
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if err := json.Unmarshal(body, &meta); err != nil {
+		slog.ErrorContext(ctx, "the contents response did not decode", slog.String("ref", ref), errAttr(err))
+		return nil, "", fmt.Errorf("the contents response for %s did not decode: %w", signaturesPath, err)
+	}
+	if meta.Encoding != "base64" {
+		return nil, "", fmt.Errorf("the contents response for %s is %q-encoded, not base64", signaturesPath, meta.Encoding)
+	}
+	// GitHub wraps the encoding at 60 characters, and the decoder rejects newlines.
+	raw, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(meta.Content, "\n", ""))
+	if err != nil {
+		slog.ErrorContext(ctx, "the contents response did not decode from base64", slog.String("ref", ref), errAttr(err))
+		return nil, "", fmt.Errorf("the contents response for %s did not decode from base64: %w", signaturesPath, err)
+	}
+	var f SignatureFile
+	if err := json.Unmarshal(raw, &f); err != nil {
+		slog.ErrorContext(ctx, "tools/cla/signatures.json did not decode", slog.String("ref", ref), errAttr(err))
+		return nil, "", fmt.Errorf("%s is not valid JSON: %w", signaturesPath, err)
+	}
+	return &f, meta.SHA, nil
 }
 
 var nextPageRe = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
