@@ -6,3 +6,4 @@ reviews:
     enabled: false
     labels:
       - coderabbit
+  review_status: false
