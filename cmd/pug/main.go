@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
+	"github.com/pug-sh/pug/internal/app/ai"
 	usagecron "github.com/pug-sh/pug/internal/app/cron/usage"
 	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
 	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
@@ -124,6 +125,12 @@ var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start the Pug server",
 	Run:   run(server.Run),
+}
+
+var aiCmd = &cobra.Command{
+	Use:   "ai",
+	Short: "Start the Pug AI dashboard assistant",
+	Run:   run(ai.Run),
 }
 
 var workerCmd = &cobra.Command{
@@ -306,6 +313,18 @@ var devCmd = &cobra.Command{
 		}
 		fmt.Println()
 
+		aiEnabled, aiStatus := ai.DevStatus(sigCtx)
+		if aiEnabled {
+			aiPort := os.Getenv("PUG_AI_PORT")
+			if aiPort == "" {
+				aiPort = "8001"
+			}
+			fmt.Println(bold+"AI assistant:"+reset, aiStatus, green+"http://localhost:"+aiPort+reset)
+		} else {
+			fmt.Println(bold+"AI assistant:"+reset, aiStatus)
+		}
+		fmt.Println()
+
 		// Listed but not started: metering is a CronJob in deploys, so dev has to
 		// say so or usage silently reads back as "never metered".
 		fmt.Println(bold + "Jobs:" + reset)
@@ -328,6 +347,9 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return upsert.Run(ctx) })
 		g.Go(func() error { return compliance.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
+		if aiEnabled {
+			g.Go(func() error { return ai.Run(ctx) })
+		}
 
 		if err := g.Wait(); err != nil {
 			slog.ErrorContext(sigCtx, "component stopped", slogx.Error(err))
@@ -396,6 +418,7 @@ func init() {
 	rootCmd.AddCommand(cronCmd)
 
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(aiCmd)
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)
 
