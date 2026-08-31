@@ -22,5 +22,5 @@ docs/specs
 scripts/Caddyfile
 scripts/deploy.sh
 
-# clacheck build output; CI runs it with `go run`
-/cla/clacheck/clacheck
+# gate build output; CI runs it with `go run`
+/cla/gate/gate

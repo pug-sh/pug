@@ -15,7 +15,7 @@ type report struct {
 
 // commentMarker identifies the gate's own comment so a re-run edits it instead of
 // posting another. It is invisible in the rendered comment.
-const commentMarker = "<!-- clacheck:signature-request -->"
+const commentMarker = "<!-- cla-gate:signature-request -->"
 
 // Marshalled from Signature rather than written out by hand, so the entry a
 // contributor is told to paste keeps whatever shape the gate parses back.

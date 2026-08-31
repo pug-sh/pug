@@ -1,4 +1,5 @@
-// Command clacheck gates a pull request on the Contributor License Agreement.
+// Command gate holds a pull request until everyone with work in it has signed
+// the Contributor License Agreement.
 //
 // Everyone whose copyright can reach the repository through the pull request —
 // commit author, committer, co-author, and the person who opened it — must appear
