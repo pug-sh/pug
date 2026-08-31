@@ -208,7 +208,12 @@ func (c *checker) verdict(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	inForce, err := c.gh.signatureFile(ctx, c.cfg.baseSHA)
+	// The base branch as it stands now, not the event's pinned base.sha. A
+	// workflow re-run replays the original payload, so a signature committed by a
+	// /sign comment after the event fired would be invisible on exactly the run
+	// that has to see it. signatureFile passes its ref to ?ref=, which takes a
+	// branch name; baseRef is a base-repo branch and never the pull request's.
+	inForce, err := c.gh.signatureFile(ctx, c.cfg.baseRef)
 	if err != nil {
 		return fmt.Errorf("reading tools/cla/signatures.json on %s: %w", c.cfg.baseRef, err)
 	}
@@ -221,7 +226,7 @@ func (c *checker) verdict(ctx context.Context) error {
 		return errUnsigned
 	}
 
-	missing, checked := unsigned(head, people)
+	missing, checked := unsigned(head, inForce, people)
 	if len(missing) > 0 || len(unknown) > 0 {
 		report := unsignedReport(c.cfg, head, missing, unknown, c.now())
 		fmt.Fprint(c.out, report.text)

@@ -93,11 +93,11 @@ func TestUnsignedIdentifiesPrincipalsByID(t *testing.T) {
 	head := file(sig("alice", 1))
 	// A rename does not lose the signature, and re-registering the freed login
 	// does not inherit it: identity is the id.
-	missing, checked := unsigned(head, []Principal{{ID: 1, Login: "alice-renamed", Type: "User"}})
+	missing, checked := unsigned(head, &SignatureFile{}, []Principal{{ID: 1, Login: "alice-renamed", Type: "User"}})
 	if len(missing) != 0 || len(checked) != 1 {
 		t.Fatalf("renamed signer should pass: missing=%v checked=%v", missing, checked)
 	}
-	missing, _ = unsigned(head, []Principal{{ID: 99, Login: "alice", Type: "User"}})
+	missing, _ = unsigned(head, &SignatureFile{}, []Principal{{ID: 99, Login: "alice", Type: "User"}})
 	if len(missing) != 1 {
 		t.Fatalf("someone re-registering the login must not inherit the signature: %v", missing)
 	}
@@ -108,12 +108,12 @@ func TestUnsignedIdentifiesPrincipalsByID(t *testing.T) {
 // one by adding a file named after it.
 func TestOnlyRealBotsAreExempt(t *testing.T) {
 	head := file()
-	missing, _ := unsigned(head, []Principal{{ID: 1, Login: "dependabot[bot]", Type: "Bot"}})
+	missing, _ := unsigned(head, &SignatureFile{}, []Principal{{ID: 1, Login: "dependabot[bot]", Type: "Bot"}})
 	if len(missing) != 0 {
 		t.Fatalf("a real bot needs no signature, got %v", missing)
 	}
 	for _, login := range []string{"dependabott", "renovateb", "github-actionso", "dependabot[bot]"} {
-		missing, _ := unsigned(head, []Principal{{ID: 5, Login: login, Type: "User"}})
+		missing, _ := unsigned(head, &SignatureFile{}, []Principal{{ID: 5, Login: login, Type: "User"}})
 		if len(missing) != 1 {
 			t.Fatalf("%q is a user account and must sign, got %v", login, missing)
 		}
@@ -128,7 +128,7 @@ func TestUnsignedDeduplicatesAndSkipsUnknownIDs(t *testing.T) {
 		{ID: 2, Login: "bob", Type: "User"},
 		{ID: 0, Login: "", Type: "User"},
 	}
-	missing, checked := unsigned(head, people)
+	missing, checked := unsigned(head, &SignatureFile{}, people)
 	if len(checked) != 2 {
 		t.Fatalf("want 2 distinct principals, got %v", checked)
 	}
@@ -145,7 +145,7 @@ func TestCommitterIsCheckedNotJustAuthor(t *testing.T) {
 	if len(unlinked) != 0 {
 		t.Fatalf("nothing should be unlinked: %v", unlinked)
 	}
-	missing, _ := unsigned(file(sig("alice", 1)), people)
+	missing, _ := unsigned(file(sig("alice", 1)), &SignatureFile{}, people)
 	if len(missing) != 1 || missing[0].Login != "mallory" {
 		t.Fatalf("want the committer flagged, got %v", missing)
 	}
@@ -156,13 +156,13 @@ func TestCommitterIsCheckedNotJustAuthor(t *testing.T) {
 func TestWebFlowCommitterIsIgnored(t *testing.T) {
 	commits := []Commit{commit("a1", user("alice", 1), user("web-flow", webFlowID), "x")}
 	people, _ := principals(commits, Principal{ID: 1, Login: "alice", Type: "User"})
-	missing, _ := unsigned(file(sig("alice", 1)), people)
+	missing, _ := unsigned(file(sig("alice", 1)), &SignatureFile{}, people)
 	if len(missing) != 0 {
 		t.Fatalf("GitHub's web-flow committer is not a copyright holder: %v", missing)
 	}
 	impostor := []Commit{commit("a1", user("alice", 1), user("web-flow", 5), "x")}
 	people, _ = principals(impostor, Principal{ID: 1, Login: "alice", Type: "User"})
-	if missing, _ := unsigned(file(sig("alice", 1)), people); len(missing) != 1 {
+	if missing, _ := unsigned(file(sig("alice", 1)), &SignatureFile{}, people); len(missing) != 1 {
 		t.Fatalf("only the real web-flow id is exempt, got %v", missing)
 	}
 }
@@ -349,5 +349,52 @@ func TestABranchBehindAVersionBumpCannotSignTheRetiredOne(t *testing.T) {
 	err := appendOnly(mergeBase, head, bob, "v2")
 	if err == nil || !strings.Contains(err.Error(), "merge the base branch") {
 		t.Fatalf("want the stale version rejected with the way out, got %v", err)
+	}
+}
+
+// A /sign comment records the signature on the base branch, so a contributor's
+// first pull request predates their own signature. head alone would read them as
+// unsigned however many times they signed.
+func TestUnsignedAcceptsASignatureOnTheBaseBranch(t *testing.T) {
+	head := &SignatureFile{CLAVersion: "v1"}
+	onBase := &SignatureFile{CLAVersion: "v1", Signatures: []Signature{
+		{Login: "nullorm", ID: 78271873, Date: "2026-09-01", CLA: "v1"},
+	}}
+	people := []Principal{{ID: 78271873, Login: "nullorm", Type: "User"}}
+
+	missing, checked := unsigned(head, onBase, people)
+	if len(missing) != 0 {
+		t.Errorf("missing = %v, want none: the signature is on the base branch", missing)
+	}
+	if len(checked) != 1 {
+		t.Errorf("checked = %d, want 1", len(checked))
+	}
+}
+
+// The base branch is searched at the version head declares, so a retired
+// signature does not carry into a bumped version.
+func TestUnsignedIgnoresABaseSignatureAtAnotherVersion(t *testing.T) {
+	head := &SignatureFile{CLAVersion: "v2"}
+	onBase := &SignatureFile{CLAVersion: "v2", Signatures: []Signature{
+		{Login: "nullorm", ID: 78271873, Date: "2026-09-01", CLA: "v1"},
+	}}
+	people := []Principal{{ID: 78271873, Login: "nullorm", Type: "User"}}
+
+	missing, _ := unsigned(head, onBase, people)
+	if len(missing) != 1 {
+		t.Errorf("missing = %v, want nullorm: v1 does not carry over to v2", missing)
+	}
+}
+
+// The pull request's own file still counts, which is the hand-edited path.
+func TestUnsignedStillAcceptsASignatureInHead(t *testing.T) {
+	head := &SignatureFile{CLAVersion: "v1", Signatures: []Signature{
+		{Login: "nullorm", ID: 78271873, Date: "2026-09-01", CLA: "v1"},
+	}}
+	onBase := &SignatureFile{CLAVersion: "v1"}
+	people := []Principal{{ID: 78271873, Login: "nullorm", Type: "User"}}
+
+	if missing, _ := unsigned(head, onBase, people); len(missing) != 0 {
+		t.Errorf("missing = %v, want none: the signature is in head", missing)
 	}
 }
