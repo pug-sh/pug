@@ -76,10 +76,10 @@ func (c *client) get(ctx context.Context, endpoint, accept string) ([]byte, http
 	return body, resp.Header, nil
 }
 
-// signatureFile reads cla/signatures.json at a given ref over the API, so the
+// signatureFile reads tools/cla/signatures.json at a given ref over the API, so the
 // gate never depends on a checkout of the pull request's own tree.
 func (c *client) signatureFile(ctx context.Context, ref string) (*SignatureFile, error) {
-	endpoint := fmt.Sprintf("%s/repos/%s/contents/cla/signatures.json?ref=%s",
+	endpoint := fmt.Sprintf("%s/repos/%s/contents/tools/cla/signatures.json?ref=%s",
 		c.baseURL, c.repo, url.QueryEscape(ref))
 	body, _, err := c.get(ctx, endpoint, "application/vnd.github.raw")
 	if err != nil {
@@ -87,8 +87,8 @@ func (c *client) signatureFile(ctx context.Context, ref string) (*SignatureFile,
 	}
 	var f SignatureFile
 	if err := json.Unmarshal(body, &f); err != nil {
-		slog.ErrorContext(ctx, "cla/signatures.json did not decode", slog.String("ref", ref), errAttr(err))
-		return nil, fmt.Errorf("cla/signatures.json is not valid JSON: %w", err)
+		slog.ErrorContext(ctx, "tools/cla/signatures.json did not decode", slog.String("ref", ref), errAttr(err))
+		return nil, fmt.Errorf("tools/cla/signatures.json is not valid JSON: %w", err)
 	}
 	return &f, nil
 }

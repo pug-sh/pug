@@ -188,7 +188,7 @@ maximum extent possible under law.
 ## How to sign
 
 Signing is a commit. Add yourself to
-[`cla/signatures.json`](cla/signatures.json) as part of your pull request:
+[`tools/cla/signatures.json`](tools/cla/signatures.json) as part of your pull request:
 
 ```json
 { "login": "your-github-username",
