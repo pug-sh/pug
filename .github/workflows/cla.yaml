@@ -1,6 +1,6 @@
 name: CLA
 
-# Signing is a commit to cla/signatures.json under the contributor's own identity,
+# Signing is a commit to tools/cla/signatures.json under the contributor's own identity,
 # so the record lives in git history and no third party holds it.
 #
 # The checker reads the commits and the signature file over the API, so no
@@ -42,15 +42,15 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: cla/gate/go.mod
+          go-version-file: tools/cla/gate/go.mod
           cache: false
 
       - name: Test the checker
-        working-directory: cla/gate
+        working-directory: tools/cla/gate
         run: go test ./...
 
       - name: Check signatures
-        working-directory: cla/gate
+        working-directory: tools/cla/gate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

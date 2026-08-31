@@ -23,4 +23,4 @@ scripts/Caddyfile
 scripts/deploy.sh
 
 # gate build output; CI runs it with `go run`
-/cla/gate/gate
+/tools/cla/gate/gate
