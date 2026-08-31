@@ -18,9 +18,5 @@ docs/plans
 docs/design
 docs/plans
 docs/specs
-# Local deploy artifacts (not tracked)
-scripts/Caddyfile
-scripts/deploy.sh
-
 # gate build output; CI runs it with `go run`
 /tools/cla/gate/gate
