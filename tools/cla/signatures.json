@@ -1,4 +1,11 @@
 {
   "cla_version": "v1",
-  "signatures": []
+  "signatures": [
+    {
+      "login": "poluruprvn",
+      "id": 876188,
+      "date": "2026-08-31",
+      "cla": "v1"
+    }
+  ]
 }
