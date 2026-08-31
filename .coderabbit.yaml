@@ -7,3 +7,15 @@ reviews:
     labels:
       - coderabbit
   review_status: false
+  # Keep the review comment to findings: no walkthrough ornaments, no per-comment
+  # agent prompt. high_level_summary stays on.
+  in_progress_fortune: false
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  enable_prompt_for_ai_agents: false
