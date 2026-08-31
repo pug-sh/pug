@@ -238,3 +238,27 @@ func TestLabelWritesUseTheIssueEndpoints(t *testing.T) {
 		t.Fatalf("a delete must not carry a body, got %q", body)
 	}
 }
+
+// A stale blob sha is a signature that landed between the read and the write, not
+// a fault, so it has to be distinguishable from every other non-2xx.
+func TestSendReportsConflictAsErrConflict(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"message":"does not match abc123"}`)
+	})
+	err := c.send(t.Context(), http.MethodPut, c.baseURL+"/x", map[string]string{"a": "b"})
+	if !errors.Is(err, errConflict) {
+		t.Fatalf("send on 409 = %v, want errConflict", err)
+	}
+}
+
+func TestSendStillReportsOtherFailures(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message":"forbidden"}`)
+	})
+	err := c.send(t.Context(), http.MethodPut, c.baseURL+"/x", nil)
+	if err == nil || errors.Is(err, errConflict) {
+		t.Fatalf("send on 403 = %v, want a plain error", err)
+	}
+}

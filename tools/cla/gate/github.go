@@ -17,6 +17,12 @@ import (
 
 var errNotFound = errors.New("not found")
 
+// errConflict is the contents API refusing a write whose blob sha is stale, which
+// means a signature landed between our read and our write rather than that
+// anything failed. The caller re-reads and retries; every other non-2xx is
+// terminal.
+var errConflict = errors.New("conflict")
+
 const defaultBaseURL = "https://api.github.com"
 
 type client struct {
@@ -206,6 +212,10 @@ func (c *client) send(ctx context.Context, method, endpoint string, payload any)
 	if err != nil {
 		slog.ErrorContext(ctx, "reading the github response failed", slog.String("endpoint", endpoint), errAttr(err))
 		return err
+	}
+	if resp.StatusCode == http.StatusConflict {
+		slog.DebugContext(ctx, "github reported a conflict", slog.String("endpoint", endpoint))
+		return errConflict
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		err := fmt.Errorf("%s %s: %s: %s", method, endpoint, resp.Status, strings.TrimSpace(string(res)))
