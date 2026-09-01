@@ -187,7 +187,13 @@ maximum extent possible under law.
 
 ## How to sign
 
-Signing is a commit. Add yourself to
+The simplest way is to comment `/sign` on a pull request you have work in. That
+records the entry below for you, on the base branch, as a commit authored under
+your own identity — you need not edit any file. GitHub attests the author of a
+comment, which is what lets a comment execute this Agreement where a commit's own
+author field, which the commit merely asserts, cannot.
+
+You can also sign by hand. Add yourself to
 [`tools/cla/signatures.json`](tools/cla/signatures.json) as part of your pull request:
 
 ```json
@@ -197,9 +203,9 @@ Signing is a commit. Add yourself to
   "cla":   "v1" }
 ```
 
-Committing that entry under your own identity is how You execute this Agreement —
-it is the electronic submission the preamble refers to, and it records the version
-of the Agreement you signed in the repository's history. You do it once per
+Either way, recording that entry under your own identity is how You execute this
+Agreement — it is the electronic submission the preamble refers to, and it records
+the version of the Agreement you signed in the repository's history. You do it once per
 version of this Agreement; it covers every Contribution you make afterwards,
 including any you have already Submitted.
 
@@ -217,13 +223,15 @@ check can resolve to an account.
 The file is append-only: the check rejects a pull request that edits or removes an
 existing signature.
 
-You sign for yourself, and only in a pull request you opened — the check accepts no
-other entry. A commit author, a committer and a `Co-authored-by:` trailer are all
+You sign for yourself. A signature added by hand is accepted only in a pull request
+you opened — a commit author, a committer and a `Co-authored-by:` trailer are all
 things the commit itself asserts, so a pull request that could sign for any of them
-could sign for anyone it chose to name. If you co-wrote a contribution with someone
-who has not signed, they sign in a pull request of their own. A trailer naming an
-AI assistant is ignored: an assistant holds no copyright, so there is nothing for
-it to license or to sign.
+could sign for anyone it chose to name. A `/sign` comment is not open to that,
+since GitHub attests who wrote it, so it is accepted from anyone with work in the
+pull request: if you co-wrote a contribution with someone who has not signed, they
+comment `/sign` on it rather than opening a pull request of their own. A trailer
+naming an AI assistant is ignored either way: an assistant holds no copyright, so
+there is nothing for it to license or to sign.
 
 If this Agreement is amended, the new text is published under a new version number
 and contributors are asked to sign again; a signature records the version it was
