@@ -142,6 +142,42 @@ func (c *client) signatureFileMeta(ctx context.Context, ref string) (*SignatureF
 	return &f, meta.SHA, nil
 }
 
+// noreplyEmail is the address GitHub itself writes for a commit made through the
+// web UI, and the only address form the gate's own trailer resolution accepts.
+func noreplyEmail(p Principal) string {
+	return fmt.Sprintf("%d+%s@users.noreply.github.com", p.ID, p.Login)
+}
+
+// marshalSignatureFile reproduces the file's on-disk shape — two-space indent,
+// trailing newline — so a signature recorded by /sign leaves no reformatting diff
+// against one added by hand, and the next hand-edit does not rewrite the file.
+func marshalSignatureFile(f *SignatureFile) ([]byte, error) {
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+// putSignatureFile commits the file to branch. The contributor is the commit
+// author and the workflow's token is the committer, so the record lives in git
+// history under the identity that agreed to it rather than the bot's. sha makes
+// the write conditional; a stale one comes back as errConflict.
+func (c *client) putSignatureFile(ctx context.Context, branch string, f *SignatureFile, sha, message string, author Principal) error {
+	content, err := marshalSignatureFile(f)
+	if err != nil {
+		return err
+	}
+	endpoint := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL, c.repo, signaturesPath)
+	return c.send(ctx, http.MethodPut, endpoint, map[string]any{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString(content),
+		"sha":     sha,
+		"branch":  branch,
+		"author":  map[string]string{"name": author.Login, "email": noreplyEmail(author)},
+	})
+}
+
 var nextPageRe = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
 
 // pullCommits walks every page. GitHub caps this endpoint at 250 commits and

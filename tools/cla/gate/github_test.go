@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -293,5 +295,67 @@ func TestSignatureFileMetaRejectsAnUnexpectedEncoding(t *testing.T) {
 	})
 	if _, _, err := c.signatureFileMeta(t.Context(), "main"); err == nil {
 		t.Fatal("signatureFileMeta accepted a non-base64 encoding")
+	}
+}
+
+func TestPutSignatureFileSendsAuthorAndSHA(t *testing.T) {
+	var got map[string]any
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decoding the request: %v", err)
+		}
+		fmt.Fprint(w, `{}`)
+	})
+	f := &SignatureFile{CLAVersion: "v1", Signatures: []Signature{
+		{Login: "alice", ID: 1, Date: "2026-09-01", CLA: "v1"},
+	}}
+	err := c.putSignatureFile(t.Context(), "main", f, "abc123",
+		"chore(cla): sign v1 for @alice", Principal{ID: 1, Login: "alice"})
+	if err != nil {
+		t.Fatalf("putSignatureFile: %v", err)
+	}
+
+	if got["sha"] != "abc123" {
+		t.Errorf("sha = %v, want abc123", got["sha"])
+	}
+	if got["branch"] != "main" {
+		t.Errorf("branch = %v, want main", got["branch"])
+	}
+	// The author is the contributor, so the record stays in git history under the
+	// identity that agreed to it; the committer is whatever the token is.
+	author, _ := got["author"].(map[string]any)
+	if author["email"] != "1+alice@users.noreply.github.com" {
+		t.Errorf("author email = %v, want the noreply form", author["email"])
+	}
+	if author["name"] != "alice" {
+		t.Errorf("author name = %v, want alice", author["name"])
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(got["content"].(string))
+	if err != nil {
+		t.Fatalf("content is not base64: %v", err)
+	}
+	// A signature recorded by /sign must leave no reformatting diff against one
+	// added by hand, or the next hand-edit rewrites the whole file.
+	if !strings.HasSuffix(string(decoded), "}\n") {
+		t.Errorf("content does not end with a newline: %q", string(decoded))
+	}
+	if !strings.Contains(string(decoded), `      "login": "alice"`) {
+		t.Errorf("content is not indented like the file on disk:\n%s", decoded)
+	}
+}
+
+func TestPutSignatureFilePropagatesAConflict(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"message":"sha does not match"}`)
+	})
+	f := &SignatureFile{CLAVersion: "v1"}
+	err := c.putSignatureFile(t.Context(), "main", f, "stale", "m", Principal{ID: 1, Login: "a"})
+	if !errors.Is(err, errConflict) {
+		t.Fatalf("putSignatureFile on 409 = %v, want errConflict", err)
 	}
 }
