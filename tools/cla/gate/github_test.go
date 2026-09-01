@@ -262,3 +262,36 @@ func TestSendStillReportsOtherFailures(t *testing.T) {
 		t.Fatalf("send on 403 = %v, want a plain error", err)
 	}
 }
+
+// GitHub wraps base64 content at 60 characters. A decoder that does not strip the
+// newlines fails on every real response, so the fixture carries one.
+func TestSignatureFileMetaDecodesContentAndSHA(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("ref"); got != "main" {
+			t.Errorf("ref = %q, want main", got)
+		}
+		fmt.Fprint(w, `{"sha":"abc123","encoding":"base64","content":"eyJjbGFfdmVyc2lvbiI6InYxIiwic2ln\nbmF0dXJlcyI6W119"}`)
+	})
+	f, sha, err := c.signatureFileMeta(t.Context(), "main")
+	if err != nil {
+		t.Fatalf("signatureFileMeta: %v", err)
+	}
+	if sha != "abc123" {
+		t.Errorf("sha = %q, want abc123", sha)
+	}
+	if f.CLAVersion != "v1" {
+		t.Errorf("cla_version = %q, want v1", f.CLAVersion)
+	}
+	if f.Signatures == nil {
+		t.Error("signatures decoded as nil, want an empty slice")
+	}
+}
+
+func TestSignatureFileMetaRejectsAnUnexpectedEncoding(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"sha":"abc123","encoding":"none","content":""}`)
+	})
+	if _, _, err := c.signatureFileMeta(t.Context(), "main"); err == nil {
+		t.Fatal("signatureFileMeta accepted a non-base64 encoding")
+	}
+}
