@@ -329,6 +329,21 @@ func TestSignRefusesAClosedPullRequest(t *testing.T) {
 	}
 }
 
+// An unlinked email drops its commit's author from the principal list, so the
+// bare refusal would tell someone with commits here that they have none.
+func TestSignExplainsAnUnlinkedCommitEmail(t *testing.T) {
+	gh := signable()
+	gh.pr.Commits = 2
+	gh.commits = append(gh.commits, Commit{SHA: "c2"})
+	err := newSigner(gh, Principal{ID: 2, Login: "bob", Type: "User"}).sign(t.Context())
+	if !errors.Is(err, errNotAPrincipal) {
+		t.Fatalf("sign = %v, want errNotAPrincipal", err)
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, "c2") {
+		t.Errorf("the reply does not name the unlinked commit: %+v", gh.posted)
+	}
+}
+
 // An issue_comment run attaches to no check on the pull request, so an error that
 // only annotates the job is a comment nobody replied to.
 func TestSignRepliesWhenItFailsOutright(t *testing.T) {

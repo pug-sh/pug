@@ -188,10 +188,9 @@ func (s *signer) record(ctx context.Context) error {
 			len(commits), pr.Commits)
 	}
 
-	// An unlinked commit email is left to the checker to report: it blocks the
-	// gate there with a fuller explanation, and refusing to sign over it would
-	// only add a second, vaguer message about the same problem.
-	people, _ := principals(commits, pr.User)
+	// An unlinked commit drops its author from people entirely, so a contributor
+	// who has commits here would otherwise be refused for having none.
+	people, unlinked := principals(commits, pr.User)
 	coauthors, _, err := resolveCoauthors(ctx, s.gh, commits)
 	if err != nil {
 		return err
@@ -209,6 +208,9 @@ func (s *signer) record(ctx context.Context) error {
 			return fmt.Errorf("reading %s on %s: %w", signaturesPath, pr.Base.Ref, err)
 		}
 		if err := maySign(s.cfg.commenter, people, head, onBase, onBase.CLAVersion); err != nil {
+			if errors.Is(err, errNotAPrincipal) && len(unlinked) > 0 {
+				err = fmt.Errorf("%w; these commits carry an email that is not linked to a GitHub account, so their author cannot be identified: %s", err, strings.Join(unlinked, ", "))
+			}
 			return s.decline(ctx, err)
 		}
 
