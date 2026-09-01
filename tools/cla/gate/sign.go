@@ -86,6 +86,10 @@ var (
 	errBotCommenter  = errors.New("a bot holds no copyright, so it has nothing to license")
 )
 
+// errDeclined marks a refusal decline has already replied to, so sign does not
+// post a second, vaguer comment on top of the specific one.
+var errDeclined = errors.New("declined")
+
 // maySign decides whether this comment records a signature, and when it does not,
 // which reason the contributor is told.
 //
@@ -131,13 +135,28 @@ const putRetries = 1
 // what the contributor needs is the one action that gets their check re-run.
 const rerunFailed = "\n\nThe CLA check could not be re-run automatically — push any commit, or ask a maintainer to re-run it."
 
+// stillRed is the same advice for someone whose signature was already on file: a
+// repeat /sign is usually an attempt to clear a check that never got re-run.
+const stillRed = "\n\nIf the CLA check is still red, push any commit or ask a maintainer to re-run it."
+
 type signer struct {
 	cfg signConfig
 	gh  githubAPI
 	now func() time.Time
 }
 
+// A contributor who typed /sign must be answered. An issue_comment run attaches
+// to no check on the pull request, so an error that only annotates the job is a
+// comment nobody replied to.
 func (s *signer) sign(ctx context.Context) error {
+	err := s.record(ctx)
+	if err != nil && !errors.Is(err, errDeclined) {
+		s.reply(ctx, fmt.Sprintf("@%s — `/sign` could not be recorded: %s", s.cfg.commenter.Login, err))
+	}
+	return err
+}
+
+func (s *signer) record(ctx context.Context) error {
 	pr, err := s.gh.pullRequest(ctx, s.cfg.pr)
 	if err != nil {
 		return fmt.Errorf("reading pull request %d: %w", s.cfg.pr, err)
@@ -218,6 +237,16 @@ func (s *signer) sign(ctx context.Context) error {
 	}
 }
 
+// reply is how the contributor learns what happened. Best-effort: failing the job
+// over a comment would misreport a signature that did land. It annotates too,
+// because the run that most needs this seen exits 0 and nobody opens a green log.
+func (s *signer) reply(ctx context.Context, body string) {
+	if err := s.gh.createComment(ctx, s.cfg.pr, body); err != nil {
+		slog.ErrorContext(ctx, "could not post the reply", errAttr(err))
+		fmt.Printf("::warning::%s\n", escapeAnnotation("could not post the reply: "+err.Error()))
+	}
+}
+
 // confirm tells the contributor the signature landed and re-runs the checker, so
 // the pull request's own required check turns green rather than a second one
 // agreeing with it. The re-run is best-effort: the signature is committed either
@@ -239,33 +268,30 @@ func (s *signer) confirm(ctx context.Context, pr PullRequest, version string) er
 		}
 	}
 
-	if err := s.gh.createComment(ctx, s.cfg.pr, body); err != nil {
-		slog.ErrorContext(ctx, "could not post the confirmation", errAttr(err))
-	}
+	s.reply(ctx, body)
 	return nil
 }
 
 // decline reports why no signature was recorded.
 //
 // Already-signed is not a failure: a contributor commenting twice, or one whose
-// first /sign landed before the check re-ran, already has what they came for, and
-// painting the pull request red for it would be a lie about the state of things.
-// It replies and exits green. Every other reason fails the job — a refusal that
-// exited 0 would leave a green tick and no signature.
+// first /sign landed before the check re-ran, already has what they came for, so
+// the run says so and exits green. Every other reason fails the job, which is the
+// only place an operator can see that a /sign was refused.
 func (s *signer) decline(ctx context.Context, reason error) error {
 	body := fmt.Sprintf("@%s — %s.", s.cfg.commenter.Login, reason)
 	settled := errors.Is(reason, errAlreadySigned)
-	if !settled {
+	if settled {
+		body += stillRed
+	} else {
 		body += fmt.Sprintf("\n\nSee [CLA.md](%s/%s/blob/HEAD/CLA.md) for how signing works.", s.cfg.serverURL, s.cfg.repo)
 	}
-	if err := s.gh.createComment(ctx, s.cfg.pr, body); err != nil {
-		slog.ErrorContext(ctx, "could not post the reply", errAttr(err))
-	}
+	s.reply(ctx, body)
 	if settled {
 		slog.InfoContext(ctx, "nothing to record", slog.String("commenter", s.cfg.commenter.Login))
 		return nil
 	}
-	return fmt.Errorf("refused to sign for %s: %w", s.cfg.commenter.Login, reason)
+	return fmt.Errorf("refused to sign for %s: %w: %w", s.cfg.commenter.Login, errDeclined, reason)
 }
 
 func runSign(ctx context.Context) error {

@@ -328,3 +328,28 @@ func TestSignRefusesAClosedPullRequest(t *testing.T) {
 		t.Errorf("wrote for a closed pull request: %d attempts", gh.putAttempts)
 	}
 }
+
+// An issue_comment run attaches to no check on the pull request, so an error that
+// only annotates the job is a comment nobody replied to.
+func TestSignRepliesWhenItFailsOutright(t *testing.T) {
+	gh := signable()
+	gh.putErr = errors.New("403 protected branch")
+	if err := newSigner(gh, alice).sign(t.Context()); err == nil {
+		t.Fatal("sign returned nil after the write failed")
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, "@alice") {
+		t.Fatalf("no reply after an outright failure: %+v", gh.posted)
+	}
+}
+
+// decline has already posted the specific reason; a second, vaguer comment on top
+// of it would be worse than none.
+func TestSignDoesNotDoubleReplyOnARefusal(t *testing.T) {
+	gh := signable()
+	if err := newSigner(gh, Principal{ID: 999, Login: "carol", Type: "User"}).sign(t.Context()); err == nil {
+		t.Fatal("sign returned nil for a stranger")
+	}
+	if len(gh.posted) != 1 {
+		t.Errorf("posted %d replies, want the refusal only", len(gh.posted))
+	}
+}
