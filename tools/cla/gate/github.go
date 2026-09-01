@@ -24,6 +24,12 @@ var errNotFound = errors.New("not found")
 // terminal.
 var errConflict = errors.New("conflict")
 
+// errNoRuns is an empty run list, which is not a missing resource: a contributor
+// can comment /sign before the checker has ever run. Kept apart from errNotFound
+// so a 404 — a renamed workflow file — cannot be reported as "the first one will
+// pass" on a check that will never run.
+var errNoRuns = errors.New("no run yet")
+
 const defaultBaseURL = "https://api.github.com"
 
 type client struct {
@@ -232,10 +238,8 @@ func (c *client) latestWorkflowRun(ctx context.Context, workflowFile, headSHA st
 		slog.ErrorContext(ctx, "the workflow runs response did not decode", errAttr(err))
 		return WorkflowRun{}, fmt.Errorf("the workflow runs response did not decode: %w", err)
 	}
-	// A contributor can comment /sign before the checker has ever run, which is
-	// not a failure — errNotFound lets the caller say so rather than raise.
 	if len(page.Runs) == 0 {
-		return WorkflowRun{}, errNotFound
+		return WorkflowRun{}, errNoRuns
 	}
 	return page.Runs[0], nil
 }

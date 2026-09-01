@@ -368,3 +368,40 @@ func TestSignDoesNotDoubleReplyOnARefusal(t *testing.T) {
 		t.Errorf("posted %d replies, want the refusal only", len(gh.posted))
 	}
 }
+
+// The signature is committed before the check is re-run, so nothing after that
+// point may report a signing that happened as one that did not.
+func TestConfirmSurvivesAFailedRerunAndAFailedComment(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  func(*fakeGitHub)
+		want string
+	}{
+		{"no run yet", func(g *fakeGitHub) { g.runErr = errNoRuns }, "first one will pass"},
+		{"lookup failed", func(g *fakeGitHub) { g.runErr = errNotFound }, "could not be re-run"},
+		{"rerun failed", func(g *fakeGitHub) { g.rerunErr = errors.New("409") }, "could not be re-run"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := signable()
+			tc.set(gh)
+			if err := newSigner(gh, alice).sign(t.Context()); err != nil {
+				t.Fatalf("sign = %v, want nil after a committed signature", err)
+			}
+			if gh.putFile == nil {
+				t.Fatal("the signature was not committed")
+			}
+			if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, tc.want) {
+				t.Errorf("reply = %+v, want %q", gh.posted, tc.want)
+			}
+		})
+	}
+
+	gh := signable()
+	gh.writeErr = errors.New("502")
+	if err := newSigner(gh, alice).sign(t.Context()); err != nil {
+		t.Fatalf("sign = %v, want nil when only the confirmation failed", err)
+	}
+	if gh.putFile == nil {
+		t.Fatal("the signature was not committed")
+	}
+}

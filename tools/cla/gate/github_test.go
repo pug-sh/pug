@@ -421,12 +421,17 @@ func TestLatestWorkflowRunAndRerun(t *testing.T) {
 }
 
 // No run yet is an ordinary outcome — a contributor can comment /sign before the
-// checker has ever run — so it must not read as an API failure.
-func TestLatestWorkflowRunReportsNoRunAsNotFound(t *testing.T) {
+// checker has ever run — so it must not read as an API failure. It is kept apart
+// from errNotFound because a 404 here means the workflow file was renamed, and
+// reporting that as "the first check will pass" promises a run that never comes.
+func TestLatestWorkflowRunReportsNoRunAsNoRuns(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"workflow_runs":[]}`)
 	})
-	if _, err := c.latestWorkflowRun(t.Context(), "cla.yaml", "deadbeef"); !errors.Is(err, errNotFound) {
-		t.Fatalf("latestWorkflowRun with no runs = %v, want errNotFound", err)
+	switch _, err := c.latestWorkflowRun(t.Context(), "cla.yaml", "deadbeef"); {
+	case !errors.Is(err, errNoRuns):
+		t.Fatalf("latestWorkflowRun with no runs = %v, want errNoRuns", err)
+	case errors.Is(err, errNotFound):
+		t.Fatal("an empty run list must not read as a missing workflow")
 	}
 }

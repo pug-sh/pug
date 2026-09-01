@@ -258,7 +258,7 @@ func (s *signer) confirm(ctx context.Context, pr PullRequest, version string) er
 		version, s.cfg.commenter.Login, signaturesPath, pr.Base.Ref)
 
 	switch run, err := s.gh.latestWorkflowRun(ctx, signWorkflowFile, pr.Head.SHA); {
-	case errors.Is(err, errNotFound):
+	case errors.Is(err, errNoRuns):
 		body += "\n\nNo CLA check has run here yet; the first one will pass."
 	case err != nil:
 		slog.ErrorContext(ctx, "could not find the CLA run to re-run", errAttr(err))
