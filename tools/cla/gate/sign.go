@@ -32,18 +32,20 @@ const signWorkflowFile = "cla.yaml"
 const signCommand = "/sign"
 
 type signConfig struct {
-	repo      string
-	pr        int
-	commenter Principal
-	serverURL string
-	token     string
+	repo       string
+	pr         int
+	baseBranch string
+	commenter  Principal
+	serverURL  string
+	token      string
 }
 
 func loadSignConfig() (signConfig, error) {
 	c := signConfig{
-		repo:      os.Getenv("GITHUB_REPOSITORY"),
-		serverURL: env("GITHUB_SERVER_URL", "https://github.com"),
-		token:     env("GH_TOKEN", os.Getenv("GITHUB_TOKEN")),
+		repo:       os.Getenv("GITHUB_REPOSITORY"),
+		baseBranch: env("BASE_BRANCH", "main"),
+		serverURL:  env("GITHUB_SERVER_URL", "https://github.com"),
+		token:      env("GH_TOKEN", os.Getenv("GITHUB_TOKEN")),
 	}
 	var err error
 	if c.pr, err = strconv.Atoi(os.Getenv("PR_NUMBER")); err != nil {
@@ -137,6 +139,18 @@ func (s *signer) sign(ctx context.Context) error {
 	slog.InfoContext(ctx, "recording a signature",
 		slog.String("repo", s.cfg.repo), slog.Int("pr", s.cfg.pr),
 		slog.String("commenter", s.cfg.commenter.Login), slog.String("base", pr.Base.Ref))
+
+	// issue_comment carries no branch filter, so the target is checked here: a
+	// signature committed to any other branch is one the checker never reads, and
+	// the contributor would be told it landed.
+	if pr.Base.Ref != s.cfg.baseBranch {
+		return s.decline(ctx, fmt.Errorf("signatures are recorded on %s only, and this pull request targets %s", s.cfg.baseBranch, pr.Base.Ref))
+	}
+	// issue_comment fires on a closed pull request too, and a merged one's head is
+	// gone once the fork is deleted.
+	if pr.State != "open" {
+		return s.decline(ctx, fmt.Errorf("this pull request is %s; sign on an open one", pr.State))
+	}
 
 	commits, err := s.gh.pullCommits(ctx, s.cfg.pr)
 	if err != nil {

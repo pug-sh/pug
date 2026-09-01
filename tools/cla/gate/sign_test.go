@@ -166,7 +166,7 @@ func signable() *fakeGitHub {
 
 func newSigner(gh githubAPI, commenter Principal) *signer {
 	return &signer{
-		cfg: signConfig{repo: "pug-sh/pug", pr: 107, token: "t", commenter: commenter},
+		cfg: signConfig{repo: "pug-sh/pug", pr: 107, baseBranch: "main", token: "t", commenter: commenter},
 		gh:  gh,
 		now: func() time.Time { return fixedNow },
 	}
@@ -296,5 +296,35 @@ func TestRunSignToleratesSurroundingWhitespace(t *testing.T) {
 	// Reaching the configuration error proves the body was accepted as the command.
 	if err := runSign(t.Context()); err == nil {
 		t.Fatal("runSign treated a padded /sign as a non-command")
+	}
+}
+
+// A signature committed to any other branch is one the checker never reads, so
+// the contributor is refused rather than told it landed.
+func TestSignRefusesAPullRequestTargetingAnotherBranch(t *testing.T) {
+	gh := signable()
+	gh.pr.Base.Ref = "release/1.2"
+	err := newSigner(gh, alice).sign(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "release/1.2") {
+		t.Fatalf("sign against another branch = %v, want a refusal naming it", err)
+	}
+	if gh.putAttempts != 0 {
+		t.Errorf("committed to an ungated branch: %d attempts", gh.putAttempts)
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0].Body, "release/1.2") {
+		t.Errorf("no reply explaining the branch: %+v", gh.posted)
+	}
+}
+
+// issue_comment fires on a closed pull request too, and a merged one's head is
+// gone once the fork is deleted.
+func TestSignRefusesAClosedPullRequest(t *testing.T) {
+	gh := signable()
+	gh.pr.State = "closed"
+	if err := newSigner(gh, alice).sign(t.Context()); err == nil {
+		t.Fatal("sign accepted a closed pull request")
+	}
+	if gh.putAttempts != 0 {
+		t.Errorf("wrote for a closed pull request: %d attempts", gh.putAttempts)
 	}
 }

@@ -72,4 +72,7 @@ jobs:
           COMMENTER_ID: ${{ github.event.comment.user.id }}
           COMMENTER_LOGIN: ${{ github.event.comment.user.login }}
           COMMENTER_TYPE: ${{ github.event.comment.user.type }}
+          # issue_comment takes no branches: filter, so the branch cla.yaml gates
+          # is passed in and the signer refuses a pull request targeting any other.
+          BASE_BRANCH: main
         run: go run . sign
