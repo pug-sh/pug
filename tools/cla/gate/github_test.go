@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -433,5 +436,26 @@ func TestLatestWorkflowRunReportsNoRunAsNoRuns(t *testing.T) {
 		t.Fatalf("latestWorkflowRun with no runs = %v, want errNoRuns", err)
 	case errors.Is(err, errNotFound):
 		t.Fatal("an empty run list must not read as a missing workflow")
+	}
+}
+
+// The no-reformatting-diff claim, pinned against the real file rather than a
+// fixture: a hand-edit and a /sign have to produce the same bytes, or each
+// rewrites the other's whole file.
+func TestMarshalSignatureFileRoundTripsTheRealFile(t *testing.T) {
+	onDisk, err := os.ReadFile(filepath.Join("..", "signatures.json"))
+	if err != nil {
+		t.Fatalf("reading the signature file: %v", err)
+	}
+	var f SignatureFile
+	if err := json.Unmarshal(onDisk, &f); err != nil {
+		t.Fatalf("the signature file is not valid JSON: %v", err)
+	}
+	got, err := marshalSignatureFile(&f)
+	if err != nil {
+		t.Fatalf("marshalSignatureFile: %v", err)
+	}
+	if !bytes.Equal(got, onDisk) {
+		t.Errorf("a /sign write would reformat the file:\n got %q\nwant %q", got, onDisk)
 	}
 }

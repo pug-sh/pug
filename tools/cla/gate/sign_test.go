@@ -205,11 +205,20 @@ func TestSignAppendsTheCommenterAndCommitsToTheBaseBranch(t *testing.T) {
 func TestSignRetriesOnceOnAConflict(t *testing.T) {
 	gh := signable()
 	gh.putConflicts = 1
+	gh.landed = &Signature{Login: "bob", ID: 2, Date: "2026-08-29", CLA: "v1"}
 	if err := newSigner(gh, alice).sign(t.Context()); err != nil {
 		t.Fatalf("sign after one conflict: %v", err)
 	}
 	if gh.putAttempts != 2 {
 		t.Errorf("put attempts = %d, want 2", gh.putAttempts)
+	}
+	// Appending to the file as re-read, not to the copy the first attempt built:
+	// bob's signature is a recorded agreement and losing it is unrecoverable.
+	if gh.putFile == nil || len(gh.putFile.Signatures) != 2 {
+		t.Fatalf("wrote %+v, want bob's signature kept and alice's added", gh.putFile)
+	}
+	if gh.putFile.Signatures[0].Login != "bob" || gh.putFile.Signatures[1].Login != "alice" {
+		t.Errorf("wrote %+v, want bob then alice", gh.putFile.Signatures)
 	}
 }
 
@@ -344,6 +353,34 @@ func TestSignExplainsAnUnlinkedCommitEmail(t *testing.T) {
 	}
 }
 
+// The signer must never be the thing that makes the file unparseable for
+// everyone else, so it validates what it is about to write.
+func TestSignWritesNothingWhenTheResultWouldBeInvalid(t *testing.T) {
+	gh := signable()
+	gh.files["main"] = &SignatureFile{CLAVersion: "v1 draft", Signatures: []Signature{}}
+	if err := newSigner(gh, alice).sign(t.Context()); err == nil {
+		t.Fatal("sign accepted a file it would have invalidated")
+	}
+	if gh.putAttempts != 0 {
+		t.Errorf("committed an invalid file: %d attempts", gh.putAttempts)
+	}
+}
+
+// "We could not reach GitHub" must not reach a co-author as "you have no work
+// here", so a lookup failure is raised rather than silently shrinking the list.
+func TestSignRaisesACoauthorLookupFailure(t *testing.T) {
+	gh := signable()
+	gh.commits = []Commit{commit("c1", user("alice", 1), user("alice", 1),
+		"feat\n\nCo-authored-by: Bob <bob@users.noreply.github.com>\n")}
+	gh.lookupErr = errors.New("502 bad gateway")
+	if err := newSigner(gh, alice).sign(t.Context()); err == nil {
+		t.Fatal("sign proceeded despite an unresolved co-author")
+	}
+	if gh.putAttempts != 0 {
+		t.Errorf("wrote against an incomplete principal list: %d attempts", gh.putAttempts)
+	}
+}
+
 // An issue_comment run attaches to no check on the pull request, so an error that
 // only annotates the job is a comment nobody replied to.
 func TestSignRepliesWhenItFailsOutright(t *testing.T) {
@@ -403,5 +440,28 @@ func TestConfirmSurvivesAFailedRerunAndAFailedComment(t *testing.T) {
 	}
 	if gh.putFile == nil {
 		t.Fatal("the signature was not committed")
+	}
+}
+
+// More than one refusal can be true at once, and only the first is ever read. The
+// order is a decision about what the contributor is told, not an accident: a
+// stranger's refusal fails the job where already-signed exits green, so swapping
+// those two turns a settled contributor's second /sign red.
+func TestMaySignReportsTheFirstReasonInOrder(t *testing.T) {
+	signed := &SignatureFile{CLAVersion: "v1", Signatures: []Signature{
+		{Login: "alice", ID: 1, Date: "2026-08-30", CLA: "v1"},
+		{Login: "botty", ID: 7, Date: "2026-08-30", CLA: "v1"},
+	}}
+	empty := &SignatureFile{CLAVersion: "v1"}
+	none := []Principal{}
+
+	// A bot that is also signed and also a stranger: all three are true.
+	if err := maySign(Principal{ID: 7, Login: "botty", Type: "Bot"}, none, signed, empty, "v1"); !errors.Is(err, errBotCommenter) {
+		t.Errorf("a signed, non-principal bot = %v, want errBotCommenter", err)
+	}
+	// Signed on an earlier pull request, commenting on a colleague's: telling them
+	// they have no work here is true and sends them hunting for nothing.
+	if err := maySign(alice, none, empty, signed, "v1"); !errors.Is(err, errAlreadySigned) {
+		t.Errorf("a signed non-principal = %v, want errAlreadySigned", err)
 	}
 }

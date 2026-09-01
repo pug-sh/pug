@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -912,10 +913,25 @@ func TestSubcommandRejectsAnUnknownArgument(t *testing.T) {
 	if _, ok := subcommand([]string{"gate", "sing"}); ok {
 		t.Error(`subcommand accepted "sing"`)
 	}
-	if _, ok := subcommand([]string{"gate"}); !ok {
-		t.Error("subcommand rejected a bare invocation, which is the checker")
+	// cla.yaml invokes the gate bare. Dispatching that to the signer would find no
+	// COMMENT_BODY, return nil, and turn the required check green having checked
+	// nothing — so the function itself is asserted, not just that one was returned.
+	bare, ok := subcommand([]string{"gate"})
+	if !ok {
+		t.Fatal("subcommand rejected a bare invocation, which is the checker")
 	}
-	if _, ok := subcommand([]string{"gate", "sign"}); !ok {
-		t.Error(`subcommand rejected "sign"`)
+	if !sameFunc(bare, run) {
+		t.Error("a bare invocation is not the checker")
 	}
+	signing, ok := subcommand([]string{"gate", "sign"})
+	if !ok {
+		t.Fatal(`subcommand rejected "sign"`)
+	}
+	if !sameFunc(signing, runSign) {
+		t.Error(`"sign" is not the signer`)
+	}
+}
+
+func sameFunc(a, b func(context.Context) error) bool {
+	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
