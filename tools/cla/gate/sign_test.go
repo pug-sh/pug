@@ -273,9 +273,28 @@ func TestSignRefusesToActOnATruncatedCommitList(t *testing.T) {
 }
 
 func TestRunSignRefusesAnEmptyConfiguration(t *testing.T) {
+	t.Setenv("COMMENT_BODY", signCommand)
 	t.Setenv("GITHUB_REPOSITORY", "")
 	t.Setenv("PR_NUMBER", "")
 	if err := runSign(t.Context()); err == nil {
 		t.Fatal("runSign accepted an empty configuration")
+	}
+}
+
+// Actions expressions cannot trim, so the workflow's `if:` is only a prefilter and
+// the exact match happens here.
+func TestRunSignIgnoresACommentThatMerelyMentionsTheCommand(t *testing.T) {
+	t.Setenv("COMMENT_BODY", "I'll /sign this later, promise")
+	if err := runSign(t.Context()); err != nil {
+		t.Fatalf("runSign on an unrelated comment = %v, want a quiet nil", err)
+	}
+}
+
+func TestRunSignToleratesSurroundingWhitespace(t *testing.T) {
+	t.Setenv("COMMENT_BODY", "  /sign\r\n")
+	t.Setenv("GITHUB_REPOSITORY", "")
+	// Reaching the configuration error proves the body was accepted as the command.
+	if err := runSign(t.Context()); err == nil {
+		t.Fatal("runSign treated a padded /sign as a non-command")
 	}
 }

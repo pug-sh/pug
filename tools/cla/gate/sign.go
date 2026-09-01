@@ -17,6 +17,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -24,6 +25,11 @@ import (
 // pull request's own required check turns green rather than a second check
 // merely agreeing with it.
 const signWorkflowFile = "cla.yaml"
+
+// signCommand is the whole comment, not a prefix of it. The workflow gates on a
+// prefix because Actions expressions cannot trim, so this is the authoritative
+// match.
+const signCommand = "/sign"
 
 type signConfig struct {
 	repo      string
@@ -243,6 +249,14 @@ func (s *signer) decline(ctx context.Context, reason error) error {
 }
 
 func runSign(ctx context.Context) error {
+	// A near-miss exits quietly rather than replying: the contributor meant
+	// something else, and a refusal posted under every "I'll /sign later" would be
+	// worse than saying nothing.
+	if body := strings.TrimSpace(os.Getenv("COMMENT_BODY")); body != signCommand {
+		slog.InfoContext(ctx, "comment is not the sign command; nothing to do")
+		return nil
+	}
+
 	cfg, err := loadSignConfig()
 	if err != nil {
 		return fmt.Errorf("configuration: %w", err)
