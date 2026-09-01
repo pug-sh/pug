@@ -97,8 +97,10 @@ func loadConfig() (config, error) {
 
 // githubAPI is the GitHub surface the gate depends on, named consumer-side so
 // the check can be unit-tested against a fake instead of the live API. Every
-// implementation must report a missing resource as errNotFound: resolveCoauthors
-// reads it as "no such account" rather than as an API failure.
+// implementation must report a missing resource as errNotFound, which
+// resolveCoauthors reads as "no such account" rather than as an API failure; an
+// empty run list as errNoRuns; and a write refused for a stale blob sha as
+// errConflict, which is the only thing the signer's retry keys on.
 type githubAPI interface {
 	signatureFile(ctx context.Context, ref string) (*SignatureFile, error)
 	pullCommits(ctx context.Context, pr int) ([]Commit, error)
@@ -241,6 +243,11 @@ func (c *checker) verdict(ctx context.Context) error {
 	inForce, err := c.gh.signatureFile(ctx, c.cfg.baseRef)
 	if err != nil {
 		return fmt.Errorf("reading tools/cla/signatures.json on %s: %w", c.cfg.baseRef, err)
+	}
+	// Validated like head: unsigned now takes a passing verdict from this file, and
+	// signedAt compares only the id and the version.
+	if err := inForce.validate(); err != nil {
+		return fmt.Errorf("tools/cla/signatures.json on %s is invalid: %w", c.cfg.baseRef, err)
 	}
 	if err := appendOnly(base, head, c.cfg.opener, inForce.CLAVersion); err != nil {
 		// A rejected edit is the contributor's to fix, like an unsigned CLA, so it
