@@ -104,6 +104,11 @@ type githubAPI interface {
 	pullCommits(ctx context.Context, pr int) ([]Commit, error)
 	mergeBase(ctx context.Context, base, head string) (string, error)
 	userByLogin(ctx context.Context, login string) (Principal, error)
+	signatureFileMeta(ctx context.Context, ref string) (*SignatureFile, string, error)
+	putSignatureFile(ctx context.Context, branch string, f *SignatureFile, sha, message string, author Principal) error
+	pullRequest(ctx context.Context, pr int) (PullRequest, error)
+	latestWorkflowRun(ctx context.Context, workflowFile, headSHA string) (WorkflowRun, error)
+	rerunWorkflow(ctx context.Context, runID int64) error
 	comments(ctx context.Context, pr int) ([]Comment, error)
 	createComment(ctx context.Context, pr int, body string) error
 	updateComment(ctx context.Context, id int64, body string) error
@@ -198,7 +203,7 @@ func (c *checker) verdict(ctx context.Context) error {
 	// An unidentified co-author blocks the gate like an unsigned one — a trailer
 	// names a copyright holder either way — but is reported rather than raised: it
 	// is the contributor's to fix, and a checker error would bury the report.
-	coauthors, unknown, err := c.resolveCoauthors(ctx, commits)
+	coauthors, unknown, err := resolveCoauthors(ctx, c.gh, commits)
 	if err != nil {
 		return err
 	}
@@ -332,7 +337,11 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 	return base, nil
 }
 
-// resolveCoauthors turns Co-authored-by trailers into principals. A trailer is
+// resolveCoauthors turns Co-authored-by trailers into principals. It takes the
+// API rather than hanging off the checker: the signer needs exactly this list to
+// decide who may sign, and two implementations of "who is a principal" — one
+// deciding who must sign and one deciding who may — is the single disagreement
+// this system cannot survive. A trailer is
 // commit-message text, so nothing in it is taken on trust — the address only
 // chooses which login is looked up, and the id always comes back from the API.
 //
@@ -346,7 +355,7 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 // to answer is an error instead, since "we could not reach GitHub" must not reach
 // the contributor as "your co-author has not signed". A known assistant is
 // neither: it names no copyright holder, so it is skipped rather than reported.
-func (c *checker) resolveCoauthors(ctx context.Context, commits []Commit) (found []Principal, unknown []string, err error) {
+func resolveCoauthors(ctx context.Context, gh githubAPI, commits []Commit) (found []Principal, unknown []string, err error) {
 	for _, email := range coauthorEmails(commits) {
 		if isAssistant(email) {
 			continue
@@ -356,7 +365,7 @@ func (c *checker) resolveCoauthors(ctx context.Context, commits []Commit) (found
 			unknown = append(unknown, email)
 			continue
 		}
-		p, err := c.gh.userByLogin(ctx, login)
+		p, err := gh.userByLogin(ctx, login)
 		if err != nil && !errors.Is(err, errNotFound) {
 			return nil, nil, fmt.Errorf("resolving the co-author %s: %w\nIf GitHub's API was erroring, re-running the job is enough", email, err)
 		}

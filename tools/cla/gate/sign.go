@@ -10,11 +10,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strconv"
+	"time"
 )
 
 // signWorkflowFile is the checker's workflow, re-run once a signature lands so the
@@ -26,13 +29,15 @@ type signConfig struct {
 	repo      string
 	pr        int
 	commenter Principal
+	serverURL string
 	token     string
 }
 
 func loadSignConfig() (signConfig, error) {
 	c := signConfig{
-		repo:  os.Getenv("GITHUB_REPOSITORY"),
-		token: env("GH_TOKEN", os.Getenv("GITHUB_TOKEN")),
+		repo:      os.Getenv("GITHUB_REPOSITORY"),
+		serverURL: env("GITHUB_SERVER_URL", "https://github.com"),
+		token:     env("GH_TOKEN", os.Getenv("GITHUB_TOKEN")),
 	}
 	var err error
 	if c.pr, err = strconv.Atoi(os.Getenv("PR_NUMBER")); err != nil {
@@ -101,4 +106,150 @@ func maySign(commenter Principal, people []Principal, head, onBase *SignatureFil
 		return errNotAPrincipal
 	}
 	return nil
+}
+
+// putRetries is one retry, not a loop. A conflict means another signature landed;
+// a second one in the time it takes to re-read is not congestion but a bug, and
+// spinning on it would hold the runner while making it worse.
+const putRetries = 1
+
+// rerunFailed is advice, not an apology: the signature is committed either way, so
+// what the contributor needs is the one action that gets their check re-run.
+const rerunFailed = "\n\nThe CLA check could not be re-run automatically — push any commit, or ask a maintainer to re-run it."
+
+type signer struct {
+	cfg signConfig
+	gh  githubAPI
+	now func() time.Time
+}
+
+func (s *signer) sign(ctx context.Context) error {
+	pr, err := s.gh.pullRequest(ctx, s.cfg.pr)
+	if err != nil {
+		return fmt.Errorf("reading pull request %d: %w", s.cfg.pr, err)
+	}
+	slog.InfoContext(ctx, "recording a signature",
+		slog.String("repo", s.cfg.repo), slog.Int("pr", s.cfg.pr),
+		slog.String("commenter", s.cfg.commenter.Login), slog.String("base", pr.Base.Ref))
+
+	commits, err := s.gh.pullCommits(ctx, s.cfg.pr)
+	if err != nil {
+		return fmt.Errorf("listing commits: refusing to sign against an unverified list: %w", err)
+	}
+	// The checker's own 250-cap guard. A truncated list here would drop principals
+	// and refuse a contributor who really is one.
+	if len(commits) != pr.Commits {
+		return fmt.Errorf("listed %d of the pull request's %d commits, so a principal could be missed; GitHub caps that endpoint at 250, so squash or split a pull request that large, otherwise re-run the job",
+			len(commits), pr.Commits)
+	}
+
+	// An unlinked commit email is left to the checker to report: it blocks the
+	// gate there with a fuller explanation, and refusing to sign over it would
+	// only add a second, vaguer message about the same problem.
+	people, _ := principals(commits, pr.User)
+	coauthors, _, err := resolveCoauthors(ctx, s.gh, commits)
+	if err != nil {
+		return err
+	}
+	people = append(people, coauthors...)
+
+	head, err := s.gh.signatureFile(ctx, pr.Head.SHA)
+	if err != nil {
+		return fmt.Errorf("reading %s at the pull request head: %w", signaturesPath, err)
+	}
+
+	for attempt := 0; ; attempt++ {
+		onBase, sha, err := s.gh.signatureFileMeta(ctx, pr.Base.Ref)
+		if err != nil {
+			return fmt.Errorf("reading %s on %s: %w", signaturesPath, pr.Base.Ref, err)
+		}
+		if err := maySign(s.cfg.commenter, people, head, onBase, onBase.CLAVersion); err != nil {
+			return s.decline(ctx, err)
+		}
+
+		onBase.Signatures = append(onBase.Signatures, Signature{
+			Login: s.cfg.commenter.Login,
+			ID:    s.cfg.commenter.ID,
+			Date:  s.now().UTC().Format(time.DateOnly),
+			CLA:   onBase.CLAVersion,
+		})
+		// Validate what is about to be written, not what was read: the signer must
+		// never be the thing that makes the file unparseable for everyone else.
+		if err := onBase.validate(); err != nil {
+			return fmt.Errorf("the signature would make %s invalid: %w", signaturesPath, err)
+		}
+
+		msg := fmt.Sprintf("chore(cla): sign %s for @%s", onBase.CLAVersion, s.cfg.commenter.Login)
+		err = s.gh.putSignatureFile(ctx, pr.Base.Ref, onBase, sha, msg, s.cfg.commenter)
+		switch {
+		case err == nil:
+			return s.confirm(ctx, pr, onBase.CLAVersion)
+		case errors.Is(err, errConflict) && attempt < putRetries:
+			slog.InfoContext(ctx, "another signature landed first; re-reading", slog.Int("attempt", attempt+1))
+		default:
+			return fmt.Errorf("committing the signature to %s: %w", pr.Base.Ref, err)
+		}
+	}
+}
+
+// confirm tells the contributor the signature landed and re-runs the checker, so
+// the pull request's own required check turns green rather than a second one
+// agreeing with it. The re-run is best-effort: the signature is committed either
+// way, and failing here would report a signing that happened as one that did not.
+func (s *signer) confirm(ctx context.Context, pr PullRequest, version string) error {
+	body := fmt.Sprintf("Signed CLA **%s** for @%s — recorded in `%s` on `%s`. Thanks!",
+		version, s.cfg.commenter.Login, signaturesPath, pr.Base.Ref)
+
+	switch run, err := s.gh.latestWorkflowRun(ctx, signWorkflowFile, pr.Head.SHA); {
+	case errors.Is(err, errNotFound):
+		body += "\n\nNo CLA check has run here yet; the first one will pass."
+	case err != nil:
+		slog.ErrorContext(ctx, "could not find the CLA run to re-run", errAttr(err))
+		body += rerunFailed
+	default:
+		if err := s.gh.rerunWorkflow(ctx, run.ID); err != nil {
+			slog.ErrorContext(ctx, "could not re-run the CLA check", errAttr(err))
+			body += rerunFailed
+		}
+	}
+
+	if err := s.gh.createComment(ctx, s.cfg.pr, body); err != nil {
+		slog.ErrorContext(ctx, "could not post the confirmation", errAttr(err))
+	}
+	return nil
+}
+
+// decline reports why no signature was recorded.
+//
+// Already-signed is not a failure: a contributor commenting twice, or one whose
+// first /sign landed before the check re-ran, already has what they came for, and
+// painting the pull request red for it would be a lie about the state of things.
+// It replies and exits green. Every other reason fails the job — a refusal that
+// exited 0 would leave a green tick and no signature.
+func (s *signer) decline(ctx context.Context, reason error) error {
+	body := fmt.Sprintf("@%s — %s.", s.cfg.commenter.Login, reason)
+	settled := errors.Is(reason, errAlreadySigned)
+	if !settled {
+		body += fmt.Sprintf("\n\nSee [CLA.md](%s/%s/blob/HEAD/CLA.md) for how signing works.", s.cfg.serverURL, s.cfg.repo)
+	}
+	if err := s.gh.createComment(ctx, s.cfg.pr, body); err != nil {
+		slog.ErrorContext(ctx, "could not post the reply", errAttr(err))
+	}
+	if settled {
+		slog.InfoContext(ctx, "nothing to record", slog.String("commenter", s.cfg.commenter.Login))
+		return nil
+	}
+	return fmt.Errorf("refused to sign for %s: %w", s.cfg.commenter.Login, reason)
+}
+
+func runSign(ctx context.Context) error {
+	cfg, err := loadSignConfig()
+	if err != nil {
+		return fmt.Errorf("configuration: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	defer cancel()
+
+	s := &signer{cfg: cfg, gh: newClient(cfg.token, cfg.repo), now: time.Now}
+	return s.sign(ctx)
 }
