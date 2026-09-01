@@ -40,6 +40,10 @@ type fakeGitHub struct {
 	putErr       error
 	runErr       error
 	rerunID      int64
+	rerunErr     error
+	// landed is committed to the branch by the write that reports the conflict, so
+	// a retry that drops it is visible rather than merely unobserved.
+	landed *Signature
 }
 
 func (f *fakeGitHub) signatureFileMeta(_ context.Context, ref string) (*SignatureFile, string, error) {
@@ -58,6 +62,11 @@ func (f *fakeGitHub) putSignatureFile(_ context.Context, branch string, sf *Sign
 	f.putAttempts++
 	if f.putConflicts > 0 {
 		f.putConflicts--
+		if f.landed != nil {
+			cur := f.files[branch]
+			cur.Signatures = append(cur.Signatures, *f.landed)
+			f.landed = nil
+		}
 		return errConflict
 	}
 	if f.putErr != nil {
@@ -79,7 +88,7 @@ func (f *fakeGitHub) latestWorkflowRun(context.Context, string, string) (Workflo
 
 func (f *fakeGitHub) rerunWorkflow(_ context.Context, id int64) error {
 	f.rerunID = id
-	return nil
+	return f.rerunErr
 }
 
 func (f *fakeGitHub) signatureFile(_ context.Context, ref string) (*SignatureFile, error) {
