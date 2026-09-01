@@ -97,8 +97,15 @@ func (f *SignatureFile) validate() error {
 // superseded version reads as unsigned, so a version bump hands the contributor
 // the ordinary sign-me report instead of failing the file as a whole.
 func (f *SignatureFile) signed(id int64) bool {
+	return f.signedAt(id, f.CLAVersion)
+}
+
+// signedAt is signed() against a version the caller chooses, so the base branch's
+// file can be searched for the version the pull request's head declares rather
+// than its own.
+func (f *SignatureFile) signedAt(id int64, version string) bool {
 	return slices.ContainsFunc(f.Signatures, func(s Signature) bool {
-		return s.ID == id && s.CLA == f.CLAVersion
+		return s.ID == id && s.CLA == version
 	})
 }
 
@@ -212,7 +219,15 @@ func appendOnly(base, head *SignatureFile, signer Principal, inForce string) err
 // and with bots dropped: a machine-authored commit carries no human authorship to
 // license. Every id here was resolved against the API, so a login cannot be
 // shaped to look like a bot and slip through.
-func unsigned(head *SignatureFile, ps []Principal) (missing, checked []Principal) {
+//
+// A principal counts as signed from either file. head is the pull request's own,
+// where a hand-written signature lands; onBase is the base branch as it stands
+// now, where a /sign comment lands one. A contributor's first pull request
+// predates their own signature, so head alone would read them as unsigned however
+// many times they signed. Searching onBase at head's version is safe because
+// appendOnly has already rejected a mismatch between the two files by the time
+// this runs (main.go: appendOnly before unsigned, and it returns on a mismatch).
+func unsigned(head, onBase *SignatureFile, ps []Principal) (missing, checked []Principal) {
 	seen := make(map[int64]bool, len(ps))
 	for _, p := range ps {
 		if p.isBot() || p.ID == 0 || seen[p.ID] {
@@ -220,7 +235,7 @@ func unsigned(head *SignatureFile, ps []Principal) (missing, checked []Principal
 		}
 		seen[p.ID] = true
 		checked = append(checked, p)
-		if !head.signed(p.ID) {
+		if !head.signed(p.ID) && !onBase.signedAt(p.ID, head.CLAVersion) {
 			missing = append(missing, p)
 		}
 	}

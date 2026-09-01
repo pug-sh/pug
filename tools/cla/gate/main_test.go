@@ -35,6 +35,15 @@ func (f *fakeGitHub) signatureFile(_ context.Context, ref string) (*SignatureFil
 	if sf, ok := f.files[ref]; ok {
 		return sf, nil
 	}
+	// The checker reads the version in force at the base branch by name. In the
+	// ordinary case that branch and the merge base carry the same file, so "main"
+	// falls back to the merge base's entry; a test that needs them to differ —
+	// which is what a /sign comment produces — seeds "main" explicitly.
+	if ref == "main" {
+		if sf, ok := f.files["base"]; ok {
+			return sf, nil
+		}
+	}
 	return nil, errNotFound
 }
 
