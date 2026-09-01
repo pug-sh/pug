@@ -26,7 +26,11 @@ permissions:
   actions: write
 
 concurrency:
-  group: cla-sign-${{ github.event.issue.number }}
+  # Per commenter, not per pull request: GitHub cancels a *pending* run when a
+  # newer one joins the group, so a shared group would silently drop the second
+  # of two people signing the same pull request. Concurrent writers are already
+  # safe — the commit is conditional on the blob sha and retried on a conflict.
+  group: cla-sign-${{ github.event.issue.number }}-${{ github.event.comment.user.id }}
   # Not cancel-in-progress: a cancelled run could stop between committing the
   # signature and reporting it, leaving a contributor who signed with no reply.
   cancel-in-progress: false
