@@ -364,8 +364,9 @@ func (c *client) send(ctx context.Context, method, endpoint string, payload any)
 		return err
 	}
 	if resp.StatusCode == http.StatusConflict {
-		slog.DebugContext(ctx, "github reported a conflict", slog.String("endpoint", endpoint))
-		return errConflict
+		// The body is what separates a lost race from a refusal that will never
+		// succeed, such as a protected branch; errors.Is still matches.
+		return fmt.Errorf("%w: %s", errConflict, strings.TrimSpace(string(res)))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		err := fmt.Errorf("%s %s: %s: %s", method, endpoint, resp.Status, strings.TrimSpace(string(res)))
