@@ -134,8 +134,8 @@ func (c *client) signatureFileMeta(ctx context.Context, ref string) (*SignatureF
 	if meta.Encoding != "base64" {
 		return nil, "", fmt.Errorf("the contents response for %s is %q-encoded, not base64", signaturesPath, meta.Encoding)
 	}
-	// GitHub wraps the encoding at 60 characters, and the decoder rejects newlines.
-	raw, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(meta.Content, "\n", ""))
+	// GitHub wraps the encoding at 60 characters; the decoder ignores the newlines.
+	raw, err := base64.StdEncoding.DecodeString(meta.Content)
 	if err != nil {
 		slog.ErrorContext(ctx, "the contents response did not decode from base64", slog.String("ref", ref), errAttr(err))
 		return nil, "", fmt.Errorf("the contents response for %s did not decode from base64: %w", signaturesPath, err)
@@ -185,11 +185,10 @@ func (c *client) putSignatureFile(ctx context.Context, branch string, f *Signatu
 }
 
 // PullRequest is the part of the pull request the signer needs and the
-// issue_comment payload does not carry: where to commit, and how many commits to
-// expect so a list truncated at GitHub's 250 cap is caught rather than silently
-// under-reporting who has work here.
+// issue_comment payload does not carry: where to commit, whether it is still
+// open, and how many commits to expect so a list truncated at GitHub's 250 cap is
+// caught rather than silently under-reporting who has work here.
 type PullRequest struct {
-	Number  int       `json:"number"`
 	State   string    `json:"state"`
 	Commits int       `json:"commits"`
 	User    Principal `json:"user"`
@@ -217,11 +216,10 @@ func (c *client) pullRequest(ctx context.Context, pr int) (PullRequest, error) {
 
 // WorkflowRun is one run of the checker's workflow. The signer re-runs an existing
 // run rather than dispatching a fresh one: only pull_request_target runs attach to
-// a pull request's checks, so a workflow_dispatch would execute happily and change
-// nothing the merge button can see.
+// a pull request's checks, so a dispatched run would change nothing the merge
+// button can see.
 type WorkflowRun struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
+	ID int64 `json:"id"`
 }
 
 func (c *client) latestWorkflowRun(ctx context.Context, workflowFile, headSHA string) (WorkflowRun, error) {

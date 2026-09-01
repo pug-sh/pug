@@ -156,7 +156,7 @@ func signable() *fakeGitHub {
 			"deadbeef": {CLAVersion: "v1", Signatures: []Signature{}},
 		},
 		fileSHA: "abc123",
-		pr:      PullRequest{Number: 107, State: "open", Commits: 1, User: Principal{ID: 1, Login: "alice", Type: "User"}},
+		pr:      PullRequest{State: "open", Commits: 1, User: Principal{ID: 1, Login: "alice", Type: "User"}},
 		commits: []Commit{{SHA: "c1", Author: &Principal{ID: 1, Login: "alice", Type: "User"}}},
 	}
 	gh.pr.Head.SHA = "deadbeef"

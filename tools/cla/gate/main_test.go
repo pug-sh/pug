@@ -83,7 +83,7 @@ func (f *fakeGitHub) latestWorkflowRun(context.Context, string, string) (Workflo
 	if f.runErr != nil {
 		return WorkflowRun{}, f.runErr
 	}
-	return WorkflowRun{ID: 991, Status: "completed"}, nil
+	return WorkflowRun{ID: 991}, nil
 }
 
 func (f *fakeGitHub) rerunWorkflow(_ context.Context, id int64) error {
