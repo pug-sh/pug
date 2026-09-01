@@ -55,7 +55,7 @@ func loadSignConfig() (signConfig, error) {
 	if err != nil {
 		return c, fmt.Errorf("COMMENTER_ID: %w", err)
 	}
-	c.commenter = Principal{ID: id, Login: os.Getenv("COMMENTER_LOGIN"), Type: env("COMMENTER_TYPE", "User")}
+	c.commenter = Principal{ID: id, Login: os.Getenv("COMMENTER_LOGIN"), Type: os.Getenv("COMMENTER_TYPE")}
 	// Each of these weakens the signer if it is missing rather than wrong: a zero
 	// id names nobody to sign for, and an absent token downgrades the run to the
 	// unauthenticated rate limit before failing the write outright.
@@ -68,6 +68,12 @@ func loadSignConfig() (signConfig, error) {
 		return c, errors.New("COMMENTER_ID is zero")
 	case c.commenter.Login == "":
 		return c, errors.New("COMMENTER_LOGIN is empty")
+	// No "User" fallback: that is the value isBot() reads as human, so a renamed
+	// payload field would sign for a bot rather than refuse one.
+	case c.commenter.Type == "":
+		return c, errors.New("COMMENTER_TYPE is empty")
+	case c.pr <= 0:
+		return c, fmt.Errorf("PR_NUMBER is %d", c.pr)
 	}
 	return c, nil
 }
