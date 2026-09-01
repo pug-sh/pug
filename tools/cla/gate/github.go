@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,18 @@ import (
 )
 
 var errNotFound = errors.New("not found")
+
+// errConflict is the contents API refusing a write whose blob sha is stale, which
+// means a signature landed between our read and our write rather than that
+// anything failed. The caller re-reads and retries; every other non-2xx is
+// terminal.
+var errConflict = errors.New("conflict")
+
+// errNoRuns is an empty run list, which is not a missing resource: a contributor
+// can comment /sign before the checker has ever run. Kept apart from errNotFound
+// so a 404 — a renamed workflow file — cannot be reported as "the first one will
+// pass" on a check that will never run.
+var errNoRuns = errors.New("no run yet")
 
 const defaultBaseURL = "https://api.github.com"
 
@@ -76,11 +89,16 @@ func (c *client) get(ctx context.Context, endpoint, accept string) ([]byte, http
 	return body, resp.Header, nil
 }
 
+// signaturesPath is the one place the file's location is written down. The gate
+// reads it two ways — raw for a decision, with metadata for a write — and a
+// disagreement between them would read one file and overwrite another.
+const signaturesPath = "tools/cla/signatures.json"
+
 // signatureFile reads tools/cla/signatures.json at a given ref over the API, so the
 // gate never depends on a checkout of the pull request's own tree.
 func (c *client) signatureFile(ctx context.Context, ref string) (*SignatureFile, error) {
-	endpoint := fmt.Sprintf("%s/repos/%s/contents/tools/cla/signatures.json?ref=%s",
-		c.baseURL, c.repo, url.QueryEscape(ref))
+	endpoint := fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s",
+		c.baseURL, c.repo, signaturesPath, url.QueryEscape(ref))
 	body, _, err := c.get(ctx, endpoint, "application/vnd.github.raw")
 	if err != nil {
 		return nil, err
@@ -91,6 +109,142 @@ func (c *client) signatureFile(ctx context.Context, ref string) (*SignatureFile,
 		return nil, fmt.Errorf("tools/cla/signatures.json is not valid JSON: %w", err)
 	}
 	return &f, nil
+}
+
+// signatureFileMeta reads the same file as JSON rather than raw, for the blob sha.
+// That sha is what makes the signer's write conditional: without it a signature
+// landing between the read and the write is silently overwritten instead of
+// rejected, and the loser never learns their signature is gone.
+func (c *client) signatureFileMeta(ctx context.Context, ref string) (*SignatureFile, string, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s",
+		c.baseURL, c.repo, signaturesPath, url.QueryEscape(ref))
+	body, _, err := c.get(ctx, endpoint, "application/vnd.github+json")
+	if err != nil {
+		return nil, "", err
+	}
+	var meta struct {
+		SHA      string `json:"sha"`
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if err := json.Unmarshal(body, &meta); err != nil {
+		slog.ErrorContext(ctx, "the contents response did not decode", slog.String("ref", ref), errAttr(err))
+		return nil, "", fmt.Errorf("the contents response for %s did not decode: %w", signaturesPath, err)
+	}
+	if meta.Encoding != "base64" {
+		return nil, "", fmt.Errorf("the contents response for %s is %q-encoded, not base64", signaturesPath, meta.Encoding)
+	}
+	// GitHub wraps the encoding at 60 characters; the decoder ignores the newlines.
+	raw, err := base64.StdEncoding.DecodeString(meta.Content)
+	if err != nil {
+		slog.ErrorContext(ctx, "the contents response did not decode from base64", slog.String("ref", ref), errAttr(err))
+		return nil, "", fmt.Errorf("the contents response for %s did not decode from base64: %w", signaturesPath, err)
+	}
+	var f SignatureFile
+	if err := json.Unmarshal(raw, &f); err != nil {
+		slog.ErrorContext(ctx, "tools/cla/signatures.json did not decode", slog.String("ref", ref), errAttr(err))
+		return nil, "", fmt.Errorf("%s is not valid JSON: %w", signaturesPath, err)
+	}
+	return &f, meta.SHA, nil
+}
+
+// noreplyEmail is the address GitHub itself writes for a commit made through the
+// web UI, and the only address form the gate's own trailer resolution accepts.
+func noreplyEmail(p Principal) string {
+	return fmt.Sprintf("%d+%s@users.noreply.github.com", p.ID, p.Login)
+}
+
+// marshalSignatureFile reproduces the file's on-disk shape — two-space indent,
+// trailing newline — so a signature recorded by /sign leaves no reformatting diff
+// against one added by hand, and the next hand-edit does not rewrite the file.
+func marshalSignatureFile(f *SignatureFile) ([]byte, error) {
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+// putSignatureFile commits the file to branch. The contributor is the commit
+// author and the workflow's token is the committer, so the record lives in git
+// history under the identity that agreed to it rather than the bot's. sha makes
+// the write conditional; a stale one comes back as errConflict.
+func (c *client) putSignatureFile(ctx context.Context, branch string, f *SignatureFile, sha, message string, author Principal) error {
+	content, err := marshalSignatureFile(f)
+	if err != nil {
+		return err
+	}
+	endpoint := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL, c.repo, signaturesPath)
+	return c.send(ctx, http.MethodPut, endpoint, map[string]any{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString(content),
+		"sha":     sha,
+		"branch":  branch,
+		"author":  map[string]string{"name": author.Login, "email": noreplyEmail(author)},
+	})
+}
+
+// PullRequest is the part of the pull request the signer needs and the
+// issue_comment payload does not carry: where to commit, whether it is still
+// open, and how many commits to expect so a list truncated at GitHub's 250 cap is
+// caught rather than silently under-reporting who has work here.
+type PullRequest struct {
+	State   string    `json:"state"`
+	Commits int       `json:"commits"`
+	User    Principal `json:"user"`
+	Head    struct {
+		SHA string `json:"sha"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+}
+
+func (c *client) pullRequest(ctx context.Context, pr int) (PullRequest, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/pulls/%d", c.baseURL, c.repo, pr)
+	body, _, err := c.get(ctx, endpoint, "application/vnd.github+json")
+	if err != nil {
+		return PullRequest{}, err
+	}
+	var out PullRequest
+	if err := json.Unmarshal(body, &out); err != nil {
+		slog.ErrorContext(ctx, "the pull request response did not decode", slog.Int("pr", pr), errAttr(err))
+		return PullRequest{}, fmt.Errorf("the pull request response did not decode: %w", err)
+	}
+	return out, nil
+}
+
+// WorkflowRun is one run of the checker's workflow. The signer re-runs an existing
+// run rather than dispatching a fresh one: only pull_request_target runs attach to
+// a pull request's checks, so a dispatched run would change nothing the merge
+// button can see.
+type WorkflowRun struct {
+	ID int64 `json:"id"`
+}
+
+func (c *client) latestWorkflowRun(ctx context.Context, workflowFile, headSHA string) (WorkflowRun, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/actions/workflows/%s/runs?head_sha=%s&per_page=1",
+		c.baseURL, c.repo, url.PathEscape(workflowFile), url.QueryEscape(headSHA))
+	body, _, err := c.get(ctx, endpoint, "application/vnd.github+json")
+	if err != nil {
+		return WorkflowRun{}, err
+	}
+	var page struct {
+		Runs []WorkflowRun `json:"workflow_runs"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		slog.ErrorContext(ctx, "the workflow runs response did not decode", errAttr(err))
+		return WorkflowRun{}, fmt.Errorf("the workflow runs response did not decode: %w", err)
+	}
+	if len(page.Runs) == 0 {
+		return WorkflowRun{}, errNoRuns
+	}
+	return page.Runs[0], nil
+}
+
+func (c *client) rerunWorkflow(ctx context.Context, runID int64) error {
+	endpoint := fmt.Sprintf("%s/repos/%s/actions/runs/%d/rerun", c.baseURL, c.repo, runID)
+	return c.send(ctx, http.MethodPost, endpoint, nil)
 }
 
 var nextPageRe = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
@@ -206,6 +360,11 @@ func (c *client) send(ctx context.Context, method, endpoint string, payload any)
 	if err != nil {
 		slog.ErrorContext(ctx, "reading the github response failed", slog.String("endpoint", endpoint), errAttr(err))
 		return err
+	}
+	if resp.StatusCode == http.StatusConflict {
+		// The body is what separates a lost race from a refusal that will never
+		// succeed, such as a protected branch; errors.Is still matches.
+		return fmt.Errorf("%w: %s", errConflict, strings.TrimSpace(string(res)))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		err := fmt.Errorf("%s %s: %s: %s", method, endpoint, resp.Status, strings.TrimSpace(string(res)))
