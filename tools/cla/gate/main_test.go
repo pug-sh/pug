@@ -232,7 +232,7 @@ func TestCheckReportsTheUnsignedContributor(t *testing.T) {
 	}
 	// alice opened it, so hers is the entry offered; bob authored the commit and
 	// is named, but only he can sign for himself.
-	for _, want := range []string{"alice", "bob", `"id": 1`, "opened themselves"} {
+	for _, want := range []string{"alice", "bob", `"id": 1`, "commenting `/sign`"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("want %q in the report, got %q", want, out.String())
 		}

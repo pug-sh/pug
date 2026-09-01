@@ -3,10 +3,10 @@
 //
 // Everyone whose copyright can reach the repository through the pull request —
 // commit author, committer, co-author, and the person who opened it — must appear
-// in tools/cla/signatures.json. The file is read from the pull request's own head, so a
-// contributor signs in the same pull request; the edit must be append-only and may
-// only add the person who opened it, so a co-author signs in a pull request of
-// their own.
+// in tools/cla/signatures.json. The file is read both at the pull request's head,
+// where a hand-written signature lands, and at the base branch tip, where a /sign
+// comment lands one. A hand-written edit must be append-only and may only add the
+// person who opened it, so a co-author signs by commenting /sign instead.
 //
 // Commits and the signature file are read over the API, so no file the pull
 // request controls is read off the runner. The checker's own code and workflow are

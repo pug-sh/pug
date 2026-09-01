@@ -180,9 +180,11 @@ func noreplyLogin(email string) string {
 }
 
 // appendOnly keeps existing entries immutable and takes only the opener's own
-// signature. The opener is the one principal that cannot be forged: an author, a
-// committer and a trailer are all self-asserted, so accepting a signature for any
-// principal would let a pull request sign for anyone it named.
+// signature. The opener is the one principal in the pull request's own contents
+// that cannot be forged: an author, a committer and a trailer are all
+// self-asserted, so accepting a signature for any principal would let a pull
+// request sign for anyone it named. A /sign comment is the other unforgeable
+// identity, and it writes to the base branch rather than through here.
 //
 // inForce comes from the base branch tip, not from base: a branch that predates a
 // version bump would otherwise sign the retired version and pass.
@@ -200,7 +202,7 @@ func appendOnly(base, head *SignatureFile, signer Principal, inForce string) err
 		switch {
 		case slices.Contains(base.Signatures, h):
 		case h.ID != signer.ID:
-			return fmt.Errorf("this pull request adds a signature for %q, who did not open it; you may only sign for yourself, so a co-author signs in a pull request of their own", h.Login)
+			return fmt.Errorf("this pull request adds a signature for %q, who did not open it; you may only sign for yourself, so a co-author comments /sign on this pull request instead", h.Login)
 		// Signing matches on the id, so a mismatched login would stand in the
 		// record as a signature by whoever it names.
 		case !strings.EqualFold(h.Login, signer.Login):

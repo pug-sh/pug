@@ -197,10 +197,12 @@ You can also sign by hand. Add yourself to
 [`tools/cla/signatures.json`](tools/cla/signatures.json) as part of your pull request:
 
 ```json
-{ "login": "your-github-username",
-  "id":    12345678,
-  "date":  "YYYY-MM-DD",
-  "cla":   "v1" }
+{
+  "login": "your-github-username",
+  "id": 12345678,
+  "date": "YYYY-MM-DD",
+  "cla": "v1"
+}
 ```
 
 Either way, recording that entry under your own identity is how You execute this
@@ -209,9 +211,9 @@ the version of the Agreement you signed in the repository's history. You do it o
 version of this Agreement; it covers every Contribution you make afterwards,
 including any you have already Submitted.
 
-`id` is your numeric GitHub user id. The CLA check prints this entry for you with
-the id already filled in, so the simplest path is to open the pull request and copy
-what it tells you. You can also read it from
+`id` is your numeric GitHub user id, needed only if you sign by hand. The CLA
+check prints this entry for you with the id already filled in, so the simplest
+path is to open the pull request and copy what it tells you. You can also read it from
 `https://api.github.com/users/<username>`. It is the id rather than the username
 that identifies you here, because usernames can be changed and re-registered.
 
