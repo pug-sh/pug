@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/events"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	activityv1 "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -130,6 +131,87 @@ func TestGetEventExplorer_InvalidPageToken(t *testing.T) {
 	}
 }
 
+func TestGetProfileSessions_InvalidPageToken(t *testing.T) {
+	s := &server{}
+	ctx := ctxWithProject(context.Background())
+
+	for _, tc := range []struct {
+		name  string
+		token string
+		sort  activityv1.ProfileSessionSort
+	}{
+		{"malformed", "!!!not-valid-base64!!!", activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_STARTED_AT},
+		{"issued for another sort", mustSessionToken(t, events.ProfileSessionSortStartedAt),
+			activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_DURATION},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := s.GetProfileSessions(ctx, connect.NewRequest(&activityv1.GetProfileSessionsRequest{
+				DistinctId: proto.String("user-1"),
+				PageToken:  proto.String(tc.token),
+				Sort:       tc.sort.Enum(),
+			}))
+			var ae *apperr.Error
+			if !errors.As(err, &ae) {
+				t.Fatalf("want *apperr.Error, got %T: %v", err, err)
+			}
+			if ae.Code() != connect.CodeInvalidArgument {
+				t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
+			}
+			if ae.Reason() != apperr.ReasonInvalidPageToken {
+				t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason())
+			}
+		})
+	}
+}
+
+func mustSessionToken(t *testing.T, sort events.ProfileSessionSort) string {
+	t.Helper()
+	c := &events.ProfileSessionCursor{Sort: sort, Value: 1, SessionID: uuid.NewString()}
+	token, err := c.Encode()
+	if err != nil {
+		t.Fatalf("encode cursor: %v", err)
+	}
+	return token
+}
+
+func TestGetProfileSessions_Unauthenticated(t *testing.T) {
+	s := &server{}
+	_, err := s.GetProfileSessions(context.Background(), connect.NewRequest(&activityv1.GetProfileSessionsRequest{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
+	}
+}
+
+// Enumerating the enum descriptor is what makes the next sort added to the proto
+// fail here rather than silently ordering by started_at in production.
+func TestProfileSessionSort_MapsEveryProtoValue(t *testing.T) {
+	values := activityv1.ProfileSessionSort(0).Descriptor().Values()
+	seen := make(map[events.ProfileSessionSort]string, values.Len())
+	for i := range values.Len() {
+		value := values.Get(i)
+		mode := activityv1.ProfileSessionSort(value.Number())
+		if mode == activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_UNSPECIFIED {
+			continue
+		}
+		got := profileSessionSort(mode)
+		if got == events.ProfileSessionSortStartedAt && mode != activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_STARTED_AT {
+			t.Errorf("profileSessionSort(%s) fell through to %q — add it to the switch", value.Name(), got)
+			continue
+		}
+		if prev, dup := seen[got]; dup {
+			t.Errorf("profileSessionSort(%s) and (%s) both map to %q", value.Name(), prev, got)
+		}
+		seen[got] = string(value.Name())
+	}
+	if len(seen) != values.Len()-1 {
+		t.Errorf("mapped %d sorts, want %d", len(seen), values.Len()-1)
+	}
+}
+
 func TestGetActivityHeatmap_Unauthenticated(t *testing.T) {
 	s := &server{}
 	_, err := s.GetActivityHeatmap(context.Background(), connect.NewRequest(&activityv1.GetActivityHeatmapRequest{}))
@@ -155,7 +237,7 @@ func TestGetProfileStats_Unauthenticated(t *testing.T) {
 }
 
 // TestIncludeBots_ReachesTheReader pins the proto field through the handler for all
-// four activity RPCs. The core-layer toggle is covered by events.TestBotExclusion;
+// five activity RPCs. The core-layer toggle is covered by events.TestBotExclusion;
 // what is untested without this is the plumbing — a handler that drops the field or
 // hardcodes it passes every core test.
 func TestIncludeBots_ReachesTheReader(t *testing.T) {
@@ -222,6 +304,15 @@ func TestIncludeBots_ReachesTheReader(t *testing.T) {
 			}
 			return total, nil
 		}},
+		{"GetProfileSessions", 0, func(b bool) (int64, error) {
+			resp, err := srv.GetProfileSessions(reqCtx, connect.NewRequest(&activityv1.GetProfileSessionsRequest{
+				DistinctId: proto.String(distinctID), IncludeBots: proto.Bool(b),
+			}))
+			if err != nil {
+				return 0, err
+			}
+			return int64(len(resp.Msg.GetSessions())), nil
+		}},
 		{"GetProfileStats", 0, func(b bool) (int64, error) {
 			resp, err := srv.GetProfileStats(reqCtx, connect.NewRequest(&activityv1.GetProfileStatsRequest{
 				DistinctId: proto.String(distinctID), IncludeBots: proto.Bool(b),
@@ -248,5 +339,66 @@ func TestIncludeBots_ReachesTheReader(t *testing.T) {
 				t.Errorf("%s with bots included = %d, want 2 — the field is not reaching the reader", tc.name, included)
 			}
 		})
+	}
+}
+
+// Pins encode → response → decode → seek. Without it, dropping the NextPageToken
+// assignment in the handler fails nothing — the same shape as the bug this RPC fixes.
+func TestGetProfileSessions_PageTokenRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+
+	projectID := "proj-activity-sessions"
+	const distinctID = "user-1"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	want := make(map[string]bool, 3)
+	for i := range 3 {
+		sessionID := uuid.NewString()
+		want[sessionID] = true
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, distinctID, "page_view",
+			sessionID, map[string]string{}, map[string]string{}, now.Add(-time.Duration(i)*time.Hour))
+	}
+
+	srv := NewServer(ch.Conn, nil, dbread.New(pg.PgRO))
+	reqCtx := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypePrivateKey,
+		Project:  &dbread.Project{ID: projectID},
+	})
+
+	got := make(map[string]bool, 3)
+	token := ""
+	for page := 0; ; page++ {
+		if page > 3 {
+			t.Fatal("pagination did not terminate")
+		}
+		resp, err := srv.GetProfileSessions(reqCtx, connect.NewRequest(&activityv1.GetProfileSessionsRequest{
+			DistinctId: proto.String(distinctID),
+			PageSize:   proto.Int32(1),
+			PageToken:  proto.String(token),
+		}))
+		if err != nil {
+			t.Fatalf("GetProfileSessions page %d: %v", page, err)
+		}
+		for _, sess := range resp.Msg.GetSessions() {
+			got[sess.GetSessionId()] = true
+		}
+		token = resp.Msg.GetNextPageToken()
+		if token == "" {
+			break
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("paged %d sessions, want %d", len(got), len(want))
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("session %s never returned", id)
+		}
 	}
 }

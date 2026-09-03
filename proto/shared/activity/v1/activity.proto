@@ -33,6 +33,21 @@ service ActivityService {
   // Defaults to the last 60 days when no time_range is provided.
   // Traffic tagged as a bot at ingest is excluded unless include_bots is true.
   rpc GetActivityHeatmap(GetActivityHeatmapRequest) returns (GetActivityHeatmapResponse);
+  // GetProfileSessions returns a paginated list of one user profile's sessions,
+  // newest first. Requires that user's distinct_id (the pug profile id a profile
+  // lookup gives you). Sessions are aggregated server-side — one row per session
+  // with its start, end, event count and device context — so a profile with more
+  // events than any one page can hold still lists every session, with exact
+  // durations and counts. Resolves profile aliases so merged anonymous events are
+  // included.
+  // To page, send the previous response's next_page_token back as page_token; an
+  // empty next_page_token means there are no more pages. A token is only valid for
+  // the sort it was issued under — to change sort, start again with no page_token.
+  // Every sort is descending.
+  // Traffic tagged as a bot at ingest is excluded unless include_bots is true, and
+  // the judgement is per session: a session with any tagged event is omitted whole
+  // rather than returned with only its untagged events.
+  rpc GetProfileSessions(GetProfileSessionsRequest) returns (GetProfileSessionsResponse);
   // GetProfileStats returns aggregate statistics, device/browser/location context from the
   // latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
   // Resolves aliases so merged anonymous events are included.
@@ -167,6 +182,73 @@ message HeatmapDay {
 
 message GetActivityHeatmapResponse {
   repeated HeatmapDay days = 1;
+}
+
+// ProfileSessionSort names the ordering of GetProfileSessions. Ordering is always
+// descending — newest, longest, or busiest first — with the session id breaking ties.
+enum ProfileSessionSort {
+  // Defaults to PROFILE_SESSION_SORT_STARTED_AT.
+  PROFILE_SESSION_SORT_UNSPECIFIED = 0;
+  // Session start, newest first.
+  PROFILE_SESSION_SORT_STARTED_AT = 1;
+  // Session duration (ended_at - started_at), longest first.
+  PROFILE_SESSION_SORT_DURATION = 2;
+  // Events in the session, most first.
+  PROFILE_SESSION_SORT_EVENT_COUNT = 3;
+}
+
+message GetProfileSessionsRequest {
+  // Required. The profile ID to list sessions for.
+  string distinct_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.min_len = 1];
+  // 0 means server default (100). Values above 1000 are rejected.
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // Opaque cursor from a previous response's next_page_token. Empty for the first page.
+  // A token is bound to the sort it was issued under, since the seek predicate is
+  // built from the ordering column; send the same sort back, or restart from an
+  // empty token to change it. It is not bound to the other fields — changing
+  // time_range or include_bots mid-pagination gives undefined paging.
+  string page_token = 3;
+  // Optional. Defaults to PROFILE_SESSION_SORT_STARTED_AT.
+  ProfileSessionSort sort = 4 [(buf.validate.field).enum = {defined_only: true}];
+  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  bool include_bots = 5;
+  // Optional. Restricts to sessions with an event in the window; omitted means the
+  // profile's whole history. Every page aggregates the window, so narrowing it is
+  // the only way to bound the read.
+  common.v1.TimeRange time_range = 6;
+}
+
+// ProfileSession is one session of a profile, aggregated over every event in it.
+message ProfileSession {
+  string session_id = 1;
+  // Time of the session's first event.
+  google.protobuf.Timestamp started_at = 2;
+  // Time of the session's last event; equals started_at for a single-event session.
+  google.protobuf.Timestamp ended_at = 3;
+  // Events recorded in the session.
+  int64 event_count = 4;
+  // Browser name from the session's latest event (e.g. "Chrome"). Empty if unavailable.
+  string browser = 5;
+  // OS name from the session's latest event (e.g. "Mac OS X"). Empty if unavailable.
+  string os = 6;
+  // Device model from the session's latest event (e.g. "iPhone"). Empty for desktop browsers.
+  string device = 7;
+  // Platform from the session's latest event (e.g. "web", "ios"). Empty if unavailable.
+  string platform = 8;
+  // True when EVERY event in the session was tagged as automated at ingest ($bot).
+  // Only ever true on a read that set include_bots, since a session with any tagged
+  // event is otherwise excluded.
+  bool bot = 9;
+}
+
+message GetProfileSessionsResponse {
+  repeated ProfileSession sessions = 1;
+  // Empty when there are no more pages. Set only when a further session exists.
+  string next_page_token = 2;
 }
 
 message GetProfileStatsRequest {

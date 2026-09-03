@@ -49,6 +49,9 @@ const (
 	// ActivityServiceGetActivityHeatmapProcedure is the fully-qualified name of the ActivityService's
 	// GetActivityHeatmap RPC.
 	ActivityServiceGetActivityHeatmapProcedure = "/shared.activity.v1.ActivityService/GetActivityHeatmap"
+	// ActivityServiceGetProfileSessionsProcedure is the fully-qualified name of the ActivityService's
+	// GetProfileSessions RPC.
+	ActivityServiceGetProfileSessionsProcedure = "/shared.activity.v1.ActivityService/GetProfileSessions"
 	// ActivityServiceGetProfileStatsProcedure is the fully-qualified name of the ActivityService's
 	// GetProfileStats RPC.
 	ActivityServiceGetProfileStatsProcedure = "/shared.activity.v1.ActivityService/GetProfileStats"
@@ -77,6 +80,21 @@ type ActivityServiceClient interface {
 	// Defaults to the last 60 days when no time_range is provided.
 	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
+	// GetProfileSessions returns a paginated list of one user profile's sessions,
+	// newest first. Requires that user's distinct_id (the pug profile id a profile
+	// lookup gives you). Sessions are aggregated server-side — one row per session
+	// with its start, end, event count and device context — so a profile with more
+	// events than any one page can hold still lists every session, with exact
+	// durations and counts. Resolves profile aliases so merged anonymous events are
+	// included.
+	// To page, send the previous response's next_page_token back as page_token; an
+	// empty next_page_token means there are no more pages. A token is only valid for
+	// the sort it was issued under — to change sort, start again with no page_token.
+	// Every sort is descending.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true, and
+	// the judgement is per session: a session with any tagged event is omitted whole
+	// rather than returned with only its untagged events.
+	GetProfileSessions(context.Context, *connect.Request[v1.GetProfileSessionsRequest]) (*connect.Response[v1.GetProfileSessionsResponse], error)
 	// GetProfileStats returns aggregate statistics, device/browser/location context from the
 	// latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
 	// Resolves aliases so merged anonymous events are included.
@@ -127,6 +145,12 @@ func NewActivityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(activityServiceMethods.ByName("GetActivityHeatmap")),
 			connect.WithClientOptions(opts...),
 		),
+		getProfileSessions: connect.NewClient[v1.GetProfileSessionsRequest, v1.GetProfileSessionsResponse](
+			httpClient,
+			baseURL+ActivityServiceGetProfileSessionsProcedure,
+			connect.WithSchema(activityServiceMethods.ByName("GetProfileSessions")),
+			connect.WithClientOptions(opts...),
+		),
 		getProfileStats: connect.NewClient[v1.GetProfileStatsRequest, v1.GetProfileStatsResponse](
 			httpClient,
 			baseURL+ActivityServiceGetProfileStatsProcedure,
@@ -143,6 +167,7 @@ type activityServiceClient struct {
 	getFilterSchema    *connect.Client[v11.GetFilterSchemaRequest, v11.GetFilterSchemaResponse]
 	getPropertyValues  *connect.Client[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse]
 	getActivityHeatmap *connect.Client[v1.GetActivityHeatmapRequest, v1.GetActivityHeatmapResponse]
+	getProfileSessions *connect.Client[v1.GetProfileSessionsRequest, v1.GetProfileSessionsResponse]
 	getProfileStats    *connect.Client[v1.GetProfileStatsRequest, v1.GetProfileStatsResponse]
 }
 
@@ -169,6 +194,11 @@ func (c *activityServiceClient) GetPropertyValues(ctx context.Context, req *conn
 // GetActivityHeatmap calls shared.activity.v1.ActivityService.GetActivityHeatmap.
 func (c *activityServiceClient) GetActivityHeatmap(ctx context.Context, req *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error) {
 	return c.getActivityHeatmap.CallUnary(ctx, req)
+}
+
+// GetProfileSessions calls shared.activity.v1.ActivityService.GetProfileSessions.
+func (c *activityServiceClient) GetProfileSessions(ctx context.Context, req *connect.Request[v1.GetProfileSessionsRequest]) (*connect.Response[v1.GetProfileSessionsResponse], error) {
+	return c.getProfileSessions.CallUnary(ctx, req)
 }
 
 // GetProfileStats calls shared.activity.v1.ActivityService.GetProfileStats.
@@ -199,6 +229,21 @@ type ActivityServiceHandler interface {
 	// Defaults to the last 60 days when no time_range is provided.
 	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
+	// GetProfileSessions returns a paginated list of one user profile's sessions,
+	// newest first. Requires that user's distinct_id (the pug profile id a profile
+	// lookup gives you). Sessions are aggregated server-side — one row per session
+	// with its start, end, event count and device context — so a profile with more
+	// events than any one page can hold still lists every session, with exact
+	// durations and counts. Resolves profile aliases so merged anonymous events are
+	// included.
+	// To page, send the previous response's next_page_token back as page_token; an
+	// empty next_page_token means there are no more pages. A token is only valid for
+	// the sort it was issued under — to change sort, start again with no page_token.
+	// Every sort is descending.
+	// Traffic tagged as a bot at ingest is excluded unless include_bots is true, and
+	// the judgement is per session: a session with any tagged event is omitted whole
+	// rather than returned with only its untagged events.
+	GetProfileSessions(context.Context, *connect.Request[v1.GetProfileSessionsRequest]) (*connect.Response[v1.GetProfileSessionsResponse], error)
 	// GetProfileStats returns aggregate statistics, device/browser/location context from the
 	// latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
 	// Resolves aliases so merged anonymous events are included.
@@ -245,6 +290,12 @@ func NewActivityServiceHandler(svc ActivityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(activityServiceMethods.ByName("GetActivityHeatmap")),
 		connect.WithHandlerOptions(opts...),
 	)
+	activityServiceGetProfileSessionsHandler := connect.NewUnaryHandler(
+		ActivityServiceGetProfileSessionsProcedure,
+		svc.GetProfileSessions,
+		connect.WithSchema(activityServiceMethods.ByName("GetProfileSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	activityServiceGetProfileStatsHandler := connect.NewUnaryHandler(
 		ActivityServiceGetProfileStatsProcedure,
 		svc.GetProfileStats,
@@ -263,6 +314,8 @@ func NewActivityServiceHandler(svc ActivityServiceHandler, opts ...connect.Handl
 			activityServiceGetPropertyValuesHandler.ServeHTTP(w, r)
 		case ActivityServiceGetActivityHeatmapProcedure:
 			activityServiceGetActivityHeatmapHandler.ServeHTTP(w, r)
+		case ActivityServiceGetProfileSessionsProcedure:
+			activityServiceGetProfileSessionsHandler.ServeHTTP(w, r)
 		case ActivityServiceGetProfileStatsProcedure:
 			activityServiceGetProfileStatsHandler.ServeHTTP(w, r)
 		default:
@@ -292,6 +345,10 @@ func (UnimplementedActivityServiceHandler) GetPropertyValues(context.Context, *c
 
 func (UnimplementedActivityServiceHandler) GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetActivityHeatmap is not implemented"))
+}
+
+func (UnimplementedActivityServiceHandler) GetProfileSessions(context.Context, *connect.Request[v1.GetProfileSessionsRequest]) (*connect.Response[v1.GetProfileSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetProfileSessions is not implemented"))
 }
 
 func (UnimplementedActivityServiceHandler) GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error) {

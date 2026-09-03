@@ -25,6 +25,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ProfileSessionSort names the ordering of GetProfileSessions. Ordering is always
+// descending — newest, longest, or busiest first — with the session id breaking ties.
+type ProfileSessionSort int32
+
+const (
+	// Defaults to PROFILE_SESSION_SORT_STARTED_AT.
+	ProfileSessionSort_PROFILE_SESSION_SORT_UNSPECIFIED ProfileSessionSort = 0
+	// Session start, newest first.
+	ProfileSessionSort_PROFILE_SESSION_SORT_STARTED_AT ProfileSessionSort = 1
+	// Session duration (ended_at - started_at), longest first.
+	ProfileSessionSort_PROFILE_SESSION_SORT_DURATION ProfileSessionSort = 2
+	// Events in the session, most first.
+	ProfileSessionSort_PROFILE_SESSION_SORT_EVENT_COUNT ProfileSessionSort = 3
+)
+
+// Enum value maps for ProfileSessionSort.
+var (
+	ProfileSessionSort_name = map[int32]string{
+		0: "PROFILE_SESSION_SORT_UNSPECIFIED",
+		1: "PROFILE_SESSION_SORT_STARTED_AT",
+		2: "PROFILE_SESSION_SORT_DURATION",
+		3: "PROFILE_SESSION_SORT_EVENT_COUNT",
+	}
+	ProfileSessionSort_value = map[string]int32{
+		"PROFILE_SESSION_SORT_UNSPECIFIED": 0,
+		"PROFILE_SESSION_SORT_STARTED_AT":  1,
+		"PROFILE_SESSION_SORT_DURATION":    2,
+		"PROFILE_SESSION_SORT_EVENT_COUNT": 3,
+	}
+)
+
+func (x ProfileSessionSort) Enum() *ProfileSessionSort {
+	p := new(ProfileSessionSort)
+	*p = x
+	return p
+}
+
+func (x ProfileSessionSort) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProfileSessionSort) Descriptor() protoreflect.EnumDescriptor {
+	return file_shared_activity_v1_activity_proto_enumTypes[0].Descriptor()
+}
+
+func (ProfileSessionSort) Type() protoreflect.EnumType {
+	return &file_shared_activity_v1_activity_proto_enumTypes[0]
+}
+
+func (x ProfileSessionSort) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProfileSessionSort.Descriptor instead.
+func (ProfileSessionSort) EnumDescriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{0}
+}
+
 type GetActivityFeedRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required. The profile ID to fetch events for.
@@ -709,6 +767,275 @@ func (x *GetActivityHeatmapResponse) GetDays() []*HeatmapDay {
 	return nil
 }
 
+type GetProfileSessionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Required. The profile ID to list sessions for.
+	DistinctId *string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	// 0 means server default (100). Values above 1000 are rejected.
+	PageSize *int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
+	// A token is bound to the sort it was issued under, since the seek predicate is
+	// built from the ordering column; send the same sort back, or restart from an
+	// empty token to change it. It is not bound to the other fields — changing
+	// time_range or include_bots mid-pagination gives undefined paging.
+	PageToken *string `protobuf:"bytes,3,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	// Optional. Defaults to PROFILE_SESSION_SORT_STARTED_AT.
+	Sort *ProfileSessionSort `protobuf:"varint,4,opt,name=sort,enum=shared.activity.v1.ProfileSessionSort" json:"sort,omitempty"`
+	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
+	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	IncludeBots *bool `protobuf:"varint,5,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
+	// Optional. Restricts to sessions with an event in the window; omitted means the
+	// profile's whole history. Every page aggregates the window, so narrowing it is
+	// the only way to bound the read.
+	TimeRange     *v1.TimeRange `protobuf:"bytes,6,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProfileSessionsRequest) Reset() {
+	*x = GetProfileSessionsRequest{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProfileSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProfileSessionsRequest) ProtoMessage() {}
+
+func (x *GetProfileSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProfileSessionsRequest.ProtoReflect.Descriptor instead.
+func (*GetProfileSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetProfileSessionsRequest) GetDistinctId() string {
+	if x != nil && x.DistinctId != nil {
+		return *x.DistinctId
+	}
+	return ""
+}
+
+func (x *GetProfileSessionsRequest) GetPageSize() int32 {
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
+	}
+	return 0
+}
+
+func (x *GetProfileSessionsRequest) GetPageToken() string {
+	if x != nil && x.PageToken != nil {
+		return *x.PageToken
+	}
+	return ""
+}
+
+func (x *GetProfileSessionsRequest) GetSort() ProfileSessionSort {
+	if x != nil && x.Sort != nil {
+		return *x.Sort
+	}
+	return ProfileSessionSort_PROFILE_SESSION_SORT_UNSPECIFIED
+}
+
+func (x *GetProfileSessionsRequest) GetIncludeBots() bool {
+	if x != nil && x.IncludeBots != nil {
+		return *x.IncludeBots
+	}
+	return false
+}
+
+func (x *GetProfileSessionsRequest) GetTimeRange() *v1.TimeRange {
+	if x != nil {
+		return x.TimeRange
+	}
+	return nil
+}
+
+// ProfileSession is one session of a profile, aggregated over every event in it.
+type ProfileSession struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId *string                `protobuf:"bytes,1,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	// Time of the session's first event.
+	StartedAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=started_at,json=startedAt" json:"started_at,omitempty"`
+	// Time of the session's last event; equals started_at for a single-event session.
+	EndedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=ended_at,json=endedAt" json:"ended_at,omitempty"`
+	// Events recorded in the session.
+	EventCount *int64 `protobuf:"varint,4,opt,name=event_count,json=eventCount" json:"event_count,omitempty"`
+	// Browser name from the session's latest event (e.g. "Chrome"). Empty if unavailable.
+	Browser *string `protobuf:"bytes,5,opt,name=browser" json:"browser,omitempty"`
+	// OS name from the session's latest event (e.g. "Mac OS X"). Empty if unavailable.
+	Os *string `protobuf:"bytes,6,opt,name=os" json:"os,omitempty"`
+	// Device model from the session's latest event (e.g. "iPhone"). Empty for desktop browsers.
+	Device *string `protobuf:"bytes,7,opt,name=device" json:"device,omitempty"`
+	// Platform from the session's latest event (e.g. "web", "ios"). Empty if unavailable.
+	Platform *string `protobuf:"bytes,8,opt,name=platform" json:"platform,omitempty"`
+	// True when EVERY event in the session was tagged as automated at ingest ($bot).
+	// Only ever true on a read that set include_bots, since a session with any tagged
+	// event is otherwise excluded.
+	Bot           *bool `protobuf:"varint,9,opt,name=bot" json:"bot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileSession) Reset() {
+	*x = ProfileSession{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileSession) ProtoMessage() {}
+
+func (x *ProfileSession) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileSession.ProtoReflect.Descriptor instead.
+func (*ProfileSession) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ProfileSession) GetSessionId() string {
+	if x != nil && x.SessionId != nil {
+		return *x.SessionId
+	}
+	return ""
+}
+
+func (x *ProfileSession) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *ProfileSession) GetEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndedAt
+	}
+	return nil
+}
+
+func (x *ProfileSession) GetEventCount() int64 {
+	if x != nil && x.EventCount != nil {
+		return *x.EventCount
+	}
+	return 0
+}
+
+func (x *ProfileSession) GetBrowser() string {
+	if x != nil && x.Browser != nil {
+		return *x.Browser
+	}
+	return ""
+}
+
+func (x *ProfileSession) GetOs() string {
+	if x != nil && x.Os != nil {
+		return *x.Os
+	}
+	return ""
+}
+
+func (x *ProfileSession) GetDevice() string {
+	if x != nil && x.Device != nil {
+		return *x.Device
+	}
+	return ""
+}
+
+func (x *ProfileSession) GetPlatform() string {
+	if x != nil && x.Platform != nil {
+		return *x.Platform
+	}
+	return ""
+}
+
+func (x *ProfileSession) GetBot() bool {
+	if x != nil && x.Bot != nil {
+		return *x.Bot
+	}
+	return false
+}
+
+type GetProfileSessionsResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Sessions []*ProfileSession      `protobuf:"bytes,1,rep,name=sessions" json:"sessions,omitempty"`
+	// Empty when there are no more pages. Set only when a further session exists.
+	NextPageToken *string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProfileSessionsResponse) Reset() {
+	*x = GetProfileSessionsResponse{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProfileSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProfileSessionsResponse) ProtoMessage() {}
+
+func (x *GetProfileSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProfileSessionsResponse.ProtoReflect.Descriptor instead.
+func (*GetProfileSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetProfileSessionsResponse) GetSessions() []*ProfileSession {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *GetProfileSessionsResponse) GetNextPageToken() string {
+	if x != nil && x.NextPageToken != nil {
+		return *x.NextPageToken
+	}
+	return ""
+}
+
 type GetProfileStatsRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	DistinctId *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
@@ -721,7 +1048,7 @@ type GetProfileStatsRequest struct {
 
 func (x *GetProfileStatsRequest) Reset() {
 	*x = GetProfileStatsRequest{}
-	mi := &file_shared_activity_v1_activity_proto_msgTypes[10]
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -733,7 +1060,7 @@ func (x *GetProfileStatsRequest) String() string {
 func (*GetProfileStatsRequest) ProtoMessage() {}
 
 func (x *GetProfileStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_activity_v1_activity_proto_msgTypes[10]
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -746,7 +1073,7 @@ func (x *GetProfileStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProfileStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetProfileStatsRequest) Descriptor() ([]byte, []int) {
-	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{10}
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetProfileStatsRequest) GetDistinctId() string {
@@ -793,7 +1120,7 @@ type ProfileStats struct {
 
 func (x *ProfileStats) Reset() {
 	*x = ProfileStats{}
-	mi := &file_shared_activity_v1_activity_proto_msgTypes[11]
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -805,7 +1132,7 @@ func (x *ProfileStats) String() string {
 func (*ProfileStats) ProtoMessage() {}
 
 func (x *ProfileStats) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_activity_v1_activity_proto_msgTypes[11]
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -818,7 +1145,7 @@ func (x *ProfileStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileStats.ProtoReflect.Descriptor instead.
 func (*ProfileStats) Descriptor() ([]byte, []int) {
-	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{11}
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ProfileStats) GetFirstSeen() *timestamppb.Timestamp {
@@ -906,7 +1233,7 @@ type GetProfileStatsResponse struct {
 
 func (x *GetProfileStatsResponse) Reset() {
 	*x = GetProfileStatsResponse{}
-	mi := &file_shared_activity_v1_activity_proto_msgTypes[12]
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -918,7 +1245,7 @@ func (x *GetProfileStatsResponse) String() string {
 func (*GetProfileStatsResponse) ProtoMessage() {}
 
 func (x *GetProfileStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_activity_v1_activity_proto_msgTypes[12]
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -931,7 +1258,7 @@ func (x *GetProfileStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProfileStatsResponse.ProtoReflect.Descriptor instead.
 func (*GetProfileStatsResponse) Descriptor() ([]byte, []int) {
-	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{12}
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetProfileStatsResponse) GetStats() *ProfileStats {
@@ -1025,7 +1352,35 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x04date\x18\x01 \x01(\tR\x04date\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\"P\n" +
 	"\x1aGetActivityHeatmapResponse\x122\n" +
-	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days\"d\n" +
+	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days\"\xae\x02\n" +
+	"\x19GetProfileSessionsRequest\x12+\n" +
+	"\vdistinct_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\n" +
+	"distinctId\x12'\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\x12D\n" +
+	"\x04sort\x18\x04 \x01(\x0e2&.shared.activity.v1.ProfileSessionSortB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04sort\x12!\n" +
+	"\finclude_bots\x18\x05 \x01(\bR\vincludeBots\x123\n" +
+	"\n" +
+	"time_range\x18\x06 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\"\xb2\x02\n" +
+	"\x0eProfileSession\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x129\n" +
+	"\n" +
+	"started_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
+	"\bended_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12\x1f\n" +
+	"\vevent_count\x18\x04 \x01(\x03R\n" +
+	"eventCount\x12\x18\n" +
+	"\abrowser\x18\x05 \x01(\tR\abrowser\x12\x0e\n" +
+	"\x02os\x18\x06 \x01(\tR\x02os\x12\x16\n" +
+	"\x06device\x18\a \x01(\tR\x06device\x12\x1a\n" +
+	"\bplatform\x18\b \x01(\tR\bplatform\x12\x10\n" +
+	"\x03bot\x18\t \x01(\bR\x03bot\"\x84\x01\n" +
+	"\x1aGetProfileSessionsResponse\x12>\n" +
+	"\bsessions\x18\x01 \x03(\v2\".shared.activity.v1.ProfileSessionR\bsessions\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"d\n" +
 	"\x16GetProfileStatsRequest\x12'\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"distinctId\x12!\n" +
@@ -1049,13 +1404,19 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\aheatmap\x18\x02 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\aheatmap\x127\n" +
 	"\n" +
 	"properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties2\x99\x05\n" +
+	"properties*\xa8\x01\n" +
+	"\x12ProfileSessionSort\x12$\n" +
+	" PROFILE_SESSION_SORT_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fPROFILE_SESSION_SORT_STARTED_AT\x10\x01\x12!\n" +
+	"\x1dPROFILE_SESSION_SORT_DURATION\x10\x02\x12$\n" +
+	" PROFILE_SESSION_SORT_EVENT_COUNT\x10\x032\x8e\x06\n" +
 	"\x0fActivityService\x12j\n" +
 	"\x0fGetActivityFeed\x12*.shared.activity.v1.GetActivityFeedRequest\x1a+.shared.activity.v1.GetActivityFeedResponse\x12m\n" +
 	"\x10GetEventExplorer\x12+.shared.activity.v1.GetEventExplorerRequest\x1a,.shared.activity.v1.GetEventExplorerResponse\x12X\n" +
 	"\x0fGetFilterSchema\x12!.common.v1.GetFilterSchemaRequest\x1a\".common.v1.GetFilterSchemaResponse\x12p\n" +
 	"\x11GetPropertyValues\x12,.shared.activity.v1.GetPropertyValuesRequest\x1a-.shared.activity.v1.GetPropertyValuesResponse\x12s\n" +
-	"\x12GetActivityHeatmap\x12-.shared.activity.v1.GetActivityHeatmapRequest\x1a..shared.activity.v1.GetActivityHeatmapResponse\x12j\n" +
+	"\x12GetActivityHeatmap\x12-.shared.activity.v1.GetActivityHeatmapRequest\x1a..shared.activity.v1.GetActivityHeatmapResponse\x12s\n" +
+	"\x12GetProfileSessions\x12-.shared.activity.v1.GetProfileSessionsRequest\x1a..shared.activity.v1.GetProfileSessionsResponse\x12j\n" +
 	"\x0fGetProfileStats\x12*.shared.activity.v1.GetProfileStatsRequest\x1a+.shared.activity.v1.GetProfileStatsResponseBHZFgithub.com/pug-sh/pug/internal/gen/proto/shared/activity/v1;activityv1b\beditionsp\xe8\a"
 
 var (
@@ -1070,67 +1431,79 @@ func file_shared_activity_v1_activity_proto_rawDescGZIP() []byte {
 	return file_shared_activity_v1_activity_proto_rawDescData
 }
 
-var file_shared_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_shared_activity_v1_activity_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_shared_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_shared_activity_v1_activity_proto_goTypes = []any{
-	(*GetActivityFeedRequest)(nil),     // 0: shared.activity.v1.GetActivityFeedRequest
-	(*ActivityEvent)(nil),              // 1: shared.activity.v1.ActivityEvent
-	(*GetActivityFeedResponse)(nil),    // 2: shared.activity.v1.GetActivityFeedResponse
-	(*GetEventExplorerRequest)(nil),    // 3: shared.activity.v1.GetEventExplorerRequest
-	(*GetEventExplorerResponse)(nil),   // 4: shared.activity.v1.GetEventExplorerResponse
-	(*GetPropertyValuesRequest)(nil),   // 5: shared.activity.v1.GetPropertyValuesRequest
-	(*GetPropertyValuesResponse)(nil),  // 6: shared.activity.v1.GetPropertyValuesResponse
-	(*GetActivityHeatmapRequest)(nil),  // 7: shared.activity.v1.GetActivityHeatmapRequest
-	(*HeatmapDay)(nil),                 // 8: shared.activity.v1.HeatmapDay
-	(*GetActivityHeatmapResponse)(nil), // 9: shared.activity.v1.GetActivityHeatmapResponse
-	(*GetProfileStatsRequest)(nil),     // 10: shared.activity.v1.GetProfileStatsRequest
-	(*ProfileStats)(nil),               // 11: shared.activity.v1.ProfileStats
-	(*GetProfileStatsResponse)(nil),    // 12: shared.activity.v1.GetProfileStatsResponse
-	(*v1.TimeRange)(nil),               // 13: common.v1.TimeRange
-	(*v1.PropertyFilter)(nil),          // 14: common.v1.PropertyFilter
-	(*v1.EventFilter)(nil),             // 15: common.v1.EventFilter
-	(*timestamppb.Timestamp)(nil),      // 16: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),            // 17: google.protobuf.Struct
-	(v1.PropertySource)(0),             // 18: common.v1.PropertySource
-	(*v1.GetFilterSchemaRequest)(nil),  // 19: common.v1.GetFilterSchemaRequest
-	(*v1.GetFilterSchemaResponse)(nil), // 20: common.v1.GetFilterSchemaResponse
+	(ProfileSessionSort)(0),            // 0: shared.activity.v1.ProfileSessionSort
+	(*GetActivityFeedRequest)(nil),     // 1: shared.activity.v1.GetActivityFeedRequest
+	(*ActivityEvent)(nil),              // 2: shared.activity.v1.ActivityEvent
+	(*GetActivityFeedResponse)(nil),    // 3: shared.activity.v1.GetActivityFeedResponse
+	(*GetEventExplorerRequest)(nil),    // 4: shared.activity.v1.GetEventExplorerRequest
+	(*GetEventExplorerResponse)(nil),   // 5: shared.activity.v1.GetEventExplorerResponse
+	(*GetPropertyValuesRequest)(nil),   // 6: shared.activity.v1.GetPropertyValuesRequest
+	(*GetPropertyValuesResponse)(nil),  // 7: shared.activity.v1.GetPropertyValuesResponse
+	(*GetActivityHeatmapRequest)(nil),  // 8: shared.activity.v1.GetActivityHeatmapRequest
+	(*HeatmapDay)(nil),                 // 9: shared.activity.v1.HeatmapDay
+	(*GetActivityHeatmapResponse)(nil), // 10: shared.activity.v1.GetActivityHeatmapResponse
+	(*GetProfileSessionsRequest)(nil),  // 11: shared.activity.v1.GetProfileSessionsRequest
+	(*ProfileSession)(nil),             // 12: shared.activity.v1.ProfileSession
+	(*GetProfileSessionsResponse)(nil), // 13: shared.activity.v1.GetProfileSessionsResponse
+	(*GetProfileStatsRequest)(nil),     // 14: shared.activity.v1.GetProfileStatsRequest
+	(*ProfileStats)(nil),               // 15: shared.activity.v1.ProfileStats
+	(*GetProfileStatsResponse)(nil),    // 16: shared.activity.v1.GetProfileStatsResponse
+	(*v1.TimeRange)(nil),               // 17: common.v1.TimeRange
+	(*v1.PropertyFilter)(nil),          // 18: common.v1.PropertyFilter
+	(*v1.EventFilter)(nil),             // 19: common.v1.EventFilter
+	(*timestamppb.Timestamp)(nil),      // 20: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),            // 21: google.protobuf.Struct
+	(v1.PropertySource)(0),             // 22: common.v1.PropertySource
+	(*v1.GetFilterSchemaRequest)(nil),  // 23: common.v1.GetFilterSchemaRequest
+	(*v1.GetFilterSchemaResponse)(nil), // 24: common.v1.GetFilterSchemaResponse
 }
 var file_shared_activity_v1_activity_proto_depIdxs = []int32{
-	13, // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
-	14, // 1: shared.activity.v1.GetActivityFeedRequest.property_filters:type_name -> common.v1.PropertyFilter
-	15, // 2: shared.activity.v1.GetActivityFeedRequest.events:type_name -> common.v1.EventFilter
-	16, // 3: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
-	17, // 4: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
-	17, // 5: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
-	1,  // 6: shared.activity.v1.GetActivityFeedResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	13, // 7: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
-	14, // 8: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
-	15, // 9: shared.activity.v1.GetEventExplorerRequest.events:type_name -> common.v1.EventFilter
-	1,  // 10: shared.activity.v1.GetEventExplorerResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	18, // 11: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
-	13, // 12: shared.activity.v1.GetActivityHeatmapRequest.time_range:type_name -> common.v1.TimeRange
-	8,  // 13: shared.activity.v1.GetActivityHeatmapResponse.days:type_name -> shared.activity.v1.HeatmapDay
-	16, // 14: shared.activity.v1.ProfileStats.first_seen:type_name -> google.protobuf.Timestamp
-	16, // 15: shared.activity.v1.ProfileStats.last_seen:type_name -> google.protobuf.Timestamp
-	11, // 16: shared.activity.v1.GetProfileStatsResponse.stats:type_name -> shared.activity.v1.ProfileStats
-	8,  // 17: shared.activity.v1.GetProfileStatsResponse.heatmap:type_name -> shared.activity.v1.HeatmapDay
-	17, // 18: shared.activity.v1.GetProfileStatsResponse.properties:type_name -> google.protobuf.Struct
-	0,  // 19: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
-	3,  // 20: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
-	19, // 21: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> common.v1.GetFilterSchemaRequest
-	5,  // 22: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
-	7,  // 23: shared.activity.v1.ActivityService.GetActivityHeatmap:input_type -> shared.activity.v1.GetActivityHeatmapRequest
-	10, // 24: shared.activity.v1.ActivityService.GetProfileStats:input_type -> shared.activity.v1.GetProfileStatsRequest
-	2,  // 25: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
-	4,  // 26: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
-	20, // 27: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> common.v1.GetFilterSchemaResponse
-	6,  // 28: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
-	9,  // 29: shared.activity.v1.ActivityService.GetActivityHeatmap:output_type -> shared.activity.v1.GetActivityHeatmapResponse
-	12, // 30: shared.activity.v1.ActivityService.GetProfileStats:output_type -> shared.activity.v1.GetProfileStatsResponse
-	25, // [25:31] is the sub-list for method output_type
-	19, // [19:25] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	17, // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
+	18, // 1: shared.activity.v1.GetActivityFeedRequest.property_filters:type_name -> common.v1.PropertyFilter
+	19, // 2: shared.activity.v1.GetActivityFeedRequest.events:type_name -> common.v1.EventFilter
+	20, // 3: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
+	21, // 4: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
+	21, // 5: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
+	2,  // 6: shared.activity.v1.GetActivityFeedResponse.events:type_name -> shared.activity.v1.ActivityEvent
+	17, // 7: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
+	18, // 8: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
+	19, // 9: shared.activity.v1.GetEventExplorerRequest.events:type_name -> common.v1.EventFilter
+	2,  // 10: shared.activity.v1.GetEventExplorerResponse.events:type_name -> shared.activity.v1.ActivityEvent
+	22, // 11: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
+	17, // 12: shared.activity.v1.GetActivityHeatmapRequest.time_range:type_name -> common.v1.TimeRange
+	9,  // 13: shared.activity.v1.GetActivityHeatmapResponse.days:type_name -> shared.activity.v1.HeatmapDay
+	0,  // 14: shared.activity.v1.GetProfileSessionsRequest.sort:type_name -> shared.activity.v1.ProfileSessionSort
+	17, // 15: shared.activity.v1.GetProfileSessionsRequest.time_range:type_name -> common.v1.TimeRange
+	20, // 16: shared.activity.v1.ProfileSession.started_at:type_name -> google.protobuf.Timestamp
+	20, // 17: shared.activity.v1.ProfileSession.ended_at:type_name -> google.protobuf.Timestamp
+	12, // 18: shared.activity.v1.GetProfileSessionsResponse.sessions:type_name -> shared.activity.v1.ProfileSession
+	20, // 19: shared.activity.v1.ProfileStats.first_seen:type_name -> google.protobuf.Timestamp
+	20, // 20: shared.activity.v1.ProfileStats.last_seen:type_name -> google.protobuf.Timestamp
+	15, // 21: shared.activity.v1.GetProfileStatsResponse.stats:type_name -> shared.activity.v1.ProfileStats
+	9,  // 22: shared.activity.v1.GetProfileStatsResponse.heatmap:type_name -> shared.activity.v1.HeatmapDay
+	21, // 23: shared.activity.v1.GetProfileStatsResponse.properties:type_name -> google.protobuf.Struct
+	1,  // 24: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
+	4,  // 25: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
+	23, // 26: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> common.v1.GetFilterSchemaRequest
+	6,  // 27: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
+	8,  // 28: shared.activity.v1.ActivityService.GetActivityHeatmap:input_type -> shared.activity.v1.GetActivityHeatmapRequest
+	11, // 29: shared.activity.v1.ActivityService.GetProfileSessions:input_type -> shared.activity.v1.GetProfileSessionsRequest
+	14, // 30: shared.activity.v1.ActivityService.GetProfileStats:input_type -> shared.activity.v1.GetProfileStatsRequest
+	3,  // 31: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
+	5,  // 32: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
+	24, // 33: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> common.v1.GetFilterSchemaResponse
+	7,  // 34: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
+	10, // 35: shared.activity.v1.ActivityService.GetActivityHeatmap:output_type -> shared.activity.v1.GetActivityHeatmapResponse
+	13, // 36: shared.activity.v1.ActivityService.GetProfileSessions:output_type -> shared.activity.v1.GetProfileSessionsResponse
+	16, // 37: shared.activity.v1.ActivityService.GetProfileStats:output_type -> shared.activity.v1.GetProfileStatsResponse
+	31, // [31:38] is the sub-list for method output_type
+	24, // [24:31] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_shared_activity_v1_activity_proto_init() }
@@ -1143,13 +1516,14 @@ func file_shared_activity_v1_activity_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_shared_activity_v1_activity_proto_rawDesc), len(file_shared_activity_v1_activity_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   13,
+			NumEnums:      1,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_shared_activity_v1_activity_proto_goTypes,
 		DependencyIndexes: file_shared_activity_v1_activity_proto_depIdxs,
+		EnumInfos:         file_shared_activity_v1_activity_proto_enumTypes,
 		MessageInfos:      file_shared_activity_v1_activity_proto_msgTypes,
 	}.Build()
 	File_shared_activity_v1_activity_proto = out.File
