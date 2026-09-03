@@ -72,19 +72,26 @@ func DecodeProfileSessionCursor(token string) (*ProfileSessionCursor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid page token: %w", err)
 	}
-	var c ProfileSessionCursor
-	if err := json.Unmarshal(b, &c); err != nil {
+	// Value is a pointer so an absent "v" stays distinguishable from a legitimate 0:
+	// a truncated token that zero-fills the seek would read as end-of-list.
+	var wire struct {
+		Sort      ProfileSessionSort `json:"s"`
+		Value     *int64             `json:"v"`
+		SessionID string             `json:"i"`
+	}
+	if err := json.Unmarshal(b, &wire); err != nil {
 		return nil, fmt.Errorf("invalid page token: %w", err)
 	}
-	if c.SessionID == "" {
+	if wire.SessionID == "" || wire.Value == nil {
 		return nil, errors.New("invalid page token: missing required cursor fields")
 	}
-	// Value drives the seek, so a truncated token that zero-fills it must not decode:
-	// it would silently read as end-of-list, or seek into the zero-duration tail.
+	c := ProfileSessionCursor{Sort: wire.Sort, Value: *wire.Value, SessionID: wire.SessionID}
 	switch c.Sort {
-	case ProfileSessionSortStartedAt, ProfileSessionSortEventCount:
+	case ProfileSessionSortStartedAt:
+		// Any int64: a device clock at or before the epoch yields non-positive millis.
+	case ProfileSessionSortEventCount:
 		if c.Value <= 0 {
-			return nil, fmt.Errorf("invalid page token: non-positive %s value %d", c.Sort, c.Value)
+			return nil, fmt.Errorf("invalid page token: non-positive event_count value %d", c.Value)
 		}
 	case ProfileSessionSortDuration:
 		// 0 is legitimate here — a single-event session.

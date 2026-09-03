@@ -81,16 +81,17 @@ type ActivityServiceClient interface {
 	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
 	// GetProfileSessions returns a paginated list of one user profile's sessions,
-	// newest first. Requires that user's distinct_id (the pug profile id a profile
-	// lookup gives you). Sessions are aggregated server-side — one row per session
-	// with its start, end, event count and device context — so a profile with more
-	// events than any one page can hold still lists every session, with exact
-	// durations and counts. Resolves profile aliases so merged anonymous events are
+	// newest first unless sort says otherwise. Requires that user's distinct_id (the
+	// pug profile id a profile lookup gives you). Sessions are aggregated server-side
+	// — one row per session with its start, end, event count and device context — so
+	// a profile with more events than any one page can hold still lists every
+	// session, with exact durations and counts. Resolves profile aliases so merged anonymous events are
 	// included.
 	// To page, send the previous response's next_page_token back as page_token; an
 	// empty next_page_token means there are no more pages. A token is only valid for
 	// the sort it was issued under — to change sort, start again with no page_token.
-	// Every sort is descending.
+	// sort defaults to PROFILE_SESSION_SORT_STARTED_AT and every sort is descending,
+	// so DURATION lists the longest sessions first and EVENT_COUNT the busiest.
 	// Traffic tagged as a bot at ingest is excluded unless include_bots is true, and
 	// the judgement is per session: a session with any tagged event is omitted whole
 	// rather than returned with only its untagged events.
@@ -230,16 +231,17 @@ type ActivityServiceHandler interface {
 	// Traffic tagged as a bot at ingest is excluded unless include_bots is true.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
 	// GetProfileSessions returns a paginated list of one user profile's sessions,
-	// newest first. Requires that user's distinct_id (the pug profile id a profile
-	// lookup gives you). Sessions are aggregated server-side — one row per session
-	// with its start, end, event count and device context — so a profile with more
-	// events than any one page can hold still lists every session, with exact
-	// durations and counts. Resolves profile aliases so merged anonymous events are
+	// newest first unless sort says otherwise. Requires that user's distinct_id (the
+	// pug profile id a profile lookup gives you). Sessions are aggregated server-side
+	// — one row per session with its start, end, event count and device context — so
+	// a profile with more events than any one page can hold still lists every
+	// session, with exact durations and counts. Resolves profile aliases so merged anonymous events are
 	// included.
 	// To page, send the previous response's next_page_token back as page_token; an
 	// empty next_page_token means there are no more pages. A token is only valid for
 	// the sort it was issued under — to change sort, start again with no page_token.
-	// Every sort is descending.
+	// sort defaults to PROFILE_SESSION_SORT_STARTED_AT and every sort is descending,
+	// so DURATION lists the longest sessions first and EVENT_COUNT the busiest.
 	// Traffic tagged as a bot at ingest is excluded unless include_bots is true, and
 	// the judgement is per session: a session with any tagged event is omitted whole
 	// rather than returned with only its untagged events.

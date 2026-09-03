@@ -418,7 +418,6 @@ func TestDecodeProfileSessionCursor_Invalid(t *testing.T) {
 		{"absent sort", encodeJSON(t, map[string]any{"v": 1, "i": "abc"})},
 		// A zero-filled value seeks past every row and reads as end-of-list.
 		{"absent value", encodeJSON(t, map[string]any{"s": "started_at", "i": "abc"})},
-		{"zero started_at", encodeJSON(t, map[string]any{"s": "started_at", "v": 0, "i": "abc"})},
 		{"zero event count", encodeJSON(t, map[string]any{"s": "event_count", "v": 0, "i": "abc"})},
 		{"negative duration", encodeJSON(t, map[string]any{"s": "duration", "v": -1, "i": "abc"})},
 	} {
@@ -430,11 +429,22 @@ func TestDecodeProfileSessionCursor_Invalid(t *testing.T) {
 	}
 }
 
-// A single-event session has duration 0, so that is the one legitimate zero value.
-func TestDecodeProfileSessionCursor_ZeroDurationAccepted(t *testing.T) {
-	token := encodeJSON(t, map[string]any{"s": "duration", "v": 0, "i": "abc"})
-	if _, err := events.DecodeProfileSessionCursor(token); err != nil {
-		t.Errorf("DecodeProfileSessionCursor: %v, want nil", err)
+// Zero is legitimate for two of the three sorts, and started_at admits negatives
+// too: a device clock at or before the epoch is what a client can actually send.
+func TestDecodeProfileSessionCursor_NonPositiveAccepted(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{"zero duration", encodeJSON(t, map[string]any{"s": "duration", "v": 0, "i": "abc"})},
+		{"epoch started_at", encodeJSON(t, map[string]any{"s": "started_at", "v": 0, "i": "abc"})},
+		{"pre-epoch started_at", encodeJSON(t, map[string]any{"s": "started_at", "v": -86400000, "i": "abc"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := events.DecodeProfileSessionCursor(tc.token); err != nil {
+				t.Errorf("DecodeProfileSessionCursor: %v, want nil", err)
+			}
+		})
 	}
 }
 
@@ -489,6 +499,60 @@ func TestGetProfileSessions_PaginatesThroughTies(t *testing.T) {
 				t.Errorf("paged through ties: got %v, want each of %v exactly once", got, want)
 			}
 		})
+	}
+}
+
+// A client's device clock can sit at or before the epoch, making started_at millis
+// non-positive. The cursor has to survive the token round trip for those sessions,
+// so page here at size 1 across the epoch boundary rather than reusing the cursor
+// the reader returns.
+func TestGetProfileSessions_PaginatesAcrossEpoch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+
+	epoch := time.Unix(0, 0).UTC()
+	newest, oldest := uuid.NewString(), uuid.NewString()
+	seedSession(ctx, t, ch, "proj-1", "user-1", newest, 1, epoch, nil)
+	seedSession(ctx, t, ch, "proj-1", "user-1", oldest, 1, epoch.Add(-24*time.Hour), nil)
+
+	reader := events.NewReader(ch.Conn)
+	sessions, next, err := reader.GetProfileSessions(ctx, events.ProfileSessionsParams{
+		ProjectID: "proj-1", DistinctID: "user-1", PageSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("GetProfileSessions page 1: %v", err)
+	}
+	if got := sessionIDs(sessions); !slices.Equal(got, []string{newest}) {
+		t.Fatalf("page 1: got %v, want [%s]", got, newest)
+	}
+	if next == nil {
+		t.Fatal("page 1: expected a next cursor")
+	}
+	if next.Value != 0 {
+		t.Fatalf("page 1 cursor value: got %d, want 0", next.Value)
+	}
+
+	token, err := next.Encode()
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	decoded, err := events.DecodeProfileSessionCursor(token)
+	if err != nil {
+		t.Fatalf("DecodeProfileSessionCursor: %v", err)
+	}
+
+	sessions, _, err = reader.GetProfileSessions(ctx, events.ProfileSessionsParams{
+		ProjectID: "proj-1", DistinctID: "user-1", PageSize: 1, PageToken: decoded,
+	})
+	if err != nil {
+		t.Fatalf("GetProfileSessions page 2: %v", err)
+	}
+	if got := sessionIDs(sessions); !slices.Equal(got, []string{oldest}) {
+		t.Errorf("page 2: got %v, want [%s]", got, oldest)
 	}
 }
 
