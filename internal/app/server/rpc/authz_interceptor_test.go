@@ -355,6 +355,7 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/shared.activity.v1.ActivityService/GetFilterSchema":               true,
 		"/shared.activity.v1.ActivityService/GetPropertyValues":             true,
 		"/shared.activity.v1.ActivityService/GetActivityHeatmap":            true,
+		"/shared.activity.v1.ActivityService/GetProfileSessions":            true,
 		"/shared.activity.v1.ActivityService/GetProfileStats":               true,
 		"/shared.profiles.v1.ProfilesService/Get":                           true,
 		"/shared.profiles.v1.ProfilesService/GetByExternalId":               true,

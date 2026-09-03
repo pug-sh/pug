@@ -97,6 +97,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/shared.activity.v1.ActivityService/GetFilterSchema":    authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 	"/shared.activity.v1.ActivityService/GetPropertyValues":  authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 	"/shared.activity.v1.ActivityService/GetActivityHeatmap": authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
+	"/shared.activity.v1.ActivityService/GetProfileSessions": authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 	"/shared.activity.v1.ActivityService/GetProfileStats":    authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 
 	// --- shared.profiles.v1.ProfilesService — project-data plane ---
