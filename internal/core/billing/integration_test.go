@@ -252,12 +252,17 @@ func TestEveryCatalogSlugIsStorable(t *testing.T) {
 
 	f := newFixture(t)
 	for _, plan := range corebilling.Plans() {
+		if plan.Slug == corebilling.SlugTrial {
+			continue // not settable by design; ExtendTrial owns it
+		}
+		if plan.Retired {
+			// One org holds every slug in turn, and a retired tier is grantable only to
+			// the org already on it. retired_test.go stores one on its incumbent.
+			continue
+		}
 		change := corebilling.Change{PlanSlug: plan.Slug}
 		if plan.Slug == corebilling.SlugCustom {
 			change.IncludedEvents = new(int64(1))
-		}
-		if plan.Slug == corebilling.SlugTrial {
-			continue // not settable by design; ExtendTrial owns it
 		}
 		if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); err != nil {
 			t.Errorf("%s: %v — this catalog slug is not storable", plan.Slug, err)

@@ -287,3 +287,134 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 		t.Fatalf("Clear after the lock was released: %v", err)
 	}
 }
+
+// The contract is what expires an override, so clearing it on a downgrade has to
+// take the overrides with it — otherwise the deal a lapse would have ended
+// becomes permanent, and "downgrade to free" leaves a larger quota than doing
+// nothing at all.
+func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	now := time.Now()
+	until := now.AddDate(0, 1, 0)
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:       "growth",
+		IncludedEvents: new(int64(5_000_000)),
+		DisplayName:    new("Acme Enterprise"),
+		ContractEndsAt: new(until),
+	}); err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugFree}); err != nil {
+		t.Fatalf("downgrade: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, until.AddDate(5, 0, 0))
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if got := ent.IncludedEvents; got == nil || *got != 10_000 {
+		t.Errorf("quota five years after the downgrade = %v, want the free floor's 10000", got)
+	}
+	if ent.DisplayName != "Free" {
+		t.Errorf("display name = %q, want the free floor's, not the deal's", ent.DisplayName)
+	}
+
+	// A comped grant on the floor names its own terms, and those survive.
+	pilot, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugFree,
+		IncludedEvents: new(int64(5_000_000)),
+		ContractEndsAt: new(until),
+	})
+	if err != nil {
+		t.Fatalf("set comped pilot: %v", err)
+	}
+	if pilot.IncludedEventsOverride != 5_000_000 {
+		t.Errorf("pilot quota = %d, want the named 5000000", pilot.IncludedEventsOverride)
+	}
+}
+
+// The other way to store a trial date that resolves to nothing: the trial branch
+// is gated on the contract, so a lapsed one swallows the extension exactly as a
+// granted plan would.
+func TestExtendTrialIsRefusedOnALapsedContract(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	now := time.Now()
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugFree,
+		IncludedEvents: new(int64(5_000_000)),
+		ContractEndsAt: new(now.Add(-time.Hour)),
+	}); err != nil {
+		t.Fatalf("set an ended pilot: %v", err)
+	}
+
+	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, now)
+	if !errors.Is(err, corebilling.ErrTrialOnLapsedContract) {
+		t.Errorf("err = %v, want ErrTrialOnLapsedContract", err)
+	}
+}
+
+// An operator's display name is free text, and varchar(150) would otherwise
+// surface as a raw SQLSTATE logged as a pug fault.
+func TestOverLongDisplayNameIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:    "growth",
+		DisplayName: new(strings.Repeat("x", corebilling.MaxDisplayNameLen+1)),
+	})
+	if !errors.Is(err, corebilling.ErrDisplayNameLong) {
+		t.Errorf("err = %v, want ErrDisplayNameLong", err)
+	}
+}
+
+// The lock mutate takes before its read, which is the one `for update` cannot
+// stand in for: it locks nothing when the org has no row yet, so without this two
+// concurrent first writes both read an empty record and the second wins.
+func TestSetPlanTakesTheOrgLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	tx, err := f.pg.PgW.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	if err := dbwrite.New(tx).LockBillingEntitlementOrg(t.Context(), f.orgID); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("SetPlan finished (%v) while the org lock was held; it is not taking the lock", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if err := tx.Rollback(t.Context()); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("SetPlan after the lock was released: %v", err)
+	}
+}

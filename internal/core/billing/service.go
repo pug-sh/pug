@@ -29,6 +29,7 @@ var (
 	ErrCustomNeedsQuota = errors.New("billing: the custom plan requires an events override")
 	ErrAnchorDayRange   = errors.New("billing: anchor day must be between 1 and 31")
 	ErrQuotaNegative    = errors.New("billing: the events override must be positive")
+	ErrDisplayNameLong  = errors.New("billing: the display name override is too long")
 	// ErrTrialNotExtended guards a date that would move the org's trial end
 	// backwards, which "extend" must never do.
 	ErrTrialNotExtended = errors.New("billing: that trial end is not later than the current one")
@@ -36,6 +37,9 @@ var (
 	// ErrTrialOnGrantedPlan guards a trial date that would resolve to nothing: a
 	// granted plan wins over it, so the write would look like it worked.
 	ErrTrialOnGrantedPlan = errors.New("billing: clear the granted plan before extending a trial")
+	// ErrTrialOnLapsedContract guards the same empty write reached the other way:
+	// a lapsed contract expires the trial branch too.
+	ErrTrialOnLapsedContract = errors.New("billing: clear the lapsed contract before extending a trial")
 	// ErrNoEntitlement is a clear that found nothing stored. The org is already on
 	// the derived floors, but nothing was deleted.
 	ErrNoEntitlement = errors.New("billing: no entitlement stored for this org")
@@ -45,17 +49,17 @@ var (
 // `pug billing`. No RPC mutates an entitlement, so nothing here is behind a
 // second type.
 type Service struct {
-	read  *dbread.Queries
-	write *dbwrite.Queries
-	pgW   *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
+	read *dbread.Queries
+	pgW  *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
 	// billingEnabled mirrors PUG_BILLING_ENABLED. Off means a self-hosted install,
 	// where every org resolves with no quota at all, so no client can render a
 	// limit that does not apply.
 	billingEnabled bool
 }
 
-// NewService checks the floors at wiring time: a catalog missing one resolves
-// every org to a blank plan with no quota, and looks healthy doing it.
+// NewService checks the floors at wiring time, where mustPlan would otherwise
+// panic inside Resolve on a request — a startup failure names the problem, a
+// recovered panic per dashboard load does not.
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Service, error) {
 	for _, slug := range []string{SlugFree, SlugTrial} {
 		if _, ok := PlanBySlug(slug); !ok {
@@ -64,7 +68,6 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Se
 	}
 	return &Service{
 		read:           dbread.New(pgRO),
-		write:          dbwrite.New(pgW),
 		pgW:            pgW,
 		billingEnabled: billingEnabled,
 	}, nil
@@ -132,6 +135,9 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 	return rec
 }
 
+// MaxDisplayNameLen mirrors display_name_override's varchar(150).
+const MaxDisplayNameLen = 150
+
 // Change is one operator edit. PlanSlug is required; every other field is nil to
 // leave the stored value alone, or a value to write — the zero value being the
 // clear.
@@ -168,7 +174,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 		return Record{}, ErrTrialNotSettable
 	}
 
-	return s.mutate(ctx, orgID, actor, func(cur Record) (Record, error) {
+	return s.mutate(ctx, orgID, actor, func(_ *dbwrite.Queries, cur Record) (Record, error) {
 		next := applyChange(cur, change)
 		// A retired tier keeps its existing holders but is never handed to somebody
 		// new, so this is checked against what the org held BEFORE the change.
@@ -186,6 +192,10 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 		if next.AnchorDay < 0 || next.AnchorDay > 31 {
 			return Record{}, ErrAnchorDayRange
 		}
+		// Mirrors the column's varchar(150), for the same reason as the checks above.
+		if len(next.DisplayNameOverride) > MaxDisplayNameLen {
+			return Record{}, ErrDisplayNameLong
+		}
 		return next, nil
 	})
 }
@@ -197,13 +207,15 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 	if days <= 0 || days > MaxTrialDays {
 		return Record{}, ErrTrialDaysRange
 	}
-	// The org's create time, because the trial being extended is usually the
-	// derived one and the locked row alone cannot see it.
-	orgCreateTime, err := s.orgCreateTime(ctx, orgID)
-	if err != nil {
-		return Record{}, err
-	}
-	return s.mutate(ctx, orgID, actor, func(cur Record) (Record, error) {
+	return s.mutate(ctx, orgID, actor, func(w *dbwrite.Queries, cur Record) (Record, error) {
+		// The org's create time, because the trial being extended is usually the
+		// derived one and the locked row alone cannot see it. Read through the tx,
+		// not s.read: against a real replica a lagging read would report
+		// ErrOrgNotFound for an org that was just created.
+		orgCreateTime, err := orgCreateTime(ctx, w, orgID)
+		if err != nil {
+			return Record{}, err
+		}
 		// A granted plan resolves ahead of any trial date, so writing one here would
 		// store a date that changes nothing and still print as a success. A slug the
 		// catalog no longer knows counts as granted: it resolves free without ever
@@ -211,6 +223,11 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 		if cur.Present {
 			if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.isFloor() {
 				return Record{}, ErrTrialOnGrantedPlan
+			}
+			// A lapsed contract expires the trial branch too, so the date would be just
+			// as empty — a comped pilot that has ended needs a fresh grant, not a trial.
+			if contractLapsed(cur, now) {
+				return Record{}, ErrTrialOnLapsedContract
 			}
 		}
 		next := cur
@@ -279,7 +296,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 // mutate runs one read-modify-write under a row lock, appending the resulting
 // snapshot to the history in the same transaction — so a change and its record
 // commit together or not at all.
-func (s *Service) mutate(ctx context.Context, orgID, actor string, edit func(Record) (Record, error)) (Record, error) {
+func (s *Service) mutate(ctx context.Context, orgID, actor string, edit func(*dbwrite.Queries, Record) (Record, error)) (Record, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return Record{}, err
@@ -301,7 +318,7 @@ func (s *Service) mutate(ctx context.Context, orgID, actor string, edit func(Rec
 		return Record{}, err
 	}
 
-	next, err := edit(cur)
+	next, err := edit(w, cur)
 	if err != nil {
 		return Record{}, err
 	}
@@ -347,8 +364,8 @@ func (s *Service) commit(ctx context.Context, tx pgx.Tx, orgID string) error {
 
 // orgCreateTime reads the org's age, which is what the derived trial is measured
 // from.
-func (s *Service) orgCreateTime(ctx context.Context, orgID string) (time.Time, error) {
-	row, err := s.read.GetOrgEntitlement(ctx, orgID)
+func orgCreateTime(ctx context.Context, w *dbwrite.Queries, orgID string) (time.Time, error) {
+	org, err := w.GetOrgByID(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return time.Time{}, ErrOrgNotFound
@@ -357,7 +374,7 @@ func (s *Service) orgCreateTime(ctx context.Context, orgID string) (time.Time, e
 		telemetry.RecordError(ctx, err)
 		return time.Time{}, err
 	}
-	return row.OrgCreateTime.Time, nil
+	return org.CreateTime.Time, nil
 }
 
 func currentRecord(ctx context.Context, w *dbwrite.Queries, orgID string) (Record, error) {
@@ -409,9 +426,12 @@ func applyChange(cur Record, c Change) Record {
 			next.TrialEndsAt = time.Time{}
 		} else if c.ContractEndsAt == nil {
 			// The mirror: the contract belongs to the granted plan, so falling back to a
-			// floor tier ends it. Unless this change names one, which is a time-boxed
-			// comped grant on the floor.
+			// floor tier ends it — and the overrides it gated with it, or clearing the
+			// date would turn a time-boxed quota into a permanent one. Unless this
+			// change names them, which is a comped grant on the floor.
 			next.ContractEndsAt = time.Time{}
+			next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
+			next.DisplayNameOverride = orKeep(c.DisplayName, "")
 		}
 	}
 	return next
