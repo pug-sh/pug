@@ -153,7 +153,9 @@ func contractLapsed(rec Record, now time.Time) bool {
 // operator types — into the instant to store. The comparison above is half-open,
 // so storing that day's midnight would lapse the plan at the start of it. The
 // date is read in lastDay's own location, so a picker in any zone means the day
-// it displayed.
+// it displayed. The boundary itself is UTC midnight, like every window in this
+// subsystem; building it in lastDay's zone would store a different instant per
+// operator.
 func ContractEndExclusive(lastDay time.Time) time.Time {
 	y, m, d := lastDay.Date()
 	return time.Date(y, m, d+1, 0, 0, 0, 0, time.UTC)
