@@ -10,12 +10,14 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	usagev1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1"
 )
 
 // Role gating is enforced by rpc.AuthzInterceptor before any handler runs, so a
-// request reaching here proves the org exists and the caller is a member.
+// request reaching here proves the caller is a member; the anniversary read below
+// is what can still report the org gone.
 type Server struct {
 	service *coreusage.Service
 }
@@ -36,7 +38,16 @@ func (s *Server) GetUsage(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	periodStart, periodEnd := coreusage.CalendarMonth(time.Now())
+	// The org's own quota window, which starts on its billing anniversary rather
+	// than the 1st — resolved through the same helper the meter uses, so the
+	// window shown and the window summed cannot diverge.
+	periodStart, periodEnd, err := s.service.GetOrgPeriod(ctx, orgID, time.Now())
+	if err != nil {
+		if errors.Is(err, coreusage.ErrOrgNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
+		}
+		return nil, internalErr()
+	}
 
 	usage, err := s.service.GetPeriodUsage(ctx, orgID, periodStart)
 	if err != nil {
@@ -57,16 +68,15 @@ func (s *Server) GetUsage(
 		PeriodEnd:   timestamppb.New(periodEnd),
 		PeriodStart: timestamppb.New(periodStart),
 	}
-	// The two fields carry three states between them, so a client never has to
-	// derive one by comparing usage_computed_at against period_start: both absent
-	// means the meter has never run; stamp alone means it is alive but has not
-	// reached this period yet; both present means used_events is a real sum. A
-	// count is emitted only in the last case — the placeholder zero behind the
-	// second one was a number the server had no basis for.
+	// usage_computed_at and counted carry three states between them, so a client
+	// never has to compare the stamp against period_start: no stamp means the meter
+	// has never run, stamp alone means it has not reached this period yet, and both
+	// mean used_events is a real sum.
 	if !usage.UsageComputedAt.IsZero() {
 		resp.UsageComputedAt = timestamppb.New(usage.UsageComputedAt)
 	}
 	if usage.Counted {
+		resp.Counted = proto.Bool(true)
 		resp.UsedEvents = proto.Int64(usage.EventCount)
 	}
 	return connect.NewResponse(resp), nil

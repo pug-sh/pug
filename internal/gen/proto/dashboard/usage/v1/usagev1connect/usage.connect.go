@@ -39,12 +39,12 @@ const (
 
 // UsageServiceClient is a client for the dashboard.usage.v1.UsageService service.
 type UsageServiceClient interface {
-	// Returns how many events the org's projects recorded in the current calendar
-	// month, plus the per-project daily series behind it. The numbers come from a
-	// scheduled meter whose cadence the deployment sets, so read usage_computed_at
-	// for how stale they are rather than assuming one. Both used_events and
-	// usage_computed_at are absent if the meter has never run; usage_computed_at
-	// alone is present while it is alive but has not summed this period yet.
+	// Returns how many events the org's projects recorded in the current billing
+	// period — which runs from the org's billing anchor, defaulting to its signup
+	// anniversary rather than the 1st of the month — plus the per-project daily
+	// series behind it. The numbers come from a scheduled meter whose cadence the
+	// deployment sets, so read usage_computed_at for how stale they are rather than
+	// assuming one, and read counted before rendering used_events at all.
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
 }
 
@@ -80,12 +80,12 @@ func (c *usageServiceClient) GetUsage(ctx context.Context, req *connect.Request[
 
 // UsageServiceHandler is an implementation of the dashboard.usage.v1.UsageService service.
 type UsageServiceHandler interface {
-	// Returns how many events the org's projects recorded in the current calendar
-	// month, plus the per-project daily series behind it. The numbers come from a
-	// scheduled meter whose cadence the deployment sets, so read usage_computed_at
-	// for how stale they are rather than assuming one. Both used_events and
-	// usage_computed_at are absent if the meter has never run; usage_computed_at
-	// alone is present while it is alive but has not summed this period yet.
+	// Returns how many events the org's projects recorded in the current billing
+	// period — which runs from the org's billing anchor, defaulting to its signup
+	// anniversary rather than the 1st of the month — plus the per-project daily
+	// series behind it. The numbers come from a scheduled meter whose cadence the
+	// deployment sets, so read usage_computed_at for how stale they are rather than
+	// assuming one, and read counted before rendering used_events at all.
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
 }
 

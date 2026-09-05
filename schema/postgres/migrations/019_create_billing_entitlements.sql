@@ -1,7 +1,7 @@
 -- +goose Up
--- What an org is allowed to send (docs/architecture/billing.md). Signup writes
--- nothing here: no row, or a NULL column, derives from orgs.create_time or from
--- the plan. No price column -- the payments provider owns the amount.
+-- What an org is allowed to send. Signup writes nothing here: no row, or a NULL
+-- column, derives from orgs.create_time or from the plan. No price column -- the
+-- payments provider owns the amount.
 
 create table billing_entitlements (
   anchor_day smallint

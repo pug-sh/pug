@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/pug-sh/pug/internal/apperr"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	usagev1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1"
@@ -17,8 +19,66 @@ import (
 	"github.com/rs/xid"
 )
 
-func seedOrgProject(t *testing.T, w *dbwrite.Queries) (orgID, projectID string) {
+// The window the dashboard shows must follow the org's anchor, not the 1st. Every
+// other test here backdates its org to 2020-01-01, which pins anchor 1 and would
+// pass unchanged against the calendar months this replaced.
+func TestGetUsageFollowsTheOrgsAnchorDay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+	orgID, _ := seedOrgProject(t, pg)
+	if _, err := pg.PgW.Exec(t.Context(),
+		"insert into billing_entitlements (org_id, plan_slug, anchor_day) values ($1, 'growth', 17)",
+		orgID); err != nil {
+		t.Fatalf("seed entitlement: %v", err)
+	}
+
+	resp, err := srvGetUsage(t, NewServer(svc), orgID)
+	if err != nil {
+		t.Fatalf("GetUsage: %v", err)
+	}
+	start, end := resp.Msg.GetPeriodStart().AsTime(), resp.Msg.GetPeriodEnd().AsTime()
+	if start.Day() != 17 || end.Day() != 17 {
+		t.Errorf("period = [%s, %s), want both bounds on the 17th", start, end)
+	}
+	if !start.Before(end) {
+		t.Errorf("period [%s, %s) is not half-open", start, end)
+	}
+}
+
+// Membership is proven before the handler runs, so this is only reachable when a
+// cached role outlives the org row — but it must be NotFound, not Internal.
+func TestGetUsageOnAMissingOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+
+	// The handler is called directly here, so the error is still an *apperr.Error;
+	// the error interceptor is what turns it into a connect code in production.
+	_, err := srvGetUsage(t, NewServer(svc), xid.New().String())
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) {
+		t.Fatalf("err = %v, want an *apperr.Error", err)
+	}
+	if appErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want NotFound", appErr.Code())
+	}
+}
+
+func srvGetUsage(t *testing.T, srv *Server, orgID string) (*connect.Response[usagev1.GetUsageResponse], error) {
 	t.Helper()
+	return srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{OrgId: &orgID}))
+}
+
+func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID string) {
+	t.Helper()
+	w := dbwrite.New(pg.PgW)
 
 	org, err := w.CreateOrg(t.Context(), dbwrite.CreateOrgParams{
 		ID: xid.New().String(), DisplayName: "acme",
@@ -26,6 +86,10 @@ func seedOrgProject(t *testing.T, w *dbwrite.Queries) (orgID, projectID string) 
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
+	// Backdated to the 1st so the org's quota window is the calendar month these
+	// assertions assume — an anchor derives from create_time, so an org created
+	// "now" would shift every expected bound with the suite's run date.
+	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	id := xid.New().String()
 	project, err := w.CreateProject(t.Context(), dbwrite.CreateProjectParams{
 		ID: id, OrgID: org.ID, DisplayName: "project-" + id,
@@ -46,7 +110,7 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, projectID := seedOrgProject(t, pg)
 	srv := NewServer(svc)
 
 	resp, err := srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{
@@ -62,13 +126,16 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 		t.Errorf("used_events = %d on an unmetered org, want absent — a client would render it as 0",
 			resp.Msg.GetUsedEvents())
 	}
+	if resp.Msg.GetCounted() {
+		t.Error("counted is true on an org the meter has never run for")
+	}
 	if resp.Msg.GetPeriodStart() == nil || resp.Msg.GetPeriodEnd() == nil {
 		t.Error("period bounds should be returned regardless of metering")
 	}
 
 	// Metered, and it really is zero: both fields present.
 	now := time.Now().UTC()
-	start, end := coreusage.CalendarMonth(now)
+	start, end := coreusage.PeriodFor(now, 1)
 	if _, err := svc.RefreshPeriodUsage(t.Context(), orgID, start, end); err != nil {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
 	}
@@ -85,6 +152,10 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 	}
 	if resp.Msg.GetUsedEvents() != 0 {
 		t.Errorf("used_events = %d, want 0", resp.Msg.GetUsedEvents())
+	}
+	// This zero is a measurement; the rollover case below produces one that isn't.
+	if !resp.Msg.GetCounted() {
+		t.Error("counted is false after a metering pass; a metered zero is a real total")
 	}
 
 	// And a real count round-trips with its daily series.
@@ -123,11 +194,11 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, _ := seedOrgProject(t, pg)
 
 	// Meter only the *previous* month, leaving the current period rowless. Stepped
 	// back from the 1st, not from today: AddDate normalizes Feb 31 to March.
-	currentStart, _ := coreusage.CalendarMonth(time.Now().UTC())
+	currentStart, _ := coreusage.PeriodFor(time.Now().UTC(), 1)
 	prevStart, prevEnd := currentStart.AddDate(0, -1, 0), currentStart
 	if _, err := svc.RefreshPeriodUsage(t.Context(), orgID, prevStart, prevEnd); err != nil {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
@@ -144,6 +215,11 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 		t.Errorf("used_events = %d, want ABSENT — a period the meter has not reached has no total, "+
 			"and a present zero is a number the server has no basis for", resp.Msg.GetUsedEvents())
 	}
+	// The state the flag exists for: used_events' absence does not survive
+	// protoc-gen-es, so this is what a TypeScript client reads instead.
+	if resp.Msg.GetCounted() {
+		t.Error("counted is true for a period the meter has not reached")
+	}
 }
 
 // The range bounds the daily series only; used_events stays the current period.
@@ -154,9 +230,9 @@ func TestGetUsageRangeWindowsOnlyTheDailySeries(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, projectID := seedOrgProject(t, pg)
 
-	periodStart, periodEnd := coreusage.CalendarMonth(time.Now().UTC())
+	periodStart, periodEnd := coreusage.PeriodFor(time.Now().UTC(), 1)
 	first, second := periodStart, periodStart.AddDate(0, 0, 1)
 	if err := svc.RecordDailyUsage(t.Context(), []coreusage.DailyUsage{
 		{Day: first, EventCount: 3, ProjectID: projectID},
@@ -205,9 +281,9 @@ func TestGetUsageRangeSnapsToWholeDays(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, projectID := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, projectID := seedOrgProject(t, pg)
 
-	day, _ := coreusage.CalendarMonth(time.Now().UTC())
+	day, _ := coreusage.PeriodFor(time.Now().UTC(), 1)
 	if err := svc.RecordDailyUsage(t.Context(), []coreusage.DailyUsage{
 		{Day: day, EventCount: 9, ProjectID: projectID},
 	}); err != nil {
@@ -250,7 +326,7 @@ func TestGetUsageFailsWhenTheReadFails(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
-	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, _ := seedOrgProject(t, pg)
 	srv := NewServer(svc)
 
 	pg.PgRO.Close()
@@ -273,7 +349,7 @@ func TestGetUsageOnACancelledRequest(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	orgID, _ := seedOrgProject(t, dbwrite.New(pg.PgW))
+	orgID, _ := seedOrgProject(t, pg)
 	srv := NewServer(coreusage.NewService(pg.PgRO, pg.PgW))
 
 	ctx, cancel := context.WithCancel(t.Context())
