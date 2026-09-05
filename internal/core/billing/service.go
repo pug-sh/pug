@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -135,7 +136,8 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 	return rec
 }
 
-// MaxDisplayNameLen mirrors display_name_override's varchar(150).
+// MaxDisplayNameLen mirrors display_name_override's varchar(150), which bounds
+// characters rather than bytes.
 const MaxDisplayNameLen = 150
 
 // Change is one operator edit. PlanSlug is required; every other field is nil to
@@ -193,7 +195,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 			return Record{}, ErrAnchorDayRange
 		}
 		// Mirrors the column's varchar(150), for the same reason as the checks above.
-		if len(next.DisplayNameOverride) > MaxDisplayNameLen {
+		if utf8.RuneCountInString(next.DisplayNameOverride) > MaxDisplayNameLen {
 			return Record{}, ErrDisplayNameLong
 		}
 		return next, nil

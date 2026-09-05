@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -378,6 +379,18 @@ func TestOverLongDisplayNameIsRefused(t *testing.T) {
 	})
 	if !errors.Is(err, corebilling.ErrDisplayNameLong) {
 		t.Errorf("err = %v, want ErrDisplayNameLong", err)
+	}
+
+	// varchar(150) bounds characters, so a multi-byte name at the limit fits.
+	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:    "growth",
+		DisplayName: new(strings.Repeat("\u00e9", corebilling.MaxDisplayNameLen)),
+	})
+	if err != nil {
+		t.Fatalf("set plan with a 150-character non-ASCII name: %v", err)
+	}
+	if got := utf8.RuneCountInString(rec.DisplayNameOverride); got != corebilling.MaxDisplayNameLen {
+		t.Errorf("stored name = %d characters, want %d", got, corebilling.MaxDisplayNameLen)
 	}
 }
 
