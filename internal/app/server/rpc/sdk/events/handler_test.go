@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"strconv"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/attribution"
+	"github.com/pug-sh/pug/internal/autoprop"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
@@ -882,4 +884,151 @@ func TestEnrichAttribution(t *testing.T) {
 			t.Errorf("expected no auto-properties, got %v", events[0].AutoProperties)
 		}
 	})
+}
+
+const headlessChromeUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0.0.0 Safari/537.36"
+
+func webEvent(extra map[string]string) *eventsv1.Event {
+	m := map[string]string{autoprop.PropPlatform: autoprop.PlatformWeb}
+	maps.Copy(m, extra)
+	return &eventsv1.Event{AutoProperties: propMap(m)}
+}
+
+func TestEnrichBot(t *testing.T) {
+	pub, prv := rpc.AuthTypePublicKey, rpc.AuthTypePrivateKey
+	tests := []struct {
+		name     string
+		ua, asn  string // empty = omit header
+		authType rpc.AuthType
+		events   []*eventsv1.Event
+		want     []string // $bot_reason per event; empty = untagged
+	}{
+		{
+			name: "crawler user agent tags every web event", ua: headlessChromeUA, authType: pub,
+			events: []*eventsv1.Event{webEvent(nil), webEvent(nil)},
+			want:   []string{"HeadlessChrome", "HeadlessChrome"},
+		},
+		{
+			name: "user agent wins over asn", ua: headlessChromeUA, asn: "24940", authType: pub,
+			events: []*eventsv1.Event{webEvent(nil)},
+			want:   []string{"HeadlessChrome"},
+		},
+		{
+			name: "datacenter asn", ua: chromeWindowsUA, asn: "24940", authType: pub,
+			events: []*eventsv1.Event{webEvent(nil)},
+			want:   []string{"asn:24940"},
+		},
+		{
+			name: "residential asn", ua: chromeWindowsUA, asn: "7922", authType: pub,
+			events: []*eventsv1.Event{webEvent(nil)},
+			want:   []string{""},
+		},
+		{
+			name: "unparseable asn", ua: chromeWindowsUA, asn: "AS24940", authType: pub,
+			events: []*eventsv1.Event{webEvent(nil)},
+			want:   []string{""},
+		},
+		{
+			name: "no signal strips client-sent values", ua: chromeWindowsUA, authType: pub,
+			events: []*eventsv1.Event{webEvent(map[string]string{"$bot": "true", "$bot_reason": "spoofed"})},
+			want:   []string{""},
+		},
+		{
+			name: "only web events are tagged", ua: headlessChromeUA, authType: pub,
+			events: []*eventsv1.Event{
+				webEvent(nil),
+				{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: "android", "$bot": "true"})},
+				{AutoProperties: propMap(map[string]string{"$os": "Linux"})},
+				{},
+			},
+			want: []string{"HeadlessChrome", "", "", ""},
+		},
+		{
+			name: "private key is never tagged", ua: headlessChromeUA, asn: "24940", authType: prv,
+			events: []*eventsv1.Event{webEvent(map[string]string{"$bot": "true"})},
+			want:   []string{""},
+		},
+		{
+			name: "only public keys are tagged", ua: headlessChromeUA, authType: rpc.AuthTypeJWT,
+			events: []*eventsv1.Event{webEvent(nil)},
+			want:   []string{""},
+		},
+	}
+
+	s := &Server{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			if tt.ua != "" {
+				h.Set("User-Agent", tt.ua)
+			}
+			if tt.asn != "" {
+				h.Set(cfHeaderASN, tt.asn)
+			}
+			s.enrichBot(context.Background(), "test-project", tt.authType, h, tt.events)
+			for i, event := range tt.events {
+				bot, botSet := event.AutoProperties["$bot"]
+				reason, reasonSet := event.AutoProperties["$bot_reason"]
+				if tt.want[i] == "" {
+					if botSet || reasonSet {
+						t.Errorf("event %d: expected untagged, got $bot=%q $bot_reason=%q", i, propString(bot), propString(reason))
+					}
+					continue
+				}
+				if _, typed := bot.GetValue().(*commonv1.PropertyValue_BoolValue); !typed || propString(bot) != "true" || propString(reason) != tt.want[i] {
+					t.Errorf("event %d: got $bot=%q (%T) $bot_reason=%q, want typed true/%q", i, propString(bot), bot.GetValue(), propString(reason), tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestBatchCreateWiresBotEnricher(t *testing.T) {
+	for _, tt := range []struct {
+		authType rpc.AuthType
+		want     map[string]string
+	}{
+		{rpc.AuthTypePublicKey, map[string]string{"$bot": "true", "$bot_reason": "HeadlessChrome"}},
+		{rpc.AuthTypePrivateKey, map[string]string{"$bot": "", "$bot_reason": ""}},
+	} {
+		t.Run(string(tt.authType), func(t *testing.T) {
+			js := &stubJetStream{}
+			s := &Server{
+				publisher:   coreevents.NewPublisher(js),
+				geoProvider: stubProvider{},
+			}
+			req := connect.NewRequest(&eventsv1.BatchCreateRequest{
+				Events: []*eventsv1.Event{{
+					EventId:        proto.String(uuid.NewString()),
+					DistinctId:     proto.String("u1"),
+					Kind:           proto.String("page_view"),
+					OccurTime:      timestamppb.New(time.Unix(1700000000, 0)),
+					SessionId:      proto.String(uuid.NewString()),
+					AutoProperties: propMap(map[string]string{autoprop.PropPlatform: autoprop.PlatformWeb, "$url": "https://shop.example.com/"}),
+				}},
+			})
+			req.Header().Set("User-Agent", headlessChromeUA)
+			ctx := authn.SetInfo(context.Background(), &rpc.Principal{
+				AuthType: tt.authType,
+				Project:  &dbread.Project{ID: "test-project"},
+			})
+
+			if _, err := s.BatchCreate(ctx, req); err != nil {
+				t.Fatalf("BatchCreate: %v", err)
+			}
+
+			var batch eventsv1.EventBatch
+			if err := proto.Unmarshal(js.data, &batch); err != nil {
+				t.Fatalf("unmarshal published batch: %v", err)
+			}
+			if len(batch.GetEvents()) != 1 {
+				t.Fatalf("published %d events, want 1", len(batch.GetEvents()))
+			}
+			for key, want := range tt.want {
+				if got := propString(batch.GetEvents()[0].AutoProperties[key]); got != want {
+					t.Errorf("published event %s = %q, want %q — is enrichBot still wired into BatchCreate?", key, got, want)
+				}
+			}
+		})
+	}
 }

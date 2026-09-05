@@ -31,8 +31,7 @@ func mustAuthorizer(t *testing.T) *authz.Authorizer {
 // path) or a plain *connect.Error — connect.CodeOf alone returns Unknown for the
 // former.
 func apperrCode(err error) connect.Code {
-	var ae *apperr.Error
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*apperr.Error](err); ok {
 		return ae.Code()
 	}
 	return connect.CodeOf(err)
@@ -356,6 +355,7 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/shared.activity.v1.ActivityService/GetFilterSchema":               true,
 		"/shared.activity.v1.ActivityService/GetPropertyValues":             true,
 		"/shared.activity.v1.ActivityService/GetActivityHeatmap":            true,
+		"/shared.activity.v1.ActivityService/GetProfileSessions":            true,
 		"/shared.activity.v1.ActivityService/GetProfileStats":               true,
 		"/shared.profiles.v1.ProfilesService/Get":                           true,
 		"/shared.profiles.v1.ProfilesService/GetByExternalId":               true,

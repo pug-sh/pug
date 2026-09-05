@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ func TestSessionNoFutureEvents(t *testing.T) {
 	factory := newSessionFactory()
 
 	for range 1000 {
-		sess := factory.session(start, end)
+		sess := factory.session(t.Context(), start, end)
 		for i, e := range sess {
 			if e.occurTime.After(end) {
 				t.Fatalf("session[%d]: occur_time %v is after end %v", i, e.occurTime, end)
@@ -49,7 +50,7 @@ func TestSessionAutoPropertyCoverage(t *testing.T) {
 	factory := newSessionFactory()
 
 	for range 500 {
-		sess := factory.session(start, end)
+		sess := factory.session(t.Context(), start, end)
 		for _, e := range sess {
 			a := e.autoProperties
 			for _, key := range []string{"$platform", "$os", "$country", "$city", "$latitude", "$longitude", "$bot_score", "$mobile"} {
@@ -154,7 +155,7 @@ func TestSessionsRespectUserLifecycle(t *testing.T) {
 	}
 
 	for range 2000 {
-		sess := f.session(start, end)
+		sess := f.session(t.Context(), start, end)
 		u, ok := byID[sess[0].distinctID]
 		if !ok {
 			continue // bot session
@@ -238,13 +239,7 @@ func TestAppVersionAdoption(t *testing.T) {
 	for range 5000 {
 		v := appVersionAt(at)
 		counts[v]++
-		found := false
-		for _, rv := range released {
-			if v == rv {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(released, v)
 		if !found {
 			t.Fatalf("appVersionAt returned unreleased version %s", v)
 		}
@@ -337,7 +332,7 @@ func TestSessionFunnelCoherence(t *testing.T) {
 
 	checked := 0
 	for range 20_000 {
-		sess := factory.session(start, end)
+		sess := factory.session(t.Context(), start, end)
 
 		var cartTotal, discount float64
 		var purchase map[string]any
@@ -548,7 +543,7 @@ func TestToLiveEventsCopiesAllFields(t *testing.T) {
 	if le.AutoProperties["$k"] != "v" || le.CustomProperties["amount"] != 1.0 {
 		t.Fatalf("property maps not copied: %+v", le)
 	}
-	if ne, nl := reflect.TypeOf(event{}).NumField(), reflect.TypeOf(LiveEvent{}).NumField(); ne != nl {
+	if ne, nl := reflect.TypeFor[event]().NumField(), reflect.TypeFor[LiveEvent]().NumField(); ne != nl {
 		t.Errorf("event has %d fields, LiveEvent has %d — toLiveEvents must map all of them", ne, nl)
 	}
 }
@@ -788,7 +783,7 @@ func TestActiveSetCollection(t *testing.T) {
 
 	active := map[int]struct{}{}
 	for range 5000 {
-		sess := f.session(start, end)
+		sess := f.session(t.Context(), start, end)
 		if len(sess) == 0 {
 			continue
 		}

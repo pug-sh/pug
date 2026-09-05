@@ -6,6 +6,7 @@ import (
 
 	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -18,14 +19,16 @@ func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 	dbPoolConfig, err := pgxpool.ParseConfig(addr)
 	if err != nil {
 		slog.ErrorContext(ctx, "unable to parse database URL", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 
 	dbPoolConfig.ConnConfig.Tracer = otelpgx.NewTracer()
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), dbPoolConfig)
+	pool, err := pgxpool.NewWithConfig(ctx, dbPoolConfig)
 	if err != nil {
 		slog.ErrorContext(ctx, "unable to create connection pool", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	return pool, nil

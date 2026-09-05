@@ -2,6 +2,7 @@ package email
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -28,13 +29,13 @@ type TenantAwareResolver struct {
 
 func NewTenantAwareResolver(repo providerRepo, cipher *secret.Cipher, fallback Provider, operatorFrom, operatorReplyTo string) (*TenantAwareResolver, error) {
 	if repo == nil {
-		return nil, fmt.Errorf("email: tenant-aware resolver requires a provider repo")
+		return nil, errors.New("email: tenant-aware resolver requires a provider repo")
 	}
 	if cipher == nil {
-		return nil, fmt.Errorf("email: tenant-aware resolver requires a cipher (set PUG_EMAIL_PROVIDER_SECRET_KEY)")
+		return nil, errors.New("email: tenant-aware resolver requires a cipher (set PUG_EMAIL_PROVIDER_SECRET_KEY)")
 	}
 	if fallback == nil {
-		return nil, fmt.Errorf("email: tenant-aware resolver requires a fallback provider")
+		return nil, errors.New("email: tenant-aware resolver requires a fallback provider")
 	}
 	return &TenantAwareResolver{
 		repo:            repo,

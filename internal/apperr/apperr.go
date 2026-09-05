@@ -149,6 +149,8 @@ func ReasonForCode(c connect.Code) Reason {
 		return ReasonDataLoss
 	case connect.CodeUnauthenticated:
 		return ReasonUnauthenticated
+	case connect.CodeUnknown:
+		return ReasonUnknown
 	default:
 		return ReasonUnknown
 	}

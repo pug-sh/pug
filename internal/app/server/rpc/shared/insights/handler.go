@@ -63,8 +63,7 @@ func (s *server) Query(
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, rpc.ConnectCtxErr(err)
 		}
-		var invalid *coreinsights.InvalidQueryError
-		if errors.As(err, &invalid) {
+		if invalid, ok := errors.AsType[*coreinsights.InvalidQueryError](err); ok {
 			return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+invalid.Message)
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))

@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestPromotedColumnOrderPinned(t *testing.T) {
 	for i, col := range cols {
 		s, ok := args[i].(string)
 		if !ok {
-			continue // bot_score / verified_bot / mobile are not string columns
+			continue // bot_score / verified_bot / mobile / bot are not string columns
 		}
 		if s != col {
 			t.Errorf("column %q (slot %d) receives the value belonging to column %q — the property→field→slot chain is crossed", col, i, s)
@@ -87,17 +88,18 @@ func TestPromotedStringColumnsHaveAccessors(t *testing.T) {
 	}
 }
 
-// TestPromotedNonRollupKeysMapToTheirColumns pins the three promoted string
-// keys that have NO rollup dimension. The rollup-backed ten are pinned to their
-// columns by TestMigration011PromotedDimExprsMatch via the MV text; these three
+// TestPromotedNonRollupKeysMapToTheirColumns pins the four promoted string
+// keys that have NO rollup dimension. The rollup-backed twenty are pinned to their
+// columns by TestMigration012PromotedDimExprsMatch via the MV text; these four
 // are not, yet mergePromotedAutoDimensions injects them into the filter picker —
 // so a wrong Property→Column mapping would make every filter and breakdown on
 // them read another column's data with nothing objecting.
 func TestPromotedNonRollupKeysMapToTheirColumns(t *testing.T) {
 	for prop, want := range map[string]string{
-		"$url":       "url",
-		"$referrer":  "referrer",
-		"$pageTitle": "page_title",
+		"$url":        "url",
+		"$referrer":   "referrer",
+		"$pageTitle":  "page_title",
+		"$bot_reason": "bot_reason",
 	} {
 		got, ok := promotedAutoByProperty[prop]
 		if !ok {
@@ -108,4 +110,53 @@ func TestPromotedNonRollupKeysMapToTheirColumns(t *testing.T) {
 			t.Errorf("%s maps to column %q, want %q", prop, got.Column, want)
 		}
 	}
+}
+
+// TestPromotedBoolColumnsReachTheirSlots is the bool half of
+// TestPromotedColumnOrderPinned, which skips non-string slots: setPromotedBool
+// dispatches by property, so a bool column missing its case drops the value
+// silently, and two bool fields swapped in AppendArgs/ScanDest type-check.
+func TestPromotedBoolColumnsReachTheirSlots(t *testing.T) {
+	cols := strings.Split(EventsInsertPromotedColumns, ", ")
+	for _, col := range promotedAutoColumns {
+		if col.Kind != PromotedBool && col.Kind != PromotedNullableBool {
+			continue
+		}
+		slot := slices.Index(cols, col.Column)
+		row, rest := SplitPromotedAutoProperties(map[string]*commonv1.PropertyValue{
+			col.Property: {Value: &commonv1.PropertyValue_BoolValue{BoolValue: true}},
+		})
+		if len(rest) != 0 {
+			t.Errorf("%s was not split out of the map", col.Property)
+		}
+		for i, arg := range row.AppendArgs() {
+			if boolArg(arg) != (i == slot) {
+				t.Errorf("%s=true: AppendArgs slot %d (%s) = %v", col.Property, i, cols[i], arg)
+			}
+		}
+
+		var scanned PromotedAutoRow
+		switch p := scanned.ScanDest()[slot].(type) {
+		case *bool:
+			*p = true
+		case **bool:
+			v := true
+			*p = &v
+		default:
+			t.Errorf("%s: ScanDest slot %d is %T", col.Property, slot, p)
+		}
+		if !boolArg(scanned.AppendArgs()[slot]) {
+			t.Errorf("%s: written via ScanDest slot %d but AppendArgs does not read it there", col.Property, slot)
+		}
+	}
+}
+
+func boolArg(arg any) bool {
+	switch v := arg.(type) {
+	case bool:
+		return v
+	case *bool:
+		return v != nil && *v
+	}
+	return false
 }

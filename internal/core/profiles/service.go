@@ -93,15 +93,17 @@ type ProfileActivitySummary struct {
 	Country        string
 	Region         string
 	City           string
+	Bot            bool
 }
 
 type ListParams struct {
-	ProjectID  string
-	HasCursor  bool
-	CursorTime time.Time
-	CursorID   string
-	PageSize   int32
-	Filter     chq.Condition
+	ProjectID   string
+	HasCursor   bool
+	CursorTime  time.Time
+	CursorID    string
+	PageSize    int32
+	Filter      chq.Condition
+	IncludeBots bool
 }
 
 type Service struct {
@@ -132,8 +134,8 @@ func NewService(pgW *pgxpool.Pool, ch driver.Conn, producer *natsdeps.NATSClient
 // anonymous person (the id IS the distinct_id), or — when the id is an alias
 // claimed by an identify merge — the canonical profile it was merged into, so
 // pre-identify URLs and event links keep working after the merge.
-func (s *Service) GetByID(ctx context.Context, projectID, id string) (Profile, error) {
-	profile, err := s.getSingle(ctx, projectID, chq.Eq("p.id", id))
+func (s *Service) GetByID(ctx context.Context, projectID, id string, includeBots bool) (Profile, error) {
+	profile, err := s.getSingle(ctx, projectID, includeBots, chq.Eq("p.id", id))
 	if err == nil || !errors.Is(err, ErrProfileNotFound) {
 		return profile, err
 	}
@@ -147,25 +149,25 @@ func (s *Service) GetByID(ctx context.Context, projectID, id string) (Profile, e
 	if !ok || canonicalID == id {
 		return Profile{}, ErrProfileNotFound
 	}
-	return s.getSingle(ctx, projectID, chq.Eq("p.id", canonicalID))
+	return s.getSingle(ctx, projectID, includeBots, chq.Eq("p.id", canonicalID))
 }
 
-func (s *Service) GetByExternalID(ctx context.Context, projectID, externalID string) (Profile, error) {
+func (s *Service) GetByExternalID(ctx context.Context, projectID, externalID string, includeBots bool) (Profile, error) {
 	// An empty string is never a legitimate external_id, so treat it as a miss
 	// rather than a lookup: anonymous persons carry an empty external_id by
 	// construction, and matching one arbitrarily would be wrong.
 	if externalID == "" {
 		return Profile{}, ErrProfileNotFound
 	}
-	return s.getSingle(ctx, projectID, chq.Eq("p.external_id", externalID))
+	return s.getSingle(ctx, projectID, includeBots, chq.Eq("p.external_id", externalID))
 }
 
-func (s *Service) getSingle(ctx context.Context, projectID string, extra chq.Condition) (Profile, error) {
+func (s *Service) getSingle(ctx context.Context, projectID string, includeBots bool, extra chq.Condition) (Profile, error) {
 	if s == nil || s.ch == nil {
 		return Profile{}, errors.New("profiles: clickhouse conn is nil")
 	}
 
-	sql, args, err := personsQuery(projectID).
+	sql, args, err := personsQuery(projectID, includeBots).
 		Where(
 			chq.Eq("p.is_deleted", uint8(0)),
 			extra,
@@ -220,7 +222,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 		wheres = append(wheres, params.Filter)
 	}
 
-	sql, args, err := personsQuery(params.ProjectID).
+	sql, args, err := personsQuery(params.ProjectID, params.IncludeBots).
 		Where(wheres...).
 		OrderBy("p.create_time DESC", "p.id DESC").
 		Limit(int64(params.PageSize)).
@@ -256,7 +258,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 
 // LatestProfilesCTE projects the latest state of each profile row
 // (argMax by insert_time over the ReplacingMergeTree), project-scoped.
-// Exported for reuse by insights queries that resolve canonical users.
+// Registered by WithIdentityUnion; identity_union reads it by name.
 //
 // WARNING: personsCTE unions this projection by POSITION — keep this Select's
 // column order (create_time, external_id, id, project_id, properties,
@@ -279,8 +281,8 @@ func LatestProfilesCTE(projectID string) *chq.Query {
 }
 
 // LatestProfileAliasesCTE projects the latest alias_id -> profile_id mapping,
-// project-scoped. Exported for reuse by insights queries that resolve
-// canonical users.
+// project-scoped. Registered by WithIdentityUnion; identity_union reads it by
+// name.
 func LatestProfileAliasesCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(
@@ -299,19 +301,19 @@ func LatestProfileAliasesCTE(projectID string) *chq.Query {
 // `p` / `activity_summary` aliases that the caller-supplied filter conditions
 // bind against. Callers add WHERE / ORDER BY / LIMIT.
 //
-// CTE order is dependency order: claimed_ids reads the latest_* CTEs,
-// anon_persons reads claimed_ids, and persons / persons_activity read
-// anon_persons (plus identified_activity for the latter).
-func personsQuery(projectID string) *chq.Query {
-	return chq.NewQuery().
+// CTE order is dependency order: identity_union and claimed_ids read the
+// latest_* CTEs, anon_persons reads claimed_ids, identified_activity reads
+// identity_union, and persons / persons_activity read anon_persons (plus
+// identified_activity for the latter).
+func personsQuery(projectID string, includeBots bool) *chq.Query {
+	q := chq.NewQuery().
 		Select(profileSelectColumns()...).
-		From("persons p LEFT JOIN persons_activity activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id").
-		With("latest_profiles", LatestProfilesCTE(projectID)).
-		With("latest_profile_aliases", LatestProfileAliasesCTE(projectID)).
+		From("persons p LEFT JOIN persons_activity activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id")
+	return WithIdentityUnion(q, projectID).
 		With("claimed_ids", claimedIDsCTE()).
-		With("anon_persons", anonPersonsCTE(projectID)).
+		With("anon_persons", anonPersonsCTE(projectID, includeBots)).
 		With("persons", personsCTE()).
-		With("identified_activity", profileActivitySummaryCTE(projectID)).
+		With("identified_activity", profileActivitySummaryCTE(projectID, includeBots)).
 		With("persons_activity", personsActivityCTE())
 }
 
@@ -361,7 +363,7 @@ SELECT external_id AS claimed_id FROM latest_profiles WHERE external_id != ''
 // It is O(project distinct_ids) per query — same class as the identified
 // summary CTE — with a dedicated first-seen-ordered person index as the
 // documented escape hatch if per-project cardinality outgrows it.
-func anonPersonsCTE(projectID string) *chq.Query {
+func anonPersonsCTE(projectID string, includeBots bool) *chq.Query {
 	return chq.NewQuery().
 		Select(
 			"states.project_id AS project_id",
@@ -379,6 +381,7 @@ func anonPersonsCTE(projectID string) *chq.Query {
 			"argMaxMerge(states.latest_country_state) AS latest_country",
 			"argMaxMerge(states.latest_region_state) AS latest_region",
 			"argMaxMerge(states.latest_city_state) AS latest_city",
+			"min(states.bot) AS bot",
 		).
 		From("distinct_id_activity_states states").
 		Where(
@@ -387,6 +390,7 @@ func anonPersonsCTE(projectID string) *chq.Query {
 			// materialize a single id='' person; keep it out of the person set.
 			chq.RawCond("states.distinct_id != ''"),
 			chq.RawCond("states.distinct_id NOT IN claimed_ids"),
+			chq.BotFilter(includeBots, "states"),
 		).
 		GroupBy("states.project_id", "states.distinct_id")
 }
@@ -434,21 +438,21 @@ func personsActivityCTE() *chq.Query {
 			"project_id", "profile_id", "first_seen", "last_seen",
 			"total_events", "pageviews", "sessions",
 			"latest_browser", "latest_browser_version", "latest_os", "latest_os_version",
-			"latest_device", "latest_country", "latest_region", "latest_city",
+			"latest_device", "latest_country", "latest_region", "latest_city", "bot",
 		).
 		From(`(
 SELECT
     project_id, profile_id, first_seen, last_seen,
     total_events, pageviews, sessions,
     latest_browser, latest_browser_version, latest_os, latest_os_version,
-    latest_device, latest_country, latest_region, latest_city
+    latest_device, latest_country, latest_region, latest_city, bot
 FROM identified_activity
 UNION ALL
 SELECT
     project_id, id AS profile_id, first_seen, last_seen,
     total_events, pageviews, sessions,
     latest_browser, latest_browser_version, latest_os, latest_os_version,
-    latest_device, latest_country, latest_region, latest_city
+    latest_device, latest_country, latest_region, latest_city, bot
 FROM anon_persons
 ) s`)
 }
@@ -487,21 +491,16 @@ func (s *Service) resolveAliasTarget(ctx context.Context, projectID, aliasID str
 // profileActivitySummaryCTE aggregates per-IDENTIFIED-profile activity
 // (registered as identified_activity in personsQuery; derived anonymous
 // persons carry their own single-distinct_id summary via anonPersonsCTE) by
-// unioning every distinct_id that maps to the profile — profile.id,
-// profile.external_id, and all alias_ids — then joining to the
-// distinct_id_activity_states rollup and re-aggregating to one row per
-// profile. The external_id != p.id guard avoids
-// double-merging the same state when an SDK uses the same UUID for both
-// columns. If a profile's external_id happens to coincide with one of its
-// alias_ids, the aggregate state is merged twice: the additive aggregates
-// (total_events, pageviews) double-count, while sessions (HyperLogLog) and
-// the min/max/argMax columns are idempotent under repeated merging and
-// remain correct.
+// joining the identity_union CTE — every distinct_id that maps to the profile
+// — to the distinct_id_activity_states rollup and re-aggregating to one row
+// per profile. identity_union's arrayDistinct dedups across all three id
+// sources, so a value repeated between id, external_id and an alias_id yields
+// one row and its state is merged once.
 //
 // WARNING: personsActivityCTE unions this output by POSITION with anonPersonsCTE
 // — keep this Select's column order in sync with both, or the activity summary
 // will silently bind to the wrong columns.
-func profileActivitySummaryCTE(projectID string) *chq.Query {
+func profileActivitySummaryCTE(projectID string, includeBots bool) *chq.Query {
 	return chq.NewQuery().
 		Select(
 			"identity.project_id",
@@ -519,34 +518,13 @@ func profileActivitySummaryCTE(projectID string) *chq.Query {
 			"argMaxMerge(states.latest_country_state) AS latest_country",
 			"argMaxMerge(states.latest_region_state) AS latest_region",
 			"argMaxMerge(states.latest_city_state) AS latest_city",
+			"min(states.bot) AS bot",
 		).
-		From(`(
-SELECT
-    p.project_id AS project_id,
-    p.id AS profile_id,
-    p.id AS distinct_id
-FROM latest_profiles p
-WHERE p.is_deleted = 0
-UNION ALL
-SELECT
-    p.project_id AS project_id,
-    p.id AS profile_id,
-    p.external_id AS distinct_id
-FROM latest_profiles p
-WHERE p.is_deleted = 0
-  AND p.external_id != ''
-  AND p.external_id != p.id
-UNION ALL
-SELECT
-    pa.project_id AS project_id,
-    pa.profile_id AS profile_id,
-    pa.alias_id AS distinct_id
-FROM latest_profile_aliases pa
-INNER JOIN latest_profiles p
-    ON p.project_id = pa.project_id AND p.id = pa.profile_id
-WHERE p.is_deleted = 0
-) identity INNER JOIN distinct_id_activity_states states ON states.project_id = identity.project_id AND states.distinct_id = identity.distinct_id`).
-		Where(chq.Eq("identity.project_id", projectID)).
+		From("identity_union identity INNER JOIN distinct_id_activity_states states ON states.project_id = identity.project_id AND states.distinct_id = identity.distinct_id").
+		Where(
+			chq.Eq("identity.project_id", projectID),
+			chq.BotFilter(includeBots, "states"),
+		).
 		GroupBy("identity.project_id", "identity.profile_id")
 }
 
@@ -557,6 +535,7 @@ func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 	var totalEvents uint64
 	var pageviews uint64
 	var sessions uint64
+	var bot uint8
 	if err := rows.Scan(
 		&profile.CreateTime,
 		&profile.ExternalID,
@@ -577,6 +556,7 @@ func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 		&activity.Country,
 		&activity.Region,
 		&activity.City,
+		&bot,
 	); err != nil {
 		return Profile{}, err
 	}
@@ -585,6 +565,8 @@ func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 		activity.TotalEvents = int64(totalEvents)
 		activity.Pageviews = int64(pageviews)
 		activity.Sessions = int64(sessions)
+		// min over the person's state rows: every counted event was tagged, not just one.
+		activity.Bot = bot == 1
 		profile.Activity = &activity
 	}
 	return profile, nil
@@ -720,5 +702,6 @@ func profileSelectColumns() []string {
 		"coalesce(activity_summary.latest_country, '') AS latest_country",
 		"coalesce(activity_summary.latest_region, '') AS latest_region",
 		"coalesce(activity_summary.latest_city, '') AS latest_city",
+		"toUInt8(coalesce(activity_summary.bot, 0)) AS bot",
 	}
 }

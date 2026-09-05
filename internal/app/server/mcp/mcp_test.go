@@ -17,10 +17,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
-	"github.com/pug-sh/pug/internal/correlation"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	"github.com/pug-sh/pug/internal/correlation"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
@@ -73,6 +73,7 @@ var curatedToolNames = []string{
 	"get_insights_property_values",
 	"get_profile",
 	"get_profile_by_external_id",
+	"get_profile_sessions",
 	"get_profile_stats",
 	"query_insights",
 }

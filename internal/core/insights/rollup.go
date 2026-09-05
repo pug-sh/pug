@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -12,8 +13,8 @@ import (
 )
 
 // rollupTable is the daily dimensional rollup populated by
-// dashboard_event_rollup_daily_mv (migration 006; MV query extended by 009 and
-// restated by 011, which is what currently defines it).
+// dashboard_event_rollup_daily_mv (migration 006; the newest restatement of
+// its query, currently 012, is what defines it).
 const rollupTable = "dashboard_event_rollup_daily"
 
 // totalDimName is the synthetic dimension whose single empty-string value per
@@ -49,11 +50,11 @@ var (
 
 // materializedDims are the auto-property breakdown dimensions backed by the
 // rollup: the union of every applied migration's group, so it matches the
-// LATEST MV definition (011's MODIFY QUERY — 011 adds no dims, but it is the
-// migration that now defines the MV) by construction rather than by a list
-// restated a third time. TestMaterializedDimsMatchMigration checks the dim names
-// against that MV; TestMigration011PromotedDimExprsMatch checks that every dim's
-// value expression reads its promoted column.
+// newest MV restatement (currently 012's MODIFY QUERY; 011 and 012 added key
+// columns, no dims) by construction rather than by a list restated a third
+// time. TestMaterializedDimsMatchMigration checks the dim names against that
+// MV; TestMigration012PromotedDimExprsMatch checks that every dim's value
+// expression reads its promoted column.
 var materializedDims = slices.Concat(eventRollupDims006, eventRollupDims009)
 
 func isMaterializedDim(prop string) bool {
@@ -65,6 +66,7 @@ func isMaterializedDim(prop string) bool {
 // false for numeric property aggregations (SUM/AVG/MIN/MAX), which need raw
 // per-event values the rollup does not store.
 func rollupAggExpr(agg insightsv1.AggregationType) (string, bool) {
+	//exhaustive:ignore a metric the rollup cannot serve falls back to the raw builder
 	switch agg {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
 		insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED:
@@ -93,6 +95,7 @@ func rollupAggExpr(agg insightsv1.AggregationType) (string, bool) {
 // inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
 // pinned by TestIntegration/rollup_duplicate_overcount_documented.
 func canUseEventRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granularity) bool {
+	//exhaustive:ignore an insight type the rollup cannot serve falls back to the raw builder
 	switch spec.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 		insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
@@ -100,6 +103,7 @@ func canUseEventRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granul
 		return false
 	}
 
+	//exhaustive:ignore a granularity finer than the day-keyed rollup falls back to raw
 	switch gran {
 	case insightsv1.Granularity_GRANULARITY_DAY,
 		insightsv1.Granularity_GRANULARITY_WEEK,
@@ -273,6 +277,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 					chq.Lte("day", toDay),
 					// Rank over the same population THIS event's metric counts.
 					chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+					botExclusionCond(excludeBots(spec), ""),
 				).
 				GroupBy("dim_value", "t")
 
@@ -312,6 +317,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				// Exclusion = cookieless-0 rows only; inclusion = no predicate
 				// (states merge across both key values). Both stay fast-path.
 				chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+				botExclusionCond(excludeBots(spec), ""),
 			)
 
 		groupBy := []string{"t", "event_kind"}
@@ -422,7 +428,7 @@ func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
 	events := req.GetSpec().GetEvents()
 	if len(events) == 0 {
-		return ScalarQuery{}, fmt.Errorf("segmentation rollup: no events")
+		return ScalarQuery{}, errors.New("segmentation rollup: no events")
 	}
 	aggExpr, ok := rollupAggExpr(aggregationType(req))
 	if !ok {
@@ -444,6 +450,7 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 			chq.Gte("day", fromDay),
 			chq.Lte("day", toDay),
 			chq.When(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), chq.Eq("cookieless", uint8(0))),
+			botExclusionCond(excludeBots(req.GetSpec()), ""),
 			chq.Or(kindConds...),
 		).
 		WithQueryCache(analyticsCacheTTL).
@@ -516,6 +523,7 @@ func canUseTopKRollup(spec *insightsv1.InsightQuerySpec) bool {
 	if len(tk.GetScope().GetFilters()) != 0 {
 		return false
 	}
+	//exhaustive:ignore a dimension the rollup cannot serve falls back to the raw builder
 	switch tk.GetDimension() {
 	case insightsv1.TopKQuery_DIMENSION_EVENT_KIND:
 	case insightsv1.TopKQuery_DIMENSION_PROPERTY:
@@ -557,6 +565,7 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 	}
 
 	var dimName, dimExpr string
+	//exhaustive:ignore unreachable: canUseTopKRollup already rejected any other dimension, and this errors rather than guessing
 	switch tk.GetDimension() {
 	case insightsv1.TopKQuery_DIMENSION_PROPERTY:
 		dimName, dimExpr = tk.GetProperty(), "dim_value"
@@ -583,6 +592,7 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 		// feeding the un-normalised value keeps a needless difference alive
 		// between two paths whose whole contract is producing identical answers.
 		chq.When(excludeCookielessForAgg(req.GetSpec(), topKMetric(tk)), chq.Eq("cookieless", uint8(0))),
+		botExclusionCond(excludeBots(req.GetSpec()), ""),
 	}
 
 	// Omit-$others fast path mirrors buildTopKEvents: a single aggregation with

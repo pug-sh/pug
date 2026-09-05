@@ -262,7 +262,7 @@ func testDiscardPolicy(policy string) jetstream.DiscardPolicy {
 func readStreamConfig() ([]natsdeps.StreamConfig, error) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
-		return nil, fmt.Errorf("unable to determine source file path")
+		return nil, errors.New("unable to determine source file path")
 	}
 	dir := filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "nats")
 	data, err := os.ReadFile(filepath.Join(dir, "streams.yaml"))
@@ -284,7 +284,7 @@ func readStreamConfig() ([]natsdeps.StreamConfig, error) {
 func readConsumerConfig() ([]natsdeps.ConsumerConfig, error) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
-		return nil, fmt.Errorf("unable to determine source file path")
+		return nil, errors.New("unable to determine source file path")
 	}
 	dir := filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "nats")
 	data, err := os.ReadFile(filepath.Join(dir, "consumers.yaml"))

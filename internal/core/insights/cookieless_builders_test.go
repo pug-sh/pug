@@ -13,6 +13,11 @@ import (
 
 const cookielessNeedle = "NOT startsWith(distinct_id, 'cookieless-')"
 
+// cookielessNeedleAliased is the predicate as emitted by identity-resolving
+// builders (funnel, funnel timing, retention, top-K users), whose event scans
+// are aliased "e" under the identity_union join.
+const cookielessNeedleAliased = "NOT startsWith(e.distinct_id, 'cookieless-')"
+
 // cookielessTestReq builds a minimal valid trends request with one page_view
 // event carrying the given aggregation, over a day-aligned 7-day UTC window.
 func cookielessTestReq(agg insightsv1.AggregationType) *insightsv1.QueryRequest {
@@ -118,7 +123,7 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(q.SQL(), cookielessNeedle) {
+		if !strings.Contains(q.SQL(), cookielessNeedleAliased) {
 			t.Errorf("funnel must exclude cookieless by default:\n%s", q.SQL())
 		}
 
@@ -127,7 +132,7 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(q.SQL(), cookielessNeedle) {
+		if strings.Contains(q.SQL(), cookielessNeedleAliased) {
 			t.Errorf("toggle must lift funnel exclusion:\n%s", q.SQL())
 		}
 	})
@@ -162,7 +167,7 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := strings.Count(q.SQL(), cookielessNeedle); got != 2 {
+		if got := strings.Count(q.SQL(), cookielessNeedleAliased); got != 2 {
 			t.Errorf("funnel timing must exclude cookieless in BOTH scans (pre-filter + tagged CTE), got %d:\n%s", got, q.SQL())
 		}
 
@@ -171,7 +176,7 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(q.SQL(), cookielessNeedle) {
+		if strings.Contains(q.SQL(), cookielessNeedleAliased) {
 			t.Errorf("toggle must lift funnel timing exclusion in both scans:\n%s", q.SQL())
 		}
 	})
@@ -191,12 +196,9 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sql := q.SQL()
-		if !strings.Contains(sql, cookielessNeedle) {
-			t.Errorf("retention cohort scan must exclude cookieless:\n%s", sql)
-		}
-		if !strings.Contains(sql, "NOT startsWith(e.distinct_id, 'cookieless-')") {
-			t.Errorf("retention retained scan must exclude via the e. alias:\n%s", sql)
+		// Both scans (cohorts + return_events) are e.-aliased under the identity join.
+		if got := strings.Count(q.SQL(), cookielessNeedleAliased); got != 2 {
+			t.Errorf("retention must exclude cookieless in both scans (cohorts + return_events), got %d:\n%s", got, q.SQL())
 		}
 	})
 

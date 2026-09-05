@@ -171,12 +171,23 @@ func TestFunnel(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	// windowFunnel-based: single CTE with CROSS JOIN (no UNION ALL)
-	if !strings.Contains(sql, "WITH funnel AS") {
+	// windowFunnel-based: single aggregation CTE with CROSS JOIN (no UNION ALL),
+	// identity-joined and keyed by the canonical user key so a person split by
+	// identify() converts as one chain.
+	if !strings.Contains(sql, "funnel AS (") {
 		t.Errorf("expected funnel CTE in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "windowFunnel(") {
 		t.Errorf("expected windowFunnel() in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "events e LEFT ANY JOIN identity_union i ON i.project_id = e.project_id AND i.distinct_id = e.distinct_id") {
+		t.Errorf("expected identity join in funnel CTE, got: %s", sql)
+	}
+	if !strings.Contains(sql, "if(i.profile_id = '', e.distinct_id, i.profile_id) AS user_key") {
+		t.Errorf("expected canonical user_key in funnel CTE, got: %s", sql)
+	}
+	if !strings.Contains(sql, "GROUP BY user_key") {
+		t.Errorf("expected funnel grouped by user_key, got: %s", sql)
 	}
 	if !strings.Contains(sql, "countIf(f.level >= s.step_index + 1)") {
 		t.Errorf("expected countIf with CROSS JOIN step_index in SQL, got: %s", sql)
@@ -188,10 +199,11 @@ func TestFunnel(t *testing.T) {
 		t.Errorf("expected step ordering in SQL, got: %s", sql)
 	}
 
-	// Args: windowFunnel step conditions (2) + WHERE (project_id, from, to, OR step filter: 2) = 7
+	// Args: identity CTEs (latest_profiles + latest_profile_aliases project_id: 2)
+	// + windowFunnel step conditions (2) + WHERE (project_id, from, to, OR step filter: 2) = 9
 	// Event kinds are SQL literals in the CROSS JOIN, not parameterized.
-	if len(args) != 7 {
-		t.Errorf("expected 7 args for 2-step windowFunnel, got %d: %v", len(args), args)
+	if len(args) != 9 {
+		t.Errorf("expected 9 args for 2-step windowFunnel, got %d: %v", len(args), args)
 	}
 }
 
@@ -354,7 +366,7 @@ func TestFunnelWithStepTiming(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	if !strings.Contains(sql, "WITH tagged AS") {
+	if !strings.Contains(sql, "tagged AS (") {
 		t.Errorf("expected tagged CTE in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "multiIf(") {
@@ -366,17 +378,24 @@ func TestFunnelWithStepTiming(t *testing.T) {
 	if !strings.Contains(sql, "step_matches") {
 		t.Errorf("expected step_matches array in output, got: %s", sql)
 	}
-	// Pre-filter: windowFunnel IN subquery restricts to users who progressed
-	if !strings.Contains(sql, "distinct_id IN (") {
-		t.Errorf("expected pre-filter IN subquery in SQL, got: %s", sql)
+	// Pre-filter: windowFunnel IN subquery restricts to users who progressed,
+	// keyed by the canonical user key like the tagged CTE (both scans identity-joined).
+	if !strings.Contains(sql, "if(i.profile_id = '', e.distinct_id, i.profile_id) IN (") {
+		t.Errorf("expected user-key pre-filter IN subquery in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "windowFunnel(") {
 		t.Errorf("expected windowFunnel in pre-filter, got: %s", sql)
 	}
+	if got := strings.Count(sql, "events e LEFT ANY JOIN identity_union i ON i.project_id = e.project_id AND i.distinct_id = e.distinct_id"); got != 2 {
+		t.Errorf("expected identity join in both scans (pre-filter + tagged), got %d: %s", got, sql)
+	}
+	if !strings.Contains(sql, "GROUP BY user_key") {
+		t.Errorf("expected grouping by user_key, got: %s", sql)
+	}
 
-	// Args: tagged CTE (multiIf: 2 + OR: 2 + WHERE: 3 + pre-filter subquery: 3+2+1+2 = 8) = 15
-	if len(args) != 15 {
-		t.Errorf("expected 15 args for 2-step timing funnel with pre-filter, got %d: %v", len(args), args)
+	// Args: identity CTEs (2) + tagged CTE (multiIf: 2 + OR: 2 + WHERE: 3 + pre-filter subquery: 3+2+1+2 = 8) = 17
+	if len(args) != 17 {
+		t.Errorf("expected 17 args for 2-step timing funnel with pre-filter, got %d: %v", len(args), args)
 	}
 }
 
@@ -405,17 +424,17 @@ func TestFunnelWithFilterGroups(t *testing.T) {
 	}
 	sql := q.SQL()
 
-	// Filter group should appear inside the CTE WHERE
-	if !strings.Contains(sql, "coalesce(country, '')") {
+	// Filter group should appear inside the CTE WHERE (e.-aliased under the identity join).
+	if !strings.Contains(sql, "coalesce(e.country, '')") {
 		t.Errorf("expected filter group in funnel SQL, got: %s", sql)
 	}
 }
 
 // TestRetention_NonUTCTimezoneWrapsBothBucketColumns guards the one place bucketExpr
-// is called twice with different columns: the cohort CTE buckets occur_time and the
-// retained CTE buckets e.occur_time. Both must be wrapped in toTimeZone() for the
-// requested zone — wrapping only one would bucket cohorts and their return windows on
-// different calendars and silently distort every retention curve.
+// is called twice with different columns: the cohort CTE buckets e.occur_time and the
+// retained CTE buckets re.occur_time (the return_events scan). Both must be wrapped in
+// toTimeZone() for the requested zone — wrapping only one would bucket cohorts and their
+// return windows on different calendars and silently distort every retention curve.
 func TestRetention_NonUTCTimezoneWrapsBothBucketColumns(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		Spec: &insightsv1.InsightQuerySpec{
@@ -436,10 +455,10 @@ func TestRetention_NonUTCTimezoneWrapsBothBucketColumns(t *testing.T) {
 	}
 	sql := q.SQL()
 
-	if !strings.Contains(sql, "toTimeZone(occur_time, 'Asia/Kolkata')") {
+	if !strings.Contains(sql, "toTimeZone(e.occur_time, 'Asia/Kolkata')") {
 		t.Errorf("cohort bucket not wrapped in requested zone, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toTimeZone(e.occur_time, 'Asia/Kolkata')") {
+	if !strings.Contains(sql, "toTimeZone(re.occur_time, 'Asia/Kolkata')") {
 		t.Errorf("retained bucket not wrapped in requested zone, got: %s", sql)
 	}
 }
@@ -463,11 +482,14 @@ func TestRetention(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	if !strings.Contains(sql, "WITH cohorts AS") {
+	if !strings.Contains(sql, "cohorts AS (") {
 		t.Errorf("expected cohorts CTE in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "cohort_sizes AS") {
 		t.Errorf("expected cohort_sizes CTE in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "return_events AS") {
+		t.Errorf("expected return_events CTE in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "retained AS") {
 		t.Errorf("expected retained CTE in SQL, got: %s", sql)
@@ -482,22 +504,35 @@ func TestRetention(t *testing.T) {
 		t.Errorf("expected deterministic retention ordering, got: %s", sql)
 	}
 
+	// Both event scans resolve identity and key on the canonical user key, so a
+	// person who signs up between cohort entry and return stays one person.
+	if got := strings.Count(sql, "events e LEFT ANY JOIN identity_union i ON i.project_id = e.project_id AND i.distinct_id = e.distinct_id"); got != 2 {
+		t.Errorf("expected identity join in both scans (cohorts + return_events), got %d: %s", got, sql)
+	}
+	if !strings.Contains(sql, "cohorts c INNER JOIN return_events re ON re.user_key = c.user_key") {
+		t.Errorf("expected retained join on user_key, got: %s", sql)
+	}
+	if !strings.Contains(sql, "uniq(re.user_key)") {
+		t.Errorf("expected retained_users counted over user_key, got: %s", sql)
+	}
+
 	// Cohorts CTE must capture precise first_event_time (not just bucketed cohort_time)
 	// to avoid counting return events before the user's actual start.
 	if !strings.Contains(sql, "first_event_time") {
 		t.Errorf("expected first_event_time in cohorts CTE, got: %s", sql)
 	}
-	if !strings.Contains(sql, "e.occur_time >= c.first_event_time") {
+	if !strings.Contains(sql, "re.occur_time >= c.first_event_time") {
 		t.Errorf("retained CTE should filter by first_event_time, not cohort_time, got: %s", sql)
 	}
 
-	// Retained CTE conditions must use e.* aliases to avoid ambiguity in the JOIN.
-	if !strings.Contains(sql, "e.kind") {
-		t.Errorf("expected e.kind alias in retained CTE, got: %s", sql)
+	// Event-scan conditions must use e.* aliases to avoid ambiguity under the identity join.
+	if got := strings.Count(sql, "e.kind"); got != 2 {
+		t.Errorf("expected e.kind alias in both event-scan CTEs, got %d: %s", got, sql)
 	}
 
-	if len(args) != 8 {
-		t.Errorf("expected 8 args for retention query, got %d: %v", len(args), args)
+	// Identity CTEs (2) + cohorts (project_id, from, to, kind) + return_events (project_id, from, to, kind) = 10.
+	if len(args) != 10 {
+		t.Errorf("expected 10 args for retention query, got %d: %v", len(args), args)
 	}
 }
 
@@ -2048,11 +2083,10 @@ func TestSingleEventRetention(t *testing.T) {
 		t.Error("expected 'retained' CTE in SQL")
 	}
 
-	// The same event kind should appear in both the cohorts CTE and the retained CTE.
-	// cohorts: kind = ? (start event)
-	// retained: e.kind = ? (return event, aliased)
-	if strings.Count(sql, "kind = ?") < 2 {
-		t.Errorf("expected kind condition in both cohorts and retained CTEs, got %d occurrences", strings.Count(sql, "kind = ?"))
+	// The same event kind should appear in both the cohorts CTE and the
+	// return_events CTE (both e.-aliased under the identity join).
+	if strings.Count(sql, "e.kind = ?") < 2 {
+		t.Errorf("expected kind condition in both cohorts and return_events CTEs, got %d occurrences", strings.Count(sql, "e.kind = ?"))
 	}
 
 	// Granularity should be weekly.
@@ -2060,13 +2094,10 @@ func TestSingleEventRetention(t *testing.T) {
 		t.Error("expected toStartOfWeek granularity in SQL")
 	}
 
-	// Args should include projectID and time range for both cohorts and retained CTEs,
-	// plus the kind arg for each.
-	// cohorts: projectID, from, to, kind = 4
-	// retained: projectID, from, to, kind = 4
-	// Total = 8
-	if len(args) != 8 {
-		t.Fatalf("expected 8 args (cohorts x4 + retained x4), got %d: %v", len(args), args)
+	// Args: identity CTEs (2 project_ids) + cohorts (projectID, from, to, kind)
+	// + return_events (projectID, from, to, kind) = 10.
+	if len(args) != 10 {
+		t.Fatalf("expected 10 args (identity x2 + cohorts x4 + return_events x4), got %d: %v", len(args), args)
 	}
 
 	// Both kind args should be "login".
@@ -2124,12 +2155,9 @@ func TestRetentionWithFilterGroups(t *testing.T) {
 	}
 	sql := q.SQL()
 
-	// Filter group should appear in cohorts (bare column) and retained CTE (aliased).
-	if !strings.Contains(sql, "coalesce(country, '')") {
-		t.Errorf("expected filter group in cohorts CTE, got:\n%s", sql)
-	}
-	if !strings.Contains(sql, "coalesce(e.country, '')") {
-		t.Errorf("expected aliased filter group in retained CTE, got:\n%s", sql)
+	// Filter group should appear e.-aliased in both event scans (cohorts + return_events).
+	if got := strings.Count(sql, "coalesce(e.country, '')"); got < 2 {
+		t.Errorf("expected aliased filter group in both cohorts and return_events CTEs, got %d:\n%s", got, sql)
 	}
 }
 
@@ -3351,9 +3379,9 @@ func TestComputeFunnelTimingMatchesCountsAtBoundary(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	users := []insights.FunnelUserEvents{
 		// Exactly at the 1-hour boundary — both paths must include this user at step 1.
-		{DistinctID: "u-boundary", Times: []time.Time{t0, t0.Add(1 * time.Hour)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u-boundary", Times: []time.Time{t0, t0.Add(1 * time.Hour)}, StepMatches: []int64{0, 1}},
 		// One nanosecond past the boundary — both paths must exclude this user at step 1.
-		{DistinctID: "u-just-past", Times: []time.Time{t0, t0.Add(1*time.Hour + time.Nanosecond)}, StepMatches: []int64{0, 1}},
+		{UserKey: "u-just-past", Times: []time.Time{t0, t0.Add(1*time.Hour + time.Nanosecond)}, StepMatches: []int64{0, 1}},
 	}
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 3600, 0)
 	if err != nil {

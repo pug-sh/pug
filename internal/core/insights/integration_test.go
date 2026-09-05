@@ -31,6 +31,10 @@ func TestIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	seedEvents(t, ctx, ch)
+	// Seeded up front, not inside the subtests that filter on profiles: every
+	// funnel/retention subtest is identity-resolved now, so a mid-run profile
+	// insert would make earlier and later subtests see different worlds.
+	seedIntegrationProfiles(t, ctx, ch)
 	executor := insights.NewExecutor(ch.Conn)
 
 	t.Run("trends_daily", func(t *testing.T) {
@@ -428,9 +432,8 @@ func TestIntegration(t *testing.T) {
 		// alice(pro): 3 page_views; bob(free): 2; charlie(no profile): 1.
 		// Plus 1 event from alias "alice_anon" which maps to alice (plan=pro).
 		// Filter plan=pro → alice's 3 events + 1 alias event = 4.
-		seedIntegrationProfiles(t, ctx, ch)
 
-		// Insert an event with an alias distinct_id to exercise the UNION ALL alias branch.
+		// Insert an event with an alias distinct_id to exercise the alias branch of the IN set.
 		if err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID, uuid.New().String(), "page_view", "alice_anon",
 			time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC),
@@ -1441,7 +1444,7 @@ func TestIntegration(t *testing.T) {
 		// Insert the same event twice (identical dedup key): an at-least-once
 		// redelivery / client retry. Raw collapses these on merge; the incremental
 		// MV fires per insert and sums them.
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if err := insertAutoEvent(ctx, ch.Conn, dupProjectID, eventID, "page_view", "alice", occur,
 				variantStringMap(map[string]string{"$country": "US"})); err != nil {
 				t.Fatalf("seed dup event %d: %v", i, err)
@@ -1629,7 +1632,7 @@ func TestIntegration(t *testing.T) {
 		sessionID := "00000000-0000-0000-0000-0000000000e5"
 		eventID := uuid.New().String()
 		// Same event_id twice = an at-least-once redelivery of a one-event session.
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if err := insertSessionEvent(ctx, ch.Conn, dupProjectID, eventID,
 				"page_view", "alice", sessionID, occur, "/only", "US"); err != nil {
 				t.Fatalf("seed dup session event %d: %v", i, err)
@@ -2060,7 +2063,6 @@ func TestIntegration(t *testing.T) {
 	t.Run("top_k", func(t *testing.T) {
 		// Sept 2024 window, isolated from every other seed (Jan–Jun).
 		seedTopKEvents(t, ctx, ch)
-		seedIntegrationProfiles(t, ctx, ch)
 		topKWindow := &commonv1.TimeRange{
 			From: timestamppb.New(time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)),
 			To:   timestamppb.New(time.Date(2024, 9, 8, 0, 0, 0, 0, time.UTC)),
@@ -2323,12 +2325,9 @@ func TestIntegration(t *testing.T) {
 
 		t.Run("user_profile_filter", func(t *testing.T) {
 			// PROPERTY_SOURCE_PROFILE plan=pro restricts the ranking to alice's
-			// events. Note the existing profileFilterCondition contract: it
-			// matches events by distinct_id IN (profile ids ∪ alias ids) — NOT
-			// external_id — so alice's event keyed by "alice_ext" is excluded by
-			// the filter even though the top-K identity union resolves it to her.
-			// The surviving events ("alice" + "alice_anon") still group to the
-			// canonical key.
+			// events. The filter matches distinct_id against her full identity
+			// set (id ∪ external_id ∪ aliases), so all three of her tk_purchase
+			// keys pass and group to the canonical key.
 			req := topKReq(&insightsv1.TopKQuery{
 				Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(),
 				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_purchase")},
@@ -2349,9 +2348,9 @@ func TestIntegration(t *testing.T) {
 			if len(rows) != 1 {
 				t.Fatalf("expected 1 row (alice only), got %d: %v", len(rows), rows)
 			}
-			// TOTAL metric (default): 2 events pass the filter (id + alias).
-			if rows[0].GetDimensionValue() != "alice" || rows[0].GetValue() != 2 {
-				t.Errorf("expected alice/2, got %v", rows[0])
+			// TOTAL metric (default): 3 events pass the filter (id + external_id + alias).
+			if rows[0].GetDimensionValue() != "alice" || rows[0].GetValue() != 3 {
+				t.Errorf("expected alice/3, got %v", rows[0])
 			}
 		})
 
@@ -2858,7 +2857,7 @@ func seedRetentionEvents(t *testing.T, ctx context.Context, ch *testutil.TestCli
 //
 // Aliases:
 //
-//	alice_anon → alice (exercises UNION ALL alias branch)
+//	alice_anon → alice (exercises the alias branch of the IN set)
 func seedIntegrationProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
 	t.Helper()
 
@@ -2882,7 +2881,7 @@ func seedIntegrationProfiles(t *testing.T, ctx context.Context, ch *testutil.Tes
 		}
 	}
 
-	// Seed an alias so the UNION ALL branch in profileFilterCondition is exercised.
+	// Seed an alias so profileFilterCondition's alias branch is exercised.
 	if err := ch.Conn.Exec(ctx,
 		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
 		"alice_anon", "alice", "alice_ext", testProjectID,
@@ -3162,7 +3161,7 @@ func seedTopKEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHou
 	}{
 		{"big", 3}, {"$others", 2}, {"small", 1},
 	} {
-		for i := 0; i < l.n; i++ {
+		for i := range l.n {
 			events = append(events, event{
 				kind: "tk_lit", user: fmt.Sprintf("l_%s_%d", l.label, i),
 				custom: map[string]chcol.Variant{"label": chcol.NewVariantWithType(l.label, "String")},
@@ -3296,7 +3295,7 @@ func seedTopKCollisionProfiles(t *testing.T, ctx context.Context, ch *testutil.T
 		user  string
 		count int
 	}{{"collide", 3}, {"solo", 1}} {
-		for i := 0; i < e.count; i++ {
+		for range e.count {
 			occurTime := time.Date(2024, 11, 1+n%3, 12, 0, 0, 0, time.UTC)
 			n++
 			batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)
@@ -3327,10 +3326,10 @@ func variantStringMap(props map[string]string) map[string]chcol.Variant {
 	return out
 }
 
-func insertAutoEvent(
+func insertEventInSession(
 	ctx context.Context,
 	conn driver.Conn,
-	projectID, eventID, kind, distinctID string,
+	projectID, eventID, kind, distinctID, sessionID string,
 	occurTime time.Time,
 	autoProps map[string]chcol.Variant,
 ) error {
@@ -3341,11 +3340,21 @@ func insertAutoEvent(
 	if err := batch.Append(chq.PrepareEventInsertArgs(
 		eventID, projectID, distinctID, kind,
 		autoProps, nil,
-		occurTime, uuid.NewString(),
+		occurTime, sessionID,
 	)...); err != nil {
 		return err
 	}
 	return batch.Send()
+}
+
+func insertAutoEvent(
+	ctx context.Context,
+	conn driver.Conn,
+	projectID, eventID, kind, distinctID string,
+	occurTime time.Time,
+	autoProps map[string]chcol.Variant,
+) error {
+	return insertEventInSession(ctx, conn, projectID, eventID, kind, distinctID, uuid.NewString(), occurTime, autoProps)
 }
 
 // insertSessionEvent inserts one event with an explicit session_id and $url, so

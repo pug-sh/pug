@@ -1486,7 +1486,7 @@ func TestGetActivityHeatmap(t *testing.T) {
 		{"signup", now.AddDate(0, 0, -3), 1},
 	}
 	for _, se := range seedEvents {
-		for i := 0; i < se.count; i++ {
+		for i := range se.count {
 			testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", se.kind, uuid.NewString(),
 				map[string]string{},
 				map[string]string{},
@@ -1751,7 +1751,7 @@ func TestGetProfileStats(t *testing.T) {
 	)
 
 	// Day 0: 2 events with latest props.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "page_view", uuid.NewString(),
 			latestProps,
 			map[string]string{},
@@ -1785,7 +1785,7 @@ func TestGetProfileStats(t *testing.T) {
 	reader := events.NewReader(ch.Conn)
 
 	t.Run("returns stats with auto_properties from latest event", func(t *testing.T) {
-		stats, heatmap, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		stats, heatmap, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{ProjectID: "proj-1", DistinctID: "user-1"})
 		if err != nil {
 			t.Fatalf("GetProfileStats: %v", err)
 		}
@@ -1830,7 +1830,7 @@ func TestGetProfileStats(t *testing.T) {
 	})
 
 	t.Run("includes alias events in aggregation", func(t *testing.T) {
-		stats, _, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		stats, _, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{ProjectID: "proj-1", DistinctID: "user-1"})
 		if err != nil {
 			t.Fatalf("GetProfileStats: %v", err)
 		}
@@ -1844,7 +1844,7 @@ func TestGetProfileStats(t *testing.T) {
 	})
 
 	t.Run("returns nil when no events exist", func(t *testing.T) {
-		stats, heatmap, err := reader.GetProfileStats(ctx, "proj-1", "nonexistent")
+		stats, heatmap, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{ProjectID: "proj-1", DistinctID: "nonexistent"})
 		if err != nil {
 			t.Fatalf("GetProfileStats: %v", err)
 		}
@@ -1857,7 +1857,7 @@ func TestGetProfileStats(t *testing.T) {
 	})
 
 	t.Run("project isolation", func(t *testing.T) {
-		stats, _, err := reader.GetProfileStats(ctx, "proj-2", "user-1")
+		stats, _, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{ProjectID: "proj-2", DistinctID: "user-1"})
 		if err != nil {
 			t.Fatalf("GetProfileStats: %v", err)
 		}
@@ -1877,7 +1877,7 @@ func TestGetProfileStats(t *testing.T) {
 			now.AddDate(0, 0, -90),
 		)
 
-		stats, heatmap, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		stats, heatmap, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{ProjectID: "proj-1", DistinctID: "user-1"})
 		if err != nil {
 			t.Fatalf("GetProfileStats: %v", err)
 		}
@@ -1911,7 +1911,7 @@ func TestGetProfileStats(t *testing.T) {
 			now.Add(10*time.Hour), // latest event
 		)
 
-		stats, _, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		stats, _, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{ProjectID: "proj-1", DistinctID: "user-1"})
 		if err != nil {
 			t.Fatalf("GetProfileStats: %v", err)
 		}
@@ -2027,7 +2027,7 @@ func TestGetProfileStats_EmptyInputsReturnError(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := reader.GetProfileStats(ctx, tc.projectID, tc.distinctID)
+			_, _, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{ProjectID: tc.projectID, DistinctID: tc.distinctID})
 			if err == nil {
 				t.Fatal("expected error for empty input, got nil")
 			}
@@ -2064,4 +2064,237 @@ func TestGetActivityFeed_EmptyInputsReturnError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBotExclusion pins the default across all four activity read paths at once: each filters in
+// a different place, so a fix applied to one proves nothing about the others.
+func TestBotExclusion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+
+	human := map[string]string{"$browser": "Chrome"}
+	crawler := map[string]string{"$browser": "Chrome", "$bot": "true", "$bot_reason": "user_agent"}
+
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "page_view", uuid.NewString(),
+		human, map[string]string{}, now.Add(-2*time.Hour))
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "page_view", uuid.NewString(),
+		crawler, map[string]string{}, now.Add(-time.Hour))
+
+	reader := events.NewReader(ch.Conn)
+	timeRange := &commonv1.TimeRange{
+		From: timestamppb.New(now.AddDate(0, 0, -1)),
+		To:   timestamppb.New(now.Add(time.Hour)),
+	}
+
+	t.Run("event explorer", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			includeBots bool
+			want        int
+		}{
+			{"excluded by default", false, 1},
+			{"included when asked", true, 2},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
+					ProjectID:   "proj-1",
+					TimeRange:   timeRange,
+					IncludeBots: tc.includeBots,
+				})
+				if err != nil {
+					t.Fatalf("GetEventExplorer: %v", err)
+				}
+				if len(evts) != tc.want {
+					t.Errorf("events: got %d, want %d", len(evts), tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("activity feed", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			includeBots bool
+			want        int
+		}{
+			{"excluded by default", false, 1},
+			{"included when asked", true, 2},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+					ProjectID:   "proj-1",
+					DistinctID:  "user-1",
+					TimeRange:   timeRange,
+					IncludeBots: tc.includeBots,
+				})
+				if err != nil {
+					t.Fatalf("GetActivityFeed: %v", err)
+				}
+				if len(evts) != tc.want {
+					t.Errorf("events: got %d, want %d", len(evts), tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("activity heatmap", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			includeBots bool
+			want        int64
+		}{
+			{"excluded by default", false, 1},
+			{"included when asked", true, 2},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+					ProjectID:   "proj-1",
+					DistinctID:  "user-1",
+					TimeRange:   timeRange,
+					IncludeBots: tc.includeBots,
+				})
+				if err != nil {
+					t.Fatalf("GetActivityHeatmap: %v", err)
+				}
+				var total int64
+				for _, d := range days {
+					total += d.Count
+				}
+				if total != tc.want {
+					t.Errorf("heatmap total: got %d, want %d", total, tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("profile stats", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			includeBots bool
+			want        int64
+		}{
+			{"excluded by default", false, 1},
+			{"included when asked", true, 2},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				stats, heatmap, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{
+					ProjectID:   "proj-1",
+					DistinctID:  "user-1",
+					IncludeBots: tc.includeBots,
+				})
+				if err != nil {
+					t.Fatalf("GetProfileStats: %v", err)
+				}
+				if stats == nil {
+					t.Fatal("expected non-nil stats")
+				}
+				if stats.TotalEvents != tc.want {
+					t.Errorf("TotalEvents: got %d, want %d", stats.TotalEvents, tc.want)
+				}
+				// The heatmap runs its own query, so the flag has to reach it too.
+				var days int64
+				for _, d := range heatmap {
+					days += d.Count
+				}
+				if days != tc.want {
+					t.Errorf("heatmap total: got %d, want %d", days, tc.want)
+				}
+			})
+		}
+	})
+
+	// The feed's callers read session facts off the first and last row they get back, so half a
+	// session is worse than none: it renders a short duration and the wrong entry event, and looks
+	// exactly like a real one.
+	// All four reads are row-level, so a straddling session keeps its human half rather than
+	// vanishing. Session *metrics* drop it whole; an event list is not a session judgement, and
+	// the feed must agree with the explorer and the stats on the same profile page.
+	// Its own project, so the counts above stay independent of subtest order.
+	t.Run("a straddling session keeps its human half", func(t *testing.T) {
+		straddle := uuid.NewString()
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-straddle", "user-2", "page_view", straddle,
+			human, map[string]string{}, now.Add(-90*time.Minute))
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-straddle", "user-2", "page_view", straddle,
+			crawler, map[string]string{}, now.Add(-80*time.Minute))
+
+		feed := func(includeBots bool) int {
+			t.Helper()
+			evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+				ProjectID:   "proj-straddle",
+				DistinctID:  "user-2",
+				TimeRange:   timeRange,
+				IncludeBots: includeBots,
+			})
+			if err != nil {
+				t.Fatalf("GetActivityFeed: %v", err)
+			}
+			return len(evts)
+		}
+		if got := feed(false); got != 1 {
+			t.Errorf("feed: got %d events, want 1 (the human half survives)", got)
+		}
+		if got := feed(true); got != 2 {
+			t.Errorf("feed with bots included: got %d events, want 2", got)
+		}
+
+		// The same session through the explorer must agree with the feed.
+		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
+			ProjectID: "proj-straddle",
+			SessionID: straddle,
+			TimeRange: timeRange,
+		})
+		if err != nil {
+			t.Fatalf("GetEventExplorer: %v", err)
+		}
+		if len(evts) != 1 {
+			t.Errorf("explorer scoped to the session: got %d events, want 1 (same as the feed)", len(evts))
+		}
+
+		// And so must the stats, which back the same profile page.
+		stats, _, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{
+			ProjectID:  "proj-straddle",
+			DistinctID: "user-2",
+		})
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats == nil || stats.TotalEvents != 1 {
+			t.Errorf("stats: got %+v, want TotalEvents 1 to match the feed", stats)
+		}
+	})
+
+	// A profile with nothing but bot traffic reads as one with no events, so the page has to
+	// offer the toggle to recover it.
+	t.Run("all-bot profile reads as empty until bots are included", func(t *testing.T) {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-bots", "crawler-1", "page_view", uuid.NewString(),
+			crawler, map[string]string{}, now.Add(-time.Hour))
+
+		stats, _, err := reader.GetProfileStats(ctx, events.ProfileStatsParams{
+			ProjectID:  "proj-bots",
+			DistinctID: "crawler-1",
+		})
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats != nil {
+			t.Errorf("expected nil stats for an all-bot profile, got TotalEvents=%d", stats.TotalEvents)
+		}
+
+		stats, _, err = reader.GetProfileStats(ctx, events.ProfileStatsParams{
+			ProjectID:   "proj-bots",
+			DistinctID:  "crawler-1",
+			IncludeBots: true,
+		})
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats == nil || stats.TotalEvents != 1 {
+			t.Errorf("expected 1 event with bots included, got %+v", stats)
+		}
+	})
 }

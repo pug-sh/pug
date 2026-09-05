@@ -317,7 +317,7 @@ func TestMigration010SessionRollupColumnsMatchDims(t *testing.T) {
 		t.Fatal("migration 010 Up missing the partial backfill INSERT column list")
 	}
 	var cols []string
-	for _, c := range strings.Split(m[1], ",") {
+	for c := range strings.SplitSeq(m[1], ",") {
 		cols = append(cols, strings.TrimSpace(c))
 	}
 	want := []string{"project_id", "kind", "session_id"}
@@ -362,5 +362,35 @@ func TestMigration010SessionRollupDimExprsMatch(t *testing.T) {
 	}
 	if strings.Contains(up, "auto_properties['$") {
 		t.Error("migration 010 must not read promoted keys from the auto_properties map")
+	}
+	// 010 predates the bot key column; its file must not grow one.
+	if botWord.MatchString(up) {
+		t.Error("migration 010 is frozen and must not mention bot — that is 012's job")
+	}
+}
+
+// TestMigration012SessionRollupRestatesStates pins the LATEST session-rollup MV
+// definition — migration 012's MODIFY QUERY — to sessionMaterializedDims: every
+// dim's entry/exit pair stated exactly once with the correct source expression,
+// plus the start/end/count states, so adding the bot key could not have
+// dropped a state on the floor.
+func TestMigration012SessionRollupRestatesStates(t *testing.T) {
+	up := migrationUpSection(t, migration012Path)
+	for _, dim := range sessionMaterializedDims {
+		if got := countSessionDimStateExprs(t, up, dim); got != 1 {
+			t.Errorf("dim %s: expected 1 correctly-wired state pair in 012 Up (MODIFY QUERY), found %d", dim, got)
+		}
+	}
+	for _, want := range []string{
+		"minState(occur_time) AS start_state",
+		"maxState(occur_time) AS end_state",
+		"countState() AS event_count_state",
+	} {
+		if !strings.Contains(up, want) {
+			t.Errorf("012 Up missing %q", want)
+		}
+	}
+	if strings.Contains(up, "INSERT INTO dashboard_session_rollup") {
+		t.Error("012 adds a key column, not states — there is nothing to backfill")
 	}
 }

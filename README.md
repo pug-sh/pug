@@ -157,4 +157,6 @@ guidance and conventions are in [`CLAUDE.md`](CLAUDE.md).
 
 ## License
 
-Pug is licensed under the [GNU AGPL v3.0](LICENSE).
+Pug is licensed under the [GNU AGPL v3.0](LICENSE). Contributors sign a
+[CLA](CLA.md) before their first pull request is merged — see
+[CONTRIBUTING.md](CONTRIBUTING.md).

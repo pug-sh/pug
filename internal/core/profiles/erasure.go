@@ -307,7 +307,8 @@ func (s *Service) requestErasureByUnresolvedID(ctx context.Context, projectID, i
 // ErrProfileNotFound for real data.
 //
 // That mattered once it became clear a controller can SEE these ids —
-// GetEventExplorer and GetActivityFeed both return distinct_id unfiltered — so
+// GetEventExplorer and GetActivityFeed both return distinct_id without the
+// rollup's cookieless filter (a bot-tagged one needs include_bots) — so
 // "not found" was reachable from a UI, on an Art. 17 obligation, for data the
 // system was still holding. Cookieless ids therefore probe the events table
 // directly. Pinned by TestErasure_ByID_CookielessIsErasable.
@@ -1102,10 +1103,7 @@ const chBatchSize = 1000
 // chunk, stopping at the first error. An empty slice invokes fn zero times.
 func forEachBatch(values []string, fn func(batch []string) error) error {
 	for start := 0; start < len(values); start += chBatchSize {
-		end := start + chBatchSize
-		if end > len(values) {
-			end = len(values)
-		}
+		end := min(start+chBatchSize, len(values))
 		if err := fn(values[start:end]); err != nil {
 			return err
 		}

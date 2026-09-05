@@ -19,8 +19,7 @@ func TestExecuteQuery_RejectsUnloadableTimezone(t *testing.T) {
 		Timezone: proto.String("Not/A/Zone"),
 	}
 	_, err := ExecuteQuery(context.Background(), &Executor{}, "proj_123", req, time.Now())
-	var invalid *InvalidQueryError
-	if !errors.As(err, &invalid) {
+	if _, ok := errors.AsType[*InvalidQueryError](err); !ok {
 		t.Fatalf("err = %v (%T), want *InvalidQueryError", err, err)
 	}
 }

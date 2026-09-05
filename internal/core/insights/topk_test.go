@@ -1,6 +1,7 @@
 package insights_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -333,13 +334,7 @@ func TestBuildTopKQuery_ScopeAndFiltersInBothScans(t *testing.T) {
 		}
 	}
 	for _, v := range []any{"page_view", "US", "pro"} {
-		found := false
-		for _, a := range cteArgs {
-			if a == v {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(cteArgs, v)
 		if !found {
 			t.Errorf("expected arg %v in scan args, got: %v", v, cteArgs)
 		}
@@ -347,10 +342,10 @@ func TestBuildTopKQuery_ScopeAndFiltersInBothScans(t *testing.T) {
 }
 
 // TestBuildTopKQuery_UserDimension verifies the single-pass USER shape:
-// identity union via one ARRAY JOIN pass, LEFT ANY JOIN, e.-aliased
-// conditions, per-user partials with row_number ranking, and — critically —
-// that events and latest_profiles each appear exactly once (a CTE referenced
-// twice would re-execute its scan).
+// LEFT ANY JOIN onto identity_union, e.-aliased conditions, per-user partials
+// with row_number ranking, and — critically — that events and each identity
+// CTE appear exactly once (a CTE referenced twice would re-execute its scan).
+// The CTE's own shape is pinned in the profiles package, next to its source.
 func TestBuildTopKQuery_UserDimension(t *testing.T) {
 	req := topKRequest(&insightsv1.TopKQuery{
 		Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
@@ -369,8 +364,7 @@ func TestBuildTopKQuery_UserDimension(t *testing.T) {
 		"per_user AS (",
 		"ranked AS (",
 		"LEFT ANY JOIN",
-		"ARRAY JOIN arrayDistinct(arrayFilter(x -> x != '', [p.id, p.external_id]))",
-		"i.distinct_id = e.distinct_id",
+		"i.project_id = e.project_id AND i.distinct_id = e.distinct_id",
 		"if(i.profile_id = '', e.distinct_id, i.profile_id) AS user_key",
 		"e.project_id = ?",
 		"e.occur_time >= ?",
@@ -390,17 +384,20 @@ func TestBuildTopKQuery_UserDimension(t *testing.T) {
 	if !strings.Contains(sql, "custom_properties['order_amount']") {
 		t.Errorf("expected order_amount map access, got: %s", sql)
 	}
-	// Single-pass invariants: one events scan, one latest_profiles aggregation
-	// source plus its two CTE references (ARRAY JOIN branch + alias join), one
-	// join build. Regressing to a twice-referenced CTE would double these.
+	// Single-pass invariants: one events scan, one profiles read, one
+	// latest_profiles reference, one join build. Regressing to a
+	// twice-referenced CTE would double these.
 	if got := strings.Count(sql, "FROM events"); got != 1 {
 		t.Errorf("expected exactly 1 events scan, got %d: %s", got, sql)
 	}
 	if got := strings.Count(sql, "FROM profiles"); got != 1 {
 		t.Errorf("expected exactly 1 profiles read (inside latest_profiles), got %d: %s", got, sql)
 	}
-	if got := strings.Count(sql, "FROM latest_profiles"); got != 1 {
-		t.Errorf("expected exactly 1 ARRAY JOIN reference to latest_profiles, got %d: %s", got, sql)
+	if got := strings.Count(sql, "latest_profiles p"); got != 1 {
+		t.Errorf("expected exactly 1 latest_profiles reference, got %d: %s", got, sql)
+	}
+	if got := strings.Count(sql, "FROM latest_profile_aliases"); got != 1 {
+		t.Errorf("expected exactly 1 latest_profile_aliases reference, got %d: %s", got, sql)
 	}
 	if got := strings.Count(sql, "LEFT ANY JOIN"); got != 1 {
 		t.Errorf("expected exactly 1 identity join, got %d: %s", got, sql)

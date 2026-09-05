@@ -409,13 +409,11 @@ func TestCompleteMagicLink_ConcurrentRedemptionSerializes(t *testing.T) {
 	start := make(chan struct{})
 	results := make([]error, n)
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			_, err := svc.CompleteMagicLink(ctx, raw, "")
 			results[i] = err
-		}()
+		})
 	}
 	close(start) // release all goroutines together to maximize overlap
 	wg.Wait()

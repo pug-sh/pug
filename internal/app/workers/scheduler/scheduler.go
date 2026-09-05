@@ -30,13 +30,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := closeOtel(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
-		}
-	}()
+	defer telemetry.ShutdownOnExit(ctx, closeOtel)
 
 	var cfg postgres.Config
 	if err := envconfig.Process(ctx, &cfg); err != nil {

@@ -87,11 +87,11 @@ func cteBody(t *testing.T, sql, name string) string {
 		t.Fatalf("CTE %s not found in:\n%s", name, sql)
 	}
 	rest := sql[i+len(open):]
-	j := strings.Index(rest, "\n)")
-	if j < 0 {
+	before, _, ok := strings.Cut(rest, "\n)")
+	if !ok {
 		t.Fatalf("unterminated CTE %s in:\n%s", name, sql)
 	}
-	return rest[:j]
+	return before
 }
 
 // TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN pins the three axes on
@@ -662,6 +662,7 @@ const (
 	migration006Path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
 	migration009Path = "../../../schema/clickhouse/migrations/009_extend_dashboard_event_rollup.sql"
 	migration011Path = "../../../schema/clickhouse/migrations/011_cookieless_identity.sql"
+	migration012Path = "../../../schema/clickhouse/migrations/012_bot_tagging.sql"
 )
 
 func readMigration(t *testing.T, path string) string {
@@ -736,15 +737,15 @@ func TestCheckDimListHelpers(t *testing.T) {
 }
 
 // TestMaterializedDimsMatchMigration pins the Go dimension lists to the LATEST
-// event-rollup MV definition — migration 011's restated MODIFY QUERY, which
-// must carry exactly materializedDims + $__total__ (011 changes no dims; it
-// adds the cookieless key column, so it has no backfill block). Also pins the
+// event-rollup MV definition — migration 012's restated MODIFY QUERY, which
+// must carry exactly materializedDims + $__total__ (012 changes no dims; it
+// adds the bot key column, so it has no backfill block). Also pins the
 // internal coherence of the per-migration Go groups.
 func TestMaterializedDimsMatchMigration(t *testing.T) {
-	up := migrationUpSection(t, migration011Path)
+	up := migrationUpSection(t, migration012Path)
 	blocks := extractArrayJoinBlocks(up)
 	if len(blocks) != 1 {
-		t.Fatalf("expected 1 ARRAY JOIN block in 011 Up (MODIFY QUERY only, no backfill), found %d", len(blocks))
+		t.Fatalf("expected 1 ARRAY JOIN block in 012 Up (MODIFY QUERY only, no backfill), found %d", len(blocks))
 	}
 	if err := checkDimList(blocks[0], append([]string{totalDimName}, materializedDims...)); err != nil {
 		t.Errorf("MODIFY QUERY block: %v", err)
@@ -836,17 +837,17 @@ func checkDimExprs(blocks []string, dims []string) error {
 	return nil
 }
 
-// TestMigration011PromotedDimExprsMatch pins the latest MV's dim_value
-// expressions (migration 011's restated MODIFY QUERY) to
+// TestMigration012PromotedDimExprsMatch pins the latest MV's dim_value
+// expressions (migration 012's restated MODIFY QUERY) to
 // AutoPropertyProjectionFor. The auto_properties ban is scoped to the ARRAY
 // JOIN block because reading the map is legitimate in a derivation mutation
 // (008's, over historical rows that were never split) and never in a rollup
 // that must read the promoted columns.
-func TestMigration011PromotedDimExprsMatch(t *testing.T) {
-	up := migrationUpSection(t, migration011Path)
+func TestMigration012PromotedDimExprsMatch(t *testing.T) {
+	up := migrationUpSection(t, migration012Path)
 	blocks := extractArrayJoinBlocks(up)
 	if len(blocks) != 1 {
-		t.Fatalf("expected 1 ARRAY JOIN block in 011 Up, found %d", len(blocks))
+		t.Fatalf("expected 1 ARRAY JOIN block in 012 Up, found %d", len(blocks))
 	}
 	if err := checkDimExprs(blocks, materializedDims); err != nil {
 		t.Errorf("MODIFY QUERY block: %v", err)
@@ -855,6 +856,60 @@ func TestMigration011PromotedDimExprsMatch(t *testing.T) {
 		if strings.Contains(block, "auto_properties['$") {
 			t.Errorf("ARRAY JOIN block %d reads promoted keys from the auto_properties map", i)
 		}
+	}
+}
+
+// TestMigration011Frozen freezes 011 the way TestMigration009Frozen freezes
+// 009, now that 012 restates the MV: its one ARRAY JOIN block carries the
+// 21-dim list with promoted-column expressions, and it knows nothing of the
+// bot key column.
+func TestMigration011Frozen(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	blocks := extractArrayJoinBlocks(up)
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 ARRAY JOIN block in 011 Up, found %d", len(blocks))
+	}
+	if err := checkDimList(blocks[0], append([]string{totalDimName}, materializedDims...)); err != nil {
+		t.Errorf("MODIFY QUERY block: %v", err)
+	}
+	if err := checkDimExprs(blocks, materializedDims); err != nil {
+		t.Errorf("MODIFY QUERY block: %v", err)
+	}
+	if strings.Contains(blocks[0], "auto_properties['$") {
+		t.Error("ARRAY JOIN block reads promoted keys from the auto_properties map")
+	}
+	if botWord.MatchString(up) {
+		t.Error("migration 011 is frozen and must not mention bot — that is 012's job")
+	}
+}
+
+var botWord = regexp.MustCompile(`\bbot\b`)
+
+// TestMigration012BotKeyColumns pins the bot plumbing: the two promoted events
+// columns, and a `bot` key column on both rollups added the 011 way (same-ALTER
+// MODIFY ORDER BY, no DEFAULT), computed from the events column and present in
+// each MV's GROUP BY. The restated event MV must keep the cookieless key, or
+// 011's exclusion silently stops for rows inserted after 012.
+func TestMigration012BotKeyColumns(t *testing.T) {
+	up := migrationUpSection(t, migration012Path)
+	for want, count := range map[string]int{
+		"ADD COLUMN IF NOT EXISTS bot        Bool DEFAULT false,":                       1,
+		"ADD COLUMN IF NOT EXISTS bot_reason LowCardinality(String) DEFAULT ''":         1,
+		"ADD COLUMN IF NOT EXISTS bot UInt8,":                                           2,
+		"MODIFY ORDER BY (project_id, kind, dim_name, day, dim_value, cookieless, bot)": 1,
+		"MODIFY ORDER BY (project_id, kind, session_id, bot)":                           1,
+		"toUInt8(bot) AS bot": 2,
+		"MODIFY QUERY":        2,
+		"toUInt8(startsWith(distinct_id, '" + cookieless.IDPrefix + "')) AS cookieless": 1,
+		"GROUP BY project_id, day, kind, dim_name, dim_value, cookieless, bot":          1,
+		"GROUP BY project_id, kind, session_id, bot":                                    1,
+	} {
+		if got := strings.Count(up, want); got != count {
+			t.Errorf("012 Up has %d of %q, want %d", got, want, count)
+		}
+	}
+	if strings.Contains(up, "DROP") || strings.Contains(up, "CREATE MATERIALIZED VIEW") {
+		t.Error("012 must MODIFY QUERY the rollup MVs, never DROP->CREATE")
 	}
 }
 

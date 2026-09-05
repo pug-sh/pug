@@ -31,8 +31,8 @@ func TestOutputPairsCoversEveryField(t *testing.T) {
 		}
 		seen[p.Value] = true
 	}
-	for i := range rt.NumField() {
-		if name := rt.Field(i).Name; !seen[name] {
+	for field := range rt.Fields() {
+		if name := field.Name; !seen[name] {
 			t.Errorf("Output.%s never reaches Pairs, so no caller can ever write it", name)
 		}
 	}
@@ -226,6 +226,13 @@ func TestDeriveReferrerDomain(t *testing.T) {
 		{"self-referral blanked", Input{URL: "https://example.com/x", Referrer: "https://example.com/prev"}, ""},
 		{"self-referral blanked across www", Input{URL: "https://www.example.com/x", Referrer: "https://example.com/prev"}, ""},
 		{"self-referral blanked www on referrer", Input{URL: "https://example.com/x", Referrer: "https://www.example.com/prev"}, ""},
+		{"auth host blanked", Input{URL: "https://example.com/x", Referrer: "https://accounts.google.com/o/oauth2/v2/auth"}, ""},
+		{"auth host blanked through www strip", Input{URL: "https://example.com/x", Referrer: "https://www.login.yahoo.com/x"}, ""},
+		{"auth host is exact-match", Input{URL: "https://example.com/x", Referrer: "https://evil.accounts.google.com/x"}, "evil.accounts.google.com"},
+		{"per-tenant idp stays a referral", Input{URL: "https://example.com/x", Referrer: "https://acme.okta.com/oauth2/v1/authorize"}, "acme.okta.com"},
+		{"google ccTLD sign-in stays a referral", Input{URL: "https://example.com/x", Referrer: "https://accounts.google.co.uk/x"}, "accounts.google.co.uk"},
+		// Pins the deliberate omission: github.com serves pages too.
+		{"github stays a referral", Input{URL: "https://example.com/x", Referrer: "https://github.com/login/oauth/authorize"}, "github.com"},
 		// Pinned v1 behavior: subdomains are NOT collapsed (no publicsuffix) —
 		// app.example.com referred from www.example.com stays a referral.
 		{"subdomain not collapsed", Input{URL: "https://app.example.com/x", Referrer: "https://www.example.com/"}, "example.com"},
@@ -378,9 +385,9 @@ func TestStripServerOnly(t *testing.T) {
 // This test turns that omission into a build failure instead of a silent leak.
 func TestServerOnlyKeysMatchDerivedOnlyFields(t *testing.T) {
 	inputFields := make(map[string]bool)
-	it := reflect.TypeOf(Input{})
-	for i := range it.NumField() {
-		inputFields[it.Field(i).Name] = true
+	it := reflect.TypeFor[Input]()
+	for field := range it.Fields() {
+		inputFields[field.Name] = true
 	}
 
 	// Output field name → its canonical Prop* key, via the Pairs table: stamp
@@ -397,8 +404,8 @@ func TestServerOnlyKeysMatchDerivedOnlyFields(t *testing.T) {
 	}
 
 	want := make(map[string]bool)
-	for i := range ot.NumField() {
-		name := ot.Field(i).Name
+	for field := range ot.Fields() {
+		name := field.Name
 		if inputFields[name] {
 			continue // client can supply it: derive-if-absent, not server-only
 		}

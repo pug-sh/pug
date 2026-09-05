@@ -23,8 +23,7 @@ func opp(o commonv1.FilterOperator) *commonv1.FilterOperator { return &o }
 // — protovalidate wraps these as plain errors, not ValidationError, but the
 // failing rule id appears in the message text.
 func hasRule(err error, ruleSubstring string) bool {
-	var ve *protovalidate.ValidationError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*protovalidate.ValidationError](err); ok {
 		for _, v := range ve.Violations {
 			if strings.Contains(v.Proto.GetRuleId(), ruleSubstring) {
 				return true
@@ -352,7 +351,6 @@ func TestValidateProfilePropertyName_MirrorsProtoRegex(t *testing.T) {
 		"user-profile.first-name", "$session.duration", "a.b.c",
 	}
 	for _, name := range valid {
-		name := name
 		t.Run("valid_"+name, func(t *testing.T) {
 			if err := chq.ValidateProfilePropertyName(name); err != nil {
 				t.Errorf("expected valid, got %v", err)
@@ -365,7 +363,6 @@ func TestValidateProfilePropertyName_MirrorsProtoRegex(t *testing.T) {
 		"foo bar", "a/b", "a`b", "a;b", "a'b", "a\"b",
 	}
 	for _, name := range invalid {
-		name := name
 		t.Run("invalid_"+name, func(t *testing.T) {
 			if err := chq.ValidateProfilePropertyName(name); err == nil {
 				t.Errorf("expected error for %q, got nil", name)

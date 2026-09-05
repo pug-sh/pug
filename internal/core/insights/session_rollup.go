@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -33,10 +34,12 @@ var (
 
 // sessionMaterializedDims are the entry/exit breakdown dimensions backed by
 // the session-grain rollup MV: the union of every applied migration's group,
-// matching the LATEST MV definition (010's MODIFY QUERY) by construction.
-// TestMigration010SessionRollupColumnsMatchDims pins the column names against
-// that MV and TestMigration010SessionRollupDimExprsMatch pins the
-// argMin/argMaxState value expressions against the raw builder's projection.
+// matching the newest MV restatement (012's MODIFY QUERY — 010's states plus
+// the bot key column, TestMigration012SessionRollupRestatesStates) by
+// construction. The 010 tests pin 010's own file:
+// TestMigration010SessionRollupColumnsMatchDims the column names,
+// TestMigration010SessionRollupDimExprsMatch the argMin/argMaxState value
+// expressions against the raw builder's projection.
 var sessionMaterializedDims = slices.Concat(sessionRollupDims007, sessionRollupDims010)
 
 func isSessionMaterializedDim(prop string) bool {
@@ -53,7 +56,7 @@ func isSessionMaterializedDim(prop string) bool {
 // bounces relative to the raw builders under duplicate event delivery. The events
 // table is ReplacingMergeTree and collapses redeliveries on merge, so the raw path's
 // count() per session self-corrects; the rollup's event_count_state is countState()
-// keyed on (project_id, kind, session_id) WITHOUT event_id (migration 007), so a
+// keyed on (project_id, kind, session_id, bot) WITHOUT event_id (007, bot via 012), so a
 // duplicate insert is retained permanently and a genuinely single-event session can
 // read event_count > 1 — i.e. no longer counted as a bounce. The drift equals the
 // pipeline's redelivery rate (monotonic, never self-correcting). SESSIONS, ENTRY,
@@ -69,6 +72,7 @@ func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Gran
 		return false
 	}
 
+	//exhaustive:ignore an insight type the rollup cannot serve falls back to the raw builder
 	switch spec.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 		insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
@@ -76,6 +80,7 @@ func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Gran
 		return false
 	}
 
+	//exhaustive:ignore a granularity finer than the day-keyed rollup falls back to raw
 	switch gran {
 	case insightsv1.Granularity_GRANULARITY_DAY,
 		insightsv1.Granularity_GRANULARITY_WEEK,
@@ -188,7 +193,7 @@ func buildSessionSegmentationFromRollup(req *insightsv1.QueryRequest, projectID 
 func buildSessionRollupRowsCTE(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	session := req.GetSpec().GetSession()
 	if session == nil {
-		return nil, fmt.Errorf("session is required")
+		return nil, errors.New("session is required")
 	}
 
 	kind := ""
@@ -210,6 +215,7 @@ func buildSessionRollupRowsCTE(req *insightsv1.QueryRequest, projectID string) (
 		).
 		GroupBy("session_id").
 		HavingExpr("start_time >= ? AND start_time < ?", req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
+	botSessionHaving(q, excludeBots(req.GetSpec()))
 
 	breakdowns := req.GetSpec().GetBreakdowns()
 	if len(breakdowns) == 1 {

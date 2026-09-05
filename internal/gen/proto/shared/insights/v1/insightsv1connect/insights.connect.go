@@ -59,7 +59,8 @@ type InsightsServiceClient interface {
 	// breakdowns; a map's country dimension is implicit, so spec.map may be empty.
 	// The request also carries the time range and granularity, and it is the
 	// right tool for any project-wide or over-time question; per-granularity range
-	// caps apply.
+	// caps apply. Traffic tagged as a bot at ingest is excluded unless
+	// spec.include_bots is true.
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	// SegmentUsers returns a paginated page of the distinct ids of the users who
@@ -162,7 +163,8 @@ type InsightsServiceHandler interface {
 	// breakdowns; a map's country dimension is implicit, so spec.map may be empty.
 	// The request also carries the time range and granularity, and it is the
 	// right tool for any project-wide or over-time question; per-granularity range
-	// caps apply.
+	// caps apply. Traffic tagged as a bot at ingest is excluded unless
+	// spec.include_bots is true.
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	// SegmentUsers returns a paginated page of the distinct ids of the users who

@@ -26,7 +26,7 @@ type Provider struct {
 
 func New(cfg Config) (*Provider, error) {
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("resend: API key is required")
+		return nil, errors.New("resend: API key is required")
 	}
 	return &Provider{
 		client: newClient(newObservedHTTPClient(nil), cfg.APIKey),
@@ -70,7 +70,7 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 		return wrappedErr
 	}
 	if sent == nil || sent.Id == "" {
-		return emailspec.NewPermanentError(fmt.Errorf("resend send email: empty response"))
+		return emailspec.NewPermanentError(errors.New("resend send email: empty response"))
 	}
 	return nil
 }

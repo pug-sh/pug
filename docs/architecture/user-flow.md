@@ -8,7 +8,7 @@ Linked from [`CLAUDE.md`](../../CLAUDE.md) and [`insights.md`](insights.md).
 > transitions aggregated across all positions (`GROUP BY source, target`). That
 > model is a *cyclic* graph (e.g. `page_view ⇄ click`), which a Sankey cannot lay
 > out — it rendered as spanning arcs and overlapping labels. The shipped code is
-> now **step-indexed** (Rybbit-style): a node is `(depth, label)`, transitions are
+> now **step-indexed**: a node is `(depth, label)`, transitions are
 > `GROUP BY step, source, target`, and the same label at two positions is two
 > distinct nodes. This makes the graph a strict layered DAG (every edge `d → d+1`)
 > that renders as clean left→right columns. Read [`insights.md` → User Flow](insights.md#user-flow)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"time"
 
 	"connectrpc.com/connect"
@@ -60,6 +61,7 @@ func (s *server) GetActivityFeed(
 		PropertyFilters: req.Msg.GetPropertyFilters(),
 		EventFilters:    req.Msg.GetEvents(),
 		PageSize:        req.Msg.GetPageSize(),
+		IncludeBots:     req.Msg.GetIncludeBots(),
 	}
 
 	if req.Msg.GetPageToken() != "" {
@@ -123,6 +125,7 @@ func (s *server) GetEventExplorer(
 		PropertyFilters: req.Msg.GetPropertyFilters(),
 		EventFilters:    req.Msg.GetEvents(),
 		PageSize:        req.Msg.GetPageSize(),
+		IncludeBots:     req.Msg.GetIncludeBots(),
 	}
 
 	if req.Msg.GetPageToken() != "" {
@@ -204,9 +207,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 
 func mapToStruct(m map[string]any) (*structpb.Struct, error) {
 	fields := make(map[string]any, len(m))
-	for k, v := range m {
-		fields[k] = v
-	}
+	maps.Copy(fields, m)
 	return structpb.NewStruct(fields)
 }
 
@@ -233,9 +234,10 @@ func (s *server) GetActivityHeatmap(
 	}
 
 	days, err := s.eventsReader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
-		ProjectID:  principal.Project.ID,
-		DistinctID: req.Msg.GetDistinctId(),
-		TimeRange:  tr,
+		ProjectID:   principal.Project.ID,
+		DistinctID:  req.Msg.GetDistinctId(),
+		TimeRange:   tr,
+		IncludeBots: req.Msg.GetIncludeBots(),
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -247,6 +249,87 @@ func (s *server) GetActivityHeatmap(
 	}
 
 	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: heatmapDays}), nil
+}
+
+func profileSessionSort(sort activityv1.ProfileSessionSort) events.ProfileSessionSort {
+	switch sort {
+	case activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_DURATION:
+		return events.ProfileSessionSortDuration
+	case activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_EVENT_COUNT:
+		return events.ProfileSessionSortEventCount
+	case activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_STARTED_AT:
+		return events.ProfileSessionSortStartedAt
+	default:
+		return events.ProfileSessionSortStartedAt
+	}
+}
+
+func (s *server) GetProfileSessions(
+	ctx context.Context,
+	req *connect.Request[activityv1.GetProfileSessionsRequest],
+) (*connect.Response[activityv1.GetProfileSessionsResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	params := events.ProfileSessionsParams{
+		ProjectID:   principal.Project.ID,
+		DistinctID:  req.Msg.GetDistinctId(),
+		PageSize:    req.Msg.GetPageSize(),
+		Sort:        profileSessionSort(req.Msg.GetSort()),
+		TimeRange:   req.Msg.GetTimeRange(),
+		IncludeBots: req.Msg.GetIncludeBots(),
+	}
+
+	if req.Msg.GetPageToken() != "" {
+		cursor, err := events.DecodeProfileSessionCursor(req.Msg.GetPageToken())
+		if err != nil {
+			return nil, apperr.Invalid(apperr.ReasonInvalidPageToken, "invalid page token")
+		}
+		params.PageToken = cursor
+	}
+
+	sessions, nextCursor, err := s.eventsReader.GetProfileSessions(ctx, params)
+	if err != nil {
+		if errors.Is(err, events.ErrPageTokenSortMismatch) {
+			return nil, apperr.Invalid(apperr.ReasonInvalidPageToken,
+				"page token was issued for a different sort; restart from an empty token to change it")
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	resp := &activityv1.GetProfileSessionsResponse{
+		Sessions: make([]*activityv1.ProfileSession, len(sessions)),
+	}
+	for i, sess := range sessions {
+		resp.Sessions[i] = &activityv1.ProfileSession{
+			SessionId:  proto.String(sess.SessionID),
+			StartedAt:  timestamppb.New(sess.StartedAt),
+			EndedAt:    timestamppb.New(sess.EndedAt),
+			EventCount: proto.Int64(sess.EventCount),
+			Browser:    proto.String(sess.Browser),
+			Os:         proto.String(sess.OS),
+			Device:     proto.String(sess.Device),
+			Platform:   proto.String(sess.Platform),
+			Bot:        proto.Bool(sess.Bot),
+		}
+	}
+	if nextCursor != nil {
+		token, err := nextCursor.Encode()
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to encode pagination cursor", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		resp.NextPageToken = proto.String(token)
+	}
+
+	return connect.NewResponse(resp), nil
 }
 
 func (s *server) GetProfileStats(
@@ -262,7 +345,11 @@ func (s *server) GetProfileStats(
 		return nil, err
 	}
 
-	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, principal.Project.ID, req.Msg.GetDistinctId())
+	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, events.ProfileStatsParams{
+		ProjectID:   principal.Project.ID,
+		DistinctID:  req.Msg.GetDistinctId(),
+		IncludeBots: req.Msg.GetIncludeBots(),
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

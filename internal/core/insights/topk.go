@@ -92,7 +92,8 @@ func BuildTopKQuery(req *insightsv1.QueryRequest, projectID string) (TopKQuery, 
 // topKBaseConditions returns the WHERE conditions shared by the top_vals CTE
 // and the outer aggregation: project/time window, optional event scope, and
 // top-level filter groups (including profile-source filters, which compile to
-// a distinct_id IN (profiles ∪ aliases) subquery valid in any events WHERE).
+// a distinct_id IN (ids ∪ external_ids ∪ aliases) subquery valid in any events
+// WHERE).
 func topKBaseConditions(req *insightsv1.QueryRequest, projectID, alias string) ([]chq.Condition, error) {
 	spec := req.GetSpec()
 	tk := spec.GetTopK()
@@ -113,6 +114,7 @@ func topKBaseConditions(req *insightsv1.QueryRequest, projectID, alias string) (
 	excludeCookieless := excludeCookielessForAgg(spec, topKMetric(tk)) ||
 		(tk.GetDimension() == insightsv1.TopKQuery_DIMENSION_USER && excludeCookielessForPersons(spec))
 	conds = append(conds, cookielessExclusionCond(excludeCookieless, alias))
+	conds = append(conds, botExclusionCond(excludeBots(spec), alias))
 
 	if tk.GetScope() != nil {
 		scopeCond, err := chq.EventConditionAliased([]*commonv1.EventFilter{tk.GetScope()}, projectID, alias)
@@ -152,10 +154,11 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 	tk := req.GetSpec().GetTopK()
 
 	var dimExpr string
+	//exhaustive:ignore a dimension with no expression is rejected, not guessed
 	switch tk.GetDimension() {
 	case insightsv1.TopKQuery_DIMENSION_PROPERTY:
 		if tk.GetProperty() == "" {
-			return nil, fmt.Errorf("property is required for PROPERTY dimension")
+			return nil, errors.New("property is required for PROPERTY dimension")
 		}
 		dimExpr = chq.PropertyExpr(tk.GetProperty())
 	case insightsv1.TopKQuery_DIMENSION_EVENT_KIND:
@@ -235,14 +238,10 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 // single-reference shape (one events scan, one profiles read, one join) so a
 // regression to a twice-referenced CTE is caught.
 //
-// The identity union maps every distinct_id of a profile — its id, external_id
-// (via one ARRAY JOIN pass so latest_profiles aggregates once, not once per
-// union branch), and alias ids — to the canonical profile id; unidentified
-// distinct_ids stay as themselves. LEFT ANY JOIN picks one identity row per
-// event so pathological mappings (a distinct_id matching multiple identity
-// rows, e.g. one profile's external_id colliding with another's alias) cannot
-// multiply event rows and inflate metrics; which canonical id wins in that
-// case is arbitrary but stable within a query.
+// The identity_union CTE (profiles.IdentityUnionCTE, the shared definition of
+// a person's distinct_id set) maps every distinct_id of a profile to the
+// canonical profile id; unidentified distinct_ids stay as themselves. See
+// profiles.IdentityJoinedEvents for the LEFT ANY JOIN collision semantics.
 func buildTopKUsers(req *insightsv1.QueryRequest, projectID string, limit int) (*chq.Query, error) {
 	tk := req.GetSpec().GetTopK()
 
@@ -257,7 +256,7 @@ func buildTopKUsers(req *insightsv1.QueryRequest, projectID string, limit int) (
 	}
 
 	perUserCols := make([]string, len(metric.partials)+1)
-	perUserCols[0] = "if(i.profile_id = '', e.distinct_id, i.profile_id) AS user_key"
+	perUserCols[0] = profiles.IdentityUserKeyExpr() + " AS user_key"
 	rankedCols := make([]string, len(metric.partials)+1)
 	rankedCols[0] = "user_key"
 	for i, p := range metric.partials {
@@ -267,17 +266,7 @@ func buildTopKUsers(req *insightsv1.QueryRequest, projectID string, limit int) (
 
 	perUser := chq.NewQuery().
 		Select(perUserCols...).
-		From(`events e LEFT ANY JOIN (
-SELECT dist_id AS distinct_id, p.id AS profile_id
-FROM latest_profiles p
-ARRAY JOIN arrayDistinct(arrayFilter(x -> x != '', [p.id, p.external_id])) AS dist_id
-WHERE p.is_deleted = 0
-UNION ALL
-SELECT pa.alias_id AS distinct_id, pa.profile_id AS profile_id
-FROM latest_profile_aliases pa
-INNER JOIN latest_profiles p ON p.id = pa.profile_id
-WHERE p.is_deleted = 0
-) i ON i.distinct_id = e.distinct_id`).
+		From(profiles.IdentityJoinedEvents()).
 		Where(conds...).
 		GroupBy("user_key")
 
@@ -288,9 +277,7 @@ WHERE p.is_deleted = 0
 		)...).
 		From("per_user")
 
-	base := chq.NewQuery().
-		With("latest_profiles", profiles.LatestProfilesCTE(projectID)).
-		With("latest_profile_aliases", profiles.LatestProfileAliasesCTE(projectID)).
+	base := profiles.WithIdentityUnion(chq.NewQuery(), projectID).
 		With("per_user", perUser).
 		With("ranked", ranked)
 
@@ -381,6 +368,7 @@ func topKUserMetricExprs(tk *insightsv1.TopKQuery) (topKUserMetric, error) {
 	}
 	num := "toFloat64OrNull(" + chq.PropertyExprAliased(tk.GetMetricProperty(), "e") + ")"
 
+	//exhaustive:ignore a metric with no per-user shape is rejected, not defaulted
 	switch metric {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
 		return topKUserMetric{

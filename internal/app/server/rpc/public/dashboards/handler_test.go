@@ -161,8 +161,7 @@ func assertCode(t *testing.T, err error, want connect.Code) {
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	var ae *apperr.Error
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*apperr.Error](err); ok {
 		if ae.Code() != want {
 			t.Errorf("got code %v, want %v (err: %v)", ae.Code(), want, err)
 		}

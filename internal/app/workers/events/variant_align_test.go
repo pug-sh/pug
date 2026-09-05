@@ -61,7 +61,7 @@ func TestPropertyValueOneofCoverage(t *testing.T) {
 	samples := samplePropertyValues()
 	seen := make(map[string]bool, oneof.Fields().Len())
 
-	for i := 0; i < oneof.Fields().Len(); i++ {
+	for i := range oneof.Fields().Len() {
 		field := string(oneof.Fields().Get(i).Name())
 		seen[field] = true
 

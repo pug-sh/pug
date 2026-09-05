@@ -383,22 +383,38 @@ func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 	if !strings.Contains(sql, "UNION ALL") {
 		t.Errorf("expected UNION ALL for aliases, got: %s", sql)
 	}
+	// Post-identify events are keyed by external_id, so the identity set needs it.
+	if !strings.Contains(sql, "SELECT p.external_id FROM profiles p WHERE") {
+		t.Errorf("expected external_id branch, got: %s", sql)
+	}
 	if !strings.Contains(sql, "SELECT pa.alias_id FROM profile_aliases pa") {
 		t.Errorf("expected profile_aliases subquery, got: %s", sql)
 	}
 	if !strings.Contains(sql, "coalesce(CAST(properties.`plan` AS Nullable(String)), '')") {
 		t.Errorf("expected JSON subcolumn read for profile property, got: %s", sql)
 	}
-	if !strings.Contains(sql, "is_deleted = 0") {
-		t.Errorf("expected soft-delete guard, got: %s", sql)
+	// One guard per branch. A bare Contains would still pass with the
+	// external_id branch's guard dropped, re-admitting an erased profile's
+	// events into every profile-filtered insight.
+	if n := strings.Count(sql, "is_deleted = 0"); n != 3 {
+		t.Errorf("expected 3 soft-delete guards (one per branch), got %d: %s", n, sql)
 	}
-	if !strings.Contains(sql, "external_id != ''") {
-		t.Errorf("expected external_id filter, got: %s", sql)
+	// The non-empty guard belongs to the external_id branch alone; the id and
+	// alias branches must still resolve a profile whose external_id is empty.
+	if n := strings.Count(sql, "external_id != ''"); n != 1 {
+		t.Errorf("expected exactly 1 external_id guard, got %d: %s", n, sql)
 	}
-	// Exact args: [projectID, filterValue, projectID, projectID, filterValue]
-	// Maps to: first branch (p.project_id=?, ...plan=?), aliases (pa.project_id=?, inner p.project_id=?, ...plan=?)
+	const unguardedIDBranch = "SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND " +
+		"coalesce(CAST(properties.`plan` AS Nullable(String)), '') = ?"
+	if strings.Count(sql, unguardedIDBranch) != 2 {
+		t.Errorf("expected unguarded id and alias-inner branches, got: %s", sql)
+	}
+	// Exact args: [projectID, filterValue, projectID, filterValue, projectID, projectID, filterValue]
+	// Maps to: id branch (p.project_id=?, ...plan=?), external_id branch (p.project_id=?, ...plan=?),
+	// aliases (pa.project_id=?, inner p.project_id=?, ...plan=?). The external_id
+	// guard is argless, so scoping it to one branch leaves this list unchanged.
 	args := cond.Args()
-	wantArgs := []any{"proj_abc", "pro", "proj_abc", "proj_abc", "pro"}
+	wantArgs := []any{"proj_abc", "pro", "proj_abc", "pro", "proj_abc", "proj_abc", "pro"}
 	if len(args) != len(wantArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
 	}
@@ -426,9 +442,9 @@ func TestPropertyCondition_ProfileSource_IsSet(t *testing.T) {
 	if !strings.Contains(sql, "coalesce(CAST(properties.`email` AS Nullable(String)), '') != ''") {
 		t.Errorf("expected IS_SET condition for profile property, got: %s", sql)
 	}
-	// Zero-arg operator: args are only projectIDs (3 total)
+	// Zero-arg operator: args are only projectIDs (4 total: id, external_id, alias outer+inner)
 	args := cond.Args()
-	wantArgs := []any{"proj_abc", "proj_abc", "proj_abc"}
+	wantArgs := []any{"proj_abc", "proj_abc", "proj_abc", "proj_abc"}
 	if len(args) != len(wantArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
 	}
@@ -456,9 +472,9 @@ func TestPropertyCondition_ProfileSource_IsNotSet(t *testing.T) {
 	if !strings.Contains(sql, "coalesce(CAST(properties.`phone` AS Nullable(String)), '') = ''") {
 		t.Errorf("expected IS_NOT_SET condition for profile property, got: %s", sql)
 	}
-	// Zero-arg operator: args are only projectIDs (3 total)
+	// Zero-arg operator: args are only projectIDs (4 total: id, external_id, alias outer+inner)
 	args := cond.Args()
-	wantArgs := []any{"proj_abc", "proj_abc", "proj_abc"}
+	wantArgs := []any{"proj_abc", "proj_abc", "proj_abc", "proj_abc"}
 	if len(args) != len(wantArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
 	}
@@ -487,9 +503,10 @@ func TestPropertyCondition_ProfileSource_In(t *testing.T) {
 	if !strings.Contains(sql, "coalesce(CAST(properties.`plan` AS Nullable(String)), '') IN (?, ?)") {
 		t.Errorf("expected IN condition for profile property, got: %s", sql)
 	}
-	// Multi-value operator: args are [projectID, val1, val2, projectID, projectID, val1, val2]
+	// Multi-value operator: one (projectID, val1, val2) group per branch (id,
+	// external_id, alias — the alias branch carries outer + inner projectIDs).
 	args := cond.Args()
-	wantArgs := []any{"proj_abc", "pro", "enterprise", "proj_abc", "proj_abc", "pro", "enterprise"}
+	wantArgs := []any{"proj_abc", "pro", "enterprise", "proj_abc", "pro", "enterprise", "proj_abc", "proj_abc", "pro", "enterprise"}
 	if len(args) != len(wantArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
 	}
@@ -518,9 +535,9 @@ func TestPropertyCondition_ProfileSource_GTE(t *testing.T) {
 	if !strings.Contains(sql, "coalesce(properties.`score`.:Float64, CAST(properties.`score`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`score`.:String)) >= ?") {
 		t.Errorf("expected typed numeric condition for profile property, got: %s", sql)
 	}
-	// Numeric operator: args are [projectID, numericValue, projectID, projectID, numericValue]
+	// Numeric operator: one (projectID, numericValue) group per branch.
 	args := cond.Args()
-	wantArgs := []any{"proj_abc", 42.5, "proj_abc", "proj_abc", 42.5}
+	wantArgs := []any{"proj_abc", 42.5, "proj_abc", 42.5, "proj_abc", "proj_abc", 42.5}
 	if len(args) != len(wantArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
 	}
@@ -980,7 +997,7 @@ func TestPropertyCondition_ProfileSource_Between(t *testing.T) {
 		t.Errorf("expected typed numeric condition for profile property, got: %s", sql)
 	}
 	args := cond.Args()
-	wantArgs := []any{"proj_abc", float64(10), float64(50), "proj_abc", "proj_abc", float64(10), float64(50)}
+	wantArgs := []any{"proj_abc", float64(10), float64(50), "proj_abc", float64(10), float64(50), "proj_abc", "proj_abc", float64(10), float64(50)}
 	if len(args) != len(wantArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
 	}

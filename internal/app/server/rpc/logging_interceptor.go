@@ -67,7 +67,7 @@ func logRPC(ctx context.Context, err error, args []any) {
 	if isClientError(err) {
 		slog.WarnContext(ctx, "rpc error", args...)
 	} else {
-		slog.ErrorContext(ctx, "rpc error", args...)
+		slog.ErrorContext(ctx, "rpc error", args...) // puglint:exempt — access log; the detecting layer recorded it
 	}
 }
 
@@ -98,6 +98,15 @@ func isClientError(err error) bool {
 		connect.CodeOutOfRange,
 		connect.CodeCanceled:
 		return true
+	case connect.CodeUnknown,
+		connect.CodeDeadlineExceeded,
+		connect.CodeResourceExhausted,
+		connect.CodeAborted,
+		connect.CodeUnimplemented,
+		connect.CodeInternal,
+		connect.CodeUnavailable,
+		connect.CodeDataLoss:
+		return false
 	default:
 		return false
 	}

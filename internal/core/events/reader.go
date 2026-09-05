@@ -377,13 +377,13 @@ func (r *Reader) getExternalIDForProfile(ctx context.Context, projectID, profile
 // guaranteed by MustGetPrincipalWithProject and proto validation (required = true).
 func (r *Reader) resolveProfileIDs(ctx context.Context, projectID, distinctID string) ([]string, error) {
 	if projectID == "" {
-		err := fmt.Errorf("resolveProfileIDs: projectID must not be empty")
+		err := errors.New("resolveProfileIDs: projectID must not be empty")
 		slog.ErrorContext(ctx, "resolveProfileIDs called with empty project_id", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	if distinctID == "" {
-		err := fmt.Errorf("resolveProfileIDs: distinctID must not be empty")
+		err := errors.New("resolveProfileIDs: distinctID must not be empty")
 		slog.ErrorContext(ctx, "resolveProfileIDs called with empty distinct_id", slogx.Error(err),
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
@@ -458,7 +458,7 @@ func DecodeEventCursor(token string) (*EventCursor, error) {
 		return nil, fmt.Errorf("invalid page token: %w", err)
 	}
 	if c.OccurTime.IsZero() || c.EventID == "" {
-		return nil, fmt.Errorf("invalid page token: missing required cursor fields")
+		return nil, errors.New("invalid page token: missing required cursor fields")
 	}
 	return &c, nil
 }
@@ -474,6 +474,7 @@ type EventExplorerParams struct {
 	EventFilters    []*commonv1.EventFilter
 	PageSize        int32
 	PageToken       *EventCursor
+	IncludeBots     bool
 }
 
 func normalizePageSize(pageSize int32) int32 {
@@ -492,7 +493,10 @@ func applyCommonEventFilters(
 	timeRange *commonv1.TimeRange,
 	propertyFilters []*commonv1.PropertyFilter,
 	pageToken *EventCursor,
+	includeBots bool,
 ) error {
+	q.Where(chq.BotFilter(includeBots, ""))
+
 	// time_range itself is optional (no required annotation). When present,
 	// From/To within it are guaranteed non-nil by proto validation (required fields + validate interceptor).
 	// If called outside the RPC chain, callers must ensure From and To are set.
@@ -543,7 +547,9 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
 		)
 
-	if err := applyCommonEventFilters(q, params.ProjectID, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
+	if err := applyCommonEventFilters(
+		q, params.ProjectID, params.TimeRange, params.PropertyFilters, params.PageToken, params.IncludeBots,
+	); err != nil {
 		return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
 	}
 
@@ -616,6 +622,7 @@ type ActivityFeedParams struct {
 	EventFilters    []*commonv1.EventFilter
 	PageSize        int32
 	PageToken       *EventCursor
+	IncludeBots     bool
 }
 
 // GetActivityFeed returns a paginated, filtered list of events for a profile.
@@ -647,7 +654,9 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
 		)
 
-	if err := applyCommonEventFilters(q, params.ProjectID, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
+	if err := applyCommonEventFilters(
+		q, params.ProjectID, params.TimeRange, params.PropertyFilters, params.PageToken, params.IncludeBots,
+	); err != nil {
 		return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
 	}
 
@@ -739,7 +748,9 @@ func scanHeatmapDays(ctx context.Context, rows driver.Rows) ([]HeatmapDay, error
 
 // queryHeatmap runs a per-day event count query for the given profile IDs and optional time range.
 // The time range is half-open: [from, to). Zero-value times omit that bound.
-func (r *Reader) queryHeatmap(ctx context.Context, projectID string, ids []string, from, to time.Time) ([]HeatmapDay, error) {
+func (r *Reader) queryHeatmap(
+	ctx context.Context, projectID string, ids []string, from, to time.Time, includeBots bool,
+) ([]HeatmapDay, error) {
 	q := chq.NewQuery().
 		Select("toString(toDate(occur_time)) AS day", "count() AS cnt").
 		From("events").
@@ -748,6 +759,7 @@ func (r *Reader) queryHeatmap(ctx context.Context, projectID string, ids []strin
 			chq.RawCond("distinct_id IN ?", ids),
 			chq.When(!from.IsZero(), chq.Gte("occur_time", from)),
 			chq.When(!to.IsZero(), chq.Lt("occur_time", to)),
+			chq.BotFilter(includeBots, ""),
 		)
 
 	sql, args, err := q.GroupBy("day").OrderBy("day").Build()
@@ -777,9 +789,10 @@ func (r *Reader) queryHeatmap(ctx context.Context, projectID string, ids []strin
 
 // ActivityHeatmapParams configures the GetActivityHeatmap query.
 type ActivityHeatmapParams struct {
-	ProjectID  string
-	DistinctID string
-	TimeRange  *commonv1.TimeRange
+	ProjectID   string
+	DistinctID  string
+	TimeRange   *commonv1.TimeRange
+	IncludeBots bool
 }
 
 // GetActivityHeatmap returns per-day event counts for a profile over the given window.
@@ -799,7 +812,7 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 	var from, to time.Time
 	if params.TimeRange != nil {
 		if params.TimeRange.GetFrom() == nil || params.TimeRange.GetTo() == nil {
-			err := fmt.Errorf("GetActivityHeatmap: TimeRange.From and TimeRange.To must be set when TimeRange is provided")
+			err := errors.New("GetActivityHeatmap: TimeRange.From and TimeRange.To must be set when TimeRange is provided")
 			slog.ErrorContext(ctx, "GetActivityHeatmap called with partial TimeRange", slogx.Error(err),
 				slog.String("project_id", params.ProjectID))
 			telemetry.RecordError(ctx, err)
@@ -809,7 +822,7 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 		to = params.TimeRange.GetTo().AsTime()
 	}
 
-	days, err := r.queryHeatmap(ctx, params.ProjectID, ids, from, to)
+	days, err := r.queryHeatmap(ctx, params.ProjectID, ids, from, to, params.IncludeBots)
 	if err != nil {
 		return nil, fmt.Errorf("GetActivityHeatmap: %w", err)
 	}
@@ -834,7 +847,9 @@ type ProfileStats struct {
 // queryProfileStats runs the aggregate stats query and extracts auto_properties
 // from the latest event. Returns nil when no events exist for the given IDs
 // (determined by total_events == 0; ClickHouse aggregates always produce a row).
-func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []string) (*ProfileStats, error) {
+func (r *Reader) queryProfileStats(
+	ctx context.Context, projectID string, ids []string, includeBots bool,
+) (*ProfileStats, error) {
 	statSQL, statArgs, err := chq.NewQuery().
 		Select(
 			"min(occur_time) AS first_seen",
@@ -852,6 +867,7 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 		Where(
 			chq.Eq("project_id", projectID),
 			chq.RawCond("distinct_id IN ?", ids),
+			chq.BotFilter(includeBots, ""),
 		).
 		Build()
 	if err != nil {
@@ -884,7 +900,7 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("queryProfileStats: row iteration failed: %w", err)
 		}
-		err := fmt.Errorf("queryProfileStats: aggregate query returned no rows (unexpected)")
+		err := errors.New("queryProfileStats: aggregate query returned no rows (unexpected)")
 		slog.ErrorContext(ctx, "queryProfileStats: aggregate returned zero rows", slogx.Error(err),
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
@@ -934,21 +950,29 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 	return &stats, nil
 }
 
+// ProfileStatsParams configures the GetProfileStats query.
+type ProfileStatsParams struct {
+	ProjectID   string
+	DistinctID  string
+	IncludeBots bool
+}
+
 // GetProfileStats returns aggregate event statistics and latest-event context (over all time),
 // plus a per-day activity heatmap for the last DefaultHeatmapDays, for a profile.
 // Alias IDs are resolved so merged anonymous events are included.
 // Returns nil, nil, nil if the profile has no recorded events (the heatmap query is skipped).
+// A profile whose every event is bot-tagged reads as no events unless IncludeBots is set.
 //
 // ProjectID and DistinctID are required. At the RPC boundary these are guaranteed by
 // MustGetPrincipalWithProject (non-empty project ID) and proto validation (required = true).
 // Internal callers must ensure both are non-empty — empty values return an error.
-func (r *Reader) GetProfileStats(ctx context.Context, projectID, distinctID string) (*ProfileStats, []HeatmapDay, error) {
-	ids, err := r.resolveProfileIDs(ctx, projectID, distinctID)
+func (r *Reader) GetProfileStats(ctx context.Context, params ProfileStatsParams) (*ProfileStats, []HeatmapDay, error) {
+	ids, err := r.resolveProfileIDs(ctx, params.ProjectID, params.DistinctID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetProfileStats: %w", err)
 	}
 
-	stats, err := r.queryProfileStats(ctx, projectID, ids)
+	stats, err := r.queryProfileStats(ctx, params.ProjectID, ids, params.IncludeBots)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetProfileStats: %w", err)
 	}
@@ -957,7 +981,9 @@ func (r *Reader) GetProfileStats(ctx context.Context, projectID, distinctID stri
 	}
 
 	now := time.Now().UTC()
-	days, err := r.queryHeatmap(ctx, projectID, ids, now.AddDate(0, 0, -DefaultHeatmapDays), now)
+	days, err := r.queryHeatmap(
+		ctx, params.ProjectID, ids, now.AddDate(0, 0, -DefaultHeatmapDays), now, params.IncludeBots,
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetProfileStats: %w", err)
 	}

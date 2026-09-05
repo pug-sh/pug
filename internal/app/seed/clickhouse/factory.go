@@ -338,7 +338,7 @@ func (f *sessionFactory) pickActiveUser(start, end time.Time) (*userProfile, tim
 // warnedMissingTZ dedupes the missing-timezone warning to one log per zone.
 var warnedMissingTZ sync.Map
 
-func (f *sessionFactory) location(name string) *time.Location {
+func (f *sessionFactory) location(ctx context.Context, name string) *time.Location {
 	if loc, ok := f.locs[name]; ok {
 		return loc
 	}
@@ -348,7 +348,7 @@ func (f *sessionFactory) location(name string) *time.Location {
 		// curve onto the same hours (a slim/distroless image without tzdata is
 		// the usual cause), so surface it once per zone.
 		if _, warned := warnedMissingTZ.LoadOrStore(name, struct{}{}); !warned {
-			slog.WarnContext(context.Background(), "timezone not found, defaulting to UTC (diurnal curve for this region will be wrong)",
+			slog.WarnContext(ctx, "timezone not found, defaulting to UTC (diurnal curve for this region will be wrong)",
 				slog.String("timezone", name), slogx.Error(err))
 		}
 		loc = time.UTC
@@ -402,8 +402,8 @@ var dayWeights = [7]float64{1.35, 0.85, 0.85, 0.90, 0.95, 1.10, 1.45} // Sun..Sa
 // efficiency, never correctness).
 const maxStartWeight = 3.5
 
-func (f *sessionFactory) startTimeWeight(t time.Time, geo geoEntry, mobile bool) float64 {
-	local := t.In(f.location(geo.timezone))
+func (f *sessionFactory) startTimeWeight(ctx context.Context, t time.Time, geo geoEntry, mobile bool) float64 {
+	local := t.In(f.location(ctx, geo.timezone))
 	hours := &desktopHourWeights
 	if wd := local.Weekday(); wd == time.Saturday || wd == time.Sunday {
 		hours = &weekendHourWeights
@@ -414,7 +414,7 @@ func (f *sessionFactory) startTimeWeight(t time.Time, geo geoEntry, mobile bool)
 }
 
 // session generates one coherent session anchored inside [start, end].
-func (f *sessionFactory) session(start, end time.Time) []event {
+func (f *sessionFactory) session(ctx context.Context, start, end time.Time) []event {
 	if rand.Float64() < botSessionRate {
 		anchor := start
 		if totalMs := end.Sub(start).Milliseconds(); totalMs > 0 {
@@ -426,7 +426,7 @@ func (f *sessionFactory) session(start, end time.Time) []event {
 	u, activeStart, activeEnd := f.pickActiveUser(start, end)
 	prof := u.devices[rand.IntN(len(u.devices))]
 
-	sessionStart := f.sampleStart(u.geo, prof.mobile, activeStart, activeEnd)
+	sessionStart := f.sampleStart(ctx, u.geo, prof.mobile, activeStart, activeEnd)
 	jd := f.journeyFor(u, prof, sessionStart)
 
 	// If this user already has an overlapping session on this platform, try
@@ -453,7 +453,7 @@ func (f *sessionFactory) session(start, end time.Time) []event {
 
 // sampleStart rejection-samples a session start so traffic follows the
 // diurnal/weekly curve in the user's local timezone.
-func (f *sessionFactory) sampleStart(geo geoEntry, mobile bool, start, end time.Time) time.Time {
+func (f *sessionFactory) sampleStart(ctx context.Context, geo geoEntry, mobile bool, start, end time.Time) time.Time {
 	totalMs := end.Sub(start).Milliseconds()
 	if totalMs <= 0 {
 		return start
@@ -461,7 +461,7 @@ func (f *sessionFactory) sampleStart(geo geoEntry, mobile bool, start, end time.
 	var candidate time.Time
 	for range 16 {
 		candidate = start.Add(time.Duration(rand.Int64N(totalMs)) * time.Millisecond)
-		if rand.Float64() < f.startTimeWeight(candidate, geo, mobile)/maxStartWeight {
+		if rand.Float64() < f.startTimeWeight(ctx, candidate, geo, mobile)/maxStartWeight {
 			return candidate
 		}
 	}

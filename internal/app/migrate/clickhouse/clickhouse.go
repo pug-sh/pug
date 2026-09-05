@@ -68,7 +68,7 @@ func Down(ctx context.Context, num int) error {
 		return nil
 	}
 
-	for i := 0; i < num; i++ {
+	for range num {
 		if err := goose.DownContext(ctx, db, dir); err != nil {
 			return err
 		}

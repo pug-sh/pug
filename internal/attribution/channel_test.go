@@ -33,12 +33,20 @@ func TestClassifyChannelRules(t *testing.T) {
 		// 5: Paid Other
 		{"paid other", Input{URL: page, UTMSource: "partnerx", UTMMedium: "cpc"}, ChannelPaidOther},
 		{"paid prefix medium", Input{URL: page, UTMSource: "partnerx", UTMMedium: "paid-placement"}, ChannelPaidOther},
+		// A blanked auth ref leaves no source, so a paid medium takes rule 5.
+		{"paid medium with auth ref is paid other", Input{URL: page, Referrer: "https://accounts.google.com/x", UTMMedium: "cpc"}, ChannelPaidOther},
 		// 6: Organic Search
 		{"organic search via ref", Input{URL: page, Referrer: "https://www.google.com/"}, ChannelOrganicSearch},
 		{"organic search via duckduckgo ref", Input{URL: page, Referrer: "https://duckduckgo.com/"}, ChannelOrganicSearch},
 		{"organic search via perplexity ref", Input{URL: page, Referrer: "https://www.perplexity.ai/"}, ChannelOrganicSearch},
 		{"organic medium", Input{URL: page, UTMSource: "seo-tool", UTMMedium: "organic"}, ChannelOrganicSearch},
 		{"organic search via google ccTLD subdomain", Input{URL: page, Referrer: "https://images.google.co.in/x"}, ChannelOrganicSearch},
+		{"organic search via google news", Input{URL: page, Referrer: "https://news.google.com/x"}, ChannelOrganicSearch},
+		// Google product hosts fail the subdomain gate: Referral, not Search.
+		{"search console is referral not search", Input{URL: page, Referrer: "https://search.google.com/search-console"}, ChannelReferral},
+		{"google docs is referral not search", Input{URL: page, Referrer: "https://docs.google.com/document/d/1"}, ChannelReferral},
+		{"multi-label google subdomain is referral not search", Input{URL: page, Referrer: "https://console.cloud.google.com/x"}, ChannelReferral},
+		{"google ccTLD sign-in is referral not search", Input{URL: page, Referrer: "https://accounts.google.co.uk/x"}, ChannelReferral},
 		// 7: Organic Social
 		{"organic social via ref", Input{URL: page, Referrer: "https://reddit.com/r/pugs"}, ChannelOrganicSocial},
 		{"organic social via t.co", Input{URL: page, Referrer: "https://t.co/abc"}, ChannelOrganicSocial},
@@ -67,6 +75,23 @@ func TestClassifyChannelRules(t *testing.T) {
 		{"email via medium", Input{URL: page, UTMSource: "lifecycle", UTMMedium: "email"}, ChannelEmail},
 		{"email via newsletter source", Input{URL: page, UTMSource: "newsletter"}, ChannelEmail},
 		{"email via e-mail medium variant", Input{URL: page, UTMMedium: "E-Mail"}, ChannelEmail},
+		// Webmail: a click inside an email, not the provider's search engine.
+		// gmail and yahoo mail both suffix-match a search domain, so without the
+		// webmail set these are Organic Search, not merely Referral.
+		{"gmail ref is email not search", Input{URL: page, Referrer: "https://mail.google.com/mail/u/0"}, ChannelEmail},
+		{"yahoo mail ref is email not search", Input{URL: page, Referrer: "https://mail.yahoo.com/d/folders/1"}, ChannelEmail},
+		{"outlook web ref is email", Input{URL: page, Referrer: "https://outlook.live.com/mail/0/inbox"}, ChannelEmail},
+		{"yahoo japan mail ref is email not search", Input{URL: page, Referrer: "https://mail.yahoo.co.jp/x"}, ChannelEmail},
+		{"yandex mail ref is email not search", Input{URL: page, Referrer: "https://mail.yandex.ru/x"}, ChannelEmail},
+		{"yandex international mail ref is email not search", Input{URL: page, Referrer: "https://mail.yandex.com/x"}, ChannelEmail},
+		{"webmail subdomain ref is email", Input{URL: page, Referrer: "https://deep.mail.google.com/x"}, ChannelEmail},
+		// 9 beats 10: an affiliate link forwarded in a newsletter.
+		{"webmail ref with affiliate medium is email", Input{URL: page, Referrer: "https://mail.google.com/x", UTMMedium: "affiliate"}, ChannelEmail},
+		// The webmail guard covers the REF side only, so a search source still
+		// takes rule 6 — and a paid medium still takes rules 1-5. Both are what
+		// an edit hoisting `webmail` out of the search expression would break.
+		{"search source beats webmail ref", Input{URL: page, Referrer: "https://mail.google.com/x", UTMSource: "google"}, ChannelOrganicSearch},
+		{"paid medium with webmail ref is paid other", Input{URL: page, Referrer: "https://mail.yahoo.com/x", UTMMedium: "cpc"}, ChannelPaidOther},
 		// 5 beats 9: a paid medium wins even when the source reads as email.
 		{"paid medium with newsletter source is paid other", Input{URL: page, UTMSource: "newsletter", UTMMedium: "cpc"}, ChannelPaidOther},
 		// 8 beats 9: a video source wins over an email-shaped medium.
@@ -80,7 +105,7 @@ func TestClassifyChannelRules(t *testing.T) {
 		// rule 11 above 9/10 would silently reclassify both as Referral into a
 		// permanent rollup dimension with the whole suite still green.
 		{"affiliate with referrer beats referral", Input{URL: page, Referrer: "https://partner.example.org/review", UTMMedium: "affiliate"}, ChannelAffiliate},
-		{"email with webmail referrer beats referral", Input{URL: page, Referrer: "https://mail.example.org/inbox", UTMMedium: "email"}, ChannelEmail},
+		{"email medium with non-webmail referrer beats referral", Input{URL: page, Referrer: "https://mail.example.org/inbox", UTMMedium: "email"}, ChannelEmail},
 		// 11: Referral
 		{"referral", Input{URL: page, Referrer: "https://blog.dogfood.example.org/review"}, ChannelReferral},
 		{"android-app referral", Input{URL: page, Referrer: "android-app://com.google.android.gm"}, ChannelReferral},
@@ -89,6 +114,7 @@ func TestClassifyChannelRules(t *testing.T) {
 		{"utm campaign only", Input{URL: page, UTMCampaign: "summer-sale"}, ChannelUnassigned},
 		{"utm term only via url", Input{URL: page + "?utm_term=dog+food"}, ChannelUnassigned},
 		{"unrecognized source+medium", Input{URL: page, UTMSource: "mystery", UTMMedium: "carrier-pigeon"}, ChannelUnassigned},
+		{"auth ref with unmatched source is unassigned not direct", Input{URL: page, Referrer: "https://accounts.google.com/x", UTMSource: "partnerx"}, ChannelUnassigned},
 		// 12, via an unresolvable referrer. url.Parse reads a schemeless string
 		// as a path, so these yield no host and no error; booking them Direct
 		// would hide real referred traffic inside the one bucket nobody
@@ -105,6 +131,8 @@ func TestClassifyChannelRules(t *testing.T) {
 		// Direct — it is not an unclassifiable signal.
 		{"self-referral collapses to direct", Input{URL: page, Referrer: "https://pugandpals.example.com/"}, ChannelDirect},
 		{"self-referral with www collapses to direct", Input{URL: page, Referrer: "https://www.pugandpals.example.com/"}, ChannelDirect},
+		// Auth bounce: blanked before classification, so Direct like a self-referral.
+		{"auth bounce collapses to direct", Input{URL: page, Referrer: "https://accounts.google.com/o/oauth2/v2/auth"}, ChannelDirect},
 		// Precedence: search ref + email medium → Organic Search (rule 6 before 9).
 		{"search ref beats email medium", Input{URL: page, Referrer: "https://www.google.com", UTMMedium: "email"}, ChannelOrganicSearch},
 		// Precedence: social ref + affiliate medium → Organic Social (7 before 10).
@@ -130,8 +158,18 @@ func TestClassifyChannelRules(t *testing.T) {
 // LowCardinality(String) rollup dimension and in migration 008's multiIf; a
 // rename would fork history into two irreconcilable dim_values and silently
 // desync the SQL mirror. Editing a value here is therefore a taxonomy
-// MIGRATION (update the 008 multiIf and re-run the backfill), not a refactor —
-// the same freeze contract as the migration-scoped dim lists in insights.
+// MIGRATION, not a refactor — the same freeze contract as the migration-scoped
+// dim lists in insights. 008 itself is shipped and must NOT be edited to
+// re-sync: a value change needs a NEW migration re-deriving the column.
+func TestAuthIntermediaryHostsBlankToDirect(t *testing.T) {
+	for _, host := range authIntermediaryHosts {
+		out := Derive(Input{URL: "https://pugandpals.example.com/x", Referrer: "https://" + host + "/authorize"})
+		if out.ReferrerDomain != "" || out.Channel != ChannelDirect {
+			t.Errorf("%s: referrerDomain %q channel %q, want blank and %s", host, out.ReferrerDomain, out.Channel, ChannelDirect)
+		}
+	}
+}
+
 func TestChannelValuesFrozen(t *testing.T) {
 	frozen := map[string]string{
 		ChannelPaidSearch:    "Paid Search",
@@ -175,17 +213,24 @@ func TestIsPaidMedium(t *testing.T) {
 	}
 }
 
-func TestIsGoogleHost(t *testing.T) {
-	yes := []string{"google.com", "google.co.uk", "google.de", "images.google.co.in", "news.google.com", "google"}
+func TestIsGoogleSearchHost(t *testing.T) {
+	yes := []string{"google.com", "google.co.uk", "google.de", "images.google.co.in", "news.google.com", "www.google.com", "gemini.google.com", "google"}
 	for _, h := range yes {
-		if !isGoogleHost(h) {
-			t.Errorf("isGoogleHost(%q) = false, want true", h)
+		if !isGoogleSearchHost(h) {
+			t.Errorf("isGoogleSearchHost(%q) = false, want true", h)
 		}
 	}
-	no := []string{"", "googleusercontent.com", "notgoogle.com", "agoogle.de", "example.com"}
+	// Everything past the first five is a google PRODUCT host: in the family, but
+	// not a search surface, so it must fail closed. evil.www.google.com pins that
+	// the WHOLE prefix is the subdomain, not its last label.
+	no := []string{
+		"", "googleusercontent.com", "notgoogle.com", "agoogle.de", "example.com",
+		"accounts.google.com", "mail.google.com", "search.google.com", "docs.google.com",
+		"console.cloud.google.com", "accounts.google.co.uk", "evil.www.google.com",
+	}
 	for _, h := range no {
-		if isGoogleHost(h) {
-			t.Errorf("isGoogleHost(%q) = true, want false", h)
+		if isGoogleSearchHost(h) {
+			t.Errorf("isGoogleSearchHost(%q) = true, want false", h)
 		}
 	}
 }
