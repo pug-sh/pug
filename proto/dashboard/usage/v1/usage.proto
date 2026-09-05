@@ -11,11 +11,9 @@ service UsageService {
   // Returns how many events the org's projects recorded in the current billing
   // period — which runs from the org's billing anchor, defaulting to its signup
   // anniversary rather than the 1st of the month — plus the per-project daily
-  // series behind it. The numbers come from a
-  // scheduled meter whose cadence the deployment sets, so read usage_computed_at
-  // for how stale they are rather than assuming one. Both used_events and
-  // usage_computed_at are absent if the meter has never run; usage_computed_at
-  // alone is present while it is alive but has not summed this period yet.
+  // series behind it. The numbers come from a scheduled meter whose cadence the
+  // deployment sets, so read usage_computed_at for how stale they are rather than
+  // assuming one, and read counted before rendering used_events at all.
   rpc GetUsage(GetUsageRequest) returns (GetUsageResponse) {}
 }
 
@@ -77,5 +75,9 @@ message GetUsageResponse {
   //   - stamp, counted: used_events is a real total, and a 0 there is a real 0.
   //
   // Read this rather than comparing usage_computed_at against period_start.
+  //
+  // A plain bool rather than a wrapper: it is only ever emitted true, so a
+  // generator that drops the presence bit reads absence as false — which is the
+  // right answer, unlike the 0 the same erasure makes of used_events.
   bool counted = 6;
 }

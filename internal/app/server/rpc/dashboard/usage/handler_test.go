@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/pug-sh/pug/internal/apperr"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	usagev1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/usage/v1"
@@ -16,6 +18,63 @@ import (
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
 )
+
+// The window the dashboard shows must follow the org's anchor, not the 1st. Every
+// other test here backdates its org to 2020-01-01, which pins anchor 1 and would
+// pass unchanged against the calendar months this replaced.
+func TestGetUsageFollowsTheOrgsAnchorDay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+	orgID, _ := seedOrgProject(t, pg)
+	if _, err := pg.PgW.Exec(t.Context(),
+		"insert into billing_entitlements (org_id, plan_slug, anchor_day) values ($1, 'growth', 17)",
+		orgID); err != nil {
+		t.Fatalf("seed entitlement: %v", err)
+	}
+
+	resp, err := srvGetUsage(t, NewServer(svc), orgID)
+	if err != nil {
+		t.Fatalf("GetUsage: %v", err)
+	}
+	start, end := resp.Msg.GetPeriodStart().AsTime(), resp.Msg.GetPeriodEnd().AsTime()
+	if start.Day() != 17 || end.Day() != 17 {
+		t.Errorf("period = [%s, %s), want both bounds on the 17th", start, end)
+	}
+	if !start.Before(end) {
+		t.Errorf("period [%s, %s) is not half-open", start, end)
+	}
+}
+
+// Membership is proven before the handler runs, so this is only reachable when a
+// cached role outlives the org row — but it must be NotFound, not Internal.
+func TestGetUsageOnAMissingOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+
+	// The handler is called directly here, so the error is still an *apperr.Error;
+	// the error interceptor is what turns it into a connect code in production.
+	_, err := srvGetUsage(t, NewServer(svc), xid.New().String())
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) {
+		t.Fatalf("err = %v, want an *apperr.Error", err)
+	}
+	if appErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want NotFound", appErr.Code())
+	}
+}
+
+func srvGetUsage(t *testing.T, srv *Server, orgID string) (*connect.Response[usagev1.GetUsageResponse], error) {
+	t.Helper()
+	return srv.GetUsage(t.Context(), connect.NewRequest(&usagev1.GetUsageRequest{OrgId: &orgID}))
+}
 
 func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID string) {
 	t.Helper()

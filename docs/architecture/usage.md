@@ -5,7 +5,7 @@ Detailed reference for event usage metering (`internal/core/usage`,
 [`CLAUDE.md`](../../CLAUDE.md) — read this when working on the meter, the
 `cron_state` job scaffolding, or the `GetUsage` read.
 
-How many events has an org sent this month? Pug answers that from a small
+How many events has an org sent this period? Pug answers that from a small
 scheduled meter rather than from an analytical query on every page load.
 
 The subsystem is deliberately narrow: it counts, stores and serves. It does not
@@ -22,9 +22,9 @@ Three properties everything below preserves.
    has no numbers, and nothing else degrades. `GetUsage` reports an absent
    `usage_computed_at`, which the client renders as "unknown" — never as zero.
 3. **Counts are reporting, not entitlement.** Nothing in pug branches on a usage
-   number. The tiers and quotas live in `internal/core/billing`, which this
-   package neither imports nor is imported by — the two meet only in a client
-   rendering "X of Y". There is no over-limit state anywhere.
+   number. Tiers and quotas do not exist yet: `billing_entitlements` (migration
+   019) carries the schema, and `anchor_day` is the only column anything here
+   reads. There is no over-limit state anywhere.
 
 ## 2. What gets counted
 
@@ -85,9 +85,9 @@ derives the window, and `AnchorDay` resolves the anchor from
 `billing_entitlements.anchor_day` when an operator has set one and from
 `orgs.create_time` otherwise — so every org has a window whether or not billing
 has ever written a row. `ListOrgUsageWindows` returns both inputs with the work
-list; the meter reads that billing column but imports nothing from
-`internal/core/billing`, and `GetOrgPeriod` is the single derivation the RPC read
-path and the meter share.
+list; the meter reads that one billing column and nothing else from the table —
+it needs the window, not the entitlement — and `GetOrgPeriod` is the single
+derivation the RPC read path and the meter share.
 
 Two consequences worth holding onto. Period starts land on **UTC midnight** and
 never on an instant, because `RefreshPeriodUsage` sums day cells with
@@ -101,8 +101,8 @@ bug `period_test.go` exists to catch.
 Rollovers are therefore spread across the month rather than landing on the 1st
 for everybody, so the "metered, but not this period yet" state (§5) is an
 everyday occurrence for some org rather than a monthly spike for all of them.
-Quotas themselves live in [`billing.md`](billing.md); this subsystem only borrows
-the window so that "X of Y" compares two numbers measured over the same one.
+Quotas do not exist yet; this subsystem borrows only the window, so that an
+eventual "X of Y" would compare two numbers measured over the same one.
 
 This deliberately differs from insights, which bucket in the **project's**
 `reporting_timezone` (`bucketExpr` wraps the column in `toTimeZone`). An org can
@@ -233,7 +233,7 @@ because neither the primary key `(project_id, day)` nor `(org_id, day)` leads wi
 
 "Once a day" for both is tracked in **`cron_state`** (`internal/app/cron`), shared
 by every scheduled job. It cannot live in the process: each pass is a fresh one, so
-in-memory timestamps would make *every* run do a full-month recompute and a
+in-memory timestamps would make *every* run do a full recompute and a
 full-table prune. The table is what lets the schedule fire as often as it likes
 without the daily work following it.
 
@@ -331,7 +331,8 @@ tables, no RPC does.
 Because the interceptor has already resolved the caller's role in the org, a
 request that reaches the handler is proof the caller belongs to it. The handler
 still resolves the org's anniversary window, which returns `NotFound` if the org
-row has since gone.
+row has since gone — reachable only through the positive role cache outliving a
+deleted org, since no RPC deletes one.
 
 ## 6. Configuration
 
@@ -387,21 +388,22 @@ Three layers that do work, in order of usefulness:
 
 ## 8. Known imprecision
 
-- **Client clock skew** can place an event's `occur_time` in a neighbouring month;
-  ingestion does not clamp it. A skewed client shifts a small number of events
-  between periods.
+- **Client clock skew** can place an event's `occur_time` in a neighbouring
+  period; ingestion does not clamp it. A skewed client shifts a small number of
+  events between periods.
 - **A closed period is never revisited.** At its widest (the 24h full recompute)
   the metered window's floor is the earliest of three: month-to-date, the earliest
-  current-period start across all orgs, and `now - PUG_USAGE_RESCAN_DAYS` — so it
-  reaches back at most to the oldest live anniversary, and usually to the 1st. An
-  import carrying months-old `occur_time` values therefore lands in **neither**
-  the daily series nor any headline total: `MeterWindow` never sees those days,
-  so no day cell is written and no closed period is re-summed. Deletions in a
-  closed month are unrepairable for the same reason — the drop pass only
-  reconciles the window it just metered. Widening `PUG_USAGE_RESCAN_DAYS` is not
-  the fix: it recomputes older day cells while `OrgPeriods` still re-sums only
-  each org's *current* period, which leaves the daily series and the headline
-  disagreeing about a closed one.
+  current-period start across all orgs, and `now - PUG_USAGE_RESCAN_DAYS`. An
+  import carrying older `occur_time` values therefore lands in **neither** the
+  daily series nor any headline total: `MeterWindow` never sees those days, so no
+  day cell is written and no closed period is re-summed. Deletions inside that
+  floor are the mirror image: the reconcile drops day cells by date alone, while
+  `OrgPeriods` re-sums only each org's *current* period, so an erasure landing in
+  a closed period shrinks the daily series and leaves that period's stored total
+  standing. Anniversary anchors make that routine rather than rare — the floor now
+  reaches back up to a full period on every full pass, where month-to-date crossed
+  the boundary only on the first `PUG_USAGE_RESCAN_DAYS` of a month. Raising
+  `PUG_USAGE_RESCAN_DAYS` widens the same gap.
 - **`uniqExact(event_id)` per day is looser than the storage dedup key** (which
   also carries minute and kind): an `event_id` counts once per `(project, day)`
   however many kinds it arrived under, and once again in each other day it
@@ -425,7 +427,7 @@ Three layers that do work, in order of usefulness:
   year, kept indefinitely, so the daily series can age out from under a period
   total that survives. Deliberate — the period row is the cheap answer the
   dashboard reads, and re-deriving it after its days are gone is impossible.
-- **An idle deployment re-runs the full-month recompute on every pass**, because
+- **An idle deployment re-runs the full recompute on every pass**, because
   `full_recompute` is stamped only when the pass actually metered cells
   (`len(usage) > 0`). Cheap by construction — there is nothing to scan — and the
   alternative stamps a window the meter never verified.
@@ -457,8 +459,7 @@ Three layers that do work, in order of usefulness:
   every project on a schedule and holds the day's counts in memory — and it needs
   no quota to be useful: "any project over N events/day, or M× its trailing
   median" catches the same traffic without importing an entitlement. Deliberately
-  absent rather than forgotten; see [`billing.md`](billing.md) §13, which records
-  the same gap from the other side. Note that an alert would be the first thing
+  absent rather than forgotten. Note that an alert would be the first thing
   here to *act* on a count, so it must stay on the read side of invariant 1 —
   telling someone, never throttling anyone.
 - **Payments of any kind.** No provider, no checkout, no ledger, no webhooks.

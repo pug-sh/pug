@@ -33,8 +33,8 @@ limit @row_limit;
 -- The meter's work list: every org, with what its quota window is anchored to.
 -- create_time is the default anchor and anchor_day overrides it, so a period is
 -- resolvable for an org that has never touched billing -- which is almost all of
--- them. Reads a billing table but imports nothing from it: the meter needs the
--- window, not the entitlement. See docs/architecture/billing.md section 6.1.
+-- them. Reads one column of a billing table and nothing else from it: the meter
+-- needs the window, not the entitlement.
 select o.id, o.create_time, e.anchor_day
 from orgs o
 left join billing_entitlements e on e.org_id = o.id

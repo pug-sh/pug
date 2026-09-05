@@ -283,9 +283,9 @@ type OrgPeriod struct {
 // reads as a metered zero.
 //
 // The windows are per-org because quotas run on a billing anniversary, so unlike
-// a calendar month they do not all start on the same day — and some of them
-// started before the current month did, which is why the caller widens its rescan
-// to the earliest of them.
+// a calendar month they do not all start on the same day — and an org whose anchor
+// day is still ahead in the month is inside a period that began in the previous
+// one, which is why a full pass widens its rescan to the earliest of them.
 func (s *Service) OrgPeriods(ctx context.Context, now time.Time) ([]OrgPeriod, error) {
 	orgs, err := s.read.ListOrgUsageWindows(ctx)
 	if err != nil {

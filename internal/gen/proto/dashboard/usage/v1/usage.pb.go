@@ -178,6 +178,10 @@ type GetUsageResponse struct {
 	//   - stamp, counted: used_events is a real total, and a 0 there is a real 0.
 	//
 	// Read this rather than comparing usage_computed_at against period_start.
+	//
+	// A plain bool rather than a wrapper: it is only ever emitted true, so a
+	// generator that drops the presence bit reads absence as false — which is the
+	// right answer, unlike the 0 the same erasure makes of used_events.
 	Counted       *bool `protobuf:"varint,6,opt,name=counted" json:"counted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

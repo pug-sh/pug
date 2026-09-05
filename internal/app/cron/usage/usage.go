@@ -97,6 +97,7 @@ const (
 
 	reasonUnverifiedRead  = "unverified_read"
 	reasonUnknownProjects = "unknown_projects"
+	reasonNoOrgs          = "no_orgs"
 )
 
 var (
@@ -256,11 +257,11 @@ type job struct {
 // meterFrom is the lower bound of one pass's recompute window.
 //
 // A full pass floors at month-to-date, which is what the erasure reconcile needs
-// and what the empty-read guard reads as its evidence window — an org anchored
-// near today would otherwise leave a full pass no wider than the trailing rescan.
-// Anniversaries only widen it further: an org metered on the 10th has a period
-// that began in the previous month, and stopping at the month boundary would
-// re-sum it over a window the pass had not fully read.
+// and what the empty-read guard reads as its evidence window — on the 1st or 2nd
+// that floor is all that keeps a full pass wider than the trailing rescan.
+// Anniversaries only widen it further: on the 3rd, an org anchored on the 10th is
+// still inside a period that began last month, and stopping at the month boundary
+// would re-sum it over a window the pass had not fully read.
 func meterFrom(now time.Time, rescanDays int, full bool, windows []coreusage.OrgPeriod) time.Time {
 	from := coreusage.FloorDayUTC(now.AddDate(0, 0, -rescanDays))
 	if !full {
@@ -409,6 +410,8 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 			return err
 		}
 		slog.WarnContext(ctx, "usage meter found no orgs to refresh; treating as a fresh deployment")
+		unrefreshedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reasonNoOrgs)))
+		j.unrefreshed = true
 	}
 
 	var refreshed, failed int

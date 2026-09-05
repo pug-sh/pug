@@ -58,7 +58,7 @@ func (s *Service) WithClickHouse(conn *chdb.Conn) *Service {
 //
 //   - Counted: the meter has summed this period. EventCount is its total.
 //   - !Counted, UsageComputedAt set: the meter has run for this org but has not
-//     reached this period yet (a month rollover). EventCount is meaningless.
+//     reached this period yet (an anniversary rollover). EventCount is meaningless.
 //   - !Counted, UsageComputedAt zero: the meter has never run. No answer at all.
 //
 // Counted is what keeps the second state from reading as a metered zero. Without
@@ -92,11 +92,11 @@ func (s *Service) GetPeriodUsage(ctx context.Context, orgID string, start time.T
 	}, nil
 }
 
-// A month rollover leaves the new period rowless until the next pass. That is a
-// metered org with nothing counted yet, not an unmetered one, so it keeps the
-// org's last stamp — otherwise every dashboard reads "never metered" on the 1st.
-// Counted stays false: the stamp says the meter is alive, not that it has summed
-// this period.
+// An anniversary rollover leaves the new period rowless until the next pass. That
+// is a metered org with nothing counted yet, not an unmetered one, so it keeps the
+// org's last stamp — otherwise a dashboard reads "never metered" every time its
+// org crosses its anchor. Counted stays false: the stamp says the meter is alive,
+// not that it has summed this period.
 func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsage, error) {
 	at, err := s.read.GetLatestUsageComputedAt(ctx, orgID)
 	if err != nil {
@@ -150,6 +150,9 @@ func (s *Service) GetOrgPeriod(ctx context.Context, orgID string, now time.Time)
 	row, err := s.read.GetOrgUsageWindow(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Authz already resolved a role in this org, so no row here is an
+			// inconsistency (a cached role outliving a delete), not a bad request.
+			slog.WarnContext(ctx, "usage read found no org row", slog.String("org_id", orgID))
 			return time.Time{}, time.Time{}, ErrOrgNotFound
 		}
 		slog.ErrorContext(ctx, "failed to read the org usage window", slogx.Error(err), slog.String("org_id", orgID))
@@ -163,7 +166,7 @@ func (s *Service) GetOrgPeriod(ctx context.Context, orgID string, now time.Time)
 // AnchorDay is the day of month an org's quota window starts on: the stored
 // override when there is one (0 means none), otherwise the day the org was
 // created. Every org therefore has a well-defined anchor without billing having
-// written anything — see docs/architecture/billing.md section 6.1.
+// written anything.
 func AnchorDay(orgCreateTime time.Time, override int) int {
 	if override >= 1 && override <= 31 {
 		return override

@@ -1,6 +1,7 @@
 package usage_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -76,6 +77,63 @@ func TestOrgPeriodsUsesEachOrgsOwnAnchor(t *testing.T) {
 	if want := utc(2026, time.February, 17); !coreusage.EarliestPeriodStart(periods).Equal(want) {
 		t.Errorf("earliest = %s, want %s — a rescan stopping at the month boundary "+
 			"would silently under-count the anchored org", coreusage.EarliestPeriodStart(periods), want)
+	}
+}
+
+// The read path and the meter derive the window from two separate statements, and
+// nothing but this pins them together. If they drift, GetPeriodUsage looks up a
+// start the meter never writes, counted stays false forever, and the dashboard
+// reads "computing" permanently without an error anywhere.
+func TestGetOrgPeriodAgreesWithTheMeter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+	w := dbwrite.New(pg.PgW)
+
+	orgID := seedOrgWithAnchor(t, pg, w, 23)
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+
+	start, end, err := svc.GetOrgPeriod(t.Context(), orgID, now)
+	if err != nil {
+		t.Fatalf("GetOrgPeriod: %v", err)
+	}
+	periods, err := svc.OrgPeriods(t.Context(), now)
+	if err != nil {
+		t.Fatalf("OrgPeriods: %v", err)
+	}
+
+	var found bool
+	for _, p := range periods {
+		if p.OrgID != orgID {
+			continue
+		}
+		found = true
+		if !p.Start.Equal(start) || !p.End.Equal(end) {
+			t.Errorf("meter window [%s, %s) != read window [%s, %s)", p.Start, p.End, start, end)
+		}
+	}
+	if !found {
+		t.Fatalf("org %s is missing from the meter's work list", orgID)
+	}
+	if want := utc(2026, time.February, 23); !start.Equal(want) {
+		t.Errorf("start = %s, want %s", start, want)
+	}
+}
+
+func TestGetOrgPeriodOnAMissingOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	svc := coreusage.NewService(pg.PgRO, pg.PgW)
+
+	_, _, err := svc.GetOrgPeriod(t.Context(), xid.New().String(), time.Now())
+	if !errors.Is(err, coreusage.ErrOrgNotFound) {
+		t.Errorf("err = %v, want ErrOrgNotFound", err)
 	}
 }
 

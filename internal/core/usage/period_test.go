@@ -70,6 +70,19 @@ func TestPeriodForClampsShortMonths(t *testing.T) {
 			start:     utc(2026, 1, 30), end: utc(2026, 2, 28),
 		},
 		{
+			// 29 is the only anchor whose clamping depends on the year.
+			name:      "anchor 29 in a 28-day february",
+			now:       time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC),
+			anchorDay: 29,
+			start:     utc(2026, 1, 29), end: utc(2026, 2, 28),
+		},
+		{
+			name:      "anchor 29 in a leap february",
+			now:       time.Date(2028, 3, 1, 0, 0, 0, 0, time.UTC),
+			anchorDay: 29,
+			start:     utc(2028, 2, 29), end: utc(2028, 3, 29),
+		},
+		{
 			name:      "year rollover",
 			now:       time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
 			anchorDay: 20,

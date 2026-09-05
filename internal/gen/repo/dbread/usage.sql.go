@@ -126,8 +126,8 @@ type ListOrgUsageWindowsRow struct {
 // The meter's work list: every org, with what its quota window is anchored to.
 // create_time is the default anchor and anchor_day overrides it, so a period is
 // resolvable for an org that has never touched billing -- which is almost all of
-// them. Reads a billing table but imports nothing from it: the meter needs the
-// window, not the entitlement. See docs/architecture/billing.md section 6.1.
+// them. Reads one column of a billing table and nothing else from it: the meter
+// needs the window, not the entitlement.
 func (q *Queries) ListOrgUsageWindows(ctx context.Context) ([]ListOrgUsageWindowsRow, error) {
 	rows, err := q.db.Query(ctx, listOrgUsageWindows)
 	if err != nil {
