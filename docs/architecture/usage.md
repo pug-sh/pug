@@ -308,6 +308,10 @@ edition-2023 singular scalar as a **non-optional** bigint, so an absent
 genuinely sent nothing. A plain bool rather than swapping `used_events` for a
 wrapper, so the change stays additive on the wire.
 
+Additive on the wire cuts one way only: an older server omits field 6 entirely,
+so a client that keys on `counted` reads a period the old server really did
+count as "computing". Roll the server out before the dashboard that reads it.
+
 The middle state is the wrinkle the meter creates: at a period rollover the new
 period has no `usage_periods` row until the next pass, which is *not* "never
 metered". `GetPeriodUsage` falls back to the org's most recent stamp so an org
