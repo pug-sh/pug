@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/testcontainers/testcontainers-go"
 
@@ -58,6 +59,21 @@ const (
 type TestPostgres struct {
 	PgRO *pgxpool.Pool
 	PgW  *pgxpool.Pool
+}
+
+// SetOrgCreateTime backdates an org: the trial clock and the quota anchor both
+// derive from create_time, so fixed period assertions would otherwise pass or
+// fail by the calendar. Raw SQL because no write query updates it.
+func SetOrgCreateTime(t *testing.T, pool *pgxpool.Pool, orgID string, at time.Time) {
+	t.Helper()
+	tag, err := pool.Exec(t.Context(),
+		"update orgs set create_time = $1 where id = $2", at, orgID)
+	if err != nil {
+		t.Fatalf("backdate org %s: %v", orgID, err)
+	}
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("backdate org %s: matched %d rows, want 1", orgID, tag.RowsAffected())
+	}
 }
 
 // sharedPostgres is the single container backing every test in the package.
