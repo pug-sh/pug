@@ -13,8 +13,8 @@ import (
 // keep resolving against what they agreed to.
 //
 // This test is the only guard against that edit, because nothing else in the
-// system can tell an intended reprice from a typo. If it fails, the fix is
-// almost never to update the expectation.
+// system can tell an intended reprice from a typo. Editing an existing row here
+// is almost never the fix; adding a row for a newly minted slug is.
 //
 // DisplayName is deliberately absent: renaming "Growth" to "Team" changes
 // nothing anybody bought.
@@ -38,6 +38,14 @@ func TestCatalogIsPinned(t *testing.T) {
 	}
 
 	plans := corebilling.Plans()
+	// PlanBySlug returns the first match, so a duplicate would silently shadow.
+	seen := make(map[string]bool, len(plans))
+	for _, p := range plans {
+		if seen[p.Slug] {
+			t.Errorf("%s: duplicated in the catalog", p.Slug)
+		}
+		seen[p.Slug] = true
+	}
 	if len(plans) != len(want) {
 		t.Errorf("catalog has %d plans, want %d — a tier may be added, but none may be REMOVED "+
 			"while rows still name it", len(plans), len(want))

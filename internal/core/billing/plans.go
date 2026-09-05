@@ -1,15 +1,12 @@
 package billing
 
 // Plan is a catalog tier. The catalog is Go rather than rows: a tier is static
-// product config with revenue consequences, so it belongs in review and deploy
-// — and a code catalog means no seed step and no catalog row that signup could
-// depend on. See docs/architecture/billing.md section 4.
+// product config with revenue consequences, so it belongs in review and deploy.
 type Plan struct {
 	Slug        string
 	DisplayName string
 	// ISO 4217. Mandatory: PriceCents is minor units of THIS currency, and minor
-	// units are not always hundredths (JPY has none, KWD has three), so nothing
-	// may format an amount without it.
+	// units are not always hundredths (JPY has none, KWD has three).
 	Currency string
 	// nil means there is no price to show — the custom tier, whose price lives in
 	// the payments provider. Distinct from 0, which is a real price (the floors).
@@ -24,8 +21,7 @@ type Plan struct {
 	Retired bool
 }
 
-// Slugs the resolution rules name directly. The rest of the catalog is data to
-// everything in this package.
+// Slugs the resolution rules name directly.
 const (
 	SlugFree   = "free"
 	SlugTrial  = "trial"
@@ -42,13 +38,10 @@ const MaxTrialDays = 365
 
 // catalog is every tier pug has ever sold, newest last.
 //
-// IMMUTABILITY: a tier's Currency, PriceCents and IncludedEvents are fixed once
-// any org holds it. Editing them re-negotiates every live agreement on that tier
-// with a one-line diff and no record; repricing mints a new slug (growth-v2) and
-// marks the old one Retired. DisplayName is the exception — renaming "Growth" to
-// "Team" changes nothing anybody bought. TestCatalogIsPinned fails on an edit to
-// the fixed fields, which is the only guard that exists against a silent quota
-// cut. See docs/architecture/billing.md section 4.2.
+// A tier's Currency, PriceCents and IncludedEvents are fixed once any org holds
+// it; repricing mints a new slug (growth-v2) and marks the old one Retired.
+// DisplayName is the exception. TestCatalogIsPinned carries the reasoning and is
+// the only guard against a silent quota cut.
 var catalog = []Plan{
 	{Slug: SlugFree, DisplayName: "Free", Currency: "USD", PriceCents: i64(0), IncludedEvents: i64(10_000)},
 	{Slug: SlugTrial, DisplayName: "Trial", Currency: "USD", PriceCents: i64(0), IncludedEvents: i64(500_000)},
@@ -62,7 +55,7 @@ var catalog = []Plan{
 }
 
 // mustPlan is for the floors only, inside the pure Resolve path, which has no
-// error to return. NewService has already refused a catalog missing one.
+// error to return. TestCatalogIsPinned fails if one is ever removed.
 func mustPlan(slug string) Plan {
 	p, ok := PlanBySlug(slug)
 	if !ok {
@@ -71,7 +64,8 @@ func mustPlan(slug string) Plan {
 	return p
 }
 
-// Plans returns the catalog in display order.
+// Plans returns every tier the catalog has ever sold, in display order, retired
+// ones included. A grant path must filter on Retired.
 func Plans() []Plan {
 	out := make([]Plan, 0, len(catalog))
 	for _, p := range catalog {
@@ -104,8 +98,7 @@ func copyPlan(p Plan) Plan {
 	return p
 }
 
-// isFloor reports the two tiers nothing is ever charged for. Everything else is
-// a plan an org holds because somebody agreed to it.
+// isFloor reports the two tiers nothing is ever charged for.
 func (p Plan) isFloor() bool {
 	return p.Slug == SlugFree || p.Slug == SlugTrial
 }

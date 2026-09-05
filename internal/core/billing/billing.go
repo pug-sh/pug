@@ -2,11 +2,9 @@
 // consumption is internal/core/usage's job, and the two meet only in a client
 // rendering "X of Y".
 //
-// Nothing here is on the ingestion path. A quota drives a banner and never a
-// rejected event, so a wrong row costs a wrong number on a page — which is why
-// no ingestion path imports this package and this package reads no ClickHouse.
-//
-// See docs/architecture/billing.md.
+// A quota drives a banner and never a rejected event, so a wrong row costs a
+// wrong number on a page. Nothing on the ingestion path imports this package,
+// and nothing here issues a ClickHouse query.
 package billing
 
 import (
@@ -15,11 +13,9 @@ import (
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 )
 
-// Status is the entitlement state, DERIVED at read time from timestamps and the
-// clock — never stored. A stored status is a second source of truth that can
-// disagree with the dates beside it, and keeping it honest costs a sweep job.
-// Provider-reported states (PAST_DUE, CANCELLED) cannot be derived and arrive
-// with checkout, along with a column to hold them.
+// Status is the entitlement state, DERIVED at read time from the timestamps and
+// the clock. A stored status would be a second source of truth that can disagree
+// with the dates beside it, and keeping it honest costs a sweep job.
 type Status string
 
 const (
@@ -28,8 +24,9 @@ const (
 	StatusFree     Status = "FREE"
 )
 
-// AllStatuses is every status Resolve can produce, so the RPC mapping can assert
-// it covers them: a status added here and missed there ships as UNSPECIFIED.
+// AllStatuses is every status Resolve can produce, so a table-driven RPC mapping
+// can assert it covers them: a status added here and missed there ships as
+// UNSPECIFIED.
 func AllStatuses() []Status { return []Status{StatusTrialing, StatusActive, StatusFree} }
 
 // Record is the stored entitlement row. Absent for almost every org — that is
@@ -59,12 +56,11 @@ type Entitlement struct {
 	Currency    string
 	Status      Status
 
-	// The catalog's list price, and only ever that: what a negotiated deal is
-	// actually charged lives in the payments provider (docs/architecture/payments.md
-	// § 4). nil is the custom tier, which has no list price — distinct from zero,
-	// which is the free and trial tiers.
+	// nil means NO LIST PRICE: the custom tier, whose price lives in the payments
+	// provider, or a row naming a plan the catalog no longer knows. Zero is a real
+	// price — the two floors.
 	PriceCents *int64
-	// nil means NO QUOTA — billing is switched off, or the row names a plan the
+	// nil means NO QUOTA: billing is switched off, or the row names a plan the
 	// catalog no longer knows. Never render it as zero.
 	IncludedEvents *int64
 
@@ -76,17 +72,22 @@ type Entitlement struct {
 	BillingEnabled bool
 }
 
-// Resolve is the whole rule set, as a pure function: no I/O, no clock of its
-// own, so every branch is unit-testable without a container.
+// Resolve is the whole rule set, as a pure function.
 //
 // Expiry is lazy by construction. A trial that ended an hour ago resolves free
 // on the next request with nothing having run in between, which is why this
 // subsystem has no sweep job whose failure could leave an entitlement stale.
 func Resolve(orgCreateTime time.Time, rec Record, now time.Time, billingEnabled bool) Entitlement {
-	// The quota window comes from the org's billing anniversary, resolved through
-	// the same helper the meter uses so the window shown and the window summed are
-	// the same one. It is independent of every branch below: a plan changes what
-	// an org may send, never when its month turns over.
+	// An absent row means every field is meaningless, not just the plan: without
+	// this, a caller that forgot Present would still have its anchor day and trial
+	// date honoured while its plan was ignored.
+	if !rec.Present {
+		rec = Record{}
+	}
+
+	// Resolved through the same helper the meter uses, so the window shown and the
+	// window summed are the same one. Independent of every branch below: a plan
+	// changes what an org may send, never when its month turns over.
 	start, end := coreusage.PeriodFor(now, coreusage.AnchorDay(orgCreateTime, rec.AnchorDay))
 	ent := Entitlement{PeriodStart: start, PeriodEnd: end, BillingEnabled: billingEnabled}
 
@@ -96,8 +97,8 @@ func Resolve(orgCreateTime time.Time, rec Record, now time.Time, billingEnabled 
 	if !billingEnabled {
 		free := mustPlan(SlugFree)
 		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
-		// The free tier's price of 0, not nil: absent means the custom tier, and a
-		// client reading the documented rule would call this a negotiated deal.
+		// The free tier's price of 0, not nil: absent means a tier with no list
+		// price, which a client would read as a negotiated deal.
 		ent.PriceCents = free.PriceCents
 		ent.Status = StatusFree
 		return ent
@@ -107,56 +108,54 @@ func Resolve(orgCreateTime time.Time, rec Record, now time.Time, billingEnabled 
 	ent.Status = status
 	ent.Slug, ent.DisplayName, ent.Currency = plan.Slug, plan.DisplayName, plan.Currency
 	ent.PriceCents, ent.IncludedEvents = plan.PriceCents, plan.IncludedEvents
-	if status == StatusTrialing {
-		ent.TrialEndsAt = trialEnd(orgCreateTime, rec)
-	}
-	// Kept even once it is in the past, where it is the answer to "when did this
-	// lapse" rather than "when will it".
+	// Both dates stay once they are past, where they answer "when did this lapse"
+	// rather than "when will it".
+	ent.TrialEndsAt = trialEnd(orgCreateTime, rec)
 	ent.ContractEndsAt = rec.ContractEndsAt
 
 	applyOverrides(&ent, rec, now)
 	return ent
 }
 
-// resolvePlan picks the tier and the state it is held in, in order: a paid plan
-// beats a lingering trial date, so a customer who converted mid-trial can never
-// be demoted by a stale timestamp.
+// resolvePlan picks the tier and the state it is held in, in order: a granted
+// plan beats a lingering trial date, so a customer who converted mid-trial can
+// never be demoted by a stale timestamp.
 func resolvePlan(orgCreateTime time.Time, rec Record, now time.Time) (Plan, Status) {
 	free := mustPlan(SlugFree)
-	trial := mustPlan(SlugTrial)
+	lapsed := contractLapsed(rec, now)
+	plan, known := PlanBySlug(rec.PlanSlug)
 
-	if rec.Present {
-		plan, known := PlanBySlug(rec.PlanSlug)
-		if !known {
-			// Resolving to "free, 10,000" would tell a paying customer they are over
-			// their limit, so this keeps the row's own numbers. GetEntitlement logs it.
-			return Plan{Slug: rec.PlanSlug, DisplayName: rec.PlanSlug, Currency: free.Currency}, StatusFree
-		}
-		if !plan.isFloor() && !contractLapsed(rec, now) {
-			return plan, StatusActive
-		}
+	if rec.Present && known && !plan.isFloor() && !lapsed {
+		return plan, StatusActive
 	}
-
-	// Derived identically whether or not a row exists: recording an anchor day or
-	// a note must not end a trial that is still running.
-	if now.Before(trialEnd(orgCreateTime, rec)) {
-		return trial, StatusTrialing
+	// Gated on the contract too: a time-boxed comp is stored as a floor plan, so
+	// an extended trial on one would otherwise outlive the deal it belongs to and
+	// keep handing back the trial floor's much larger quota.
+	if !lapsed && now.Before(trialEnd(orgCreateTime, rec)) {
+		return mustPlan(SlugTrial), StatusTrialing
+	}
+	if rec.Present && !known {
+		// Keeps the row's own numbers: resolving to "free, 10,000" would tell a
+		// paying customer they are over their limit.
+		return Plan{Slug: rec.PlanSlug, DisplayName: rec.PlanSlug, Currency: free.Currency}, StatusFree
 	}
 	return free, StatusFree
 }
 
 // contractLapsed reports a deal whose end date has passed; a zero date is
-// open-ended. Consulted for floor plans too, because a time-boxed comped grant
-// is stored as a floor plan plus overrides and nothing else would expire it.
+// open-ended. Consulted for the floors too, because a time-boxed comped grant is
+// stored as a floor plan and nothing else would expire it.
 func contractLapsed(rec Record, now time.Time) bool {
 	return !rec.ContractEndsAt.IsZero() && !now.Before(rec.ContractEndsAt)
 }
 
 // ContractEndExclusive converts the last day a deal is meant to run — what an
 // operator types — into the instant to store. The comparison above is half-open,
-// so storing that day's midnight would lapse the plan at the start of it.
+// so storing that day's midnight would lapse the plan at the start of it. The
+// date is read in lastDay's own location, so a picker in any zone means the day
+// it displayed.
 func ContractEndExclusive(lastDay time.Time) time.Time {
-	y, m, d := lastDay.UTC().Date()
+	y, m, d := lastDay.Date()
 	return time.Date(y, m, d+1, 0, 0, 0, 0, time.UTC)
 }
 
@@ -170,10 +169,11 @@ func trialEnd(orgCreateTime time.Time, rec Record) time.Time {
 }
 
 // applyOverrides patches the negotiated fields over the resolved plan, last, so
-// repricing a catalog tier cannot disturb a deal built on it. Each override is
+// the deal's numbers win over the catalog's. The deal ends when its contract
+// does — without that, an expired 5M grant would keep its 5M. Each override is
 // independent.
 func applyOverrides(ent *Entitlement, rec Record, now time.Time) {
-	if !rec.Present || !overridesInForce(ent, rec, now) {
+	if !rec.Present || contractLapsed(rec, now) {
 		return
 	}
 	if rec.IncludedEventsOverride > 0 {
@@ -183,20 +183,4 @@ func applyOverrides(ent *Entitlement, rec Record, now time.Time) {
 	if rec.DisplayNameOverride != "" {
 		ent.DisplayName = rec.DisplayNameOverride
 	}
-}
-
-// overridesInForce reports whether the deal on the row still applies. It ends
-// when its contract does, or when the granted plan it describes has lapsed —
-// without that, an expired 5M deal would keep its 5M. A floor plan has no grant
-// to lapse, so its overrides survive the promotion that renames the slug to
-// "trial".
-func overridesInForce(ent *Entitlement, rec Record, now time.Time) bool {
-	if contractLapsed(rec, now) {
-		return false
-	}
-	if ent.Slug == rec.PlanSlug {
-		return true
-	}
-	stored, known := PlanBySlug(rec.PlanSlug)
-	return known && stored.isFloor()
 }
