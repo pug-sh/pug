@@ -19,6 +19,26 @@ service BillingService {
   // plan with overrides. Price is never overridden — what a deal is charged
   // lives in the payments provider, not here.
   rpc GetBillingStatus(GetBillingStatusRequest) returns (GetBillingStatusResponse) {}
+
+  // Opens a checkout for one catalog tier and returns the URL to send the buyer
+  // to. Admin-only: the quota banner stays on the viewer floor, but starting a
+  // checkout is spending money.
+  //
+  // The price is never pug's -- it lives on the provider's product, and this
+  // request names a plan slug, never an amount. For the custom tier it checks
+  // out against the org's own recorded product and returns FailedPrecondition
+  // when none is recorded; for a catalog tier it uses the configured one.
+  // Unavailable when the deployment has no payments provider at all, which is
+  // the self-hosted shape.
+  rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse) {}
+
+  // Opens the provider's customer portal, which is where plan changes, card
+  // updates, invoices and cancellation live. Pug serves none of those itself,
+  // so there is no ChangePlan or CancelSubscription RPC.
+  //
+  // FailedPrecondition for an org that has never checked out: a trialing, free
+  // or comped org has no customer at the provider to open a portal for.
+  rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
 }
 
 // BillingStatus is derived from the clock on every read, never stored. The
@@ -33,6 +53,30 @@ enum BillingStatus {
   BILLING_STATUS_ACTIVE = 2;
   // The floor: never trialed, trial expired, or a contract that has ended.
   BILLING_STATUS_FREE = 3;
+}
+
+// SubscriptionStatus is the provider subscription behind the entitlement, in
+// pug's own vocabulary rather than the provider's.
+//
+// Only UNSPECIFIED, ACTIVE and PAST_DUE are ever emitted: resolution consults
+// only a LIVE subscription, so a paused or cancelled one reports UNSPECIFIED
+// and the org resolves to whatever sits beneath it. The remaining values exist
+// because they are pug's vocabulary and a stored row holds them -- do not write
+// a client branch that waits for one.
+enum SubscriptionStatus {
+  // No live subscription. A trialing, free or comped org, and every org on a
+  // deployment with no payments provider.
+  SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
+  SUBSCRIPTION_STATUS_ACTIVE = 1;
+  // The card failed and the provider is retrying. The entitlement is UNCHANGED
+  // and the quota still applies -- degrading a paying customer's product over an
+  // expired card is worse for both sides than a few unbilled days. Worth a
+  // banner, never a block.
+  SUBSCRIPTION_STATUS_PAST_DUE = 2;
+  SUBSCRIPTION_STATUS_PAUSED = 3;
+  SUBSCRIPTION_STATUS_CANCELLED = 4;
+  SUBSCRIPTION_STATUS_EXPIRED = 5;
+  SUBSCRIPTION_STATUS_FAILED = 6;
 }
 
 message GetBillingStatusRequest {
@@ -96,4 +140,44 @@ message GetBillingStatusResponse {
   // the same org, which is what makes "X of Y" a comparison of like with like.
   google.protobuf.Timestamp period_start = 7;
   google.protobuf.Timestamp period_end = 8;
+  SubscriptionStatus subscription_status = 9;
+  // When the provider bills next. This is the MONEY's period, not the quota's:
+  // period_start/period_end above are the window used_events is measured over,
+  // and the two do not coincide. Absent when there is no live subscription.
+  google.protobuf.Timestamp current_period_end = 10;
+  // Whether a checkout would actually open. True only when billing is enabled, a
+  // payments provider is configured, and there is a product to check out
+  // against -- a configured catalog tier, or the custom tier once this org has a
+  // product id recorded. It is the same condition CreateCheckoutSession refuses
+  // on, read from one helper so the two cannot drift: a button that cannot work
+  // is worse than no button.
+  //
+  // It says nothing about which tier, and carries no product id -- the dashboard
+  // never sees one.
+  bool purchasable = 11;
+  // Whether a portal session would open: this org has a customer at the
+  // provider, which only a checkout leaves behind. Not implied by
+  // subscription_status -- a CANCELLED org reports UNSPECIFIED above and still
+  // has invoices to fetch and a card to re-add.
+  bool manageable = 12;
+}
+
+message CreateCheckoutSessionRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+  // A catalog slug. Never a price and never a product id: the amount lives on
+  // the provider's product, and pug stores no money at all.
+  string plan_slug = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateCheckoutSessionResponse {
+  // Send the buyer here. Single-use and short-lived; never store it.
+  string checkout_url = 1;
+}
+
+message CreatePortalSessionRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreatePortalSessionResponse {
+  string portal_url = 1;
 }

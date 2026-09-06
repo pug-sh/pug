@@ -36,6 +36,12 @@ const (
 	// BillingServiceGetBillingStatusProcedure is the fully-qualified name of the BillingService's
 	// GetBillingStatus RPC.
 	BillingServiceGetBillingStatusProcedure = "/dashboard.billing.v1.BillingService/GetBillingStatus"
+	// BillingServiceCreateCheckoutSessionProcedure is the fully-qualified name of the BillingService's
+	// CreateCheckoutSession RPC.
+	BillingServiceCreateCheckoutSessionProcedure = "/dashboard.billing.v1.BillingService/CreateCheckoutSession"
+	// BillingServiceCreatePortalSessionProcedure is the fully-qualified name of the BillingService's
+	// CreatePortalSession RPC.
+	BillingServiceCreatePortalSessionProcedure = "/dashboard.billing.v1.BillingService/CreatePortalSession"
 )
 
 // BillingServiceClient is a client for the dashboard.billing.v1.BillingService service.
@@ -50,6 +56,24 @@ type BillingServiceClient interface {
 	// plan with overrides. Price is never overridden — what a deal is charged
 	// lives in the payments provider, not here.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
+	// Opens a checkout for one catalog tier and returns the URL to send the buyer
+	// to. Admin-only: the quota banner stays on the viewer floor, but starting a
+	// checkout is spending money.
+	//
+	// The price is never pug's -- it lives on the provider's product, and this
+	// request names a plan slug, never an amount. For the custom tier it checks
+	// out against the org's own recorded product and returns FailedPrecondition
+	// when none is recorded; for a catalog tier it uses the configured one.
+	// Unavailable when the deployment has no payments provider at all, which is
+	// the self-hosted shape.
+	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
+	// Opens the provider's customer portal, which is where plan changes, card
+	// updates, invoices and cancellation live. Pug serves none of those itself,
+	// so there is no ChangePlan or CancelSubscription RPC.
+	//
+	// FailedPrecondition for an org that has never checked out: a trialing, free
+	// or comped org has no customer at the provider to open a portal for.
+	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
 }
 
 // NewBillingServiceClient constructs a client for the dashboard.billing.v1.BillingService service.
@@ -69,17 +93,41 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("GetBillingStatus")),
 			connect.WithClientOptions(opts...),
 		),
+		createCheckoutSession: connect.NewClient[v1.CreateCheckoutSessionRequest, v1.CreateCheckoutSessionResponse](
+			httpClient,
+			baseURL+BillingServiceCreateCheckoutSessionProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("CreateCheckoutSession")),
+			connect.WithClientOptions(opts...),
+		),
+		createPortalSession: connect.NewClient[v1.CreatePortalSessionRequest, v1.CreatePortalSessionResponse](
+			httpClient,
+			baseURL+BillingServiceCreatePortalSessionProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("CreatePortalSession")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // billingServiceClient implements BillingServiceClient.
 type billingServiceClient struct {
-	getBillingStatus *connect.Client[v1.GetBillingStatusRequest, v1.GetBillingStatusResponse]
+	getBillingStatus      *connect.Client[v1.GetBillingStatusRequest, v1.GetBillingStatusResponse]
+	createCheckoutSession *connect.Client[v1.CreateCheckoutSessionRequest, v1.CreateCheckoutSessionResponse]
+	createPortalSession   *connect.Client[v1.CreatePortalSessionRequest, v1.CreatePortalSessionResponse]
 }
 
 // GetBillingStatus calls dashboard.billing.v1.BillingService.GetBillingStatus.
 func (c *billingServiceClient) GetBillingStatus(ctx context.Context, req *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error) {
 	return c.getBillingStatus.CallUnary(ctx, req)
+}
+
+// CreateCheckoutSession calls dashboard.billing.v1.BillingService.CreateCheckoutSession.
+func (c *billingServiceClient) CreateCheckoutSession(ctx context.Context, req *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error) {
+	return c.createCheckoutSession.CallUnary(ctx, req)
+}
+
+// CreatePortalSession calls dashboard.billing.v1.BillingService.CreatePortalSession.
+func (c *billingServiceClient) CreatePortalSession(ctx context.Context, req *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error) {
+	return c.createPortalSession.CallUnary(ctx, req)
 }
 
 // BillingServiceHandler is an implementation of the dashboard.billing.v1.BillingService service.
@@ -94,6 +142,24 @@ type BillingServiceHandler interface {
 	// plan with overrides. Price is never overridden — what a deal is charged
 	// lives in the payments provider, not here.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
+	// Opens a checkout for one catalog tier and returns the URL to send the buyer
+	// to. Admin-only: the quota banner stays on the viewer floor, but starting a
+	// checkout is spending money.
+	//
+	// The price is never pug's -- it lives on the provider's product, and this
+	// request names a plan slug, never an amount. For the custom tier it checks
+	// out against the org's own recorded product and returns FailedPrecondition
+	// when none is recorded; for a catalog tier it uses the configured one.
+	// Unavailable when the deployment has no payments provider at all, which is
+	// the self-hosted shape.
+	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
+	// Opens the provider's customer portal, which is where plan changes, card
+	// updates, invoices and cancellation live. Pug serves none of those itself,
+	// so there is no ChangePlan or CancelSubscription RPC.
+	//
+	// FailedPrecondition for an org that has never checked out: a trialing, free
+	// or comped org has no customer at the provider to open a portal for.
+	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -109,10 +175,26 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("GetBillingStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceCreateCheckoutSessionHandler := connect.NewUnaryHandler(
+		BillingServiceCreateCheckoutSessionProcedure,
+		svc.CreateCheckoutSession,
+		connect.WithSchema(billingServiceMethods.ByName("CreateCheckoutSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceCreatePortalSessionHandler := connect.NewUnaryHandler(
+		BillingServiceCreatePortalSessionProcedure,
+		svc.CreatePortalSession,
+		connect.WithSchema(billingServiceMethods.ByName("CreatePortalSession")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.billing.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServiceGetBillingStatusProcedure:
 			billingServiceGetBillingStatusHandler.ServeHTTP(w, r)
+		case BillingServiceCreateCheckoutSessionProcedure:
+			billingServiceCreateCheckoutSessionHandler.ServeHTTP(w, r)
+		case BillingServiceCreatePortalSessionProcedure:
+			billingServiceCreatePortalSessionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -124,4 +206,12 @@ type UnimplementedBillingServiceHandler struct{}
 
 func (UnimplementedBillingServiceHandler) GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.GetBillingStatus is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.CreateCheckoutSession is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.CreatePortalSession is not implemented"))
 }

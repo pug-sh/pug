@@ -60,6 +60,21 @@ func (s *Service) Purchasable(rec Record) bool {
 	return len(s.payments.ProductBySlug) > 0 || rec.ProviderProductID != ""
 }
 
+// Manageable reports whether a portal session would actually open. Read by the
+// dashboard to render "Manage billing" and by CreatePortalSession to refuse, from
+// the SAME lookup -- which is the point: a cancelled org has no LIVE
+// subscription, so anything derived from subscription_status would hide the
+// portal from exactly the org most likely to want its invoices.
+func (s *Service) Manageable(ctx context.Context, orgID string) bool {
+	if !s.billingEnabled || !s.payments.configured() {
+		return false
+	}
+	customerID, err := s.anyProviderCustomer(ctx, orgID)
+	// A read that failed is already logged; reporting false renders no button,
+	// which is the safe direction for a status page.
+	return err == nil && customerID != ""
+}
+
 // checkoutProduct resolves the product a slug is bought against. The custom tier
 // is the org's own, which is what lets a negotiated deal be bought from the pug
 // dashboard without pug ever creating a product.
@@ -92,6 +107,10 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, orgID, planSlug, cu
 		return "", ErrPlanNotFound
 	}
 	// A floor is never sold and a retired tier is never handed to somebody new.
+	// Dodo's product map already excludes both, so today this refuses nothing the
+	// lookup below would not -- but that exclusion is a PROVIDER's, and core must
+	// not assume the next one builds its map the same way. The rule belongs on
+	// this side of the seam.
 	if plan.isFloor() || plan.Retired {
 		return "", ErrNotPurchasable
 	}

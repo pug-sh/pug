@@ -140,5 +140,11 @@ func buildPolicyRules() [][]string {
 	// half is already the viewer floor above.
 	rules = append(rules, grant(roleAdmin, ResourceAPIKey, ActionCreate, ActionDelete)...)
 
+	// admin — starting a checkout or opening the payments portal. Create rather
+	// than a new verb: both mint a provider session. The READ half stays on the
+	// viewer floor above, because the person who notices the quota banner is
+	// rarely the admin — but spending money is not theirs to do.
+	rules = append(rules, grant(roleAdmin, ResourceBilling, ActionCreate)...)
+
 	return rules
 }
