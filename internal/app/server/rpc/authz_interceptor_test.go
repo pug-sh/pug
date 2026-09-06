@@ -349,6 +349,7 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/dashboard.billing.v1.BillingService/GetBillingStatus":             true,
 		"/dashboard.billing.v1.BillingService/CreateCheckoutSession":        true,
 		"/dashboard.billing.v1.BillingService/CreatePortalSession":          true,
+		"/dashboard.billing.v1.BillingService/ListPlans":                    true,
 		"/shared.insights.v1.InsightsService/Query":                         true,
 		"/shared.insights.v1.InsightsService/SegmentUsers":                  true,
 		"/shared.insights.v1.InsightsService/GetFilterSchema":               true,

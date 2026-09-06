@@ -83,6 +83,10 @@ var permissionRegistry = map[string]authzspec.Spec{
 
 	// --- dashboard.billing.v1.BillingService — org control plane; the read is on the viewer floor ---
 	"/dashboard.billing.v1.BillingService/GetBillingStatus": authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead),
+	// The catalog is a read, on the viewer floor: a price is a marketing number,
+	// and the person reading the quota banner is the one who wants to know what
+	// the next tier costs.
+	"/dashboard.billing.v1.BillingService/ListPlans": authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead),
 	// Admin-only: the quota banner stays on the viewer floor, but starting a
 	// checkout is spending money and opening the portal reaches invoices.
 	"/dashboard.billing.v1.BillingService/CreateCheckoutSession": authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate),

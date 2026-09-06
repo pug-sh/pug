@@ -335,3 +335,95 @@ func TestStatusReportsALiveSubscription(t *testing.T) {
 		t.Errorf("portal_url = %q, want %q", resp.Msg.GetPortalUrl(), portalURL)
 	}
 }
+
+func listPlans(t *testing.T, srv *Server, orgID string) []*billingv1.PlanOption {
+	t.Helper()
+	resp, err := srv.ListPlans(t.Context(), connect.NewRequest(&billingv1.ListPlansRequest{OrgId: &orgID}))
+	if err != nil {
+		t.Fatalf("ListPlans: %v", err)
+	}
+	return resp.Msg.GetPlans()
+}
+
+// The catalog is what the dashboard names a tier from, and it must never name
+// something nobody can buy or something that is not for sale.
+func TestListPlansOffersOnlySellableTiers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	srv := newPayingServer(t, pg, true)
+
+	bySlug := map[string]*billingv1.PlanOption{}
+	for _, plan := range listPlans(t, srv, orgID) {
+		bySlug[plan.GetSlug()] = plan
+	}
+
+	for _, floor := range []string{corebilling.SlugFree, corebilling.SlugTrial} {
+		if _, ok := bySlug[floor]; ok {
+			t.Errorf("%q is offered for sale; nobody buys a floor", floor)
+		}
+	}
+	// No product id on this org's row, so there is no custom deal to buy.
+	if _, ok := bySlug[corebilling.SlugCustom]; ok {
+		t.Error("custom is offered to an org with no recorded product")
+	}
+
+	// Per tier, not per org: this deployment configured growth and not scale.
+	if got := bySlug["growth"]; got == nil || !got.GetPurchasable() {
+		t.Errorf("growth purchasable = %v, want true", got.GetPurchasable())
+	}
+	if got := bySlug["scale"]; got == nil || got.GetPurchasable() {
+		t.Error("scale is purchasable with no product configured for it")
+	}
+
+	// The list price, not the org's negotiated anything.
+	if got := bySlug["growth"].GetPriceCents(); got == nil || got.GetValue() != 2_000 {
+		t.Errorf("growth price = %v, want 2000", got)
+	}
+	if got := bySlug["growth"].GetIncludedEvents(); got == nil || got.GetValue() != 500_000 {
+		t.Errorf("growth quota = %v, want 500000", got)
+	}
+}
+
+// A negotiated deal is buyable from the dashboard by the org whose row records
+// its product, and by nobody else. That is what lets an operator paste one id
+// instead of emailing a payment link.
+func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	srv := newPayingServer(t, pg, true)
+
+	quota := int64(5_000_000)
+	productID := "prod_acme"
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (included_events_override, org_id, plan_slug, provider_product_id)
+		 values ($1, $2, 'custom', $3)`, quota, orgID, productID); err != nil {
+		t.Fatalf("seed entitlement: %v", err)
+	}
+
+	var custom *billingv1.PlanOption
+	for _, plan := range listPlans(t, srv, orgID) {
+		if plan.GetSlug() == corebilling.SlugCustom {
+			custom = plan
+		}
+	}
+	if custom == nil {
+		t.Fatal("custom is not offered to the org whose row records its product")
+	}
+	if !custom.GetPurchasable() {
+		t.Error("custom is not purchasable for the org that has its product id")
+	}
+	// The catalog price and quota, not this org's negotiated ones — those belong
+	// to the entitlement, which GetBillingStatus reports.
+	if custom.GetPriceCents() != nil {
+		t.Errorf("custom price = %v, want absent — a deal's price lives in the provider", custom.GetPriceCents())
+	}
+	if custom.GetIncludedEvents() != nil {
+		t.Errorf("custom quota = %v, want absent on the catalog entry", custom.GetIncludedEvents())
+	}
+}

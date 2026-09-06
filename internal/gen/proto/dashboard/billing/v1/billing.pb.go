@@ -646,6 +646,193 @@ func (x *CreatePortalSessionResponse) GetPortalUrl() string {
 	return ""
 }
 
+type ListPlansRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Scoped to an org because purchasability is: the custom tier is only
+	// purchasable by the org whose row records its product.
+	OrgId         *string `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPlansRequest) Reset() {
+	*x = ListPlansRequest{}
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPlansRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPlansRequest) ProtoMessage() {}
+
+func (x *ListPlansRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPlansRequest.ProtoReflect.Descriptor instead.
+func (*ListPlansRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListPlansRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+// PlanOption is a tier as this deployment sells it. Distinct from Plan, which is
+// a tier as ONE ORG HOLDS it, overrides applied -- a negotiated quota and display
+// name never appear here.
+type PlanOption struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
+	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	// The tier's list price, in minor units of `currency`. ABSENT is the custom
+	// tier, whose price lives in the payments provider; that is not a price of
+	// zero.
+	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
+	// ISO 4217.
+	Currency *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
+	// Events the tier includes. ABSENT is the custom tier, whose quota comes from
+	// the org's own row. Never render its absence as 0.
+	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,5,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
+	// Whether a checkout for THIS tier would open. Same helper
+	// CreateCheckoutSession refuses on, so a button that cannot work is
+	// impossible rather than unlikely -- and it is per tier, because a deployment
+	// can configure a product for some tiers and not others.
+	Purchasable   *bool `protobuf:"varint,6,opt,name=purchasable" json:"purchasable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanOption) Reset() {
+	*x = PlanOption{}
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanOption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanOption) ProtoMessage() {}
+
+func (x *PlanOption) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanOption.ProtoReflect.Descriptor instead.
+func (*PlanOption) Descriptor() ([]byte, []int) {
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PlanOption) GetSlug() string {
+	if x != nil && x.Slug != nil {
+		return *x.Slug
+	}
+	return ""
+}
+
+func (x *PlanOption) GetDisplayName() string {
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
+	}
+	return ""
+}
+
+func (x *PlanOption) GetPriceCents() *wrapperspb.Int64Value {
+	if x != nil {
+		return x.PriceCents
+	}
+	return nil
+}
+
+func (x *PlanOption) GetCurrency() string {
+	if x != nil && x.Currency != nil {
+		return *x.Currency
+	}
+	return ""
+}
+
+func (x *PlanOption) GetIncludedEvents() *wrapperspb.Int64Value {
+	if x != nil {
+		return x.IncludedEvents
+	}
+	return nil
+}
+
+func (x *PlanOption) GetPurchasable() bool {
+	if x != nil && x.Purchasable != nil {
+		return *x.Purchasable
+	}
+	return false
+}
+
+type ListPlansResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Plans         []*PlanOption          `protobuf:"bytes,1,rep,name=plans" json:"plans,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPlansResponse) Reset() {
+	*x = ListPlansResponse{}
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPlansResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPlansResponse) ProtoMessage() {}
+
+func (x *ListPlansResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPlansResponse.ProtoReflect.Descriptor instead.
+func (*ListPlansResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListPlansResponse) GetPlans() []*PlanOption {
+	if x != nil {
+		return x.Plans
+	}
+	return nil
+}
+
 var File_dashboard_billing_v1_billing_proto protoreflect.FileDescriptor
 
 const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
@@ -685,7 +872,20 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"<\n" +
 	"\x1bCreatePortalSessionResponse\x12\x1d\n" +
 	"\n" +
-	"portal_url\x18\x01 \x01(\tR\tportalUrl*\x80\x01\n" +
+	"portal_url\x18\x01 \x01(\tR\tportalUrl\"2\n" +
+	"\x10ListPlansRequest\x12\x1e\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\x85\x02\n" +
+	"\n" +
+	"PlanOption\x12\x12\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12<\n" +
+	"\vprice_cents\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\n" +
+	"priceCents\x12\x1a\n" +
+	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12D\n" +
+	"\x0fincluded_events\x18\x05 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12 \n" +
+	"\vpurchasable\x18\x06 \x01(\bR\vpurchasable\"K\n" +
+	"\x11ListPlansResponse\x126\n" +
+	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x80\x01\n" +
 	"\rBillingStatus\x12\x1e\n" +
 	"\x1aBILLING_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17BILLING_STATUS_TRIALING\x10\x01\x12\x19\n" +
@@ -698,11 +898,12 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x1aSUBSCRIPTION_STATUS_PAUSED\x10\x03\x12!\n" +
 	"\x1dSUBSCRIPTION_STATUS_CANCELLED\x10\x04\x12\x1f\n" +
 	"\x1bSUBSCRIPTION_STATUS_EXPIRED\x10\x05\x12\x1e\n" +
-	"\x1aSUBSCRIPTION_STATUS_FAILED\x10\x062\x88\x03\n" +
+	"\x1aSUBSCRIPTION_STATUS_FAILED\x10\x062\xe8\x03\n" +
 	"\x0eBillingService\x12s\n" +
 	"\x10GetBillingStatus\x12-.dashboard.billing.v1.GetBillingStatusRequest\x1a..dashboard.billing.v1.GetBillingStatusResponse\"\x00\x12\x82\x01\n" +
 	"\x15CreateCheckoutSession\x122.dashboard.billing.v1.CreateCheckoutSessionRequest\x1a3.dashboard.billing.v1.CreateCheckoutSessionResponse\"\x00\x12|\n" +
-	"\x13CreatePortalSession\x120.dashboard.billing.v1.CreatePortalSessionRequest\x1a1.dashboard.billing.v1.CreatePortalSessionResponse\"\x00BIZGgithub.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1;billingv1b\beditionsp\xe8\a"
+	"\x13CreatePortalSession\x120.dashboard.billing.v1.CreatePortalSessionRequest\x1a1.dashboard.billing.v1.CreatePortalSessionResponse\"\x00\x12^\n" +
+	"\tListPlans\x12&.dashboard.billing.v1.ListPlansRequest\x1a'.dashboard.billing.v1.ListPlansResponse\"\x00BIZGgithub.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1;billingv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_billing_v1_billing_proto_rawDescOnce sync.Once
@@ -717,7 +918,7 @@ func file_dashboard_billing_v1_billing_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_billing_v1_billing_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_dashboard_billing_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_dashboard_billing_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_dashboard_billing_v1_billing_proto_goTypes = []any{
 	(BillingStatus)(0),                    // 0: dashboard.billing.v1.BillingStatus
 	(SubscriptionStatus)(0),               // 1: dashboard.billing.v1.SubscriptionStatus
@@ -728,31 +929,39 @@ var file_dashboard_billing_v1_billing_proto_goTypes = []any{
 	(*CreateCheckoutSessionResponse)(nil), // 6: dashboard.billing.v1.CreateCheckoutSessionResponse
 	(*CreatePortalSessionRequest)(nil),    // 7: dashboard.billing.v1.CreatePortalSessionRequest
 	(*CreatePortalSessionResponse)(nil),   // 8: dashboard.billing.v1.CreatePortalSessionResponse
-	(*wrapperspb.Int64Value)(nil),         // 9: google.protobuf.Int64Value
-	(*timestamppb.Timestamp)(nil),         // 10: google.protobuf.Timestamp
+	(*ListPlansRequest)(nil),              // 9: dashboard.billing.v1.ListPlansRequest
+	(*PlanOption)(nil),                    // 10: dashboard.billing.v1.PlanOption
+	(*ListPlansResponse)(nil),             // 11: dashboard.billing.v1.ListPlansResponse
+	(*wrapperspb.Int64Value)(nil),         // 12: google.protobuf.Int64Value
+	(*timestamppb.Timestamp)(nil),         // 13: google.protobuf.Timestamp
 }
 var file_dashboard_billing_v1_billing_proto_depIdxs = []int32{
-	9,  // 0: dashboard.billing.v1.Plan.price_cents:type_name -> google.protobuf.Int64Value
+	12, // 0: dashboard.billing.v1.Plan.price_cents:type_name -> google.protobuf.Int64Value
 	3,  // 1: dashboard.billing.v1.GetBillingStatusResponse.plan:type_name -> dashboard.billing.v1.Plan
 	0,  // 2: dashboard.billing.v1.GetBillingStatusResponse.status:type_name -> dashboard.billing.v1.BillingStatus
-	9,  // 3: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
-	10, // 4: dashboard.billing.v1.GetBillingStatusResponse.trial_ends_at:type_name -> google.protobuf.Timestamp
-	10, // 5: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
-	10, // 6: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
-	10, // 7: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
+	12, // 3: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
+	13, // 4: dashboard.billing.v1.GetBillingStatusResponse.trial_ends_at:type_name -> google.protobuf.Timestamp
+	13, // 5: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
+	13, // 6: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
+	13, // 7: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
 	1,  // 8: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
-	10, // 9: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
-	2,  // 10: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
-	5,  // 11: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
-	7,  // 12: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
-	4,  // 13: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
-	6,  // 14: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
-	8,  // 15: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
-	13, // [13:16] is the sub-list for method output_type
-	10, // [10:13] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	13, // 9: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
+	12, // 10: dashboard.billing.v1.PlanOption.price_cents:type_name -> google.protobuf.Int64Value
+	12, // 11: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
+	10, // 12: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
+	2,  // 13: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
+	5,  // 14: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
+	7,  // 15: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
+	9,  // 16: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
+	4,  // 17: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
+	6,  // 18: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
+	8,  // 19: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
+	11, // 20: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
+	17, // [17:21] is the sub-list for method output_type
+	13, // [13:17] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_billing_v1_billing_proto_init() }
@@ -766,7 +975,7 @@ func file_dashboard_billing_v1_billing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_billing_v1_billing_proto_rawDesc), len(file_dashboard_billing_v1_billing_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

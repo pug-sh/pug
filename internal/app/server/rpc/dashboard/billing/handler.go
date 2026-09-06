@@ -155,6 +155,39 @@ func (s *Server) CreatePortalSession(
 	}), nil
 }
 
+// ListPlans returns the tiers this deployment sells. Never a product id: the
+// dashboard renders a buy button from `purchasable` alone.
+func (s *Server) ListPlans(
+	ctx context.Context,
+	req *connect.Request[billingv1.ListPlansRequest],
+) (*connect.Response[billingv1.ListPlansResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
+	orgID := req.Msg.GetOrgId()
+	options, err := s.service.PlanOptions(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, corebilling.ErrOrgNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
+		}
+		return nil, internalErr()
+	}
+
+	plans := make([]*billingv1.PlanOption, 0, len(options))
+	for _, opt := range options {
+		plans = append(plans, &billingv1.PlanOption{
+			Currency:       proto.String(opt.Currency),
+			DisplayName:    proto.String(opt.DisplayName),
+			IncludedEvents: int64Value(opt.IncludedEvents),
+			PriceCents:     int64Value(opt.PriceCents),
+			Purchasable:    proto.Bool(opt.Purchasable),
+			Slug:           proto.String(opt.Slug),
+		})
+	}
+	return connect.NewResponse(&billingv1.ListPlansResponse{Plans: plans}), nil
+}
+
 // checkoutErr translates the session paths. Everything a caller can act on gets
 // its own reason; a provider call that simply failed is internal, since its
 // message is the provider's and must not reach an API consumer.

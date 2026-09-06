@@ -42,6 +42,9 @@ const (
 	// BillingServiceCreatePortalSessionProcedure is the fully-qualified name of the BillingService's
 	// CreatePortalSession RPC.
 	BillingServiceCreatePortalSessionProcedure = "/dashboard.billing.v1.BillingService/CreatePortalSession"
+	// BillingServiceListPlansProcedure is the fully-qualified name of the BillingService's ListPlans
+	// RPC.
+	BillingServiceListPlansProcedure = "/dashboard.billing.v1.BillingService/ListPlans"
 )
 
 // BillingServiceClient is a client for the dashboard.billing.v1.BillingService service.
@@ -74,6 +77,18 @@ type BillingServiceClient interface {
 	// FailedPrecondition for an org that has never checked out: a trialing, free
 	// or comped org has no customer at the provider to open a portal for.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
+	// The tiers this deployment sells, in display order. On the viewer floor
+	// beside GetBillingStatus: a price is a marketing number, and the person
+	// reading the quota banner is the one who wants to know what the next tier
+	// costs — they simply cannot buy it.
+	//
+	// It exists because the catalog is Go, not rows, so the dashboard has no other
+	// honest way to name a tier. Mirroring the catalog in the frontend would put a
+	// second authority on what a plan costs, which is the mistake section 4
+	// exists to prevent, one layer up.
+	//
+	// Never returns a product id, and never the floors -- nobody buys Free.
+	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 
 // NewBillingServiceClient constructs a client for the dashboard.billing.v1.BillingService service.
@@ -105,6 +120,12 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("CreatePortalSession")),
 			connect.WithClientOptions(opts...),
 		),
+		listPlans: connect.NewClient[v1.ListPlansRequest, v1.ListPlansResponse](
+			httpClient,
+			baseURL+BillingServiceListPlansProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ListPlans")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -113,6 +134,7 @@ type billingServiceClient struct {
 	getBillingStatus      *connect.Client[v1.GetBillingStatusRequest, v1.GetBillingStatusResponse]
 	createCheckoutSession *connect.Client[v1.CreateCheckoutSessionRequest, v1.CreateCheckoutSessionResponse]
 	createPortalSession   *connect.Client[v1.CreatePortalSessionRequest, v1.CreatePortalSessionResponse]
+	listPlans             *connect.Client[v1.ListPlansRequest, v1.ListPlansResponse]
 }
 
 // GetBillingStatus calls dashboard.billing.v1.BillingService.GetBillingStatus.
@@ -128,6 +150,11 @@ func (c *billingServiceClient) CreateCheckoutSession(ctx context.Context, req *c
 // CreatePortalSession calls dashboard.billing.v1.BillingService.CreatePortalSession.
 func (c *billingServiceClient) CreatePortalSession(ctx context.Context, req *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error) {
 	return c.createPortalSession.CallUnary(ctx, req)
+}
+
+// ListPlans calls dashboard.billing.v1.BillingService.ListPlans.
+func (c *billingServiceClient) ListPlans(ctx context.Context, req *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error) {
+	return c.listPlans.CallUnary(ctx, req)
 }
 
 // BillingServiceHandler is an implementation of the dashboard.billing.v1.BillingService service.
@@ -160,6 +187,18 @@ type BillingServiceHandler interface {
 	// FailedPrecondition for an org that has never checked out: a trialing, free
 	// or comped org has no customer at the provider to open a portal for.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
+	// The tiers this deployment sells, in display order. On the viewer floor
+	// beside GetBillingStatus: a price is a marketing number, and the person
+	// reading the quota banner is the one who wants to know what the next tier
+	// costs — they simply cannot buy it.
+	//
+	// It exists because the catalog is Go, not rows, so the dashboard has no other
+	// honest way to name a tier. Mirroring the catalog in the frontend would put a
+	// second authority on what a plan costs, which is the mistake section 4
+	// exists to prevent, one layer up.
+	//
+	// Never returns a product id, and never the floors -- nobody buys Free.
+	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -187,6 +226,12 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("CreatePortalSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceListPlansHandler := connect.NewUnaryHandler(
+		BillingServiceListPlansProcedure,
+		svc.ListPlans,
+		connect.WithSchema(billingServiceMethods.ByName("ListPlans")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.billing.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServiceGetBillingStatusProcedure:
@@ -195,6 +240,8 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 			billingServiceCreateCheckoutSessionHandler.ServeHTTP(w, r)
 		case BillingServiceCreatePortalSessionProcedure:
 			billingServiceCreatePortalSessionHandler.ServeHTTP(w, r)
+		case BillingServiceListPlansProcedure:
+			billingServiceListPlansHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -214,4 +261,8 @@ func (UnimplementedBillingServiceHandler) CreateCheckoutSession(context.Context,
 
 func (UnimplementedBillingServiceHandler) CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.CreatePortalSession is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.ListPlans is not implemented"))
 }

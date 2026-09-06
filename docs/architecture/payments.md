@@ -691,6 +691,17 @@ to no quota — and then to the free floor — on the day its agreed term passed
 while Dodo went on charging. The contract bounds a grant an operator made; it
 cannot expire a subscription the provider still says is live.
 
+**`ListPlans` was added (§12).** The design adds two RPCs and says the dashboard
+renders its buy button from `purchasable` — but `CreateCheckoutSession` takes a
+plan *slug*, so something has to name the tiers, and the catalog is Go rather
+than rows precisely so it is not queryable. The alternative was a hardcoded
+catalog in the frontend, which would put a second authority on what a plan costs
+— the mistake §4 exists to prevent, one layer up. It sits on the viewer floor
+beside `GetBillingStatus`: a price is a marketing number, and the person reading
+the quota banner is the one who wants to know what the next tier costs. It never
+returns a product id, never the floors, and offers `custom` only to the org whose
+row records its product.
+
 `provider_product_id` is also on `billing_entitlement_history`, which §6 does not
 mention: the history is a snapshot of the row, and "who pasted this product id,
 and when" is a support question about the one field that decides whether an org

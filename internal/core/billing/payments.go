@@ -180,3 +180,56 @@ func (s *Service) planForProduct(productID string, rec Record) (string, error) {
 	}
 	return "", fmt.Errorf("%w: product %s", ErrNotPurchasable, productID)
 }
+
+// PlanOption is a tier as this deployment sells it, distinct from Entitlement,
+// which is a tier as one org holds it. A negotiated quota or display name never
+// appears here.
+type PlanOption struct {
+	Slug        string
+	DisplayName string
+	Currency    string
+
+	// nil means no list price: the custom tier, whose price lives in the provider.
+	PriceCents *int64
+	// nil means no quota of its own: the custom tier again, whose quota comes from
+	// the org's row.
+	IncludedEvents *int64
+
+	Purchasable bool
+}
+
+// PlanOptions is the sellable catalog for one org. The floors are excluded --
+// nobody buys Free -- and a retired tier is excluded too, since it is kept only
+// so existing holders keep resolving.
+//
+// Custom is included only for the org whose row records a product, which is what
+// makes a negotiated deal buyable from the dashboard without a link ever leaving
+// our hands.
+func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, error) {
+	rec, err := s.StoredRecord(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]PlanOption, 0, len(catalog))
+	for _, plan := range Plans() {
+		if plan.isFloor() || plan.Retired {
+			continue
+		}
+		if plan.Slug == SlugCustom && rec.ProviderProductID == "" {
+			continue
+		}
+		// Per tier, not per org: a deployment can configure a product for some tiers
+		// and not others, and a button that cannot work is worse than no button.
+		_, err := s.checkoutProduct(rec, plan.Slug)
+		out = append(out, PlanOption{
+			Currency:       plan.Currency,
+			DisplayName:    plan.DisplayName,
+			IncludedEvents: plan.IncludedEvents,
+			PriceCents:     plan.PriceCents,
+			Purchasable:    s.billingEnabled && err == nil,
+			Slug:           plan.Slug,
+		})
+	}
+	return out, nil
+}

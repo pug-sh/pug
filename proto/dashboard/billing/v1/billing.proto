@@ -39,6 +39,19 @@ service BillingService {
   // FailedPrecondition for an org that has never checked out: a trialing, free
   // or comped org has no customer at the provider to open a portal for.
   rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
+
+  // The tiers this deployment sells, in display order. On the viewer floor
+  // beside GetBillingStatus: a price is a marketing number, and the person
+  // reading the quota banner is the one who wants to know what the next tier
+  // costs — they simply cannot buy it.
+  //
+  // It exists because the catalog is Go, not rows, so the dashboard has no other
+  // honest way to name a tier. Mirroring the catalog in the frontend would put a
+  // second authority on what a plan costs, which is the mistake section 4
+  // exists to prevent, one layer up.
+  //
+  // Never returns a product id, and never the floors -- nobody buys Free.
+  rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {}
 }
 
 // BillingStatus is derived from the clock on every read, never stored. The
@@ -180,4 +193,36 @@ message CreatePortalSessionRequest {
 
 message CreatePortalSessionResponse {
   string portal_url = 1;
+}
+
+message ListPlansRequest {
+  // Scoped to an org because purchasability is: the custom tier is only
+  // purchasable by the org whose row records its product.
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// PlanOption is a tier as this deployment sells it. Distinct from Plan, which is
+// a tier as ONE ORG HOLDS it, overrides applied -- a negotiated quota and display
+// name never appear here.
+message PlanOption {
+  string slug = 1;
+  string display_name = 2;
+  // The tier's list price, in minor units of `currency`. ABSENT is the custom
+  // tier, whose price lives in the payments provider; that is not a price of
+  // zero.
+  google.protobuf.Int64Value price_cents = 3;
+  // ISO 4217.
+  string currency = 4;
+  // Events the tier includes. ABSENT is the custom tier, whose quota comes from
+  // the org's own row. Never render its absence as 0.
+  google.protobuf.Int64Value included_events = 5;
+  // Whether a checkout for THIS tier would open. Same helper
+  // CreateCheckoutSession refuses on, so a button that cannot work is
+  // impossible rather than unlikely -- and it is per tier, because a deployment
+  // can configure a product for some tiers and not others.
+  bool purchasable = 6;
+}
+
+message ListPlansResponse {
+  repeated PlanOption plans = 1;
 }
