@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/validate"
 	"github.com/pug-sh/pug/internal/app/server/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
+	billingrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/billing"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/customers"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
@@ -28,6 +29,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
 	"github.com/pug-sh/pug/internal/cookieless"
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
@@ -38,6 +40,7 @@ import (
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1/billingv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
@@ -204,6 +207,18 @@ func start(ctx context.Context, d *deps) error {
 	usagePath, usageHandler := usagev1connect.NewUsageServiceHandler(
 		usage.NewServer(coreusage.NewService(d.pgRo, d.pgW)), handlerOpts)
 
+	// Postgres only: an entitlement is a row plus the clock, and the quota it
+	// carries enforces nothing, so no ingestion or ClickHouse path is involved.
+	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingEnabled)
+	if err != nil {
+		return fmt.Errorf("billing service: %w", err)
+	}
+	// The likeliest misconfig is a pod missing the flag: every org would then read
+	// as having no quota, with nothing failing and no other breadcrumb.
+	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled))
+	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
+		billingrpc.NewServer(billingSvc), handlerOpts)
+
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
@@ -257,6 +272,7 @@ func start(ctx context.Context, d *deps) error {
 	handle(orgEmailProvidersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 	handle(customersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(customersHandler)))
 	handle(usagePath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(usageHandler)))
+	handle(billingPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(billingHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	handle(insightsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(insightsHandler)))
