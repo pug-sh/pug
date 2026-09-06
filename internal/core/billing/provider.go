@@ -92,9 +92,14 @@ type CheckoutInput struct {
 }
 
 // SubStatus is pug's subscription vocabulary. It is fixed and does not grow to
-// fit a provider: a state pug has no word for normalizes to notLive, which can
-// only ever withhold a plan, never grant one. That is what makes a provider
-// mapping safe to be incomplete on its first day.
+// fit a provider.
+//
+// A STORED value may nonetheless sit outside it: a provider state pug has no
+// word for is stored verbatim, and ParseSubStatus then refuses it, which makes
+// it not live. That is the safe direction -- an unknown state can only ever
+// withhold a plan, never grant one -- and it is what lets a provider mapping be
+// incomplete on its first day without leaving a lapsing org on its last known
+// status.
 type SubStatus string
 
 const (

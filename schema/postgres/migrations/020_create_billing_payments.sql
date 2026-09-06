@@ -60,10 +60,14 @@ create table billing_subscriptions (
   -- The CAS column: the delivery timestamp a payload arrived with. An apply is
   -- refused when it is older than what is stored.
   provider_updated_at timestamptz not null,
-  -- Pug's vocabulary, not the provider's; provider_status keeps theirs verbatim.
+  -- Pug's vocabulary -- active, past_due, paused, cancelled, expired, failed --
+  -- except that a provider state pug has no word for is stored VERBATIM here too.
+  -- Not constrained to the six: a value outside them fails to parse at read time
+  -- and is therefore not live, which can only ever withhold a plan, never grant
+  -- one. Constraining it instead would leave the org on its last known status,
+  -- which for a lapsing subscription is the opposite of the safe direction.
   status text not null
-    constraint billing_subscriptions_status_check
-      check (status in ('active', 'past_due', 'paused', 'cancelled', 'expired', 'failed')),
+    constraint billing_subscriptions_status_check check (status <> ''),
   update_time timestamptz not null default now(),
 
   constraint billing_subscriptions_provider_sub_key unique (provider, provider_sub_id)
