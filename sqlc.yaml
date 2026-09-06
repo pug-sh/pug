@@ -20,6 +20,11 @@ sql:
           - column: "dashboard_tiles.thresholds"
             go_type:
               type: "[]byte"
+          # The delivery as the provider sent it. Raw bytes, not a decoded map: a
+          # signature is over the exact bytes, and a map round-trip reorders them.
+          - column: "billing_webhook_deliveries.payload"
+            go_type:
+              type: "[]byte"
   - engine: 'postgresql'
     queries: 'schema/postgres/queries/write/*.sql'
     schema: 'schema/postgres/migrations'
@@ -38,5 +43,10 @@ sql:
           # thresholds is a JSON array, not an object — return raw bytes so the
           # service layer can marshal proto repeated fields via protojson.
           - column: "dashboard_tiles.thresholds"
+            go_type:
+              type: "[]byte"
+          # The delivery as the provider sent it. Raw bytes, not a decoded map: a
+          # signature is over the exact bytes, and a map round-trip reorders them.
+          - column: "billing_webhook_deliveries.payload"
             go_type:
               type: "[]byte"

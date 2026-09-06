@@ -11,6 +11,71 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const applyBillingSubscription = `-- name: ApplyBillingSubscription :execrows
+insert into billing_subscriptions (
+  currency, current_period_end, current_period_start, id, org_id, plan_slug,
+  price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
+  provider_updated_at, status
+) values (
+  $1, $2, $3, $4, $5, $6,
+  $7, $8, $9, $10, $11,
+  $12, $13
+)
+on conflict (provider, provider_sub_id) do update
+set currency = excluded.currency,
+    current_period_end = excluded.current_period_end,
+    current_period_start = excluded.current_period_start,
+    plan_slug = excluded.plan_slug,
+    price_cents = excluded.price_cents,
+    provider_customer_id = excluded.provider_customer_id,
+    provider_status = excluded.provider_status,
+    provider_sub_id = excluded.provider_sub_id,
+    provider_updated_at = excluded.provider_updated_at,
+    status = excluded.status
+where billing_subscriptions.provider_updated_at <= excluded.provider_updated_at
+`
+
+type ApplyBillingSubscriptionParams struct {
+	Currency           string
+	CurrentPeriodEnd   pgtype.Timestamptz
+	CurrentPeriodStart pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PlanSlug           string
+	PriceCents         int64
+	Provider           string
+	ProviderCustomerID string
+	ProviderStatus     string
+	ProviderSubID      string
+	ProviderUpdatedAt  pgtype.Timestamptz
+	Status             string
+}
+
+// The mirror write, and the only one. CAS on provider_updated_at: deliveries are
+// unordered and each carries the latest object, so an older one must not overwrite
+// a newer. org_id is never updated -- attribution is decided once, on first sight.
+func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBillingSubscriptionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, applyBillingSubscription,
+		arg.Currency,
+		arg.CurrentPeriodEnd,
+		arg.CurrentPeriodStart,
+		arg.ID,
+		arg.OrgID,
+		arg.PlanSlug,
+		arg.PriceCents,
+		arg.Provider,
+		arg.ProviderCustomerID,
+		arg.ProviderStatus,
+		arg.ProviderSubID,
+		arg.ProviderUpdatedAt,
+		arg.Status,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteBillingEntitlement = `-- name: DeleteBillingEntitlement :execrows
 delete from billing_entitlements where org_id = $1
 `
@@ -23,8 +88,28 @@ func (q *Queries) DeleteBillingEntitlement(ctx context.Context, orgID string) (i
 	return result.RowsAffected(), nil
 }
 
+const deleteBillingWebhookDeliveriesForOrg = `-- name: DeleteBillingWebhookDeliveriesForOrg :execrows
+delete from billing_webhook_deliveries d
+where exists (
+  select 1 from billing_subscriptions s
+  where s.org_id = $1
+    and s.provider = d.provider
+    and d.payload->'data'->>'subscription_id' = s.provider_sub_id
+)
+`
+
+// Org erasure. The deliveries name the org only inside the payload, so they are
+// matched through the subscriptions the org holds.
+func (q *Queries) DeleteBillingWebhookDeliveriesForOrg(ctx context.Context, orgID string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBillingWebhookDeliveriesForOrg, orgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
-select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time from billing_entitlements where org_id = $1 for update
+select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time, provider_product_id from billing_entitlements where org_id = $1 for update
 `
 
 // Returns no rows for an org that has never been touched, which is normal.
@@ -42,6 +127,78 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.PlanSlug,
 		&i.TrialEndsAt,
 		&i.UpdateTime,
+		&i.ProviderProductID,
+	)
+	return i, err
+}
+
+const getBillingSubscriptionByProviderCustomerID = `-- name: GetBillingSubscriptionByProviderCustomerID :one
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+where provider = $1 and provider_customer_id = $2
+order by create_time desc
+limit 1
+`
+
+type GetBillingSubscriptionByProviderCustomerIDParams struct {
+	Provider           string
+	ProviderCustomerID string
+}
+
+// Attribution fallback when a delivery carries no org_id metadata. Newest first:
+// a customer that re-subscribed has a dead row beside the live one, and either
+// names the same org.
+func (q *Queries) GetBillingSubscriptionByProviderCustomerID(ctx context.Context, arg GetBillingSubscriptionByProviderCustomerIDParams) (BillingSubscription, error) {
+	row := q.db.QueryRow(ctx, getBillingSubscriptionByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
+	var i BillingSubscription
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Currency,
+		&i.CurrentPeriodEnd,
+		&i.CurrentPeriodStart,
+		&i.ID,
+		&i.OrgID,
+		&i.PlanSlug,
+		&i.PriceCents,
+		&i.Provider,
+		&i.ProviderCustomerID,
+		&i.ProviderStatus,
+		&i.ProviderSubID,
+		&i.ProviderUpdatedAt,
+		&i.Status,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getBillingSubscriptionByProviderSubID = `-- name: GetBillingSubscriptionByProviderSubID :one
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+where provider = $1 and provider_sub_id = $2
+`
+
+type GetBillingSubscriptionByProviderSubIDParams struct {
+	Provider      string
+	ProviderSubID string
+}
+
+func (q *Queries) GetBillingSubscriptionByProviderSubID(ctx context.Context, arg GetBillingSubscriptionByProviderSubIDParams) (BillingSubscription, error) {
+	row := q.db.QueryRow(ctx, getBillingSubscriptionByProviderSubID, arg.Provider, arg.ProviderSubID)
+	var i BillingSubscription
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Currency,
+		&i.CurrentPeriodEnd,
+		&i.CurrentPeriodStart,
+		&i.ID,
+		&i.OrgID,
+		&i.PlanSlug,
+		&i.PriceCents,
+		&i.Provider,
+		&i.ProviderCustomerID,
+		&i.ProviderStatus,
+		&i.ProviderSubID,
+		&i.ProviderUpdatedAt,
+		&i.Status,
+		&i.UpdateTime,
 	)
 	return i, err
 }
@@ -49,10 +206,10 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
   actor, anchor_day, contract_ends_at, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, trial_ends_at
+  id, included_events_override, note, org_id, plan_slug, provider_product_id, trial_ends_at
 ) values (
   $1, $2, $3, $4,
-  $5, $6, $7, $8, $9, $10
+  $5, $6, $7, $8, $9, $10, $11
 )
 `
 
@@ -66,6 +223,7 @@ type InsertBillingEntitlementHistoryParams struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               pgtype.Text
+	ProviderProductID      pgtype.Text
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -80,9 +238,49 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
+		arg.ProviderProductID,
 		arg.TrialEndsAt,
 	)
 	return err
+}
+
+const insertBillingWebhookDelivery = `-- name: InsertBillingWebhookDelivery :one
+insert into billing_webhook_deliveries (event_type, payload, provider, webhook_id)
+values ($1, $2, $3, $4)
+on conflict (provider, webhook_id) do update
+  set event_type = billing_webhook_deliveries.event_type
+returning error, event_type, payload, processed_at, provider, received_at, webhook_id
+`
+
+type InsertBillingWebhookDeliveryParams struct {
+	EventType string
+	Payload   []byte
+	Provider  string
+	WebhookID string
+}
+
+// The provider's retry reuses its webhook id, so the primary key dedups it. The
+// returned row is what tells a retry apart from a first delivery: an unprocessed
+// row means the last attempt died mid-apply and must be re-applied, so this
+// deliberately does not swallow the conflict.
+func (q *Queries) InsertBillingWebhookDelivery(ctx context.Context, arg InsertBillingWebhookDeliveryParams) (BillingWebhookDelivery, error) {
+	row := q.db.QueryRow(ctx, insertBillingWebhookDelivery,
+		arg.EventType,
+		arg.Payload,
+		arg.Provider,
+		arg.WebhookID,
+	)
+	var i BillingWebhookDelivery
+	err := row.Scan(
+		&i.Error,
+		&i.EventType,
+		&i.Payload,
+		&i.ProcessedAt,
+		&i.Provider,
+		&i.ReceivedAt,
+		&i.WebhookID,
+	)
+	return i, err
 }
 
 const lockBillingEntitlementOrg = `-- name: LockBillingEntitlementOrg :exec
@@ -96,13 +294,57 @@ func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) e
 	return err
 }
 
+const lockBillingSubscriptionOrg = `-- name: LockBillingSubscriptionOrg :exec
+select pg_advisory_xact_lock(hashtext('billing_subscription:' || $1::text))
+`
+
+// Held across the read-modify-write in the apply path, so two deliveries for the
+// same org cannot both pass the CAS on a row neither has inserted yet.
+func (q *Queries) LockBillingSubscriptionOrg(ctx context.Context, orgID string) error {
+	_, err := q.db.Exec(ctx, lockBillingSubscriptionOrg, orgID)
+	return err
+}
+
+const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :exec
+update billing_webhook_deliveries
+set processed_at = now(), error = $1
+where provider = $2 and webhook_id = $3
+`
+
+type MarkBillingWebhookDeliveryProcessedParams struct {
+	Error     string
+	Provider  string
+	WebhookID string
+}
+
+func (q *Queries) MarkBillingWebhookDeliveryProcessed(ctx context.Context, arg MarkBillingWebhookDeliveryProcessedParams) error {
+	_, err := q.db.Exec(ctx, markBillingWebhookDeliveryProcessed, arg.Error, arg.Provider, arg.WebhookID)
+	return err
+}
+
+const pruneBillingWebhookDeliveries = `-- name: PruneBillingWebhookDeliveries :execrows
+delete from billing_webhook_deliveries
+where processed_at is not null and processed_at < $1
+`
+
+// The payload holds personal data replay needs and nothing else does, so it is
+// kept for a window rather than forever. Unprocessed rows are never pruned: they
+// are the ones still worth replaying.
+func (q *Queries) PruneBillingWebhookDeliveries(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneBillingWebhookDeliveries, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertBillingEntitlement = `-- name: UpsertBillingEntitlement :one
 insert into billing_entitlements (
   anchor_day, contract_ends_at, display_name_override,
-  included_events_override, note, org_id, plan_slug, trial_ends_at
+  included_events_override, note, org_id, plan_slug, provider_product_id, trial_ends_at
 ) values (
   $1, $2, $3,
-  $4, $5, $6, $7, $8
+  $4, $5, $6, $7, $8, $9
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
@@ -111,8 +353,9 @@ set anchor_day = excluded.anchor_day,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
+    provider_product_id = excluded.provider_product_id,
     trial_ends_at = excluded.trial_ends_at
-returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time
+returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time, provider_product_id
 `
 
 type UpsertBillingEntitlementParams struct {
@@ -123,6 +366,7 @@ type UpsertBillingEntitlementParams struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               string
+	ProviderProductID      pgtype.Text
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -137,6 +381,7 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
+		arg.ProviderProductID,
 		arg.TrialEndsAt,
 	)
 	var i BillingEntitlement
@@ -151,6 +396,7 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.PlanSlug,
 		&i.TrialEndsAt,
 		&i.UpdateTime,
+		&i.ProviderProductID,
 	)
 	return i, err
 }

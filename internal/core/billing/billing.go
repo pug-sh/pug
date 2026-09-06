@@ -40,7 +40,12 @@ type Record struct {
 	DisplayNameOverride string
 	Note                string
 	PlanSlug            string
-	TrialEndsAt         time.Time
+	// The provider product a negotiated deal is bought against. Empty for every
+	// org that is not a deal: the catalog tiers map slug -> product id in config,
+	// not on the row. Operator-written, and the only thing that makes a custom
+	// deal purchasable.
+	ProviderProductID string
+	TrialEndsAt       time.Time
 
 	// 0 means no override: the column is checked > 0, so zero cannot be a stored
 	// quota and needs no pointer to stay distinguishable.

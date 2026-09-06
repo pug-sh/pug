@@ -128,6 +128,7 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 		DisplayNameOverride: row.DisplayNameOverride.String,
 		Note:                row.Note.String,
 		PlanSlug:            row.PlanSlug.String,
+		ProviderProductID:   row.ProviderProductID.String,
 		TrialEndsAt:         row.TrialEndsAt.Time,
 	}
 	if row.IncludedEventsOverride.Valid {
@@ -149,12 +150,13 @@ const MaxDisplayNameLen = 150
 // reverted a customer's negotiated quota to a catalog number would be the most
 // expensive bug this API could have.
 type Change struct {
-	PlanSlug       string
-	IncludedEvents *int64
-	DisplayName    *string
-	AnchorDay      *int
-	ContractEndsAt *time.Time
-	Note           *string
+	PlanSlug          string
+	IncludedEvents    *int64
+	DisplayName       *string
+	AnchorDay         *int
+	ContractEndsAt    *time.Time
+	Note              *string
+	ProviderProductID *string
 }
 
 // orKeep resolves one Change field against the value already stored.
@@ -402,6 +404,7 @@ func recordFromWriteRow(row dbwrite.BillingEntitlement) Record {
 		DisplayNameOverride: row.DisplayNameOverride.String,
 		Note:                row.Note,
 		PlanSlug:            row.PlanSlug,
+		ProviderProductID:   row.ProviderProductID.String,
 		TrialEndsAt:         row.TrialEndsAt.Time,
 	}
 	if row.IncludedEventsOverride.Valid {
@@ -419,6 +422,7 @@ func applyChange(cur Record, c Change) Record {
 	next.AnchorDay = orKeep(c.AnchorDay, cur.AnchorDay)
 	next.ContractEndsAt = orKeep(c.ContractEndsAt, cur.ContractEndsAt)
 	next.Note = orKeep(c.Note, cur.Note)
+	next.ProviderProductID = orKeep(c.ProviderProductID, cur.ProviderProductID)
 
 	if plan, ok := PlanBySlug(next.PlanSlug); ok {
 		if !plan.isFloor() {
@@ -434,6 +438,9 @@ func applyChange(cur Record, c Change) Record {
 			next.ContractEndsAt = time.Time{}
 			next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
 			next.DisplayNameOverride = orKeep(c.DisplayName, "")
+			// Dropped with them: a product id left behind would keep offering a buy
+			// button for the deal that just ended.
+			next.ProviderProductID = orKeep(c.ProviderProductID, "")
 		}
 	}
 	return next
@@ -448,6 +455,7 @@ func upsertParams(orgID string, rec Record) dbwrite.UpsertBillingEntitlementPara
 		Note:                   rec.Note,
 		OrgID:                  orgID,
 		PlanSlug:               rec.PlanSlug,
+		ProviderProductID:      postgres.NewOptionalText(rec.ProviderProductID),
 		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 }
@@ -463,6 +471,7 @@ func appendHistory(ctx context.Context, w *dbwrite.Queries, orgID, actor string,
 		Note:                   rec.Note,
 		OrgID:                  orgID,
 		PlanSlug:               postgres.NewOptionalText(rec.PlanSlug),
+		ProviderProductID:      postgres.NewOptionalText(rec.ProviderProductID),
 		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 	if err := w.InsertBillingEntitlementHistory(ctx, params); err != nil {
@@ -506,6 +515,7 @@ func (s *Service) History(ctx context.Context, orgID string) ([]HistoryEntry, er
 			DisplayNameOverride: row.DisplayNameOverride.String,
 			Note:                row.Note,
 			PlanSlug:            row.PlanSlug.String,
+			ProviderProductID:   row.ProviderProductID.String,
 			TrialEndsAt:         row.TrialEndsAt.Time,
 		}
 		if row.IncludedEventsOverride.Valid {
