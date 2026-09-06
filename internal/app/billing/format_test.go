@@ -193,3 +193,27 @@ func TestPriceOnlyScalesTheCurrencyPugSells(t *testing.T) {
 		t.Fatalf("JPY price = %q, want unscaled minor units", got)
 	}
 }
+
+// The subscription line is what tells an operator whether a resolved plan is
+// backed by money, so each part appears only once it has a value.
+func TestSubscriptionLine(t *testing.T) {
+	if got := subscription(corebilling.Entitlement{}); got != none {
+		t.Errorf("no subscription = %q, want %q", got, none)
+	}
+
+	bare := subscription(corebilling.Entitlement{SubStatus: corebilling.SubStatusPastDue})
+	if bare != string(corebilling.SubStatusPastDue) {
+		t.Errorf("status-only line = %q", bare)
+	}
+
+	full := subscription(corebilling.Entitlement{
+		SubStatus:          corebilling.SubStatusActive,
+		SubPeriodEnd:       time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		ProviderCustomerID: "cus_1",
+	})
+	for _, want := range []string{"active", "bills next 2026-07-01", "customer cus_1"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("subscription line %q is missing %q", full, want)
+		}
+	}
+}

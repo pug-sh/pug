@@ -162,3 +162,27 @@ func TestStatusToRPCCoversEveryResolvedStatus(t *testing.T) {
 		t.Errorf("the table covers %d statuses, the resolver produces %d", len(want), len(corebilling.AllStatuses()))
 	}
 }
+
+func TestSubStatusToRPCCoversEveryStoredStatus(t *testing.T) {
+	want := map[corebilling.SubStatus]billingv1.SubscriptionStatus{
+		corebilling.SubStatusActive:    billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE,
+		corebilling.SubStatusPastDue:   billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE,
+		corebilling.SubStatusPaused:    billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_PAUSED,
+		corebilling.SubStatusCancelled: billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELLED,
+		corebilling.SubStatusExpired:   billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_EXPIRED,
+		corebilling.SubStatusFailed:    billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_FAILED,
+	}
+	for s, w := range want {
+		if got := subStatusToRPC(s); got != w {
+			t.Errorf("subStatusToRPC(%s) = %s, want %s", s, got, w)
+		}
+	}
+	if len(want) != len(corebilling.AllSubStatuses()) {
+		t.Errorf("the table covers %d statuses, the column permits %d", len(want), len(corebilling.AllSubStatuses()))
+	}
+	// A provider state pug has no word for is stored verbatim and reports
+	// UNSPECIFIED -- the same "not live" resolution gives it.
+	if got := subStatusToRPC("some_state_the_provider_added"); got != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED {
+		t.Errorf("an unmapped status = %s, want UNSPECIFIED", got)
+	}
+}

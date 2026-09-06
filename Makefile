@@ -106,9 +106,11 @@ fmt:
 test:
 	go test ./... -race -count=1 -shuffle=on
 
+# -coverpkg because a package's logic is often driven by another package's tests
+# (core services by handler tests); without it those statements read as untested.
 .PHONY: cover
 cover:
-	go test ./... -race -count=1 -covermode=atomic -coverprofile=coverage.out
+	go test ./... -race -count=1 -covermode=atomic -coverpkg=./... -coverprofile=coverage.out
 
 .PHONY: psql
 psql:
