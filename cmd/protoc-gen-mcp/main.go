@@ -1,6 +1,6 @@
 // Command protoc-gen-mcp is a thin in-repo wrapper around
-// redpanda-data/protoc-gen-go-mcp that additionally declares support for
-// protobuf editions.
+// redpanda-data/protoc-gen-go-mcp that declares support for protobuf editions
+// and repairs one import the upstream generator gets wrong.
 //
 // The upstream plugin only advertises FEATURE_PROTO3_OPTIONAL, so buf refuses to
 // run it against our `edition = "2023"` protos ("plugin does not support
@@ -13,12 +13,32 @@
 package main
 
 import (
+	"bytes"
 	"flag"
+	"fmt"
+	"io"
+	"os"
 
 	"github.com/redpanda-data/protoc-gen-go-mcp/pkg/generator"
 	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/pluginpb"
+)
+
+// runtime.Tool's schema fields are declared as encoding/json's RawMessage, which
+// Go 1.25's json/v2 makes an ALIAS for encoding/json/jsontext.Value. The upstream
+// generator prints the field's resolved type name, so it emits `jsontext.Value`
+// while importing only `encoding/json` -- and every generated file fails to
+// compile with "undefined: jsontext". It is not the pinned plugin version that
+// moved; it is the toolchain beneath it.
+//
+// Rewritten back to the alias the import actually provides. The two are the same
+// type, so this changes no behaviour, and it keeps the generated output
+// byte-identical to what the repo already has checked in.
+var (
+	emittedType = []byte("jsontext.Value{")
+	importedAs  = []byte("json.RawMessage{")
 )
 
 func main() {
@@ -29,19 +49,59 @@ func main() {
 		"Generate files into a sub-package of the package containing the base .pb.go files using the given suffix. An empty suffix denotes to generate into the same package as the base pb.go files.",
 	)
 
-	protogen.Options{ParamFunc: flagSet.Set}.Run(func(gen *protogen.Plugin) error {
-		// The only delta from upstream cmd/protoc-gen-go-mcp: advertise editions
-		// support so buf will run us on `edition = "2023"` protos.
-		gen.SupportedFeatures |= uint64(pluginpb.CodeGeneratorResponse_FEATURE_SUPPORTS_EDITIONS)
-		gen.SupportedEditionsMinimum = descriptorpb.Edition_EDITION_PROTO2
-		gen.SupportedEditionsMaximum = descriptorpb.Edition_EDITION_2023
+	// Not protogen.Options.Run: that writes the response itself, and the import
+	// repair below has to happen after generation and before it is written.
+	opts := protogen.Options{ParamFunc: flagSet.Set}
+	req, err := readRequest()
+	if err != nil {
+		fail(err)
+	}
+	gen, err := opts.New(req)
+	if err != nil {
+		fail(err)
+	}
 
-		for _, f := range gen.Files {
-			if !f.Generate {
-				continue
-			}
-			generator.NewFileGenerator(f, gen).Generate(*packageSuffix)
+	// Advertise editions support so buf will run us on `edition = "2023"` protos.
+	gen.SupportedFeatures |= uint64(pluginpb.CodeGeneratorResponse_FEATURE_SUPPORTS_EDITIONS)
+	gen.SupportedEditionsMinimum = descriptorpb.Edition_EDITION_PROTO2
+	gen.SupportedEditionsMaximum = descriptorpb.Edition_EDITION_2023
+
+	for _, f := range gen.Files {
+		if !f.Generate {
+			continue
 		}
-		return nil
-	})
+		generator.NewFileGenerator(f, gen).Generate(*packageSuffix)
+	}
+
+	resp := gen.Response()
+	for _, f := range resp.File {
+		if f.Content == nil {
+			continue
+		}
+		f.Content = proto.String(string(bytes.ReplaceAll([]byte(f.GetContent()), emittedType, importedAs)))
+	}
+	out, err := proto.Marshal(resp)
+	if err != nil {
+		fail(err)
+	}
+	if _, err := os.Stdout.Write(out); err != nil {
+		fail(err)
+	}
+}
+
+func readRequest() (*pluginpb.CodeGeneratorRequest, error) {
+	in, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, err
+	}
+	req := &pluginpb.CodeGeneratorRequest{}
+	if err := proto.Unmarshal(in, req); err != nil {
+		return nil, err
+	}
+	return req, nil
+}
+
+func fail(err error) {
+	fmt.Fprintf(os.Stderr, "protoc-gen-mcp: %v\n", err)
+	os.Exit(1)
 }
