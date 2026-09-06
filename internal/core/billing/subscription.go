@@ -1,0 +1,55 @@
+package billing
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/slogx"
+)
+
+// liveSubscription reads the one row that can supply a plan. No row is the
+// ordinary answer -- trialing, free and comped orgs have never checked out -- so
+// it returns nil rather than an error.
+func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
+	row, err := s.read.GetLiveBillingSubscription(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		slog.ErrorContext(ctx, "failed to read the live billing subscription", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return nil, err
+	}
+	sub, ok := subscriptionFromRow(row)
+	if !ok {
+		// The partial index only admits active/past_due, so a stored word outside
+		// the vocabulary means the column's check and pug's mapping have diverged.
+		// Not live is the safe reading: it can only withhold a plan.
+		slog.ErrorContext(ctx, "live subscription holds a status pug does not know",
+			slog.String("org_id", orgID), slog.String("status", row.Status))
+		return nil, nil
+	}
+	return &sub, nil
+}
+
+func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
+	status, ok := ParseSubStatus(row.Status)
+	if !ok {
+		return Subscription{}, false
+	}
+	return Subscription{
+		Currency:           row.Currency,
+		CurrentPeriodEnd:   row.CurrentPeriodEnd.Time,
+		CurrentPeriodStart: row.CurrentPeriodStart.Time,
+		PlanSlug:           row.PlanSlug,
+		PriceCents:         row.PriceCents,
+		ProviderCustomerID: row.ProviderCustomerID,
+		ProviderSubID:      row.ProviderSubID,
+		Status:             status,
+	}, true
+}

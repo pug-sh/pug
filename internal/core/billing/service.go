@@ -96,7 +96,16 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 				slog.String("org_id", orgID), slog.String("plan_slug", rec.PlanSlug))
 		}
 	}
-	return Resolve(row.OrgCreateTime.Time, rec, now, s.billingEnabled), nil
+	// Only when billing is on: with it off every org resolves to the free floor
+	// with no quota regardless, so the read would be a query per dashboard load
+	// that cannot change the answer.
+	var sub *Subscription
+	if s.billingEnabled {
+		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
+			return Entitlement{}, err
+		}
+	}
+	return Resolve(row.OrgCreateTime.Time, rec, sub, now, s.billingEnabled), nil
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the

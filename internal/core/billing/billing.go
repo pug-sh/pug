@@ -75,6 +75,14 @@ type Entitlement struct {
 	PeriodEnd      time.Time
 
 	BillingEnabled bool
+
+	// The live provider subscription behind this entitlement, if there is one.
+	// Empty SubStatus means none -- a trialing, free or comped org has never
+	// checked out. These describe the MONEY: SubPeriodEnd is when the provider
+	// bills next, which is not PeriodEnd, the quota window.
+	SubStatus          SubStatus
+	SubPeriodEnd       time.Time
+	ProviderCustomerID string
 }
 
 // Resolve is the whole rule set, as a pure function.
@@ -82,12 +90,22 @@ type Entitlement struct {
 // Expiry is lazy by construction. A trial that ended an hour ago resolves free
 // on the next request with nothing having run in between, which is why this
 // subsystem has no sweep job whose failure could leave an entitlement stale.
-func Resolve(orgCreateTime time.Time, rec Record, now time.Time, billingEnabled bool) Entitlement {
+// sub is the org's live provider subscription, or nil. A separate argument
+// rather than a field on Record because the two rows have different writers --
+// the operator owns the entitlement, the webhook owns the subscription -- and
+// folding one into the other would put the operator's type in the provider's
+// write path.
+func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time, billingEnabled bool) Entitlement {
 	// An absent row means every field is meaningless, not just the plan: without
 	// this, a caller that forgot Present would still have its anchor day and trial
 	// date honoured while its plan was ignored.
 	if !rec.Present {
 		rec = Record{}
+	}
+	// Only a live subscription supplies anything. A cancelled row is kept -- "when
+	// did this lapse" is a question support asks -- but it is not consulted here.
+	if sub != nil && !sub.Status.Live() {
+		sub = nil
 	}
 
 	// Resolved through the same helper the meter uses, so the window shown and the
@@ -109,7 +127,13 @@ func Resolve(orgCreateTime time.Time, rec Record, now time.Time, billingEnabled 
 		return ent
 	}
 
-	plan, status := resolvePlan(orgCreateTime, rec, now)
+	if sub != nil {
+		ent.SubStatus = sub.Status
+		ent.SubPeriodEnd = sub.CurrentPeriodEnd
+		ent.ProviderCustomerID = sub.ProviderCustomerID
+	}
+
+	plan, status := resolvePlan(orgCreateTime, rec, sub, now)
 	ent.Status = status
 	ent.Slug, ent.DisplayName, ent.Currency = plan.Slug, plan.DisplayName, plan.Currency
 	ent.PriceCents, ent.IncludedEvents = plan.PriceCents, plan.IncludedEvents
@@ -118,17 +142,43 @@ func Resolve(orgCreateTime time.Time, rec Record, now time.Time, billingEnabled 
 	ent.TrialEndsAt = trialEnd(orgCreateTime, rec)
 	ent.ContractEndsAt = rec.ContractEndsAt
 
-	applyOverrides(&ent, rec, now)
+	applyOverrides(&ent, rec, sub, now)
+
+	// A negotiated deal's quota lives on the entitlement row and the catalog has
+	// none to fall back on, so a custom plan that reached here with no override is
+	// a paid subscription against nothing. The free floor is the honest answer and
+	// the reconcile pass reports it -- a customer paying for nothing must be loud,
+	// not silently unlimited.
+	if ent.Slug == SlugCustom && ent.IncludedEvents == nil {
+		free := mustPlan(SlugFree)
+		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
+		ent.PriceCents, ent.IncludedEvents = free.PriceCents, free.IncludedEvents
+		ent.Status = StatusFree
+	}
 	return ent
 }
 
 // resolvePlan picks the tier and the state it is held in, in order: a granted
 // plan beats a lingering trial date, so a customer who converted mid-trial can
 // never be demoted by a stale timestamp.
-func resolvePlan(orgCreateTime time.Time, rec Record, now time.Time) (Plan, Status) {
+func resolvePlan(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time) (Plan, Status) {
 	free := mustPlan(SlugFree)
 	lapsed := contractLapsed(rec, now)
 	plan, known := PlanBySlug(rec.PlanSlug)
+
+	// Most specific first: somebody is paying for this one. It outranks the
+	// operator grant beneath it, and it is not gated on the contract -- that date
+	// bounds a grant an operator made, and cannot expire a subscription the
+	// provider still says is live.
+	if sub != nil {
+		if subPlan, ok := PlanBySlug(sub.PlanSlug); ok {
+			return subPlan, StatusActive
+		}
+		// The catalog dropped a slug rows still name. Keeping the row's own slug
+		// resolves free with no quota; resolving to "free, 10,000" would tell a
+		// paying customer they are over their limit.
+		return Plan{Slug: sub.PlanSlug, DisplayName: sub.PlanSlug, Currency: free.Currency}, StatusActive
+	}
 
 	if rec.Present && known && !plan.isFloor() && !lapsed {
 		return plan, StatusActive
@@ -179,8 +229,12 @@ func trialEnd(orgCreateTime time.Time, rec Record) time.Time {
 // the deal's numbers win over the catalog's. The deal ends when its contract
 // does — without that, an expired 5M grant would keep its 5M. Each override is
 // independent.
-func applyOverrides(ent *Entitlement, rec Record, now time.Time) {
-	if !rec.Present || contractLapsed(rec, now) {
+func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Time) {
+	// The contract bounds a grant an operator made; it cannot expire a
+	// subscription the provider still says is live. Gating the overrides on it
+	// anyway is what would collapse a live custom deal to no quota the day its
+	// agreed term passed, while the customer went on being charged.
+	if !rec.Present || (sub == nil && contractLapsed(rec, now)) {
 		return
 	}
 	if rec.IncludedEventsOverride > 0 {
