@@ -528,6 +528,7 @@ pug billing show <org-id> [--history]
 pug billing set  <org-id> --plan <slug> --actor <who> [--events N]
                           [--name "Acme Enterprise"] [--anchor-day 17]
                           [--until 2027-01-01] [--note "$400/mo, INV-123"]
+                          [--provider-product prod_2f9k...]
 pug billing extend-trial <org-id> --days 30 --actor <who>
 pug billing clear <org-id> --actor <who>
 ```
@@ -592,6 +593,25 @@ This CLI is why the slice is usable rather than decorative — without a writer,
 the table is dead and the RPC only ever reports the derived floors. If it should
 be smaller, the honest floor is `show` + `set`; `extend-trial` and `clear` are
 conveniences over the same two columns.
+
+Every command prints the same report — the org, the switch, `RESOLVED`, `STORED`
+and optionally `HISTORY` — so a write is confirmed by the state it produced
+rather than by an "ok". Three things about that report are load-bearing:
+
+- **An absent value prints `(none)`, never `0`.** Absent `included_events` means
+  NO quota and absent `price_cents` means no list price (§7); a zero would state
+  a billing figure the deployment never claimed. A price of `0` is real — the two
+  floors — and prints as `$0.00 USD`.
+- **A mutation's `STORED` half is the row its own transaction wrote**, not a
+  re-read. The reader is a replica in principle, and confirming a write against a
+  lagging read is how a successful `set` prints the row it replaced. `RESOLVED`
+  is re-read, because it needs the subscription (payments §7) as well.
+- **`--provider-product` is the one field that decides whether an org can spend
+  money** (payments §5.2), so it is printed in `STORED` and carried in the
+  history line.
+
+The report goes to stdout and the logs to stderr, so `show` stays pipeable; a
+refusal is a non-zero exit with the reason on stderr and no usage block.
 
 ## 9. Configuration
 
@@ -808,4 +828,16 @@ here.
   changed nothing and still printed as a success.
 - **`ListPlans` is absent as designed, but so is any RPC that reads the
   history.** §5.1 says the history is operator data; `pug billing show --history`
-  is the only reader, and nothing serves it over the network.
+  is the only reader, and nothing serves it over the network. (`ListPlans` later
+  arrived with checkout — payments §17.)
+- **`show` prints the org's display name, which no billing query returns.** The
+  CLI reads `orgs` directly for it. An operator pastes an id and is about to
+  write to it; "Acme Inc" beside `o_2f9k` is the only thing in the report that
+  catches the wrong org before the write, and it is cheap.
+- **`--until ""` clears the contract end.** §8 lists the empty value of every
+  other override as its clear but not this one, which left a deal's end date
+  unremovable without a `set` back to a floor plan.
+- **The CLI validates `--anchor-day` and `--events` itself**, as §8 says for the
+  anchor day and does not for the quota. Both are also checked in the service,
+  which is what a second caller would hit; the CLI's copy exists so the message
+  names the flag rather than the column.
