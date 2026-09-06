@@ -112,8 +112,3 @@ select * from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
 order by create_time desc
 limit 1;
-
--- name: LockBillingSubscriptionOrg :exec
--- Held across the read-modify-write in the apply path, so two deliveries for the
--- same org cannot both pass the CAS on a row neither has inserted yet.
-select pg_advisory_xact_lock(hashtext('billing_subscription:' || @org_id::text));

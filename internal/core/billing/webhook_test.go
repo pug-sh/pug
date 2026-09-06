@@ -1,0 +1,422 @@
+package billing_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"testing"
+	"time"
+
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/testutil"
+	"github.com/rs/xid"
+)
+
+// fakeProvider is the whole seam, stubbed. Everything above section 2.1 -- the
+// inbox, the CAS, attribution, the rejection dispositions -- is exercised
+// through it, which is what proves those paths hold no Dodo assumption. A test
+// that the fake and Dodo agree on anything beyond the interface would be
+// testing the mock.
+type fakeProvider struct {
+	name  string
+	event corebilling.SubscriptionEvent
+	err   error
+}
+
+func (f *fakeProvider) Name() string { return f.name }
+
+func (f *fakeProvider) Verify(http.Header, []byte) (corebilling.Delivery, error) {
+	return corebilling.Delivery{}, nil
+}
+
+func (f *fakeProvider) Normalize(corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
+	return f.event, f.err
+}
+
+func (f *fakeProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, error) {
+	return "https://pay.example/checkout", nil
+}
+
+func (f *fakeProvider) CreatePortalSession(context.Context, string) (string, error) {
+	return "https://pay.example/portal", nil
+}
+
+func (f *fakeProvider) FetchSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return f.event, nil
+}
+
+const fakeProviderName = "fake"
+
+func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
+	t.Helper()
+	pg := testutil.SetupPostgres(t)
+
+	org, err := dbwriteOrg(t, pg)
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	provider := &fakeProvider{name: fakeProviderName}
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
+		Provider:      provider,
+		ReturnURL:     "https://app.example/settings/billing",
+		SlugByProduct: map[string]string{"prod_growth": "growth", "prod_scale": "scale"},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return &fixture{svc: svc, pg: pg, orgID: org}, provider
+}
+
+func subEvent(orgID, subID, product string, status corebilling.SubStatus) corebilling.SubscriptionEvent {
+	return corebilling.SubscriptionEvent{
+		Currency:           "USD",
+		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second),
+		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour).UTC().Truncate(time.Second),
+		OrgID:              orgID,
+		PriceCents:         2_000,
+		ProductID:          product,
+		ProviderCustomerID: "cus_" + orgID,
+		ProviderStatus:     string(status),
+		ProviderSubID:      subID,
+		Status:             status,
+	}
+}
+
+func delivery(id string, at time.Time) corebilling.Delivery {
+	return corebilling.Delivery{
+		DeliveredAt: at,
+		EventType:   "subscription.active",
+		RawPayload:  []byte(`{"type":"subscription.active","data":{}}`),
+		WebhookID:   id,
+	}
+}
+
+func storedDelivery(t *testing.T, f *fixture, id string) dbread.BillingWebhookDelivery {
+	t.Helper()
+	rows, err := f.pg.PgRO.Query(t.Context(),
+		`select error, event_type, payload, processed_at, provider, received_at, webhook_id
+		 from billing_webhook_deliveries where provider = $1 and webhook_id = $2`,
+		fakeProviderName, id)
+	if err != nil {
+		t.Fatalf("read delivery: %v", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatalf("no delivery stored for %s", id)
+	}
+	var d dbread.BillingWebhookDelivery
+	if err := rows.Scan(&d.Error, &d.EventType, &d.Payload, &d.ProcessedAt, &d.Provider,
+		&d.ReceivedAt, &d.WebhookID); err != nil {
+		t.Fatalf("scan delivery: %v", err)
+	}
+	return d
+}
+
+func TestDeliveryAppliesASubscription(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != "growth" || ent.Status != corebilling.StatusActive {
+		t.Errorf("entitlement = (%s, %s), want (growth, ACTIVE)", ent.Slug, ent.Status)
+	}
+	if ent.SubStatus != corebilling.SubStatusActive {
+		t.Errorf("sub_status = %q, want active", ent.SubStatus)
+	}
+	if got := storedDelivery(t, f, "evt_1"); !got.ProcessedAt.Valid || got.Error != "" {
+		t.Errorf("delivery processed=%v error=%q, want processed with no error", got.ProcessedAt.Valid, got.Error)
+	}
+}
+
+// Deliveries are unordered and each carries the latest object, so an older one
+// must not overwrite a newer.
+func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	newer := time.Now().UTC().Truncate(time.Second)
+	older := newer.Add(-time.Hour)
+
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusCancelled)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_new", newer)); err != nil {
+		t.Fatalf("HandleDelivery(newer): %v", err)
+	}
+	// The active delivery is genuinely older, so it must lose even though it
+	// arrives second.
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_old", older)); err != nil {
+		t.Fatalf("HandleDelivery(older): %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != corebilling.SlugFree {
+		t.Errorf("slug = %q, want free — a stale delivery revived a cancelled subscription", ent.Slug)
+	}
+	// Accepted, not retried: the provider is not at fault for delivering in any
+	// order it likes.
+	if d := storedDelivery(t, f, "evt_old"); !d.ProcessedAt.Valid {
+		t.Error("a stale delivery was left unprocessed, so the provider will retry it forever")
+	}
+}
+
+// The provider's retry reuses its webhook id. A retry whose row is still
+// unprocessed means the last attempt died mid-apply and must be re-applied; a
+// bare conflict->200 would neutralize exactly that retry.
+func TestRetryOfAnUnprocessedDeliveryReapplies(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	at := time.Now().UTC().Truncate(time.Second)
+
+	// Simulate the attempt that died after the insert: the row exists, unprocessed.
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_webhook_deliveries (event_type, payload, provider, webhook_id)
+		 values ('subscription.active', '{}'::jsonb, $1, 'evt_1')`, fakeProviderName); err != nil {
+		t.Fatalf("seed delivery: %v", err)
+	}
+
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", at)); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != "growth" {
+		t.Errorf("slug = %q, want growth — the retry did not re-apply", ent.Slug)
+	}
+}
+
+// A retry of a delivery that DID apply must not run again.
+func TestRetryOfAProcessedDeliveryIsANoop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	at := time.Now().UTC().Truncate(time.Second)
+
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", at)); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+	// A different payload under the same webhook id: if the retry re-applied, the
+	// entitlement would move.
+	provider.event = subEvent(f.orgID, "sub_1", "prod_scale", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", at.Add(time.Hour))); err != nil {
+		t.Fatalf("HandleDelivery(retry): %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != "growth" {
+		t.Errorf("slug = %q, want growth — a processed delivery was applied twice", ent.Slug)
+	}
+}
+
+// Every unapplicable delivery has one disposition: stored, marked processed with
+// a reason, never retried. Retrying cannot fix any of these, and eight attempts
+// would only delay the alert.
+func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	cases := []struct {
+		name   string
+		event  func(orgID string) corebilling.SubscriptionEvent
+		reason string
+	}{
+		{
+			name: "foreign currency",
+			event: func(orgID string) corebilling.SubscriptionEvent {
+				e := subEvent(orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+				e.Currency = "EUR"
+				return e
+			},
+			reason: "currency",
+		},
+		{
+			name: "unmapped product",
+			event: func(orgID string) corebilling.SubscriptionEvent {
+				return subEvent(orgID, "sub_1", "prod_unknown", corebilling.SubStatusActive)
+			},
+			reason: "product",
+		},
+		{
+			name: "unattributable",
+			event: func(string) corebilling.SubscriptionEvent {
+				e := subEvent("", "sub_1", "prod_growth", corebilling.SubStatusActive)
+				e.OrgID = xid.New().String()
+				e.ProviderCustomerID = "cus_nobody"
+				return e
+			},
+			reason: "attribution",
+		},
+		{
+			name: "no status",
+			event: func(orgID string) corebilling.SubscriptionEvent {
+				e := subEvent(orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+				e.Status = ""
+				return e
+			},
+			reason: "status",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			provider.event = tc.event(f.orgID)
+
+			if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+				t.Fatalf("HandleDelivery returned an error, so the provider will retry: %v", err)
+			}
+			stored := storedDelivery(t, f, "evt_1")
+			if !stored.ProcessedAt.Valid {
+				t.Fatal("delivery left unprocessed; the provider will retry it forever")
+			}
+			if stored.Error == "" {
+				t.Fatal("delivery recorded no reason for not applying")
+			}
+			if got := stored.Error; len(got) < len(tc.reason) || got[:len(tc.reason)] != tc.reason {
+				t.Errorf("error = %q, want it to start with %q", got, tc.reason)
+			}
+
+			ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+			if err != nil {
+				t.Fatalf("GetEntitlement: %v", err)
+			}
+			if ent.Slug != corebilling.SlugFree {
+				t.Errorf("slug = %q, want free — an unapplicable delivery changed the entitlement", ent.Slug)
+			}
+		})
+	}
+}
+
+// Attribution falls back to the provider customer when a delivery carries no
+// org metadata — a renewal, say, which Dodo need not echo metadata onto.
+func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	renewal := subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusPastDue)
+	renewal.OrgID = ""
+	provider.event = renewal
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_2", time.Now().Add(time.Minute))); err != nil {
+		t.Fatalf("HandleDelivery(renewal): %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.SubStatus != corebilling.SubStatusPastDue {
+		t.Errorf("sub_status = %q, want past_due — the fallback did not attribute the renewal", ent.SubStatus)
+	}
+	if ent.Slug != "growth" {
+		t.Errorf("slug = %q, want growth — past_due must keep the plan", ent.Slug)
+	}
+}
+
+// A negotiated deal's product is not in config; it is on the org's own row, and
+// the quota comes from the same row.
+func TestCustomProductResolvesFromTheOrgRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+
+	quota := int64(5_000_000)
+	productID := "prod_acme"
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:          corebilling.SlugCustom,
+		IncludedEvents:    &quota,
+		ProviderProductID: &productID,
+	}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+
+	provider.event = subEvent(f.orgID, "sub_1", productID, corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != corebilling.SlugCustom {
+		t.Errorf("slug = %q, want custom", ent.Slug)
+	}
+	if ent.IncludedEvents == nil || *ent.IncludedEvents != quota {
+		t.Errorf("quota = %v, want %d — a deal's quota comes from pug, not the provider", ent.IncludedEvents, quota)
+	}
+}
+
+// A body Postgres cannot parse is still stored: losing the delivery entirely is
+// the one thing the inbox exists to prevent.
+func TestUnparseableBodyIsStillStored(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	provider.event = corebilling.SubscriptionEvent{}
+
+	d := delivery("evt_1", time.Now())
+	d.RawPayload = []byte{0x00, 0x01, 0xff}
+	if err := f.svc.HandleDelivery(t.Context(), provider, d); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+	stored := storedDelivery(t, f, "evt_1")
+	var wrapped map[string]string
+	if err := json.Unmarshal(stored.Payload, &wrapped); err != nil {
+		t.Fatalf("stored payload is not JSON: %v", err)
+	}
+	if wrapped["raw_base64"] == "" {
+		t.Error("an unparseable body was stored without its bytes")
+	}
+}
+
+// dbwriteOrg creates a backdated org, so a test asserting a granted plan is not
+// also fighting a live trial window.
+func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
+	t.Helper()
+	org, err := dbwrite.New(pg.PgW).CreateOrg(t.Context(), dbwrite.CreateOrgParams{
+		ID:          xid.New().String(),
+		DisplayName: "acme",
+	})
+	if err != nil {
+		return "", err
+	}
+	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
+	return org.ID, nil
+}

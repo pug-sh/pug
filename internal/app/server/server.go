@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
+	"github.com/pug-sh/pug/internal/app/server/billingwebhook"
 	"github.com/pug-sh/pug/internal/app/server/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	billingrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/billing"
@@ -209,13 +210,23 @@ func start(ctx context.Context, d *deps) error {
 
 	// Postgres only: an entitlement is a row plus the clock, and the quota it
 	// carries enforces nothing, so no ingestion or ClickHouse path is involved.
-	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingEnabled)
+	payments, webhookMountable, err := newPayments(ctx)
+	if err != nil {
+		return fmt.Errorf("payments provider: %w", err)
+	}
+	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingEnabled, payments)
 	if err != nil {
 		return fmt.Errorf("billing service: %w", err)
 	}
 	// The likeliest misconfig is a pod missing the flag: every org would then read
-	// as having no quota, with nothing failing and no other breadcrumb.
-	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled))
+	// as having no quota, with nothing failing and no other breadcrumb. The
+	// provider is logged beside it for the same reason -- a missing key is a
+	// dashboard with no buy button and nothing in the logs to say why.
+	provider := ""
+	if payments != nil {
+		provider = payments.Provider.Name()
+	}
+	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled), slog.String("provider", provider))
 	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
 		billingrpc.NewServer(billingSvc), handlerOpts)
 
@@ -313,6 +324,18 @@ func start(ctx context.Context, d *deps) error {
 	// tool set drifts from the curated policy table.
 	if err := mcp.Mount(mux, mux, projectsRepo); err != nil {
 		return fmt.Errorf("mount mcp: %w", err)
+	}
+
+	// The payments webhook, mounted directly for the same reason as /mcp and
+	// reflection: it is not a Connect service, so the authz-registry contract does
+	// not apply. It authenticates by HMAC and mounts nothing at all when no signing
+	// secret is configured, so the provider gets 404s rather than a route that
+	// verifies nothing.
+	if payments != nil {
+		if billingwebhook.Mount(mux, billingSvc, payments.Provider, webhookMountable) {
+			slog.InfoContext(ctx, "mounted the payments webhook",
+				slog.String("path", billingwebhook.PathFor(payments.Provider.Name())))
+		}
 	}
 
 	// WithCorrelationID wraps the whole mux so a correlation id exists before the

@@ -30,7 +30,7 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, billingEnabled)
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, billingEnabled, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

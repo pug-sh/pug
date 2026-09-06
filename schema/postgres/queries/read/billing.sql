@@ -46,3 +46,12 @@ where e.plan_slug not in ('free', 'trial')
   and (e.contract_ends_at is null or e.contract_ends_at > now())
   and s.org_id is null
 order by e.org_id;
+
+-- name: GetLatestBillingSubscription :one
+-- Any row, newest first -- not only a live one. A customer whose subscription
+-- lapsed still has invoices to fetch and a card to re-add, and the portal is
+-- where both live.
+select * from billing_subscriptions
+where org_id = @org_id
+order by create_time desc
+limit 1;

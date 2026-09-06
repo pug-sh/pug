@@ -36,7 +36,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
 
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true)
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

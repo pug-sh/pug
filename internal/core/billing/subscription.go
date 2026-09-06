@@ -53,3 +53,22 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 		Status:             status,
 	}, true
 }
+
+// anyProviderCustomer resolves the customer the portal is opened for. Checkout
+// is what leaves one behind, so a trialing, free or comped org has none.
+func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string, error) {
+	row, err := s.read.GetLatestBillingSubscription(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNoCustomer
+		}
+		slog.ErrorContext(ctx, "failed to read the billing subscription for a portal session", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if row.ProviderCustomerID == "" {
+		return "", ErrNoCustomer
+	}
+	return row.ProviderCustomerID, nil
+}

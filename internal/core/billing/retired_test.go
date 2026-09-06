@@ -32,7 +32,7 @@ func TestRetiredPlanCannotBeGrantedToANewOrg(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	svc, err := NewService(pg.PgRO, pg.PgW, true)
+	svc, err := NewService(pg.PgRO, pg.PgW, true, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestRetiredPlanIsStillRenewableByItsHolder(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	svc, err := NewService(pg.PgRO, pg.PgW, true)
+	svc, err := NewService(pg.PgRO, pg.PgW, true, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

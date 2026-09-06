@@ -294,17 +294,6 @@ func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) e
 	return err
 }
 
-const lockBillingSubscriptionOrg = `-- name: LockBillingSubscriptionOrg :exec
-select pg_advisory_xact_lock(hashtext('billing_subscription:' || $1::text))
-`
-
-// Held across the read-modify-write in the apply path, so two deliveries for the
-// same org cannot both pass the CAS on a row neither has inserted yet.
-func (q *Queries) LockBillingSubscriptionOrg(ctx context.Context, orgID string) error {
-	_, err := q.db.Exec(ctx, lockBillingSubscriptionOrg, orgID)
-	return err
-}
-
 const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :exec
 update billing_webhook_deliveries
 set processed_at = now(), error = $1

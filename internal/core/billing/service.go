@@ -56,12 +56,15 @@ type Service struct {
 	// where every org resolves with no quota at all, so no client can render a
 	// limit that does not apply.
 	billingEnabled bool
+	// payments is nil on a deployment with no provider credentials, which is a
+	// supported mode: only the buy button is missing.
+	payments *Payments
 }
 
 // NewService checks the floors at wiring time, where mustPlan would otherwise
 // panic inside Resolve on a request — a startup failure names the problem, a
 // recovered panic per dashboard load does not.
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Service, error) {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool, payments *Payments) (*Service, error) {
 	for _, slug := range []string{SlugFree, SlugTrial} {
 		if _, ok := PlanBySlug(slug); !ok {
 			return nil, fmt.Errorf("billing: catalog is missing the floor plan %q", slug)
@@ -71,6 +74,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Se
 		read:           dbread.New(pgRO),
 		pgW:            pgW,
 		billingEnabled: billingEnabled,
+		payments:       payments,
 	}, nil
 }
 
@@ -355,6 +359,11 @@ func (s *Service) mutate(ctx context.Context, orgID, actor string, edit func(*db
 	}
 	return stored, nil
 }
+
+// write is the pool-backed writer, for the paths that are a single statement and
+// have no history row to commit alongside them. Every operator mutation goes
+// through mutate's transaction instead.
+func (s *Service) write() *dbwrite.Queries { return dbwrite.New(s.pgW) }
 
 func (s *Service) begin(ctx context.Context) (pgx.Tx, error) {
 	tx, err := s.pgW.Begin(ctx)

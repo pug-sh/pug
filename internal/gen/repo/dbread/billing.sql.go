@@ -11,6 +11,39 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getLatestBillingSubscription = `-- name: GetLatestBillingSubscription :one
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+where org_id = $1
+order by create_time desc
+limit 1
+`
+
+// Any row, newest first -- not only a live one. A customer whose subscription
+// lapsed still has invoices to fetch and a card to re-add, and the portal is
+// where both live.
+func (q *Queries) GetLatestBillingSubscription(ctx context.Context, orgID string) (BillingSubscription, error) {
+	row := q.db.QueryRow(ctx, getLatestBillingSubscription, orgID)
+	var i BillingSubscription
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Currency,
+		&i.CurrentPeriodEnd,
+		&i.CurrentPeriodStart,
+		&i.ID,
+		&i.OrgID,
+		&i.PlanSlug,
+		&i.PriceCents,
+		&i.Provider,
+		&i.ProviderCustomerID,
+		&i.ProviderStatus,
+		&i.ProviderSubID,
+		&i.ProviderUpdatedAt,
+		&i.Status,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const getLiveBillingSubscription = `-- name: GetLiveBillingSubscription :one
 select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
 where org_id = $1 and status in ('active', 'past_due')

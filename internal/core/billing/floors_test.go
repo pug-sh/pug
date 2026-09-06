@@ -19,7 +19,7 @@ func TestNewServiceRefusesACatalogMissingAFloor(t *testing.T) {
 			catalog = trimmed
 
 			// Construction never touches the pools, so nil reaches the check.
-			if _, err := NewService(nil, nil, true); err == nil {
+			if _, err := NewService(nil, nil, true, nil); err == nil {
 				t.Fatalf("NewService accepted a catalog with no %q tier", missing)
 			}
 		})
