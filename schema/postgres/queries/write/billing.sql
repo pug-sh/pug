@@ -65,7 +65,8 @@ where processed_at is not null and processed_at < @older_than;
 
 -- name: DeleteBillingWebhookDeliveriesForOrg :execrows
 -- Org erasure. The deliveries name the org only inside the payload, so they are
--- matched through the subscriptions the org holds.
+-- matched through the subscriptions the org holds. Written ahead of the
+-- org-deletion path billing.md §11 defers; nothing calls it yet.
 delete from billing_webhook_deliveries d
 where exists (
   select 1 from billing_subscriptions s

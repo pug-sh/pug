@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/pug-sh/pug/internal/app/cron"
@@ -131,10 +132,13 @@ func pass(ctx context.Context, svc *corebilling.Service, now time.Time) error {
 // newPayments builds only what reconcile needs: the provider and the product
 // map. No return URL — this pass never starts a checkout.
 func newPayments(ctx context.Context, providerName string) (*corebilling.Payments, error) {
-	if providerName == "" {
+	// Normalised exactly as the server normalises it: PUG_BILLING_PROVIDER=DODO
+	// must not start one and fail the other.
+	name := strings.ToLower(strings.TrimSpace(providerName))
+	if name == "" {
 		return nil, nil
 	}
-	if providerName != dodo.Name {
+	if name != dodo.Name {
 		return nil, errors.New("unknown PUG_BILLING_PROVIDER " + providerName)
 	}
 	var dodoCfg dodo.Config

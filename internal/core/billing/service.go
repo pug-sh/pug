@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -44,6 +45,10 @@ var (
 	// ErrNoEntitlement is a clear that found nothing stored. The org is already on
 	// the derived floors, but nothing was deleted.
 	ErrNoEntitlement = errors.New("billing: no entitlement stored for this org")
+	// ErrActorRequired guards the history's only attribution. The column rejects
+	// the empty string alone, so a blank actor would store as an unattributed
+	// entry -- which is the one thing the history exists to prevent.
+	ErrActorRequired = errors.New("billing: an actor is required")
 )
 
 // Service is the whole package: GetEntitlement for the dashboard, the rest for
@@ -267,6 +272,9 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 // Clear deletes the row, returning the org to the derived floors. Recorded in
 // the history as a snapshot with no values.
 func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
+	if strings.TrimSpace(actor) == "" {
+		return ErrActorRequired
+	}
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return err
@@ -314,6 +322,9 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 // snapshot to the history in the same transaction — so a change and its record
 // commit together or not at all.
 func (s *Service) mutate(ctx context.Context, orgID, actor string, edit func(*dbwrite.Queries, Record) (Record, error)) (Record, error) {
+	if strings.TrimSpace(actor) == "" {
+		return Record{}, ErrActorRequired
+	}
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return Record{}, err

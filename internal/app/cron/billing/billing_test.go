@@ -174,6 +174,17 @@ func TestNewPayments(t *testing.T) {
 		}
 	})
 
+	// The server lowercases and trims the same variable, so a name it starts on
+	// must not fail the pass.
+	t.Run("the provider name is normalized", func(t *testing.T) {
+		t.Setenv("PUG_DODO_API_KEY", "sk_test")
+		for _, name := range []string{"  ", "  DODO  ", "Dodo"} {
+			if _, err := newPayments(t.Context(), name); err != nil {
+				t.Errorf("newPayments(%q): %v", name, err)
+			}
+		}
+	})
+
 	// Credentials absent is the same supported shape as no provider at all.
 	t.Run("no api key", func(t *testing.T) {
 		t.Setenv("PUG_DODO_API_KEY", "")

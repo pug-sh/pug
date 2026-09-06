@@ -97,12 +97,18 @@ func TestExtendTrialReportsTheNewEnd(t *testing.T) {
 
 	orgID := newOrg(t)
 	var out strings.Builder
+	// Bracketed, because the command reads its own clock: a UTC midnight crossing
+	// between the two reads would otherwise fail a correct write.
+	before := time.Now()
 	if err := ExtendTrial(t.Context(), &out, orgID, actor, 30); err != nil {
 		t.Fatalf("ExtendTrial: %v", err)
 	}
-	want := time.Now().AddDate(0, 0, 30).UTC().Format(time.DateOnly)
-	if !strings.Contains(out.String(), want) {
-		t.Errorf("ExtendTrial output is missing the new trial end %s:\n%s", want, out.String())
+	wants := []string{
+		before.AddDate(0, 0, 30).UTC().Format(time.DateOnly),
+		time.Now().AddDate(0, 0, 30).UTC().Format(time.DateOnly),
+	}
+	if !strings.Contains(out.String(), wants[0]) && !strings.Contains(out.String(), wants[1]) {
+		t.Errorf("ExtendTrial output is missing the new trial end %v:\n%s", wants, out.String())
 	}
 }
 

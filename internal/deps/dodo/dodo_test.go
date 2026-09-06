@@ -164,6 +164,29 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
+// Dodo's metadata is string|number|bool. Decoding the map into map[string]string
+// would fail the whole delivery over one numeric value a merchant set in the
+// dashboard, and a rejected delivery is never retried.
+func TestNormalizeKeepsAttributionBesideNonStringMetadata(t *testing.T) {
+	c := testClient(t, time.Now())
+	body := `{"type":"subscription.active","data":{` +
+		`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
+		`"currency":"USD","recurring_pre_tax_amount":2000,` +
+		`"customer":{"customer_id":"cus_1"},` +
+		`"metadata":{"org_id":"org_abc","seats":5,"trial":true}}}`
+
+	event, err := c.Normalize(corebilling.Delivery{
+		EventType:  "subscription.active",
+		RawPayload: []byte(body),
+	})
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if event.OrgID != "org_abc" {
+		t.Errorf("org_id = %q, want org_abc", event.OrgID)
+	}
+}
+
 // A payment, a refund and an event type that does not exist yet all normalize to
 // nothing. They must never 500 and never retry forever.
 func TestNormalizeIgnoresNonSubscriptionDeliveries(t *testing.T) {

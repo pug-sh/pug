@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
@@ -74,6 +75,13 @@ func newPayments(ctx context.Context) (*corebilling.Payments, bool, error) {
 			slog.String("provider", name))
 	}
 
+	// Dodo rejects a relative return_url, so an unset PUG_DASHBOARD_BASE_URL would
+	// fail every checkout at the provider instead of at startup.
+	base := strings.TrimSuffix(cfg.DashboardBaseURL, "/")
+	if u, err := url.Parse(base); err != nil || !u.IsAbs() || u.Host == "" {
+		return nil, false, fmt.Errorf("PUG_BILLING_PROVIDER is set, so PUG_DASHBOARD_BASE_URL must be an absolute URL (got %q)", cfg.DashboardBaseURL)
+	}
+
 	slugByProduct := make(map[string]string, len(products))
 	for slug, id := range products {
 		slugByProduct[id] = slug
@@ -81,7 +89,7 @@ func newPayments(ctx context.Context) (*corebilling.Payments, bool, error) {
 	return &corebilling.Payments{
 		ProductBySlug: products,
 		Provider:      client,
-		ReturnURL:     strings.TrimSuffix(cfg.DashboardBaseURL, "/") + checkoutReturnPath,
+		ReturnURL:     base + checkoutReturnPath,
 		SlugByProduct: slugByProduct,
 	}, client.CanVerify(), nil
 }

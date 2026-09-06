@@ -41,6 +41,19 @@ func TestNewPaymentsRejectsAnUnknownProvider(t *testing.T) {
 	}
 }
 
+// Dodo rejects a relative return_url, so a missing dashboard URL has to fail
+// startup rather than every checkout.
+func TestNewPaymentsRequiresAnAbsoluteDashboardURL(t *testing.T) {
+	for _, base := range []string{"", "/", "app.example.com", "/settings"} {
+		t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)
+		t.Setenv("PUG_DODO_API_KEY", "sk_test")
+		t.Setenv("PUG_DASHBOARD_BASE_URL", base)
+		if _, _, err := newPayments(t.Context()); err == nil {
+			t.Errorf("PUG_DASHBOARD_BASE_URL=%q was accepted", base)
+		}
+	}
+}
+
 func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", strings.ToUpper(dodo.Name))
 	t.Setenv("PUG_DODO_API_KEY", "sk_test")
@@ -78,6 +91,7 @@ func TestNewPaymentsWithoutAWebhookSecret(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)
 	t.Setenv("PUG_DODO_API_KEY", "sk_test")
 	t.Setenv("PUG_DODO_WEBHOOK_SECRET", "")
+	t.Setenv("PUG_DASHBOARD_BASE_URL", "https://app.example.com")
 
 	payments, canVerify, err := newPayments(t.Context())
 	if err != nil {

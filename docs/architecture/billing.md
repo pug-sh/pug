@@ -5,13 +5,12 @@ Design reference for the first billing slice (`internal/core/billing`,
 [`CLAUDE.md`](../../CLAUDE.md) — read this when working on plans,
 quotas or trials. Event **counting** is not here: see [`usage.md`](usage.md).
 
-> **Status: implemented except §8, the operator CLI** — and except where §14
-> records a divergence. On `main`: migration 019, the Go catalog, `Resolve`, the
-> entitlement store, and §7's `GetBillingStatus` RPC. `pug billing` is not
-> written yet, so nothing can grant a plan and every org still resolves to the
-> derived trial-then-free floors. The code is the authority; this document
-> explains why it is shaped the way it is. This is the first of three billing
-> slices (§11) and stands on its own, with no payments provider involved.
+> **Status: implemented**, except where §14 records a divergence: migration 019,
+> the Go catalog, `Resolve`, the entitlement store, §7's `GetBillingStatus` RPC
+> and §8's `pug billing`. The code is the authority; this document explains why
+> it is shaped the way it is. This is the first of three billing slices (§11)
+> and stands on its own, with no payments provider involved — the second,
+> checkout, is [`payments.md`](payments.md) and supersedes §11's sketch of it.
 
 Usage metering answers *how many events did this org send*. This slice answers
 the other half — *how many was it entitled to send* — and nothing else. No card,

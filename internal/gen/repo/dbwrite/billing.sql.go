@@ -99,7 +99,8 @@ where exists (
 `
 
 // Org erasure. The deliveries name the org only inside the payload, so they are
-// matched through the subscriptions the org holds.
+// matched through the subscriptions the org holds. Written ahead of the
+// org-deletion path billing.md §11 defers; nothing calls it yet.
 func (q *Queries) DeleteBillingWebhookDeliveriesForOrg(ctx context.Context, orgID string) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteBillingWebhookDeliveriesForOrg, orgID)
 	if err != nil {

@@ -393,6 +393,28 @@ func TestRejectedChangeAppendsNoHistory(t *testing.T) {
 	}
 }
 
+// The column's check rejects "" alone, so the blank is the case that would get
+// through and store an entry nobody can be asked about.
+func TestBlankActorIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	for _, blank := range []string{"", " ", "\t\n"} {
+		if _, err := f.svc.SetPlan(t.Context(), f.orgID, blank,
+			corebilling.Change{PlanSlug: "growth"}); !errors.Is(err, corebilling.ErrActorRequired) {
+			t.Errorf("SetPlan(%q) = %v, want ErrActorRequired", blank, err)
+		}
+		if _, err := f.svc.ExtendTrial(t.Context(), f.orgID, blank, 30, time.Now()); !errors.Is(err, corebilling.ErrActorRequired) {
+			t.Errorf("ExtendTrial(%q) = %v, want ErrActorRequired", blank, err)
+		}
+		if err := f.svc.Clear(t.Context(), f.orgID, blank); !errors.Is(err, corebilling.ErrActorRequired) {
+			t.Errorf("Clear(%q) = %v, want ErrActorRequired", blank, err)
+		}
+	}
+}
+
 // The history has no foreign key on purpose: "what were they on when they left"
 // is asked after the org is gone, usually in a refund dispute.
 func TestHistorySurvivesTheOrgBeingDeleted(t *testing.T) {

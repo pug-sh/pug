@@ -368,10 +368,13 @@ unrecoverable.
 `payload` is the delivery as sent, which for a subscription event carries the
 customer's name, email, billing address and any tax id — personal data pug does
 not otherwise store. Replay needs the bytes, so the controls are on the row
-rather than on the fields: no RPC or MCP tool reads this table, `pug cron
-billing-reconcile` prunes rows **90 days** after `processed_at`, and an org
-erasure (`compliance`) deletes its deliveries with the rest. Anything long-lived
-that a query wants — status, period, amount — belongs on
+rather than on the fields: no RPC or MCP tool reads this table, and `pug cron
+billing-reconcile` prunes rows **90 days** after `processed_at`. Retention is
+therefore the whole control today: `compliance` erases a data subject, not an
+org, and pug has no org-deletion path at all
+(`DeleteBillingWebhookDeliveriesForOrg` is written for the one §11 of
+[`billing.md`](billing.md) defers, and is uncalled until it exists). Anything
+long-lived that a query wants — status, period, amount — belongs on
 `billing_subscriptions`, which outlives the payload it came from.
 
 ## 7. Resolution with a subscription
