@@ -120,6 +120,7 @@ linters:
         # setupFailed is the cron pass's RecordError wrapper; spancheck matches the
         # fully-qualified name, so an unqualified pattern would also match other packages.
         - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
+        - github\.com/pug-sh/pug/internal/app/cron/billing\.setupFailed
     gosec:
       excludes:
         - G115

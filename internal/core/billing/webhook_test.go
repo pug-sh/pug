@@ -420,3 +420,18 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
 	return org.ID, nil
 }
+
+// svcWithProvider rebuilds the service against a different provider, sharing the
+// fixture's pools so the seeded rows are the ones reconciled.
+func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *corebilling.Service {
+	t.Helper()
+	svc, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
+		Provider:      provider,
+		SlugByProduct: map[string]string{"prod_growth": "growth", "prod_scale": "scale"},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return svc
+}

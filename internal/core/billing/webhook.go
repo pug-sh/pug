@@ -226,3 +226,47 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 	}
 	return n, nil
 }
+
+// applyReconciledSubscription writes a provider read through the same CAS the
+// webhook uses, so the two cannot disagree about what "newer" means. Reports
+// whether the write landed; false is the CAS refusing a read older than a
+// delivery that arrived while the pass was running.
+func (s *Service) applyReconciledSubscription(
+	ctx context.Context, provider PaymentProvider, orgID string,
+	event SubscriptionEvent, rec Record, at time.Time,
+) (bool, error) {
+	if normalizeCurrency(event.Currency) != Currency || event.Status == "" {
+		return false, nil
+	}
+	planSlug, err := s.planForProduct(event.ProductID, rec)
+	if err != nil {
+		return false, nil
+	}
+	applied, err := s.write().ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
+		Currency:           Currency,
+		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
+		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
+		ID:                 xid.New().String(),
+		OrgID:              orgID,
+		PlanSlug:           planSlug,
+		PriceCents:         event.PriceCents,
+		Provider:           provider.Name(),
+		ProviderCustomerID: event.ProviderCustomerID,
+		ProviderStatus:     event.ProviderStatus,
+		ProviderSubID:      event.ProviderSubID,
+		ProviderUpdatedAt:  postgres.NewTimestamptz(at),
+		Status:             string(event.Status),
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			slog.ErrorContext(ctx, "reconcile found two live subscriptions for one org",
+				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+			return false, nil
+		}
+		slog.ErrorContext(ctx, "failed to apply a reconciled subscription", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+		telemetry.RecordError(ctx, err)
+		return false, err
+	}
+	return applied > 0, nil
+}

@@ -96,6 +96,7 @@ build:
 	go build -o bin/pug-worker-profile-upsert ./cmd/workers/profile/upsert
 	go build -o bin/pug-worker-compliance ./cmd/workers/compliance
 	go build -o bin/pug-cron-usage ./cmd/cron/usage
+	go build -o bin/pug-cron-billing-reconcile ./cmd/cron/billing-reconcile
 
 .PHONY: fmt
 fmt:
