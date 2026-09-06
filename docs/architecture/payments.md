@@ -12,13 +12,12 @@ the inbox, the reconcile pass or the dashboard — merchant-of-record terms and
 fee schedules move, and being locked to one is a commercial risk, not only a
 technical one. Dodo is the first and, for now, the only implementation.
 
-> **Status: design, awaiting review. No code from this slice exists** — the one
-> exception is §4, which was decided and applied to migration 019 before it
-> merged, since it removes columns rather than adding any. §15 tracks what is
-> decided and what is still open. An earlier, reviewed, all-at-once Dodo build
-> exists at `archive/billing-2026-08-15`; §16 records where this design
-> deliberately departs from it. Provider-swappability (§2.1) was added to this
-> design on 2026-09-06 and is not reflected in the archive at all.
+> **Status: implemented 2026-09-06.** §17 records where the build departs from
+> this design, and §15's open questions are resolved there. An earlier,
+> reviewed, all-at-once Dodo build exists at `archive/billing-2026-08-15`; §16
+> records where this design deliberately departs from it. Provider-swappability
+> (§2.1) was added to this design on 2026-09-06 and is not reflected in the
+> archive at all.
 
 ---
 
@@ -620,9 +619,12 @@ likely to be wrong in a way nothing else catches, and it is per provider.
 5. **§5.2 — no payment links.** The operator pastes the product id onto the org
    and the customer buys from the pug dashboard. DECIDED; a link stays a working
    fallback rather than the normal path.
-6. **§12 — is checkout admin-only?** Recommended yes. OPEN.
-7. **§10 — does a failed provider cancel block org deletion**, or does it proceed
-   and log loudly? Recommended block. OPEN.
+6. **§12 — is checkout admin-only?** DECIDED yes, as recommended. Granted as
+   `ActionCreate` on `ResourceBilling` rather than a new verb: both session RPCs
+   mint a provider session. The read stays on the viewer floor.
+7. **§10 — does a failed provider cancel block org deletion?** MOOT, not
+   decided. This codebase has no org-delete path at all — no RPC, no CLI, no
+   `delete from orgs` query — so there is nothing to guard. See §17.
 
 ## 16. Divergences from the archived build
 
@@ -654,3 +656,42 @@ this slice plus the next two. Where this design differs, it is on purpose:
 The archive remains the reference for §8's mechanics — its delivery-semantics
 table is reproduced here nearly verbatim because it was derived from Dodo's
 documented behaviour and reviewed once already.
+
+
+## 17. What the build changed
+
+Four departures from the design above, all made during implementation.
+
+**`CancelSubscription` is not on the interface (§2.1, §10).** Its only caller
+would be org deletion, and pug has no org-delete path: `OrgsService` serves no
+Delete, and no query deletes an org. Shipping the verb now would be the
+speculative abstraction §2.1 argues against. When org deletion lands, it adds the
+method and the cancel-before-delete rule together — and that is the moment to
+settle §15.7.
+
+**`status` is not constrained to pug's six words (§6, §7).** The design's §7
+table says an unmapped provider state is "stored verbatim, treated as not live",
+which a `check (status in (...))` makes impossible. Refusing to store it instead
+leaves the row on its LAST KNOWN status — for a lapsing subscription, that grants
+a plan nobody is paying for, the exact opposite of the safe direction. So the
+column is checked non-empty, the provider's own word is stored, and
+`ParseSubStatus` refusing it at read time is what makes it not live.
+
+**`GetBillingStatus` reports `manageable` as well as `purchasable` (§12).** The
+portal's precondition is a provider *customer*, which a cancelled org still has
+while reporting `SUBSCRIPTION_STATUS_UNSPECIFIED` — so a client inferring the
+button from the status hides invoices from the org most likely to want them.
+Same rule as `purchasable`: read from the one helper the RPC refuses on. Writing
+it as `ProviderCustomerID != ""` on the resolved entitlement reproduced exactly
+the drift this is meant to prevent, and a test caught it.
+
+**A lapsed contract no longer gates the overrides when a subscription is live
+(§7).** `applyOverrides` was contract-gated, which collapsed a live custom deal
+to no quota — and then to the free floor — on the day its agreed term passed,
+while Dodo went on charging. The contract bounds a grant an operator made; it
+cannot expire a subscription the provider still says is live.
+
+`provider_product_id` is also on `billing_entitlement_history`, which §6 does not
+mention: the history is a snapshot of the row, and "who pasted this product id,
+and when" is a support question about the one field that decides whether an org
+can spend money.
