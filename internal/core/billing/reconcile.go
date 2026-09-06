@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -145,7 +146,11 @@ func (s *Service) reconcileOne(
 	// something newer in between -- which is the correct outcome.
 	applied, err := s.applyReconciledSubscription(ctx, provider, row.OrgID, event, rec, now)
 	if err != nil {
-		report.Unreadable++
+		// Already logged and recorded at the write, and it is an inconsistency rather
+		// than a failed read -- counting it as unreadable would read as an outage.
+		if !errors.Is(err, ErrTwoLiveSubscriptions) {
+			report.Unreadable++
+		}
 		return
 	}
 	if applied {

@@ -32,6 +32,16 @@ service BillingService {
   // the self-hosted shape.
   rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse) {}
 
+  // Verifies one checkout against the provider and applies its subscription,
+  // which is what confirms a returning buyer without a webhook -- the only thing
+  // that works at all on a deployment with no reachable webhook URL. The webhook
+  // stays the authority for the lifecycle, which has no redirect to ride on.
+  //
+  // session_id is a claim: the subscription it resolves to must carry this org in
+  // the metadata pug wrote at checkout, PermissionDenied otherwise. Admin-only,
+  // like the checkout it confirms.
+  rpc ConfirmCheckout(ConfirmCheckoutRequest) returns (ConfirmCheckoutResponse) {}
+
   // Opens the provider's customer portal, which is where plan changes, card
   // updates, invoices and cancellation live. Pug serves none of those itself,
   // so there is no ChangePlan or CancelSubscription RPC.
@@ -185,6 +195,22 @@ message CreateCheckoutSessionRequest {
 message CreateCheckoutSessionResponse {
   // Send the buyer here. Single-use and short-lived; never store it.
   string checkout_url = 1;
+  // Hand back to ConfirmCheckout when the buyer returns. Not a secret and not
+  // proof: the server re-reads the checkout and checks it belongs to the caller's
+  // org. Empty if the provider gives no id, leaving the webhook to confirm.
+  string session_id = 2;
+}
+
+message ConfirmCheckoutRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The session_id CreateCheckoutSessionResponse returned for this org.
+  string session_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message ConfirmCheckoutResponse {
+  // False is "not settled yet" -- the buyer beat their own payment home -- never
+  // a failure. A checkout that will not settle is an error instead.
+  bool confirmed = 1;
 }
 
 message CreatePortalSessionRequest {

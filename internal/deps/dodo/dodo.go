@@ -90,7 +90,9 @@ func (c *Client) ProductForSlug(slug string) (string, bool) {
 // decides that the route mounts at all.
 func (c *Client) CanVerify() bool { return c != nil && c.verifier != nil }
 
-func (c *Client) CreateCheckoutSession(ctx context.Context, in corebilling.CheckoutInput) (string, error) {
+func (c *Client) CreateCheckoutSession(
+	ctx context.Context, in corebilling.CheckoutInput,
+) (sessionID, checkoutURL string, err error) {
 	req := dodopayments.CheckoutSessionRequestParam{
 		ProductCart: dodopayments.F([]dodopayments.ProductItemReqParam{{
 			ProductID: dodopayments.F(in.ProductID),
@@ -118,12 +120,12 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, in corebilling.Check
 		CheckoutSessionRequest: req,
 	})
 	if err != nil {
-		return "", fmt.Errorf("dodo: create checkout session: %w", err)
+		return "", "", fmt.Errorf("dodo: create checkout session: %w", err)
 	}
 	if session.CheckoutURL == "" {
-		return "", errors.New("dodo: checkout session has no checkout_url")
+		return "", "", errors.New("dodo: checkout session has no checkout_url")
 	}
-	return session.CheckoutURL, nil
+	return session.SessionID, session.CheckoutURL, nil
 }
 
 func (c *Client) CreatePortalSession(ctx context.Context, customerID string) (string, error) {
@@ -156,6 +158,54 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 		Status:                string(sub.Status),
 		SubscriptionID:        sub.SubscriptionID,
 	}), nil
+}
+
+// FetchCheckoutOutcome walks one checkout session to the subscription it
+// produced: session -> payment -> subscription. Dodo's session status carries a
+// payment id but no subscription id, and only the subscription object carries
+// the product, price, period and the org_id metadata pug attributes on -- so the
+// last hop is FetchSubscription itself, which is what keeps this event identical
+// to the one a delivery normalizes to.
+//
+// Each missing link is a zero event rather than an error: a session still
+// collecting details has no payment, and a payment that is not a subscription's
+// has nothing to apply. Both mean "not yet", and neither is a fault -- but a
+// payment Dodo has already given up on is neither, so its status is read rather
+// than dropped, or a declined card would poll forever as "not yet".
+func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (corebilling.SubscriptionEvent, error) {
+	session, err := c.api.CheckoutSessions.Get(ctx, sessionID)
+	if err != nil {
+		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get checkout session: %w", err)
+	}
+	if terminalIntent(string(session.PaymentStatus)) {
+		return corebilling.SubscriptionEvent{}, corebilling.ErrCheckoutFailed
+	}
+	if session.PaymentID == "" {
+		return corebilling.SubscriptionEvent{}, nil
+	}
+	payment, err := c.api.Payments.Get(ctx, session.PaymentID)
+	if err != nil {
+		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get checkout payment: %w", err)
+	}
+	if terminalIntent(string(payment.Status)) {
+		return corebilling.SubscriptionEvent{}, corebilling.ErrCheckoutFailed
+	}
+	if payment.SubscriptionID == "" {
+		return corebilling.SubscriptionEvent{}, nil
+	}
+	return c.FetchSubscription(ctx, payment.SubscriptionID)
+}
+
+// terminalIntent reports a payment Dodo will not carry further. Deliberately a
+// short allowlist of the states that are over: everything else -- processing, an
+// unfinished 3DS challenge, a word Dodo adds later -- stays "not yet", so an
+// unknown state can only ever delay the answer, never invent a failure.
+func terminalIntent(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "failed", "cancelled", "canceled":
+		return true
+	}
+	return false
 }
 
 // stringMetadata narrows Dodo's string|number|bool metadata to the string values

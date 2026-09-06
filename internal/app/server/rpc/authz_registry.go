@@ -91,6 +91,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	// checkout is spending money and opening the portal reaches invoices.
 	"/dashboard.billing.v1.BillingService/CreateCheckoutSession": authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate),
 	"/dashboard.billing.v1.BillingService/CreatePortalSession":   authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate),
+	// Confirming is the other half of starting, and it writes the subscription
+	// row, so it sits with the checkout it confirms rather than on the read floor.
+	"/dashboard.billing.v1.BillingService/ConfirmCheckout": authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate),
 
 	// --- dashboard.customers.v1.CustomersService — self-service ---
 	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.Self(),

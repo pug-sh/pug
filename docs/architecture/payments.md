@@ -49,9 +49,10 @@ today.
    pug's number and changing it changes what an org may send. The amount charged
    is the provider's, and pug cannot alter it by writing to Postgres.
 2. **One writer per row.** The operator writes `billing_entitlements`. The
-   webhook writes `billing_subscriptions`. Neither writes the other's table.
-   This is what makes drift structurally impossible rather than a thing to
-   remember (§4).
+   payments side writes `billing_subscriptions` — the webhook, reconcile and
+   `ConfirmCheckout`, all through the one CAS, so there is no second notion of
+   "newer". Neither side writes the other's table. This is what makes drift
+   structurally impossible rather than a thing to remember (§4).
 3. **Every paid org has a provider subscription**, negotiated deals included.
    There is no manual-payment path, so "entitlement with no live subscription"
    is a reconcilable defect rather than a legitimate state.
@@ -549,6 +550,8 @@ quota banner stays on the viewer floor but starting a checkout is spending money
   when none is recorded; for a catalog tier it uses the configured product id.
 - `CreatePortalSession() → portal_url`, `FailedPrecondition` for an org with no
   `provider_customer_id` — trialing, free and comped orgs have never checked out.
+- `ConfirmCheckout(session_id) → confirmed` (§12.1), which is how a returning
+  buyer is confirmed without a delivery having arrived.
 
 `GetBillingStatus` gains `subscription_status`, `current_period_end` and a
 `purchasable` bool — what the FE renders the buy button from, without ever
@@ -560,6 +563,68 @@ billing enabled, a Dodo API key configured, and a product to check out against
 drift — a button that cannot work is worse than no button. Tested both
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
 portal; no `ChangePlan` RPC in this slice.
+
+### 12.1 Confirming the buyer who came back
+
+The webhook is the authority for the subscription *lifecycle* — renewal,
+dunning, cancellation, expiry, refunds — because none of those has a redirect to
+be carried on. It is a bad authority for the one moment somebody is watching.
+
+`CreateCheckoutSession` therefore also returns the provider's `session_id`, and
+`ConfirmCheckout(org_id, session_id)` re-reads that checkout **straight from the
+provider** and applies it through `applyReconciledSubscription` — the same CAS
+the webhook and reconcile write through, so no third notion of "newer" exists.
+For Dodo the walk is session → payment → subscription (`FetchCheckoutOutcome`),
+because the session status carries a payment id but no subscription id, and only
+the subscription object carries the product, price, period and metadata. The last
+hop is `FetchSubscription` itself, which is what keeps the event the same shape
+as the one a delivery normalizes to.
+
+What this buys is not latency, it is **reachability**. Before it, the dashboard's
+return handler polled `GetBillingStatus` — pug's own state, which nothing but a
+delivery changes — so the checkout moment depended on inbound connectivity. On a
+deployment whose webhook URL is not reachable (self-hosted behind NAT, or a
+laptop) a purchase could never complete: the poll ran its ~17.5s and told a
+paying customer their payment was "still confirming", forever.
+
+Four rules make it safe:
+
+- **`session_id` is a claim, not evidence.** The subscription it resolves to must
+  carry the `metadata.org_id` pug wrote at checkout, and it must equal the
+  caller's org — `PermissionDenied` otherwise. There is deliberately **no
+  fallback to attribution by customer id** here, unlike §8's webhook path: nobody
+  chose which delivery arrived, but the caller chose this id.
+- **`confirmed` is read from the provider's state, not from whether the write
+  landed.** The CAS also skips the write when a delivery already stored something
+  newer, and reporting that as "not confirmed" would push a buyer who already
+  holds the plan into the poll this exists to remove. The one refusal that is
+  *not* a harmless skip — a second live subscription hitting
+  `billing_subscriptions_one_live_idx` — comes back as `ErrTwoLiveSubscriptions`
+  rather than as a `false` from the writer, or a buyer would be told "confirmed"
+  for a row that was never stored.
+- **A subscription pug has no word for is written but not confirmed.** `pending`
+  stores its row — which is what leaves the org a customer to manage — and grants
+  nothing, so telling the buyer it worked would be a lie.
+- **Every paid-but-unplaceable case is returned, not swallowed.** A foreign
+  currency (§3), an unmappable product, a second live subscription and a
+  subscription carrying no status at all are the dispositions §8 stores and
+  alerts on, but here somebody is waiting, so each surfaces as
+  `FailedPrecondition` under its own reason and the dashboard says the payment
+  needs a person rather than that the page will update shortly. None may fall
+  through to the pre-payment `BILLING_NOT_PURCHASABLE`, which says the plan
+  "cannot be purchased" to somebody who just bought it.
+- **A checkout the provider has given up on is a refusal, not a wait.**
+  `FetchCheckoutOutcome` reads the payment's status, so a declined or cancelled
+  card returns `ErrCheckoutFailed` → `BILLING_CHECKOUT_FAILED` instead of the
+  zero event that means "not settled yet". Without it a decline is
+  indistinguishable from a slow payment and the buyer polls for money that will
+  never arrive. Anything else — `processing`, an unfinished 3DS challenge, a word
+  Dodo adds later — stays "not yet", so an unknown state can only delay the
+  answer, never invent a failure.
+
+The client keeps the poll as its own fallback: `confirmed=false` is the ordinary
+"not settled yet" for a buyer who beat their own payment home, and the webhook is
+still coming.
 
 ## 13. Configuration
 
@@ -701,6 +766,15 @@ beside `GetBillingStatus`: a price is a marketing number, and the person reading
 the quota banner is the one who wants to know what the next tier costs. It never
 returns a product id, never the floors, and offers `custom` only to the org whose
 row records its product.
+
+**`ConfirmCheckout` was added, and the redirect stopped being a spinner (§12.1).**
+The design has the dashboard poll after checkout, and the implementation did —
+but it polled pug's own state, which only a delivery changes, so it verified
+nothing and made the checkout moment depend on a reachable webhook URL. Found by
+testing locally, where there is none: the payment succeeded at Dodo and the
+dashboard read "Trial" indefinitely. `pug cron billing-reconcile` is not a
+recovery for it either — it walks `ListBillingSubscriptionsByProvider`, so with
+no stored row there is nothing to re-read.
 
 `provider_product_id` is also on `billing_entitlement_history`, which §6 does not
 mention: the history is a snapshot of the row, and "who pasted this product id,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -98,13 +99,15 @@ func (s *Service) checkoutProduct(rec Record, slug string) (string, error) {
 // CreateCheckoutSession opens a provider checkout for one tier and returns the
 // URL to send the buyer to. Nothing about the price is pug's: the amount lives
 // on the product.
-func (s *Service) CreateCheckoutSession(ctx context.Context, orgID, planSlug, customerEmail string) (string, error) {
+func (s *Service) CreateCheckoutSession(
+	ctx context.Context, orgID, planSlug, customerEmail string,
+) (sessionID, checkoutURL string, err error) {
 	if !s.billingEnabled {
-		return "", ErrNoProvider
+		return "", "", ErrNoProvider
 	}
 	plan, ok := PlanBySlug(planSlug)
 	if !ok {
-		return "", ErrPlanNotFound
+		return "", "", ErrPlanNotFound
 	}
 	// A floor is never sold and a retired tier is never handed to somebody new.
 	// Dodo's product map already excludes both, so today this refuses nothing the
@@ -112,19 +115,19 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, orgID, planSlug, cu
 	// not assume the next one builds its map the same way. The rule belongs on
 	// this side of the seam.
 	if plan.isFloor() || plan.Retired {
-		return "", ErrNotPurchasable
+		return "", "", ErrNotPurchasable
 	}
 
 	rec, err := s.StoredRecord(ctx, orgID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	productID, err := s.checkoutProduct(rec, planSlug)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	url, err := s.payments.Provider.CreateCheckoutSession(ctx, CheckoutInput{
+	sessionID, url, err := s.payments.Provider.CreateCheckoutSession(ctx, CheckoutInput{
 		CustomerEmail: customerEmail,
 		OrgID:         orgID,
 		ProductID:     productID,
@@ -134,9 +137,9 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, orgID, planSlug, cu
 		slog.ErrorContext(ctx, "failed to create a checkout session", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("plan_slug", planSlug))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return "", "", err
 	}
-	return url, nil
+	return sessionID, url, nil
 }
 
 // CreatePortalSession opens the provider's customer portal, which is where plan
@@ -232,4 +235,99 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 		})
 	}
 	return out, nil
+}
+
+// ErrCheckoutNotForOrg is a session id whose subscription names a different org
+// -- or names none at all. Distinct from a failed lookup: it is the guard that
+// makes a client-supplied session id safe to act on.
+var ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
+
+// ErrCheckoutFailed is a checkout the provider says will not settle -- a declined
+// card, most often. Distinct from a zero event, which means "not yet": without
+// it a decline is indistinguishable from a slow payment and the buyer is told to
+// keep waiting for money that will never arrive.
+var ErrCheckoutFailed = errors.New("billing: this checkout did not complete")
+
+// ConfirmCheckout verifies one checkout against the provider and writes its
+// subscription through the same CAS the webhook uses. Both stamp the same
+// column, so neither can overwrite the other's newer row -- though the webhook
+// stamps the provider's signed time and this stamps pug's, which agree only as
+// well as the two clocks do.
+//
+// It reports false, nil when the provider has no subscription for the session
+// yet. That is the ordinary answer for a buyer who got back before the payment
+// settled, and the caller should keep waiting rather than report a failure.
+func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, now time.Time) (bool, error) {
+	if !s.billingEnabled || !s.payments.configured() {
+		return false, ErrNoProvider
+	}
+	provider := s.payments.Provider
+
+	event, err := provider.FetchCheckoutOutcome(ctx, sessionID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to read a checkout outcome", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return false, err
+	}
+	if event.IsZero() {
+		return false, nil
+	}
+
+	// The whole reason a client may hand us a session id. The webhook can fall back
+	// to attribution by customer, because nobody chose which delivery arrived; here
+	// the caller chose the id, so only the org_id pug itself wrote at checkout will
+	// do, and an absent one is a refusal rather than a lookup.
+	if event.OrgID == "" || event.OrgID != orgID {
+		slog.WarnContext(ctx, "refusing a checkout confirmation for another org",
+			slog.String("org_id", orgID), slog.String("checkout_org_id", event.OrgID),
+			slog.String("provider_sub_id", event.ProviderSubID))
+		return false, ErrCheckoutNotForOrg
+	}
+	// A real subscription with no status at all means the provider's schema and
+	// pug's mapping have diverged. Rare, but the buyer is left waiting on it, so it
+	// must not pass silently the way "not settled yet" does.
+	if event.Status == "" {
+		err := errors.New("billing: confirmed subscription carries no status")
+		slog.ErrorContext(ctx, "confirmed checkout carries no status", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+		telemetry.RecordError(ctx, err)
+		return false, err
+	}
+	// Loud rather than silent: the customer has paid and pug cannot place it. The
+	// webhook's disposition for both of these is to store and alert, and a person
+	// has to act either way -- but here somebody is waiting for the answer, so it
+	// is returned as well as logged.
+	if cur := normalizeCurrency(event.Currency); cur != Currency {
+		slog.ErrorContext(ctx, "confirmed checkout is billed in an unsupported currency",
+			slogx.Error(ErrCurrencyNotSupported), slog.String("org_id", orgID),
+			slog.String("currency", cur), slog.String("provider_sub_id", event.ProviderSubID))
+		telemetry.RecordError(ctx, ErrCurrencyNotSupported)
+		return false, ErrCurrencyNotSupported
+	}
+	rec, err := s.StoredRecord(ctx, orgID)
+	if err != nil {
+		return false, err
+	}
+	if _, err := s.planForProduct(event.ProductID, rec); err != nil {
+		slog.ErrorContext(ctx, "confirmed checkout names a product pug cannot place", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("product_id", event.ProductID),
+			slog.String("provider_sub_id", event.ProviderSubID))
+		telemetry.RecordError(ctx, err)
+		return false, err
+	}
+
+	// The same writer reconcile uses, for the same reason: a direct read has no
+	// delivery stamp, so `now` is what the CAS compares.
+	if _, err := s.applyReconciledSubscription(ctx, provider, orgID, event, rec, now); err != nil {
+		return false, err
+	}
+	// Reported from the PROVIDER's state rather than from whether our write landed.
+	// The CAS skips the write when a webhook already stored a newer one, and telling
+	// a buyer to keep waiting for the plan they already hold is the exact failure
+	// this path exists to remove. The one refusal that is NOT a no-op -- a second
+	// live subscription -- comes back as an error above rather than as a skip. A
+	// subscription still `pending` writes its row and grants nothing, so it is not a
+	// confirmation either.
+	return event.Status.Live(), nil
 }

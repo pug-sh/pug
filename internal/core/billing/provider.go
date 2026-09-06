@@ -30,11 +30,24 @@ type PaymentProvider interface {
 	// written.
 	Normalize(Delivery) (SubscriptionEvent, error)
 
-	CreateCheckoutSession(ctx context.Context, in CheckoutInput) (string, error)
+	// CreateCheckoutSession returns the session's id alongside the URL to send the
+	// buyer to. The id is what ConfirmCheckout later re-reads the outcome by; a
+	// provider with no such handle returns an empty one, which leaves the webhook
+	// as the only confirmation path.
+	CreateCheckoutSession(ctx context.Context, in CheckoutInput) (sessionID, checkoutURL string, err error)
 	CreatePortalSession(ctx context.Context, customerID string) (string, error)
 	// FetchSubscription re-reads one subscription for the reconcile pass, in the
 	// same shape a delivery would have carried.
 	FetchSubscription(ctx context.Context, providerSubID string) (SubscriptionEvent, error)
+	// FetchCheckoutOutcome re-reads one checkout the dashboard started, in that
+	// same shape. It is what confirms a returning buyer without waiting on a
+	// delivery.
+	//
+	// A zero SubscriptionEvent means "not settled yet" and is not an error. A
+	// checkout the provider has given up on -- a declined card, an unknown or
+	// expired session -- must NOT use it: return ErrCheckoutFailed, or the buyer
+	// waits out a poll for money that will never arrive.
+	FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
 }
 
 // Delivery is one verified webhook, still in the provider's own vocabulary.

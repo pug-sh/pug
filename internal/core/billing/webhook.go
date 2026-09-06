@@ -227,6 +227,12 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 	return n, nil
 }
 
+// ErrTwoLiveSubscriptions is the partial unique index refusing a second live
+// subscription for one org. Returned rather than swallowed because the caller
+// cannot tell it from the CAS's own skip, and on the confirm path that
+// difference is a buyer who paid and holds nothing.
+var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live subscription")
+
 // applyReconciledSubscription writes a provider read through the same CAS the
 // webhook uses, so the two cannot disagree about what "newer" means. Reports
 // whether the write landed; false is the CAS refusing a read older than a
@@ -259,9 +265,10 @@ func (s *Service) applyReconciledSubscription(
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
-			slog.ErrorContext(ctx, "reconcile found two live subscriptions for one org",
+			slog.ErrorContext(ctx, "found two live subscriptions for one org", slogx.Error(err),
 				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-			return false, nil
+			telemetry.RecordError(ctx, err)
+			return false, ErrTwoLiveSubscriptions
 		}
 		slog.ErrorContext(ctx, "failed to apply a reconciled subscription", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))

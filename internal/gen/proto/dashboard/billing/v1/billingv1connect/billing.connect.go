@@ -39,6 +39,9 @@ const (
 	// BillingServiceCreateCheckoutSessionProcedure is the fully-qualified name of the BillingService's
 	// CreateCheckoutSession RPC.
 	BillingServiceCreateCheckoutSessionProcedure = "/dashboard.billing.v1.BillingService/CreateCheckoutSession"
+	// BillingServiceConfirmCheckoutProcedure is the fully-qualified name of the BillingService's
+	// ConfirmCheckout RPC.
+	BillingServiceConfirmCheckoutProcedure = "/dashboard.billing.v1.BillingService/ConfirmCheckout"
 	// BillingServiceCreatePortalSessionProcedure is the fully-qualified name of the BillingService's
 	// CreatePortalSession RPC.
 	BillingServiceCreatePortalSessionProcedure = "/dashboard.billing.v1.BillingService/CreatePortalSession"
@@ -70,6 +73,15 @@ type BillingServiceClient interface {
 	// Unavailable when the deployment has no payments provider at all, which is
 	// the self-hosted shape.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
+	// Verifies one checkout against the provider and applies its subscription,
+	// which is what confirms a returning buyer without a webhook -- the only thing
+	// that works at all on a deployment with no reachable webhook URL. The webhook
+	// stays the authority for the lifecycle, which has no redirect to ride on.
+	//
+	// session_id is a claim: the subscription it resolves to must carry this org in
+	// the metadata pug wrote at checkout, PermissionDenied otherwise. Admin-only,
+	// like the checkout it confirms.
+	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
 	// Opens the provider's customer portal, which is where plan changes, card
 	// updates, invoices and cancellation live. Pug serves none of those itself,
 	// so there is no ChangePlan or CancelSubscription RPC.
@@ -114,6 +126,12 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("CreateCheckoutSession")),
 			connect.WithClientOptions(opts...),
 		),
+		confirmCheckout: connect.NewClient[v1.ConfirmCheckoutRequest, v1.ConfirmCheckoutResponse](
+			httpClient,
+			baseURL+BillingServiceConfirmCheckoutProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ConfirmCheckout")),
+			connect.WithClientOptions(opts...),
+		),
 		createPortalSession: connect.NewClient[v1.CreatePortalSessionRequest, v1.CreatePortalSessionResponse](
 			httpClient,
 			baseURL+BillingServiceCreatePortalSessionProcedure,
@@ -133,6 +151,7 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type billingServiceClient struct {
 	getBillingStatus      *connect.Client[v1.GetBillingStatusRequest, v1.GetBillingStatusResponse]
 	createCheckoutSession *connect.Client[v1.CreateCheckoutSessionRequest, v1.CreateCheckoutSessionResponse]
+	confirmCheckout       *connect.Client[v1.ConfirmCheckoutRequest, v1.ConfirmCheckoutResponse]
 	createPortalSession   *connect.Client[v1.CreatePortalSessionRequest, v1.CreatePortalSessionResponse]
 	listPlans             *connect.Client[v1.ListPlansRequest, v1.ListPlansResponse]
 }
@@ -145,6 +164,11 @@ func (c *billingServiceClient) GetBillingStatus(ctx context.Context, req *connec
 // CreateCheckoutSession calls dashboard.billing.v1.BillingService.CreateCheckoutSession.
 func (c *billingServiceClient) CreateCheckoutSession(ctx context.Context, req *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error) {
 	return c.createCheckoutSession.CallUnary(ctx, req)
+}
+
+// ConfirmCheckout calls dashboard.billing.v1.BillingService.ConfirmCheckout.
+func (c *billingServiceClient) ConfirmCheckout(ctx context.Context, req *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error) {
+	return c.confirmCheckout.CallUnary(ctx, req)
 }
 
 // CreatePortalSession calls dashboard.billing.v1.BillingService.CreatePortalSession.
@@ -180,6 +204,15 @@ type BillingServiceHandler interface {
 	// Unavailable when the deployment has no payments provider at all, which is
 	// the self-hosted shape.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
+	// Verifies one checkout against the provider and applies its subscription,
+	// which is what confirms a returning buyer without a webhook -- the only thing
+	// that works at all on a deployment with no reachable webhook URL. The webhook
+	// stays the authority for the lifecycle, which has no redirect to ride on.
+	//
+	// session_id is a claim: the subscription it resolves to must carry this org in
+	// the metadata pug wrote at checkout, PermissionDenied otherwise. Admin-only,
+	// like the checkout it confirms.
+	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
 	// Opens the provider's customer portal, which is where plan changes, card
 	// updates, invoices and cancellation live. Pug serves none of those itself,
 	// so there is no ChangePlan or CancelSubscription RPC.
@@ -220,6 +253,12 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("CreateCheckoutSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceConfirmCheckoutHandler := connect.NewUnaryHandler(
+		BillingServiceConfirmCheckoutProcedure,
+		svc.ConfirmCheckout,
+		connect.WithSchema(billingServiceMethods.ByName("ConfirmCheckout")),
+		connect.WithHandlerOptions(opts...),
+	)
 	billingServiceCreatePortalSessionHandler := connect.NewUnaryHandler(
 		BillingServiceCreatePortalSessionProcedure,
 		svc.CreatePortalSession,
@@ -238,6 +277,8 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 			billingServiceGetBillingStatusHandler.ServeHTTP(w, r)
 		case BillingServiceCreateCheckoutSessionProcedure:
 			billingServiceCreateCheckoutSessionHandler.ServeHTTP(w, r)
+		case BillingServiceConfirmCheckoutProcedure:
+			billingServiceConfirmCheckoutHandler.ServeHTTP(w, r)
 		case BillingServiceCreatePortalSessionProcedure:
 			billingServiceCreatePortalSessionHandler.ServeHTTP(w, r)
 		case BillingServiceListPlansProcedure:
@@ -257,6 +298,10 @@ func (UnimplementedBillingServiceHandler) GetBillingStatus(context.Context, *con
 
 func (UnimplementedBillingServiceHandler) CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.CreateCheckoutSession is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.ConfirmCheckout is not implemented"))
 }
 
 func (UnimplementedBillingServiceHandler) CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error) {

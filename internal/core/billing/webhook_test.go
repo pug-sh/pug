@@ -23,6 +23,10 @@ type fakeProvider struct {
 	name  string
 	event corebilling.SubscriptionEvent
 	err   error
+	// The confirm-on-return path reads its own event, so a test can make the
+	// provider disagree with what any delivery said.
+	checkout    corebilling.SubscriptionEvent
+	checkoutErr error
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -35,8 +39,8 @@ func (f *fakeProvider) Normalize(corebilling.Delivery) (corebilling.Subscription
 	return f.event, f.err
 }
 
-func (f *fakeProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, error) {
-	return "https://pay.example/checkout", nil
+func (f *fakeProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, string, error) {
+	return "cs_fake", "https://pay.example/checkout", nil
 }
 
 func (f *fakeProvider) CreatePortalSession(context.Context, string) (string, error) {
@@ -45,6 +49,10 @@ func (f *fakeProvider) CreatePortalSession(context.Context, string) (string, err
 
 func (f *fakeProvider) FetchSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
 	return f.event, nil
+}
+
+func (f *fakeProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return f.checkout, f.checkoutErr
 }
 
 const fakeProviderName = "fake"

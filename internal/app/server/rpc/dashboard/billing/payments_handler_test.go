@@ -40,8 +40,9 @@ func appErr(t *testing.T, err error) *apperr.Error {
 }
 
 const (
-	checkoutURL = "https://pay.example/checkout/abc"
-	portalURL   = "https://pay.example/portal/abc"
+	checkoutSessionID = "cs_abc"
+	checkoutURL       = "https://pay.example/checkout/abc"
+	portalURL         = "https://pay.example/portal/abc"
 )
 
 type stubProvider struct{}
@@ -56,8 +57,8 @@ func (stubProvider) Normalize(corebilling.Delivery) (corebilling.SubscriptionEve
 	return corebilling.SubscriptionEvent{}, nil
 }
 
-func (stubProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, error) {
-	return checkoutURL, nil
+func (stubProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, string, error) {
+	return checkoutSessionID, checkoutURL, nil
 }
 
 func (stubProvider) CreatePortalSession(context.Context, string) (string, error) {
@@ -65,6 +66,10 @@ func (stubProvider) CreatePortalSession(context.Context, string) (string, error)
 }
 
 func (stubProvider) FetchSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, nil
+}
+
+func (stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
 	return corebilling.SubscriptionEvent{}, nil
 }
 
@@ -158,12 +163,19 @@ func TestCheckoutReturnsAURL(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 
-	url, err := checkout(t, newPayingServer(t, pg, true), orgID, "growth")
+	orgIDCopy, slug := orgID, "growth"
+	resp, err := newPayingServer(t, pg, true).CreateCheckoutSession(buyerCtx(t),
+		connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{OrgId: &orgIDCopy, PlanSlug: &slug}))
 	if err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)
 	}
-	if url != checkoutURL {
-		t.Errorf("checkout_url = %q, want %q", url, checkoutURL)
+	if got := resp.Msg.GetCheckoutUrl(); got != checkoutURL {
+		t.Errorf("checkout_url = %q, want %q", got, checkoutURL)
+	}
+	// Without this the buyer confirms with "", which min_len rejects -- the feature
+	// dies silently and every other assertion here still passes.
+	if got := resp.Msg.GetSessionId(); got != checkoutSessionID {
+		t.Errorf("session_id = %q, want %q", got, checkoutSessionID)
 	}
 }
 
@@ -425,5 +437,167 @@ func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 	}
 	if custom.GetIncludedEvents() != nil {
 		t.Errorf("custom quota = %v, want absent on the catalog entry", custom.GetIncludedEvents())
+	}
+}
+
+// confirmStub answers FetchCheckoutOutcome with whatever a test needs, so the
+// translations below are exercised through the real handler rather than asserted
+// on the service's sentinels.
+type confirmStub struct {
+	stubProvider
+	event corebilling.SubscriptionEvent
+	err   error
+}
+
+func (c confirmStub) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return c.event, c.err
+}
+
+func newConfirmingServer(t *testing.T, pg *testutil.TestPostgres, provider corebilling.PaymentProvider) *Server {
+	t.Helper()
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		Provider:      provider,
+		ReturnURL:     "https://app.example/settings/billing",
+		SlugByProduct: map[string]string{"prod_growth": "growth"},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return NewServer(svc)
+}
+
+func confirm(t *testing.T, srv *Server, orgID string) (bool, error) {
+	t.Helper()
+	session := "cs_abc"
+	resp, err := srv.ConfirmCheckout(buyerCtx(t),
+		connect.NewRequest(&billingv1.ConfirmCheckoutRequest{OrgId: &orgID, SessionId: &session}))
+	if err != nil {
+		return false, err
+	}
+	return resp.Msg.GetConfirmed(), nil
+}
+
+func confirmEvent(orgID, subID, product string, status corebilling.SubStatus) corebilling.SubscriptionEvent {
+	return corebilling.SubscriptionEvent{
+		Currency:           "USD",
+		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour),
+		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour),
+		OrgID:              orgID,
+		PriceCents:         2_000,
+		ProductID:          product,
+		ProviderCustomerID: "cus_" + orgID,
+		ProviderStatus:     string(status),
+		ProviderSubID:      subID,
+		Status:             status,
+	}
+}
+
+func TestConfirmReportsASettledCheckout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+
+	srv := newConfirmingServer(t, pg, confirmStub{
+		event: confirmEvent(orgID, "sub00000000000000040", "prod_growth", corebilling.SubStatusActive),
+	})
+	confirmed, err := confirm(t, srv, orgID)
+	if err != nil {
+		t.Fatalf("ConfirmCheckout: %v", err)
+	}
+	if !confirmed {
+		t.Error("confirmed = false for a settled checkout")
+	}
+}
+
+// Every refusal that follows took the customer's money except the last, so none
+// may reach them as "internal error" or as a plan that "cannot be purchased".
+func TestConfirmTranslatesItsRefusals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+
+	cases := []struct {
+		name       string
+		stub       func(orgID string) confirmStub
+		wantCode   connect.Code
+		wantReason apperr.Reason
+	}{
+		{
+			"another org's session",
+			func(string) confirmStub {
+				return confirmStub{event: confirmEvent("org-elsewhere", "sub00000000000000041", "prod_growth", corebilling.SubStatusActive)}
+			},
+			connect.CodePermissionDenied, apperr.ReasonBillingCheckoutNotForOrg,
+		},
+		{
+			"foreign currency",
+			func(orgID string) confirmStub {
+				e := confirmEvent(orgID, "sub00000000000000042", "prod_growth", corebilling.SubStatusActive)
+				e.Currency = "EUR"
+				return confirmStub{event: e}
+			},
+			connect.CodeFailedPrecondition, apperr.ReasonBillingCurrencyUnsupported,
+		},
+		{
+			// Not NOT_PURCHASABLE: that is a checkout refused before any money moved.
+			"product pug cannot place",
+			func(orgID string) confirmStub {
+				return confirmStub{event: confirmEvent(orgID, "sub00000000000000043", "prod_unknown", corebilling.SubStatusActive)}
+			},
+			connect.CodeFailedPrecondition, apperr.ReasonBillingProductUnmapped,
+		},
+		{
+			"declined card",
+			func(string) confirmStub { return confirmStub{err: corebilling.ErrCheckoutFailed} },
+			connect.CodeFailedPrecondition, apperr.ReasonBillingCheckoutFailed,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+			_, err := confirm(t, newConfirmingServer(t, pg, tc.stub(orgID)), orgID)
+			if err == nil {
+				t.Fatal("err = nil, want a refusal")
+			}
+			ae := appErr(t, err)
+			if ae.Code() != tc.wantCode {
+				t.Errorf("code = %v, want %v", ae.Code(), tc.wantCode)
+			}
+			if ae.Reason() != tc.wantReason {
+				t.Errorf("reason = %q, want %q", ae.Reason(), tc.wantReason)
+			}
+		})
+	}
+}
+
+// The org already holds a live subscription, so the paid one cannot be written.
+// Its own reason, because "internal error" is what this used to be.
+func TestConfirmRefusesASecondLiveSubscription(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+
+	live := confirmEvent(orgID, "sub00000000000000044", "prod_growth", corebilling.SubStatusActive)
+	if _, err := confirm(t, newConfirmingServer(t, pg, confirmStub{event: live}), orgID); err != nil {
+		t.Fatalf("seed confirm: %v", err)
+	}
+
+	second := confirmEvent(orgID, "sub00000000000000045", "prod_growth", corebilling.SubStatusActive)
+	_, err := confirm(t, newConfirmingServer(t, pg, confirmStub{event: second}), orgID)
+	if err == nil {
+		t.Fatal("err = nil for a second live subscription, want a refusal")
+	}
+	ae := appErr(t, err)
+	if ae.Code() != connect.CodeFailedPrecondition {
+		t.Errorf("code = %v, want FailedPrecondition", ae.Code())
+	}
+	if ae.Reason() != apperr.ReasonBillingTwoLiveSubscriptions {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonBillingTwoLiveSubscriptions)
 	}
 }

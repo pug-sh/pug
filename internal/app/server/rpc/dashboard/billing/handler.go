@@ -126,13 +126,69 @@ func (s *Server) CreateCheckoutSession(
 		return nil, err
 	}
 
-	url, err := s.service.CreateCheckoutSession(ctx, orgID, req.Msg.GetPlanSlug(), principal.Customer.Email)
+	sessionID, url, err := s.service.CreateCheckoutSession(ctx, orgID, req.Msg.GetPlanSlug(), principal.Customer.Email)
 	if err != nil {
 		return nil, checkoutErr(err, orgID, req.Msg.GetPlanSlug())
 	}
 	return connect.NewResponse(&billingv1.CreateCheckoutSessionResponse{
 		CheckoutUrl: proto.String(url),
+		SessionId:   proto.String(sessionID),
 	}), nil
+}
+
+// ConfirmCheckout verifies a returning buyer's checkout against the provider.
+func (s *Server) ConfirmCheckout(
+	ctx context.Context,
+	req *connect.Request[billingv1.ConfirmCheckoutRequest],
+) (*connect.Response[billingv1.ConfirmCheckoutResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
+	orgID := req.Msg.GetOrgId()
+	confirmed, err := s.service.ConfirmCheckout(ctx, orgID, req.Msg.GetSessionId(), time.Now())
+	if err != nil {
+		return nil, confirmErr(err, orgID)
+	}
+	return connect.NewResponse(&billingv1.ConfirmCheckoutResponse{
+		Confirmed: proto.Bool(confirmed),
+	}), nil
+}
+
+// confirmErr translates the confirm path. Every case below is a checkout that
+// already took the customer's money except the last, so none may fall through to
+// checkoutErr -- which answers as though no money had moved ("this plan cannot be
+// purchased") and, for anything it has no case for, as "internal error".
+// FailedPrecondition throughout, because the dashboard has to say a person is
+// needed rather than that the page will update shortly.
+func confirmErr(err error, orgID string) error {
+	paid := func(reason apperr.Reason, msg string) error {
+		return apperr.FailedPrecondition(reason, msg,
+			apperr.Precondition(string(reason), orgID,
+				"the payment succeeded; it cannot be applied automatically"))
+	}
+	switch {
+	case errors.Is(err, corebilling.ErrCheckoutNotForOrg):
+		return apperr.PermissionDenied(apperr.ReasonBillingCheckoutNotForOrg,
+			"this checkout does not belong to this organization")
+	case errors.Is(err, corebilling.ErrCurrencyNotSupported):
+		return paid(apperr.ReasonBillingCurrencyUnsupported,
+			"this subscription is billed in a currency pug does not support")
+	case errors.Is(err, corebilling.ErrNotPurchasable):
+		return paid(apperr.ReasonBillingProductUnmapped,
+			"this subscription is for a product pug cannot match to a plan")
+	case errors.Is(err, corebilling.ErrTwoLiveSubscriptions):
+		return paid(apperr.ReasonBillingTwoLiveSubscriptions,
+			"this organization already has a live subscription")
+	case errors.Is(err, corebilling.ErrCheckoutFailed):
+		// The one case where no money moved, so it says so plainly rather than
+		// sending the buyer to support.
+		return apperr.FailedPrecondition(apperr.ReasonBillingCheckoutFailed,
+			"this checkout did not complete, and nothing has been charged",
+			apperr.Precondition(string(apperr.ReasonBillingCheckoutFailed), orgID,
+				"the payment did not go through"))
+	}
+	return checkoutErr(err, orgID, "")
 }
 
 // CreatePortalSession opens the provider's customer portal, which is where plan
