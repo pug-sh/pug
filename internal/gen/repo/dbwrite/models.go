@@ -19,6 +19,13 @@ type ApiKey struct {
 	UpdateTime  pgtype.Timestamptz
 }
 
+type BillingCheckoutSession struct {
+	CreateTime pgtype.Timestamptz
+	OrgID      string
+	Provider   string
+	Ref        string
+}
+
 type BillingEntitlement struct {
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz

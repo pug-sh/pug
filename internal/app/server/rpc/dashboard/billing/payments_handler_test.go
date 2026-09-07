@@ -555,6 +555,25 @@ func TestConfirmTranslatesItsRefusals(t *testing.T) {
 			connect.CodeFailedPrecondition, apperr.ReasonBillingProductUnmapped,
 		},
 		{
+			// Neither is pre-checked by ConfirmCheckout, so both reach the writer's guard.
+			"no customer on the provider's record",
+			func(orgID string) confirmStub {
+				e := confirmEvent(orgID, "sub00000000000000044", "prod_growth", corebilling.SubStatusActive)
+				e.ProviderCustomerID = ""
+				return confirmStub{event: e}
+			},
+			connect.CodeFailedPrecondition, apperr.ReasonBillingSubscriptionUnapplicable,
+		},
+		{
+			"no status on the provider's record",
+			func(orgID string) confirmStub {
+				e := confirmEvent(orgID, "sub00000000000000045", "prod_growth", corebilling.SubStatusActive)
+				e.Status = ""
+				return confirmStub{event: e}
+			},
+			connect.CodeFailedPrecondition, apperr.ReasonBillingSubscriptionUnapplicable,
+		},
+		{
 			"declined card",
 			func(string) confirmStub { return confirmStub{err: corebilling.ErrCheckoutFailed} },
 			connect.CodeFailedPrecondition, apperr.ReasonBillingCheckoutFailed,

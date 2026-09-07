@@ -2,6 +2,8 @@ package billing
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,8 +11,19 @@ import (
 	"time"
 
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 )
+
+// newCheckoutRef returns the token every delivery is attributed on. Unguessable is
+// the whole property: a predictable one lands a purchase on another org.
+func newCheckoutRef() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("crypto/rand: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
 
 var (
 	// ErrNoProvider is billing running with no payments credentials: the
@@ -33,8 +46,8 @@ const Currency = "USD"
 // Payments is the provider wiring. Nil means no provider, which is legal.
 type Payments struct {
 	Provider PaymentProvider
-	// ProductBySlug is checkout's direction, SlugByProduct is the webhook's. Both
-	// are built from one source so they cannot disagree.
+	// ProductBySlug is checkout's direction, SlugByProduct is the webhook's. Derive
+	// the second from the first: a one-way slug takes money and rejects the delivery.
 	ProductBySlug map[string]string
 	SlugByProduct map[string]string
 	// ReturnURL is where the provider sends a buyer after checkout: the dashboard's
@@ -111,7 +124,25 @@ func (s *Service) CreateCheckoutSession(
 		return "", "", err
 	}
 
+	// Before the provider call: the ref travels in the checkout's metadata. An
+	// orphan row is pruned; a missing one leaves a real purchase unattributable.
+	ref, err := newCheckoutRef()
+	if err != nil {
+		return "", "", err
+	}
+	if err := s.write().CreateBillingCheckoutSession(ctx, dbwrite.CreateBillingCheckoutSessionParams{
+		OrgID:    orgID,
+		Provider: s.payments.Provider.Name(),
+		Ref:      ref,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to store a billing checkout session", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return "", "", err
+	}
+
 	sessionID, url, err := s.payments.Provider.CreateCheckoutSession(ctx, CheckoutInput{
+		CheckoutRef:   ref,
 		CustomerEmail: customerEmail,
 		OrgID:         orgID,
 		ProductID:     productID,
@@ -265,11 +296,11 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 	// A real subscription with no status means the provider's schema and pug's
 	// mapping have diverged; the buyer is waiting, so it must not pass silently.
 	if event.Status == "" {
-		err := errors.New("billing: confirmed subscription carries no status")
-		slog.ErrorContext(ctx, "confirmed checkout carries no status", slogx.Error(err),
+		slog.ErrorContext(ctx, "confirmed checkout carries no status",
+			slogx.Error(ErrSubscriptionUnapplicable),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-		telemetry.RecordError(ctx, err)
-		return false, err
+		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
+		return false, ErrSubscriptionUnapplicable
 	}
 	// The customer has paid and pug cannot place it. A person has to act either
 	// way, but somebody is waiting here, so it is returned as well as logged.

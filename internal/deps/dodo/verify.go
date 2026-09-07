@@ -104,7 +104,7 @@ func (v *verifier) verify(headers http.Header, rawBody []byte) (corebilling.Deli
 	// from a header would take it from outside the signed envelope.
 	eventType, err := envelopeType(rawBody)
 	if err != nil {
-		return corebilling.Delivery{}, err
+		return corebilling.Delivery{}, fmt.Errorf("%w: %w", corebilling.ErrUndecodable, err)
 	}
 	return corebilling.Delivery{
 		DeliveredAt: delivered,

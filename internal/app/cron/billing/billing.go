@@ -52,7 +52,9 @@ func Run(ctx context.Context) error {
 	// Off is the self-hosted shape: nothing to reconcile. Exit 0, so the CronJob stays
 	// green on a deployment that simply does not bill.
 	if !billingCfg.Enabled {
-		slog.InfoContext(ctx, "billing is disabled; nothing to reconcile")
+		// Warn, not info: the pass is also the only thing that prunes the inbox, whose
+		// payloads carry personal data.
+		slog.WarnContext(ctx, "billing is disabled; nothing to reconcile and no delivery prune")
 		return nil
 	}
 

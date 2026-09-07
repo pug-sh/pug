@@ -58,8 +58,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Started before the body read: a budget a slow upload could spend would leave a
-	// fine delivery no time to be stored.
+	// The timeout starts after the body read below, not here: a budget a slow upload
+	// could spend would leave a fine delivery no time to be stored.
 	ctx := r.Context()
 
 	// Outside the Connect chain nothing upstream started a span, so RecordError would
@@ -98,6 +98,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	delivery, err := h.provider.Verify(r.Header, body)
 	if err != nil {
+		// Verified but unreadable is pug's fault: 401 would file the money path going
+		// down under the same warning a port scanner produces.
+		if errors.Is(err, corebilling.ErrUndecodable) {
+			slog.ErrorContext(ctx, "cannot decode a verified billing webhook", slogx.Error(err),
+				slog.String("provider", h.provider.Name()))
+			telemetry.RecordError(ctx, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		// An auth failure, not a server fault -- recording it would let a scanner
 		// probing an open route fill the error telemetry.
 		slog.WarnContext(ctx, "rejected a billing webhook", slogx.Error(err),

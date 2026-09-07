@@ -2,9 +2,14 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 )
+
+// ErrUndecodable is a delivery that VERIFIED and still will not decode. Kept apart
+// from a signature failure so it is retried and recorded, not answered 401.
+var ErrUndecodable = errors.New("billing: webhook body cannot be decoded")
 
 // PaymentProvider is the whole seam between pug and a merchant of record: nothing
 // else in this slice imports a provider package. The payload is deliberately not
@@ -57,9 +62,12 @@ type SubscriptionEvent struct {
 	// ProductID is the provider's product. It is what resolves a plan slug -- from
 	// config for a catalog tier, from the org's row for a negotiated deal.
 	ProductID string
-	// OrgID is metadata.org_id, set on every checkout pug starts. Empty falls back
-	// to attribution by customer id.
+	// OrgID is metadata.org_id, which a buyer can set on a static payment link. It
+	// attributes only beside a ProductID an operator staged, and cross-checks a confirm.
 	OrgID string
+	// CheckoutRef is the token pug minted and stored before opening the checkout --
+	// the one signal a buyer cannot forge, so it wins.
+	CheckoutRef string
 
 	Status SubStatus
 	// ProviderStatus is the provider's own word, kept verbatim for when pug's
@@ -79,6 +87,9 @@ func (e SubscriptionEvent) IsZero() bool { return e.ProviderSubID == "" }
 type CheckoutInput struct {
 	ProductID string
 	OrgID     string
+	// CheckoutRef is the token pug stored against OrgID before calling the provider.
+	// It rides the metadata and comes back on every delivery.
+	CheckoutRef string
 	// ReturnURL is where the provider sends the buyer after checkout. It is the
 	// dashboard's billing page, not a provider page.
 	ReturnURL string
@@ -103,7 +114,7 @@ const (
 
 // Live reports whether the subscription supplies a plan. past_due is live on
 // purpose: the card failed, the entitlement did not. The same set is hardcoded in
-// three SQL sites, which TestTheLiveStatusSetAgreesBetweenGoAndSQL pins.
+// four SQL sites, which TestTheLiveStatusSetAgreesBetweenGoAndSQL pins.
 func (s SubStatus) Live() bool {
 	switch s {
 	case SubStatusActive, SubStatusPastDue:

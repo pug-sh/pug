@@ -30,4 +30,7 @@ var (
 	// The provider says the checkout will not settle -- a declined card, most
 	// often. The one confirmation reason where no money moved.
 	ReasonBillingCheckoutFailed = codes.add("BILLING_CHECKOUT_FAILED")
+	// Paid, and the provider's record is one pug cannot store: no customer, no
+	// status, or a negative price.
+	ReasonBillingSubscriptionUnapplicable = codes.add("BILLING_SUBSCRIPTION_UNAPPLICABLE")
 )

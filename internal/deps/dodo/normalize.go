@@ -10,8 +10,12 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
-// metadataOrgID is the attribution key pug sets on every checkout it starts.
+// metadataOrgID names an org rather than proving one: static payment links let a
+// buyer set metadata_*. It counts only beside a product an operator staged.
 const metadataOrgID = "org_id"
+
+// metadataCheckoutRef is the one a buyer cannot forge, so attribution prefers it.
+const metadataCheckoutRef = "checkout_ref"
 
 // Every subscription.* delivery runs one apply path and takes its state from the
 // payload's status, not the event name, so pausing needs no branch of its own.
@@ -101,6 +105,7 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 		p.CustomerID = p.Customer.CustomerID
 	}
 	event := corebilling.SubscriptionEvent{
+		CheckoutRef:        p.Metadata[metadataCheckoutRef],
 		Currency:           strings.ToUpper(strings.TrimSpace(p.Currency)),
 		OrgID:              p.Metadata[metadataOrgID],
 		PriceCents:         p.RecurringPreTaxAmount,

@@ -207,7 +207,8 @@ The split for `custom`:
   retention, plus that product's id
   (`provider_product_id`, §5.2), `contract_ends_at` and `--note`.
 - **The join:** the subscription row the webhook writes, attributed by the
-  `metadata.org_id` pug sets on the checkout session it opens.
+  `checkout_ref` pug mints for the checkout session it opens — or, for a payment
+  link, by `metadata.org_id` paired with the `provider_product_id` staged above.
 
 Note what is *not* here: no price typed into pug, and no payment link emailed to
 the customer. The operator pastes one product id; the customer buys from the pug
@@ -261,8 +262,12 @@ pug.
 
 **A payment link still works** and stays the fallback — for a customer who wants
 to pay before anyone touches pug, or a deal where the buyer is not a pug user at
-all. The webhook attributes it the same way, provided `metadata.org_id` is set on
-the link.
+all. It carries no `checkout_ref`, so it attributes on `metadata.org_id` **paired
+with** the `provider_product_id` already on that org's row: `pug billing set
+--provider-product` has to run *before* the link is paid, not after. That pairing
+is what keeps a buyer-settable `metadata_org_id` from placing a subscription on
+someone else's org — the worst a forged one can do is buy the org exactly the
+product an operator already staged for it.
 
 **The one ordering hazard:** if the operator never runs `pug billing set`, the
 org holds a `custom` subscription with no quota row, and `custom` has no catalog
@@ -289,7 +294,7 @@ self-serve customer sees too.
 
 ## 6. Storage
 
-One new table, one new inbox, and one new column on `billing_entitlements`:
+Two new tables, one new inbox, and one new column on `billing_entitlements`:
 
 ```text
 billing_entitlements
@@ -474,7 +479,9 @@ processed. Only `Verify` and `Normalize` change per provider.
 Dodo's verification is [Standard Webhooks](https://www.standardwebhooks.com/):
 HMAC-SHA256 over `"{webhook-id}.{webhook-timestamp}.{raw body}"`, constant-time
 compared against **each** space-delimited signature in `webhook-signature` (the
-header carries several during secret rotation), ±5 minute timestamp tolerance.
+header carries several during secret rotation), 24h timestamp tolerance — wide
+because a retry reuses its original timestamp, so a tighter window would reject
+every late attempt.
 The raw body must be read before any JSON decode — re-serializing changes the
 bytes and breaks the signature. Not every provider uses this scheme, which is
 why it lives behind `Verify` rather than in the handler.
@@ -501,22 +508,45 @@ everything. `payment.*` and `refund.*` are stored and
 ignored in this slice; the ledger is a later one
 ([`billing.md`](billing.md) §11.4).
 
-Attribution is `metadata.org_id`, set on every checkout and every custom product
-link, falling back to `provider_customer_id` — and that fallback only while the
-customer names a single org. Checkout sets `always_create_new_customer`, so one
+Attribution is a `checkout_ref` — 32 crypto-random bytes pug mints and stores in
+`billing_checkout_sessions` (§6) *before* it opens the checkout, then sets in the
+checkout's metadata. A row there is keyed by the ref, carries the org and the
+provider, and is pruned on the inbox's 90-day window: past it the ref has either
+produced a subscription row, which carries attribution from then on, or belonged
+to an abandoned checkout. It falls back to `metadata.org_id`, but **only** when that
+org's `provider_product_id` equals the delivery's product (the staged-deal link
+below), and then to `provider_customer_id` — that one only while the customer
+names a single org. `metadata.org_id` is never sufficient alone: Dodo's static
+payment links accept `metadata_*` query parameters, so a buyer can set it to any
+org id, and trusting it would let anyone who pays put a subscription on an org
+they do not belong to. Checkout sets `always_create_new_customer`, so one
 buyer paying for two orgs gets two provider customers rather than one shared
 between them; without that flag Dodo matches on email and the fallback would
 resolve to two orgs, and the portal would open on whichever it found. A delivery that resolves
 to no org, or to two, is stored, marked processed, and logged — never applied to
 a guess.
 
-**A product pug cannot place is the same case.** If `product_id` maps to no
-configured tier (§13) and does not match the attributed org's
-`provider_product_id`, there is no `plan_slug` to write, so the delivery is
+**A body that verifies and will not decode answers 500, not 401.** The signature
+passed, so it is pug's payload mapping that is behind, not an unauthenticated
+caller: `ErrUndecodable` separates the two so the delivery is retried and recorded
+rather than filed under the warning a port scanner produces.
+
+**A product pug cannot place is the same case, in the granting direction only.**
+If `product_id` maps to no configured tier (§13) and does not match the attributed
+org's `provider_product_id`, there is no `plan_slug` to write, so the delivery is
 stored, marked processed, logged as an error, and **not applied** — the same
 disposition as a foreign currency (§3) and an unattributable delivery, for the
 same reason: retrying cannot fix a mapping that lives in config, and 8 retries
-would only delay the alert. Reconcile (§9) reports it as a third inconsistency —
+would only delay the alert. Every such delivery is counted and logged by the
+reconcile pass as `Rejected` (§9) — the subscription walk cannot see it, because a
+delivery pug did not apply wrote no subscription row at all.
+
+**A delivery that ENDS a subscription is exempt.** A non-live status keeps the
+`plan_slug` already stored on the row rather than resolving one from the product,
+because refusing a cancellation whose product has left the config would leave the
+row `active` and the org on a tier it stopped paying for — an unmapped product may
+withhold a plan, never preserve one. Only a delivery with no stored row to end
+falls back to the refusal above. Reconcile (§9) reports it as a third inconsistency —
 a live subscription against a product pug does not know — which is the signal
 that a deploy is missing a product key or that an operator created a product
 without pasting its id.

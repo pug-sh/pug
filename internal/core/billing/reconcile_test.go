@@ -179,6 +179,12 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		past, fakeProviderName); err != nil {
 		t.Fatalf("seed deliveries: %v", err)
 	}
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_checkout_sessions (create_time, org_id, provider, ref)
+		 values ($1, $2, $3, 'ref_abandoned')`,
+		past, f.orgID, fakeProviderName); err != nil {
+		t.Fatalf("seed checkout session: %v", err)
+	}
 
 	pruned, err := f.svc.PruneDeliveries(t.Context(), time.Now().Add(-corebilling.DeliveryRetention))
 	if err != nil {
@@ -196,6 +202,26 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 	}
 	if remaining != "evt_stuck" {
 		t.Errorf("remaining delivery = %q, want evt_stuck — a retry can still fix that one", remaining)
+	}
+
+	// The same window drops spent refs. Deleting one early makes its checkout
+	// unattributable, so only the old one may go.
+	var refs []string
+	rows, err := f.pg.PgRO.Query(t.Context(),
+		`select ref from billing_checkout_sessions order by ref`)
+	if err != nil {
+		t.Fatalf("read refs: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ref string
+		if err := rows.Scan(&ref); err != nil {
+			t.Fatalf("scan ref: %v", err)
+		}
+		refs = append(refs, ref)
+	}
+	if len(refs) != 1 || refs[0] != checkoutRef(f.orgID) {
+		t.Errorf("refs = %v, want only the fresh %q", refs, checkoutRef(f.orgID))
 	}
 }
 
@@ -222,5 +248,53 @@ func TestReconcileCountsASubscriptionItCannotStore(t *testing.T) {
 	}
 	if report.Unapplicable != 1 || report.Applied != 0 || report.Unreadable != 0 {
 		t.Errorf("report = %+v, want 1 unapplicable and nothing else", report)
+	}
+}
+
+// A read that SUCCEEDS and decodes to nothing is a payload shape pug no longer
+// understands. Counted Untracked it would exit 0 on a pass that verified nothing,
+// which is exactly the case reconcile exists to catch.
+func TestReconcileCountsAnUndecodableSubscriptionAsUnreadable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	seedLiveSubscription(t, f, "sub00000000000000011", "growth")
+
+	// An empty remote map: the fetch succeeds and yields a zero event.
+	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}})
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.Unreadable != 1 || report.Untracked != 0 {
+		t.Errorf("report = %+v, want 1 unreadable and 0 untracked", report)
+	}
+}
+
+// A delivery pug accepted and did not apply wrote no subscription row, so the walk
+// cannot see it. Without this counter nothing reports it at all.
+func TestReconcileCountsAcceptedButUnappliedDeliveries(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_webhook_deliveries
+		   (error, event_type, payload, processed_at, provider, received_at, webhook_id)
+		 values ('product: no such product', 'subscription.active', '{}'::jsonb,
+		         now(), $1, now(), 'evt_rejected'),
+		        ('', 'subscription.active', '{}'::jsonb, now(), $1, now(), 'evt_applied')`,
+		fakeProviderName); err != nil {
+		t.Fatalf("seed deliveries: %v", err)
+	}
+
+	report, err := f.svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.Rejected != 1 {
+		t.Errorf("rejected = %d, want 1 — only the delivery carrying a reason", report.Rejected)
 	}
 }

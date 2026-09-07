@@ -90,7 +90,13 @@ func (d deps) report(ctx context.Context, out io.Writer, orgID string, rec coreb
 	if err != nil {
 		return err
 	}
-	return writeReport(out, org, ent, rec, history)
+	// Not through the entitlement: that one nils a non-live row and resolves
+	// nothing while billing is off, which is when `show` is most worth running.
+	subs, err := d.read.ListBillingSubscriptionsByOrg(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	return writeReport(out, org, ent, rec, subs, history)
 }
 
 func withDeps(ctx context.Context, fn func(context.Context, deps) error) error {

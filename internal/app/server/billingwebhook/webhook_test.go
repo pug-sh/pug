@@ -3,6 +3,7 @@ package billingwebhook
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -203,5 +204,46 @@ func TestAFailedWriteIs500(t *testing.T) {
 	res := post(t, &handler{provider: stubProvider{name: "dodo"}, service: svc}, "/", goodBody)
 	if res.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", res.StatusCode)
+	}
+}
+
+// A body that verified and still will not decode is pug's fault. 401 would file the
+// money path going down under the same warning a port scanner produces, and the
+// provider's retry is what a redeploy needs.
+func TestAnUndecodableBodyIsRetriedNotRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	svc, _ := newService(t)
+	mux := http.NewServeMux()
+	provider := stubProvider{
+		name:      "dodo",
+		verifyErr: fmt.Errorf("%w: unexpected envelope", corebilling.ErrUndecodable),
+	}
+	if !Mount(mux, svc, provider, true) {
+		t.Fatal("Mount did not register the route")
+	}
+
+	if res := post(t, mux, PathFor("dodo"), goodBody); res.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 so the provider retries", res.StatusCode)
+	}
+}
+
+// The other half: a genuine signature failure stays a 401, so a scanner probing an
+// open route cannot fill the error telemetry.
+func TestABadSignatureStaysUnauthorized(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	svc, _ := newService(t)
+	mux := http.NewServeMux()
+	if !Mount(mux, svc, stubProvider{name: "dodo"}, true) {
+		t.Fatal("Mount did not register the route")
+	}
+
+	if res := post(t, mux, PathFor("dodo"), "not-the-magic-body"); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", res.StatusCode)
 	}
 }

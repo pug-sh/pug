@@ -16,7 +16,7 @@ import (
 // bound on history and no list price -- "0 days of history" worst of all.
 const none = "(none)"
 
-func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record, history []corebilling.HistoryEntry) error {
+func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record, subs []dbread.BillingSubscription, history []corebilling.HistoryEntry) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	row(w, "org", fmt.Sprintf("%s  %q", org.ID, org.DisplayName))
@@ -53,6 +53,17 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 		row(w, "  provider product", text(rec.ProviderProductID))
 		row(w, "  trial ends", instant(rec.TrialEndsAt))
 		row(w, "  note", text(rec.Note))
+	}
+
+	if len(subs) == 0 {
+		section(w, "SUBSCRIPTIONS", "(none stored)")
+	} else {
+		section(w, "SUBSCRIPTIONS", "")
+		for _, sub := range subs {
+			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  %s  ends %s",
+				sub.PlanSlug, price(&sub.PriceCents, sub.Currency), sub.Provider,
+				sub.ProviderSubID, instant(sub.CurrentPeriodEnd.Time)))
+		}
 	}
 
 	if history != nil {

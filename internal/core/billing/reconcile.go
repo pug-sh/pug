@@ -3,9 +3,11 @@ package billing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -36,8 +38,8 @@ type ReconcileReport struct {
 	// A live subscription against a product nothing maps to: a deploy is missing a
 	// product key, or an operator created a product without pasting its id.
 	UnmappedProduct int
-	// Rows the pass could not settle because a read or a write failed. Kept apart so
-	// an outage does not read as clean, and the only counter the CronJob fails on.
+	// Rows the pass could not settle: a failed read or write, or a read that
+	// decoded to nothing. The only counter the CronJob fails on.
 	Unreadable int
 	// A live subscription pug cannot apply: an unsold currency, no status, no
 	// customer, or a negative price. Counted rather than skipped, or the pass
@@ -46,6 +48,9 @@ type ReconcileReport struct {
 	// Two live subscriptions for one org, refused by the partial unique index -- the
 	// one finding that means an org may be paying twice.
 	TwoLive int
+	// Deliveries accepted and not applied. The walk above cannot see them: one that
+	// was not applied wrote no subscription row.
+	Rejected int
 }
 
 // Reconcile is the backstop for the one thing the inbox cannot cover: a webhook
@@ -104,11 +109,26 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 
+	rejected, err := s.read.ListRecentRejectedBillingWebhookDeliveries(ctx,
+		postgres.NewTimestamptz(now.Add(-DeliveryRetention)))
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list rejected billing webhook deliveries", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return report, err
+	}
+	for _, row := range rejected {
+		report.Rejected++
+		// Error, not warn: somebody may have paid for a plan they do not hold.
+		slog.ErrorContext(ctx, "billing webhook delivery was accepted but not applied",
+			slog.String("provider", row.Provider), slog.String("webhook_id", row.WebhookID),
+			slog.String("event_type", row.EventType), slog.String("reason", row.Error))
+	}
+
 	slog.InfoContext(ctx, "billing reconcile pass finished",
 		slog.Int("checked", report.Checked), slog.Int("applied", report.Applied),
 		slog.Int("untracked", report.Untracked), slog.Int("entitled_unbilled", report.EntitledUnbilled),
 		slog.Int("unmapped_product", report.UnmappedProduct), slog.Int("unreadable", report.Unreadable),
-		slog.Int("two_live", report.TwoLive),
+		slog.Int("two_live", report.TwoLive), slog.Int("rejected", report.Rejected),
 		slog.Int("unapplicable", report.Unapplicable))
 	return report, nil
 }
@@ -138,9 +158,13 @@ func (s *Service) reconcileOne(
 		return
 	}
 	if event.IsZero() {
-		report.Untracked++
-		slog.ErrorContext(ctx, "the provider returned nothing for a stored subscription",
+		// A successful read that decodes to nothing is a shape change, not a dropped
+		// subscription: Untracked would exit 0 on a pass that verified nothing.
+		report.Unreadable++
+		err := fmt.Errorf("provider returned an undecodable subscription %q", row.ProviderSubID)
+		slog.ErrorContext(ctx, "the provider returned nothing for a stored subscription", slogx.Error(err),
 			slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID))
+		telemetry.RecordError(ctx, err)
 		return
 	}
 

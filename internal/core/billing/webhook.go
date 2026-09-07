@@ -115,20 +115,41 @@ func (s *Service) applySubscriptionEvent(
 	return s.finishDelivery(ctx, provider, d, "")
 }
 
-// attributeDelivery places a delivery on an org: metadata.org_id first, then the
-// provider customer, and that one only while it names a single org. A delivery
-// resolving to no org, or to two, is never applied to a guess.
+// attributeDelivery places a delivery on an org: the ref from a checkout pug
+// started, then a staged deal's product, then the provider customer, and that one
+// only while it names a single org. A delivery resolving to no org, or to two, is
+// never applied to a guess.
+//
+// metadata.org_id is never enough on its own. Static payment links let the buyer
+// set metadata_* from the URL, so an org id in a payload names an org rather than
+// proving one -- it counts only alongside a product an operator staged.
 func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
-	// Both reads go through the WRITE pool: a lagging replica would report "no such
-	// org" for an org that just checked out, rejecting the delivery permanently.
+	// Every read here goes through the WRITE pool: a lagging replica would report "no
+	// such org" for an org that just checked out, rejecting the delivery permanently.
 	w := s.write()
-	// Checked against orgs, not against the subscription table: a first delivery
-	// beats the row into existence, and the org is what the id has to name.
-	if event.OrgID != "" {
-		if _, err := w.GetOrgByID(ctx, event.OrgID); err == nil {
-			return event.OrgID, nil
-		} else if !errors.Is(err, pgx.ErrNoRows) {
+	if event.CheckoutRef != "" {
+		orgID, err := w.GetBillingCheckoutSessionOrgID(ctx, dbwrite.GetBillingCheckoutSessionOrgIDParams{
+			Provider: provider.Name(),
+			Ref:      event.CheckoutRef,
+		})
+		if err == nil {
+			return orgID, nil
+		}
+		// A ref nobody minted is worth nothing, not a rejection: a payment link has none.
+		if !errors.Is(err, pgx.ErrNoRows) {
 			return "", err
+		}
+	}
+	// metadata.org_id, but only for the product an operator already staged this org
+	// to buy -- the negotiated-deal payment link. Buyer-settable metadata alone
+	// names an org; paired with a staged product it can only buy what was staged.
+	if event.OrgID != "" && event.ProductID != "" {
+		staged, err := w.GetBillingEntitlementProviderProductID(ctx, event.OrgID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return "", err
+		}
+		if err == nil && staged.Valid && staged.String == event.ProductID {
+			return event.OrgID, nil
 		}
 	}
 	if event.ProviderCustomerID != "" {
@@ -205,7 +226,8 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// PruneDeliveries drops deliveries older than the retention window -- the whole
+// PruneDeliveries drops deliveries and spent checkout refs older than the
+// retention window. For deliveries that is the whole
 // row, dedup key included, so a re-send after this is treated as new. They carry
 // personal data pug does not otherwise store; only replay needs it. One that
 // never processed is dated from its arrival, or a body pug cannot decode would
@@ -214,6 +236,13 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 	n, err := s.write().PruneBillingWebhookDeliveries(ctx, postgres.NewTimestamptz(olderThan))
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prune billing webhook deliveries", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return 0, err
+	}
+	// Same window: past it a ref has either produced its subscription row, which
+	// carries attribution from then on, or belongs to an abandoned checkout.
+	if _, err := s.write().PruneBillingCheckoutSessions(ctx, postgres.NewTimestamptz(olderThan)); err != nil {
+		slog.ErrorContext(ctx, "failed to prune billing checkout sessions", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return 0, err
 	}
@@ -239,10 +268,15 @@ var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be ap
 func (s *Service) applySubscription(
 	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time,
 ) (int64, error) {
-	// Mirrors the column checks: unguarded they fail the insert, which retries and
-	// then leaves the delivery stored but never processed.
+	// Mirrors the column checks: unguarded they fail the insert. Logged here because
+	// the confirm path reaches it with a buyer already charged.
 	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
 		event.ProviderCustomerID == "" || event.PriceCents < 0 {
+		slog.ErrorContext(ctx, "subscription cannot be applied", slogx.Error(ErrSubscriptionUnapplicable),
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
+			slog.String("currency", normalizeCurrency(event.Currency)),
+			slog.String("status", string(event.Status)))
+		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
 	}
 	tx, err := s.begin(ctx)
@@ -266,7 +300,26 @@ func (s *Service) applySubscription(
 	}
 	planSlug, err := s.planForProduct(event.ProductID, rec)
 	if err != nil {
-		return 0, err
+		// A product only has to resolve to GRANT a plan. Refusing a cancellation whose
+		// product left the config would strand the org on a tier it stopped paying for.
+		if event.Status.Live() || !errors.Is(err, ErrNotPurchasable) {
+			return 0, err
+		}
+		stored, storedErr := w.GetBillingSubscriptionPlanSlug(ctx, dbwrite.GetBillingSubscriptionPlanSlugParams{
+			Provider:      provider.Name(),
+			ProviderSubID: event.ProviderSubID,
+		})
+		if storedErr != nil {
+			// No row means no grant to end, so the original refusal stands.
+			if errors.Is(storedErr, pgx.ErrNoRows) {
+				return 0, err
+			}
+			slog.ErrorContext(ctx, "failed to read the stored plan slug for a cancellation", slogx.Error(storedErr),
+				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+			telemetry.RecordError(ctx, storedErr)
+			return 0, storedErr
+		}
+		planSlug = stored
 	}
 	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
 		Currency:           Currency,

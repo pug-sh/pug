@@ -77,12 +77,13 @@ func (c *Client) CreateCheckoutSession(
 			ProductID: dodopayments.F(in.ProductID),
 			Quantity:  dodopayments.F(int64(1)),
 		}}),
-		// Attribution. Every delivery this checkout produces carries it, which is
-		// what lets the webhook place a subscription without guessing.
-		Metadata: dodopayments.F(dodopayments.MetadataParam{
-			metadataOrgID: shared.UnionString(in.OrgID),
-		}),
 	}
+	// Both ride every delivery this checkout produces; only the ref proves the org.
+	md := dodopayments.MetadataParam{metadataOrgID: shared.UnionString(in.OrgID)}
+	if in.CheckoutRef != "" {
+		md[metadataCheckoutRef] = shared.UnionString(in.CheckoutRef)
+	}
+	req.Metadata = dodopayments.F(md)
 	if in.ReturnURL != "" {
 		req.ReturnURL = dodopayments.F(in.ReturnURL)
 	}

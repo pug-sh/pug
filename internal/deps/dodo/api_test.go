@@ -48,7 +48,8 @@ func jsonHandler(t *testing.T, status int, body string, record func(*http.Reques
 const subscriptionJSONBody = `{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
 	`"currency":"USD","recurring_pre_tax_amount":2000,` +
-	`"customer":{"customer_id":"cus_1"},"metadata":{"org_id":"org_abc"},` +
+	`"customer":{"customer_id":"cus_1"},` +
+	`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}`
 
 // The same subscription with no metadata, for the case where Dodo does not carry
@@ -85,6 +86,7 @@ func TestCreateCheckoutSession(t *testing.T) {
 		id, url, err := c.CreateCheckoutSession(context.Background(), corebilling.CheckoutInput{
 			ProductID:     "prod_growth",
 			OrgID:         "org_abc",
+			CheckoutRef:   "ref_deadbeef",
 			ReturnURL:     "https://app.example/settings/billing",
 			CustomerEmail: "buyer@example.com",
 		})
@@ -100,8 +102,12 @@ func TestCreateCheckoutSession(t *testing.T) {
 		if len(got.ProductCart) != 1 || got.ProductCart[0].ProductID != "prod_growth" || got.ProductCart[0].Quantity != 1 {
 			t.Errorf("product_cart = %+v, want one prod_growth at quantity 1", got.ProductCart)
 		}
-		// Every delivery this checkout produces carries it; without it the webhook
-		// can only attribute by customer id.
+		// A checkout that does not carry the ref leaves every delivery it produces to
+		// the customer-id fallback.
+		if got.Metadata[metadataCheckoutRef] != "ref_deadbeef" {
+			t.Errorf("metadata[%s] = %q, want ref_deadbeef",
+				metadataCheckoutRef, got.Metadata[metadataCheckoutRef])
+		}
 		if got.Metadata[metadataOrgID] != "org_abc" {
 			t.Errorf("metadata[%s] = %q, want org_abc", metadataOrgID, got.Metadata[metadataOrgID])
 		}

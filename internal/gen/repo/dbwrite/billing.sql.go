@@ -80,6 +80,24 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 	return result.RowsAffected(), nil
 }
 
+const createBillingCheckoutSession = `-- name: CreateBillingCheckoutSession :exec
+insert into billing_checkout_sessions (org_id, provider, ref)
+values ($1, $2, $3)
+`
+
+type CreateBillingCheckoutSessionParams struct {
+	OrgID    string
+	Provider string
+	Ref      string
+}
+
+// Written before the provider is called, because the ref has to be in the
+// checkout's metadata. An abandoned checkout's row is pruned.
+func (q *Queries) CreateBillingCheckoutSession(ctx context.Context, arg CreateBillingCheckoutSessionParams) error {
+	_, err := q.db.Exec(ctx, createBillingCheckoutSession, arg.OrgID, arg.Provider, arg.Ref)
+	return err
+}
+
 const deleteBillingEntitlement = `-- name: DeleteBillingEntitlement :execrows
 delete from billing_entitlements where org_id = $1
 `
@@ -90,6 +108,25 @@ func (q *Queries) DeleteBillingEntitlement(ctx context.Context, orgID string) (i
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getBillingCheckoutSessionOrgID = `-- name: GetBillingCheckoutSessionOrgID :one
+select org_id from billing_checkout_sessions
+where provider = $1 and ref = $2
+`
+
+type GetBillingCheckoutSessionOrgIDParams struct {
+	Provider string
+	Ref      string
+}
+
+// Attribution: turns a ref that came back on a delivery into the org pug chose
+// when it started the checkout.
+func (q *Queries) GetBillingCheckoutSessionOrgID(ctx context.Context, arg GetBillingCheckoutSessionOrgIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getBillingCheckoutSessionOrgID, arg.Provider, arg.Ref)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
 }
 
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
@@ -115,6 +152,39 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.ProviderProductID,
 	)
 	return i, err
+}
+
+const getBillingEntitlementProviderProductID = `-- name: GetBillingEntitlementProviderProductID :one
+select provider_product_id from billing_entitlements where org_id = $1
+`
+
+// The product an operator staged this org to buy. It is what lets a payment
+// link's metadata.org_id attribute: buyer-settable on its own, it only counts
+// when an operator has already pointed this org at this product.
+func (q *Queries) GetBillingEntitlementProviderProductID(ctx context.Context, orgID string) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, getBillingEntitlementProviderProductID, orgID)
+	var provider_product_id pgtype.Text
+	err := row.Scan(&provider_product_id)
+	return provider_product_id, err
+}
+
+const getBillingSubscriptionPlanSlug = `-- name: GetBillingSubscriptionPlanSlug :one
+select plan_slug from billing_subscriptions
+where provider = $1 and provider_sub_id = $2
+`
+
+type GetBillingSubscriptionPlanSlugParams struct {
+	Provider      string
+	ProviderSubID string
+}
+
+// Read inside the apply lock so a delivery that ENDS a subscription keeps the
+// stored slug: a product dropped from config must not refuse a cancellation.
+func (q *Queries) GetBillingSubscriptionPlanSlug(ctx context.Context, arg GetBillingSubscriptionPlanSlugParams) (string, error) {
+	row := q.db.QueryRow(ctx, getBillingSubscriptionPlanSlug, arg.Provider, arg.ProviderSubID)
+	var plan_slug string
+	err := row.Scan(&plan_slug)
+	return plan_slug, err
 }
 
 const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistory :exec
@@ -211,7 +281,8 @@ type ListBillingSubscriptionOrgsByProviderCustomerIDParams struct {
 	ProviderCustomerID string
 }
 
-// Attribution fallback when a delivery carries no org_id metadata. Two rows is the
+// Attribution's last resort, once the ref missed and no staged product matched.
+// Two rows is the
 // answer that matters: one buyer purchasing for two orgs shares a provider customer,
 // so the caller rejects the delivery rather than guessing.
 func (q *Queries) ListBillingSubscriptionOrgsByProviderCustomerID(ctx context.Context, arg ListBillingSubscriptionOrgsByProviderCustomerIDParams) ([]string, error) {
@@ -261,6 +332,19 @@ type MarkBillingWebhookDeliveryProcessedParams struct {
 // fault rather than a benign no-op.
 func (q *Queries) MarkBillingWebhookDeliveryProcessed(ctx context.Context, arg MarkBillingWebhookDeliveryProcessedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markBillingWebhookDeliveryProcessed, arg.Error, arg.Provider, arg.WebhookID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const pruneBillingCheckoutSessions = `-- name: PruneBillingCheckoutSessions :execrows
+delete from billing_checkout_sessions where create_time < $1
+`
+
+// A ref only has to outlive the gap between a checkout and its first delivery.
+func (q *Queries) PruneBillingCheckoutSessions(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneBillingCheckoutSessions, olderThan)
 	if err != nil {
 		return 0, err
 	}

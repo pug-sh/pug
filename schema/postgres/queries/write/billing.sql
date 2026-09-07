@@ -100,8 +100,36 @@ where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
    or (billing_subscriptions.provider_updated_at = excluded.provider_updated_at
        and billing_subscriptions.status in ('active', 'past_due'));
 
+-- name: CreateBillingCheckoutSession :exec
+-- Written before the provider is called, because the ref has to be in the
+-- checkout's metadata. An abandoned checkout's row is pruned.
+insert into billing_checkout_sessions (org_id, provider, ref)
+values (@org_id, @provider, @ref);
+
+-- name: GetBillingCheckoutSessionOrgID :one
+-- Attribution: turns a ref that came back on a delivery into the org pug chose
+-- when it started the checkout.
+select org_id from billing_checkout_sessions
+where provider = @provider and ref = @ref;
+
+-- name: PruneBillingCheckoutSessions :execrows
+-- A ref only has to outlive the gap between a checkout and its first delivery.
+delete from billing_checkout_sessions where create_time < @older_than;
+
+-- name: GetBillingEntitlementProviderProductID :one
+-- The product an operator staged this org to buy. It is what lets a payment
+-- link's metadata.org_id attribute: buyer-settable on its own, it only counts
+-- when an operator has already pointed this org at this product.
+select provider_product_id from billing_entitlements where org_id = @org_id;
+
+-- name: GetBillingSubscriptionPlanSlug :one
+-- Read inside the apply lock so a delivery that ENDS a subscription keeps the
+-- stored slug: a product dropped from config must not refuse a cancellation.
+select plan_slug from billing_subscriptions
+where provider = @provider and provider_sub_id = @provider_sub_id;
+
 -- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
--- Attribution fallback when a delivery carries no org_id metadata. Two rows is the
+-- Attribution's last resort, once the ref missed and no staged product matched. Two rows is the
 -- answer that matters: one buyer purchasing for two orgs shares a provider customer,
 -- so the caller rejects the delivery rather than guessing.
 select distinct org_id from billing_subscriptions

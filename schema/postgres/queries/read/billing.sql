@@ -50,8 +50,24 @@ order by e.org_id;
 
 -- name: GetLatestBillingSubscription :one
 -- Any row, newest first -- not only a live one. A customer whose subscription
--- lapsed still has invoices to fetch and a card to re-add.
+-- lapsed still has invoices to fetch and a card to re-add. Provider-scoped, or a
+-- cutover hands provider A's customer id to provider B.
 select * from billing_subscriptions
-where org_id = @org_id
+where org_id = @org_id and provider = @provider
 order by create_time desc
 limit 1;
+
+-- name: ListRecentRejectedBillingWebhookDeliveries :many
+-- Deliveries pug accepted and did not apply. Nothing else surfaces them: one that
+-- was not applied wrote no subscription row for the walk above to find.
+select provider, webhook_id, event_type, error
+from billing_webhook_deliveries
+where error <> '' and received_at >= @since
+order by received_at;
+
+-- name: ListBillingSubscriptionsByOrg :many
+-- The operator's view: every stored row, newest first. Neither provider-scoped nor
+-- live-only -- a lapsed row is most of what `show` exists to explain.
+select * from billing_subscriptions
+where org_id = @org_id
+order by create_time desc;

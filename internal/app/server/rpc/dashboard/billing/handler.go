@@ -174,6 +174,9 @@ func confirmErr(err error, orgID string) error {
 	case errors.Is(err, corebilling.ErrTwoLiveSubscriptions):
 		return paid(apperr.ReasonBillingTwoLiveSubscriptions,
 			"this organization already has a live subscription")
+	case errors.Is(err, corebilling.ErrSubscriptionUnapplicable):
+		return paid(apperr.ReasonBillingSubscriptionUnapplicable,
+			"this subscription is in a state pug cannot record")
 	case errors.Is(err, corebilling.ErrCheckoutFailed):
 		// The one case where no money moved, so it says so plainly rather than
 		// sending the buyer to support.

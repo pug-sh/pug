@@ -13,15 +13,22 @@ import (
 
 const getLatestBillingSubscription = `-- name: GetLatestBillingSubscription :one
 select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
-where org_id = $1
+where org_id = $1 and provider = $2
 order by create_time desc
 limit 1
 `
 
+type GetLatestBillingSubscriptionParams struct {
+	OrgID    string
+	Provider string
+}
+
 // Any row, newest first -- not only a live one. A customer whose subscription
-// lapsed still has invoices to fetch and a card to re-add.
-func (q *Queries) GetLatestBillingSubscription(ctx context.Context, orgID string) (BillingSubscription, error) {
-	row := q.db.QueryRow(ctx, getLatestBillingSubscription, orgID)
+// lapsed still has invoices to fetch and a card to re-add. Provider-scoped like
+// every other read here: a cutover would otherwise hand provider A's customer id
+// to provider B's API.
+func (q *Queries) GetLatestBillingSubscription(ctx context.Context, arg GetLatestBillingSubscriptionParams) (BillingSubscription, error) {
+	row := q.db.QueryRow(ctx, getLatestBillingSubscription, arg.OrgID, arg.Provider)
 	var i BillingSubscription
 	err := row.Scan(
 		&i.CreateTime,
@@ -169,6 +176,51 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 	return items, nil
 }
 
+const listBillingSubscriptionsByOrg = `-- name: ListBillingSubscriptionsByOrg :many
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+where org_id = $1
+order by create_time desc
+`
+
+// The operator's view: every stored row, newest first. Deliberately neither
+// provider-scoped nor live-only -- `billing show` exists to explain the state the
+// resolved answer hides, and a lapsed row is most of that state.
+func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID string) ([]BillingSubscription, error) {
+	rows, err := q.db.Query(ctx, listBillingSubscriptionsByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BillingSubscription
+	for rows.Next() {
+		var i BillingSubscription
+		if err := rows.Scan(
+			&i.CreateTime,
+			&i.Currency,
+			&i.CurrentPeriodEnd,
+			&i.CurrentPeriodStart,
+			&i.ID,
+			&i.OrgID,
+			&i.PlanSlug,
+			&i.PriceCents,
+			&i.Provider,
+			&i.ProviderCustomerID,
+			&i.ProviderStatus,
+			&i.ProviderSubID,
+			&i.ProviderUpdatedAt,
+			&i.Status,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingSubscriptionsByProvider = `-- name: ListBillingSubscriptionsByProvider :many
 select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
 where provider = $1
@@ -248,6 +300,48 @@ func (q *Queries) ListPaidEntitlementsWithoutLiveSubscription(ctx context.Contex
 	for rows.Next() {
 		var i ListPaidEntitlementsWithoutLiveSubscriptionRow
 		if err := rows.Scan(&i.OrgID, &i.PlanSlug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentRejectedBillingWebhookDeliveries = `-- name: ListRecentRejectedBillingWebhookDeliveries :many
+select provider, webhook_id, event_type, error
+from billing_webhook_deliveries
+where error <> '' and received_at >= $1
+order by received_at
+`
+
+type ListRecentRejectedBillingWebhookDeliveriesRow struct {
+	Provider  string
+	WebhookID string
+	EventType string
+	Error     string
+}
+
+// Deliveries pug accepted and did not apply. Nothing else surfaces them: an
+// unattributable or unmappable delivery writes no subscription row, so the walk
+// above cannot see it and the buyer holds a plan nobody granted.
+func (q *Queries) ListRecentRejectedBillingWebhookDeliveries(ctx context.Context, since pgtype.Timestamptz) ([]ListRecentRejectedBillingWebhookDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listRecentRejectedBillingWebhookDeliveries, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentRejectedBillingWebhookDeliveriesRow
+	for rows.Next() {
+		var i ListRecentRejectedBillingWebhookDeliveriesRow
+		if err := rows.Scan(
+			&i.Provider,
+			&i.WebhookID,
+			&i.EventType,
+			&i.Error,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

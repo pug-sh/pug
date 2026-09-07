@@ -63,9 +63,16 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 // anyProviderCustomer resolves the customer the portal is opened for. Checkout
 // is what leaves one behind, so a trialing, free or comped org has none.
 func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string, error) {
+	if !s.payments.configured() {
+		return "", ErrNoProvider
+	}
 	// The write pool, for liveSubscription's reason: a lagging replica would hide
 	// "Manage billing" from a customer who has just paid.
-	row, err := dbread.New(s.pgW).GetLatestBillingSubscription(ctx, orgID)
+	row, err := dbread.New(s.pgW).GetLatestBillingSubscription(ctx,
+		dbread.GetLatestBillingSubscriptionParams{
+			OrgID:    orgID,
+			Provider: s.payments.Provider.Name(),
+		})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrNoCustomer

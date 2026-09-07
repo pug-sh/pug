@@ -27,6 +27,9 @@ type fakeProvider struct {
 	// provider disagree with what any delivery said.
 	checkout    corebilling.SubscriptionEvent
 	checkoutErr error
+	// checkoutIn is the last input CreateCheckoutSession was handed, so a test can
+	// join the ref pug stored against the ref it sent.
+	checkoutIn corebilling.CheckoutInput
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -39,7 +42,10 @@ func (f *fakeProvider) Normalize(corebilling.Delivery) (corebilling.Subscription
 	return f.event, f.err
 }
 
-func (f *fakeProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, string, error) {
+func (f *fakeProvider) CreateCheckoutSession(
+	_ context.Context, in corebilling.CheckoutInput,
+) (string, string, error) {
+	f.checkoutIn = in
 	return "cs_fake", "https://pay.example/checkout", nil
 }
 
@@ -75,11 +81,33 @@ func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	return &fixture{svc: svc, pg: pg, orgID: org}, provider
+	f := &fixture{svc: svc, pg: pg, orgID: org}
+	seedCheckoutRef(t, f, org)
+	return f, provider
+}
+
+// checkoutRef is the ref a delivery for orgID carries. Attribution is by ref, so a
+// test org needs a stored checkout to be reachable at all.
+func checkoutRef(orgID string) string {
+	if orgID == "" {
+		return ""
+	}
+	return "ref_" + orgID
+}
+
+// seedCheckoutRef stands in for the row CreateCheckoutSession writes.
+func seedCheckoutRef(t *testing.T, f *fixture, orgID string) {
+	t.Helper()
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_checkout_sessions (org_id, provider, ref) values ($1, $2, $3)`,
+		orgID, fakeProviderName, checkoutRef(orgID)); err != nil {
+		t.Fatalf("seed checkout session: %v", err)
+	}
 }
 
 func subEvent(orgID, subID, product string, status corebilling.SubStatus) corebilling.SubscriptionEvent {
 	return corebilling.SubscriptionEvent{
+		CheckoutRef:        checkoutRef(orgID),
 		Currency:           "USD",
 		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second),
 		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour).UTC().Truncate(time.Second),
@@ -184,7 +212,7 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 	}
 }
 
-// SubStatus.Live() is Go; the same set is hardcoded in three SQL sites with nothing
+// SubStatus.Live() is Go; the same set is hardcoded in four SQL sites with nothing
 // linking them, so adding a live status in Go alone would drop a paying org to the
 // floor. This walks the whole vocabulary through the real query.
 func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
@@ -192,6 +220,11 @@ func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// A slice literal `exhaustive` cannot check, so a new member must be added here
+	// to be walked through SQL at all.
+	if got := len(corebilling.AllSubStatuses()); got != 6 {
+		t.Fatalf("vocabulary has %d statuses, want 6", got)
+	}
 	for _, status := range corebilling.AllSubStatuses() {
 		t.Run(string(status), func(t *testing.T) {
 			f, provider := newPaidFixture(t)
@@ -474,6 +507,7 @@ func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
+	seedCheckoutRef(t, f, other)
 
 	for i, orgID := range []string{f.orgID, other} {
 		event := subEvent(orgID, "sub_"+orgID, "prod_growth", corebilling.SubStatusActive)
@@ -737,4 +771,282 @@ func waitForEntitlementLockWaiter(t *testing.T, f *fixture, done <-chan struct{}
 		}
 	}
 	t.Fatal("the delivery never blocked on the entitlement lock")
+}
+
+// A product dropped from the config must not refuse a CANCELLATION. Refusing it
+// leaves the row active and the org on a tier it stopped paying for -- an unmapped
+// product may withhold a plan, never preserve one.
+func TestCancellationLandsWhenTheProductIsUnmapped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_active", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery(active): %v", err)
+	}
+
+	// The same subscription, now cancelled, against a product nothing maps to.
+	provider.event = subEvent(f.orgID, "sub_1", "prod_retired", corebilling.SubStatusCancelled)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_cancel", time.Now().Add(time.Minute))); err != nil {
+		t.Fatalf("HandleDelivery(cancel): %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != corebilling.SlugFree {
+		t.Errorf("slug = %q, want free — an unmapped product kept a cancelled plan alive", ent.Slug)
+	}
+	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {
+		t.Errorf("cancellation processed=%v error=%q, want processed with no error", d.ProcessedAt.Valid, d.Error)
+	}
+}
+
+// Dodo's static payment links accept metadata_* query parameters, so a buyer can
+// put any org id in a payload. On its own it attributes nothing.
+func TestPayloadOrgIDDoesNotAttributeADelivery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+
+	forged := subEvent(f.orgID, "sub_forged", "prod_scale", corebilling.SubStatusActive)
+	forged.CheckoutRef = ""
+	forged.ProviderCustomerID = "cus_someone_else"
+	provider.event = forged
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_forged", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != corebilling.SlugFree {
+		t.Errorf("slug = %q, want free — metadata.org_id attributed a subscription", ent.Slug)
+	}
+	if d := storedDelivery(t, f, "evt_forged"); !strings.HasPrefix(d.Error, "attribution") {
+		t.Errorf("error = %q, want it to start with %q", d.Error, "attribution")
+	}
+}
+
+// A ref nobody minted is worth no more than none at all.
+func TestAnUnknownCheckoutRefDoesNotAttribute(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+
+	forged := subEvent(f.orgID, "sub_forged", "prod_scale", corebilling.SubStatusActive)
+	forged.CheckoutRef = "ref_guessed"
+	forged.ProviderCustomerID = "cus_someone_else"
+	provider.event = forged
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_forged", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	if d := storedDelivery(t, f, "evt_forged"); !strings.HasPrefix(d.Error, "attribution") {
+		t.Errorf("error = %q, want it to start with %q", d.Error, "attribution")
+	}
+}
+
+// The negotiated-deal payment link: no checkout pug opened, so no ref. It
+// attributes on metadata.org_id paired with the product an operator staged for
+// that org -- which is the only thing a buyer cannot set from a URL.
+func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override)
+		 values ($1, 'custom', $2, 5000000)`,
+		f.orgID, "prod_deal"); err != nil {
+		t.Fatalf("stage the deal: %v", err)
+	}
+
+	link := subEvent(f.orgID, "sub_deal", "prod_deal", corebilling.SubStatusActive)
+	link.CheckoutRef = ""
+	provider.event = link
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_deal", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	if d := storedDelivery(t, f, "evt_deal"); !d.ProcessedAt.Valid || d.Error != "" {
+		t.Fatalf("delivery processed=%v error=%q, want processed with no error", d.ProcessedAt.Valid, d.Error)
+	}
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.SubStatus != corebilling.SubStatusActive {
+		t.Errorf("sub_status = %q, want active — the staged deal did not attribute", ent.SubStatus)
+	}
+}
+
+// The same link against a product this org was NOT staged for: metadata alone
+// must not place a subscription on it.
+func TestAnUnstagedProductDoesNotAttributeAPaymentLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override)
+		 values ($1, 'custom', $2, 5000000)`,
+		f.orgID, "prod_deal"); err != nil {
+		t.Fatalf("stage the deal: %v", err)
+	}
+
+	link := subEvent(f.orgID, "sub_other", "prod_scale", corebilling.SubStatusActive)
+	link.CheckoutRef = ""
+	link.ProviderCustomerID = "cus_someone_else"
+	provider.event = link
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_other", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	if d := storedDelivery(t, f, "evt_other"); !strings.HasPrefix(d.Error, "attribution") {
+		t.Errorf("error = %q, want it to start with %q", d.Error, "attribution")
+	}
+}
+
+// The stored ref and the sent ref are two statements, and every other attribution
+// test seeds both halves itself. A divergence is permanently accepted, not retried.
+func TestCheckoutStoresTheRefItSendsToTheProvider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+
+	if _, _, err := f.svc.CreateCheckoutSession(
+		t.Context(), f.orgID, "growth", "buyer@example.com"); err != nil {
+		t.Fatalf("CreateCheckoutSession: %v", err)
+	}
+	sent := provider.checkoutIn.CheckoutRef
+	if sent == "" {
+		t.Fatal("the checkout carried no ref; every delivery it produces is unattributable")
+	}
+
+	var storedOrg string
+	if err := f.pg.PgW.QueryRow(t.Context(),
+		`select org_id from billing_checkout_sessions where provider = $1 and ref = $2`,
+		fakeProviderName, sent).Scan(&storedOrg); err != nil {
+		t.Fatalf("the ref sent to the provider was never stored: %v", err)
+	}
+	if storedOrg != f.orgID {
+		t.Errorf("ref stored against %q, want %q", storedOrg, f.orgID)
+	}
+
+	// And back: a delivery carrying only that ref lands on the org.
+	event := subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	event.CheckoutRef = sent
+	event.OrgID = ""
+	event.ProviderCustomerID = "cus_brand_new"
+	provider.event = event
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != "growth" {
+		t.Errorf("entitlement = %q, want growth", ent.Slug)
+	}
+}
+
+// Every other test feeds an event whose three signals agree, so a reordering of
+// the branches passes them all. Here they name three orgs.
+func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	other, err := dbwriteOrg(t, f.pg)
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	seedCheckoutRef(t, f, other)
+
+	// The customer id names `other`, via a subscription it already holds.
+	first := subEvent(other, "sub_other", "prod_growth", corebilling.SubStatusActive)
+	provider.event = first
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_seed", time.Now())); err != nil {
+		t.Fatalf("seed delivery: %v", err)
+	}
+
+	// The ref names f.orgID; metadata.org_id and the customer both name `other`.
+	event := subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	event.OrgID = other
+	event.ProviderCustomerID = "cus_" + other
+	provider.event = event
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != "growth" {
+		t.Errorf("the ref's org resolved %q, want growth -- attribution did not prefer the ref", ent.Slug)
+	}
+}
+
+// A dropped product must not refuse a cancellation -- but with no stored row there
+// is no grant to end, so the refusal stands.
+func TestCancellationWithNoStoredRowKeepsTheProductRefusal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	provider.event = subEvent(f.orgID, "sub_gone", "prod_retired", corebilling.SubStatusCancelled)
+
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+	got := storedDelivery(t, f, "evt_1")
+	if !got.ProcessedAt.Valid || !strings.HasPrefix(got.Error, "product") {
+		t.Errorf("delivery processed=%v error=%q, want processed with a product reason",
+			got.ProcessedAt.Valid, got.Error)
+	}
+}
+
+// Clear refuses to strand a live custom subscription; a floor plan reaches the
+// same state by another route.
+func TestSetPlanIsRefusedWhenItWouldStrandALiveSubscription(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	ctx := t.Context()
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:          corebilling.SlugCustom,
+		IncludedEvents:    new(int64(5_000_000)),
+		ProviderProductID: new("prod_acme"),
+	}); err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+	provider.event = subEvent(f.orgID, "sub_1", "prod_acme", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(ctx, provider, delivery("evt_1", time.Now().UTC())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug: corebilling.SlugFree,
+	}); !errors.Is(err, corebilling.ErrClearWouldStrandSubscription) {
+		t.Fatalf("SetPlan to a floor under a live custom subscription: err = %v, want a refusal", err)
+	}
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if got := ent.IncludedEvents; got == nil || *got != 5_000_000 {
+		t.Errorf("included events = %v, want the deal's 5000000 left intact", got)
+	}
 }

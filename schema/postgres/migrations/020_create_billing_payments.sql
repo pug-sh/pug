@@ -82,6 +82,22 @@ create index billing_subscriptions_customer_idx on billing_subscriptions (provid
 create trigger update_timestamp before
 update on billing_subscriptions for each row execute procedure moddatetime(update_time);
 
+-- The checkouts pug itself started. Attribution prefers a ref from here over the
+-- org_id in a payload's metadata: static payment links let the BUYER set metadata,
+-- so an org id there names an org rather than proving one.
+create table billing_checkout_sessions (
+  create_time timestamptz not null default now(),
+  org_id char(20) not null references orgs(id) on delete cascade,
+  provider text not null
+    constraint billing_checkout_sessions_provider_check check (provider <> ''),
+  -- 32 crypto-random bytes, hex. Unguessable is the whole security property.
+  ref text primary key
+    constraint billing_checkout_sessions_ref_check check (ref <> '')
+);
+
+create index billing_checkout_sessions_org_idx on billing_checkout_sessions (org_id);
+create index billing_checkout_sessions_create_idx on billing_checkout_sessions (create_time);
+
 -- Every delivery as sent, so the provider's retries are safe and a failed payload
 -- is replayable. Keyed by (provider, webhook_id), the provider's own namespace.
 -- payload carries personal data: no RPC reads it, and reconcile prunes at 90 days.
@@ -106,6 +122,7 @@ create index billing_webhook_deliveries_prune_idx
 
 -- +goose Down
 drop table if exists billing_webhook_deliveries;
+drop table if exists billing_checkout_sessions;
 drop table if exists billing_subscriptions;
 
 alter table billing_entitlement_history

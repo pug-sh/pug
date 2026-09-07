@@ -32,8 +32,8 @@ var (
 	// ErrTrialNotSettable guards the one slug that means nothing without a date.
 	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
 	ErrCustomNeedsQuota = errors.New("billing: a custom plan or a provider product requires an events override")
-	// ErrClearWouldStrandSubscription refuses to delete the row a live custom
-	// subscription resolves its quota from.
+	// ErrClearWouldStrandSubscription refuses to drop the quota a live custom
+	// subscription resolves from -- by clearing the row or by falling back to a floor.
 	ErrClearWouldStrandSubscription = errors.New("billing: this org has a live custom subscription; cancel it with the provider first")
 	ErrAnchorDayRange               = errors.New("billing: anchor day must be between 1 and 31")
 	ErrQuotaNegative                = errors.New("billing: the events override must be positive")
@@ -218,6 +218,17 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 		// quota the custom slug does -- or the org buys the deal and resolves free.
 		if (next.PlanSlug == SlugCustom || next.ProviderProductID != "") && next.IncludedEventsOverride <= 0 {
 			return Record{}, ErrCustomNeedsQuota
+		}
+		// The stranding Clear refuses, reached by a floor plan instead. Safe under the
+		// lock this holds, which a subscription writer takes before it maps its product.
+		if next.IncludedEventsOverride <= 0 {
+			sub, err := s.liveSubscription(ctx, orgID)
+			if err != nil {
+				return Record{}, err
+			}
+			if sub != nil && sub.PlanSlug == SlugCustom {
+				return Record{}, ErrClearWouldStrandSubscription
+			}
 		}
 		// Mirrors the columns' `> 0` checks, which would otherwise surface as a raw
 		// SQLSTATE logged as a pug fault.

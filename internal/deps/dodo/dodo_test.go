@@ -47,7 +47,8 @@ func testClient(t *testing.T, now time.Time) *Client {
 const activeBody = `{"type":"subscription.active","data":{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
 	`"currency":"USD","recurring_pre_tax_amount":2000,` +
-	`"customer":{"customer_id":"cus_1"},"metadata":{"org_id":"org_abc"},` +
+	`"customer":{"customer_id":"cus_1"},` +
+	`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}}`
 
 func TestVerify(t *testing.T) {
@@ -146,6 +147,10 @@ func TestNormalize(t *testing.T) {
 	if event.ProviderSubID != "sub_1" || event.ProviderCustomerID != "cus_1" {
 		t.Errorf("ids = (%q, %q), want (sub_1, cus_1)", event.ProviderSubID, event.ProviderCustomerID)
 	}
+	// The ref is what attributes; org_id counts only beside a staged product.
+	if event.CheckoutRef != "ref_deadbeef" {
+		t.Errorf("checkout_ref = %q, want ref_deadbeef", event.CheckoutRef)
+	}
 	if event.OrgID != "org_abc" {
 		t.Errorf("org_id = %q, want org_abc — attribution comes from metadata", event.OrgID)
 	}
@@ -172,7 +177,7 @@ func TestNormalizeKeepsAttributionBesideNonStringMetadata(t *testing.T) {
 		`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
 		`"currency":"USD","recurring_pre_tax_amount":2000,` +
 		`"customer":{"customer_id":"cus_1"},` +
-		`"metadata":{"org_id":"org_abc","seats":5,"trial":true}}}`
+		`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef","seats":5,"trial":true}}}`
 
 	event, err := c.Normalize(corebilling.Delivery{
 		EventType:  "subscription.active",
@@ -183,6 +188,9 @@ func TestNormalizeKeepsAttributionBesideNonStringMetadata(t *testing.T) {
 	}
 	if event.OrgID != "org_abc" {
 		t.Errorf("org_id = %q, want org_abc", event.OrgID)
+	}
+	if event.CheckoutRef != "ref_deadbeef" {
+		t.Errorf("checkout_ref = %q, want ref_deadbeef", event.CheckoutRef)
 	}
 }
 

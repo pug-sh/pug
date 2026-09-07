@@ -21,8 +21,15 @@ func testOrg() dbread.Org {
 
 func render(t *testing.T, ent corebilling.Entitlement, rec corebilling.Record, history []corebilling.HistoryEntry) string {
 	t.Helper()
+	return renderWithSubs(t, ent, rec, nil, history)
+}
+
+func renderWithSubs(t *testing.T, ent corebilling.Entitlement, rec corebilling.Record,
+	subs []dbread.BillingSubscription, history []corebilling.HistoryEntry,
+) string {
+	t.Helper()
 	var buf bytes.Buffer
-	if err := writeReport(&buf, testOrg(), ent, rec, history); err != nil {
+	if err := writeReport(&buf, testOrg(), ent, rec, subs, history); err != nil {
 		t.Fatalf("writeReport: %v", err)
 	}
 	return buf.String()
@@ -236,5 +243,29 @@ func TestSubscriptionLine(t *testing.T) {
 		if !strings.Contains(full, want) {
 			t.Errorf("subscription line %q is missing %q", full, want)
 		}
+	}
+}
+
+// The resolved entitlement nils a non-live subscription and resolves nothing while
+// billing is off. The section reads the rows directly, so both stay visible.
+func TestReportShowsStoredSubscriptionsTheResolvedAnswerHides(t *testing.T) {
+	ent := corebilling.Entitlement{Slug: "free", DisplayName: "Free", Status: corebilling.StatusFree}
+	subs := []dbread.BillingSubscription{{
+		Currency:      "USD",
+		OrgID:         "o_2f9k",
+		PlanSlug:      "growth",
+		PriceCents:    2000,
+		Provider:      "dodo",
+		ProviderSubID: "sub_1",
+		Status:        "cancelled",
+	}}
+
+	out := renderWithSubs(t, ent, corebilling.Record{}, subs, nil)
+	if !strings.Contains(out, "sub_1") || !strings.Contains(out, "cancelled") {
+		t.Errorf("SUBSCRIPTIONS section did not name the stored row:\n%s", out)
+	}
+
+	if empty := renderWithSubs(t, ent, corebilling.Record{}, nil, nil); !strings.Contains(empty, "(none stored)") {
+		t.Errorf("an org with no rows should say so:\n%s", empty)
 	}
 }
