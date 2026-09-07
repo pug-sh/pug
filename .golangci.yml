@@ -34,10 +34,8 @@ linters:
               desc: business logic must not know the RPC transport; handlers translate errors
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: core is imported by app, never the other way round
-        # Billing is a renderer, never a gate: a quota drives a banner and nothing
-        # else. Keeping it out of the ingest and query paths is what makes "no event
-        # is ever rejected for a quota" structural rather than a promise -- an
-        # import here is the first thing any enforcement would need.
+        # Billing is a renderer, never a gate: keeping it out of the ingest and query
+        # paths is what makes "no event is rejected for a quota" structural.
         ingestion-is-billing-free:
           files:
             - "**/internal/core/events/**"
@@ -59,10 +57,8 @@ linters:
               desc: infrastructure must not depend on domain logic
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: infrastructure must not reach up into the app layer
-        # The port-implementing adapters are the deps packages that may see core,
-        # and only the one port each implements: core/email/spec for the email
-        # senders, core/billing's PaymentProvider for the payments provider. Both
-        # stay barred from the app layer.
+        # The port-implementing adapters are the deps packages that may see core, and
+        # only the one port each implements. Both stay barred from the app layer.
         deps-email-adapters:
           files: ["**/internal/deps/email/**", "!$test"]
           deny:

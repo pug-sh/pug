@@ -45,12 +45,9 @@ const (
 	// update or delete — the meter writes it, no RPC does.
 	ResourceUsage Resource = "usage"
 
-	// ResourceBilling is an org's entitlement — its plan, quota and period — and the
-	// checkout and portal sessions that buy one. Reads are on the viewer floor
-	// beside ResourceUsage, which it is rendered next to: the person who notices
-	// the limit is rarely the admin. Create is admin-only and mints a provider
-	// session, never an entitlement — no RPC writes one; `pug billing` does, at the
-	// trust level of a migration.
+	// ResourceBilling is an org's entitlement -- its plan, quota and period -- and the
+	// checkout and portal sessions that buy one. Reads are on the viewer floor beside
+	// ResourceUsage; create is admin-only and mints a session, never an entitlement.
 	ResourceBilling Resource = "billing"
 
 	// ResourceAPIKey is a project's API keys. Its org is resolved from the

@@ -12,10 +12,8 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
-// none is what an absent value prints as. Never a zero: absent included_events
-// means NO quota, absent retention_days no bound on history, and absent
-// price_cents no list price -- each would otherwise read as a real number the
-// deployment never claimed, and "0 days of history" worst of all.
+// none is what an absent value prints as. Never a zero: absent means no quota, no
+// bound on history and no list price -- "0 days of history" worst of all.
 const none = "(none)"
 
 func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record, history []corebilling.HistoryEntry) error {
@@ -75,9 +73,8 @@ func row(w io.Writer, label, value string) {
 	fmt.Fprintf(w, "%s\t%s\n", label, value)
 }
 
-// section starts a block. It carries no tab, which both keeps the header free of
-// the padding a tabwriter would add to an empty cell and closes the preceding
-// block, so each section's labels align among themselves.
+// section starts a block. It carries no tab, which keeps the header free of a
+// tabwriter's padding and closes the preceding block so each aligns alone.
 func section(w io.Writer, name, note string) {
 	fmt.Fprintln(w)
 	if note == "" {
@@ -87,9 +84,8 @@ func section(w io.Writer, name, note string) {
 	fmt.Fprintln(w, name+"  "+note)
 }
 
-// historyLine is one recorded snapshot on a single line. Only the fields that
-// carry a value, so a renewal reads as the two things that changed rather than
-// as eight columns of (none).
+// historyLine is one recorded snapshot on a single line, carrying only the fields
+// that have a value, so a renewal reads as the two things that changed.
 func historyLine(rec corebilling.Record) string {
 	if !rec.Present {
 		return "cleared"
@@ -136,10 +132,8 @@ func subscription(ent corebilling.Entitlement) string {
 	return out
 }
 
-// contractEnd prints the stored instant with the last day it covers beside it.
-// The resolver's comparison is half-open, so the stored value is the day AFTER
-// the one an operator typed into --until, and the pair is what stops that
-// reading as an off-by-one.
+// contractEnd prints the stored instant with the last day it covers beside it. The
+// resolver's comparison is half-open, so the stored value is --until's day plus one.
 func contractEnd(t time.Time) string {
 	if t.IsZero() {
 		return none

@@ -13,10 +13,8 @@ import (
 // metadataOrgID is the attribution key pug sets on every checkout it starts.
 const metadataOrgID = "org_id"
 
-// Every subscription.* delivery runs one apply path and takes its new state from
-// the payload's status, not from the event name -- so pausing drops the org to
-// whatever is beneath the subscription and unpausing restores it, with no
-// event-name branch. The prefix is therefore the whole match.
+// Every subscription.* delivery runs one apply path and takes its state from the
+// payload's status, not the event name, so pausing needs no branch of its own.
 const subscriptionPrefix = "subscription."
 
 // envelope decodes only what pug consumes. The schema is the provider's and
@@ -43,10 +41,8 @@ type subscriptionPayload struct {
 	SubscriptionID        string     `json:"subscription_id"`
 }
 
-// metadata narrows Dodo's string|number|bool map to the string values pug
-// writes, the same way stringMetadata does on the direct-read path. Decoding
-// straight into map[string]string would fail the whole delivery over one
-// numeric value somebody else set, and a rejected delivery is never retried.
+// metadata narrows Dodo's string|number|bool map to the string values pug writes:
+// decoding into map[string]string would fail a delivery over one numeric value.
 type metadata map[string]string
 
 func (m *metadata) UnmarshalJSON(b []byte) error {
@@ -74,9 +70,7 @@ func envelopeType(raw []byte) (string, error) {
 }
 
 // Normalize maps one verified delivery onto pug's vocabulary. A zero event means
-// "store, mark processed, ignore" -- payments, refunds, disputes, and every event
-// type Dodo adds after this was written. A type pug does not handle must never
-// 500 and never retry forever.
+// "store, mark processed, ignore" -- a type pug does not handle must never 500.
 func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
 	if !strings.HasPrefix(d.EventType, subscriptionPrefix) {
 		return corebilling.SubscriptionEvent{}, nil
@@ -95,8 +89,7 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 	}
 	event := c.eventFromSubscription(payload)
 	// A subscription event that yields nothing is a payload shape pug no longer
-	// understands, not an event to ignore -- returning a zero event here would
-	// store it as cleanly processed and freeze every entitlement silently.
+	// understands: a zero event here would store it as cleanly processed.
 	if event.IsZero() {
 		return corebilling.SubscriptionEvent{}, errors.New("dodo: subscription payload carries no subscription id")
 	}
@@ -127,10 +120,8 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 }
 
 // statusFromDodo is the first implementation of pug's vocabulary. An unmapped
-// state -- Dodo's `pending`, or anything it adds later -- comes back as the
-// provider's own word, which is stored verbatim and does not parse at read time.
-// It is therefore not live: it can only ever withhold a plan, never grant one,
-// which is what makes this mapping safe to be incomplete on its first day.
+// state comes back as the provider's own word, stored verbatim and unparsed at
+// read time -- so it can only withhold a plan, never grant one.
 func statusFromDodo(status string) corebilling.SubStatus {
 	raw := strings.ToLower(strings.TrimSpace(status))
 	switch raw {

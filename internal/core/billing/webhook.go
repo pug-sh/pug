@@ -18,16 +18,9 @@ import (
 	"github.com/rs/xid"
 )
 
-// HandleDelivery stores one verified delivery and applies it, returning only
-// once the row is durable -- the caller answers 2xx on a nil error, and the
-// provider's retry is what a non-nil error asks for.
-//
-// The disposition of everything unapplicable is the same and is deliberate:
-// stored, marked processed, logged, and NOT retried. A currency pug cannot
-// render, a product it cannot place, a delivery it cannot attribute and an event
-// type it does not handle are all things eight retries cannot fix, and retrying
-// would only delay the alert. A body pug cannot DECODE is the exception: that one
-// a redeploy fixes, so it is retried.
+// HandleDelivery stores one verified delivery and applies it, returning only once
+// the row is durable. Everything unapplicable is stored, marked processed and NOT
+// retried -- eight retries fix none of it. A body pug cannot DECODE is retried.
 func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, d Delivery) error {
 	stored, err := s.write().InsertBillingWebhookDelivery(ctx, dbwrite.InsertBillingWebhookDeliveryParams{
 		EventType: d.EventType,
@@ -41,20 +34,16 @@ func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, 
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	// A retry of a delivery pug has already settled -- applied, or rejected as one
-	// of the unapplicable classes below. The one case this must NOT short-circuit
-	// is a row still unprocessed: that is an attempt that died mid-apply, and the
-	// provider's retry is the only thing that finishes it.
+	// A retry of a delivery pug has already settled. A row still unprocessed is an
+	// attempt that died mid-apply, and only the provider's retry finishes it.
 	if stored.ProcessedAt.Valid {
 		return nil
 	}
 
 	event, err := provider.Normalize(d)
 	if err != nil {
-		// Retried, not rejected: a body pug cannot decode is a payload shape that
-		// changed under us, and a redeploy inside the provider's retry window is what
-		// fixes it. Marking it processed would consume the delivery AND let the prune
-		// drop the payload, losing the replay the inbox exists for.
+		// Retried, not rejected: a payload shape changed under us, and a redeploy inside
+		// the retry window fixes it. Marking it processed would lose the replay too.
 		slog.ErrorContext(ctx, "failed to normalize a billing webhook delivery", slogx.Error(err),
 			slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID),
 			slog.String("event_type", d.EventType))
@@ -134,11 +123,8 @@ func (s *Service) applySubscriptionEvent(
 		Status:             string(event.Status),
 	})
 	if err != nil {
-		// The partial unique index refusing a second live subscription for one org.
-		// Retried rather than rejected: a cutover whose new subscription is delivered
-		// before the old one's cancellation lands here, and the retry succeeds once
-		// that cancellation arrives. Rejecting would consume the delivery and leave
-		// the org with no live subscription at all.
+		// The partial unique index refusing a second live subscription. Retried: this is
+		// a cutover whose old cancellation has not landed, and the retry then succeeds.
 		if isUniqueViolation(err) {
 			slog.ErrorContext(ctx, "org already holds a live subscription", slogx.Error(err),
 				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
@@ -151,10 +137,8 @@ func (s *Service) applySubscriptionEvent(
 		return err
 	}
 	if applied == 0 {
-		// The CAS rejected an out-of-order delivery. Deliveries are unordered and each
-		// carries the latest object, so a newer one has already landed. Recorded on
-		// the row: otherwise the inbox cannot tell an applied delivery from a skipped
-		// one, which is the question it exists to answer.
+		// The CAS rejected an out-of-order delivery: a newer one already landed.
+		// Recorded on the row, or the inbox cannot tell applied from skipped.
 		slog.InfoContext(ctx, "skipped a stale subscription delivery",
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 		return s.finishDelivery(ctx, provider, d, "stale: a newer delivery already applied")
@@ -162,15 +146,12 @@ func (s *Service) applySubscriptionEvent(
 	return s.finishDelivery(ctx, provider, d, "")
 }
 
-// attributeDelivery places a delivery on an org: metadata.org_id first, since
-// pug sets it on every checkout it starts, then the provider customer -- and
-// that one only while it names a single org. A delivery that resolves to no org,
-// or to two, is never applied to a guess.
+// attributeDelivery places a delivery on an org: metadata.org_id first, then the
+// provider customer, and that one only while it names a single org. A delivery
+// resolving to no org, or to two, is never applied to a guess.
 func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
-	// Both reads go through the WRITE pool. Against a real replica a lagging read
-	// would report "no such org" for an org that just checked out, and the delivery
-	// would be rejected as unattributable -- permanently, since the rejection marks
-	// it processed.
+	// Both reads go through the WRITE pool: a lagging replica would report "no such
+	// org" for an org that just checked out, rejecting the delivery permanently.
 	w := s.write()
 	// Checked against orgs, not against the subscription table: a first delivery
 	// beats the row into existence, and the org is what the id has to name.
@@ -200,9 +181,8 @@ func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvide
 	return "", ErrOrgNotFound
 }
 
-// finishDelivery marks the row processed. Called for an applied delivery and for
-// every unapplicable one, so a stored row is never left looking like an attempt
-// that died mid-apply.
+// finishDelivery marks the row processed -- for an applied delivery and every
+// unapplicable one, so no row is left looking like an attempt that died.
 func (s *Service) finishDelivery(ctx context.Context, provider PaymentProvider, d Delivery, reason string) error {
 	n, err := s.write().MarkBillingWebhookDeliveryProcessed(ctx, dbwrite.MarkBillingWebhookDeliveryProcessedParams{
 		Error:     reason,
@@ -216,9 +196,8 @@ func (s *Service) finishDelivery(ctx context.Context, provider PaymentProvider, 
 		return err
 	}
 	if n == 0 {
-		// The insert at the top of HandleDelivery guarantees the row, so no row here
-		// means it was deleted mid-flight -- and reporting success would leave the
-		// delivery to be re-applied on the provider's next retry.
+		// The insert at the top guarantees the row, so none here means it was deleted
+		// mid-flight; reporting success would leave it to be re-applied on the retry.
 		err := errors.New("billing: the delivery row vanished before it could be marked processed")
 		slog.ErrorContext(ctx, "failed to mark a billing webhook delivery processed", slogx.Error(err),
 			slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID))
@@ -240,17 +219,15 @@ func (s *Service) rejectDelivery(
 	return s.finishDelivery(ctx, provider, d, reason+": "+cause.Error())
 }
 
-// storablePayload keeps a body Postgres cannot parse storable. payload is jsonb,
-// so raw bytes that are not JSON would fail the insert and lose the delivery
-// entirely -- which is the one thing the inbox exists to prevent. A \u0000 escape
+// storablePayload keeps a body Postgres cannot parse storable: payload is jsonb,
+// so non-JSON bytes would fail the insert and lose the delivery. A \u0000 escape
 // passes json.Valid and jsonb still rejects it, so it is wrapped too.
 func storablePayload(raw []byte) []byte {
 	if json.Valid(raw) && !bytes.Contains(raw, []byte(`\u0000`)) {
 		return raw
 	}
 	// Built by hand rather than marshalled: base64's alphabet needs no escaping, so
-	// there is no error branch that could return an empty envelope and discard the
-	// delivery in the one function whose whole job is keeping it.
+	// there is no error branch that could discard the delivery here.
 	return []byte(`{"raw_base64":"` + base64.StdEncoding.EncodeToString(raw) + `"}`)
 }
 
@@ -260,10 +237,8 @@ func isUniqueViolation(err error) bool {
 }
 
 // PruneDeliveries drops processed deliveries older than the retention window --
-// the whole row, dedup key included, so a delivery the provider re-sends after
-// this is treated as new. They
-// carry the customer's name, email and billing address -- personal data pug does
-// not otherwise store -- and replay is the only thing that needs the bytes.
+// the whole row, dedup key included, so a re-send after this is treated as new.
+// They carry personal data pug does not otherwise store; only replay needs it.
 func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int64, error) {
 	n, err := s.write().PruneBillingWebhookDeliveries(ctx, postgres.NewTimestamptz(olderThan))
 	if err != nil {
@@ -275,23 +250,19 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 }
 
 // ErrTwoLiveSubscriptions is the partial unique index refusing a second live
-// subscription for one org. Returned rather than swallowed because the caller
-// cannot tell it from the CAS's own skip, and on the confirm path that
-// difference is a buyer who paid and holds nothing.
+// subscription. Returned, not swallowed: the caller cannot tell it from the CAS's
+// own skip, and on the confirm path that is a buyer who paid and holds nothing.
 var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live subscription")
 
 // applyReconciledSubscription writes a provider read through the same CAS the
-// webhook uses, so the two cannot disagree about what "newer" means. Reports
-// whether the write landed. false is not only the CAS refusing a read older than
-// a delivery that arrived mid-pass: it is also every guard below, i.e. an event
-// pug could not have stored. Neither is an error the caller can act on.
+// webhook uses, so the two cannot disagree about what "newer" means. false is the
+// CAS refusing an older read, or a guard below -- neither is actionable.
 func (s *Service) applyReconciledSubscription(
 	ctx context.Context, provider PaymentProvider, orgID string,
 	event SubscriptionEvent, rec Record, at time.Time,
 ) (bool, error) {
 	// The webhook path's guards, repeated because this writer is reachable without
-	// them: each would otherwise fail a column check as a raw SQLSTATE, which the
-	// callers report as a provider outage.
+	// them: each would otherwise fail a column check as a raw SQLSTATE.
 	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
 		event.ProviderCustomerID == "" || event.PriceCents < 0 {
 		return false, nil

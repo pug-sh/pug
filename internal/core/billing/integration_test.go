@@ -364,8 +364,7 @@ func TestExtendTrialAndClear(t *testing.T) {
 }
 
 // History has its own hand-written row->Record mapper, the fifth copy of the same
-// field list. This is the audit trail for "what did we agree to, and who agreed
-// it", so a field dropped from that one copy loses a deal's terms silently while
+// field list: a field dropped from that copy loses a deal's terms silently while
 // every other path still round-trips.
 func TestHistoryRoundTripsEveryOverride(t *testing.T) {
 	if testing.Short() {

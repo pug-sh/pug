@@ -13,21 +13,18 @@ import (
 	standardwebhooks "github.com/standard-webhooks/standard-webhooks/libraries/go"
 )
 
-// Standard Webhooks (standardwebhooks.com) headers. The signature is
-// HMAC-SHA256 over "{webhook-id}.{webhook-timestamp}.{raw body}", compared in
-// constant time against EACH space-delimited signature in webhook-signature --
-// the header carries several during a secret rotation.
+// Standard Webhooks (standardwebhooks.com) headers: HMAC-SHA256 over
+// "{webhook-id}.{webhook-timestamp}.{raw body}", compared in constant time against
+// EACH signature in webhook-signature -- there are several during a rotation.
 const (
 	headerWebhookID        = "webhook-id"
 	headerWebhookTimestamp = "webhook-timestamp"
 	headerWebhookSignature = "webhook-signature"
 )
 
-// tolerance bounds replay of a captured delivery. Wide enough to cover the
-// provider's whole retry schedule: a retry that reuses its original signature
-// carries the original timestamp, and a tighter window would 401 every late
-// attempt -- losing exactly the deliveries retries exist to save. The inbox's
-// (provider, webhook_id) key is what actually stops a replay.
+// tolerance bounds replay of a captured delivery. Wide enough for the whole retry
+// schedule, since a retry reuses its original timestamp and a tighter window would
+// 401 every late attempt. The inbox's (provider, webhook_id) key stops a replay.
 const tolerance = 24 * time.Hour
 
 // secretPrefix is the conventional prefix on a Standard Webhooks signing secret.
@@ -39,8 +36,7 @@ var (
 	ErrSignature      = errors.New("dodo: webhook signature does not verify")
 	ErrEmptySecret    = errors.New("dodo: webhook signing secret is empty")
 	// ErrMalformedSecret is a prefixed secret whose body is not base64. Named apart
-	// from ErrEmptySecret so a mistyped key does not read to an operator as an
-	// unset one, which is a different fix on the money path.
+	// from ErrEmptySecret: a mistyped key is a different fix from an unset one.
 	ErrMalformedSecret = errors.New("dodo: webhook signing secret after whsec_ is not valid base64")
 )
 
@@ -50,10 +46,9 @@ type verifier struct {
 	now func() time.Time
 }
 
-// newVerifier strips the conventional "whsec_" prefix and base64-decodes the
-// rest. Only a prefixed secret is decoded: a raw 32-char secret can happen to be
-// valid base64, and decoding it would key the HMAC with 24 wrong bytes and fail
-// every delivery as a bad signature.
+// newVerifier strips the conventional "whsec_" prefix and base64-decodes the rest.
+// Only a prefixed secret: a raw 32-char one can be valid base64, and decoding it
+// would key the HMAC with 24 wrong bytes.
 func newVerifier(secret string) (*verifier, error) {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
@@ -75,13 +70,9 @@ func newVerifier(secret string) (*verifier, error) {
 	return &verifier{wh: wh, now: time.Now}, nil
 }
 
-// Verify authenticates a delivery over the RAW bytes. Re-serializing a decoded
-// payload changes them and breaks the signature, so the body must be exactly
-// what arrived.
-//
-// The returned DeliveredAt is the timestamp this already parsed for the replay
-// window, which then becomes the CAS guard -- so the guard cannot be handed a
-// stamp nothing authenticated.
+// Verify authenticates a delivery over the RAW bytes -- re-serializing a decoded
+// payload breaks the signature. DeliveredAt is the timestamp this already parsed
+// for the replay window, so the CAS guard is never handed an unauthenticated one.
 func (c *Client) Verify(headers http.Header, rawBody []byte) (corebilling.Delivery, error) {
 	if c.verifier == nil {
 		return corebilling.Delivery{}, ErrEmptySecret

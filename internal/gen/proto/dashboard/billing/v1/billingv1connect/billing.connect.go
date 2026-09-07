@@ -52,54 +52,25 @@ const (
 
 // BillingServiceClient is a client for the dashboard.billing.v1.BillingService service.
 type BillingServiceClient interface {
-	// Returns what the org is entitled to send this period: its plan, its event
-	// quota, and the window both are measured over. It does NOT return how much
-	// has been used — that is UsageService.GetUsage, and a client rendering
-	// "X of Y" makes both calls.
-	//
-	// The plan fields are already resolved: a negotiated deal's name and quota
-	// have replaced the catalog tier's, so nothing downstream recombines a base
-	// plan with overrides. Price is never overridden — what a deal is charged
-	// lives in the payments provider, not here.
+	// What the org may send this period: plan, quota, and the window both are
+	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
+	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier and returns the URL to send the buyer
-	// to. Admin-only: the quota banner stays on the viewer floor, but starting a
-	// checkout is spending money.
-	//
-	// The price is never pug's -- it lives on the provider's product, and this
-	// request names a plan slug, never an amount. For the custom tier it checks
-	// out against the org's own recorded product and returns FailedPrecondition
-	// when none is recorded; for a catalog tier it uses the configured one.
-	// Unavailable when the deployment has no payments provider at all, which is
-	// the self-hosted shape.
+	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
+	// the viewer floor, but starting a checkout spends money. The price lives on
+	// the provider's product; this request names a plan slug, never an amount.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
-	// Verifies one checkout against the provider and applies its subscription,
-	// which is what confirms a returning buyer without a webhook -- the only thing
-	// that works at all on a deployment with no reachable webhook URL. The webhook
-	// stays the authority for the lifecycle, which has no redirect to ride on.
-	//
-	// session_id is a claim: the subscription it resolves to must carry this org in
-	// the metadata pug wrote at checkout, PermissionDenied otherwise. Admin-only,
-	// like the checkout it confirms.
+	// Verifies one checkout against the provider and applies its subscription:
+	// what confirms a returning buyer on a deployment with no reachable webhook
+	// URL. session_id is a claim -- the subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
-	// Opens the provider's customer portal, which is where plan changes, card
-	// updates, invoices and cancellation live. Pug serves none of those itself,
-	// so there is no ChangePlan or CancelSubscription RPC.
-	//
-	// FailedPrecondition for an org that has never checked out: a trialing, free
-	// or comped org has no customer at the provider to open a portal for.
+	// Opens the provider's customer portal, where plan changes, card updates,
+	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor
-	// beside GetBillingStatus: a price is a marketing number, and the person
-	// reading the quota banner is the one who wants to know what the next tier
-	// costs — they simply cannot buy it.
-	//
-	// It exists because the catalog is Go, not rows, so the dashboard has no other
-	// honest way to name a tier. Mirroring the catalog in the frontend would put a
-	// second authority on what a plan costs, which is the mistake section 4
-	// exists to prevent, one layer up.
-	//
-	// Never returns a product id, and never the floors -- nobody buys Free.
+	// The tiers this deployment sells, in display order. On the viewer floor: the
+	// person reading the quota banner wants to know what the next tier costs, they
+	// just cannot buy it. Never returns a product id, and never the floors.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 
@@ -183,54 +154,25 @@ func (c *billingServiceClient) ListPlans(ctx context.Context, req *connect.Reque
 
 // BillingServiceHandler is an implementation of the dashboard.billing.v1.BillingService service.
 type BillingServiceHandler interface {
-	// Returns what the org is entitled to send this period: its plan, its event
-	// quota, and the window both are measured over. It does NOT return how much
-	// has been used — that is UsageService.GetUsage, and a client rendering
-	// "X of Y" makes both calls.
-	//
-	// The plan fields are already resolved: a negotiated deal's name and quota
-	// have replaced the catalog tier's, so nothing downstream recombines a base
-	// plan with overrides. Price is never overridden — what a deal is charged
-	// lives in the payments provider, not here.
+	// What the org may send this period: plan, quota, and the window both are
+	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
+	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier and returns the URL to send the buyer
-	// to. Admin-only: the quota banner stays on the viewer floor, but starting a
-	// checkout is spending money.
-	//
-	// The price is never pug's -- it lives on the provider's product, and this
-	// request names a plan slug, never an amount. For the custom tier it checks
-	// out against the org's own recorded product and returns FailedPrecondition
-	// when none is recorded; for a catalog tier it uses the configured one.
-	// Unavailable when the deployment has no payments provider at all, which is
-	// the self-hosted shape.
+	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
+	// the viewer floor, but starting a checkout spends money. The price lives on
+	// the provider's product; this request names a plan slug, never an amount.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
-	// Verifies one checkout against the provider and applies its subscription,
-	// which is what confirms a returning buyer without a webhook -- the only thing
-	// that works at all on a deployment with no reachable webhook URL. The webhook
-	// stays the authority for the lifecycle, which has no redirect to ride on.
-	//
-	// session_id is a claim: the subscription it resolves to must carry this org in
-	// the metadata pug wrote at checkout, PermissionDenied otherwise. Admin-only,
-	// like the checkout it confirms.
+	// Verifies one checkout against the provider and applies its subscription:
+	// what confirms a returning buyer on a deployment with no reachable webhook
+	// URL. session_id is a claim -- the subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
-	// Opens the provider's customer portal, which is where plan changes, card
-	// updates, invoices and cancellation live. Pug serves none of those itself,
-	// so there is no ChangePlan or CancelSubscription RPC.
-	//
-	// FailedPrecondition for an org that has never checked out: a trialing, free
-	// or comped org has no customer at the provider to open a portal for.
+	// Opens the provider's customer portal, where plan changes, card updates,
+	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor
-	// beside GetBillingStatus: a price is a marketing number, and the person
-	// reading the quota banner is the one who wants to know what the next tier
-	// costs — they simply cannot buy it.
-	//
-	// It exists because the catalog is Go, not rows, so the dashboard has no other
-	// honest way to name a tier. Mirroring the catalog in the frontend would put a
-	// second authority on what a plan costs, which is the mistake section 4
-	// exists to prevent, one layer up.
-	//
-	// Never returns a product id, and never the floors -- nobody buys Free.
+	// The tiers this deployment sells, in display order. On the viewer floor: the
+	// person reading the quota banner wants to know what the next tier costs, they
+	// just cannot buy it. Never returns a product id, and never the floors.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 

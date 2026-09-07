@@ -12,8 +12,7 @@ import (
 )
 
 // liveSubscription reads the one row that can supply a plan. No row is the
-// ordinary answer -- trialing, free and comped orgs have never checked out -- so
-// it returns nil rather than an error.
+// ordinary answer, so it returns nil rather than an error.
 func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
 	// The write pool, like every read on the money path: ConfirmCheckout writes the
 	// row and GetBillingStatus reads it immediately after, which a replica loses.
@@ -29,9 +28,8 @@ func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscrip
 	}
 	sub, ok := subscriptionFromRow(row)
 	if !ok {
-		// The query already filtered to active/past_due, so an unparsable word here
-		// means a writer stored a status pug cannot name. Not live is the safe
-		// reading: it can only withhold a plan.
+		// The query already filtered to active/past_due, so an unparsable word means a
+		// writer stored a status pug cannot name. Not live is the safe reading.
 		slog.ErrorContext(ctx, "live subscription holds a status pug does not know",
 			slog.String("org_id", orgID), slog.String("status", row.Status))
 		return nil, nil
@@ -59,10 +57,8 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 // anyProviderCustomer resolves the customer the portal is opened for. Checkout
 // is what leaves one behind, so a trialing, free or comped org has none.
 func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string, error) {
-	// The write pool, for liveSubscription's reason: ConfirmCheckout writes the row
-	// and the same GetBillingStatus that reports the plan also reports whether the
-	// portal can be opened, so a lagging replica hides "Manage billing" from a
-	// customer who has just paid.
+	// The write pool, for liveSubscription's reason: a lagging replica would hide
+	// "Manage billing" from a customer who has just paid.
 	row, err := dbread.New(s.pgW).GetLatestBillingSubscription(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

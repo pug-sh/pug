@@ -17,7 +17,6 @@ type Plan struct {
 	IncludedEvents *int64
 	// How far back the tier's history stays queryable. nil means no bound at all,
 	// which is the custom tier and every org on a deployment with billing off.
-	// Nothing deletes on this number -- see the retention section of billing.md.
 	RetentionDays *int64
 	// Retired tiers stay in the catalog so existing holders keep resolving, but are
 	// never granted to a new org — without this, repricing (which mints a new slug
@@ -32,11 +31,9 @@ const (
 	SlugCustom = "custom"
 )
 
-// RetentionYearDays is what a "year" of retention means here: 365 days flat,
-// never a calendar year -- whatever eventually enforces this will subtract days
-// from a clock, and a leap year would then shorten the term somebody bought.
-// Exported because a renderer saying "7 years" has to divide by the same number
-// the catalog multiplied by.
+// RetentionYearDays is what a "year" of retention means here: 365 days flat, so a
+// leap year cannot shorten a term somebody bought. Exported because a renderer
+// saying "7 years" divides by the same number the catalog multiplied by.
 const RetentionYearDays = 365
 
 // TrialDays is how long a new org trials for, measured from orgs.create_time.
@@ -50,8 +47,8 @@ const MaxTrialDays = 365
 // catalog is every tier pug has ever sold, newest last.
 //
 // A tier's Currency, PriceCents, IncludedEvents and RetentionDays are fixed once
-// any org holds it; repricing mints a new slug (growth-v2) and marks the old one
-// Retired. Retention most of all: shortening it is a promise to delete.
+// any org holds it; repricing mints a new slug (growth-v2) and retires the old.
+// Retention most of all: shortening it is a promise to delete.
 // DisplayName is the exception. TestCatalogIsPinned carries the reasoning and is
 // the only guard against a silent quota cut.
 var catalog = []Plan{
@@ -65,9 +62,8 @@ var catalog = []Plan{
 		IncludedEvents: i64(500_000), RetentionDays: i64(3 * RetentionYearDays)},
 	{Slug: "scale", DisplayName: "Scale", Currency: "USD", PriceCents: i64(3_000),
 		IncludedEvents: i64(1_000_000), RetentionDays: i64(7 * RetentionYearDays)},
-	// No price, no quota and no retention of its own: a negotiated deal supplies
-	// them from the org's row, and the billing_entitlements_custom_needs_quota
-	// constraint makes the quota mandatory there.
+	// No price, no quota and no retention of its own: a negotiated deal supplies them
+	// from the org's row, where a constraint makes the quota mandatory.
 	{Slug: SlugCustom, DisplayName: "Custom", Currency: "USD"},
 }
 

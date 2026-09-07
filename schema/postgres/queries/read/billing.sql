@@ -37,8 +37,8 @@ order by id
 limit @row_limit offset @row_offset;
 
 -- name: ListPaidEntitlementsWithoutLiveSubscription :many
--- Invariant 3, as a query: every paid org has a provider subscription. A row here
--- is an org being entitled to something nobody is charged for.
+-- Every paid org should have a provider subscription. A row here is an org
+-- entitled to something nobody is charged for.
 select e.org_id, e.plan_slug
 from billing_entitlements e
 left join billing_subscriptions s
@@ -50,8 +50,7 @@ order by e.org_id;
 
 -- name: GetLatestBillingSubscription :one
 -- Any row, newest first -- not only a live one. A customer whose subscription
--- lapsed still has invoices to fetch and a card to re-add, and the portal is
--- where both live.
+-- lapsed still has invoices to fetch and a card to re-add.
 select * from billing_subscriptions
 where org_id = @org_id
 order by create_time desc

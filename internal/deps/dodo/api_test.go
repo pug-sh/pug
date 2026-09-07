@@ -14,9 +14,8 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
-// apiClient points a Client at a stub Dodo. Built directly rather than through
-// New, which has no base-URL seam: nothing in production should be able to aim
-// the client somewhere else.
+// apiClient points a Client at a stub Dodo. Built directly rather than through New,
+// which has no base-URL seam: production must not be able to aim it elsewhere.
 func apiClient(t *testing.T, h http.Handler) *Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
@@ -306,9 +305,8 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 		}
 	})
 
-	// pug writes org_id on the checkout, which Dodo documents as the PAYMENT's
-	// metadata, and reads it off the subscription. If it does not propagate, every
-	// confirmation would fail as "not for this org".
+	// pug writes org_id on the checkout -- Dodo's PAYMENT metadata -- and reads it off
+	// the subscription; if it does not propagate, every confirmation fails.
 	t.Run("attribution falls back to the payment's metadata", func(t *testing.T) {
 		m := http.NewServeMux()
 		m.Handle("/checkouts/cs_1", jsonHandler(t, http.StatusOK,
@@ -327,9 +325,7 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 	})
 
 	// A session or payment the provider does not have is one it will never settle.
-	// Reported as a dead checkout, not a fault: as a 500 the buyer would poll a
-	// stale or bookmarked session id forever and every probe would record an
-	// exception on the money path.
+	// As a 500 the buyer would poll a stale session id forever, recording exceptions.
 	t.Run("a 404 is a dead checkout, not an outage", func(t *testing.T) {
 		paymentGone := http.NewServeMux()
 		paymentGone.Handle("/checkouts/cs_1", jsonHandler(t, http.StatusOK,
@@ -349,9 +345,8 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 		}
 	})
 
-	// The reconcile pass exits non-zero on an unreadable subscription, so a row the
-	// provider has purged must be a finding rather than a read failure -- otherwise
-	// one such row holds the CronJob red on every later run.
+	// The reconcile pass exits non-zero on an unreadable subscription, so a purged row
+	// must be a finding or it holds the CronJob red on every later run.
 	t.Run("a purged subscription is not an outage", func(t *testing.T) {
 		c := apiClient(t, jsonHandler(t, http.StatusNotFound, `{}`, nil))
 		_, err := c.FetchSubscription(context.Background(), "sub_gone")

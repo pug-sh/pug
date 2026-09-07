@@ -52,9 +52,8 @@ var (
 	// ErrNoEntitlement is a clear that found nothing stored. The org is already on
 	// the derived floors, but nothing was deleted.
 	ErrNoEntitlement = errors.New("billing: no entitlement stored for this org")
-	// ErrActorRequired guards the history's only attribution. The column rejects
-	// the empty string alone, so a blank actor would store as an unattributed
-	// entry -- which is the one thing the history exists to prevent.
+	// ErrActorRequired guards the history's only attribution: the column rejects
+	// only the empty string, so a blank actor would store as unattributed.
 	ErrActorRequired = errors.New("billing: an actor is required")
 )
 
@@ -113,8 +112,7 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 		}
 	}
 	// Only when billing is on: with it off every org resolves to the free floor
-	// with no quota regardless, so the read would be a query per dashboard load
-	// that cannot change the answer.
+	// regardless, so the read is a query per dashboard load that cannot change it.
 	var sub *Subscription
 	if s.billingEnabled {
 		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
@@ -128,9 +126,8 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 // resolved entitlement, because an override that is not in force today — a
 // lapsed deal's quota, say — is invisible in the resolved answer alone.
 func (s *Service) StoredRecord(ctx context.Context, orgID string) (Record, error) {
-	// The write pool, as liveSubscription does: this feeds planForProduct on the
-	// webhook path, where a replica that has not caught up with a just-pasted
-	// provider_product_id rejects a paid delivery permanently.
+	// The write pool, as liveSubscription does: on the webhook path a lagging
+	// replica would reject a paid delivery over a just-pasted product id.
 	row, err := dbread.New(s.pgW).GetOrgEntitlement(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -217,9 +214,8 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 		if plan.Retired && cur.PlanSlug != plan.Slug {
 			return Record{}, ErrPlanRetired
 		}
-		// The product id is what a checkout resolves to the custom tier, so it needs
-		// the same quota the custom slug does -- otherwise the org buys the deal and
-		// resolves to the free floor, charged for nothing.
+		// The product id resolves a checkout to the custom tier, so it needs the same
+		// quota the custom slug does -- or the org buys the deal and resolves free.
 		if (next.PlanSlug == SlugCustom || next.ProviderProductID != "") && next.IncludedEventsOverride <= 0 {
 			return Record{}, ErrCustomNeedsQuota
 		}
@@ -296,8 +292,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 		return ErrActorRequired
 	}
 	// A live custom subscription resolves its quota from the row this deletes, so
-	// clearing it drops an org that is still being charged to the free floor.
-	// Cancel in the provider first; the delivery is what ends the deal here.
+	// clearing it would drop an org that is still being charged to the free floor.
 	sub, err := s.liveSubscription(ctx, orgID)
 	if err != nil {
 		return err
@@ -401,9 +396,8 @@ func (s *Service) mutate(ctx context.Context, orgID, actor string, edit func(*db
 	return stored, nil
 }
 
-// write is the pool-backed writer, for the paths that are a single statement and
-// have no history row to commit alongside them. Every operator mutation goes
-// through mutate's transaction instead.
+// write is the pool-backed writer, for the single-statement paths with no
+// history row to commit alongside them.
 func (s *Service) write() *dbwrite.Queries { return dbwrite.New(s.pgW) }
 
 func (s *Service) begin(ctx context.Context) (pgx.Tx, error) {
@@ -494,12 +488,9 @@ func applyChange(cur Record, c Change) Record {
 			// the resolver consults first.
 			next.TrialEndsAt = time.Time{}
 		} else if c.ContractEndsAt == nil || c.ContractEndsAt.IsZero() {
-			// The mirror: the contract belongs to the granted plan, so falling back to a
-			// floor tier ends it — and the overrides it gated with it, or clearing the
-			// date would turn a time-boxed quota into a permanent one. An explicitly
-			// EMPTY --until counts as clearing it, not as naming one: without that,
-			// the flag that ends a deal would be the one input that kept its terms.
-			// A real date here is a comped grant on the floor and keeps them.
+			// The contract belongs to the granted plan, so falling back to a floor tier
+			// ends it and the overrides it gated -- an empty --until counts as clearing it,
+			// not as naming one. A real date here is a comped grant and keeps them.
 			next.ContractEndsAt = time.Time{}
 			next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
 			next.RetentionDaysOverride = orKeep(c.RetentionDays, 0)

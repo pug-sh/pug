@@ -70,9 +70,8 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 	}
 }
 
-// Invariant 3, as the report: an org entitled to a paid plan that nobody is
-// being charged for. Not auto-fixed — writing to the money side from a guess is
-// exactly what this must not do.
+// The report's view of an org entitled to a paid plan nobody is charged for. Not
+// auto-fixed: writing to the money side from a guess is what this must not do.
 func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -120,9 +119,8 @@ func TestReconcileCountsUnreadableSubscriptions(t *testing.T) {
 	}
 }
 
-// A live subscription against a product no config key and no org row maps to:
-// the signal that a deploy is missing a product key, or that an operator made a
-// product without pasting its id.
+// A live subscription against a product nothing maps to: a deploy is missing a
+// product key, or an operator made a product without pasting its id.
 func TestReconcileReportsAnUnmappedProduct(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -161,9 +159,8 @@ func TestReconcileWithoutAProviderIsANoop(t *testing.T) {
 	}
 }
 
-// Payloads carry personal data pug does not otherwise store, and only replay
-// needs the bytes. Unprocessed rows are never pruned: they are the ones still
-// worth replaying.
+// Payloads carry personal data pug does not otherwise store, and only replay needs
+// the bytes. Unprocessed rows are never pruned -- those are still worth replaying.
 func TestPruneKeepsUnprocessedDeliveries(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

@@ -16,8 +16,7 @@ func liveSub(slug string) *corebilling.Subscription {
 	}
 }
 
-// Rule 1 of section 7: somebody is paying for this, so it outranks everything
-// beneath it.
+// Somebody is paying for this, so it outranks everything beneath it.
 func TestSubscriptionSuppliesThePlan(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("growth"), later, true)
 	if ent.Status != corebilling.StatusActive {
@@ -47,8 +46,7 @@ func TestSubscriptionOutranksAnOperatorGrant(t *testing.T) {
 	}
 }
 
-// past_due is live on purpose (section 11): the card failed, the entitlement
-// does not.
+// past_due is live on purpose: the card failed, the entitlement did not.
 func TestPastDueKeepsTheQuota(t *testing.T) {
 	sub := liveSub("growth")
 	sub.Status = corebilling.SubStatusPastDue
@@ -111,9 +109,8 @@ func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
 	}
 }
 
-// The section 5.2 ordering hazard: a paid custom subscription with no quota row
-// behind it. The free floor is the honest answer, and reconcile reports it —
-// what must never happen is silently unlimited.
+// A paid custom subscription with no quota row behind it. The free floor is the
+// honest answer, and reconcile reports it; silently unlimited is the hazard.
 func TestCustomSubscriptionWithNoQuotaFallsToFree(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("custom"), later, true)
 	if ent.Slug != "free" {
@@ -127,9 +124,8 @@ func TestCustomSubscriptionWithNoQuotaFallsToFree(t *testing.T) {
 	}
 }
 
-// A contract bounds a grant an operator made. It cannot expire a subscription
-// the provider still says is live, and gating the overrides on it would collapse
-// a live custom deal to no quota the day its agreed term passed.
+// A contract bounds an operator's grant. It cannot expire a subscription the
+// provider still says is live, or a live custom deal loses its quota mid-term.
 func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 	rec := corebilling.Record{
 		Present: true, PlanSlug: "custom",
@@ -148,9 +144,8 @@ func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 	}
 }
 
-// The escape above covers the deal's own subscription. A catalog tier is a
-// different purchase, so a lapsed grant's quota and name must not ride along on
-// it -- the customer would pay Starter's price for the pilot's quota.
+// A catalog tier is a different purchase, so a lapsed grant's quota and name must
+// not ride along on it -- the customer would pay Starter for the pilot's quota.
 func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
 	rec := corebilling.Record{
 		Present: true, PlanSlug: "custom",

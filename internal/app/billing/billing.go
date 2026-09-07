@@ -1,12 +1,6 @@
 // Package billing is the operator CLI behind `pug billing`: the only writer of
-// billing_entitlements, and the reason the entitlement table is usable rather
-// than decorative.
-//
-// Postgres only -- no provider and no network. Nothing here needs payments
-// credentials, and demanding them would make the command unusable on the
-// deployments most likely to need it. It is also ungated by PUG_BILLING_ENABLED,
-// so a deployment can be prepared before the switch goes on; the flag decides
-// only how the resolved entitlement is reported.
+// billing_entitlements. Postgres only -- no provider and no network -- and ungated
+// by PUG_BILLING_ENABLED, which decides only how the resolved half is reported.
 package billing
 
 import (
@@ -23,18 +17,15 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
-// deps is one command's worth of wiring: the service for everything billing,
-// and a plain org read for the display name, which nothing in the billing
-// service serves and which is what tells an operator they have the right org
-// before a write lands.
+// deps is one command's worth of wiring: the billing service, and a plain org read
+// for the display name that tells an operator they have the right org.
 type deps struct {
 	read *dbread.Queries
 	svc  *corebilling.Service
 }
 
-// Show prints the resolved entitlement and the stored row beneath it. Both,
-// because the interesting bugs live in the gap: a lapsed deal's quota is
-// invisible in the resolved answer and still carries onto the next set.
+// Show prints the resolved entitlement and the stored row beneath it: a lapsed
+// deal's quota is invisible in the resolved answer and still carries onto a set.
 func Show(ctx context.Context, out io.Writer, orgID string, history bool) error {
 	return withDeps(ctx, func(ctx context.Context, d deps) error {
 		rec, err := d.svc.StoredRecord(ctx, orgID)

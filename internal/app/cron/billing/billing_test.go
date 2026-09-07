@@ -144,9 +144,8 @@ func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {
 	}
 }
 
-// The prune sits ahead of that failure deliberately: a provider outage is not a
-// reason to keep an expired payload, and it would keep one for as long as the
-// outage lasts.
+// The prune sits ahead of that failure deliberately: a provider outage is no reason
+// to keep an expired payload for as long as the outage lasts.
 func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -220,9 +219,8 @@ func TestRunPrunesWithNoProviderConfigured(t *testing.T) {
 	}
 }
 
-// Contention is not failure -- but the pass must also not have run. Asserting the
-// stale delivery survives is what proves the lock was respected rather than that
-// nothing happened to go wrong.
+// Contention is not failure -- but the pass must also not have run. The stale
+// delivery surviving is what proves the lock was respected.
 func TestRunExitsZeroWhenAnotherPassHoldsTheLock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -270,8 +268,7 @@ func TestNewPayments(t *testing.T) {
 	})
 
 	// A named provider with no key is a misconfigured CronJob, not the self-hosted
-	// shape. Without this the pass reconciles nothing and still exits 0, so the
-	// backstop for a webhook that never arrived reads as healthy forever.
+	// shape: without this the pass reconciles nothing and still reads as healthy.
 	t.Run("a named provider with no api key fails", func(t *testing.T) {
 		t.Setenv("PUG_DODO_API_KEY", "")
 		p, err := newPayments(t.Context(), dodo.Name)

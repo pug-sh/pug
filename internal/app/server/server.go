@@ -218,10 +218,8 @@ func start(ctx context.Context, d *deps) error {
 	if err != nil {
 		return fmt.Errorf("billing service: %w", err)
 	}
-	// The likeliest misconfig is a pod missing the flag: every org would then read
-	// as having no quota, with nothing failing and no other breadcrumb. The
-	// provider is logged beside it for the same reason -- a missing key is a
-	// dashboard with no buy button and nothing in the logs to say why.
+	// The likeliest misconfig is a pod missing the flag: every org would then read as
+	// having no quota, with nothing failing. Same for a missing provider key.
 	provider := ""
 	if payments != nil {
 		provider = payments.Provider.Name()
@@ -326,11 +324,9 @@ func start(ctx context.Context, d *deps) error {
 		return fmt.Errorf("mount mcp: %w", err)
 	}
 
-	// The payments webhook, mounted directly for the same reason as /mcp and
-	// reflection: it is not a Connect service, so the authz-registry contract does
-	// not apply. It authenticates by HMAC and mounts nothing at all when no signing
-	// secret is configured, so the provider gets 404s rather than a route that
-	// verifies nothing.
+	// The payments webhook, mounted directly like /mcp: not a Connect service, so the
+	// authz-registry contract does not apply. It authenticates by HMAC and mounts
+	// nothing without a signing secret, so the provider gets 404s.
 	if payments != nil {
 		if billingwebhook.Mount(mux, billingSvc, payments.Provider, webhookMountable) {
 			slog.InfoContext(ctx, "mounted the payments webhook",

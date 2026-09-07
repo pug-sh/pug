@@ -170,10 +170,9 @@ func billingChange(cmd *cobra.Command) (corebilling.Change, error) {
 	return change, nil
 }
 
-// grantableSlugs names what --plan accepts for a NEW grant, which is the list a
-// typo wants back. Trial is excluded because extend-trial is its only writer;
-// a retired tier because it is kept only so existing holders keep resolving —
-// and it is still settable for an org already on it, which the caller says.
+// grantableSlugs names what --plan accepts for a NEW grant, the list a typo wants
+// back. Trial is extend-trial's alone; a retired tier is kept only for its holders,
+// and is still settable for an org already on it.
 func grantableSlugs() []string {
 	out := make([]string, 0, len(corebilling.Plans()))
 	for _, p := range corebilling.Plans() {

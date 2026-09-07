@@ -29,8 +29,7 @@ func TestCatalogIsPinned(t *testing.T) {
 	cents := func(v int64) *int64 { return &v }
 
 	// Retention is pinned as literal days, not as a multiple of RetentionYearDays:
-	// shortening the constant would cut every tier at once, which is the same
-	// silent quota cut in another column.
+	// shortening the constant would cut every tier at once.
 	want := map[string]pin{
 		"free":    {currency: "USD", price: cents(0), events: cents(10_000), retention: cents(365)},
 		"trial":   {currency: "USD", price: cents(0), events: cents(500_000), retention: cents(365)},

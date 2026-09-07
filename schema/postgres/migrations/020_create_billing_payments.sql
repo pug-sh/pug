@@ -1,22 +1,19 @@
 -- +goose Up
--- Taking money. The entitlement table beside this one stays the operator's;
--- billing_subscriptions has three writers -- the webhook, the reconcile pass and
--- ConfirmCheckout -- and they all go through the one CAS below, so no second
--- notion of "newer" exists.
+-- Taking money. billing_subscriptions has three writers -- the webhook, the
+-- reconcile pass and ConfirmCheckout -- and all three go through the one CAS below,
+-- so no second notion of "newer" exists.
 
--- The provider product a negotiated deal is bought against. Operator-written,
--- like every other column on the entitlement row. NULL is every org that is not a
--- deal: the catalog tiers map slug -> product id in config, not here.
+-- The provider product a negotiated deal is bought against, operator-written like
+-- the rest of the row. NULL is every org that is not a deal: catalog tiers map
+-- slug -> product id in config, not here.
 alter table billing_entitlements
   add column provider_product_id text
     constraint billing_entitlements_provider_product_check
       check (provider_product_id is null or provider_product_id <> '');
 
--- The history is a snapshot of the row above, so it takes the column too --
--- otherwise "who pasted this product id, and when" is unanswerable, and that is a
--- support question about the one field that decides whether an org can spend
--- money. The deletion constraint enumerates the value columns, so it is replaced
--- rather than added to.
+-- The history is a snapshot of the row above, so it takes the column too. The
+-- deletion constraint enumerates the value columns, so it is replaced rather than
+-- added to.
 alter table billing_entitlement_history
   add column provider_product_id text
     constraint billing_entitlement_history_provider_product_check
@@ -58,17 +55,13 @@ create table billing_subscriptions (
     constraint billing_subscriptions_provider_status_check check (provider_status <> ''),
   provider_sub_id text not null
     constraint billing_subscriptions_sub_check check (provider_sub_id <> ''),
-  -- The CAS column: the delivery timestamp a payload arrived with, so ordering
-  -- here is arrival order, not the order the states changed at the provider. An
-  -- apply is refused when it is older than what is stored; the reconcile pass is
-  -- what corrects a delivery that arrived out of order.
+  -- The CAS column: the delivery timestamp a payload arrived with, so ordering here
+  -- is arrival order. An apply older than what is stored is refused; the reconcile
+  -- pass corrects a delivery that arrived out of order.
   provider_updated_at timestamptz not null,
-  -- Pug's vocabulary -- active, past_due, paused, cancelled, expired, failed --
-  -- except that a provider state pug has no word for is stored VERBATIM here too.
-  -- Not constrained to the six: a value outside them fails to parse at read time
-  -- and is therefore not live, which can only ever withhold a plan, never grant
-  -- one. Constraining it instead would leave the org on its last known status,
-  -- which for a lapsing subscription is the opposite of the safe direction.
+  -- Pug's vocabulary -- active, past_due, paused, cancelled, expired, failed -- and
+  -- a provider state pug has no word for, stored VERBATIM. Not constrained to the
+  -- six: an unparsable value is not live, which can only withhold a plan.
   status text not null
     constraint billing_subscriptions_status_check check (status <> ''),
   update_time timestamptz not null default now(),
@@ -77,9 +70,8 @@ create table billing_subscriptions (
 );
 
 -- One LIVE subscription per org, not one row per org: a provider cutover is not
--- atomic, so an org legitimately holds a winding-down row beside a live one. This
--- keeps the invariant that matters -- an org cannot be billed twice -- while
--- permitting the dead row.
+-- atomic, so a winding-down row may sit beside a live one. An org still cannot be
+-- billed twice, which is the invariant that matters.
 create unique index billing_subscriptions_one_live_idx
   on billing_subscriptions (org_id)
   where status in ('active', 'past_due');
@@ -90,14 +82,9 @@ create index billing_subscriptions_customer_idx on billing_subscriptions (provid
 create trigger update_timestamp before
 update on billing_subscriptions for each row execute procedure moddatetime(update_time);
 
--- Every delivery as sent, so the provider's retries are safe and a payload that
--- failed to apply is replayable. Keyed by (provider, webhook_id) because the id
--- is the provider's namespace and two of them can run side by side.
---
--- payload carries the customer's name, email and billing address -- personal data
--- pug does not otherwise store -- so the controls are on the row: no RPC reads
--- this table, and the reconcile pass prunes 90 days after processed_at. Pug has
--- no org-deletion path yet; when it gets one, it deletes these too.
+-- Every delivery as sent, so the provider's retries are safe and a failed payload
+-- is replayable. Keyed by (provider, webhook_id), the provider's own namespace.
+-- payload carries personal data: no RPC reads it, and reconcile prunes at 90 days.
 create table billing_webhook_deliveries (
   error text not null default '',
   event_type text not null,

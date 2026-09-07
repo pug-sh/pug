@@ -20,8 +20,8 @@ var secretKey = []byte("0123456789abcdef0123456789abcdef")
 func secret() string { return testSecret + base64.StdEncoding.EncodeToString(secretKey) }
 
 // signed builds a delivery the way Standard Webhooks specifies: HMAC-SHA256 over
-// "{id}.{timestamp}.{body}". Written out rather than taken from the library, so
-// the test would catch the library agreeing with itself about the wrong thing.
+// "{id}.{timestamp}.{body}". Written out rather than taken from the library, which
+// would only agree with itself.
 func signed(id string, at time.Time, body []byte) http.Header {
 	ts := strconv.FormatInt(at.Unix(), 10)
 	mac := hmac.New(sha256.New, secretKey)
@@ -164,9 +164,8 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
-// Dodo's metadata is string|number|bool. Decoding the map into map[string]string
-// would fail the whole delivery over one numeric value a merchant set in the
-// dashboard, and a rejected delivery is never retried.
+// Dodo's metadata is string|number|bool. Decoding into map[string]string would fail
+// the whole delivery over one numeric value, and a rejection is never retried.
 func TestNormalizeKeepsAttributionBesideNonStringMetadata(t *testing.T) {
 	c := testClient(t, time.Now())
 	body := `{"type":"subscription.active","data":{` +
@@ -218,7 +217,7 @@ func TestStatusMapping(t *testing.T) {
 		"cancelled": {corebilling.SubStatusCancelled, false},
 		"expired":   {corebilling.SubStatusExpired, false},
 		"failed":    {corebilling.SubStatusFailed, false},
-		// Dodo has this state and section 7 gives pug no word for it.
+		// Dodo has this state and pug has no word for it.
 		"pending":            {"pending", false},
 		"something_invented": {"something_invented", false},
 	}
@@ -272,8 +271,7 @@ func TestProductIDs(t *testing.T) {
 	}
 }
 
-// Only the floors and custom are excluded. A tier is skipped for having no key,
-// never for what it is -- in particular a retired tier keeps its mapping, or the
+// Only the floors and custom are excluded. A retired tier keeps its mapping, or the
 // webhook could not place its existing holders' renewals and cancellations.
 func TestMappedSlug(t *testing.T) {
 	for _, tc := range []struct {

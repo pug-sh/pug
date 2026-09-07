@@ -1,6 +1,5 @@
 // Package dodo is the only package that imports the Dodo Payments SDK. Nothing
-// above billing.PaymentProvider knows the provider's name, its payload shapes or
-// its signature scheme.
+// above billing.PaymentProvider knows its payload shapes or signature scheme.
 package dodo
 
 import (
@@ -11,9 +10,8 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
-// Name is the provider slug. It is stored on every row this package produces and
-// it is the path segment the webhook mounts at, so it is an identifier: changing
-// it orphans stored rows and silently 404s the provider's deliveries.
+// Name is the provider slug: stored on every row this package produces and the
+// path segment the webhook mounts at, so changing it orphans rows and 404s.
 const Name = "dodo"
 
 const (
@@ -21,15 +19,12 @@ const (
 	EnvironmentLive = "live"
 )
 
-// productEnvPrefix maps a catalog slug to a Dodo product. One key per purchasable
-// tier; a tier with no key is simply not purchasable. Read from the environment
-// directly rather than through envconfig because the key set is the catalog's,
-// so a new tier needs a deploy variable and no code change here.
+// productEnvPrefix maps a catalog slug to a Dodo product, one key per purchasable
+// tier. Read straight from the environment: the key set is the catalog's.
 const productEnvPrefix = "PUG_DODO_PRODUCT_"
 
 // Config is the provider's own credentials, under its own prefix rather than a
-// generic PUG_PAYMENTS_*: a second provider's keys then sit beside these instead
-// of overwriting them, which is what lets both be configured during a cutover.
+// generic PUG_PAYMENTS_*, so a second provider's keys sit beside these.
 type Config struct {
 	APIKey        string `env:"PUG_DODO_API_KEY"`
 	Environment   string `env:"PUG_DODO_ENVIRONMENT,default=test"`
@@ -40,13 +35,9 @@ type Config struct {
 // setting process environment.
 type EnvLookup func(string) (string, bool)
 
-// ProductIDs resolves slug -> product id for every catalog tier that has one.
-// The floors are never sold and `custom` gets its product from the org's own row,
-// so neither is looked up. A retired tier keeps its key: its holders' renewals
-// and cancellations still have to be placeable.
-//
-// Both directions matter: checkout reads slug -> product, and the webhook reads
-// product -> slug. They come from one map so they cannot disagree.
+// ProductIDs resolves slug -> product id for every catalog tier that has one. The
+// floors are never sold and custom's product lives on the org's row. Both
+// directions come from one map so checkout and the webhook cannot disagree.
 func ProductIDs(lookup EnvLookup) (map[string]string, error) {
 	if lookup == nil {
 		lookup = os.LookupEnv
@@ -63,9 +54,8 @@ func ProductIDs(lookup EnvLookup) (map[string]string, error) {
 		if !ok || id == "" {
 			continue
 		}
-		// One product cannot back two tiers: the webhook resolves a plan by product
-		// id, so a duplicate would make an incoming subscription's tier ambiguous and
-		// pick one silently.
+		// One product cannot back two tiers: the webhook resolves a plan by product id,
+		// so a duplicate would silently pick one.
 		if other, dup := byProduct[id]; dup {
 			return nil, fmt.Errorf("dodo: %s and %s are configured with the same product id", other, plan.Slug)
 		}
@@ -75,14 +65,9 @@ func ProductIDs(lookup EnvLookup) (map[string]string, error) {
 	return out, nil
 }
 
-// mappedSlug is the catalog side of "can this tier have a product": every tier
-// except the floors and custom, whose product lives on the org's row.
-//
-// Retired tiers ARE mapped, deliberately. The map's other direction is how the
-// webhook places a delivery, so dropping a retired tier would reject its existing
-// holders' renewals AND cancellations as unmappable -- permanently, since that
-// rejection marks the delivery processed. Nothing becomes sellable: core filters
-// Retired in CreateCheckoutSession and PlanOptions.
+// mappedSlug is the catalog side of "can this tier have a product": every tier but
+// the floors and custom. Retired tiers ARE mapped, or the webhook rejects their
+// holders' renewals and cancellations; core is what keeps them unsellable.
 func mappedSlug(plan corebilling.Plan) bool {
 	switch plan.Slug {
 	case corebilling.SlugFree, corebilling.SlugTrial, corebilling.SlugCustom:

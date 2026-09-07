@@ -493,9 +493,8 @@ func TestResolveAppliesANegotiatedRetention(t *testing.T) {
 	}
 }
 
-// A slug the catalog dropped keeps the row's own numbers rather than the floor's,
-// for retention exactly as for the quota: imposing a shorter one on a paying
-// customer is the wrong direction to fail in.
+// A slug the catalog dropped keeps the row's own numbers rather than the floor's:
+// imposing a shorter retention on a paying customer is the wrong way to fail.
 func TestResolveUnknownPlanHasNoRetentionBound(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{
 		Present: true, PlanSlug: "growth-v9",

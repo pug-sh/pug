@@ -16,9 +16,8 @@ import (
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 )
 
-// Role gating is enforced by rpc.AuthzInterceptor before any handler runs, so a
-// request reaching here proves the caller is a member. Not that the org still
-// exists: it can be deleted between the two reads.
+// Role gating is enforced by rpc.AuthzInterceptor before any handler runs. Not that
+// the org still exists: it can be deleted between the two reads.
 type Server struct {
 	service *corebilling.Service
 }
@@ -68,9 +67,8 @@ func (s *Server) GetBillingStatus(
 		PeriodStart: timestamppb.New(ent.PeriodStart),
 		Status:      statusToRPC(ent.Status).Enum(),
 	}
-	// Absent means NO quota, which is what a disabled deployment and an
-	// unresolvable plan both report. Emitting a zero here would tell every org on
-	// a self-hosted install that it is over its limit.
+	// Absent means NO quota, which a disabled deployment and an unresolvable plan both
+	// report. A zero would tell every org on a self-hosted install it is over.
 	resp.IncludedEvents = int64Value(ent.IncludedEvents)
 	// Absent means no bound, never zero: nothing prunes on this number, so a 0
 	// would promise a deletion that has not happened and cannot.
@@ -97,11 +95,9 @@ func internalErr() error {
 	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 }
 
-// int64Value keeps an absent number absent on the wire. Every field it feeds --
-// the quota, the retention bound and the price, on the entitlement and on each
-// listed plan -- is a wrapper rather than a bare int64 because protoc-gen-es
-// renders an edition-2023 singular scalar as a non-optional bigint, which would
-// land "no quota" in the dashboard as a quota of zero.
+// int64Value keeps an absent number absent on the wire: protoc-gen-es renders an
+// edition-2023 singular scalar as a non-optional bigint, so "no quota" would land
+// in the dashboard as a quota of zero.
 func int64Value(v *int64) *wrapperspb.Int64Value {
 	if v == nil {
 		return nil
@@ -109,9 +105,8 @@ func int64Value(v *int64) *wrapperspb.Int64Value {
 	return wrapperspb.Int64(*v)
 }
 
-// CreateCheckoutSession opens a provider checkout and returns the URL. The
-// request names a plan slug; the amount lives on the provider's product and pug
-// stores no money at all.
+// CreateCheckoutSession opens a provider checkout and returns the URL. The request
+// names a plan slug; the amount lives on the provider's product.
 func (s *Server) CreateCheckoutSession(
 	ctx context.Context,
 	req *connect.Request[billingv1.CreateCheckoutSessionRequest],
@@ -122,9 +117,7 @@ func (s *Server) CreateCheckoutSession(
 
 	orgID := req.Msg.GetOrgId()
 	// The buyer's own address, so the provider's form is pre-filled. Never the
-	// identity: a customer is created per checkout, because one person can admin
-	// two orgs and a shared customer would let attribution land on the wrong
-	// tenant.
+	// identity: a customer is created per checkout, or attribution lands wrong.
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, err
@@ -159,12 +152,9 @@ func (s *Server) ConfirmCheckout(
 	}), nil
 }
 
-// confirmErr translates the confirm path. Every case below is a checkout that
-// already took the customer's money except the last, so none may fall through to
-// checkoutErr -- which answers as though no money had moved ("this plan cannot be
-// purchased") and, for anything it has no case for, as "internal error".
-// FailedPrecondition throughout, because the dashboard has to say a person is
-// needed rather than that the page will update shortly.
+// confirmErr translates the confirm path: every case below has already taken the
+// customer's money, so none may fall through to checkoutErr, which answers as
+// though none had moved. FailedPrecondition throughout -- a person is needed.
 func confirmErr(err error, orgID string) error {
 	paid := func(reason apperr.Reason, msg string) error {
 		return apperr.FailedPrecondition(reason, msg,
@@ -249,9 +239,8 @@ func (s *Server) ListPlans(
 	return connect.NewResponse(&billingv1.ListPlansResponse{Plans: plans}), nil
 }
 
-// checkoutErr translates the session paths. Everything a caller can act on gets
-// its own reason; a provider call that simply failed is internal, since its
-// message is the provider's and must not reach an API consumer.
+// checkoutErr translates the session paths. A provider call that simply failed is
+// internal: its message is the provider's and must not reach an API consumer.
 func checkoutErr(err error, orgID, planSlug string) error {
 	switch {
 	case errors.Is(err, corebilling.ErrOrgNotFound):
@@ -288,9 +277,8 @@ func statusToRPC(s corebilling.Status) billingv1.BillingStatus {
 	return billingv1.BillingStatus_BILLING_STATUS_UNSPECIFIED
 }
 
-// subStatusToRPC maps pug's subscription vocabulary. A stored word outside it --
-// a provider state pug has no name for -- reports UNSPECIFIED, which is the same
-// thing resolution does with it: not live.
+// subStatusToRPC maps pug's subscription vocabulary. A stored word outside it
+// reports UNSPECIFIED, which is what resolution does with it too: not live.
 func subStatusToRPC(s corebilling.SubStatus) billingv1.SubscriptionStatus {
 	switch s {
 	case corebilling.SubStatusActive:

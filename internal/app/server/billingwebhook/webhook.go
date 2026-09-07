@@ -1,14 +1,6 @@
-// Package billingwebhook serves a payments provider's webhook endpoint.
-//
-// Outside the Connect chain by necessity, not merely by preference:
-// verification needs the exact raw bytes and Connect hands a handler a decoded
-// message; the payload schema is the provider's and evolves without us, so
-// protovalidate would 400 valid deliveries into a retry loop; and the caller
-// authenticates by HMAC, which none of the four auth modes represents. So this
-// does its own body cap and its own error recording.
-//
-// The handler itself is provider-agnostic and is written once. Only Verify and
-// Normalize differ per provider, and both sit behind billing.PaymentProvider.
+// Package billingwebhook serves a payments provider's webhook endpoint, outside the
+// Connect chain by necessity: verification needs the raw bytes, the payload schema
+// is the provider's, and the caller authenticates by HMAC rather than an auth mode.
 package billingwebhook
 
 import (
@@ -27,10 +19,8 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// PathFor names the provider in the URL deliberately. Sniffing it from the
-// headers would mean trying each verifier in turn, which is both a signature
-// oracle and unresolvable when two schemes share a header name -- and a cutover
-// mounts two routes and retires the first on its own schedule, with no flag day.
+// PathFor names the provider in the URL deliberately: sniffing it from the headers
+// would mean trying each verifier in turn, which is a signature oracle.
 func PathFor(provider string) string { return "/webhooks/" + provider }
 
 // Payloads are a few KB; this backstops an unbounded read on an open route.
@@ -41,12 +31,8 @@ const maxBodyBytes = 1 << 20
 const handlerTimeout = 10 * time.Second
 
 // Mount registers the endpoint for one provider, and mounts NOTHING when the
-// provider cannot verify a signature. Never verify-nothing: with no secret
-// configured the provider gets 404s, which is the fail-closed direction.
-//
-// Registered straight on the mux (the /mcp precedent) rather than through
-// server.go's handle(), which records into the Connect-only authz contract and
-// would fail assertServedServicesMatch at startup.
+// provider cannot verify a signature -- 404 is the fail-closed direction.
+// Registered straight on the mux, like /mcp: handle() is the Connect-only path.
 func Mount(mux *http.ServeMux, service *corebilling.Service, provider corebilling.PaymentProvider, canVerify bool) bool {
 	if service == nil || provider == nil || !canVerify {
 		return false
@@ -72,14 +58,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Started before the body read on purpose: the read is bounded by
-	// maxBodyBytes and the server's own body deadline, and a budget that a slow
-	// upload could spend would leave a fine delivery no time to be stored.
+	// Started before the body read: a budget a slow upload could spend would leave a
+	// fine delivery no time to be stored.
 	ctx := r.Context()
 
-	// This route is outside the Connect chain, so nothing upstream has started a
-	// span and RecordError would resolve to the noop one -- silencing every
-	// rejection alert on the money path.
+	// Outside the Connect chain nothing upstream started a span, so RecordError would
+	// resolve to the noop one and silence every rejection alert on the money path.
 	ctx, span := otel.Tracer("server/billingwebhook").Start(ctx, "billing.webhook")
 	defer span.End()
 
@@ -100,9 +84,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 	defer cancel()
 	if err != nil {
-		// Only an oversized body is the sender's fault. A truncated read is a reset
-		// or a deadline, and 400 would tell the provider to stop retrying a delivery
-		// that never reached the inbox.
+		// Only an oversized body is the sender's fault. A truncated read is a reset or a
+		// deadline, and 400 would stop the retry of a delivery that never landed.
 		status := http.StatusInternalServerError
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			status = http.StatusBadRequest
@@ -126,9 +109,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 2xx only once the row is durable: the provider retries 8 times with
 	// exponential backoff, and a 5xx here is what asks for the next attempt.
 	if err := h.service.HandleDelivery(ctx, h.provider, delivery); err != nil {
-		// Disposition only: every path inside HandleDelivery logs and records at the
-		// layer that detected the fault, so re-recording here doubles the count on
-		// the span started above.
+		// Disposition only: HandleDelivery logs and records at the layer that detected the
+		// fault, so re-recording here doubles the count on the span above.
 		slog.WarnContext(ctx, "asking the provider to retry a billing webhook", slogx.Error(err),
 			slog.String("provider", h.provider.Name()), slog.String("webhook_id", delivery.WebhookID))
 		w.WriteHeader(http.StatusInternalServerError)

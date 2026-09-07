@@ -25,14 +25,12 @@ const (
 )
 
 // BillingStatus is derived from the clock on every read, never stored. The
-// states a payments provider reports — past due, cancelled — cannot be derived,
-// so they live on SubscriptionStatus below rather than here.
+// states a provider reports live on SubscriptionStatus instead.
 type BillingStatus int32
 
 const (
 	BillingStatus_BILLING_STATUS_UNSPECIFIED BillingStatus = 0
-	// Inside the trial window, which runs from the org's creation unless an
-	// operator extended it.
+	// Inside the trial window, which runs from org creation unless extended.
 	BillingStatus_BILLING_STATUS_TRIALING BillingStatus = 1
 	// Holding a granted plan whose contract has not lapsed.
 	BillingStatus_BILLING_STATUS_ACTIVE BillingStatus = 2
@@ -83,25 +81,17 @@ func (BillingStatus) EnumDescriptor() ([]byte, []int) {
 	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{0}
 }
 
-// SubscriptionStatus is the provider subscription behind the entitlement, in
-// pug's own vocabulary rather than the provider's.
-//
-// Only UNSPECIFIED, ACTIVE and PAST_DUE are ever emitted: resolution consults
-// only a LIVE subscription, so a paused or cancelled one reports UNSPECIFIED
-// and the org resolves to whatever sits beneath it. The remaining values exist
-// because they are pug's vocabulary and a stored row holds them -- do not write
-// a client branch that waits for one.
+// SubscriptionStatus is the provider subscription behind the entitlement, in pug's
+// own vocabulary. Only UNSPECIFIED, ACTIVE and PAST_DUE are ever emitted -- the
+// rest exist because a stored row holds them.
 type SubscriptionStatus int32
 
 const (
-	// No live subscription. A trialing, free or comped org, and every org on a
-	// deployment with no payments provider.
+	// No live subscription: trialing, free, comped, or no provider configured.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED SubscriptionStatus = 0
 	SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE      SubscriptionStatus = 1
-	// The card failed and the provider is retrying. The entitlement is UNCHANGED
-	// and the quota still applies -- degrading a paying customer's product over an
-	// expired card is worse for both sides than a few unbilled days. Worth a
-	// banner, never a block.
+	// The card failed and the provider is retrying. The entitlement is UNCHANGED:
+	// worth a banner, never a block.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE  SubscriptionStatus = 2
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAUSED    SubscriptionStatus = 3
 	SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELLED SubscriptionStatus = 4
@@ -207,21 +197,9 @@ type Plan struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// The tier's LIST price, in minor units of `currency` — never what a
-	// negotiated deal is charged, which belongs to the payments provider and is
-	// not stored in pug at all. ABSENT is the custom tier, which has no list
-	// price; that is not the same as a price of zero, which is the free and trial
-	// floors.
-	//
-	// Named `cents` because every tier in the catalog is priced in USD today.
-	// Format from the (amount, currency) pair regardless: the day a second
-	// currency is presented, minor units stop being hundredths (JPY has none) and
-	// this field is renamed with that change, not after it.
-	//
-	// A wrapper rather than a bare int64: protoc-gen-es renders an edition-2023
-	// singular scalar as a NON-optional bigint, so absence would reach the
-	// dashboard as 0 — indistinguishable from a comped deal. Verified against the
-	// generated TS, not assumed.
+	// The tier's LIST price, in minor units of `currency` -- never what a negotiated
+	// deal is charged. ABSENT is the custom tier, which is not a price of zero. A
+	// wrapper because a bare int64 would reach the dashboard as 0.
 	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
 	// ISO 4217.
 	Currency      *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
@@ -289,66 +267,35 @@ func (x *Plan) GetCurrency() string {
 
 type GetBillingStatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// False on a deployment with billing switched off — a self-hosted install.
-	// Hide every billing surface, and note that included_events is absent in that
-	// mode too, so no quota banner can fire even if this flag is ignored.
+	// False on a deployment with billing switched off. Hide every billing surface.
 	BillingEnabled *bool          `protobuf:"varint,1,opt,name=billing_enabled,json=billingEnabled" json:"billing_enabled,omitempty"`
 	Plan           *Plan          `protobuf:"bytes,2,opt,name=plan" json:"plan,omitempty"`
 	Status         *BillingStatus `protobuf:"varint,3,opt,name=status,enum=dashboard.billing.v1.BillingStatus" json:"status,omitempty"`
-	// Events the org may send this period. ABSENT means NO QUOTA — billing is off,
-	// or the org is on a plan carrying none. Never render its absence as 0. An org
-	// whose stored plan this deployment no longer knows keeps any negotiated
-	// number on its own row, and is otherwise absent here.
-	//
-	// A wrapper for the same reason as Plan.price_cents: a bare int64 reaches the
-	// dashboard as 0 when it is absent, and "0 events allowed" is the one thing
-	// this field must never say. The absence has no companion field to infer it
-	// from either, unlike GetUsageResponse.used_events, which a client can pair
-	// with usage_computed_at.
+	// Events the org may send this period. ABSENT means NO QUOTA -- billing is off,
+	// or the plan carries none. Never render its absence as 0.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,4,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
-	// When the trial ends, or when it ended. Kept once it is past, where it says
-	// why an org is on the free floor rather than when it will be. Absent only
-	// with billing switched off.
+	// When the trial ends, or when it ended. Kept once past, where it says why an
+	// org is on the free floor. Absent only with billing switched off.
 	TrialEndsAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=trial_ends_at,json=trialEndsAt" json:"trial_ends_at,omitempty"`
-	// When a granted plan lapses back to the free floor. Absent means open-ended.
-	// Kept once it is in the past, where it says when the plan ended.
-	//
-	// This is the end of the agreement, NOT of the quota window — an annual
-	// contract does not make a quota period a year long.
+	// When a granted plan lapses back to the free floor; absent means open-ended.
+	// The end of the agreement, NOT of the quota window.
 	ContractEndsAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=contract_ends_at,json=contractEndsAt" json:"contract_ends_at,omitempty"`
-	// The quota window, which runs from the org's billing anniversary rather than
-	// the 1st of the month. Identical to UsageService.GetUsage's period bounds for
-	// the same org, which is what makes "X of Y" a comparison of like with like.
+	// The quota window, which runs from the org's billing anniversary. Identical to
+	// GetUsage's period bounds, which is what makes "X of Y" like for like.
 	PeriodStart        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=period_start,json=periodStart" json:"period_start,omitempty"`
 	PeriodEnd          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=period_end,json=periodEnd" json:"period_end,omitempty"`
 	SubscriptionStatus *SubscriptionStatus    `protobuf:"varint,9,opt,name=subscription_status,json=subscriptionStatus,enum=dashboard.billing.v1.SubscriptionStatus" json:"subscription_status,omitempty"`
-	// When the provider bills next. This is the MONEY's period, not the quota's:
-	// period_start/period_end above are the window used_events is measured over,
-	// and the two do not coincide. Absent when there is no live subscription.
+	// When the provider bills next: the MONEY's period, not the quota's above.
+	// Absent when there is no live subscription.
 	CurrentPeriodEnd *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=current_period_end,json=currentPeriodEnd" json:"current_period_end,omitempty"`
-	// Whether a checkout would actually open. True only when billing is enabled, a
-	// payments provider is configured, and there is a product to check out
-	// against -- a configured catalog tier, or the custom tier once this org has a
-	// product id recorded. It gates the buy button as a whole; whether a
-	// PARTICULAR tier can be bought is PlanOption.purchasable, which does share a
-	// helper with the refusal.
-	//
-	// It says nothing about which tier, and carries no product id -- the dashboard
-	// never sees one.
+	// Whether a checkout would open at all -- billing on, a provider configured, and
+	// a product to check out against. Per tier it is PlanOption.purchasable.
 	Purchasable *bool `protobuf:"varint,11,opt,name=purchasable" json:"purchasable,omitempty"`
-	// How many days of event history this org keeps, as the plan it holds says.
-	// ABSENT means NO BOUND — billing is off, or the plan carries none — and is
-	// never zero. Nothing in pug deletes on this number today: it is what the
-	// plan promises, not a prune that has already run.
-	//
-	// A wrapper for the same reason as included_events: a bare int64 lands absent
-	// in the dashboard as 0, and "0 days of history" is the one thing this field
-	// must never say.
+	// Days of event history the plan promises. ABSENT means NO BOUND and is never
+	// zero. Nothing in pug deletes on this number today.
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,13,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
-	// Whether a portal session would open: this org has a customer at the
-	// provider, which only a checkout leaves behind. Not implied by
-	// subscription_status -- a CANCELLED org reports UNSPECIFIED above and still
-	// has invoices to fetch and a card to re-add.
+	// Whether a portal session would open: this org has a customer at the provider,
+	// which only a checkout leaves behind. Not implied by subscription_status.
 	Manageable    *bool `protobuf:"varint,12,opt,name=manageable" json:"manageable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -478,8 +425,7 @@ func (x *GetBillingStatusResponse) GetManageable() bool {
 type CreateCheckoutSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// A catalog slug. Never a price and never a product id: the amount lives on
-	// the provider's product, and pug stores no money at all.
+	// A catalog slug. Never a price and never a product id.
 	PlanSlug      *string `protobuf:"bytes,2,opt,name=plan_slug,json=planSlug" json:"plan_slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -533,9 +479,8 @@ type CreateCheckoutSessionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Send the buyer here. Single-use and short-lived; never store it.
 	CheckoutUrl *string `protobuf:"bytes,1,opt,name=checkout_url,json=checkoutUrl" json:"checkout_url,omitempty"`
-	// Hand back to ConfirmCheckout when the buyer returns. Not a secret and not
-	// proof: the server re-reads the checkout and checks it belongs to the caller's
-	// org. Empty if the provider gives no id, leaving the webhook to confirm.
+	// Hand back to ConfirmCheckout when the buyer returns. Not proof: the server
+	// re-reads the checkout. Empty if the provider gives no id.
 	SessionId     *string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -588,9 +533,8 @@ func (x *CreateCheckoutSessionResponse) GetSessionId() string {
 type ConfirmCheckoutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// The session_id CreateCheckoutSessionResponse returned for this org. Bounded
-	// to the provider's own id alphabet: it is echoed into the provider's URL path,
-	// where a `../` would address a different endpoint with pug's API key.
+	// Bounded to the provider's own id alphabet: it is echoed into the provider's
+	// URL path, where a `../` would address another endpoint with pug's API key.
 	SessionId     *string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -642,8 +586,8 @@ func (x *ConfirmCheckoutRequest) GetSessionId() string {
 
 type ConfirmCheckoutResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// False is "not settled yet" -- the buyer beat their own payment home -- never
-	// a failure. A checkout that will not settle is an error instead.
+	// False is "not settled yet", never a failure; a checkout that will not settle
+	// is an error instead.
 	Confirmed     *bool `protobuf:"varint,1,opt,name=confirmed" json:"confirmed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -776,8 +720,8 @@ func (x *CreatePortalSessionResponse) GetPortalUrl() string {
 
 type ListPlansRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Scoped to an org because purchasability is: the custom tier is only
-	// purchasable by the org whose row records its product.
+	// Scoped to an org because purchasability is: only the org whose row records a
+	// product can buy the custom tier.
 	OrgId         *string `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -820,29 +764,23 @@ func (x *ListPlansRequest) GetOrgId() string {
 	return ""
 }
 
-// PlanOption is a tier as this deployment sells it. Distinct from Plan, which is
-// a tier as ONE ORG HOLDS it, overrides applied -- a negotiated quota and display
-// name never appear here.
+// PlanOption is a tier as this deployment sells it. Plan is a tier as ONE ORG
+// holds it, overrides applied.
 type PlanOption struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// The tier's list price, in minor units of `currency`. ABSENT is the custom
-	// tier, whose price lives in the payments provider; that is not a price of
-	// zero.
+	// List price, in minor units of `currency`. ABSENT is the custom tier, whose
+	// price lives in the provider; that is not a price of zero.
 	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
 	// ISO 4217.
 	Currency *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
-	// Events the tier includes. ABSENT is the custom tier, whose quota comes from
-	// the org's own row. Never render its absence as 0.
+	// Events the tier includes. ABSENT is the custom tier. Never render it as 0.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,5,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
-	// Days of event history the tier keeps. ABSENT is the custom tier again, whose
-	// retention is whatever its deal recorded. Never render its absence as 0.
+	// Days of history the tier keeps. ABSENT is the custom tier. Never render as 0.
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,7,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
-	// Whether a checkout for THIS tier would open. Same helper
-	// CreateCheckoutSession refuses on, so a button that cannot work is
-	// impossible rather than unlikely -- and it is per tier, because a deployment
-	// can configure a product for some tiers and not others.
+	// Whether a checkout for THIS tier would open -- the same helper
+	// CreateCheckoutSession refuses on, so a dead button is impossible.
 	Purchasable   *bool `protobuf:"varint,6,opt,name=purchasable" json:"purchasable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

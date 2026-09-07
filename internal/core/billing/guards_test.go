@@ -289,10 +289,9 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 	}
 }
 
-// `--until ""` is how an operator ENDS a deal, so it has to clear the overrides
-// the contract gated exactly as omitting the flag does. It reaches the service as
-// a non-nil pointer to the zero time, which is the one input that can look like
-// "the change names a date" while naming none.
+// `--until ""` is how an operator ENDS a deal, so it clears the overrides the
+// contract gated exactly as omitting the flag does. It reaches the service as a
+// non-nil pointer to the zero time -- the one input that looks like a date.
 func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

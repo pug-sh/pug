@@ -28,10 +28,9 @@ func render(t *testing.T, ent corebilling.Entitlement, rec corebilling.Record, h
 	return buf.String()
 }
 
-// line returns the value of one labelled line, scoped to a section. Scoped
-// because the same label appears under both RESOLVED and STORED and they carry
-// different answers -- an unscoped lookup reads the resolved value and passes
-// while the stored one is wrong.
+// line returns the value of one labelled line, scoped to a section: the same label
+// appears under RESOLVED and STORED, and an unscoped lookup reads the resolved one
+// and passes while the stored value is wrong.
 func line(t *testing.T, out, section, label string) string {
 	t.Helper()
 	in := section == ""

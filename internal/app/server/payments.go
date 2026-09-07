@@ -12,12 +12,8 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
-// paymentsConfig picks the merchant of record to construct. Credentials stay
-// under each provider's own prefix, so a second provider's keys sit beside the
-// first's rather than overwriting them -- which is what lets both be configured
-// at once during a cutover. Only this decides which is constructed -- for
-// checkout and for the one webhook route that mounts, when its secret is
-// present.
+// paymentsConfig picks the merchant of record to construct. Credentials stay under
+// each provider's own prefix, so both can be configured at once during a cutover.
 type paymentsConfig struct {
 	Provider string `env:"PUG_BILLING_PROVIDER"`
 	// Reused rather than redeclared: this is the same "where the dashboard lives"
@@ -29,12 +25,9 @@ type paymentsConfig struct {
 // billing page, never a provider page.
 const checkoutReturnPath = "/settings/billing"
 
-// newPayments builds the provider wiring, or nil when none is configured.
-// Billing enabled with no payments credentials is a supported mode: quotas,
-// grants and comped deals all work and only the buy button is missing.
-//
-// An unrecognised provider name FAILS STARTUP rather than silently disabling
-// checkout, because from the dashboard the two are indistinguishable.
+// newPayments builds the provider wiring, or nil when none is configured -- a
+// supported mode where only the buy button is missing. An unrecognised provider
+// name FAILS STARTUP: from the dashboard it is indistinguishable from disabled.
 func newPayments(ctx context.Context) (*corebilling.Payments, bool, error) {
 	var cfg paymentsConfig
 	if err := envconfig.Process(ctx, &cfg); err != nil {

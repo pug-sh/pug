@@ -19,8 +19,7 @@ limit 1
 `
 
 // Any row, newest first -- not only a live one. A customer whose subscription
-// lapsed still has invoices to fetch and a card to re-add, and the portal is
-// where both live.
+// lapsed still has invoices to fetch and a card to re-add.
 func (q *Queries) GetLatestBillingSubscription(ctx context.Context, orgID string) (BillingSubscription, error) {
 	row := q.db.QueryRow(ctx, getLatestBillingSubscription, orgID)
 	var i BillingSubscription
@@ -237,8 +236,8 @@ type ListPaidEntitlementsWithoutLiveSubscriptionRow struct {
 	PlanSlug string
 }
 
-// Invariant 3, as a query: every paid org has a provider subscription. A row here
-// is an org being entitled to something nobody is charged for.
+// Every paid org should have a provider subscription. A row here is an org
+// entitled to something nobody is charged for.
 func (q *Queries) ListPaidEntitlementsWithoutLiveSubscription(ctx context.Context) ([]ListPaidEntitlementsWithoutLiveSubscriptionRow, error) {
 	rows, err := q.db.Query(ctx, listPaidEntitlementsWithoutLiveSubscription)
 	if err != nil {

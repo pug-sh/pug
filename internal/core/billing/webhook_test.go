@@ -16,11 +16,9 @@ import (
 	"github.com/rs/xid"
 )
 
-// fakeProvider is the whole seam, stubbed. Everything above section 2.1 -- the
-// inbox, the CAS, attribution, the rejection dispositions -- is exercised
-// through it, which is what proves those paths hold no Dodo assumption. A test
-// that the fake and Dodo agree on anything beyond the interface would be
-// testing the mock.
+// fakeProvider is the whole seam, stubbed: the inbox, the CAS, attribution and the
+// rejection dispositions are all exercised through it, which is what proves those
+// paths hold no Dodo assumption.
 type fakeProvider struct {
 	name  string
 	event corebilling.SubscriptionEvent
@@ -186,11 +184,9 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 	}
 }
 
-// SubStatus.Live() is Go; the same set is hardcoded as ('active', 'past_due') in
-// GetLiveBillingSubscription, in ListPaidEntitlementsWithoutLiveSubscription's
-// join, and in the partial unique index. Nothing links them, so adding a live
-// status in Go alone would leave the read finding no row and drop a paying org to
-// the floor. This walks the whole vocabulary through the real query.
+// SubStatus.Live() is Go; the same set is hardcoded in three SQL sites with nothing
+// linking them, so adding a live status in Go alone would drop a paying org to the
+// floor. This walks the whole vocabulary through the real query.
 func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -220,8 +216,7 @@ func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 }
 
 // A live custom subscription resolves its quota from the entitlement row, so
-// deleting that row drops an org that is still being charged to the free floor --
-// and nothing reports it: reconcile looks for the inverse.
+// deleting it drops an org still being charged -- and reconcile looks for the inverse.
 func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -253,10 +248,9 @@ func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 	}
 }
 
-// A webhook's CAS stamp is the signed webhook-timestamp header, which is whole
-// seconds, so a cutover's cancellation and activation can carry the same one.
-// A tie must not be able to grant a plan: the failure direction here is an org
-// that keeps a subscription it cancelled, and nobody is paying for it.
+// A webhook's CAS stamp is the whole-second webhook-timestamp header, so a
+// cutover's cancellation and activation can carry the same one. A tie must not be
+// able to grant a plan: the safe direction is withholding one.
 func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -283,8 +277,7 @@ func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
 }
 
 // A payload pug cannot decode is a shape that changed under it, which a redeploy
-// inside the provider's retry window fixes. Storing it as processed would consume
-// the delivery AND let the prune drop the payload, losing the replay too.
+// fixes. Storing it processed would consume the delivery and lose the replay.
 func TestAnUndecodablePayloadIsRetried(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -302,8 +295,7 @@ func TestAnUndecodablePayloadIsRetried(t *testing.T) {
 }
 
 // The provider's retry reuses its webhook id. A retry whose row is still
-// unprocessed means the last attempt died mid-apply and must be re-applied; a
-// bare conflict->200 would neutralize exactly that retry.
+// unprocessed died mid-apply; a bare conflict->200 would neutralize it.
 func TestRetryOfAnUnprocessedDeliveryReapplies(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -360,9 +352,8 @@ func TestRetryOfAProcessedDeliveryIsANoop(t *testing.T) {
 	}
 }
 
-// Every unapplicable delivery has one disposition: stored, marked processed with
-// a reason, never retried. Retrying cannot fix any of these, and eight attempts
-// would only delay the alert.
+// Every unapplicable delivery has one disposition: stored, marked processed with a
+// reason, never retried -- retrying fixes none of them.
 func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -473,8 +464,7 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 }
 
 // One buyer paying for two orgs shares a provider customer, so the fallback has
-// nothing to tell them apart: the delivery is rejected rather than attributed to
-// the newest of them.
+// nothing to tell them apart: rejected rather than attributed to the newest.
 func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -608,9 +598,8 @@ func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProv
 	return svc
 }
 
-// A cutover whose new subscription is delivered before the old one's
-// cancellation. Rejecting it would consume the delivery and leave the org with
-// no live subscription at all once the cancellation lands, so it must retry.
+// A cutover whose new subscription is delivered before the old one's cancellation.
+// Rejecting it would leave the org with no live subscription, so it must retry.
 func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

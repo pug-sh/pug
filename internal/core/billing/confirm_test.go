@@ -20,9 +20,8 @@ func storedSubscriptions(t *testing.T, f *fixture) int {
 	return n
 }
 
-// The whole point: a buyer comes back and the plan is theirs, with no delivery
-// having arrived. This is the only path that works on a deployment whose webhook
-// URL is not reachable at all.
+// The whole point: a buyer comes back and the plan is theirs with no delivery
+// having arrived -- the only path that works with no reachable webhook URL.
 func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -109,9 +108,8 @@ func TestConfirmCheckoutReportsAnUnsettledCheckout(t *testing.T) {
 	}
 }
 
-// A status pug has no word for is stored verbatim and is not live, so the row is
-// written — it is what leaves the org a customer to manage — while the buyer is
-// told nothing has been confirmed.
+// A status pug has no word for is stored verbatim and is not live: the row is
+// written (it leaves the org a customer to manage), the buyer told nothing.
 func TestConfirmCheckoutDoesNotConfirmAPendingSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -174,9 +172,8 @@ func TestConfirmCheckoutRefusesAnUnmappableProduct(t *testing.T) {
 	}
 }
 
-// The webhook beat the buyer home. The CAS then skips the confirm's write as
-// stale — and reporting that as "not confirmed" would send someone who already
-// holds the plan into the poll this path exists to remove.
+// The webhook beat the buyer home, so the CAS skips the confirm's write as stale.
+// Reporting "not confirmed" would send someone who holds the plan into the poll.
 func TestConfirmCheckoutConfirmsWhenTheWebhookLandedFirst(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -203,9 +200,8 @@ func TestConfirmCheckoutConfirmsWhenTheWebhookLandedFirst(t *testing.T) {
 	}
 }
 
-// The buyer paid, the partial unique index refused the row, and the old plan is
-// still the one in force. Reporting that as confirmed sends somebody who is now
-// paying twice away happy.
+// The buyer paid, the unique index refused the row, and the old plan is still in
+// force. Reporting that as confirmed sends somebody now paying twice away happy.
 func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

@@ -26,16 +26,9 @@ import (
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
-// runtime.Tool's schema fields are declared as encoding/json's RawMessage, which
-// Go 1.25's json/v2 makes an ALIAS for encoding/json/jsontext.Value. The upstream
-// generator prints the field's resolved type name, so it emits `jsontext.Value`
-// while importing only `encoding/json` -- and every generated file fails to
-// compile with "undefined: jsontext". It is not the pinned plugin version that
-// moved; it is the toolchain beneath it.
-//
-// Rewritten back to the alias the import actually provides. The two are the same
-// type, so this changes no behaviour, and it keeps the generated output
-// byte-identical to what the repo already has checked in.
+// runtime.Tool's schema fields are encoding/json's RawMessage, which Go 1.25's
+// json/v2 makes an ALIAS for jsontext.Value, so the upstream generator emits
+// `jsontext.Value` while importing only encoding/json. Rewritten back to the alias.
 var (
 	emittedType = []byte("jsontext.Value{")
 	importedAs  = []byte("json.RawMessage{")

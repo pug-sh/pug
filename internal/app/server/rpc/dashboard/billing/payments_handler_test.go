@@ -111,10 +111,9 @@ func checkout(t *testing.T, srv *Server, orgID, slug string) (string, error) {
 	return resp.Msg.GetCheckoutUrl(), nil
 }
 
-// purchasable is what the dashboard renders the buy button from, and it must
-// agree with what CreateCheckoutSession actually does -- a button that cannot
-// work is worse than no button. Both read one helper, and this asserts they
-// agree in every configuration.
+// purchasable is what the dashboard renders the buy button from, and it must agree
+// with what CreateCheckoutSession does -- a button that cannot work is worse than
+// none. Both read one helper; this asserts they agree in every configuration.
 func TestPurchasableAgreesWithCheckout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -259,10 +258,9 @@ func TestPortalRequiresACustomer(t *testing.T) {
 	}
 }
 
-// The case manageable exists for: the subscription is gone, so
-// subscription_status reports UNSPECIFIED, but the customer remains and still
-// has invoices to fetch and a card to re-add. Inferring the button from the
-// status would hide the portal from exactly the org most likely to want it.
+// The case manageable exists for: the subscription is gone, so subscription_status
+// reports UNSPECIFIED, but the customer remains with invoices to fetch. Inferring
+// the button from the status would hide the portal from the org that wants it.
 func TestCancelledOrgIsStillManageable(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -404,9 +402,8 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 	}
 }
 
-// A negotiated deal is buyable from the dashboard by the org whose row records
-// its product, and by nobody else. That is what lets an operator paste one id
-// instead of emailing a payment link.
+// A negotiated deal is buyable from the dashboard by the org whose row records its
+// product and by nobody else -- one pasted id instead of an emailed payment link.
 func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -449,8 +446,7 @@ func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 }
 
 // confirmStub answers FetchCheckoutOutcome with whatever a test needs, so the
-// translations below are exercised through the real handler rather than asserted
-// on the service's sentinels.
+// translations below run through the real handler rather than the sentinels.
 type confirmStub struct {
 	stubProvider
 	event corebilling.SubscriptionEvent

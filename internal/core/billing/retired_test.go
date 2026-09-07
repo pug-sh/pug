@@ -50,11 +50,9 @@ func TestRetiredPlanCannotBeGrantedToANewOrg(t *testing.T) {
 
 }
 
-// Plans() must keep listing a retired tier, because that list is what the webhook
-// resolves an incoming product against. Dropping it there rejects its existing
-// holders' renewals AND cancellations as unmappable -- permanently, since that
-// rejection marks the delivery processed -- so one reprice freezes every
-// incumbent's subscription while still charging them.
+// Plans() must keep listing a retired tier: that list is what the webhook resolves
+// an incoming product against, so dropping it rejects its holders' renewals AND
+// cancellations permanently -- one reprice freezes every incumbent's subscription.
 func TestRetiredPlanStaysInThePlanList(t *testing.T) {
 	original := catalog
 	t.Cleanup(func() { catalog = original })

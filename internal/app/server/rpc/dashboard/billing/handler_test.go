@@ -48,9 +48,8 @@ func getStatus(t *testing.T, srv *Server, orgID string) *billingv1.GetBillingSta
 	return resp.Msg
 }
 
-// The wire shape is where "no quota" becomes visible to a client, and it is the
-// distinction this endpoint exists to get right: absent means there is no limit
-// to render, never a limit of zero.
+// The wire shape is where "no quota" becomes visible to a client, and the
+// distinction this endpoint exists to get right: absent is never a zero limit.
 func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -150,9 +149,8 @@ func TestGetBillingStatusReportsAnUnknownOrg(t *testing.T) {
 	}
 }
 
-// Every status the resolver can produce must map to a real enum value: the
-// default falls through to UNSPECIFIED, which would reach the dashboard beside a
-// populated plan and quota with nothing failing.
+// Every status the resolver can produce must map to a real enum value: the default
+// falls through to UNSPECIFIED beside a populated plan, with nothing failing.
 func TestStatusToRPCCoversEveryResolvedStatus(t *testing.T) {
 	// Exact values, not merely "not UNSPECIFIED": two statuses swapped would tell a
 	// paying customer they are on a trial, and pass a presence-only assertion.

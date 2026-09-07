@@ -47,9 +47,8 @@ insert into billing_entitlement_history (
 
 -- name: InsertBillingWebhookDelivery :one
 -- The provider's retry reuses its webhook id, so the primary key dedups it. The
--- returned row is what tells a retry apart from a first delivery: an unprocessed
--- row means the last attempt died mid-apply and must be re-applied, so this
--- deliberately does not swallow the conflict.
+-- returned row tells a retry from a first delivery -- an unprocessed row died
+-- mid-apply -- so this deliberately does not swallow the conflict.
 insert into billing_webhook_deliveries (event_type, payload, provider, webhook_id)
 values (@event_type, @payload, @provider, @webhook_id)
 on conflict (provider, webhook_id) do update
@@ -64,17 +63,15 @@ set processed_at = now(), error = @error
 where provider = @provider and webhook_id = @webhook_id;
 
 -- name: PruneBillingWebhookDeliveries :execrows
--- The payload holds personal data replay needs and nothing else does, so it is
--- kept for a window rather than forever. Unprocessed rows are never pruned: they
--- are the ones still worth replaying.
+-- The payload holds personal data only replay needs, so it is kept for a window
+-- rather than forever. Unprocessed rows are never pruned.
 delete from billing_webhook_deliveries
 where processed_at is not null and processed_at < @older_than;
 
 -- name: ApplyBillingSubscription :execrows
--- The mirror write: one statement, three callers. CAS on provider_updated_at, which
--- is when a payload ARRIVED, so a delivery that overtakes another is what this
--- orders -- reconcile corrects the rest. org_id is never updated: attribution is
--- decided once, on first sight.
+-- The mirror write: one statement, three callers. CAS on provider_updated_at, when
+-- a payload ARRIVED, so this orders a delivery that overtakes another. org_id is
+-- never updated: attribution is decided once, on first sight.
 insert into billing_subscriptions (
   currency, current_period_end, current_period_start, id, org_id, plan_slug,
   price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
@@ -94,21 +91,17 @@ set currency = excluded.currency,
     provider_status = excluded.provider_status,
     provider_updated_at = excluded.provider_updated_at,
     status = excluded.status
--- A tie is not hypothetical: a webhook's stamp is the signed webhook-timestamp
--- header, which is whole seconds, so a cutover's cancellation and activation can
--- carry the same one. On a tie the stored row must already be live, so an equal
--- stamp can end a subscription but never revive one -- failing toward withholding
--- a plan rather than granting one nobody is paying for.
+-- A tie is not hypothetical: a webhook's stamp is the whole-second
+-- webhook-timestamp header, so a cutover's cancellation and activation can share
+-- one. On a tie an equal stamp can end a subscription but never revive one.
 where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
    or (billing_subscriptions.provider_updated_at = excluded.provider_updated_at
        and billing_subscriptions.status in ('active', 'past_due'));
 
 -- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
--- Attribution fallback when a delivery carries no org_id metadata. Two rows is
--- the answer that matters: one buyer purchasing for two orgs shares a provider
--- customer, and nothing here can tell those apart, so the caller rejects the
--- delivery rather than attributing it to a guess. metadata.org_id is tried first
--- for that reason.
+-- Attribution fallback when a delivery carries no org_id metadata. Two rows is the
+-- answer that matters: one buyer purchasing for two orgs shares a provider customer,
+-- so the caller rejects the delivery rather than guessing.
 select distinct org_id from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
 limit 2;

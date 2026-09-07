@@ -52,15 +52,12 @@ type ApplyBillingSubscriptionParams struct {
 	Status             string
 }
 
-// The mirror write: one statement, three callers. CAS on provider_updated_at, which
-// is when a payload ARRIVED, so a delivery that overtakes another is what this
-// orders -- reconcile corrects the rest. org_id is never updated: attribution is
-// decided once, on first sight.
-// A tie is not hypothetical: a webhook's stamp is the signed webhook-timestamp
-// header, which is whole seconds, so a cutover's cancellation and activation can
-// carry the same one. On a tie the stored row must already be live, so an equal
-// stamp can end a subscription but never revive one -- failing toward withholding
-// a plan rather than granting one nobody is paying for.
+// The mirror write: one statement, three callers. CAS on provider_updated_at, when
+// a payload ARRIVED, so this orders a delivery that overtakes another. org_id is
+// never updated: attribution is decided once, on first sight.
+// A tie is not hypothetical: a webhook's stamp is the whole-second
+// webhook-timestamp header, so a cutover's cancellation and activation can share
+// one. On a tie an equal stamp can end a subscription but never revive one.
 func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBillingSubscriptionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, applyBillingSubscription,
 		arg.Currency,
@@ -181,9 +178,8 @@ type InsertBillingWebhookDeliveryParams struct {
 }
 
 // The provider's retry reuses its webhook id, so the primary key dedups it. The
-// returned row is what tells a retry apart from a first delivery: an unprocessed
-// row means the last attempt died mid-apply and must be re-applied, so this
-// deliberately does not swallow the conflict.
+// returned row tells a retry from a first delivery -- an unprocessed row died
+// mid-apply -- so this deliberately does not swallow the conflict.
 func (q *Queries) InsertBillingWebhookDelivery(ctx context.Context, arg InsertBillingWebhookDeliveryParams) (BillingWebhookDelivery, error) {
 	row := q.db.QueryRow(ctx, insertBillingWebhookDelivery,
 		arg.EventType,
@@ -215,11 +211,9 @@ type ListBillingSubscriptionOrgsByProviderCustomerIDParams struct {
 	ProviderCustomerID string
 }
 
-// Attribution fallback when a delivery carries no org_id metadata. Two rows is
-// the answer that matters: one buyer purchasing for two orgs shares a provider
-// customer, and nothing here can tell those apart, so the caller rejects the
-// delivery rather than attributing it to a guess. metadata.org_id is tried first
-// for that reason.
+// Attribution fallback when a delivery carries no org_id metadata. Two rows is the
+// answer that matters: one buyer purchasing for two orgs shares a provider customer,
+// so the caller rejects the delivery rather than guessing.
 func (q *Queries) ListBillingSubscriptionOrgsByProviderCustomerID(ctx context.Context, arg ListBillingSubscriptionOrgsByProviderCustomerIDParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listBillingSubscriptionOrgsByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
 	if err != nil {
@@ -278,9 +272,8 @@ delete from billing_webhook_deliveries
 where processed_at is not null and processed_at < $1
 `
 
-// The payload holds personal data replay needs and nothing else does, so it is
-// kept for a window rather than forever. Unprocessed rows are never pruned: they
-// are the ones still worth replaying.
+// The payload holds personal data only replay needs, so it is kept for a window
+// rather than forever. Unprocessed rows are never pruned.
 func (q *Queries) PruneBillingWebhookDeliveries(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, pruneBillingWebhookDeliveries, olderThan)
 	if err != nil {

@@ -20,10 +20,8 @@ sql:
           - column: "dashboard_tiles.thresholds"
             go_type:
               type: "[]byte"
-          # The delivery as the provider sent it. Raw bytes rather than a decoded
-          # map, so nothing re-serializes it in Go. Not byte-exact on the way back
-          # out -- jsonb sorts keys and strips whitespace -- so a stored payload is
-          # for reading, never for re-verifying a signature.
+          # The delivery as the provider sent it, as raw bytes so nothing re-serializes
+          # it. jsonb sorts keys, so a stored payload never re-verifies a signature.
           - column: "billing_webhook_deliveries.payload"
             go_type:
               type: "[]byte"
@@ -47,10 +45,8 @@ sql:
           - column: "dashboard_tiles.thresholds"
             go_type:
               type: "[]byte"
-          # The delivery as the provider sent it. Raw bytes rather than a decoded
-          # map, so nothing re-serializes it in Go. Not byte-exact on the way back
-          # out -- jsonb sorts keys and strips whitespace -- so a stored payload is
-          # for reading, never for re-verifying a signature.
+          # The delivery as the provider sent it, as raw bytes so nothing re-serializes
+          # it. jsonb sorts keys, so a stored payload never re-verifies a signature.
           - column: "billing_webhook_deliveries.payload"
             go_type:
               type: "[]byte"

@@ -16,50 +16,39 @@ import (
 const reconcilePageSize = 500
 
 // DeliveryRetention is how long a processed delivery is kept. Its payload holds
-// the customer's name, email and billing address -- personal data pug does not
-// otherwise store -- and replay is the only thing that needs the bytes.
+// personal data pug does not otherwise store, and only replay needs the bytes.
 const DeliveryRetention = 90 * 24 * time.Hour
 
-// ReconcileReport is what one pass found. Nothing here is auto-fixed: an
-// automatic repair would be writing to the money side of the system from a
-// guess. The counts are logged and returned so the caller can alert on them.
+// ReconcileReport is what one pass found. Nothing is auto-fixed: that would be
+// writing to the money side from a guess. The counts are for alerting.
 type ReconcileReport struct {
 	// Rows re-read from the provider and re-applied through the same CAS the
 	// webhook uses.
 	Checked int
 	Applied int
 
-	// A subscription pug stores that the provider no longer knows -- a 404 on the
-	// re-read, or a row for an environment the deployment has since left. A finding
-	// for a person, not a fault: nothing here can tell a purged subscription from
-	// one that was never the provider's to begin with.
+	// A subscription pug stores that the provider no longer knows. A finding for a
+	// person: nothing here tells a purged subscription from one never theirs.
 	Untracked int
-	// Invariant 3, inverted: an entitlement granting a paid or custom plan with no
-	// live subscription behind it. An org with NO entitlement row is invisible
-	// here -- the query reads billing_entitlements -- so a paid custom deal whose
-	// quota row nobody wrote surfaces as UnmappedProduct instead.
+	// An entitlement granting a paid or custom plan with no live subscription behind
+	// it. An org with NO entitlement row is invisible here -- see UnmappedProduct.
 	EntitledUnbilled int
-	// A live subscription against a product no config key and no org row maps to
-	// -- a delivery that could not be applied, which means a deploy is missing a
-	// product key or an operator created a product without pasting its id.
+	// A live subscription against a product nothing maps to: a deploy is missing a
+	// product key, or an operator created a product without pasting its id.
 	UnmappedProduct int
-	// Rows the pass could not settle because a read or a write failed -- the
-	// provider, or Postgres either side of it. Distinguished from a clean pass so
-	// an outage does not read as "everything is consistent", and the only counter
-	// the CronJob exits non-zero on.
+	// Rows the pass could not settle because a read or a write failed. Kept apart so
+	// an outage does not read as clean, and the only counter the CronJob fails on.
 	Unreadable int
-	// A live subscription pug cannot apply: billed in a currency it does not sell
-	// in, or carrying no status. Counted rather than skipped, or the pass would
-	// report a clean sweep over a row it did nothing with.
+	// A live subscription pug cannot apply: an unsold currency, or no status.
+	// Counted rather than skipped, or the pass reports a sweep it did not make.
 	Unapplicable int
-	// Two live subscriptions for one org, refused by the partial unique index. The
-	// one finding here that means an org may be paying twice.
+	// Two live subscriptions for one org, refused by the partial unique index -- the
+	// one finding that means an org may be paying twice.
 	TwoLive int
 }
 
 // Reconcile is the backstop for the one thing the inbox cannot cover: a webhook
-// that never arrived at all. It re-reads every subscription through the provider
-// and applies the same CAS, then reports the inconsistencies it cannot fix.
+// that never arrived. It re-reads every subscription and applies the same CAS.
 func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport, error) {
 	var report ReconcileReport
 	if !s.payments.configured() {
@@ -70,9 +59,8 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	}
 	provider := s.payments.Provider
 
-	// Paged by offset rather than keyset: the pass reads the whole table under no
-	// lock, and a row inserted mid-walk being seen twice or not at all is
-	// harmless -- the next pass covers it, and the CAS makes a repeat a no-op.
+	// Paged by offset rather than keyset: the walk holds no lock, and a row seen
+	// twice or not at all is harmless -- the CAS makes a repeat a no-op.
 	for offset := int32(0); ; offset += reconcilePageSize {
 		rows, err := s.read.ListBillingSubscriptionsByProvider(ctx,
 			dbread.ListBillingSubscriptionsByProviderParams{
@@ -125,8 +113,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 }
 
 // reconcileOne re-reads one subscription and applies it. Errors are counted and
-// logged rather than returned: one unreadable subscription must not abandon the
-// rest of the pass.
+// logged, not returned: one unreadable row must not abandon the pass.
 func (s *Service) reconcileOne(
 	ctx context.Context, provider PaymentProvider, row dbread.BillingSubscription,
 	now time.Time, report *ReconcileReport,
@@ -136,7 +123,7 @@ func (s *Service) reconcileOne(
 	event, err := provider.FetchSubscription(ctx, row.ProviderSubID)
 	if err != nil {
 		// A subscription the provider does not know is a finding, not an outage:
-		// counting it as unreadable would hold the CronJob red on every later run.
+		// counting it unreadable would hold the CronJob red on every later run.
 		if errors.Is(err, ErrSubscriptionNotFound) {
 			report.Untracked++
 			slog.ErrorContext(ctx, "the provider does not know a stored subscription", slogx.Error(err),
@@ -182,15 +169,12 @@ func (s *Service) reconcileOne(
 		return
 	}
 
-	// `now` rather than a delivery timestamp: a read is as fresh as the clock it
-	// was made at, and the CAS then refuses it only if a webhook has landed
-	// something newer in between -- which is the correct outcome.
+	// `now` rather than a delivery timestamp: a read is as fresh as the clock it was
+	// made at, and the CAS then refuses it only if a webhook landed something newer.
 	applied, err := s.applyReconciledSubscription(ctx, provider, row.OrgID, event, rec, now)
 	if err != nil {
-		// Already logged and recorded at the write. Two live subscriptions is an
-		// inconsistency rather than a failed read -- counting it as unreadable would
-		// read as an outage -- but it means an org may be billed twice, so it still
-		// has to land in a counter the pass reports.
+		// Already logged at the write. Two live subscriptions is an inconsistency rather
+		// than a failed read, but it means an org may be billed twice.
 		if errors.Is(err, ErrTwoLiveSubscriptions) {
 			report.TwoLive++
 		} else {

@@ -1,12 +1,6 @@
-// Package billing runs one payments reconcile pass: it re-reads every stored
-// subscription from the provider, applies each through the same CAS the webhook
-// uses, reports the inconsistencies it cannot fix, and prunes delivery payloads
-// past their retention. Then it returns -- scheduling is the deployment's job (a
-// k8s CronJob), not this process's.
-//
-// It is the backstop for the one thing the inbox cannot cover: a webhook that
-// never arrived at all. Nothing here auto-repairs; an automatic fix would be
-// writing to the money side of the system from a guess.
+// Package billing runs one payments reconcile pass: re-read every stored
+// subscription, apply each through the same CAS the webhook uses, report what it
+// cannot fix, prune expired payloads, and return. Nothing here auto-repairs.
 package billing
 
 import (
@@ -27,11 +21,9 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-// passTimeout bounds one pass end to end. The pass holds an advisory lock for its
-// whole duration, so a hang does not merely stall this run: every later pod finds
-// the lock held and exits 0, leaving a green CronJob and a reconcile that has not
-// run for as long as the wedged pod lives. Generous because the pass makes one
-// provider round-trip per subscription.
+// passTimeout bounds one pass end to end. The advisory lock is held for the whole
+// duration, so a hang leaves every later pod exiting 0 on a held lock -- a green
+// CronJob and no reconcile. Generous: one provider round-trip per subscription.
 const passTimeout = 30 * time.Minute
 
 type config struct {
@@ -57,9 +49,8 @@ func Run(ctx context.Context) error {
 	if err := envconfig.Process(ctx, &billingCfg); err != nil {
 		return setupFailed(ctx, "billing config", err)
 	}
-	// Off is the self-hosted shape: no quota, no provider, nothing to reconcile.
-	// Exit 0 rather than fail, so the CronJob is green on a deployment that simply
-	// does not bill.
+	// Off is the self-hosted shape: nothing to reconcile. Exit 0, so the CronJob stays
+	// green on a deployment that simply does not bill.
 	if !billingCfg.Enabled {
 		slog.InfoContext(ctx, "billing is disabled; nothing to reconcile")
 		return nil
@@ -100,9 +91,8 @@ func Run(ctx context.Context) error {
 		return pass(ctx, svc, time.Now())
 	})
 	if err != nil {
-		// Another pod is doing this work. Exit 0 — alerting on healthy overlap would
-		// alert on nothing — but say so, because "skipped" and "reconciled" are
-		// otherwise the same silent success.
+		// Another pod is doing this work. Exit 0 -- but say so, or "skipped" and
+		// "reconciled" are the same silent success.
 		if errors.Is(err, cron.ErrLockHeld) {
 			slog.InfoContext(ctx, "another pass holds the billing reconcile lock; nothing to do")
 			return nil
@@ -119,9 +109,8 @@ func pass(ctx context.Context, svc *corebilling.Service, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	// Ahead of the failure below, not after: an outage the provider is having is
-	// not a reason to keep processed payloads past their retention, and the prune
-	// only touches rows the reconcile never looks at.
+	// Ahead of the failure below: a provider outage is no reason to keep processed
+	// payloads past their retention, and the prune touches rows reconcile ignores.
 	pruned, err := svc.PruneDeliveries(ctx, now.Add(-corebilling.DeliveryRetention))
 	if err != nil {
 		return err
@@ -130,8 +119,7 @@ func pass(ctx context.Context, svc *corebilling.Service, now time.Time) error {
 		slog.InfoContext(ctx, "pruned billing webhook deliveries", slog.Int64("rows", pruned))
 	}
 	// A pass that could not read the provider has verified nothing, and exiting 0
-	// would report that as consistent. The other counters are findings for a person
-	// to act on, not failures of the pass, so they stay in the log.
+	// would report that as consistent. The other counters are findings, not failures.
 	if report.Unreadable > 0 {
 		return fmt.Errorf("billing reconcile could not read %d of %d subscriptions",
 			report.Unreadable, report.Checked)
@@ -164,10 +152,8 @@ func newPayments(ctx context.Context, providerName string) (*corebilling.Payment
 		return nil, err
 	}
 	if client == nil {
-		// A named provider with no API key is a misconfigured CronJob, not the
-		// self-hosted shape -- that one leaves PUG_BILLING_PROVIDER empty and returns
-		// above. Failing here beats a pass that reconciles nothing and exits 0
-		// forever, which is indistinguishable from a healthy one.
+		// A named provider with no API key is a misconfigured CronJob, not the self-hosted
+		// shape: that one leaves PUG_BILLING_PROVIDER empty and returns above.
 		return nil, errors.New("PUG_BILLING_PROVIDER is " + name + " but no API key is configured")
 	}
 	slugByProduct := make(map[string]string, len(products))
