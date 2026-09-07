@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -247,8 +248,9 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 	return out, nil
 }
 
-// ErrCheckoutNotForOrg is a session id whose subscription names a different org,
-// or none -- the guard that makes a client-supplied session id safe to act on.
+// ErrCheckoutNotForOrg is a session id whose subscription names a different org
+// or none, or carries a ref pug did not mint for this org -- the guard that makes
+// a client-supplied session id safe to act on.
 var ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
 
 // ErrCheckoutFailed is a checkout the provider says will not settle. Distinct
@@ -292,6 +294,27 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 			slog.String("org_id", orgID), slog.String("checkout_org_id", event.OrgID),
 			slog.String("provider_sub_id", event.ProviderSubID))
 		return false, ErrCheckoutNotForOrg
+	}
+	// metadata.org_id only names an org; the minted ref proves one. A ref pug never
+	// stored, or one it stored against another org, is not this org's checkout.
+	if event.CheckoutRef != "" {
+		refOrg, err := s.write().GetBillingCheckoutSessionOrgID(ctx,
+			dbwrite.GetBillingCheckoutSessionOrgIDParams{
+				Provider: provider.Name(),
+				Ref:      event.CheckoutRef,
+			})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed to read a billing checkout session", slogx.Error(err),
+				slog.String("org_id", orgID))
+			telemetry.RecordError(ctx, err)
+			return false, err
+		}
+		if err != nil || refOrg != orgID {
+			slog.WarnContext(ctx, "refusing a checkout confirmation pug did not open for this org",
+				slog.String("org_id", orgID), slog.String("ref_org_id", refOrg),
+				slog.String("provider_sub_id", event.ProviderSubID))
+			return false, ErrCheckoutNotForOrg
+		}
 	}
 	// A real subscription with no status means the provider's schema and pug's
 	// mapping have diverged; the buyer is waiting, so it must not pass silently.

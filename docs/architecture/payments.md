@@ -662,7 +662,11 @@ Five rules make it safe:
 
 - **`session_id` is a claim, not evidence.** The subscription it resolves to must
   carry the `metadata.org_id` pug wrote at checkout, and it must equal the
-  caller's org — `PermissionDenied` otherwise. There is deliberately **no
+  caller's org — `PermissionDenied` otherwise. `metadata.org_id` alone only
+  *names* an org, though (§8: static payment links let a buyer set `metadata_*`
+  from the URL), so a subscription carrying a `checkout_ref` must also resolve
+  that ref against `billing_checkout_sessions` to the same org — a ref pug never
+  minted, or minted for another org, is refused. There is deliberately **no
   fallback to attribution by customer id** here, unlike §8's webhook path: nobody
   chose which delivery arrived, but the caller chose this id. Being caller-chosen
   is also why the field is `pattern`-constrained to the provider's own id

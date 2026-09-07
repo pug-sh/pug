@@ -182,10 +182,14 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 	if err != nil {
 		return corebilling.SubscriptionEvent{}, err
 	}
-	// Dodo calls a checkout's metadata the PAYMENT's and pug reads org_id off the
+	// Dodo calls a checkout's metadata the PAYMENT's and pug reads both off the
 	// SUBSCRIPTION; fall back rather than depend on whether it propagates.
+	md := stringMetadata(payment.Metadata)
 	if event.OrgID == "" {
-		event.OrgID = stringMetadata(payment.Metadata)[metadataOrgID]
+		event.OrgID = md[metadataOrgID]
+	}
+	if event.CheckoutRef == "" {
+		event.CheckoutRef = md[metadataCheckoutRef]
 	}
 	return event, nil
 }

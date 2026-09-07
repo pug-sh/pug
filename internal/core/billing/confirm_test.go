@@ -274,3 +274,47 @@ func TestConfirmCheckoutRefusesASubscriptionWithNoStatus(t *testing.T) {
 		t.Errorf("wrote %d rows for a statusless subscription, want 0", n)
 	}
 }
+
+// metadata.org_id is buyer-settable on a static payment link, so a checkout pug
+// never opened must not confirm even when it names the caller's own org.
+func TestConfirmCheckoutRefusesARefPugNeverMinted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	event := subEvent(f.orgID, "sub00000000000000030", "prod_growth", corebilling.SubStatusActive)
+	event.CheckoutRef = "ref_forged"
+	provider.checkout = event
+
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
+	}
+	if n := storedSubscriptions(t, f); n != 0 {
+		t.Errorf("wrote %d subscription rows for a checkout pug never opened, want 0", n)
+	}
+}
+
+// The ref outranks metadata: a session pug opened for another org stays that
+// org's, whatever org_id the payload carries.
+func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	other, err := dbwriteOrg(t, f.pg)
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	seedCheckoutRef(t, f, other)
+
+	event := subEvent(f.orgID, "sub00000000000000031", "prod_growth", corebilling.SubStatusActive)
+	event.CheckoutRef = checkoutRef(other)
+	provider.checkout = event
+
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
+	}
+	if n := storedSubscriptions(t, f); n != 0 {
+		t.Errorf("wrote %d subscription rows for another org's checkout, want 0", n)
+	}
+}
