@@ -129,9 +129,9 @@ select plan_slug from billing_subscriptions
 where provider = @provider and provider_sub_id = @provider_sub_id;
 
 -- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
--- Attribution's last resort, once the ref missed and no staged product matched. Two rows is the
--- answer that matters: one buyer purchasing for two orgs shares a provider customer,
--- so the caller rejects the delivery rather than guessing.
+-- Attribution's last resort, once the ref missed and no staged product matched.
+-- Two rows is the answer that matters: one buyer purchasing for two orgs shares a
+-- provider customer, so the caller rejects the delivery rather than guessing.
 select distinct org_id from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
 limit 2;

@@ -24,9 +24,8 @@ type GetLatestBillingSubscriptionParams struct {
 }
 
 // Any row, newest first -- not only a live one. A customer whose subscription
-// lapsed still has invoices to fetch and a card to re-add. Provider-scoped like
-// every other read here: a cutover would otherwise hand provider A's customer id
-// to provider B's API.
+// lapsed still has invoices to fetch and a card to re-add. Provider-scoped, or a
+// cutover hands provider A's customer id to provider B.
 func (q *Queries) GetLatestBillingSubscription(ctx context.Context, arg GetLatestBillingSubscriptionParams) (BillingSubscription, error) {
 	row := q.db.QueryRow(ctx, getLatestBillingSubscription, arg.OrgID, arg.Provider)
 	var i BillingSubscription
@@ -182,9 +181,8 @@ where org_id = $1
 order by create_time desc
 `
 
-// The operator's view: every stored row, newest first. Deliberately neither
-// provider-scoped nor live-only -- `billing show` exists to explain the state the
-// resolved answer hides, and a lapsed row is most of that state.
+// The operator's view: every stored row, newest first. Neither provider-scoped nor
+// live-only -- a lapsed row is most of what `show` exists to explain.
 func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID string) ([]BillingSubscription, error) {
 	rows, err := q.db.Query(ctx, listBillingSubscriptionsByOrg, orgID)
 	if err != nil {
@@ -324,9 +322,8 @@ type ListRecentRejectedBillingWebhookDeliveriesRow struct {
 	Error     string
 }
 
-// Deliveries pug accepted and did not apply. Nothing else surfaces them: an
-// unattributable or unmappable delivery writes no subscription row, so the walk
-// above cannot see it and the buyer holds a plan nobody granted.
+// Deliveries pug accepted and did not apply. Nothing else surfaces them: one that
+// was not applied wrote no subscription row for the walk above to find.
 func (q *Queries) ListRecentRejectedBillingWebhookDeliveries(ctx context.Context, since pgtype.Timestamptz) ([]ListRecentRejectedBillingWebhookDeliveriesRow, error) {
 	rows, err := q.db.Query(ctx, listRecentRejectedBillingWebhookDeliveries, since)
 	if err != nil {

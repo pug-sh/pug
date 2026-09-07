@@ -282,9 +282,8 @@ type ListBillingSubscriptionOrgsByProviderCustomerIDParams struct {
 }
 
 // Attribution's last resort, once the ref missed and no staged product matched.
-// Two rows is the
-// answer that matters: one buyer purchasing for two orgs shares a provider customer,
-// so the caller rejects the delivery rather than guessing.
+// Two rows is the answer that matters: one buyer purchasing for two orgs shares a
+// provider customer, so the caller rejects the delivery rather than guessing.
 func (q *Queries) ListBillingSubscriptionOrgsByProviderCustomerID(ctx context.Context, arg ListBillingSubscriptionOrgsByProviderCustomerIDParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listBillingSubscriptionOrgsByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
 	if err != nil {
