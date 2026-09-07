@@ -19,8 +19,8 @@ func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscrip
 	return readLiveSubscription(ctx, dbread.New(s.pgW), orgID)
 }
 
-// readLiveSubscription is the same read against a caller's handle, so Clear can
-// take it through its own locked tx.
+// readLiveSubscription is the same read against a caller's handle, so a mutation
+// can take it through its own locked tx.
 func readLiveSubscription(ctx context.Context, r *dbread.Queries, orgID string) (*Subscription, error) {
 	row, err := r.GetLiveBillingSubscription(ctx, orgID)
 	if err != nil {

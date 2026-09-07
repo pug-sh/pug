@@ -148,3 +148,27 @@ func TestUnknownOrgIsReported(t *testing.T) {
 		t.Fatalf("Show on an unknown org = %v, want ErrOrgNotFound", err)
 	}
 }
+
+// The operator's ordinary typos: the error surfaces, and no report is printed for
+// a row that was not written.
+func TestRefusedMutationsReportTheirReason(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	orgID := newOrg(t)
+	var out strings.Builder
+
+	if err := Set(t.Context(), &out, orgID, actor, corebilling.Change{PlanSlug: "no-such-tier"}); !errors.Is(err, corebilling.ErrPlanNotFound) {
+		t.Errorf("Set on an unknown slug = %v, want ErrPlanNotFound", err)
+	}
+	if err := ExtendTrial(t.Context(), &out, orgID, actor, 0); !errors.Is(err, corebilling.ErrTrialDaysRange) {
+		t.Errorf("ExtendTrial with no days = %v, want ErrTrialDaysRange", err)
+	}
+	if err := Clear(t.Context(), &out, orgID, actor); !errors.Is(err, corebilling.ErrNoEntitlement) {
+		t.Errorf("Clear on an org with no row = %v, want ErrNoEntitlement", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("a refused mutation printed a report:\n%s", out.String())
+	}
+}

@@ -432,6 +432,31 @@ func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 			},
 			reason: "status",
 		},
+		{
+			name: "no customer",
+			event: func(orgID string) corebilling.SubscriptionEvent {
+				e := subEvent(orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+				e.ProviderCustomerID = ""
+				return e
+			},
+			reason: "customer",
+		},
+		{
+			name: "negative price",
+			event: func(orgID string) corebilling.SubscriptionEvent {
+				e := subEvent(orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+				e.PriceCents = -1
+				return e
+			},
+			reason: "price",
+		},
+		{
+			name: "no product",
+			event: func(orgID string) corebilling.SubscriptionEvent {
+				return subEvent(orgID, "sub_1", "", corebilling.SubStatusActive)
+			},
+			reason: "product",
+		},
 	}
 
 	for _, tc := range cases {
@@ -477,7 +502,9 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
+	// Both cleared, or the ref attributes it before the customer is consulted.
 	renewal := subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusPastDue)
+	renewal.CheckoutRef = ""
 	renewal.OrgID = ""
 	provider.event = renewal
 	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_2", time.Now().Add(time.Minute))); err != nil {

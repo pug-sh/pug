@@ -218,6 +218,22 @@ func TestFetchSubscriptionMatchesADelivery(t *testing.T) {
 	}
 }
 
+// It has to reach pug naming no customer, so applySubscription stores it
+// unapplicable rather than attributing it to whatever the fallback found.
+func TestFetchSubscriptionWithNoCustomerNamesNone(t *testing.T) {
+	body := `{"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
+		`"currency":"USD","recurring_pre_tax_amount":2000}`
+	c := apiClient(t, jsonHandler(t, http.StatusOK, body, nil))
+
+	fetched, err := c.FetchSubscription(context.Background(), "sub_1")
+	if err != nil {
+		t.Fatalf("FetchSubscription: %v", err)
+	}
+	if fetched.ProviderCustomerID != "" {
+		t.Errorf("provider_customer_id = %q, want empty", fetched.ProviderCustomerID)
+	}
+}
+
 func TestFetchSubscriptionProviderError(t *testing.T) {
 	c := apiClient(t, jsonHandler(t, http.StatusInternalServerError, `{"error":"boom"}`, nil))
 	if _, err := c.FetchSubscription(context.Background(), "sub_1"); err == nil {

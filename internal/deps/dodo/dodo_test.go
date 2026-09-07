@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -307,5 +308,129 @@ func TestNewRejectsAnUnknownEnvironment(t *testing.T) {
 	c, err := New(Config{}, nil)
 	if err != nil || c != nil {
 		t.Fatalf("New with no key = (%v, %v), want (nil, nil)", c, err)
+	}
+}
+
+// A secret pug cannot key an HMAC with must fail startup, not mount a route that
+// rejects every real delivery.
+func TestNewRejectsAnUnusableWebhookSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		secret string
+		want   error
+	}{
+		{"blank after trimming", "   ", ErrEmptySecret},
+		{"prefix over non-base64", secretPrefix + "not!base64!", ErrMalformedSecret},
+		{"prefix over nothing", secretPrefix, ErrMalformedSecret},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := newVerifier(tc.secret)
+			if !errors.Is(err, tc.want) {
+				t.Errorf("newVerifier(%q) err = %v, want %v", tc.secret, err, tc.want)
+			}
+		})
+	}
+
+	// Unprefixed keys the HMAC verbatim rather than decoding to 24 wrong bytes.
+	if _, err := newVerifier(string(secretKey)); err != nil {
+		t.Errorf("newVerifier on an unprefixed secret: %v", err)
+	}
+
+	// Through New, where a mistyped deploy variable actually lands.
+	if _, err := New(Config{APIKey: "sk_test", WebhookSecret: secretPrefix + "not!base64!"}, nil); !errors.Is(err, ErrMalformedSecret) {
+		t.Errorf("New err = %v, want ErrMalformedSecret", err)
+	}
+}
+
+// The branch that decides where real money goes.
+func TestNewAcceptsLiveMode(t *testing.T) {
+	c, err := New(Config{APIKey: "sk_live", Environment: EnvironmentLive}, nil)
+	if err != nil {
+		t.Fatalf("New in live mode: %v", err)
+	}
+	if c == nil {
+		t.Fatal("New in live mode returned no client")
+	}
+}
+
+// Parsed before the signature is checked, so it must fail on its own rather than
+// read as the epoch.
+func TestVerifyRejectsAMalformedTimestamp(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	c := testClient(t, now)
+	body := []byte(activeBody)
+
+	headers := signed("evt_1", now, body)
+	headers.Set(headerWebhookTimestamp, "not-a-number")
+	if _, err := c.Verify(headers, body); !errors.Is(err, ErrTimestamp) {
+		t.Errorf("err = %v, want ErrTimestamp", err)
+	}
+}
+
+// The one shape the inbox retries: the payload changed under us, and a redeploy
+// inside the retry window fixes it.
+func TestVerifyReportsAnUndecodableBodyAsUndecodable(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	c := testClient(t, now)
+	body := []byte(`{"type":`)
+
+	_, err := c.Verify(signed("evt_1", now, body), body)
+	if !errors.Is(err, corebilling.ErrUndecodable) {
+		t.Errorf("err = %v, want ErrUndecodable", err)
+	}
+}
+
+// Never a zero event: that stores as cleanly ignored.
+func TestNormalizeRefusesASubscriptionItCannotRead(t *testing.T) {
+	c := testClient(t, time.Now())
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{"envelope is not json", `{"type":"subscription.active","data":`},
+		{"data is not an object", `{"type":"subscription.active","data":"a string"}`},
+		{"no subscription id", `{"type":"subscription.active","data":{"status":"active"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event, err := c.Normalize(corebilling.Delivery{
+				EventType:  "subscription.active",
+				RawPayload: []byte(tc.body),
+			})
+			if err == nil {
+				t.Fatalf("Normalize accepted %s and returned %+v", tc.name, event)
+			}
+		})
+	}
+}
+
+// The flat field is json:"-", so this fallback is the only thing filling
+// ProviderCustomerID on the webhook path.
+func TestNormalizeTakesTheCustomerFromTheNestedObject(t *testing.T) {
+	c := testClient(t, time.Now())
+	body := `{"type":"subscription.active","data":{` +
+		`"subscription_id":"sub_1","status":"active","customer":{"customer_id":"cus_1"}}}`
+	event, err := c.Normalize(corebilling.Delivery{
+		EventType:  "subscription.active",
+		RawPayload: []byte(body),
+	})
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if event.ProviderCustomerID != "cus_1" {
+		t.Errorf("provider_customer_id = %q, want cus_1", event.ProviderCustomerID)
+	}
+}
+
+// A non-string VALUE inside metadata does not fail the delivery; metadata that is
+// not an object at all does.
+func TestNormalizeRefusesMetadataThatIsNotAnObject(t *testing.T) {
+	c := testClient(t, time.Now())
+	body := `{"type":"subscription.active","data":{` +
+		`"subscription_id":"sub_1","status":"active","metadata":"nope"}}`
+	if _, err := c.Normalize(corebilling.Delivery{
+		EventType:  "subscription.active",
+		RawPayload: []byte(body),
+	}); err == nil {
+		t.Fatal("metadata that is not an object was accepted")
 	}
 }

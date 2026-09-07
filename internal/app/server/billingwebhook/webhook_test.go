@@ -247,3 +247,30 @@ func TestABadSignatureStaysUnauthorized(t *testing.T) {
 		t.Errorf("status = %d, want 401", res.StatusCode)
 	}
 }
+
+// panickingProvider fails the way a library can: not with an error.
+type panickingProvider struct{ stubProvider }
+
+func (panickingProvider) Verify(http.Header, []byte) (corebilling.Delivery, error) {
+	panic("provider library blew up")
+}
+
+// net/http recovers per connection either way; this pins the 500, without which
+// the provider reads a dropped connection and retries forever.
+func TestPanicIsContainedAsA500(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	svc, _ := newService(t)
+	mux := http.NewServeMux()
+	provider := panickingProvider{stubProvider{name: "stub"}}
+	if !Mount(mux, svc, provider, true) {
+		t.Fatal("Mount refused a verifiable provider")
+	}
+
+	res := post(t, mux, PathFor("stub"), goodBody)
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", res.StatusCode)
+	}
+}

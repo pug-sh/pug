@@ -1,12 +1,14 @@
 package billing_test
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
@@ -499,5 +501,84 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("SetPlan after the lock was released: %v", err)
+	}
+}
+
+// The guard runs inside mutate's transaction, which already holds a connection.
+// Off the pool it waits on that connection and only stops at the deadline.
+func TestSetPlanGuardTakesNoSecondConnection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	cfg := f.pg.PgW.Config()
+	cfg.MaxConns = 1
+	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("one-connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	svc, err := corebilling.NewService(f.pg.PgRO, pool, true, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	if _, err := svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+		t.Fatalf("SetPlan on a one-connection pool: %v", err)
+	}
+}
+
+// The columns' `> 0` checks, mirrored so an operator sees a named error rather
+// than a raw SQLSTATE.
+func TestNegativeOverridesAreRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	negative := int64(-1)
+
+	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug: "growth", IncludedEvents: &negative,
+	})
+	if !errors.Is(err, corebilling.ErrQuotaNegative) {
+		t.Errorf("err = %v, want ErrQuotaNegative", err)
+	}
+	_, err = f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug: "growth", RetentionDays: &negative,
+	})
+	if !errors.Is(err, corebilling.ErrRetentionNegative) {
+		t.Errorf("err = %v, want ErrRetentionNegative", err)
+	}
+}
+
+// Rows outlive a tier dropped from the Go catalog, so failing the read would take
+// the dashboard down for whoever holds it.
+func TestAnEntitlementNamingAnUnknownPlanStillReads(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+	// Straight to the column: no writer would store this.
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_entitlements set plan_slug = 'growth-v9' where org_id = $1`, f.orgID); err != nil {
+		t.Fatalf("rewrite the slug: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement on a slug the catalog dropped: %v", err)
+	}
+	// Fails open: "free, 10,000" would tell a paying customer they are over.
+	if ent.IncludedEvents != nil {
+		t.Errorf("included_events = %d, want absent", *ent.IncludedEvents)
 	}
 }

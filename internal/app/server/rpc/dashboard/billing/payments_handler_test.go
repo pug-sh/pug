@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,6 +72,96 @@ func (stubProvider) FetchSubscription(context.Context, string) (corebilling.Subs
 
 func (stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
 	return corebilling.SubscriptionEvent{}, nil
+}
+
+// seedCustomer stands in for a completed checkout: the portal needs a customer.
+func seedCustomer(t *testing.T, pg *testutil.TestPostgres, orgID string) {
+	t.Helper()
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_subscriptions (
+		   currency, id, org_id, plan_slug, price_cents, provider,
+		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
+		 values ('USD', 'sub00000000000000009', $1, 'growth', 2000, 'stub',
+		         'cus_1', 'active', 'psub_9', now(), 'active')`, orgID); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+}
+
+// failingProvider is the provider being down, with a message of its own.
+type failingProvider struct{ stubProvider }
+
+var errProviderDown = errors.New("dodo: 503 Service Unavailable (request id 7f3c)")
+
+func (failingProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, string, error) {
+	return "", "", errProviderDown
+}
+
+func (failingProvider) CreatePortalSession(context.Context, string) (string, error) {
+	return "", errProviderDown
+}
+
+func (failingProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errProviderDown
+}
+
+func newFailingServer(t *testing.T, pg *testutil.TestPostgres) *Server {
+	t.Helper()
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		Provider:      failingProvider{},
+		ReturnURL:     "https://app.example/settings/billing",
+		SlugByProduct: map[string]string{"prod_growth": "growth"},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return NewServer(svc)
+}
+
+// Internal, and silent: the provider's request ids and status text must not reach
+// an API consumer.
+func TestProviderFailuresAreInternalAndSayNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	srv := newFailingServer(t, pg)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	seedCustomer(t, pg, orgID)
+
+	slug := "growth"
+	sessionID := checkoutSessionID
+	calls := map[string]func() error{
+		"CreateCheckoutSession": func() error {
+			_, err := srv.CreateCheckoutSession(buyerCtx(t), connect.NewRequest(
+				&billingv1.CreateCheckoutSessionRequest{OrgId: &orgID, PlanSlug: &slug}))
+			return err
+		},
+		"CreatePortalSession": func() error {
+			_, err := srv.CreatePortalSession(t.Context(), connect.NewRequest(
+				&billingv1.CreatePortalSessionRequest{OrgId: &orgID}))
+			return err
+		},
+		"ConfirmCheckout": func() error {
+			_, err := srv.ConfirmCheckout(t.Context(), connect.NewRequest(
+				&billingv1.ConfirmCheckoutRequest{OrgId: &orgID, SessionId: &sessionID}))
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			err := call()
+			if err == nil {
+				t.Fatal("a provider outage was served as a success")
+			}
+			if got := connect.CodeOf(err); got != connect.CodeInternal {
+				t.Errorf("code = %s, want INTERNAL", got)
+			}
+			if strings.Contains(err.Error(), "7f3c") || strings.Contains(err.Error(), "dodo") {
+				t.Errorf("err = %q; it carries the provider's own message", err)
+			}
+		})
+	}
 }
 
 // A provider that is fully configured except that no catalog tier has a product

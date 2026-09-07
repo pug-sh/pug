@@ -3,6 +3,7 @@ package billing_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,9 +16,14 @@ type fetchProvider struct {
 	fakeProvider
 	remote map[string]corebilling.SubscriptionEvent
 	fail   bool
+	// fetchErr is the specific failure, for the dispositions the pass tells apart.
+	fetchErr error
 }
 
 func (f *fetchProvider) FetchSubscription(_ context.Context, id string) (corebilling.SubscriptionEvent, error) {
+	if f.fetchErr != nil {
+		return corebilling.SubscriptionEvent{}, f.fetchErr
+	}
 	if f.fail {
 		return corebilling.SubscriptionEvent{}, errors.New("provider unreachable")
 	}
@@ -26,13 +32,18 @@ func (f *fetchProvider) FetchSubscription(_ context.Context, id string) (corebil
 
 func seedLiveSubscription(t *testing.T, f *fixture, subID, slug string) {
 	t.Helper()
+	seedSubscription(t, f, subID, slug, "active")
+}
+
+func seedSubscription(t *testing.T, f *fixture, subID, slug, status string) {
+	t.Helper()
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
 		   currency, current_period_end, id, org_id, plan_slug, price_cents, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
 		 values ('USD', now() + interval '20 days', $1, $2, $3, 2000, $4,
-		         'cus_1', 'active', $5, now() - interval '1 hour', 'active')`,
-		subID, f.orgID, slug, fakeProviderName, subID); err != nil {
+		         'cus_1', $6, $5, now() - interval '1 hour', $6)`,
+		subID, f.orgID, slug, fakeProviderName, subID, status); err != nil {
 		t.Fatalf("seed subscription: %v", err)
 	}
 }
@@ -296,5 +307,126 @@ func TestReconcileCountsAcceptedButUnappliedDeliveries(t *testing.T) {
 	}
 	if report.Rejected != 1 {
 		t.Errorf("rejected = %d, want 1 — only the delivery carrying a reason", report.Rejected)
+	}
+}
+
+// A finding, not an outage: counted apart from Unreadable, or it holds the
+// CronJob red on every later run.
+func TestReconcileCountsASubscriptionTheProviderDoesNotKnow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	seedLiveSubscription(t, f, "sub00000000000000040", "growth")
+
+	svc := f.svcWithProvider(t, &fetchProvider{
+		fakeProvider: fakeProvider{name: fakeProviderName},
+		fetchErr:     fmt.Errorf("%w: sub00000000000000040", corebilling.ErrSubscriptionNotFound),
+	})
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.Untracked != 1 || report.Unreadable != 0 {
+		t.Errorf("report = %+v, want 1 untracked and 0 unreadable", report)
+	}
+}
+
+// A shape change, not a dropped subscription: Untracked would exit 0 on a pass
+// that verified nothing.
+func TestReconcileCountsAnUndecodableSubscriptionUnreadable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	seedLiveSubscription(t, f, "sub00000000000000041", "growth")
+
+	// remote has no entry for the id, so the fetch returns a zero event.
+	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}})
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.Unreadable != 1 || report.Untracked != 0 {
+		t.Errorf("report = %+v, want 1 unreadable and 0 untracked", report)
+	}
+}
+
+// A cancellation that never landed, on an org that has since bought again.
+// Counted, because it means an org may be billed twice.
+func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	seedSubscription(t, f, "sub00000000000000050", "growth", "cancelled")
+	seedLiveSubscription(t, f, "sub00000000000000051", "scale")
+
+	// The provider still calls the old one active, so it collides with the live row.
+	revived := subEvent(f.orgID, "sub00000000000000050", "prod_growth", corebilling.SubStatusActive)
+	current := subEvent(f.orgID, "sub00000000000000051", "prod_scale", corebilling.SubStatusActive)
+	svc := f.svcWithProvider(t, &fetchProvider{
+		fakeProvider: fakeProvider{name: fakeProviderName},
+		remote: map[string]corebilling.SubscriptionEvent{
+			"sub00000000000000050": revived,
+			"sub00000000000000051": current,
+		},
+	})
+
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.TwoLive != 1 {
+		t.Errorf("report = %+v, want 1 two_live", report)
+	}
+
+	// The org stays on the plan it is actually charged for.
+	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != "scale" {
+		t.Errorf("slug = %q, want scale — the revived row won", ent.Slug)
+	}
+}
+
+// cancellingProvider cancels from inside the first fetch: a CronJob deadline
+// expiring mid-walk.
+type cancellingProvider struct {
+	fakeProvider
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (c *cancellingProvider) FetchSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	c.calls++
+	c.cancel()
+	return corebilling.SubscriptionEvent{}, nil
+}
+
+// Without this every remaining row turns one cancellation into a per-row provider
+// error, reporting an outage that never happened.
+func TestReconcileStopsOnACancelledContext(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	seedLiveSubscription(t, f, "sub00000000000000060", "growth")
+	seedSubscription(t, f, "sub00000000000000061", "growth", "cancelled")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	provider := &cancellingProvider{fakeProvider: fakeProvider{name: fakeProviderName}, cancel: cancel}
+
+	report, err := f.svcWithProvider(t, provider).Reconcile(ctx, time.Now())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if provider.calls != 1 {
+		t.Errorf("provider was called %d times, want 1 — the walk carried on past the cancellation", provider.calls)
+	}
+	if report.Unreadable > 1 {
+		t.Errorf("unreadable = %d; a cancellation was counted as a provider outage", report.Unreadable)
 	}
 }

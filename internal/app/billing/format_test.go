@@ -181,11 +181,13 @@ func TestHistoryLine(t *testing.T) {
 		RetentionDaysOverride: 3_650,
 		DisplayNameOverride:   "Acme Enterprise", AnchorDay: 17,
 		ContractEndsAt:    time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		TrialEndsAt:       time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 		ProviderProductID: "prod_2f9k", Note: "$400/mo, INV-123",
 	})
 	for _, want := range []string{
 		"custom", "events=5,000,000", "retention=3,650d", `name="Acme Enterprise"`, "anchor-day=17",
-		"until=2027-01-01T00:00:00Z", "product=prod_2f9k", `note="$400/mo, INV-123"`,
+		"until=2027-01-01T00:00:00Z", "trial-ends=2026-10-01T00:00:00Z",
+		"product=prod_2f9k", `note="$400/mo, INV-123"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("history line = %q, want it to carry %s", got, want)
