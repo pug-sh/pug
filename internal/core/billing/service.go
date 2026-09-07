@@ -22,6 +22,9 @@ import (
 
 var (
 	ErrOrgNotFound = errors.New("billing: org not found")
+	// ErrCustomerNotUnique is one provider customer holding subscriptions for two
+	// orgs: the delivery names a buyer, and a buyer is not an org.
+	ErrCustomerNotUnique = errors.New("billing: the provider customer maps to more than one org")
 	// ErrPlanNotFound is a slug the catalog does not have. Distinct from
 	// ErrPlanRetired, which is a slug it has but will not hand to a new org.
 	ErrPlanNotFound = errors.New("billing: plan not found")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -352,6 +353,53 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 	}
 	if ent.Slug != "growth" {
 		t.Errorf("slug = %q, want growth — past_due must keep the plan", ent.Slug)
+	}
+}
+
+// One buyer paying for two orgs shares a provider customer, so the fallback has
+// nothing to tell them apart: the delivery is rejected rather than attributed to
+// the newest of them.
+func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	other, err := dbwriteOrg(t, f.pg)
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+
+	for i, orgID := range []string{f.orgID, other} {
+		event := subEvent(orgID, "sub_"+orgID, "prod_growth", corebilling.SubStatusActive)
+		event.ProviderCustomerID = "cus_shared"
+		provider.event = event
+		if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_seed_"+orgID, time.Now())); err != nil {
+			t.Fatalf("HandleDelivery(seed %d): %v", i, err)
+		}
+	}
+
+	unattributed := subEvent("", "sub_new", "prod_scale", corebilling.SubStatusActive)
+	unattributed.ProviderCustomerID = "cus_shared"
+	provider.event = unattributed
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_new", time.Now().Add(time.Minute))); err != nil {
+		t.Fatalf("HandleDelivery returned an error, so the provider will retry: %v", err)
+	}
+
+	stored := storedDelivery(t, f, "evt_new")
+	if !stored.ProcessedAt.Valid {
+		t.Fatal("delivery left unprocessed; the provider will retry it forever")
+	}
+	if !strings.HasPrefix(stored.Error, "attribution") {
+		t.Errorf("error = %q, want it to start with %q", stored.Error, "attribution")
+	}
+
+	var n int
+	if err := f.pg.PgRO.QueryRow(t.Context(),
+		`select count(*) from billing_subscriptions where provider_sub_id = $1`, "sub_new").Scan(&n); err != nil {
+		t.Fatalf("count subscriptions: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("stored %d rows for the ambiguous subscription, want 0", n)
 	}
 }
 

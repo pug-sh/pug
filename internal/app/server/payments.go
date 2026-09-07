@@ -15,8 +15,9 @@ import (
 // paymentsConfig picks the merchant of record to construct. Credentials stay
 // under each provider's own prefix, so a second provider's keys sit beside the
 // first's rather than overwriting them -- which is what lets both be configured
-// at once during a cutover. Only this decides which is constructed for checkout;
-// a webhook route mounts for every provider whose secret is present.
+// at once during a cutover. Only this decides which is constructed -- for
+// checkout and for the one webhook route that mounts, when its secret is
+// present.
 type paymentsConfig struct {
 	Provider string `env:"PUG_BILLING_PROVIDER"`
 	// Reused rather than redeclared: this is the same "where the dashboard lives"

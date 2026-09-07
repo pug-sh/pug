@@ -119,21 +119,22 @@ func pass(ctx context.Context, svc *corebilling.Service, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	// A pass that could not read the provider has verified nothing, and exiting 0
-	// would report that as consistent. The other counters are findings for a person
-	// to act on, not failures of the pass, so they stay in the log.
-	if report.Unreadable > 0 {
-		return fmt.Errorf("billing reconcile could not read %d of %d subscriptions",
-			report.Unreadable, report.Checked)
-	}
-	// After the reconcile, not before: a delivery still worth replaying is one the
-	// pass may have just made sense of.
+	// Ahead of the failure below, not after: an outage the provider is having is
+	// not a reason to keep processed payloads past their retention, and the prune
+	// only touches rows the reconcile never looks at.
 	pruned, err := svc.PruneDeliveries(ctx, now.Add(-corebilling.DeliveryRetention))
 	if err != nil {
 		return err
 	}
 	if pruned > 0 {
 		slog.InfoContext(ctx, "pruned billing webhook deliveries", slog.Int64("rows", pruned))
+	}
+	// A pass that could not read the provider has verified nothing, and exiting 0
+	// would report that as consistent. The other counters are findings for a person
+	// to act on, not failures of the pass, so they stay in the log.
+	if report.Unreadable > 0 {
+		return fmt.Errorf("billing reconcile could not read %d of %d subscriptions",
+			report.Unreadable, report.Checked)
 	}
 	return nil
 }

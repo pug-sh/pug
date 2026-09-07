@@ -91,12 +91,12 @@ set currency = excluded.currency,
     status = excluded.status
 where billing_subscriptions.provider_updated_at <= excluded.provider_updated_at;
 
--- name: GetBillingSubscriptionByProviderCustomerID :one
--- Attribution fallback when a delivery carries no org_id metadata. Newest first,
--- which is a guess: one buyer purchasing for two orgs shares a provider customer,
--- and nothing here can tell those apart. metadata.org_id is tried first for that
--- reason.
-select * from billing_subscriptions
+-- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
+-- Attribution fallback when a delivery carries no org_id metadata. Two rows is
+-- the answer that matters: one buyer purchasing for two orgs shares a provider
+-- customer, and nothing here can tell those apart, so the caller rejects the
+-- delivery rather than attributing it to a guess. metadata.org_id is tried first
+-- for that reason.
+select distinct org_id from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
-order by create_time desc
-limit 1;
+limit 2;

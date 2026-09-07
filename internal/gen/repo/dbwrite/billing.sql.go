@@ -112,45 +112,6 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 	return i, err
 }
 
-const getBillingSubscriptionByProviderCustomerID = `-- name: GetBillingSubscriptionByProviderCustomerID :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
-where provider = $1 and provider_customer_id = $2
-order by create_time desc
-limit 1
-`
-
-type GetBillingSubscriptionByProviderCustomerIDParams struct {
-	Provider           string
-	ProviderCustomerID string
-}
-
-// Attribution fallback when a delivery carries no org_id metadata. Newest first,
-// which is a guess: one buyer purchasing for two orgs shares a provider customer,
-// and nothing here can tell those apart. metadata.org_id is tried first for that
-// reason.
-func (q *Queries) GetBillingSubscriptionByProviderCustomerID(ctx context.Context, arg GetBillingSubscriptionByProviderCustomerIDParams) (BillingSubscription, error) {
-	row := q.db.QueryRow(ctx, getBillingSubscriptionByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
-	var i BillingSubscription
-	err := row.Scan(
-		&i.CreateTime,
-		&i.Currency,
-		&i.CurrentPeriodEnd,
-		&i.CurrentPeriodStart,
-		&i.ID,
-		&i.OrgID,
-		&i.PlanSlug,
-		&i.PriceCents,
-		&i.Provider,
-		&i.ProviderCustomerID,
-		&i.ProviderStatus,
-		&i.ProviderSubID,
-		&i.ProviderUpdatedAt,
-		&i.Status,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
 const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
   actor, anchor_day, contract_ends_at, display_name_override,
@@ -229,6 +190,42 @@ func (q *Queries) InsertBillingWebhookDelivery(ctx context.Context, arg InsertBi
 		&i.WebhookID,
 	)
 	return i, err
+}
+
+const listBillingSubscriptionOrgsByProviderCustomerID = `-- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
+select distinct org_id from billing_subscriptions
+where provider = $1 and provider_customer_id = $2
+limit 2
+`
+
+type ListBillingSubscriptionOrgsByProviderCustomerIDParams struct {
+	Provider           string
+	ProviderCustomerID string
+}
+
+// Attribution fallback when a delivery carries no org_id metadata. Two rows is
+// the answer that matters: one buyer purchasing for two orgs shares a provider
+// customer, and nothing here can tell those apart, so the caller rejects the
+// delivery rather than attributing it to a guess. metadata.org_id is tried first
+// for that reason.
+func (q *Queries) ListBillingSubscriptionOrgsByProviderCustomerID(ctx context.Context, arg ListBillingSubscriptionOrgsByProviderCustomerIDParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listBillingSubscriptionOrgsByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockBillingEntitlementOrg = `-- name: LockBillingEntitlementOrg :exec

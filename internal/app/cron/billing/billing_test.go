@@ -2,6 +2,8 @@ package billing
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/pug-sh/pug/internal/deps/dodo"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
+	"github.com/rs/xid"
 )
 
 func TestMain(m *testing.M) { testutil.Main(m) }
@@ -86,6 +89,87 @@ func TestPassPrunesOnlyPastRetention(t *testing.T) {
 	got := deliveryIDs(t, pg.PgRO)
 	if len(got) != 1 || got[0] != "evt_fresh" {
 		t.Errorf("deliveries = %v, want only evt_fresh", got)
+	}
+}
+
+// unreachableProvider fails every re-read, which is what makes Reconcile report
+// an unreadable subscription -- the pass's failure exit.
+type unreachableProvider struct{}
+
+func (unreachableProvider) Name() string { return dodo.Name }
+
+func (unreachableProvider) Verify(http.Header, []byte) (corebilling.Delivery, error) {
+	return corebilling.Delivery{}, errors.New("unused")
+}
+
+func (unreachableProvider) Normalize(corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
+
+func (unreachableProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, string, error) {
+	return "", "", errors.New("unused")
+}
+
+func (unreachableProvider) CreatePortalSession(context.Context, string) (string, error) {
+	return "", errors.New("unused")
+}
+
+func (unreachableProvider) FetchSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("provider unreachable")
+}
+
+func (unreachableProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
+
+// seedLiveSubscription gives the pass something to re-read, so a failing
+// provider produces an unreadable report rather than an empty one.
+func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {
+	t.Helper()
+	org, err := dbwrite.New(pg).CreateOrg(t.Context(), dbwrite.CreateOrgParams{
+		ID:          xid.New().String(),
+		DisplayName: "acme",
+	})
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if _, err := pg.Exec(t.Context(),
+		`insert into billing_subscriptions (
+		   currency, current_period_end, id, org_id, plan_slug, price_cents, provider,
+		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
+		 values ('USD', now() + interval '20 days', $1, $2, 'growth', 2000, $3,
+		         'cus_1', 'active', 'sub_1', now() - interval '1 hour', 'active')`,
+		xid.New().String(), org.ID, dodo.Name); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+}
+
+// The prune sits ahead of that failure deliberately: a provider outage is not a
+// reason to keep an expired payload, and it would keep one for as long as the
+// outage lasts.
+func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-corebilling.DeliveryRetention-time.Hour))
+	seedLiveSubscription(t, pg.PgW)
+
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+		Provider:      unreachableProvider{},
+		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		SlugByProduct: map[string]string{"prod_growth": "growth"},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	if err := pass(t.Context(), svc, now); err == nil {
+		t.Fatal("pass returned nil though the provider could not be read")
+	}
+	if got := deliveryIDs(t, pg.PgRO); len(got) != 0 {
+		t.Errorf("deliveries = %v, want none — the failure skipped the prune", got)
 	}
 }
 

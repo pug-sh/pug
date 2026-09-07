@@ -439,9 +439,11 @@ today — mounted with `mux.Handle` **directly**, never the `handle()` closure i
 
 **The path carries the provider name deliberately.** Sniffing the provider from
 the headers would mean trying each verifier in turn, which is both a signature
-oracle and unresolvable when two schemes share a header name. It also means a
-cutover mounts two routes and retires the first one on its own schedule, with no
-flag day.
+oracle and unresolvable when two schemes share a header name. It also leaves
+room for a cutover to mount two routes and retire the first on its own schedule,
+with no flag day -- room, not today's wiring: only the constructed provider's
+route mounts (§13), so the second one is a code change rather than a config
+change.
 
 A Connect RPC is the wrong shape, not merely extra ceremony: verification needs
 the exact raw bytes and Connect hands the handler a decoded message; the payload
@@ -486,8 +488,11 @@ ignored in this slice; the ledger is the third slice
 ([`billing.md`](billing.md) §11.3).
 
 Attribution is `metadata.org_id`, set on every checkout and every custom product
-link, falling back to `provider_customer_id`. A delivery that resolves to no org
-is stored, marked processed, and logged — never applied to a guess.
+link, falling back to `provider_customer_id` — and that fallback only while the
+customer names a single org. One buyer paying for two orgs shares a provider
+customer, and nothing on the delivery tells those apart. A delivery that resolves
+to no org, or to two, is stored, marked processed, and logged — never applied to
+a guess.
 
 **A product pug cannot place is the same case.** If `product_id` maps to no
 configured tier (§13) and does not match the attributed org's

@@ -85,7 +85,7 @@ func (s *Service) applySubscriptionEvent(
 	if err != nil {
 		// A read that failed is retryable; accepting it would lose the delivery for
 		// good, because the provider only retries on a non-2xx.
-		if !errors.Is(err, ErrOrgNotFound) {
+		if !errors.Is(err, ErrOrgNotFound) && !errors.Is(err, ErrCustomerNotUnique) {
 			slog.ErrorContext(ctx, "failed to attribute a subscription delivery", slogx.Error(err),
 				slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)
@@ -152,8 +152,9 @@ func (s *Service) applySubscriptionEvent(
 }
 
 // attributeDelivery places a delivery on an org: metadata.org_id first, since
-// pug sets it on every checkout it starts, then the provider customer. A
-// delivery that resolves to no org is never applied to a guess.
+// pug sets it on every checkout it starts, then the provider customer -- and
+// that one only while it names a single org. A delivery that resolves to no org,
+// or to two, is never applied to a guess.
 func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
 	// Both reads go through the WRITE pool. Against a real replica a lagging read
 	// would report "no such org" for an org that just checked out, and the delivery
@@ -170,16 +171,19 @@ func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvide
 		}
 	}
 	if event.ProviderCustomerID != "" {
-		row, err := w.GetBillingSubscriptionByProviderCustomerID(ctx,
-			dbwrite.GetBillingSubscriptionByProviderCustomerIDParams{
+		orgs, err := w.ListBillingSubscriptionOrgsByProviderCustomerID(ctx,
+			dbwrite.ListBillingSubscriptionOrgsByProviderCustomerIDParams{
 				Provider:           provider.Name(),
 				ProviderCustomerID: event.ProviderCustomerID,
 			})
-		if err == nil {
-			return row.OrgID, nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil {
 			return "", err
+		}
+		if len(orgs) == 1 {
+			return orgs[0], nil
+		}
+		if len(orgs) > 1 {
+			return "", ErrCustomerNotUnique
 		}
 	}
 	return "", ErrOrgNotFound
