@@ -15,6 +15,10 @@ type Plan struct {
 	// Never a sentinel: a number that reads as a quota invites arithmetic that
 	// produces "0 events remaining".
 	IncludedEvents *int64
+	// How far back the tier's history stays queryable. nil means no bound at all,
+	// which is the custom tier and every org on a deployment with billing off.
+	// Nothing deletes on this number -- see the retention section of billing.md.
+	RetentionDays *int64
 	// Retired tiers stay in the catalog so existing holders keep resolving, but are
 	// never granted to a new org — without this, repricing (which mints a new slug
 	// and retires the old one) would go on handing out the superseded numbers.
@@ -28,6 +32,13 @@ const (
 	SlugCustom = "custom"
 )
 
+// RetentionYearDays is what a "year" of retention means here: 365 days flat,
+// never a calendar year -- whatever eventually enforces this will subtract days
+// from a clock, and a leap year would then shorten the term somebody bought.
+// Exported because a renderer saying "7 years" has to divide by the same number
+// the catalog multiplied by.
+const RetentionYearDays = 365
+
 // TrialDays is how long a new org trials for, measured from orgs.create_time.
 // The trial is the org's age, not stored state — nothing is written at signup.
 const TrialDays = 14
@@ -38,19 +49,25 @@ const MaxTrialDays = 365
 
 // catalog is every tier pug has ever sold, newest last.
 //
-// A tier's Currency, PriceCents and IncludedEvents are fixed once any org holds
-// it; repricing mints a new slug (growth-v2) and marks the old one Retired.
+// A tier's Currency, PriceCents, IncludedEvents and RetentionDays are fixed once
+// any org holds it; repricing mints a new slug (growth-v2) and marks the old one
+// Retired. Retention most of all: shortening it is a promise to delete.
 // DisplayName is the exception. TestCatalogIsPinned carries the reasoning and is
 // the only guard against a silent quota cut.
 var catalog = []Plan{
-	{Slug: SlugFree, DisplayName: "Free", Currency: "USD", PriceCents: i64(0), IncludedEvents: i64(10_000)},
-	{Slug: SlugTrial, DisplayName: "Trial", Currency: "USD", PriceCents: i64(0), IncludedEvents: i64(500_000)},
-	{Slug: "starter", DisplayName: "Starter", Currency: "USD", PriceCents: i64(1_000), IncludedEvents: i64(100_000)},
-	{Slug: "growth", DisplayName: "Growth", Currency: "USD", PriceCents: i64(2_000), IncludedEvents: i64(500_000)},
-	{Slug: "scale", DisplayName: "Scale", Currency: "USD", PriceCents: i64(3_000), IncludedEvents: i64(1_000_000)},
-	// No price and no quota of its own: a negotiated deal supplies both from the
-	// org's row, which the billing_entitlements_custom_needs_quota constraint
-	// makes mandatory.
+	{Slug: SlugFree, DisplayName: "Free", Currency: "USD", PriceCents: i64(0),
+		IncludedEvents: i64(10_000), RetentionDays: i64(RetentionYearDays)},
+	{Slug: SlugTrial, DisplayName: "Trial", Currency: "USD", PriceCents: i64(0),
+		IncludedEvents: i64(500_000), RetentionDays: i64(RetentionYearDays)},
+	{Slug: "starter", DisplayName: "Starter", Currency: "USD", PriceCents: i64(1_000),
+		IncludedEvents: i64(100_000), RetentionDays: i64(RetentionYearDays)},
+	{Slug: "growth", DisplayName: "Growth", Currency: "USD", PriceCents: i64(2_000),
+		IncludedEvents: i64(500_000), RetentionDays: i64(3 * RetentionYearDays)},
+	{Slug: "scale", DisplayName: "Scale", Currency: "USD", PriceCents: i64(3_000),
+		IncludedEvents: i64(1_000_000), RetentionDays: i64(7 * RetentionYearDays)},
+	// No price, no quota and no retention of its own: a negotiated deal supplies
+	// them from the org's row, and the billing_entitlements_custom_needs_quota
+	// constraint makes the quota mandatory there.
 	{Slug: SlugCustom, DisplayName: "Custom", Currency: "USD"},
 }
 
@@ -94,6 +111,9 @@ func copyPlan(p Plan) Plan {
 	}
 	if p.IncludedEvents != nil {
 		p.IncludedEvents = i64(*p.IncludedEvents)
+	}
+	if p.RetentionDays != nil {
+		p.RetentionDays = i64(*p.RetentionDays)
 	}
 	return p
 }

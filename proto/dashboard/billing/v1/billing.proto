@@ -178,6 +178,15 @@ message GetBillingStatusResponse {
   // It says nothing about which tier, and carries no product id -- the dashboard
   // never sees one.
   bool purchasable = 11;
+  // How many days of event history this org keeps, as the plan it holds says.
+  // ABSENT means NO BOUND — billing is off, or the plan carries none — and is
+  // never zero. Nothing in pug deletes on this number today: it is what the
+  // plan promises, not a prune that has already run.
+  //
+  // A wrapper for the same reason as included_events: a bare int64 lands absent
+  // in the dashboard as 0, and "0 days of history" is the one thing this field
+  // must never say.
+  google.protobuf.Int64Value retention_days = 13;
   // Whether a portal session would open: this org has a customer at the
   // provider, which only a checkout leaves behind. Not implied by
   // subscription_status -- a CANCELLED org reports UNSPECIFIED above and still
@@ -203,8 +212,14 @@ message CreateCheckoutSessionResponse {
 
 message ConfirmCheckoutRequest {
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
-  // The session_id CreateCheckoutSessionResponse returned for this org.
-  string session_id = 2 [(buf.validate.field).string.min_len = 1];
+  // The session_id CreateCheckoutSessionResponse returned for this org. Bounded
+  // to the provider's own id alphabet: it is echoed into the provider's URL path,
+  // where a `../` would address a different endpoint with pug's API key.
+  string session_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[A-Za-z0-9_-]+$"
+  }];
 }
 
 message ConfirmCheckoutResponse {
@@ -242,6 +257,9 @@ message PlanOption {
   // Events the tier includes. ABSENT is the custom tier, whose quota comes from
   // the org's own row. Never render its absence as 0.
   google.protobuf.Int64Value included_events = 5;
+  // Days of event history the tier keeps. ABSENT is the custom tier again, whose
+  // retention is whatever its deal recorded. Never render its absence as 0.
+  google.protobuf.Int64Value retention_days = 7;
   // Whether a checkout for THIS tier would open. Same helper
   // CreateCheckoutSession refuses on, so a button that cannot work is
   // impossible rather than unlikely -- and it is per tier, because a deployment

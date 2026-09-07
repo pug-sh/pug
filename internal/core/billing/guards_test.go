@@ -289,6 +289,71 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 	}
 }
 
+// `--until ""` is how an operator ENDS a deal, so it has to clear the overrides
+// the contract gated exactly as omitting the flag does. It reaches the service as
+// a non-nil pointer to the zero time, which is the one input that can look like
+// "the change names a date" while naming none.
+func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	until := time.Now().AddDate(0, 1, 0)
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:          "growth",
+		IncludedEvents:    new(int64(5_000_000)),
+		RetentionDays:     new(int64(3650)),
+		DisplayName:       new("Acme Enterprise"),
+		ContractEndsAt:    new(until),
+		ProviderProductID: new("prod_acme"),
+	}); err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+
+	var zero time.Time
+	dropped, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugFree,
+		ContractEndsAt: &zero,
+	})
+	if err != nil {
+		t.Fatalf("downgrade: %v", err)
+	}
+	if dropped.IncludedEventsOverride != 0 || dropped.RetentionDaysOverride != 0 ||
+		dropped.DisplayNameOverride != "" || dropped.ProviderProductID != "" {
+		t.Errorf("overrides after an explicit --until \"\" = %+v, want them all cleared", dropped)
+	}
+	if !dropped.ContractEndsAt.IsZero() {
+		t.Errorf("contract_ends_at = %v, want it cleared", dropped.ContractEndsAt)
+	}
+}
+
+// The mirror of the case above: a floor plan WITH a date is a comped grant, and
+// its overrides are the whole point of it.
+func TestAFloorPlanWithAContractKeepsItsOverrides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	until := time.Now().AddDate(0, 1, 0)
+
+	comped, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugFree,
+		IncludedEvents: new(int64(2_000_000)),
+		ContractEndsAt: &until,
+	})
+	if err != nil {
+		t.Fatalf("comped grant: %v", err)
+	}
+	if comped.IncludedEventsOverride != 2_000_000 || comped.ContractEndsAt.IsZero() {
+		t.Errorf("comped grant = %+v, want the quota and the date kept", comped)
+	}
+}
+
 // The contract is what expires an override, so clearing it on a downgrade has to
 // take the overrides with it — otherwise the deal a lapse would have ended
 // becomes permanent, and "downgrade to free" leaves a larger quota than doing

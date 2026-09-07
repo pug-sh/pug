@@ -40,9 +40,10 @@ type Config struct {
 // setting process environment.
 type EnvLookup func(string) (string, bool)
 
-// ProductIDs resolves slug -> product id for every purchasable catalog tier.
+// ProductIDs resolves slug -> product id for every catalog tier that has one.
 // The floors are never sold and `custom` gets its product from the org's own row,
-// so neither is looked up.
+// so neither is looked up. A retired tier keeps its key: its holders' renewals
+// and cancellations still have to be placeable.
 //
 // Both directions matter: checkout reads slug -> product, and the webhook reads
 // product -> slug. They come from one map so they cannot disagree.
@@ -53,7 +54,7 @@ func ProductIDs(lookup EnvLookup) (map[string]string, error) {
 	out := map[string]string{}
 	byProduct := map[string]string{}
 	for _, plan := range corebilling.Plans() {
-		if !purchasableSlug(plan) {
+		if !mappedSlug(plan) {
 			continue
 		}
 		key := productEnvPrefix + strings.ToUpper(strings.ReplaceAll(plan.Slug, "-", "_"))
@@ -74,12 +75,18 @@ func ProductIDs(lookup EnvLookup) (map[string]string, error) {
 	return out, nil
 }
 
-// purchasableSlug is the catalog side of "can this tier be sold": not a floor,
-// not retired, and not the custom tier, whose product lives on the org's row.
-func purchasableSlug(plan corebilling.Plan) bool {
+// mappedSlug is the catalog side of "can this tier have a product": every tier
+// except the floors and custom, whose product lives on the org's row.
+//
+// Retired tiers ARE mapped, deliberately. The map's other direction is how the
+// webhook places a delivery, so dropping a retired tier would reject its existing
+// holders' renewals AND cancellations as unmappable -- permanently, since that
+// rejection marks the delivery processed. Nothing becomes sellable: core filters
+// Retired in CreateCheckoutSession and PlanOptions.
+func mappedSlug(plan corebilling.Plan) bool {
 	switch plan.Slug {
 	case corebilling.SlugFree, corebilling.SlugTrial, corebilling.SlugCustom:
 		return false
 	}
-	return !plan.Retired
+	return true
 }

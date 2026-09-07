@@ -34,6 +34,20 @@ linters:
               desc: business logic must not know the RPC transport; handlers translate errors
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: core is imported by app, never the other way round
+        # Billing is a renderer, never a gate: a quota drives a banner and nothing
+        # else. Keeping it out of the ingest and query paths is what makes "no event
+        # is ever rejected for a quota" structural rather than a promise -- an
+        # import here is the first thing any enforcement would need.
+        ingestion-is-billing-free:
+          files:
+            - "**/internal/core/events/**"
+            - "**/internal/core/insights/**"
+            - "**/internal/app/workers/**"
+            - "**/internal/deps/clickhouse/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/core/billing
+              desc: ingestion and query paths must not consult billing; a quota never drops an event
         deps-is-domain-free:
           files:
             - "**/internal/deps/**"

@@ -26,7 +26,8 @@ import (
 // stored, marked processed, logged, and NOT retried. A currency pug cannot
 // render, a product it cannot place, a delivery it cannot attribute and an event
 // type it does not handle are all things eight retries cannot fix, and retrying
-// would only delay the alert.
+// would only delay the alert. A body pug cannot DECODE is the exception: that one
+// a redeploy fixes, so it is retried.
 func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, d Delivery) error {
 	stored, err := s.write().InsertBillingWebhookDelivery(ctx, dbwrite.InsertBillingWebhookDeliveryParams{
 		EventType: d.EventType,
@@ -40,16 +41,25 @@ func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, 
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	// A retry of a delivery that already applied. The one case this must NOT
-	// short-circuit is a row still unprocessed: that is an attempt that died
-	// mid-apply, and the provider's retry is the only thing that finishes it.
+	// A retry of a delivery pug has already settled -- applied, or rejected as one
+	// of the unapplicable classes below. The one case this must NOT short-circuit
+	// is a row still unprocessed: that is an attempt that died mid-apply, and the
+	// provider's retry is the only thing that finishes it.
 	if stored.ProcessedAt.Valid {
 		return nil
 	}
 
 	event, err := provider.Normalize(d)
 	if err != nil {
-		return s.rejectDelivery(ctx, provider, d, "normalize", err)
+		// Retried, not rejected: a body pug cannot decode is a payload shape that
+		// changed under us, and a redeploy inside the provider's retry window is what
+		// fixes it. Marking it processed would consume the delivery AND let the prune
+		// drop the payload, losing the replay the inbox exists for.
+		slog.ErrorContext(ctx, "failed to normalize a billing webhook delivery", slogx.Error(err),
+			slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID),
+			slog.String("event_type", d.EventType))
+		telemetry.RecordError(ctx, err)
+		return err
 	}
 	// Payments, refunds, disputes and every type added after this was written.
 	if event.IsZero() {
@@ -61,6 +71,8 @@ func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, 
 func (s *Service) applySubscriptionEvent(
 	ctx context.Context, provider PaymentProvider, d Delivery, event SubscriptionEvent,
 ) error {
+	// Not constraint mirroring like the two below: the insert writes the Currency
+	// constant, so an unguarded foreign-currency event would be STORED as USD.
 	if cur := normalizeCurrency(event.Currency); cur != Currency {
 		return s.rejectDelivery(ctx, provider, d, "currency",
 			errors.New("subscription is billed in "+cur+", not "+Currency))
@@ -69,9 +81,8 @@ func (s *Service) applySubscriptionEvent(
 		return s.rejectDelivery(ctx, provider, d, "status",
 			errors.New("subscription carries no status"))
 	}
-	// The remaining two column checks, mirrored here for the same reason as the
-	// pair above: unguarded they fail the insert, which retries eight times and
-	// then leaves the delivery stored but never processed.
+	// Column checks mirrored here: unguarded they fail the insert, which retries
+	// eight times and then leaves the delivery stored but never processed.
 	if event.ProviderCustomerID == "" {
 		return s.rejectDelivery(ctx, provider, d, "customer",
 			errors.New("subscription names no customer"))
@@ -237,11 +248,10 @@ func storablePayload(raw []byte) []byte {
 	if json.Valid(raw) && !bytes.Contains(raw, []byte(`\u0000`)) {
 		return raw
 	}
-	wrapped, err := json.Marshal(map[string]string{"raw_base64": base64.StdEncoding.EncodeToString(raw)})
-	if err != nil {
-		return []byte(`{"raw_base64":""}`)
-	}
-	return wrapped
+	// Built by hand rather than marshalled: base64's alphabet needs no escaping, so
+	// there is no error branch that could return an empty envelope and discard the
+	// delivery in the one function whose whole job is keeping it.
+	return []byte(`{"raw_base64":"` + base64.StdEncoding.EncodeToString(raw) + `"}`)
 }
 
 func isUniqueViolation(err error) bool {
@@ -249,7 +259,9 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// PruneDeliveries drops delivery payloads older than the retention window. They
+// PruneDeliveries drops processed deliveries older than the retention window --
+// the whole row, dedup key included, so a delivery the provider re-sends after
+// this is treated as new. They
 // carry the customer's name, email and billing address -- personal data pug does
 // not otherwise store -- and replay is the only thing that needs the bytes.
 func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int64, error) {
@@ -270,13 +282,18 @@ var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live s
 
 // applyReconciledSubscription writes a provider read through the same CAS the
 // webhook uses, so the two cannot disagree about what "newer" means. Reports
-// whether the write landed; false is the CAS refusing a read older than a
-// delivery that arrived while the pass was running.
+// whether the write landed. false is not only the CAS refusing a read older than
+// a delivery that arrived mid-pass: it is also every guard below, i.e. an event
+// pug could not have stored. Neither is an error the caller can act on.
 func (s *Service) applyReconciledSubscription(
 	ctx context.Context, provider PaymentProvider, orgID string,
 	event SubscriptionEvent, rec Record, at time.Time,
 ) (bool, error) {
-	if normalizeCurrency(event.Currency) != Currency || event.Status == "" {
+	// The webhook path's guards, repeated because this writer is reachable without
+	// them: each would otherwise fail a column check as a raw SQLSTATE, which the
+	// callers report as a provider outage.
+	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
+		event.ProviderCustomerID == "" || event.PriceCents < 0 {
 		return false, nil
 	}
 	planSlug, err := s.planForProduct(event.ProductID, rec)

@@ -28,6 +28,7 @@ type BillingEntitlement struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               string
+	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	UpdateTime             pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
@@ -44,6 +45,7 @@ type BillingEntitlementHistory struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               pgtype.Text
+	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
 }

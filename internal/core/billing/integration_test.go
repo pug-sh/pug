@@ -169,6 +169,33 @@ func TestSetPlanRoundTrips(t *testing.T) {
 	}
 }
 
+// A deal's retention is stored beside its quota and resolves the same way, which
+// is the whole reason it is a column rather than prose in the note.
+func TestNegotiatedRetentionRoundTrips(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugCustom,
+		IncludedEvents: new(int64(5_000_000)),
+		RetentionDays:  new(int64(10 * corebilling.RetentionYearDays)),
+	}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.RetentionDays == nil || *ent.RetentionDays != 3_650 {
+		t.Errorf("retention = %v, want the negotiated 3650", ent.RetentionDays)
+	}
+}
+
 // The reason un-passed flags leave stored values alone: the common re-set is a
 // renewal, and reverting a negotiated quota to a catalog number would be silent.
 func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
@@ -182,6 +209,7 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugCustom,
 		IncludedEvents: new(int64(5_000_000)),
+		RetentionDays:  new(int64(3_650)),
 		DisplayName:    new("Acme Enterprise"),
 		AnchorDay:      new(17),
 	}); err != nil {
@@ -199,6 +227,9 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 	if rec.IncludedEventsOverride != 5_000_000 {
 		t.Errorf("quota after a renewal = %d, want the negotiated 5000000 preserved", rec.IncludedEventsOverride)
 	}
+	if rec.RetentionDaysOverride != 3_650 {
+		t.Errorf("retention after a renewal = %d, want the negotiated 3650 preserved", rec.RetentionDaysOverride)
+	}
 	if rec.DisplayNameOverride != "Acme Enterprise" {
 		t.Errorf("name after a renewal = %q, want it preserved", rec.DisplayNameOverride)
 	}
@@ -210,13 +241,15 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 	cleared, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
 		PlanSlug:       "growth",
 		IncludedEvents: new(int64),
+		RetentionDays:  new(int64),
 		DisplayName:    new(string),
 	})
 	if err != nil {
 		t.Fatalf("clearing SetPlan: %v", err)
 	}
-	if cleared.IncludedEventsOverride != 0 || cleared.DisplayNameOverride != "" {
-		t.Errorf("cleared overrides = %d/%q, want empty", cleared.IncludedEventsOverride, cleared.DisplayNameOverride)
+	if cleared.IncludedEventsOverride != 0 || cleared.DisplayNameOverride != "" || cleared.RetentionDaysOverride != 0 {
+		t.Errorf("cleared overrides = %d/%q/%d, want empty",
+			cleared.IncludedEventsOverride, cleared.DisplayNameOverride, cleared.RetentionDaysOverride)
 	}
 }
 
@@ -327,6 +360,48 @@ func TestExtendTrialAndClear(t *testing.T) {
 	}
 	if ent.Status != corebilling.StatusFree {
 		t.Errorf("status = %s after clear, want FREE (the org is back on the derived floors)", ent.Status)
+	}
+}
+
+// History has its own hand-written row->Record mapper, the fifth copy of the same
+// field list. This is the audit trail for "what did we agree to, and who agreed
+// it", so a field dropped from that one copy loses a deal's terms silently while
+// every other path still round-trips.
+func TestHistoryRoundTripsEveryOverride(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	until := time.Now().UTC().AddDate(1, 0, 0).Truncate(time.Hour)
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:          corebilling.SlugCustom,
+		IncludedEvents:    new(int64(5_000_000)),
+		RetentionDays:     new(int64(2555)),
+		DisplayName:       new("Acme Enterprise"),
+		AnchorDay:         new(11),
+		ContractEndsAt:    &until,
+		ProviderProductID: new("prod_acme"),
+		Note:              new("$400/mo, INV-123"),
+	}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+
+	entries, err := f.svc.History(ctx, f.orgID)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("history has %d entries, want 1", len(entries))
+	}
+	got := entries[0].Record
+	if got.PlanSlug != corebilling.SlugCustom || got.IncludedEventsOverride != 5_000_000 ||
+		got.RetentionDaysOverride != 2555 || got.DisplayNameOverride != "Acme Enterprise" ||
+		got.AnchorDay != 11 || got.ProviderProductID != "prod_acme" ||
+		got.Note != "$400/mo, INV-123" || !got.ContractEndsAt.Equal(until) {
+		t.Errorf("history record = %+v, want every override the grant named", got)
 	}
 }
 

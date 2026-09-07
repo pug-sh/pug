@@ -3,6 +3,7 @@ package billing_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -182,6 +183,121 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 	// order it likes.
 	if d := storedDelivery(t, f, "evt_old"); !d.ProcessedAt.Valid {
 		t.Error("a stale delivery was left unprocessed, so the provider will retry it forever")
+	}
+}
+
+// SubStatus.Live() is Go; the same set is hardcoded as ('active', 'past_due') in
+// GetLiveBillingSubscription, in ListPaidEntitlementsWithoutLiveSubscription's
+// join, and in the partial unique index. Nothing links them, so adding a live
+// status in Go alone would leave the read finding no row and drop a paying org to
+// the floor. This walks the whole vocabulary through the real query.
+func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	for _, status := range corebilling.AllSubStatuses() {
+		t.Run(string(status), func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			provider.event = subEvent(f.orgID, "sub_1", "prod_growth", status)
+			if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now().UTC())); err != nil {
+				t.Fatalf("HandleDelivery: %v", err)
+			}
+
+			ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+			if err != nil {
+				t.Fatalf("GetEntitlement: %v", err)
+			}
+			// A live status supplies the subscription's plan; anything else leaves the
+			// org on the derived floor.
+			gotPlan := ent.Slug == "growth"
+			if gotPlan != status.Live() {
+				t.Errorf("status %q: resolved slug %q (supplies a plan = %v), but Live() = %v",
+					status, ent.Slug, gotPlan, status.Live())
+			}
+		})
+	}
+}
+
+// A live custom subscription resolves its quota from the entitlement row, so
+// deleting that row drops an org that is still being charged to the free floor --
+// and nothing reports it: reconcile looks for the inverse.
+func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	ctx := t.Context()
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:          corebilling.SlugCustom,
+		IncludedEvents:    new(int64(5_000_000)),
+		ProviderProductID: new("prod_acme"),
+	}); err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+	provider.event = subEvent(f.orgID, "sub_1", "prod_acme", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(ctx, provider, delivery("evt_1", time.Now().UTC())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	if err := f.svc.Clear(ctx, f.orgID, actor); !errors.Is(err, corebilling.ErrClearWouldStrandSubscription) {
+		t.Fatalf("Clear under a live custom subscription: err = %v, want ErrClearWouldStrandSubscription", err)
+	}
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if got := ent.IncludedEvents; got == nil || *got != 5_000_000 {
+		t.Errorf("quota = %v, want the deal's 5000000 — the org is still being charged", got)
+	}
+}
+
+// A webhook's CAS stamp is the signed webhook-timestamp header, which is whole
+// seconds, so a cutover's cancellation and activation can carry the same one.
+// A tie must not be able to grant a plan: the failure direction here is an org
+// that keeps a subscription it cancelled, and nobody is paying for it.
+func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	at := time.Now().UTC().Truncate(time.Second)
+
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusCancelled)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_cancel", at)); err != nil {
+		t.Fatalf("HandleDelivery(cancelled): %v", err)
+	}
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_active", at)); err != nil {
+		t.Fatalf("HandleDelivery(active): %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != corebilling.SlugFree {
+		t.Errorf("slug = %q, want free — a same-second delivery revived a cancelled subscription", ent.Slug)
+	}
+}
+
+// A payload pug cannot decode is a shape that changed under it, which a redeploy
+// inside the provider's retry window fixes. Storing it as processed would consume
+// the delivery AND let the prune drop the payload, losing the replay too.
+func TestAnUndecodablePayloadIsRetried(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	provider.err = errors.New("dodo: decode subscription payload: json: cannot unmarshal")
+
+	err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_garbled", time.Now().UTC()))
+	if err == nil {
+		t.Fatal("a payload pug could not decode was accepted, so the provider will never retry it")
+	}
+	if d := storedDelivery(t, f, "evt_garbled"); d.ProcessedAt.Valid {
+		t.Error("an undecodable delivery was marked processed, consuming it permanently")
 	}
 }
 

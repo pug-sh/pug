@@ -155,8 +155,8 @@ func TestNormalize(t *testing.T) {
 	if event.PriceCents != 2000 || event.Currency != "USD" {
 		t.Errorf("price = (%d, %q), want (2000, USD)", event.PriceCents, event.Currency)
 	}
-	if slug, ok := c.SlugForProduct(event.ProductID); !ok || slug != "growth" {
-		t.Errorf("product %q mapped to (%q, %v), want (growth, true)", event.ProductID, slug, ok)
+	if event.ProductID != "prod_growth" {
+		t.Errorf("product_id = %q, want prod_growth", event.ProductID)
 	}
 	wantEnd := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	if !event.CurrentPeriodEnd.Equal(wantEnd) {
@@ -269,6 +269,27 @@ func TestProductIDs(t *testing.T) {
 	env["PUG_DODO_PRODUCT_SCALE"] = "prod_g"
 	if _, err := ProductIDs(lookup); err == nil {
 		t.Fatal("two tiers sharing a product id was accepted")
+	}
+}
+
+// Only the floors and custom are excluded. A tier is skipped for having no key,
+// never for what it is -- in particular a retired tier keeps its mapping, or the
+// webhook could not place its existing holders' renewals and cancellations.
+func TestMappedSlug(t *testing.T) {
+	for _, tc := range []struct {
+		plan corebilling.Plan
+		want bool
+	}{
+		{corebilling.Plan{Slug: "growth"}, true},
+		{corebilling.Plan{Slug: "growth-v0", Retired: true}, true},
+		{corebilling.Plan{Slug: corebilling.SlugFree}, false},
+		{corebilling.Plan{Slug: corebilling.SlugTrial}, false},
+		{corebilling.Plan{Slug: corebilling.SlugCustom}, false},
+	} {
+		if got := mappedSlug(tc.plan); got != tc.want {
+			t.Errorf("mappedSlug(%q, retired=%v) = %v, want %v",
+				tc.plan.Slug, tc.plan.Retired, got, tc.want)
+		}
 	}
 }
 

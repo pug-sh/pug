@@ -13,8 +13,9 @@ import (
 )
 
 // none is what an absent value prints as. Never a zero: absent included_events
-// means NO quota and absent price_cents means no list price, and both would read
-// as a real number the deployment never claimed.
+// means NO quota, absent retention_days no bound on history, and absent
+// price_cents no list price -- each would otherwise read as a real number the
+// deployment never claimed, and "0 days of history" worst of all.
 const none = "(none)"
 
 func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record, history []corebilling.HistoryEntry) error {
@@ -34,6 +35,7 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	row(w, "  plan", fmt.Sprintf("%s (%s)", ent.DisplayName, ent.Slug))
 	row(w, "  status", string(ent.Status))
 	row(w, "  included events", quota(ent.IncludedEvents))
+	row(w, "  retention", retention(ent.RetentionDays))
 	row(w, "  list price", price(ent.PriceCents, ent.Currency))
 	row(w, "  usage period", fmt.Sprintf("%s → %s", instant(ent.PeriodStart), instant(ent.PeriodEnd)))
 	row(w, "  trial ends", instant(ent.TrialEndsAt))
@@ -46,6 +48,7 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 		section(w, "STORED", "")
 		row(w, "  plan slug", rec.PlanSlug)
 		row(w, "  included events", override(rec.IncludedEventsOverride))
+		row(w, "  retention days", override(rec.RetentionDaysOverride))
 		row(w, "  display name", text(rec.DisplayNameOverride))
 		row(w, "  anchor day", override(int64(rec.AnchorDay)))
 		row(w, "  contract ends", contractEnd(rec.ContractEndsAt))
@@ -94,6 +97,9 @@ func historyLine(rec corebilling.Record) string {
 	parts := []string{rec.PlanSlug}
 	if rec.IncludedEventsOverride > 0 {
 		parts = append(parts, "events="+comma(rec.IncludedEventsOverride))
+	}
+	if rec.RetentionDaysOverride > 0 {
+		parts = append(parts, "retention="+comma(rec.RetentionDaysOverride)+"d")
 	}
 	if rec.DisplayNameOverride != "" {
 		parts = append(parts, fmt.Sprintf("name=%q", rec.DisplayNameOverride))
@@ -161,6 +167,22 @@ func override(v int64) string {
 		return none
 	}
 	return comma(v)
+}
+
+// retention renders a day count with its years beside it when they divide
+// evenly, since "2,555 days" is read as a typo more readily than as seven years.
+func retention(v *int64) string {
+	if v == nil {
+		return none
+	}
+	out := comma(*v) + " days"
+	if years := *v / corebilling.RetentionYearDays; years > 0 && *v%corebilling.RetentionYearDays == 0 {
+		if years == 1 {
+			return out + "  (1 year)"
+		}
+		return fmt.Sprintf("%s  (%d years)", out, years)
+	}
+	return out
 }
 
 func quota(v *int64) string {

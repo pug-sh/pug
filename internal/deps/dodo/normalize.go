@@ -126,14 +126,6 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 	return event
 }
 
-// SlugForProduct maps a product back to a catalog tier. Not on the interface:
-// the caller passes it the org's own product id for a negotiated deal, which
-// this map has no entry for.
-func (c *Client) SlugForProduct(productID string) (string, bool) {
-	slug, ok := c.slugByProdM[productID]
-	return slug, ok
-}
-
 // statusFromDodo is the first implementation of pug's vocabulary. An unmapped
 // state -- Dodo's `pending`, or anything it adds later -- comes back as the
 // provider's own word, which is stored verbatim and does not parse at read time.

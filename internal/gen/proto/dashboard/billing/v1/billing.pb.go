@@ -336,6 +336,15 @@ type GetBillingStatusResponse struct {
 	// It says nothing about which tier, and carries no product id -- the dashboard
 	// never sees one.
 	Purchasable *bool `protobuf:"varint,11,opt,name=purchasable" json:"purchasable,omitempty"`
+	// How many days of event history this org keeps, as the plan it holds says.
+	// ABSENT means NO BOUND — billing is off, or the plan carries none — and is
+	// never zero. Nothing in pug deletes on this number today: it is what the
+	// plan promises, not a prune that has already run.
+	//
+	// A wrapper for the same reason as included_events: a bare int64 lands absent
+	// in the dashboard as 0, and "0 days of history" is the one thing this field
+	// must never say.
+	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,13,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
 	// Whether a portal session would open: this org has a customer at the
 	// provider, which only a checkout leaves behind. Not implied by
 	// subscription_status -- a CANCELLED org reports UNSPECIFIED above and still
@@ -450,6 +459,13 @@ func (x *GetBillingStatusResponse) GetPurchasable() bool {
 		return *x.Purchasable
 	}
 	return false
+}
+
+func (x *GetBillingStatusResponse) GetRetentionDays() *wrapperspb.Int64Value {
+	if x != nil {
+		return x.RetentionDays
+	}
+	return nil
 }
 
 func (x *GetBillingStatusResponse) GetManageable() bool {
@@ -572,7 +588,9 @@ func (x *CreateCheckoutSessionResponse) GetSessionId() string {
 type ConfirmCheckoutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// The session_id CreateCheckoutSessionResponse returned for this org.
+	// The session_id CreateCheckoutSessionResponse returned for this org. Bounded
+	// to the provider's own id alphabet: it is echoed into the provider's URL path,
+	// where a `../` would address a different endpoint with pug's API key.
 	SessionId     *string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -818,6 +836,9 @@ type PlanOption struct {
 	// Events the tier includes. ABSENT is the custom tier, whose quota comes from
 	// the org's own row. Never render its absence as 0.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,5,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
+	// Days of event history the tier keeps. ABSENT is the custom tier again, whose
+	// retention is whatever its deal recorded. Never render its absence as 0.
+	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,7,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
 	// Whether a checkout for THIS tier would open. Same helper
 	// CreateCheckoutSession refuses on, so a button that cannot work is
 	// impossible rather than unlikely -- and it is per tier, because a deployment
@@ -892,6 +913,13 @@ func (x *PlanOption) GetIncludedEvents() *wrapperspb.Int64Value {
 	return nil
 }
 
+func (x *PlanOption) GetRetentionDays() *wrapperspb.Int64Value {
+	if x != nil {
+		return x.RetentionDays
+	}
+	return nil
+}
+
 func (x *PlanOption) GetPurchasable() bool {
 	if x != nil && x.Purchasable != nil {
 		return *x.Purchasable
@@ -955,7 +983,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12<\n" +
 	"\vprice_cents\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\n" +
 	"priceCents\x12\x1a\n" +
-	"\bcurrency\x18\x04 \x01(\tR\bcurrency\"\xdd\x05\n" +
+	"\bcurrency\x18\x04 \x01(\tR\bcurrency\"\xa1\x06\n" +
 	"\x18GetBillingStatusResponse\x12'\n" +
 	"\x0fbilling_enabled\x18\x01 \x01(\bR\x0ebillingEnabled\x12.\n" +
 	"\x04plan\x18\x02 \x01(\v2\x1a.dashboard.billing.v1.PlanR\x04plan\x12;\n" +
@@ -969,7 +997,8 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x13subscription_status\x18\t \x01(\x0e2(.dashboard.billing.v1.SubscriptionStatusR\x12subscriptionStatus\x12H\n" +
 	"\x12current_period_end\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\x10currentPeriodEnd\x12 \n" +
-	"\vpurchasable\x18\v \x01(\bR\vpurchasable\x12\x1e\n" +
+	"\vpurchasable\x18\v \x01(\bR\vpurchasable\x12B\n" +
+	"\x0eretention_days\x18\r \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12\x1e\n" +
 	"\n" +
 	"manageable\x18\f \x01(\bR\n" +
 	"manageable\"d\n" +
@@ -979,11 +1008,11 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x1dCreateCheckoutSessionResponse\x12!\n" +
 	"\fcheckout_url\x18\x01 \x01(\tR\vcheckoutUrl\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\"`\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"u\n" +
 	"\x16ConfirmCheckoutRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\x12&\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\x12;\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tsessionId\"7\n" +
+	"session_id\x18\x02 \x01(\tB\x1c\xbaH\x19r\x17\x10\x01\x18\x80\x012\x10^[A-Za-z0-9_-]+$R\tsessionId\"7\n" +
 	"\x17ConfirmCheckoutResponse\x12\x1c\n" +
 	"\tconfirmed\x18\x01 \x01(\bR\tconfirmed\"<\n" +
 	"\x1aCreatePortalSessionRequest\x12\x1e\n" +
@@ -992,7 +1021,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"portal_url\x18\x01 \x01(\tR\tportalUrl\"2\n" +
 	"\x10ListPlansRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\x85\x02\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\xc9\x02\n" +
 	"\n" +
 	"PlanOption\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
@@ -1000,7 +1029,8 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\vprice_cents\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\n" +
 	"priceCents\x12\x1a\n" +
 	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12D\n" +
-	"\x0fincluded_events\x18\x05 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12 \n" +
+	"\x0fincluded_events\x18\x05 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12B\n" +
+	"\x0eretention_days\x18\a \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12 \n" +
 	"\vpurchasable\x18\x06 \x01(\bR\vpurchasable\"K\n" +
 	"\x11ListPlansResponse\x126\n" +
 	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x80\x01\n" +
@@ -1067,24 +1097,26 @@ var file_dashboard_billing_v1_billing_proto_depIdxs = []int32{
 	15, // 7: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
 	1,  // 8: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
 	15, // 9: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
-	14, // 10: dashboard.billing.v1.PlanOption.price_cents:type_name -> google.protobuf.Int64Value
-	14, // 11: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
-	12, // 12: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
-	2,  // 13: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
-	5,  // 14: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
-	7,  // 15: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
-	9,  // 16: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
-	11, // 17: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
-	4,  // 18: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
-	6,  // 19: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
-	8,  // 20: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
-	10, // 21: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
-	13, // 22: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
-	18, // [18:23] is the sub-list for method output_type
-	13, // [13:18] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	14, // 10: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
+	14, // 11: dashboard.billing.v1.PlanOption.price_cents:type_name -> google.protobuf.Int64Value
+	14, // 12: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
+	14, // 13: dashboard.billing.v1.PlanOption.retention_days:type_name -> google.protobuf.Int64Value
+	12, // 14: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
+	2,  // 15: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
+	5,  // 16: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
+	7,  // 17: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
+	9,  // 18: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
+	11, // 19: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
+	4,  // 20: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
+	6,  // 21: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
+	8,  // 22: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
+	10, // 23: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
+	13, // 24: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
+	20, // [20:25] is the sub-list for method output_type
+	15, // [15:20] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_billing_v1_billing_proto_init() }

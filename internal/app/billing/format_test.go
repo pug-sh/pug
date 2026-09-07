@@ -74,6 +74,27 @@ func TestReportNeverRendersAbsentAsZero(t *testing.T) {
 	if got := line(t, out, "RESOLVED", "list price"); got != none {
 		t.Fatalf("list price = %q, want %q", got, none)
 	}
+	if got := line(t, out, "RESOLVED", "retention"); got != none {
+		t.Fatalf("retention = %q, want %q", got, none)
+	}
+}
+
+// An operator reads "2,555 days" as a typo more readily than as seven years, so
+// the years are printed beside a whole multiple.
+func TestReportRetentionNamesTheYears(t *testing.T) {
+	for days, want := range map[int64]string{
+		365:   "365 days  (1 year)",
+		2_555: "2,555 days  (7 years)",
+		400:   "400 days",
+	} {
+		out := render(t, corebilling.Entitlement{
+			Slug: "scale", DisplayName: "Scale", Currency: "USD", Status: corebilling.StatusActive,
+			RetentionDays: &days, BillingEnabled: true,
+		}, corebilling.Record{}, nil)
+		if got := line(t, out, "RESOLVED", "retention"); got != want {
+			t.Errorf("retention for %d days = %q, want %q", days, got, want)
+		}
+	}
 }
 
 // Zero is a real price -- the two floors -- and must not read as absence.
@@ -151,12 +172,13 @@ func TestHistoryLine(t *testing.T) {
 
 	got := historyLine(corebilling.Record{
 		Present: true, PlanSlug: "custom", IncludedEventsOverride: 5_000_000,
-		DisplayNameOverride: "Acme Enterprise", AnchorDay: 17,
+		RetentionDaysOverride: 3_650,
+		DisplayNameOverride:   "Acme Enterprise", AnchorDay: 17,
 		ContractEndsAt:    time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
 		ProviderProductID: "prod_2f9k", Note: "$400/mo, INV-123",
 	})
 	for _, want := range []string{
-		"custom", "events=5,000,000", `name="Acme Enterprise"`, "anchor-day=17",
+		"custom", "events=5,000,000", "retention=3,650d", `name="Acme Enterprise"`, "anchor-day=17",
 		"until=2027-01-01T00:00:00Z", "product=prod_2f9k", `note="$400/mo, INV-123"`,
 	} {
 		if !strings.Contains(got, want) {

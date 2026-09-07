@@ -271,6 +271,11 @@ func TestResolveWithBillingOffHasNoQuota(t *testing.T) {
 	if ent.IncludedEvents != nil {
 		t.Errorf("quota = %d with billing off, want none", *ent.IncludedEvents)
 	}
+	// Same direction as the quota: a self-hosted install bounds nothing, and a
+	// number here would be a retention promise nobody made.
+	if ent.RetentionDays != nil {
+		t.Errorf("retention = %d days with billing off, want none", *ent.RetentionDays)
+	}
 	if ent.Status != corebilling.StatusFree {
 		t.Errorf("status = %s with billing off, want FREE", ent.Status)
 	}
@@ -398,6 +403,7 @@ func TestResolveIgnoresEveryFieldOfAnAbsentRow(t *testing.T) {
 		AnchorDay:              22,
 		PlanSlug:               "scale",
 		IncludedEventsOverride: 5_000_000,
+		RetentionDaysOverride:  3_650,
 		DisplayNameOverride:    "Acme Enterprise",
 		TrialEndsAt:            later.AddDate(0, 1, 0),
 		ContractEndsAt:         later.AddDate(1, 0, 0),
@@ -438,8 +444,84 @@ func TestResolveKeepsTheTrialDateAfterItPasses(t *testing.T) {
 	}
 }
 
+// Retention is a term of the tier like its quota, and it moves with the plan:
+// the ladder is what the pricing page sells.
+func TestResolveReportsThePlansRetention(t *testing.T) {
+	for _, tc := range []struct {
+		slug string
+		want int64
+	}{
+		{"starter", corebilling.RetentionYearDays},
+		{"growth", 3 * corebilling.RetentionYearDays},
+		{"scale", 7 * corebilling.RetentionYearDays},
+	} {
+		t.Run(tc.slug, func(t *testing.T) {
+			ent := corebilling.Resolve(created, corebilling.Record{
+				Present: true, PlanSlug: tc.slug,
+			}, nil, later, true)
+			if got := retention(t, ent); got != tc.want {
+				t.Errorf("retention = %d days, want %d", got, tc.want)
+			}
+		})
+	}
+
+	// No row at all is the free floor's year, derived like everything else.
+	if got := retention(t, corebilling.Resolve(created, corebilling.Record{}, nil, later, true)); got != corebilling.RetentionYearDays {
+		t.Errorf("retention with no row = %d days, want the free floor's %d", got, corebilling.RetentionYearDays)
+	}
+}
+
+// A deal's retention is the org's own, and it expires with the deal — the same
+// rule the quota follows, because both are terms of the same agreement.
+func TestResolveAppliesANegotiatedRetention(t *testing.T) {
+	rec := corebilling.Record{
+		Present: true, PlanSlug: corebilling.SlugCustom,
+		IncludedEventsOverride: 5_000_000,
+		RetentionDaysOverride:  10 * corebilling.RetentionYearDays,
+	}
+
+	if got := retention(t, corebilling.Resolve(created, rec, nil, later, true)); got != 3_650 {
+		t.Errorf("retention = %d days, want the negotiated 3650", got)
+	}
+
+	// A lapsed deal falls to the free floor's year with everything else. Worth
+	// pinning: this is the one transition that shortens a retention promise.
+	rec.ContractEndsAt = later.Add(-time.Hour)
+	if got := retention(t, corebilling.Resolve(created, rec, nil, later, true)); got != corebilling.RetentionYearDays {
+		t.Errorf("retention after the deal ended = %d days, want the free floor's %d",
+			got, corebilling.RetentionYearDays)
+	}
+}
+
+// A slug the catalog dropped keeps the row's own numbers rather than the floor's,
+// for retention exactly as for the quota: imposing a shorter one on a paying
+// customer is the wrong direction to fail in.
+func TestResolveUnknownPlanHasNoRetentionBound(t *testing.T) {
+	ent := corebilling.Resolve(created, corebilling.Record{
+		Present: true, PlanSlug: "growth-v9",
+	}, nil, later, true)
+	if ent.RetentionDays != nil {
+		t.Errorf("retention = %d days for an unknown plan, want none", *ent.RetentionDays)
+	}
+
+	withOverride := corebilling.Resolve(created, corebilling.Record{
+		Present: true, PlanSlug: "growth-v9", RetentionDaysOverride: 900,
+	}, nil, later, true)
+	if got := retention(t, withOverride); got != 900 {
+		t.Errorf("retention = %d days, want the negotiated 900", got)
+	}
+}
+
+func retention(t *testing.T, ent corebilling.Entitlement) int64 {
+	t.Helper()
+	if ent.RetentionDays == nil {
+		t.Fatalf("entitlement has no retention bound; want one (plan %q, status %s)", ent.Slug, ent.Status)
+	}
+	return *ent.RetentionDays
+}
+
 func flatten(e corebilling.Entitlement) string {
-	return fmt.Sprintf("%s/%s/%s/%s quota=%v price=%v trial=%s contract=%s window=[%s,%s) enabled=%v",
+	return fmt.Sprintf("%s/%s/%s/%s quota=%v price=%v retention=%v trial=%s contract=%s window=[%s,%s) enabled=%v",
 		e.Slug, e.DisplayName, e.Currency, e.Status, str(e.IncludedEvents), str(e.PriceCents),
-		e.TrialEndsAt, e.ContractEndsAt, e.PeriodStart, e.PeriodEnd, e.BillingEnabled)
+		str(e.RetentionDays), e.TrialEndsAt, e.ContractEndsAt, e.PeriodStart, e.PeriodEnd, e.BillingEnabled)
 }

@@ -21,6 +21,11 @@ create table billing_entitlements (
   -- Not constrained to a slug list: the catalog is Go, and a reprice mints a slug.
   plan_slug varchar(50) not null
     constraint billing_entitlements_plan_slug_check check (plan_slug <> ''),
+  -- How far back this org's events stay queryable. NULL is the plan's own
+  -- retention; nothing deletes on it, here or anywhere.
+  retention_days_override bigint
+    constraint billing_entitlements_retention_check
+      check (retention_days_override > 0),
   trial_ends_at timestamptz,
   update_time timestamptz not null default now(),
   -- A custom plan has no catalog quota to fall back on.
@@ -53,6 +58,9 @@ create table billing_entitlement_history (
   org_id char(20) not null,
   plan_slug varchar(50)
     constraint billing_entitlement_history_plan_slug_check check (plan_slug <> ''),
+  retention_days_override bigint
+    constraint billing_entitlement_history_retention_check
+      check (retention_days_override > 0),
   trial_ends_at timestamptz,
   -- A snapshot must be one a live row could have held.
   constraint billing_entitlement_history_custom_needs_quota
@@ -62,7 +70,7 @@ create table billing_entitlement_history (
     check (plan_slug is not null
       or (anchor_day is null and contract_ends_at is null
           and display_name_override is null and included_events_override is null
-          and trial_ends_at is null))
+          and retention_days_override is null and trial_ends_at is null))
 );
 
 create index billing_entitlement_history_org_idx

@@ -50,6 +50,30 @@ func TestRetiredPlanCannotBeGrantedToANewOrg(t *testing.T) {
 
 }
 
+// Plans() must keep listing a retired tier, because that list is what the webhook
+// resolves an incoming product against. Dropping it there rejects its existing
+// holders' renewals AND cancellations as unmappable -- permanently, since that
+// rejection marks the delivery processed -- so one reprice freezes every
+// incumbent's subscription while still charging them.
+func TestRetiredPlanStaysInThePlanList(t *testing.T) {
+	original := catalog
+	t.Cleanup(func() { catalog = original })
+	catalog = append(append([]Plan(nil), original...), Plan{
+		Slug: "growth-v0", DisplayName: "Growth (2025)", Currency: "USD",
+		PriceCents: i64(1_500), IncludedEvents: i64(400_000), Retired: true,
+	})
+
+	var found bool
+	for _, p := range Plans() {
+		if p.Slug == "growth-v0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a retired tier is missing from Plans(), so nothing can map its product back to a slug")
+	}
+}
+
 // The other half of the rule, and the entire point of retiring rather than
 // deleting a tier: an org already on one keeps it and can still be renewed.
 // Retiring an EXISTING slug needs no migration — the check constraint already

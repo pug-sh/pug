@@ -30,7 +30,8 @@ alter table billing_entitlement_history
     check (plan_slug is not null
       or (anchor_day is null and contract_ends_at is null
           and display_name_override is null and included_events_override is null
-          and provider_product_id is null and trial_ends_at is null));
+          and provider_product_id is null and retention_days_override is null
+          and trial_ends_at is null));
 
 -- The provider's subscription, mirrored read-only. Pug owns the quota; this row
 -- owns nothing but what the provider said.
@@ -128,6 +129,6 @@ alter table billing_entitlement_history
     check (plan_slug is not null
       or (anchor_day is null and contract_ends_at is null
           and display_name_override is null and included_events_override is null
-          and trial_ends_at is null));
+          and retention_days_override is null and trial_ends_at is null));
 
 alter table billing_entitlements drop column if exists provider_product_id;

@@ -397,6 +397,11 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 	if got := bySlug["growth"].GetIncludedEvents(); got == nil || got.GetValue() != 500_000 {
 		t.Errorf("growth quota = %v, want 500000", got)
 	}
+	// A wrapper for the same reason the quota is one: a pricing table rendering
+	// "0 days of history" beside a tier is worse than rendering nothing.
+	if got := bySlug["growth"].GetRetentionDays(); got == nil || got.GetValue() != 3*corebilling.RetentionYearDays {
+		t.Errorf("growth retention = %v, want 3 years of days", got)
+	}
 }
 
 // A negotiated deal is buyable from the dashboard by the org whose row records
@@ -437,6 +442,9 @@ func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 	}
 	if custom.GetIncludedEvents() != nil {
 		t.Errorf("custom quota = %v, want absent on the catalog entry", custom.GetIncludedEvents())
+	}
+	if custom.GetRetentionDays() != nil {
+		t.Errorf("custom retention = %v, want absent — a deal's term is on its own row", custom.GetRetentionDays())
 	}
 }
 

@@ -72,6 +72,9 @@ func (s *Server) GetBillingStatus(
 	// unresolvable plan both report. Emitting a zero here would tell every org on
 	// a self-hosted install that it is over its limit.
 	resp.IncludedEvents = int64Value(ent.IncludedEvents)
+	// Absent means no bound, never zero: nothing prunes on this number, so a 0
+	// would promise a deletion that has not happened and cannot.
+	resp.RetentionDays = int64Value(ent.RetentionDays)
 	resp.SubscriptionStatus = subStatusToRPC(ent.SubStatus).Enum()
 	// Read from the same helpers the two session RPCs refuse on, so a button the
 	// dashboard renders and a call that would fail cannot drift apart.
@@ -94,10 +97,11 @@ func internalErr() error {
 	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 }
 
-// int64Value keeps an absent number absent on the wire. Both fields are wrappers
-// rather than bare int64s because protoc-gen-es renders an edition-2023 singular
-// scalar as a non-optional bigint, which would land "no quota" in the dashboard
-// as a quota of zero.
+// int64Value keeps an absent number absent on the wire. Every field it feeds --
+// the quota, the retention bound and the price, on the entitlement and on each
+// listed plan -- is a wrapper rather than a bare int64 because protoc-gen-es
+// renders an edition-2023 singular scalar as a non-optional bigint, which would
+// land "no quota" in the dashboard as a quota of zero.
 func int64Value(v *int64) *wrapperspb.Int64Value {
 	if v == nil {
 		return nil
@@ -238,6 +242,7 @@ func (s *Server) ListPlans(
 			IncludedEvents: int64Value(opt.IncludedEvents),
 			PriceCents:     int64Value(opt.PriceCents),
 			Purchasable:    proto.Bool(opt.Purchasable),
+			RetentionDays:  int64Value(opt.RetentionDays),
 			Slug:           proto.String(opt.Slug),
 		})
 	}

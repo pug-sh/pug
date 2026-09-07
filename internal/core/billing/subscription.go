@@ -15,8 +15,8 @@ import (
 // ordinary answer -- trialing, free and comped orgs have never checked out -- so
 // it returns nil rather than an error.
 func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
-	// The write pool, as elsewhere in this package: ConfirmCheckout writes the row
-	// and GetBillingStatus reads it immediately after, which a lagging replica loses.
+	// The write pool, like every read on the money path: ConfirmCheckout writes the
+	// row and GetBillingStatus reads it immediately after, which a replica loses.
 	row, err := dbread.New(s.pgW).GetLiveBillingSubscription(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -59,7 +59,11 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 // anyProviderCustomer resolves the customer the portal is opened for. Checkout
 // is what leaves one behind, so a trialing, free or comped org has none.
 func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string, error) {
-	row, err := s.read.GetLatestBillingSubscription(ctx, orgID)
+	// The write pool, for liveSubscription's reason: ConfirmCheckout writes the row
+	// and the same GetBillingStatus that reports the plan also reports whether the
+	// portal can be opened, so a lagging replica hides "Manage billing" from a
+	// customer who has just paid.
+	row, err := dbread.New(s.pgW).GetLatestBillingSubscription(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrNoCustomer

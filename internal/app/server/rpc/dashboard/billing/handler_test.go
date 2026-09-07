@@ -68,6 +68,10 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 			"the dashboard as 0, telling every org on a self-hosted install it is over a limit "+
 			"that does not exist", off.GetIncludedEvents().GetValue())
 	}
+	if off.GetRetentionDays() != nil {
+		t.Errorf("retention_days = %d with billing off, want ABSENT — a self-hosted install "+
+			"bounds nothing", off.GetRetentionDays().GetValue())
+	}
 	if off.GetPeriodStart() == nil || off.GetPeriodEnd() == nil {
 		t.Error("period bounds are missing; usage is metered whether or not billing is on")
 	}
@@ -81,6 +85,10 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 	}
 	if on.GetIncludedEvents().GetValue() != 10_000 {
 		t.Errorf("included_events = %d, want the free floor's 10000", on.GetIncludedEvents().GetValue())
+	}
+	if on.GetRetentionDays().GetValue() != corebilling.RetentionYearDays {
+		t.Errorf("retention_days = %d, want the free floor's %d",
+			on.GetRetentionDays().GetValue(), corebilling.RetentionYearDays)
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {
 		t.Errorf("status = %s, want FREE for an org past its trial", on.GetStatus())

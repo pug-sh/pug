@@ -164,7 +164,11 @@ func newPayments(ctx context.Context, providerName string) (*corebilling.Payment
 		return nil, err
 	}
 	if client == nil {
-		return nil, nil
+		// A named provider with no API key is a misconfigured CronJob, not the
+		// self-hosted shape -- that one leaves PUG_BILLING_PROVIDER empty and returns
+		// above. Failing here beats a pass that reconciles nothing and exits 0
+		// forever, which is indistinguishable from a healthy one.
+		return nil, errors.New("PUG_BILLING_PROVIDER is " + name + " but no API key is configured")
 	}
 	slugByProduct := make(map[string]string, len(products))
 	for slug, id := range products {

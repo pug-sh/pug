@@ -73,6 +73,7 @@ Four properties everything below preserves.
 | Entitlement state | **Derived, never stored** | A `status` column is a second source of truth that can disagree with the timestamps beside it, and keeping it honest costs a worker. Every state this slice has is a comparison against `now`. |
 | Quota window | **Billing anniversary**, anchored to `orgs.create_time` | An org's month runs from the day it signed up, which is the date its trial already runs from. The alternative — a calendar month — is one line of code cheaper but resets everyone on the 1st regardless of when they bought, which is a support conversation the day a card is charged. §6.1. |
 | Anchor representation | **Day-of-month integer, UTC midnight** | The meter's period sum is exact only for midnight-aligned windows. An anchor stored as an instant would silently drop a partial day from the total while leaving it in the daily series. §6.1. |
+| Retention | **A day count on the tier, plus a per-org override** (§4) | How long history is kept is a term of the agreement like the quota, so it sits beside it, is pinned immutable (§4.2) and is negotiable per deal. Days, not months: whatever eventually enforces this will subtract from `now`, and `AddDate` normalises `Feb 31` into March. Nothing subtracts today and nothing deletes — §13. |
 | Unpaid orgs | **14-day trial → free tier** | Trial is the org's age, not stored state: no row, no provider object, no card. |
 | Quota audience | **Every org member** | Reads sit on the viewer floor, exactly like `ResourceUsage`: the person who notices the limit is rarely the admin. |
 | Enforcement | **None** | Invariant 1. |
@@ -81,16 +82,17 @@ Four properties everything below preserves.
 ## 4. The plan catalog
 
 `internal/core/billing/plans.go` — an ordered slice of `Plan{Slug, DisplayName,
-Currency, PriceCents, IncludedEvents, Retired}`, with `PlanBySlug` for lookup.
+Currency, PriceCents, IncludedEvents, RetentionDays, Retired}`, with `PlanBySlug`
+for lookup.
 
-| slug | name | price | included events / month | retired |
-|---|---|---|---|---|
-| `free` | Free | $0 | 10,000 | no |
-| `trial` | Trial | $0 | 500,000 | no |
-| `starter` | Starter | $10/mo | 100,000 | no |
-| `growth` | Growth | $20/mo | 500,000 | no |
-| `scale` | Scale | $30/mo | 1,000,000 | no |
-| `custom` | Custom | — | *set per org* (§4.1) | no |
+| slug | name | price | included events / month | retention | retired |
+|---|---|---|---|---|---|
+| `free` | Free | $0 | 10,000 | 365 days | no |
+| `trial` | Trial | $0 | 500,000 | 365 days | no |
+| `starter` | Starter | $10/mo | 100,000 | 365 days | no |
+| `growth` | Growth | $20/mo | 500,000 | 1,095 days (3y) | no |
+| `scale` | Scale | $30/mo | 1,000,000 | 2,555 days (7y) | no |
+| `custom` | Custom | — | *set per org* (§4.1) | *set per org* (§4.1) | no |
 
 - `free` and `trial` are the **floors**, the answer when nothing else applies.
   `trial` is never stored at all — `extend-trial` writes a `free` row plus a
@@ -101,6 +103,14 @@ Currency, PriceCents, IncludedEvents, Retired}`, with `PlanBySlug` for lookup.
   always 1/100 — JPY has no minor unit, KWD has three — so nothing may assume
   cents when formatting. Storing an amount without its code is how a price
   silently changes meaning the first time a second currency exists.
+- **`RetentionDays` is how long the tier keeps history**, in days, at
+  `RetentionYearDays` (365) flat per year — a bound of this shape is `now - N
+  days`, and a calendar year would move it by a leap day and cut a term somebody
+  bought short. Nothing computes it yet; it is a number pug renders (§13).
+  nil is the `custom` tier, whose retention comes from the org's row, and nil
+  means **no bound at all** — never zero, exactly like an absent quota. Today the
+  number is a *promise*: nothing in pug prunes on it (§13), so every deployment
+  over-delivers by keeping everything.
 - **`Retired`** marks a tier that may no longer be granted to an org not already
   on it. A retired tier stays in the catalog forever so its existing customers
   keep resolving (§4.2), and `SetPlan` refuses it for anybody else
@@ -136,6 +146,7 @@ layer over whichever plan it names:
 | Field | Column | NULL means |
 |---|---|---|
 | Quota | `included_events_override` | use the plan's number |
+| Retention | `retention_days_override` | use the plan's number |
 | Display name | `display_name_override` | use the plan's name |
 
 Term is `contract_ends_at`, and the paperwork lives in `note`. Nothing about a
@@ -148,6 +159,12 @@ both would mean two authorities on one number, disagreeing the first time a deal
 is repriced, with the dashboard rendering the stale one as fact. The agreed
 amount goes in `note` if an operator wants it written down, which is honest about
 being a record rather than a source of truth.
+
+**Retention is negotiable and, unlike the quota, optional.** `custom` requires a
+quota because an absent one on a paid tier resolves as *unlimited sending*, which
+is a customer paying for nothing; an absent retention resolves as *unlimited
+keeping*, which is what every org already gets and costs only storage. A deal
+that names no retention is therefore stored as it is written.
 
 The `custom` slug exists for a deal that is not a variation on a tier: it has no
 quota of its own, so **`plan_slug = 'custom'` requires
@@ -175,9 +192,13 @@ This is the one failure mode that a rows-based catalog handles for free (the
 archived design's `PLAN_STATUS_ARCHIVED` existed for exactly this), so a Go
 catalog has to buy it back with a rule:
 
-> **A tier's `PriceCents`, `Currency` and `IncludedEvents` are immutable once any
-> org holds it.** Repricing mints a new slug — `growth-v2` — and marks the old
+> **A tier's `PriceCents`, `Currency`, `IncludedEvents` and `RetentionDays` are
+> immutable once any org holds it.** Repricing mints a new slug — `growth-v2` — and marks the old
 > one `Retired: true`. Nothing is ever deleted from the catalog.
+
+Retention most of all: cutting a tier's quota withholds something the customer
+has not sent yet, while cutting its retention is a promise to delete what they
+already did.
 
 Existing customers keep resolving against the slug they hold and are unaffected;
 new ones get the new tier. Grandfathering is then the default rather than
@@ -216,6 +237,11 @@ create table billing_entitlements (
   -- No slug check: the catalog is Go (plans.go) and SetPlan already rejects an
   -- unknown slug. A list here would be a second catalog to migrate in lockstep.
   plan_slug varchar(50) not null,
+  -- How far back this org's events stay queryable. NULL means the plan's own
+  -- retention. Nothing deletes on it (section 13).
+  retention_days_override bigint
+    constraint billing_entitlements_retention_check
+      check (retention_days_override is null or retention_days_override > 0),
   trial_ends_at timestamptz,
   update_time timestamptz not null default now(),
   -- A custom plan has no catalog quota to fall back on, so the deal is
@@ -235,10 +261,12 @@ create table billing_entitlements (
   quota window — an annual contract ending in March does not make March's quota
   window a year long. Keeping the two apart is why `anchor_day` exists as its own
   column rather than being read off whichever date happens to be nearby.
-- **The `*_override` columns** — a negotiated deal's quota and name (§4.1). NULL
-  means "use the plan's" in each case. `included_events_override` is checked
-  `> 0` because 0 would read as a quota of zero rather than as "no override", and
-  because "unlimited" is deliberately not expressible here.
+- **The `*_override` columns** — a negotiated deal's quota, retention and name
+  (§4.1). NULL means "use the plan's" in each case. `included_events_override`
+  and `retention_days_override` are checked `> 0` because 0 would read as a quota
+  or a retention of zero rather than as "no override", and because "unlimited" is
+  deliberately not expressible here. A zero retention would be the worse of the
+  two: it is the one value that could ever be read as "delete everything".
 - **`trial_ends_at`** — set only by `extend-trial`. NULL means the trial window
   is derived from `orgs.create_time`, which is the ordinary case for every org.
 - **`note`** — the operator's record of why ("annual wire, INV-123"). Never
@@ -271,6 +299,7 @@ create table billing_entitlement_history (
   -- answer to a question after the org is gone.
   org_id char(20) not null,
   plan_slug varchar(50),
+  retention_days_override bigint,
   trial_ends_at timestamptz
 );
 
@@ -478,11 +507,11 @@ it.
 `proto/dashboard/billing/v1/billing.proto` — `BillingService`, JWT boundary.
 `org_id` is on the request so `authzspec.OrgFromMessage` resolves the org
 through the generated `GetOrgId()`. This section describes the entitlement-only
-slice; payments added four more RPCs, see payments.md §14.
+slice; payments added four more RPCs, see payments.md §12.
 
 | RPC | Spec | Returns |
 |---|---|---|
-| `GetBillingStatus` | `OrgGated(ResourceBilling, ActionRead)` | `billing_enabled`, plan (slug, display name, price cents, currency), derived status, `included_events`, `trial_ends_at`, `contract_ends_at`, `period_start`, `period_end` |
+| `GetBillingStatus` | `OrgGated(ResourceBilling, ActionRead)` | `billing_enabled`, plan (slug, display name, price cents, currency), derived status, `included_events`, `retention_days`, `trial_ends_at`, `contract_ends_at`, `period_start`, `period_end` |
 
 The plan fields are the **resolved** ones — overrides already applied (§4.1), so
 a client never reconstructs a deal from a base plan plus patches. `note` and the
@@ -507,15 +536,20 @@ from the pair rather than assuming two decimal places (§4).
   free and trial floors.
   A client consuming these from `../app` must check presence rather than
   truthiness — `0` is a real value for both.
+- **`retention_days` is absent-able on the same terms**, and is the same
+  `Int64Value` wrapper for the same reason — absent is *no bound*, and "0 days of
+  history" is the one thing it must never say. It states what the plan promises,
+  not what has been deleted: nothing prunes on it (§13), so a client must not
+  render it as "data older than this is gone".
 - **No `ListPlans`** in this slice — a price list whose buy button does not exist
   yet is a dialog that can only disappoint. It arrived with checkout; see
-  payments.md §14.
+  payments.md §12.
 - **Read-only, so read-only permissions.** `authz.ResourceBilling` is added to
   the const block **and** `allResources` (`policy_test.go` fails a
   declared-but-ungranted resource), with `grant(roleViewer, ResourceBilling,
   ActionRead)` putting it on the viewer floor for member and admin to inherit.
   In this slice no create/update/delete action is granted, because no RPC
-  performs one; payments adds `ActionCreate` for admins (payments.md §14).
+  performs one; payments adds `ActionCreate` for admins (payments.md §12).
 
 All three wiring points are enforced at build or startup: the entry in
 `authz_served.go` and the procedure entry in `authz_registry.go` fail a contract
@@ -528,6 +562,7 @@ mounted.
 ```shell
 pug billing show <org-id> [--history]
 pug billing set  <org-id> --plan <slug> --actor <who> [--events N]
+                          [--retention-days N]
                           [--name "Acme Enterprise"] [--anchor-day 17]
                           [--until 2027-01-01] [--note "$400/mo, INV-123"]
                           [--provider-product prod_2f9k...]
@@ -560,9 +595,9 @@ Three boundary rules the flags do not spell out:
 A negotiated deal (§4.1) is one `set`:
 
 ```shell
-pug billing set o_2f9k --plan custom --events 5000000 --name "Acme Enterprise" \
-                       --actor "praveen/INV-123" --until 2027-01-01 \
-                       --note "$400/mo, INV-123"
+pug billing set o_2f9k --plan custom --events 5000000 --retention-days 2555 \
+                       --name "Acme Enterprise" --actor "praveen/INV-123" \
+                       --until 2027-01-01 --note "$400/mo, INV-123"
 ```
 
 There is no `--price`: what the deal is charged lives in the payments provider
@@ -639,6 +674,10 @@ table is a plain unit test.
   patches only its own field and a catalog reprice leaves a deal untouched; an
   unknown slug resolves to no quota; billing disabled resolves to no quota
   regardless of the row.
+- **Retention** — each tier resolves its own ladder value; a negotiated
+  `retention_days_override` wins and lapses with its contract; an unknown slug
+  and a disabled deployment both report *no bound* rather than the floor's year,
+  which is the same fail-open direction the quota takes.
 - **The floor-plan corners**, which is where a comped deal lives and where three
   bugs hid: a row's existence does not end a derived trial; a floor plan's
   overrides survive the trial promotion that renames the resolved slug to
@@ -670,7 +709,7 @@ table is a plain unit test.
   survives its org being deleted. The last of those is the one a foreign key
   would quietly break, so it is a test rather than a comment.
 - **Catalog immutability** (§4.2) — a golden test pins every tier's
-  `PriceCents`, `Currency` and `IncludedEvents`, so editing a live tier fails CI
+  `PriceCents`, `Currency`, `IncludedEvents` and `RetentionDays`, so editing a live tier fails CI
   and the fix is to mint a new slug. This is the only guard that exists against
   a one-line quota cut, since nothing else in the system can tell an intended
   reprice from a typo.
@@ -717,7 +756,16 @@ rewrites what this one stores.
    - **Annual terms.** Standard, and it interacts with §6.1: an annual contract
      renews yearly while the quota window stays monthly, so `contract_ends_at`
      and the anchor do different jobs and both are needed.
-3. **Payment ledger**: invoices, recorded manual payments, refunds and
+3. **Retention enforcement** — the prune that makes §4's number more than a
+   promise. It is deliberately its own slice because it is the first thing in
+   this subsystem that would *destroy* customer data, and three things have to be
+   decided in it rather than discovered after: what a downgrade or a lapse does
+   to history already stored (proposed: a grace period and a notice, never an
+   immediate delete — §12), whether the bound is a ClickHouse TTL or a job that
+   can be halted, and what stops a resolution bug from deleting on a wrong
+   number. Until it exists pug keeps everything, which over-delivers on every
+   tier.
+4. **Payment ledger**: invoices, recorded manual payments, refunds and
    chargebacks, on a separate admin-only resource — amounts and invoice
    references do not belong on the viewer floor the quota banner sits on. A
    refund is a ledger row; what a *chargeback* does to entitlement is a policy
@@ -752,6 +800,15 @@ so its schema is not the target.
   to the provider's charge day rather than the reverse, the org's current window
   is cut short once, and that month's number will look small next to its
   neighbours.
+- **A lapse or a downgrade shortens retention retroactively.** A 10-year deal
+  that ends resolves to the free floor's 365 days the same instant its quota
+  drops, so the *stated* bound moves across years of already-stored history at
+  once. Harmless while nothing prunes; it is the specific reason enforcement
+  (§11.3) needs a grace period rather than a nightly delete.
+- **A retention "year" is 365 days flat**, so a 7-year term is ~1.7 days short of
+  seven calendar years. Deliberate: the alternative is calendar arithmetic whose
+  normalisation moves the boundary the wrong way, and the error is invisible next
+  to a bound nothing enforces.
 - Counting's own imprecisions — staleness, day-boundary rounding — belong to
   [`usage.md`](usage.md).
 
@@ -768,6 +825,13 @@ vector, not a billing gap — the fix belongs with the meter, which already swee
 every project on a schedule, and is noted in [`usage.md`](usage.md). It does not
 need a quota to be useful: "any org over N events/day" catches the same traffic
 and works for custom deals too.
+
+**Nothing enforces retention.** The tier's `RetentionDays` is a plan term with no
+prune behind it: no ClickHouse TTL, no delete job, no query clamp, and no path
+that reads the number for anything but rendering it. Invariant 1 keeps billing
+out of *ingestion*; deletion is the larger promise, so it is §11.3's own slice
+rather than a switch flipped here. The consequence is stated plainly: a customer
+on a 1-year tier can still query year-old data, and pug pays to store it.
 
 **Overage charges.** Tiers are flat. Sending more than the quota costs the
 customer nothing, by decision — metered overage would need usage pushed to the

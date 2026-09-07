@@ -10,6 +10,7 @@ select
   e.note,
   e.plan_slug,
   e.provider_product_id,
+  e.retention_days_override,
   e.trial_ends_at
 from orgs o
 left join billing_entitlements e on e.org_id = o.id

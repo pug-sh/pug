@@ -47,9 +47,10 @@ type Record struct {
 	ProviderProductID string
 	TrialEndsAt       time.Time
 
-	// 0 means no override: the column is checked > 0, so zero cannot be a stored
-	// quota and needs no pointer to stay distinguishable.
+	// 0 means no override: both columns are checked > 0, so zero cannot be a
+	// stored value and neither needs a pointer to stay distinguishable.
 	IncludedEventsOverride int64
+	RetentionDaysOverride  int64
 }
 
 // Entitlement is the resolved answer: the plan as this org actually holds it,
@@ -68,6 +69,11 @@ type Entitlement struct {
 	// nil means NO QUOTA: billing is switched off, or the row names a plan the
 	// catalog no longer knows. Never render it as zero.
 	IncludedEvents *int64
+	// How far back this org's history stays queryable. nil means NO BOUND, which
+	// is billing switched off, an unresolvable plan, or a deal that named none.
+	// Never render it as zero: nothing deletes on this yet, and the day something
+	// does, "0 days of history" is the one answer it must never be handed.
+	RetentionDays *int64
 
 	TrialEndsAt    time.Time
 	ContractEndsAt time.Time
@@ -121,7 +127,8 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 		free := mustPlan(SlugFree)
 		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
 		// The free tier's price of 0, not nil: absent means a tier with no list
-		// price, which a client would read as a negotiated deal.
+		// price, which a client would read as a negotiated deal. Retention is left
+		// absent on purpose, like the quota: a self-hosted install bounds neither.
 		ent.PriceCents = free.PriceCents
 		ent.Status = StatusFree
 		return ent
@@ -137,6 +144,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	ent.Status = status
 	ent.Slug, ent.DisplayName, ent.Currency = plan.Slug, plan.DisplayName, plan.Currency
 	ent.PriceCents, ent.IncludedEvents = plan.PriceCents, plan.IncludedEvents
+	ent.RetentionDays = plan.RetentionDays
 	// Both dates stay once they are past, where they answer "when did this lapse"
 	// rather than "when will it".
 	ent.TrialEndsAt = trialEnd(orgCreateTime, rec)
@@ -153,6 +161,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 		free := mustPlan(SlugFree)
 		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
 		ent.PriceCents, ent.IncludedEvents = free.PriceCents, free.IncludedEvents
+		ent.RetentionDays = free.RetentionDays
 		ent.Status = StatusFree
 	}
 	return ent
@@ -240,6 +249,10 @@ func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Ti
 	if rec.IncludedEventsOverride > 0 {
 		v := rec.IncludedEventsOverride
 		ent.IncludedEvents = &v
+	}
+	if rec.RetentionDaysOverride > 0 {
+		v := rec.RetentionDaysOverride
+		ent.RetentionDays = &v
 	}
 	if rec.DisplayNameOverride != "" {
 		ent.DisplayName = rec.DisplayNameOverride

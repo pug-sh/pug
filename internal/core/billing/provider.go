@@ -130,6 +130,11 @@ const (
 // customer's product over an expired card is worse for both sides than a few
 // unbilled days, and the delivery that normalizes to cancelled is what finally
 // drops the org to the floor.
+// The same set is hardcoded in three SQL sites -- GetLiveBillingSubscription,
+// ListPaidEntitlementsWithoutLiveSubscription's join, and the
+// billing_subscriptions_one_live_idx predicate. Nothing links them to this
+// switch, so TestTheLiveStatusSetAgreesBetweenGoAndSQL walks the whole
+// vocabulary through the real query; adding a member here means editing all four.
 func (s SubStatus) Live() bool {
 	switch s {
 	case SubStatusActive, SubStatusPastDue:

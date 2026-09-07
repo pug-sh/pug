@@ -38,6 +38,10 @@ var (
 	ErrTimestamp      = errors.New("dodo: webhook timestamp is malformed or outside the tolerance window")
 	ErrSignature      = errors.New("dodo: webhook signature does not verify")
 	ErrEmptySecret    = errors.New("dodo: webhook signing secret is empty")
+	// ErrMalformedSecret is a prefixed secret whose body is not base64. Named apart
+	// from ErrEmptySecret so a mistyped key does not read to an operator as an
+	// unset one, which is a different fix on the money path.
+	ErrMalformedSecret = errors.New("dodo: webhook signing secret after whsec_ is not valid base64")
 )
 
 type verifier struct {
@@ -60,7 +64,7 @@ func newVerifier(secret string) (*verifier, error) {
 	if prefixed {
 		decoded, err := base64.StdEncoding.DecodeString(raw)
 		if err != nil || len(decoded) == 0 {
-			return nil, ErrEmptySecret
+			return nil, ErrMalformedSecret
 		}
 		key = decoded
 	}

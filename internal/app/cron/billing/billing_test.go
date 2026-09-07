@@ -269,10 +269,21 @@ func TestNewPayments(t *testing.T) {
 		}
 	})
 
-	// Credentials absent is the same supported shape as no provider at all.
-	t.Run("no api key", func(t *testing.T) {
+	// A named provider with no key is a misconfigured CronJob, not the self-hosted
+	// shape. Without this the pass reconciles nothing and still exits 0, so the
+	// backstop for a webhook that never arrived reads as healthy forever.
+	t.Run("a named provider with no api key fails", func(t *testing.T) {
 		t.Setenv("PUG_DODO_API_KEY", "")
 		p, err := newPayments(t.Context(), dodo.Name)
+		if err == nil || p != nil {
+			t.Fatalf("newPayments = (%v, %v), want an error", p, err)
+		}
+	})
+
+	// The self-hosted shape names no provider at all, and that one still passes.
+	t.Run("no provider is not an error", func(t *testing.T) {
+		t.Setenv("PUG_DODO_API_KEY", "")
+		p, err := newPayments(t.Context(), "")
 		if err != nil || p != nil {
 			t.Fatalf("newPayments = (%v, %v), want (nil, nil)", p, err)
 		}

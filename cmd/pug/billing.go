@@ -43,8 +43,8 @@ func newBillingCmd() *cobra.Command {
 		Short: "Grant a plan, merging the flags given over whatever is stored",
 		Long: "Grants a plan. Omitting an override flag leaves the stored value alone —\n" +
 			"the common re-set is a renewal on terms that have not changed — and\n" +
-			"passing its empty value (--events 0, --name \"\", --anchor-day 0,\n" +
-			"--until \"\") clears it back to the plan's.\n\n" +
+			"passing its empty value (--events 0, --retention-days 0, --name \"\",\n" +
+			"--anchor-day 0, --until \"\") clears it back to the plan's.\n\n" +
 			"--until is INCLUSIVE of the date given: --until 2026-12-31 runs the plan\n" +
 			"through all of 31 December, and `show` prints the stored instant, which is\n" +
 			"therefore the 1st.",
@@ -67,6 +67,7 @@ func newBillingCmd() *cobra.Command {
 	setCmd.Flags().String("plan", "", "catalog slug to grant")
 	setCmd.Flags().String("actor", "", "who is making this change, recorded in the history (e.g. \"praveen/INV-123\")")
 	setCmd.Flags().Int64("events", 0, "negotiated monthly event quota; 0 clears the override")
+	setCmd.Flags().Int64("retention-days", 0, "negotiated days of event history kept; 0 clears the override")
 	setCmd.Flags().String("name", "", "display name shown to the org; empty clears the override")
 	setCmd.Flags().Int("anchor-day", 0, "day of month the usage period turns over (1-31); 0 clears the override")
 	setCmd.Flags().String("until", "", "last day the deal runs, YYYY-MM-DD and inclusive; empty clears it")
@@ -125,6 +126,13 @@ func billingChange(cmd *cobra.Command) (corebilling.Change, error) {
 			return corebilling.Change{}, errors.New("--events cannot be negative; pass 0 to clear the override")
 		}
 		change.IncludedEvents = &v
+	}
+	if flags.Changed("retention-days") {
+		v, _ := flags.GetInt64("retention-days")
+		if v < 0 {
+			return corebilling.Change{}, errors.New("--retention-days cannot be negative; pass 0 to clear the override")
+		}
+		change.RetentionDays = &v
 	}
 	if flags.Changed("name") {
 		v, _ := flags.GetString("name")

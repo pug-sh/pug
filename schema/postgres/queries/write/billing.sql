@@ -12,10 +12,12 @@ select * from billing_entitlements where org_id = @org_id for update;
 -- the locked row.
 insert into billing_entitlements (
   anchor_day, contract_ends_at, display_name_override,
-  included_events_override, note, org_id, plan_slug, provider_product_id, trial_ends_at
+  included_events_override, note, org_id, plan_slug, provider_product_id,
+  retention_days_override, trial_ends_at
 ) values (
   @anchor_day, @contract_ends_at, @display_name_override,
-  @included_events_override, @note, @org_id, @plan_slug, @provider_product_id, @trial_ends_at
+  @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
+  @retention_days_override, @trial_ends_at
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
@@ -25,6 +27,7 @@ set anchor_day = excluded.anchor_day,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
     provider_product_id = excluded.provider_product_id,
+    retention_days_override = excluded.retention_days_override,
     trial_ends_at = excluded.trial_ends_at
 returning *;
 
@@ -34,10 +37,12 @@ delete from billing_entitlements where org_id = @org_id;
 -- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
   actor, anchor_day, contract_ends_at, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, provider_product_id, trial_ends_at
+  id, included_events_override, note, org_id, plan_slug, provider_product_id,
+  retention_days_override, trial_ends_at
 ) values (
   @actor, @anchor_day, @contract_ends_at, @display_name_override,
-  @id, @included_events_override, @note, @org_id, @plan_slug, @provider_product_id, @trial_ends_at
+  @id, @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
+  @retention_days_override, @trial_ends_at
 );
 
 -- name: InsertBillingWebhookDelivery :one
@@ -89,7 +94,14 @@ set currency = excluded.currency,
     provider_status = excluded.provider_status,
     provider_updated_at = excluded.provider_updated_at,
     status = excluded.status
-where billing_subscriptions.provider_updated_at <= excluded.provider_updated_at;
+-- A tie is not hypothetical: a webhook's stamp is the signed webhook-timestamp
+-- header, which is whole seconds, so a cutover's cancellation and activation can
+-- carry the same one. On a tie the stored row must already be live, so an equal
+-- stamp can end a subscription but never revive one -- failing toward withholding
+-- a plan rather than granting one nobody is paying for.
+where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
+   or (billing_subscriptions.provider_updated_at = excluded.provider_updated_at
+       and billing_subscriptions.status in ('active', 'past_due'));
 
 -- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
 -- Attribution fallback when a delivery carries no org_id metadata. Two rows is

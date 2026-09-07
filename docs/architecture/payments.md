@@ -160,6 +160,7 @@ comes back every time somebody wants a price on a page.
 | Question | Answer | Source |
 |---|---|---|
 | What may this org send? | `included_events` | pug — catalog, or the org's override |
+| How long is its history kept? | `retention_days` | pug — catalog, or the org's override |
 | What does this org pay? | the amount | Dodo — the subscription, mirrored read-only |
 | What is the list price of a tier? | `price_cents` | pug — the Go catalog, a marketing number |
 
@@ -196,7 +197,8 @@ The split for `custom`:
   the customer holds against it. Created **by hand in Dodo's dashboard**, not by
   pug (§5.1).
 - **In pug:** `plan_slug = 'custom'` with `included_events_override` — the quota
-  Dodo has no concept of — plus that product's id
+  Dodo has no concept of — and `retention_days_override` when the deal names a
+  retention, plus that product's id
   (`provider_product_id`, §5.2), `contract_ends_at` and `--note`.
 - **The join:** the subscription row the webhook writes, attributed by the
   `metadata.org_id` pug sets on the checkout session it opens.
@@ -473,9 +475,10 @@ simply makes the CAS a no-op, so the inbox shape survives a swap unchanged:
 | Guarantee | Consequence |
 |---|---|
 | 8 retries, exponential backoff, 15s timeout | Persist to the inbox and apply inline; return 2xx only once the row is durable. |
-| **No ordering guarantee**; each delivery carries the *latest* payload | CAS on `provider_updated_at` = the `webhook-timestamp` header — apply only when `>=` the stored value. Delivery time bounds payload freshness precisely *because* every delivery carries the latest object, and it is uniform across event types, which no payload field is. |
+| **No ordering guarantee**; each delivery carries the *latest* payload | CAS on `provider_updated_at` = the `webhook-timestamp` header — apply only when strictly newer than the stored value, **or** equal while the stored row is still live. Delivery time bounds payload freshness precisely *because* every delivery carries the latest object, and it is uniform across event types, which no payload field is. The header is whole seconds, so a cutover's cancellation and activation can tie; the tie-break resolves toward withholding, so an equal stamp can end a subscription but never revive one. |
 | Retries reuse `webhook-id` | On primary-key conflict, **re-apply when `processed_at is null`**. A bare conflict→200 would neutralize Dodo's retry of a delivery that died mid-apply. |
 | New event types appear over time | Unknown types are stored, marked processed, ignored. A type we do not handle must never 500 and never retry forever. |
+| The payload's **shape** changes under us | A body `Normalize` cannot decode is the one unapplicable-looking case that IS retried: a redeploy inside the retry window fixes it, and marking it processed would consume the delivery *and* let the 90-day prune drop the payload, losing the replay too. |
 
 Handled: `subscription.active`, `.updated`, `.renewed`, `.on_hold`, `.failed`,
 `.cancelled`, `.expired`, `.plan_changed`. Every `subscription.*` runs one apply
@@ -484,13 +487,15 @@ the name only selects side effects. That is also what makes the apply path
 portable: event-type vocabularies differ sharply between providers, subscription
 *states* barely do, so `Normalize` maps names to nothing and status to
 everything. `payment.*` and `refund.*` are stored and
-ignored in this slice; the ledger is the third slice
-([`billing.md`](billing.md) §11.3).
+ignored in this slice; the ledger is a later one
+([`billing.md`](billing.md) §11.4).
 
 Attribution is `metadata.org_id`, set on every checkout and every custom product
 link, falling back to `provider_customer_id` — and that fallback only while the
-customer names a single org. One buyer paying for two orgs shares a provider
-customer, and nothing on the delivery tells those apart. A delivery that resolves
+customer names a single org. Checkout sets `always_create_new_customer`, so one
+buyer paying for two orgs gets two provider customers rather than one shared
+between them; without that flag Dodo matches on email and the fallback would
+resolve to two orgs, and the portal would open on whichever it found. A delivery that resolves
 to no org, or to two, is stored, marked processed, and logged — never applied to
 a guess.
 
@@ -519,15 +524,26 @@ runs per provider — a row names the provider it belongs to (§6), so an org wi
 a winding-down subscription and a live new one is reconciled against the right
 API for each. Then the consistency reports, which are the point of invariant 3:
 
-- A subscription the provider says is live that pug has no row for.
+- A subscription pug stores that the provider no longer knows — a 404 on the
+  re-read, or a row left behind by an environment switch. A finding, deliberately
+  not a read failure: counting it as one would hold the CronJob red on every
+  later run over a row that is never coming back.
 - An entitlement granting a paid or `custom` plan with no live subscription
-  behind it — including the §5.2 case of a paid custom deal with no quota.
+  behind it. An org with **no** entitlement row is invisible here, since the query
+  reads `billing_entitlements`; the §5.2 case of a paid custom deal with no quota
+  row surfaces as the unmappable-product finding below instead.
 - A live subscription against a product no config key and no org row maps to
   (§8), which is a delivery that could not be applied.
+- Two live subscriptions for one org, refused by the partial unique index. The
+  one finding here that means an org may be paying twice.
 
 All are logged and counted, not auto-fixed. An automatic repair here would be
 writing to the money side of the system from a guess. A pass that could not read
-the provider exits non-zero; the rest are findings for a person.
+the provider — or could not read or write Postgres either side of it — exits
+non-zero; the rest are findings for a person. So does a pass that names a
+provider with no API key configured: reconciling nothing and exiting 0 is
+indistinguishable from a healthy run, and this is the backstop for a webhook that
+never arrived.
 
 ## 10. Deleting an org must cancel first
 
@@ -597,13 +613,20 @@ deployment whose webhook URL is not reachable (self-hosted behind NAT, or a
 laptop) a purchase could never complete: the poll ran its ~17.5s and told a
 paying customer their payment was "still confirming", forever.
 
-Four rules make it safe:
+Five rules make it safe:
 
 - **`session_id` is a claim, not evidence.** The subscription it resolves to must
   carry the `metadata.org_id` pug wrote at checkout, and it must equal the
   caller's org — `PermissionDenied` otherwise. There is deliberately **no
   fallback to attribution by customer id** here, unlike §8's webhook path: nobody
-  chose which delivery arrived, but the caller chose this id.
+  chose which delivery arrived, but the caller chose this id. Being caller-chosen
+  is also why the field is `pattern`-constrained to the provider's own id
+  alphabet: it is echoed into the provider's URL path, where a `../` would address
+  a different endpoint with pug's API key.
+- **A session the provider does not have is a dead checkout, not a fault.** An
+  unknown or aged-out id comes back as `ErrCheckoutFailed`, so a bookmarked or
+  probed `session_id` tells the buyer their checkout did not complete instead of
+  polling a 500 forever and recording an exception on the money path each time.
 - **`confirmed` is read from the provider's state, not from whether the write
   landed.** The CAS also skips the write when a delivery already stored something
   newer, and reporting that as "not confirmed" would push a buyer who already

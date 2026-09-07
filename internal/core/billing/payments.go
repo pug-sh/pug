@@ -196,6 +196,9 @@ type PlanOption struct {
 	// nil means no quota of its own: the custom tier again, whose quota comes from
 	// the org's row.
 	IncludedEvents *int64
+	// How far back the tier keeps history. nil is the custom tier, whose retention
+	// is whatever its deal recorded -- never a zero.
+	RetentionDays *int64
 
 	Purchasable bool
 }
@@ -230,6 +233,7 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 			IncludedEvents: plan.IncludedEvents,
 			PriceCents:     plan.PriceCents,
 			Purchasable:    s.billingEnabled && err == nil,
+			RetentionDays:  plan.RetentionDays,
 			Slug:           plan.Slug,
 		})
 	}
@@ -246,6 +250,11 @@ var ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to
 // it a decline is indistinguishable from a slow payment and the buyer is told to
 // keep waiting for money that will never arrive.
 var ErrCheckoutFailed = errors.New("billing: this checkout did not complete")
+
+// ErrSubscriptionNotFound is a subscription the provider no longer knows. A
+// finding for the reconcile pass rather than a read failure: retrying it every
+// run would hold the CronJob red forever over a row that is never coming back.
+var ErrSubscriptionNotFound = errors.New("billing: the provider does not know this subscription")
 
 // ConfirmCheckout verifies one checkout against the provider and writes its
 // subscription through the same CAS the webhook uses. Both stamp the same

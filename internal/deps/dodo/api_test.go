@@ -27,8 +27,6 @@ func apiClient(t *testing.T, h http.Handler) *Client {
 			option.WithBearerToken("sk_test"),
 			option.WithMaxRetries(0),
 		),
-		products:    map[string]string{"growth": "prod_growth"},
-		slugByProdM: map[string]string{"prod_growth": "growth"},
 	}
 }
 
@@ -52,6 +50,14 @@ const subscriptionJSONBody = `{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
 	`"currency":"USD","recurring_pre_tax_amount":2000,` +
 	`"customer":{"customer_id":"cus_1"},"metadata":{"org_id":"org_abc"},` +
+	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}`
+
+// The same subscription with no metadata, for the case where Dodo does not carry
+// a checkout's metadata onto the subscription object.
+const subscriptionWithoutMetadataJSONBody = `{` +
+	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
+	`"currency":"USD","recurring_pre_tax_amount":2000,` +
+	`"customer":{"customer_id":"cus_1"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}`
 
 func TestCreateCheckoutSession(t *testing.T) {
@@ -282,9 +288,13 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 	})
 
 	t.Run("a provider error surfaces", func(t *testing.T) {
+		payment500 := http.NewServeMux()
+		payment500.Handle("/checkouts/cs_1", jsonHandler(t, http.StatusOK,
+			`{"id":"cs_1","created_at":"2026-06-01T00:00:00Z","payment_id":"pay_1"}`, nil))
+		payment500.Handle("/payments/pay_1", jsonHandler(t, http.StatusInternalServerError, `{}`, nil))
 		for name, h := range map[string]http.Handler{
 			"session read": jsonHandler(t, http.StatusInternalServerError, `{}`, nil),
-			"payment read": mux(`{"id":"cs_1","created_at":"2026-06-01T00:00:00Z","payment_id":"pay_missing"}`, ""),
+			"payment read": payment500,
 		} {
 			t.Run(name, func(t *testing.T) {
 				c := apiClient(t, h)
@@ -293,6 +303,60 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 					t.Fatalf("err = %v, want a transport error", err)
 				}
 			})
+		}
+	})
+
+	// pug writes org_id on the checkout, which Dodo documents as the PAYMENT's
+	// metadata, and reads it off the subscription. If it does not propagate, every
+	// confirmation would fail as "not for this org".
+	t.Run("attribution falls back to the payment's metadata", func(t *testing.T) {
+		m := http.NewServeMux()
+		m.Handle("/checkouts/cs_1", jsonHandler(t, http.StatusOK,
+			`{"id":"cs_1","created_at":"2026-06-01T00:00:00Z","payment_id":"pay_1","payment_status":"succeeded"}`, nil))
+		m.Handle("/payments/pay_1", jsonHandler(t, http.StatusOK,
+			`{"payment_id":"pay_1","status":"succeeded","subscription_id":"sub_1","metadata":{"org_id":"org_abc"}}`, nil))
+		m.Handle("/subscriptions/sub_1", jsonHandler(t, http.StatusOK, subscriptionWithoutMetadataJSONBody, nil))
+
+		got, err := apiClient(t, m).FetchCheckoutOutcome(context.Background(), "cs_1")
+		if err != nil {
+			t.Fatalf("FetchCheckoutOutcome: %v", err)
+		}
+		if got.OrgID != "org_abc" {
+			t.Errorf("org_id = %q, want org_abc from the payment's metadata", got.OrgID)
+		}
+	})
+
+	// A session or payment the provider does not have is one it will never settle.
+	// Reported as a dead checkout, not a fault: as a 500 the buyer would poll a
+	// stale or bookmarked session id forever and every probe would record an
+	// exception on the money path.
+	t.Run("a 404 is a dead checkout, not an outage", func(t *testing.T) {
+		paymentGone := http.NewServeMux()
+		paymentGone.Handle("/checkouts/cs_1", jsonHandler(t, http.StatusOK,
+			`{"id":"cs_1","created_at":"2026-06-01T00:00:00Z","payment_id":"pay_1"}`, nil))
+		paymentGone.Handle("/payments/pay_1", jsonHandler(t, http.StatusNotFound, `{}`, nil))
+		for name, h := range map[string]http.Handler{
+			"unknown session": jsonHandler(t, http.StatusNotFound, `{}`, nil),
+			"unknown payment": paymentGone,
+		} {
+			t.Run(name, func(t *testing.T) {
+				c := apiClient(t, h)
+				_, err := c.FetchCheckoutOutcome(context.Background(), "cs_1")
+				if !errors.Is(err, corebilling.ErrCheckoutFailed) {
+					t.Fatalf("err = %v, want ErrCheckoutFailed", err)
+				}
+			})
+		}
+	})
+
+	// The reconcile pass exits non-zero on an unreadable subscription, so a row the
+	// provider has purged must be a finding rather than a read failure -- otherwise
+	// one such row holds the CronJob red on every later run.
+	t.Run("a purged subscription is not an outage", func(t *testing.T) {
+		c := apiClient(t, jsonHandler(t, http.StatusNotFound, `{}`, nil))
+		_, err := c.FetchSubscription(context.Background(), "sub_gone")
+		if !errors.Is(err, corebilling.ErrSubscriptionNotFound) {
+			t.Fatalf("err = %v, want ErrSubscriptionNotFound", err)
 		}
 	})
 }
@@ -326,15 +390,9 @@ func TestStringMetadata(t *testing.T) {
 	}
 }
 
-func TestNameAndProductForSlug(t *testing.T) {
+func TestName(t *testing.T) {
 	c := apiClient(t, jsonHandler(t, http.StatusOK, `{}`, nil))
 	if c.Name() != Name {
 		t.Errorf("Name = %q, want %q", c.Name(), Name)
-	}
-	if id, ok := c.ProductForSlug("growth"); !ok || id != "prod_growth" {
-		t.Errorf("ProductForSlug(growth) = (%q, %v)", id, ok)
-	}
-	if _, ok := c.ProductForSlug("free"); ok {
-		t.Error("a tier with no product id was reported as purchasable")
 	}
 }

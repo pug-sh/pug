@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -13,18 +14,14 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
-// A checkout is started from a dashboard request and reconcile runs on a tick
-// with no deadline of its own, so without this a stalled connection stalls both.
+// One stalled connection must not eat a dashboard request's budget, nor the
+// reconcile pass's 30m -- which one hung read could otherwise spend entirely.
 const requestTimeout = 10 * time.Second
 
 // Client implements billing.PaymentProvider against Dodo Payments.
 type Client struct {
-	api *dodopayments.Client
-	// products maps a catalog slug to a Dodo product and back. Both directions are
-	// served from this one map so checkout and the webhook cannot disagree.
-	products    map[string]string
-	slugByProdM map[string]string
-	verifier    *verifier
+	api      *dodopayments.Client
+	verifier *verifier
 }
 
 var _ corebilling.PaymentProvider = (*Client)(nil)
@@ -36,8 +33,9 @@ var ErrNotConfigured = errors.New("dodo: no API key configured")
 // comped deals all work and only the buy button is missing. That is the
 // self-hosted configuration.
 //
-// The webhook secret is separate: it is what mounts the route, and a deployment
-// may take deliveries without being able to start a checkout.
+// The webhook secret is separate, and needed on top of a key rather than instead
+// of one: it is what mounts the route, so a deployment with a secret and no key
+// gets no client and therefore no route.
 func New(cfg Config, products map[string]string) (*Client, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return nil, nil
@@ -59,14 +57,7 @@ func New(cfg Config, products map[string]string) (*Client, error) {
 			cfg.Environment, EnvironmentTest, EnvironmentLive)
 	}
 
-	c := &Client{
-		api:         dodopayments.NewClient(opts...),
-		products:    products,
-		slugByProdM: make(map[string]string, len(products)),
-	}
-	for slug, productID := range products {
-		c.slugByProdM[productID] = slug
-	}
+	c := &Client{api: dodopayments.NewClient(opts...)}
 	if secret := strings.TrimSpace(cfg.WebhookSecret); secret != "" {
 		v, err := newVerifier(secret)
 		if err != nil {
@@ -78,13 +69,6 @@ func New(cfg Config, products map[string]string) (*Client, error) {
 }
 
 func (c *Client) Name() string { return Name }
-
-// ProductForSlug reports the product a catalog tier is bought against. Not on the
-// PaymentProvider interface: nothing above the seam sees a product id.
-func (c *Client) ProductForSlug(slug string) (string, bool) {
-	id, ok := c.products[slug]
-	return id, ok
-}
 
 // CanVerify reports whether a webhook secret was configured, which is what
 // decides that the route mounts at all.
@@ -109,7 +93,11 @@ func (c *Client) CreateCheckoutSession(
 	}
 	// A new customer per checkout, never a lookup by email: one person can admin
 	// two orgs, and a customer shared between them would let attribution -- which
-	// falls back to the customer id -- land a delivery on the wrong tenant.
+	// falls back to the customer id -- land a delivery on the wrong tenant. The
+	// flag is what forces it; Dodo's default is to match an existing email.
+	req.FeatureFlags = dodopayments.F(dodopayments.CheckoutSessionFlagsParam{
+		AlwaysCreateNewCustomer: dodopayments.F(true),
+	})
 	if in.CustomerEmail != "" {
 		req.Customer = dodopayments.F[dodopayments.CustomerRequestUnionParam](
 			dodopayments.NewCustomerParam{Email: dodopayments.F(in.CustomerEmail)},
@@ -145,6 +133,10 @@ func (c *Client) CreatePortalSession(ctx context.Context, customerID string) (st
 func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (corebilling.SubscriptionEvent, error) {
 	sub, err := c.api.Subscriptions.Get(ctx, providerSubID)
 	if err != nil {
+		if notFound(err) {
+			return corebilling.SubscriptionEvent{}, fmt.Errorf("%w: %s",
+				corebilling.ErrSubscriptionNotFound, providerSubID)
+		}
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get subscription: %w", err)
 	}
 	return c.eventFromSubscription(subscriptionPayload{
@@ -175,6 +167,12 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (corebilling.SubscriptionEvent, error) {
 	session, err := c.api.CheckoutSessions.Get(ctx, sessionID)
 	if err != nil {
+		// A session Dodo has never heard of, or has aged out, is one it will never
+		// settle -- the interface's "given up on", not its "not yet". Reported as a
+		// dead checkout so the buyer is told, rather than polling a 500 forever.
+		if notFound(err) {
+			return corebilling.SubscriptionEvent{}, corebilling.ErrCheckoutFailed
+		}
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get checkout session: %w", err)
 	}
 	if terminalIntent(string(session.PaymentStatus)) {
@@ -185,6 +183,9 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 	}
 	payment, err := c.api.Payments.Get(ctx, session.PaymentID)
 	if err != nil {
+		if notFound(err) {
+			return corebilling.SubscriptionEvent{}, corebilling.ErrCheckoutFailed
+		}
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get checkout payment: %w", err)
 	}
 	if terminalIntent(string(payment.Status)) {
@@ -193,7 +194,18 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 	if payment.SubscriptionID == "" {
 		return corebilling.SubscriptionEvent{}, nil
 	}
-	return c.FetchSubscription(ctx, payment.SubscriptionID)
+	event, err := c.FetchSubscription(ctx, payment.SubscriptionID)
+	if err != nil {
+		return corebilling.SubscriptionEvent{}, err
+	}
+	// Dodo's own docs call a checkout's metadata the PAYMENT's, and pug reads
+	// org_id off the SUBSCRIPTION. Whether it propagates between the two is the
+	// provider's business, so fall back to the payment rather than let confirming a
+	// buyer depend on that answer.
+	if event.OrgID == "" {
+		event.OrgID = stringMetadata(payment.Metadata)[metadataOrgID]
+	}
+	return event, nil
 }
 
 // terminalIntent reports a payment Dodo will not carry further. Deliberately a
@@ -221,4 +233,12 @@ func stringMetadata(in dodopayments.Metadata) map[string]string {
 		}
 	}
 	return out
+}
+
+// notFound separates "the provider does not have this" from "the provider could
+// not be reached". Everything above treats the first as a finding and the second
+// as an outage, and without the status code they are the same error.
+func notFound(err error) bool {
+	var apiErr *dodopayments.Error
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }

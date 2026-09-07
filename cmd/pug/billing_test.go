@@ -38,6 +38,9 @@ func TestBillingChangeOmittedFlagsKeepStoredValues(t *testing.T) {
 	if change.IncludedEvents != nil {
 		t.Fatalf("events = %v, want nil (keep stored)", *change.IncludedEvents)
 	}
+	if change.RetentionDays != nil {
+		t.Fatalf("retention days = %v, want nil (keep stored)", *change.RetentionDays)
+	}
 	if change.DisplayName != nil {
 		t.Fatalf("name = %q, want nil (keep stored)", *change.DisplayName)
 	}
@@ -53,14 +56,17 @@ func TestBillingChangeOmittedFlagsKeepStoredValues(t *testing.T) {
 }
 
 func TestBillingChangeEmptyValuesClear(t *testing.T) {
-	cmd := billingSetCmd(t, "--plan", "free", "--events", "0", "--name", "",
-		"--anchor-day", "0", "--until", "", "--note", "", "--provider-product", "")
+	cmd := billingSetCmd(t, "--plan", "free", "--events", "0", "--retention-days", "0",
+		"--name", "", "--anchor-day", "0", "--until", "", "--note", "", "--provider-product", "")
 	change, err := billingChange(cmd)
 	if err != nil {
 		t.Fatalf("billingChange: %v", err)
 	}
 	if change.IncludedEvents == nil || *change.IncludedEvents != 0 {
 		t.Fatalf("events = %v, want a pointer to 0 (clear)", change.IncludedEvents)
+	}
+	if change.RetentionDays == nil || *change.RetentionDays != 0 {
+		t.Fatalf("retention days = %v, want a pointer to 0 (clear)", change.RetentionDays)
 	}
 	if change.DisplayName == nil || *change.DisplayName != "" {
 		t.Fatalf("name = %v, want a pointer to \"\" (clear)", change.DisplayName)
@@ -99,6 +105,7 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 		want string
 	}{
 		{"negative events", []string{"--plan", "custom", "--events", "-1"}, "--events"},
+		{"negative retention", []string{"--plan", "custom", "--retention-days", "-1"}, "--retention-days"},
 		{"anchor day too high", []string{"--plan", "free", "--anchor-day", "32"}, "--anchor-day"},
 		{"anchor day negative", []string{"--plan", "free", "--anchor-day", "-1"}, "--anchor-day"},
 		{"until is not a date", []string{"--plan", "custom", "--until", "31/12/2026"}, "--until"},

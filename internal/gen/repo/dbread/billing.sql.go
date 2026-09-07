@@ -84,6 +84,7 @@ select
   e.note,
   e.plan_slug,
   e.provider_product_id,
+  e.retention_days_override,
   e.trial_ends_at
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
@@ -99,6 +100,7 @@ type GetOrgEntitlementRow struct {
 	Note                   pgtype.Text
 	PlanSlug               pgtype.Text
 	ProviderProductID      pgtype.Text
+	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -116,13 +118,14 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 		&i.Note,
 		&i.PlanSlug,
 		&i.ProviderProductID,
+		&i.RetentionDaysOverride,
 		&i.TrialEndsAt,
 	)
 	return i, err
 }
 
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, trial_ends_at, provider_product_id from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -153,6 +156,7 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.Note,
 			&i.OrgID,
 			&i.PlanSlug,
+			&i.RetentionDaysOverride,
 			&i.TrialEndsAt,
 			&i.ProviderProductID,
 		); err != nil {
