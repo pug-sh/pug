@@ -294,7 +294,7 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 
 	// The same writer reconcile uses, for the same reason: a direct read has no
 	// delivery stamp, so `now` is what the CAS compares.
-	if _, err := s.applyReconciledSubscription(ctx, provider, orgID, event, rec, now); err != nil {
+	if _, err := s.applySubscription(ctx, provider, orgID, event, now); err != nil {
 		return false, err
 	}
 	// From the PROVIDER's state, not from whether our write landed: the CAS skips

@@ -269,11 +269,13 @@ func (q *Queries) MarkBillingWebhookDeliveryProcessed(ctx context.Context, arg M
 
 const pruneBillingWebhookDeliveries = `-- name: PruneBillingWebhookDeliveries :execrows
 delete from billing_webhook_deliveries
-where processed_at is not null and processed_at < $1
+where coalesce(processed_at, received_at) < $1
 `
 
 // The payload holds personal data only replay needs, so it is kept for a window
-// rather than forever. Unprocessed rows are never pruned.
+// rather than forever. Dated from received_at when a delivery never processed:
+// the provider's retries are spent long before the window closes, so an
+// undecodable body would otherwise keep its payload for good.
 func (q *Queries) PruneBillingWebhookDeliveries(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, pruneBillingWebhookDeliveries, olderThan)
 	if err != nil {

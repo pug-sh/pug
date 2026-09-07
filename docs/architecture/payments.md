@@ -49,9 +49,15 @@ today.
    is the provider's, and pug cannot alter it by writing to Postgres.
 2. **One writer per row.** The operator writes `billing_entitlements`. The
    payments side writes `billing_subscriptions` — the webhook, reconcile and
-   `ConfirmCheckout`, all through the one CAS, so there is no second notion of
-   "newer". Neither side writes the other's table. This is what makes drift
-   structurally impossible rather than a thing to remember (§4).
+   `ConfirmCheckout`, all through the one CAS in `applySubscription`, so there is
+   no second notion of "newer". Neither side writes the other's table. This is
+   what makes drift structurally impossible rather than a thing to remember (§4).
+   The two sides still meet on one org: a custom subscription takes its quota
+   from the entitlement row, so `applySubscription` takes the same
+   `pg_advisory_xact_lock` a `billing clear` does and re-reads that row inside
+   it. Otherwise a clear can commit between the mapping and the write, leaving a
+   live custom subscription against no row — the free floor, and exactly the
+   stranding `Clear`'s own guard refuses to cause.
 3. **Every paid org has a provider subscription**, negotiated deals included.
    There is no manual-payment path, so "entitlement with no live subscription"
    is a reconcilable defect rather than a legitimate state.
@@ -370,7 +376,10 @@ unrecoverable.
 customer's name, email, billing address and any tax id — personal data pug does
 not otherwise store. Replay needs the bytes, so the controls are on the row
 rather than on the fields: no RPC or MCP tool reads this table, and the
-reconcile pass prunes rows **90 days** after `processed_at`. Retention is
+reconcile pass prunes rows **90 days** after `processed_at`, or after
+`received_at` for one that never processed -- the provider's retries are spent
+long before that, so an undecodable body does not keep its payload for good.
+Retention is
 therefore the whole control today: `compliance` erases a data subject, not an
 org, and pug has no org-deletion path at all. An erasure query was written and
 removed — it matched deliveries through `billing_subscriptions`, which cascades
@@ -478,7 +487,7 @@ simply makes the CAS a no-op, so the inbox shape survives a swap unchanged:
 | **No ordering guarantee**; each delivery carries the *latest* payload | CAS on `provider_updated_at` = the `webhook-timestamp` header — apply only when strictly newer than the stored value, **or** equal while the stored row is still live. Delivery time bounds payload freshness precisely *because* every delivery carries the latest object, and it is uniform across event types, which no payload field is. The header is whole seconds, so a cutover's cancellation and activation can tie; the tie-break resolves toward withholding, so an equal stamp can end a subscription but never revive one. |
 | Retries reuse `webhook-id` | On primary-key conflict, **re-apply when `processed_at is null`**. A bare conflict→200 would neutralize Dodo's retry of a delivery that died mid-apply. |
 | New event types appear over time | Unknown types are stored, marked processed, ignored. A type we do not handle must never 500 and never retry forever. |
-| The payload's **shape** changes under us | A body `Normalize` cannot decode is the one unapplicable-looking case that IS retried: a redeploy inside the retry window fixes it, and marking it processed would consume the delivery *and* let the 90-day prune drop the payload, losing the replay too. |
+| The payload's **shape** changes under us | A body `Normalize` cannot decode is the one unapplicable-looking case that IS retried: a redeploy inside the retry window fixes it, and marking it processed would consume the delivery, losing the replay. |
 
 Handled: `subscription.active`, `.updated`, `.renewed`, `.on_hold`, `.failed`,
 `.cancelled`, `.expired`, `.plan_changed`. Every `subscription.*` runs one apply
@@ -536,6 +545,10 @@ API for each. Then the consistency reports, which are the point of invariant 3:
   (§8), which is a delivery that could not be applied.
 - Two live subscriptions for one org, refused by the partial unique index. The
   one finding here that means an org may be paying twice.
+- A live subscription no writer can store: an unsold currency, no status, no
+  customer, a negative price. The writer names it (`ErrSubscriptionUnapplicable`)
+  rather than reporting a skip, or it would be neither an apply nor a finding and
+  the pass would print a sweep it did not make.
 
 All are logged and counted, not auto-fixed. An automatic repair here would be
 writing to the money side of the system from a guess. A pass that could not read
@@ -598,8 +611,8 @@ be carried on. It is a bad authority for the one moment somebody is watching.
 
 `CreateCheckoutSession` therefore also returns the provider's `session_id`, and
 `ConfirmCheckout(org_id, session_id)` re-reads that checkout **straight from the
-provider** and applies it through `applyReconciledSubscription` — the same CAS
-the webhook and reconcile write through, so no third notion of "newer" exists.
+provider** and applies it through `applySubscription` — the same CAS the webhook
+and reconcile write through, so no third notion of "newer" exists.
 For Dodo the walk is session → payment → subscription (`FetchCheckoutOutcome`),
 because the session status carries a payment id but no subscription id, and only
 the subscription object carries the product, price, period and metadata. The last

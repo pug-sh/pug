@@ -16,7 +16,13 @@ import (
 func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
 	// The write pool, like every read on the money path: ConfirmCheckout writes the
 	// row and GetBillingStatus reads it immediately after, which a replica loses.
-	row, err := dbread.New(s.pgW).GetLiveBillingSubscription(ctx, orgID)
+	return readLiveSubscription(ctx, dbread.New(s.pgW), orgID)
+}
+
+// readLiveSubscription is the same read against a caller's handle, so Clear can
+// take it through its own locked tx.
+func readLiveSubscription(ctx context.Context, r *dbread.Queries, orgID string) (*Subscription, error) {
+	row, err := r.GetLiveBillingSubscription(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

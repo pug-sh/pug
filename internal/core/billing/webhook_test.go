@@ -646,3 +646,95 @@ func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
 		t.Errorf("slug = %q, want scale — the cutover completed", ent.Slug)
 	}
 }
+
+// The other half of the Clear guard: a delivery already in flight. The writer
+// takes the entitlement lock before it maps a product, so a clear that commits
+// first is seen by the mapping. Without it the delivery stores a live custom
+// subscription against a row that is gone, which resolves to the free floor --
+// exactly the stranding Clear refuses to cause itself.
+func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	ctx := t.Context()
+
+	productID := "prod_acme"
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:          corebilling.SlugCustom,
+		IncludedEvents:    new(int64(5_000_000)),
+		ProviderProductID: &productID,
+	}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+
+	// Holds the lock and deletes the row without committing, which is the window a
+	// concurrent `billing clear` opens.
+	tx, err := f.pg.PgW.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx,
+		`select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))`, f.orgID); err != nil {
+		t.Fatalf("take the entitlement lock: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `delete from billing_entitlements where org_id = $1`, f.orgID); err != nil {
+		t.Fatalf("delete the entitlement: %v", err)
+	}
+
+	provider.event = subEvent(f.orgID, "sub_1", productID, corebilling.SubStatusActive)
+	var applyErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		applyErr = f.svc.HandleDelivery(ctx, provider, delivery("evt_1", time.Now().UTC()))
+	}()
+
+	waitForEntitlementLockWaiter(t, f, done)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit the clear: %v", err)
+	}
+	<-done
+	if applyErr != nil {
+		t.Fatalf("HandleDelivery: %v", applyErr)
+	}
+
+	var subs int
+	if err := f.pg.PgRO.QueryRow(ctx,
+		`select count(*) from billing_subscriptions where org_id = $1`, f.orgID).Scan(&subs); err != nil {
+		t.Fatalf("count subscriptions: %v", err)
+	}
+	if subs != 0 {
+		t.Errorf("stored %d subscriptions, want 0 — a custom plan with no row behind it resolves free", subs)
+	}
+	if got := storedDelivery(t, f, "evt_1").Error; !strings.HasPrefix(got, "product:") {
+		t.Errorf("delivery error = %q, want a product rejection", got)
+	}
+}
+
+// waitForEntitlementLockWaiter blocks until the delivery is parked on the org's
+// advisory lock, so the test never races the commit that releases it. The package
+// runs its tests serially against one container, so any waiter is this one. A
+// delivery that settled without waiting returns too: that is the unserialized
+// write this test exists to catch, and the assertions name it better than a
+// timeout would.
+func waitForEntitlementLockWaiter(t *testing.T, f *fixture, done <-chan struct{}) {
+	t.Helper()
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		var n int
+		if err := f.pg.PgRO.QueryRow(t.Context(),
+			`select count(*) from pg_locks where locktype = 'advisory' and not granted`).Scan(&n); err != nil {
+			t.Fatalf("read pg_locks: %v", err)
+		}
+		if n > 0 {
+			return
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	t.Fatal("the delivery never blocked on the entitlement lock")
+}

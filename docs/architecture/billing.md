@@ -140,7 +140,7 @@ for lookup.
 ### 4.1 Negotiated deals
 
 A deal we agree with one customer — "Acme, 5M events, $400/mo, annual" — is
-**not** a catalog entry. It is the org's own row, carrying two overrides that
+**not** a catalog entry. It is the org's own row, carrying three overrides that
 layer over whichever plan it names:
 
 | Field | Column | NULL means |
@@ -603,9 +603,10 @@ pug billing set o_2f9k --plan custom --events 5000000 --retention-days 2555 \
 There is no `--price`: what the deal is charged lives in the payments provider
 (§4.1), and `--note` is where an operator writes it down.
 
-`--events`, `--name` and `--anchor-day` write the override columns; omitting one
-on a re-`set` leaves the stored value alone, and passing the empty value
-(`--events 0`, `--name ""`, `--anchor-day 0`) clears it back to the plan's. Leaving them alone is the right
+`--events`, `--retention-days`, `--name` and `--anchor-day` write the override
+columns; omitting one on a re-`set` leaves the stored value alone, and passing
+the empty value (`--events 0`, `--retention-days 0`, `--name ""`,
+`--anchor-day 0`) clears it back to the plan's. Leaving them alone is the right
 default because the common re-`set` is a renewal — a new `--until` on terms that
 have not changed — and a flag that silently reverted a customer's negotiated
 quota to a catalog number would be the most expensive bug this CLI could have.

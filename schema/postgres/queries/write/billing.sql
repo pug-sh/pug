@@ -64,9 +64,11 @@ where provider = @provider and webhook_id = @webhook_id;
 
 -- name: PruneBillingWebhookDeliveries :execrows
 -- The payload holds personal data only replay needs, so it is kept for a window
--- rather than forever. Unprocessed rows are never pruned.
+-- rather than forever. Dated from received_at when a delivery never processed:
+-- the provider's retries are spent long before the window closes, so an
+-- undecodable body would otherwise keep its payload for good.
 delete from billing_webhook_deliveries
-where processed_at is not null and processed_at < @older_than;
+where coalesce(processed_at, received_at) < @older_than;
 
 -- name: ApplyBillingSubscription :execrows
 -- The mirror write: one statement, three callers. CAS on provider_updated_at, when

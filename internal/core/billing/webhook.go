@@ -94,46 +94,15 @@ func (s *Service) applySubscriptionEvent(
 		return s.rejectDelivery(ctx, provider, d, "attribution", err)
 	}
 
-	// The org's own row, for the negotiated-deal product. Read after attribution
-	// because it is the attributed org's row that a custom product must match.
-	rec, err := s.StoredRecord(ctx, orgID)
-	if err != nil {
-		return err
-	}
-	planSlug, err := s.planForProduct(event.ProductID, rec)
+	applied, err := s.applySubscription(ctx, provider, orgID, event, d.DeliveredAt)
 	if err != nil {
 		// A deploy is missing a product key, or an operator created a product without
 		// pasting its id. Neither is fixed by retrying, and reconcile reports it.
-		return s.rejectDelivery(ctx, provider, d, "product", err)
-	}
-
-	applied, err := s.write().ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
-		Currency:           Currency,
-		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
-		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
-		ID:                 xid.New().String(),
-		OrgID:              orgID,
-		PlanSlug:           planSlug,
-		PriceCents:         event.PriceCents,
-		Provider:           provider.Name(),
-		ProviderCustomerID: event.ProviderCustomerID,
-		ProviderStatus:     event.ProviderStatus,
-		ProviderSubID:      event.ProviderSubID,
-		ProviderUpdatedAt:  postgres.NewTimestamptz(d.DeliveredAt),
-		Status:             string(event.Status),
-	})
-	if err != nil {
-		// The partial unique index refusing a second live subscription. Retried: this is
-		// a cutover whose old cancellation has not landed, and the retry then succeeds.
-		if isUniqueViolation(err) {
-			slog.ErrorContext(ctx, "org already holds a live subscription", slogx.Error(err),
-				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-			telemetry.RecordError(ctx, err)
-			return err
+		if errors.Is(err, ErrNotPurchasable) {
+			return s.rejectDelivery(ctx, provider, d, "product", err)
 		}
-		slog.ErrorContext(ctx, "failed to apply a subscription delivery", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-		telemetry.RecordError(ctx, err)
+		// Everything else is retried, ErrTwoLiveSubscriptions included: that one is a
+		// cutover whose old cancellation has not landed, and the retry then succeeds.
 		return err
 	}
 	if applied == 0 {
@@ -236,9 +205,11 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// PruneDeliveries drops processed deliveries older than the retention window --
-// the whole row, dedup key included, so a re-send after this is treated as new.
-// They carry personal data pug does not otherwise store; only replay needs it.
+// PruneDeliveries drops deliveries older than the retention window -- the whole
+// row, dedup key included, so a re-send after this is treated as new. They carry
+// personal data pug does not otherwise store; only replay needs it. One that
+// never processed is dated from its arrival, or a body pug cannot decode would
+// keep its payload forever.
 func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int64, error) {
 	n, err := s.write().PruneBillingWebhookDeliveries(ctx, postgres.NewTimestamptz(olderThan))
 	if err != nil {
@@ -254,24 +225,50 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 // own skip, and on the confirm path that is a buyer who paid and holds nothing.
 var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live subscription")
 
-// applyReconciledSubscription writes a provider read through the same CAS the
-// webhook uses, so the two cannot disagree about what "newer" means. false is the
-// CAS refusing an older read, or a guard below -- neither is actionable.
-func (s *Service) applyReconciledSubscription(
-	ctx context.Context, provider PaymentProvider, orgID string,
-	event SubscriptionEvent, rec Record, at time.Time,
-) (bool, error) {
-	// The webhook path's guards, repeated because this writer is reachable without
-	// them: each would otherwise fail a column check as a raw SQLSTATE.
+// ErrSubscriptionUnapplicable is a provider state no writer can store: an unsold
+// currency, no status, no customer, or a negative price. Returned rather than
+// reported as a skip, or a pass counts neither an apply nor a finding.
+var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be applied")
+
+// applySubscription is the one writer behind all three paths -- webhook,
+// reconcile and confirm -- so they cannot disagree about what "newer" means. It
+// runs under the entitlement lock and re-reads the org's row inside it: a
+// `billing clear` between the mapping and the write would otherwise strand a
+// live custom subscription on the free floor, which is what Clear's own guard
+// exists to prevent. 0 applied is the CAS refusing an older read.
+func (s *Service) applySubscription(
+	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time,
+) (int64, error) {
+	// Mirrors the column checks: unguarded they fail the insert, which retries and
+	// then leaves the delivery stored but never processed.
 	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
 		event.ProviderCustomerID == "" || event.PriceCents < 0 {
-		return false, nil
+		return 0, ErrSubscriptionUnapplicable
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	w := dbwrite.New(tx)
+	if err := w.LockBillingEntitlementOrg(ctx, orgID); err != nil {
+		slog.ErrorContext(ctx, "failed to lock the org for a subscription write", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return 0, err
+	}
+	// The org's own row, for the negotiated-deal product, read under the lock so
+	// the mapping and the write see the same row.
+	rec, err := currentRecord(ctx, w, orgID)
+	if err != nil {
+		return 0, err
 	}
 	planSlug, err := s.planForProduct(event.ProductID, rec)
 	if err != nil {
-		return false, nil
+		return 0, err
 	}
-	applied, err := s.write().ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
+	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
 		Currency:           Currency,
 		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
 		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
@@ -288,15 +285,18 @@ func (s *Service) applyReconciledSubscription(
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
-			slog.ErrorContext(ctx, "found two live subscriptions for one org", slogx.Error(err),
+			slog.ErrorContext(ctx, "org already holds a live subscription", slogx.Error(err),
 				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)
-			return false, ErrTwoLiveSubscriptions
+			return 0, ErrTwoLiveSubscriptions
 		}
-		slog.ErrorContext(ctx, "failed to apply a reconciled subscription", slogx.Error(err),
+		slog.ErrorContext(ctx, "failed to apply a subscription", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 		telemetry.RecordError(ctx, err)
-		return false, err
+		return 0, err
 	}
-	return applied > 0, nil
+	if err := s.commit(ctx, tx, orgID); err != nil {
+		return 0, err
+	}
+	return applied, nil
 }

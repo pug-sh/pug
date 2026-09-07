@@ -99,10 +99,10 @@ create table billing_webhook_deliveries (
   primary key (provider, webhook_id)
 );
 
--- Drives the prune, which is dated from processed_at and skips the unprocessed.
-create index billing_webhook_deliveries_processed_idx
-  on billing_webhook_deliveries (processed_at)
-  where processed_at is not null;
+-- Drives the prune. On the same expression it deletes by, so an unprocessed row
+-- -- dated from received_at -- is covered rather than left to a seq scan.
+create index billing_webhook_deliveries_prune_idx
+  on billing_webhook_deliveries (coalesce(processed_at, received_at));
 
 -- +goose Down
 drop table if exists billing_webhook_deliveries;

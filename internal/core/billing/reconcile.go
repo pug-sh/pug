@@ -39,8 +39,9 @@ type ReconcileReport struct {
 	// Rows the pass could not settle because a read or a write failed. Kept apart so
 	// an outage does not read as clean, and the only counter the CronJob fails on.
 	Unreadable int
-	// A live subscription pug cannot apply: an unsold currency, or no status.
-	// Counted rather than skipped, or the pass reports a sweep it did not make.
+	// A live subscription pug cannot apply: an unsold currency, no status, no
+	// customer, or a negative price. Counted rather than skipped, or the pass
+	// reports a sweep it did not make.
 	Unapplicable int
 	// Two live subscriptions for one org, refused by the partial unique index -- the
 	// one finding that means an org may be paying twice.
@@ -143,8 +144,9 @@ func (s *Service) reconcileOne(
 		return
 	}
 
-	rec, err := s.StoredRecord(ctx, row.OrgID)
-	if err != nil {
+	// Only to tell an org that has vanished from an ordinary read failure: the
+	// writer re-reads the row itself, under the lock it applies in.
+	if _, err := s.StoredRecord(ctx, row.OrgID); err != nil {
 		report.Unreadable++
 		// StoredRecord logs a real read failure; an org that has vanished from under
 		// a live subscription is the one it returns silently.
@@ -154,35 +156,35 @@ func (s *Service) reconcileOne(
 		}
 		return
 	}
-	if cur := normalizeCurrency(event.Currency); cur != Currency || event.Status == "" {
-		report.Unapplicable++
-		slog.ErrorContext(ctx, "live subscription cannot be applied",
-			slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID),
-			slog.String("currency", cur), slog.String("status", string(event.Status)))
-		return
-	}
-	if _, err := s.planForProduct(event.ProductID, rec); err != nil {
-		report.UnmappedProduct++
-		slog.ErrorContext(ctx, "live subscription names a product pug cannot place", slogx.Error(err),
-			slog.String("org_id", row.OrgID), slog.String("product_id", event.ProductID))
-		telemetry.RecordError(ctx, err)
-		return
-	}
-
 	// `now` rather than a delivery timestamp: a read is as fresh as the clock it was
 	// made at, and the CAS then refuses it only if a webhook landed something newer.
-	applied, err := s.applyReconciledSubscription(ctx, provider, row.OrgID, event, rec, now)
+	applied, err := s.applySubscription(ctx, provider, row.OrgID, event, now)
 	if err != nil {
-		// Already logged at the write. Two live subscriptions is an inconsistency rather
-		// than a failed read, but it means an org may be billed twice.
-		if errors.Is(err, ErrTwoLiveSubscriptions) {
+		// Already logged at the write, except the two states the writer names rather
+		// than fails on -- and every one of them has to land on a counter, or the pass
+		// reports a sweep it did not make.
+		switch {
+		case errors.Is(err, ErrTwoLiveSubscriptions):
+			// An inconsistency rather than a failed read, but it means an org may be
+			// billed twice.
 			report.TwoLive++
-		} else {
+		case errors.Is(err, ErrSubscriptionUnapplicable):
+			report.Unapplicable++
+			slog.ErrorContext(ctx, "live subscription cannot be applied", slogx.Error(err),
+				slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID),
+				slog.String("currency", normalizeCurrency(event.Currency)),
+				slog.String("status", string(event.Status)))
+		case errors.Is(err, ErrNotPurchasable):
+			report.UnmappedProduct++
+			slog.ErrorContext(ctx, "live subscription names a product pug cannot place", slogx.Error(err),
+				slog.String("org_id", row.OrgID), slog.String("product_id", event.ProductID))
+			telemetry.RecordError(ctx, err)
+		default:
 			report.Unreadable++
 		}
 		return
 	}
-	if applied {
+	if applied > 0 {
 		report.Applied++
 	}
 }

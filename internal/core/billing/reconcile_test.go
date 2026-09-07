@@ -160,19 +160,23 @@ func TestReconcileWithoutAProviderIsANoop(t *testing.T) {
 }
 
 // Payloads carry personal data pug does not otherwise store, and only replay needs
-// the bytes. Unprocessed rows are never pruned -- those are still worth replaying.
-func TestPruneKeepsUnprocessedDeliveries(t *testing.T) {
+// the bytes. A delivery still inside the window is kept whether it processed or
+// not; one that never processed and is past it goes too, or an undecodable body
+// would hold its payload forever.
+func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	old := time.Now().Add(-corebilling.DeliveryRetention - 24*time.Hour)
+	past := time.Now().Add(-corebilling.DeliveryRetention - 24*time.Hour)
 
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_webhook_deliveries (event_type, payload, processed_at, provider, webhook_id)
-		 values ('subscription.active', '{}'::jsonb, $1, $2, 'evt_old'),
-		        ('subscription.active', '{}'::jsonb, null, $2, 'evt_stuck')`,
-		old, fakeProviderName); err != nil {
+		`insert into billing_webhook_deliveries
+		   (event_type, payload, processed_at, provider, received_at, webhook_id)
+		 values ('subscription.active', '{}'::jsonb, $1, $2, $1, 'evt_old'),
+		        ('subscription.active', '{}'::jsonb, null, $2, $1, 'evt_abandoned'),
+		        ('subscription.active', '{}'::jsonb, null, $2, now(), 'evt_stuck')`,
+		past, fakeProviderName); err != nil {
 		t.Fatalf("seed deliveries: %v", err)
 	}
 
@@ -180,8 +184,8 @@ func TestPruneKeepsUnprocessedDeliveries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PruneDeliveries: %v", err)
 	}
-	if pruned != 1 {
-		t.Errorf("pruned = %d, want 1 — only the processed row is past retention", pruned)
+	if pruned != 2 {
+		t.Errorf("pruned = %d, want 2 — both rows past retention, processed or not", pruned)
 	}
 
 	var remaining string
@@ -191,6 +195,32 @@ func TestPruneKeepsUnprocessedDeliveries(t *testing.T) {
 		t.Fatalf("read remaining: %v", err)
 	}
 	if remaining != "evt_stuck" {
-		t.Errorf("remaining delivery = %q, want evt_stuck", remaining)
+		t.Errorf("remaining delivery = %q, want evt_stuck — a retry can still fix that one", remaining)
+	}
+}
+
+// A provider state no writer can store has to land on a counter: reported as a
+// plain skip it would be neither an apply nor a finding, and the pass would
+// print a sweep it did not make.
+func TestReconcileCountsASubscriptionItCannotStore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	seedLiveSubscription(t, f, "sub00000000000000013", "growth")
+
+	broken := subEvent(f.orgID, "sub00000000000000013", "prod_growth", corebilling.SubStatusActive)
+	broken.ProviderCustomerID = ""
+	svc := f.svcWithProvider(t, &fetchProvider{
+		fakeProvider: fakeProvider{name: fakeProviderName},
+		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000013": broken},
+	})
+
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.Unapplicable != 1 || report.Applied != 0 || report.Unreadable != 0 {
+		t.Errorf("report = %+v, want 1 unapplicable and nothing else", report)
 	}
 }

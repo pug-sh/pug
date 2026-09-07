@@ -291,15 +291,6 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	if strings.TrimSpace(actor) == "" {
 		return ErrActorRequired
 	}
-	// A live custom subscription resolves its quota from the row this deletes, so
-	// clearing it would drop an org that is still being charged to the free floor.
-	sub, err := s.liveSubscription(ctx, orgID)
-	if err != nil {
-		return err
-	}
-	if sub != nil && sub.PlanSlug == SlugCustom {
-		return ErrClearWouldStrandSubscription
-	}
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return err
@@ -315,6 +306,18 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 			slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return err
+	}
+	// A live custom subscription resolves its quota from the row this deletes, so
+	// clearing it would drop an org that is still being charged to the free floor.
+	// Under the lock and through the tx: a subscription writer takes the same lock
+	// before it maps its product, so a delivery in flight either lands first and is
+	// seen here, or waits and then finds the row gone.
+	sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
+	if err != nil {
+		return err
+	}
+	if sub != nil && sub.PlanSlug == SlugCustom {
+		return ErrClearWouldStrandSubscription
 	}
 	n, err := w.DeleteBillingEntitlement(ctx, orgID)
 	if err != nil {
