@@ -148,6 +148,25 @@ func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 	}
 }
 
+// The escape above covers the deal's own subscription. A catalog tier is a
+// different purchase, so a lapsed grant's quota and name must not ride along on
+// it -- the customer would pay Starter's price for the pilot's quota.
+func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
+	rec := corebilling.Record{
+		Present: true, PlanSlug: "custom",
+		IncludedEventsOverride: 5_000_000,
+		DisplayNameOverride:    "Acme Pilot",
+		ContractEndsAt:         later.AddDate(0, 0, -1),
+	}
+	ent := corebilling.Resolve(created, rec, liveSub("starter"), later, true)
+	if got := quota(t, ent); got != 100_000 {
+		t.Errorf("quota = %d, want 100000 — the pilot's grant lapsed", got)
+	}
+	if ent.DisplayName != "Starter" {
+		t.Errorf("display name = %q, want Starter", ent.DisplayName)
+	}
+}
+
 // A slug the catalog no longer knows keeps its own name and no quota. Resolving
 // it to "free, 10,000" would tell a paying customer they are over their limit.
 func TestSubscriptionOnAnUnknownSlugKeepsItsName(t *testing.T) {

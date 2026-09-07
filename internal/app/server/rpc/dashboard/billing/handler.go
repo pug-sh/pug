@@ -260,11 +260,13 @@ func checkoutErr(err error, orgID, planSlug string) error {
 	case errors.Is(err, corebilling.ErrNotPurchasable):
 		return apperr.FailedPrecondition(apperr.ReasonBillingNotPurchasable,
 			"this plan cannot be purchased",
-			apperr.Precondition("BILLING_NOT_PURCHASABLE", planSlug, "no product is configured for this plan"))
+			apperr.Precondition(string(apperr.ReasonBillingNotPurchasable), planSlug,
+				"no product is configured for this plan"))
 	case errors.Is(err, corebilling.ErrNoCustomer):
 		return apperr.FailedPrecondition(apperr.ReasonBillingNoCustomer,
 			"this organization has no billing account yet",
-			apperr.Precondition("BILLING_NO_CUSTOMER", orgID, "the organization has never completed a checkout"))
+			apperr.Precondition(string(apperr.ReasonBillingNoCustomer), orgID,
+				"the organization has never completed a checkout"))
 	}
 	return internalErr()
 }

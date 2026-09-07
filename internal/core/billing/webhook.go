@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -68,6 +69,17 @@ func (s *Service) applySubscriptionEvent(
 		return s.rejectDelivery(ctx, provider, d, "status",
 			errors.New("subscription carries no status"))
 	}
+	// The remaining two column checks, mirrored here for the same reason as the
+	// pair above: unguarded they fail the insert, which retries eight times and
+	// then leaves the delivery stored but never processed.
+	if event.ProviderCustomerID == "" {
+		return s.rejectDelivery(ctx, provider, d, "customer",
+			errors.New("subscription names no customer"))
+	}
+	if event.PriceCents < 0 {
+		return s.rejectDelivery(ctx, provider, d, "price",
+			errors.New("subscription carries a negative price"))
+	}
 
 	orgID, err := s.attributeDelivery(ctx, provider, event)
 	if err != nil {
@@ -112,10 +124,15 @@ func (s *Service) applySubscriptionEvent(
 	})
 	if err != nil {
 		// The partial unique index refusing a second live subscription for one org.
-		// A real inconsistency that needs a person, and eight retries will not make
-		// the other row go away.
+		// Retried rather than rejected: a cutover whose new subscription is delivered
+		// before the old one's cancellation lands here, and the retry succeeds once
+		// that cancellation arrives. Rejecting would consume the delivery and leave
+		// the org with no live subscription at all.
 		if isUniqueViolation(err) {
-			return s.rejectDelivery(ctx, provider, d, "two_live_subscriptions", err)
+			slog.ErrorContext(ctx, "org already holds a live subscription", slogx.Error(err),
+				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+			telemetry.RecordError(ctx, err)
+			return err
 		}
 		slog.ErrorContext(ctx, "failed to apply a subscription delivery", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
@@ -124,9 +141,12 @@ func (s *Service) applySubscriptionEvent(
 	}
 	if applied == 0 {
 		// The CAS rejected an out-of-order delivery. Deliveries are unordered and each
-		// carries the latest object, so a newer one has already landed.
-		slog.DebugContext(ctx, "skipped a stale subscription delivery",
+		// carries the latest object, so a newer one has already landed. Recorded on
+		// the row: otherwise the inbox cannot tell an applied delivery from a skipped
+		// one, which is the question it exists to answer.
+		slog.InfoContext(ctx, "skipped a stale subscription delivery",
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+		return s.finishDelivery(ctx, provider, d, "stale: a newer delivery already applied")
 	}
 	return s.finishDelivery(ctx, provider, d, "")
 }
@@ -169,12 +189,22 @@ func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvide
 // every unapplicable one, so a stored row is never left looking like an attempt
 // that died mid-apply.
 func (s *Service) finishDelivery(ctx context.Context, provider PaymentProvider, d Delivery, reason string) error {
-	err := s.write().MarkBillingWebhookDeliveryProcessed(ctx, dbwrite.MarkBillingWebhookDeliveryProcessedParams{
+	n, err := s.write().MarkBillingWebhookDeliveryProcessed(ctx, dbwrite.MarkBillingWebhookDeliveryProcessedParams{
 		Error:     reason,
 		Provider:  provider.Name(),
 		WebhookID: d.WebhookID,
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to mark a billing webhook delivery processed", slogx.Error(err),
+			slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if n == 0 {
+		// The insert at the top of HandleDelivery guarantees the row, so no row here
+		// means it was deleted mid-flight -- and reporting success would leave the
+		// delivery to be re-applied on the provider's next retry.
+		err := errors.New("billing: the delivery row vanished before it could be marked processed")
 		slog.ErrorContext(ctx, "failed to mark a billing webhook delivery processed", slogx.Error(err),
 			slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID))
 		telemetry.RecordError(ctx, err)
@@ -197,9 +227,10 @@ func (s *Service) rejectDelivery(
 
 // storablePayload keeps a body Postgres cannot parse storable. payload is jsonb,
 // so raw bytes that are not JSON would fail the insert and lose the delivery
-// entirely -- which is the one thing the inbox exists to prevent.
+// entirely -- which is the one thing the inbox exists to prevent. A \u0000 escape
+// passes json.Valid and jsonb still rejects it, so it is wrapped too.
 func storablePayload(raw []byte) []byte {
-	if json.Valid(raw) {
+	if json.Valid(raw) && !bytes.Contains(raw, []byte(`\u0000`)) {
 		return raw
 	}
 	wrapped, err := json.Marshal(map[string]string{"raw_base64": base64.StdEncoding.EncodeToString(raw)})

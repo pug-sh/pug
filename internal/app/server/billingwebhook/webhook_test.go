@@ -83,6 +83,10 @@ func post(t *testing.T, h http.Handler, path, body string) *http.Response {
 }
 
 func TestPathFor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
 	// The provider is named in the URL so no verifier has to be guessed by trying
 	// each in turn.
 	if got := PathFor("dodo"); got != "/webhooks/dodo" {
@@ -93,6 +97,10 @@ func TestPathFor(t *testing.T) {
 // With no secret configured the route must not mount at all: 404 is the
 // fail-closed direction, verify-nothing is not.
 func TestMountRequiresAVerifiableProvider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
 	svc, _ := newService(t)
 	for name, tc := range map[string]struct {
 		service   *corebilling.Service
@@ -116,6 +124,10 @@ func TestMountRequiresAVerifiableProvider(t *testing.T) {
 }
 
 func TestMountRegistersBothPathForms(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
 	svc, _ := newService(t)
 	mux := http.NewServeMux()
 	if !Mount(mux, svc, stubProvider{name: "dodo"}, true) {
@@ -131,6 +143,10 @@ func TestMountRegistersBothPathForms(t *testing.T) {
 }
 
 func TestHandlerStatuses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
 	svc, _ := newService(t)
 
 	t.Run("a verified delivery is 204 once durable", func(t *testing.T) {
@@ -177,6 +193,10 @@ func TestHandlerStatuses(t *testing.T) {
 // 2xx only once the row is durable: a 5xx is what asks for the next attempt, and
 // answering 204 on a failed write would lose the delivery for good.
 func TestAFailedWriteIs500(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
 	svc, pg := newService(t)
 	pg.PgW.Close()
 

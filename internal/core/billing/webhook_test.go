@@ -443,3 +443,53 @@ func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProv
 	}
 	return svc
 }
+
+// A cutover whose new subscription is delivered before the old one's
+// cancellation. Rejecting it would consume the delivery and leave the org with
+// no live subscription at all once the cancellation lands, so it must retry.
+func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	ctx := t.Context()
+
+	provider.event = subEvent(f.orgID, "sub00000000000000031", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_old", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	provider.event = subEvent(f.orgID, "sub00000000000000032", "prod_scale", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_new", time.Now())); err == nil {
+		t.Fatal("a second live subscription was accepted; the provider must be asked to retry")
+	}
+
+	// Unprocessed, so the retry re-applies rather than short-circuiting.
+	row, err := dbwrite.New(f.pg.PgW).InsertBillingWebhookDelivery(ctx, dbwrite.InsertBillingWebhookDeliveryParams{
+		EventType: "subscription.active", Payload: []byte(`{}`),
+		Provider: fakeProviderName, WebhookID: "wh_new",
+	})
+	if err != nil {
+		t.Fatalf("read back the delivery: %v", err)
+	}
+	if row.ProcessedAt.Valid {
+		t.Error("the delivery was marked processed; the retry will now be a no-op")
+	}
+
+	// Once the cancellation lands, the retry succeeds.
+	provider.event = subEvent(f.orgID, "sub00000000000000031", "prod_growth", corebilling.SubStatusCancelled)
+	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_cancel", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery(cancel): %v", err)
+	}
+	provider.event = subEvent(f.orgID, "sub00000000000000032", "prod_scale", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_new", time.Now())); err != nil {
+		t.Fatalf("the retry after the cancellation failed: %v", err)
+	}
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != "scale" {
+		t.Errorf("slug = %q, want scale — the cutover completed", ent.Slug)
+	}
+}

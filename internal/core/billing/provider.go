@@ -56,7 +56,8 @@ type Delivery struct {
 	// is what makes the inbox's primary key a deduplication.
 	WebhookID string
 	EventType string
-	// RawPayload is the body as sent. Stored verbatim; never re-serialized.
+	// RawPayload is the body as sent. Verify reads these exact bytes; what the
+	// inbox stores is jsonb, so it comes back canonicalized rather than verbatim.
 	RawPayload []byte
 	// DeliveredAt bounds payload freshness and is the CAS guard. It comes from the
 	// signed envelope rather than from a payload field because every delivery
@@ -129,10 +130,19 @@ const (
 // customer's product over an expired card is worse for both sides than a few
 // unbilled days, and the delivery that normalizes to cancelled is what finally
 // drops the org to the floor.
-func (s SubStatus) Live() bool { return s == SubStatusActive || s == SubStatusPastDue }
+func (s SubStatus) Live() bool {
+	switch s {
+	case SubStatusActive, SubStatusPastDue:
+		return true
+	case SubStatusPaused, SubStatusCancelled, SubStatusExpired, SubStatusFailed:
+		return false
+	}
+	// A provider word pug has no name for.
+	return false
+}
 
-// AllSubStatuses is every status the column's check constraint permits, so a
-// table-driven mapping can assert it covers them.
+// AllSubStatuses is pug's whole vocabulary, so a table-driven mapping can assert
+// it covers them. The column itself is not constrained to these -- see SubStatus.
 func AllSubStatuses() []SubStatus {
 	return []SubStatus{
 		SubStatusActive, SubStatusPastDue, SubStatusPaused,
@@ -143,10 +153,10 @@ func AllSubStatuses() []SubStatus {
 // ParseSubStatus narrows a stored word back to the vocabulary. An unrecognized
 // value is not live, which is the safe direction -- see SubStatus.
 func ParseSubStatus(v string) (SubStatus, bool) {
-	for _, s := range AllSubStatuses() {
-		if string(s) == v {
-			return s, true
-		}
+	switch s := SubStatus(v); s {
+	case SubStatusActive, SubStatusPastDue, SubStatusPaused,
+		SubStatusCancelled, SubStatusExpired, SubStatusFailed:
+		return s, true
 	}
 	return "", false
 }

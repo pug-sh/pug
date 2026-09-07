@@ -25,12 +25,15 @@ func billingSetCmd(t *testing.T, args ...string) *cobra.Command {
 // The most expensive bug this CLI could have: a renewal that quietly reverts a
 // customer's negotiated quota to the catalog number.
 func TestBillingChangeOmittedFlagsKeepStoredValues(t *testing.T) {
-	change, err := billingChange(billingSetCmd(t, "--plan", "custom", "--until", "2027-06-30"))
+	change, err := billingChange(billingSetCmd(t, "--plan", "custom"))
 	if err != nil {
 		t.Fatalf("billingChange: %v", err)
 	}
 	if change.PlanSlug != "custom" {
 		t.Fatalf("plan = %q, want custom", change.PlanSlug)
+	}
+	if change.ContractEndsAt != nil {
+		t.Fatalf("until = %v, want nil (keep stored)", *change.ContractEndsAt)
 	}
 	if change.IncludedEvents != nil {
 		t.Fatalf("events = %v, want nil (keep stored)", *change.IncludedEvents)

@@ -2,6 +2,7 @@ package dodo
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -92,7 +93,14 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 	if payload.CustomerID == "" {
 		payload.CustomerID = payload.Customer.CustomerID
 	}
-	return c.eventFromSubscription(payload), nil
+	event := c.eventFromSubscription(payload)
+	// A subscription event that yields nothing is a payload shape pug no longer
+	// understands, not an event to ignore -- returning a zero event here would
+	// store it as cleanly processed and freeze every entitlement silently.
+	if event.IsZero() {
+		return corebilling.SubscriptionEvent{}, errors.New("dodo: subscription payload carries no subscription id")
+	}
+	return event, nil
 }
 
 func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.SubscriptionEvent {

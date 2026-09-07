@@ -26,8 +26,7 @@ technical one. Dodo is the first and, for now, the only implementation.
 **In:** a merchant-of-record provider behind an interface (§2.1), implemented
 once for Dodo Payments; self-serve checkout for the three paid tiers; a signed
 webhook inbox; the provider-reported states entitlement cannot derive
-(`PAST_DUE`, `CANCELLED`); a reconcile pass; cancellation on org delete;
-negotiated deals billed through the provider like everything else, bought from
+(`PAST_DUE`, `CANCELLED`); a reconcile pass; negotiated deals billed through the provider like everything else, bought from
 the pug dashboard rather than from a link we send (§5.2).
 
 **Out:** cheques, wire transfers, and any payment that happens outside the
@@ -82,7 +81,7 @@ at the edges:
 | Event-type names and payload shape | The CAS on freshness, attribution, product → slug mapping |
 | Status vocabulary (§7's mapping table) | pug's own status vocabulary and `Resolve` (§7) |
 | Checkout / portal session creation | The RPCs that call them (§12) |
-| Subscription fetch and cancel | The reconcile pass (§9) and org-delete cancel (§10) |
+| Subscription fetch | The reconcile pass (§9) |
 | Product id namespace | `billing_subscriptions`, `billing_webhook_deliveries` (§6) |
 
 ```go
@@ -368,12 +367,12 @@ unrecoverable.
 `payload` is the delivery as sent, which for a subscription event carries the
 customer's name, email, billing address and any tax id — personal data pug does
 not otherwise store. Replay needs the bytes, so the controls are on the row
-rather than on the fields: no RPC or MCP tool reads this table, and `pug cron
-billing-reconcile` prunes rows **90 days** after `processed_at`. Retention is
+rather than on the fields: no RPC or MCP tool reads this table, and the
+reconcile pass prunes rows **90 days** after `processed_at`. Retention is
 therefore the whole control today: `compliance` erases a data subject, not an
-org, and pug has no org-deletion path at all
-(`DeleteBillingWebhookDeliveriesForOrg` is written for the one §11 of
-[`billing.md`](billing.md) defers, and is uncalled until it exists). Anything
+org, and pug has no org-deletion path at all. An erasure query was written and
+removed — it matched deliveries through `billing_subscriptions`, which cascades
+away with the org, so it erased nothing once the org was gone. Anything
 long-lived that a query wants — status, period, amount — belongs on
 `billing_subscriptions`, which outlives the payload it came from.
 
@@ -503,8 +502,9 @@ without pasting its id.
 
 ## 9. Reconcile
 
-A `pug cron billing-reconcile` pass, shaped like `pug cron usage`: one-shot,
-advisory-locked, non-zero exit on failure, run by a k8s CronJob. It is the
+A `cmd/cron/billing-reconcile` pass, shaped like `pug cron usage`: one-shot,
+advisory-locked, non-zero exit on failure, run by a k8s CronJob. It is a
+standalone binary, not a `pug cron` subcommand. It is the
 backstop for the one thing the inbox cannot cover — a webhook that never arrived
 at all.
 
@@ -512,7 +512,7 @@ For every org with a subscription row, fetch the subscription through
 `FetchSubscription` (§2.1) and apply the same CAS. During a cutover the pass
 runs per provider — a row names the provider it belongs to (§6), so an org with
 a winding-down subscription and a live new one is reconciled against the right
-API for each. Then two consistency reports, which are the point of invariant 3:
+API for each. Then the consistency reports, which are the point of invariant 3:
 
 - A subscription the provider says is live that pug has no row for.
 - An entitlement granting a paid or `custom` plan with no live subscription
@@ -520,16 +520,17 @@ API for each. Then two consistency reports, which are the point of invariant 3:
 - A live subscription against a product no config key and no org row maps to
   (§8), which is a delivery that could not be applied.
 
-Both are logged and counted, not auto-fixed. An automatic repair here would be
-writing to the money side of the system from a guess.
+All are logged and counted, not auto-fixed. An automatic repair here would be
+writing to the money side of the system from a guess. A pass that could not read
+the provider exits non-zero; the rest are findings for a person.
 
 ## 10. Deleting an org must cancel first
 
-The `on delete cascade` drops both rows and the provider knows nothing about it,
-so a deleted customer keeps being charged — a refund and a chargeback, not merely an
-inconsistency. Org deletion cancels at the provider **before** the local delete,
-and refuses to proceed if the cancel call fails. This is the one place in the
-slice where a provider error blocks a user-initiated action, deliberately.
+**Not built — pug has no org-deletion path yet.** When it gets one: the `on
+delete cascade` drops both rows and the provider knows nothing about it, so a
+deleted customer keeps being charged — a refund and a chargeback, not merely an
+inconsistency. Org deletion must cancel at the provider **before** the local
+delete, and refuse to proceed if the cancel call fails.
 
 ## 11. Dunning
 
@@ -543,10 +544,10 @@ schedule behind it moves.
 
 ## 12. RPC surface
 
-Two additions to `dashboard.billing.v1.BillingService`, both JWT, both
-**admin-only**. `authz.ResourceBilling` already exists and is granted to the
-viewer floor for the read; these need a new admin-only action on it, because the
-quota banner stays on the viewer floor but starting a checkout is spending money:
+Four additions to `dashboard.billing.v1.BillingService`, all JWT. `ListPlans`
+is a read and stays on the viewer floor; the three that spend money are
+**admin-only** through a new `ActionCreate` on `authz.ResourceBilling`, because
+the quota banner stays on the viewer floor but starting a checkout does not:
 
 - `CreateCheckoutSession(plan_slug) → checkout_url`. For `custom` it checks out
   against the org's own `provider_product_id` and returns `FailedPrecondition`
@@ -561,9 +562,10 @@ quota banner stays on the viewer floor but starting a checkout is spending money
 seeing a product id. It is true only when the checkout would actually open:
 billing enabled, a Dodo API key configured, and a product to check out against
 (a configured catalog tier, or `custom` once the org has a
-`provider_product_id`). It is the same condition `CreateCheckoutSession` returns
-`Unavailable` / `FailedPrecondition` on, read from one helper so the two cannot
-drift — a button that cannot work is worse than no button. Tested both
+`provider_product_id`). It gates the buy button as a whole; whether a particular
+tier can be bought is `PlanOption.purchasable`, which does share a helper with
+`CreateCheckoutSession`'s refusal — a button that cannot work is worse than no
+button. Tested both
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
 portal; no `ChangePlan` RPC in this slice.
 
@@ -644,9 +646,9 @@ Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's
 instead of overwriting them, which is what lets both be configured at once
 during a cutover. Only `PUG_BILLING_PROVIDER` decides which one is constructed
-for checkout; webhook routes mount for every provider whose secret is present,
-so the outgoing provider keeps being able to report cancellations after new
-checkouts have moved.
+for checkout, and that one provider's webhook route is the only one mounted —
+so a cutover must keep the outgoing provider configured until its last
+cancellation has arrived.
 
 Billing enabled with no provider credentials is a supported mode, not a broken
 one: quotas, grants and comped deals all work, and only the buy button is
@@ -728,7 +730,7 @@ documented behaviour and reviewed once already.
 
 ## 17. What the build changed
 
-Four departures from the design above, all made during implementation.
+Six departures from the design above, all made during implementation.
 
 **`CancelSubscription` is not on the interface (§2.1, §10).** Its only caller
 would be org deletion, and pug has no org-delete path: `OrgsService` serves no
@@ -775,7 +777,7 @@ The design has the dashboard poll after checkout, and the implementation did —
 but it polled pug's own state, which only a delivery changes, so it verified
 nothing and made the checkout moment depend on a reachable webhook URL. Found by
 testing locally, where there is none: the payment succeeded at Dodo and the
-dashboard read "Trial" indefinitely. `pug cron billing-reconcile` is not a
+dashboard read "Trial" indefinitely. The reconcile pass is not a
 recovery for it either — it walks `ListBillingSubscriptionsByProvider`, so with
 no stored row there is nothing to re-read.
 

@@ -29,7 +29,6 @@ set currency = excluded.currency,
     price_cents = excluded.price_cents,
     provider_customer_id = excluded.provider_customer_id,
     provider_status = excluded.provider_status,
-    provider_sub_id = excluded.provider_sub_id,
     provider_updated_at = excluded.provider_updated_at,
     status = excluded.status
 where billing_subscriptions.provider_updated_at <= excluded.provider_updated_at
@@ -51,9 +50,10 @@ type ApplyBillingSubscriptionParams struct {
 	Status             string
 }
 
-// The mirror write, and the only one. CAS on provider_updated_at: deliveries are
-// unordered and each carries the latest object, so an older one must not overwrite
-// a newer. org_id is never updated -- attribution is decided once, on first sight.
+// The mirror write: one statement, three callers. CAS on provider_updated_at, which
+// is when a payload ARRIVED, so a delivery that overtakes another is what this
+// orders -- reconcile corrects the rest. org_id is never updated: attribution is
+// decided once, on first sight.
 func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBillingSubscriptionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, applyBillingSubscription,
 		arg.Currency,
@@ -82,27 +82,6 @@ delete from billing_entitlements where org_id = $1
 
 func (q *Queries) DeleteBillingEntitlement(ctx context.Context, orgID string) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteBillingEntitlement, orgID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const deleteBillingWebhookDeliveriesForOrg = `-- name: DeleteBillingWebhookDeliveriesForOrg :execrows
-delete from billing_webhook_deliveries d
-where exists (
-  select 1 from billing_subscriptions s
-  where s.org_id = $1
-    and s.provider = d.provider
-    and d.payload->'data'->>'subscription_id' = s.provider_sub_id
-)
-`
-
-// Org erasure. The deliveries name the org only inside the payload, so they are
-// matched through the subscriptions the org holds. Written ahead of the
-// org-deletion path billing.md §11 defers; nothing calls it yet.
-func (q *Queries) DeleteBillingWebhookDeliveriesForOrg(ctx context.Context, orgID string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteBillingWebhookDeliveriesForOrg, orgID)
 	if err != nil {
 		return 0, err
 	}
@@ -145,44 +124,12 @@ type GetBillingSubscriptionByProviderCustomerIDParams struct {
 	ProviderCustomerID string
 }
 
-// Attribution fallback when a delivery carries no org_id metadata. Newest first:
-// a customer that re-subscribed has a dead row beside the live one, and either
-// names the same org.
+// Attribution fallback when a delivery carries no org_id metadata. Newest first,
+// which is a guess: one buyer purchasing for two orgs shares a provider customer,
+// and nothing here can tell those apart. metadata.org_id is tried first for that
+// reason.
 func (q *Queries) GetBillingSubscriptionByProviderCustomerID(ctx context.Context, arg GetBillingSubscriptionByProviderCustomerIDParams) (BillingSubscription, error) {
 	row := q.db.QueryRow(ctx, getBillingSubscriptionByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
-	var i BillingSubscription
-	err := row.Scan(
-		&i.CreateTime,
-		&i.Currency,
-		&i.CurrentPeriodEnd,
-		&i.CurrentPeriodStart,
-		&i.ID,
-		&i.OrgID,
-		&i.PlanSlug,
-		&i.PriceCents,
-		&i.Provider,
-		&i.ProviderCustomerID,
-		&i.ProviderStatus,
-		&i.ProviderSubID,
-		&i.ProviderUpdatedAt,
-		&i.Status,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const getBillingSubscriptionByProviderSubID = `-- name: GetBillingSubscriptionByProviderSubID :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
-where provider = $1 and provider_sub_id = $2
-`
-
-type GetBillingSubscriptionByProviderSubIDParams struct {
-	Provider      string
-	ProviderSubID string
-}
-
-func (q *Queries) GetBillingSubscriptionByProviderSubID(ctx context.Context, arg GetBillingSubscriptionByProviderSubIDParams) (BillingSubscription, error) {
-	row := q.db.QueryRow(ctx, getBillingSubscriptionByProviderSubID, arg.Provider, arg.ProviderSubID)
 	var i BillingSubscription
 	err := row.Scan(
 		&i.CreateTime,
@@ -295,7 +242,7 @@ func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) e
 	return err
 }
 
-const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :exec
+const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :execrows
 update billing_webhook_deliveries
 set processed_at = now(), error = $1
 where provider = $2 and webhook_id = $3
@@ -307,9 +254,14 @@ type MarkBillingWebhookDeliveryProcessedParams struct {
 	WebhookID string
 }
 
-func (q *Queries) MarkBillingWebhookDeliveryProcessed(ctx context.Context, arg MarkBillingWebhookDeliveryProcessedParams) error {
-	_, err := q.db.Exec(ctx, markBillingWebhookDeliveryProcessed, arg.Error, arg.Provider, arg.WebhookID)
-	return err
+// The row is guaranteed by the insert that opened the delivery, so zero rows is a
+// fault rather than a benign no-op.
+func (q *Queries) MarkBillingWebhookDeliveryProcessed(ctx context.Context, arg MarkBillingWebhookDeliveryProcessedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markBillingWebhookDeliveryProcessed, arg.Error, arg.Provider, arg.WebhookID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const pruneBillingWebhookDeliveries = `-- name: PruneBillingWebhookDeliveries :execrows

@@ -23,8 +23,12 @@ const (
 	headerWebhookSignature = "webhook-signature"
 )
 
-// tolerance bounds replay of a captured delivery.
-const tolerance = 5 * time.Minute
+// tolerance bounds replay of a captured delivery. Wide enough to cover the
+// provider's whole retry schedule: a retry that reuses its original signature
+// carries the original timestamp, and a tighter window would 401 every late
+// attempt -- losing exactly the deliveries retries exist to save. The inbox's
+// (provider, webhook_id) key is what actually stops a replay.
+const tolerance = 24 * time.Hour
 
 // secretPrefix is the conventional prefix on a Standard Webhooks signing secret.
 const secretPrefix = "whsec_"
@@ -43,15 +47,21 @@ type verifier struct {
 }
 
 // newVerifier strips the conventional "whsec_" prefix and base64-decodes the
-// rest, falling back to the raw value -- not every deployment mints base64.
+// rest. Only a prefixed secret is decoded: a raw 32-char secret can happen to be
+// valid base64, and decoding it would key the HMAC with 24 wrong bytes and fail
+// every delivery as a bad signature.
 func newVerifier(secret string) (*verifier, error) {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return nil, ErrEmptySecret
 	}
-	raw := strings.TrimPrefix(secret, secretPrefix)
+	raw, prefixed := strings.CutPrefix(secret, secretPrefix)
 	key := []byte(raw)
-	if decoded, err := base64.StdEncoding.DecodeString(raw); err == nil && len(decoded) > 0 {
+	if prefixed {
+		decoded, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(decoded) == 0 {
+			return nil, ErrEmptySecret
+		}
 		key = decoded
 	}
 	wh, err := standardwebhooks.NewWebhookRaw(key)

@@ -15,7 +15,9 @@ import (
 // ordinary answer -- trialing, free and comped orgs have never checked out -- so
 // it returns nil rather than an error.
 func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
-	row, err := s.read.GetLiveBillingSubscription(ctx, orgID)
+	// The write pool, as elsewhere in this package: ConfirmCheckout writes the row
+	// and GetBillingStatus reads it immediately after, which a lagging replica loses.
+	row, err := dbread.New(s.pgW).GetLiveBillingSubscription(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -27,9 +29,9 @@ func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscrip
 	}
 	sub, ok := subscriptionFromRow(row)
 	if !ok {
-		// The partial index only admits active/past_due, so a stored word outside
-		// the vocabulary means the column's check and pug's mapping have diverged.
-		// Not live is the safe reading: it can only withhold a plan.
+		// The query already filtered to active/past_due, so an unparsable word here
+		// means a writer stored a status pug cannot name. Not live is the safe
+		// reading: it can only withhold a plan.
 		slog.ErrorContext(ctx, "live subscription holds a status pug does not know",
 			slog.String("org_id", orgID), slog.String("status", row.Status))
 		return nil, nil

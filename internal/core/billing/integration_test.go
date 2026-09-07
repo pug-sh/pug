@@ -2,10 +2,10 @@ package billing_test
 
 import (
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -235,9 +235,10 @@ func TestCustomPlanRequiresAQuota(t *testing.T) {
 	// Straight past the service, to prove the constraint itself holds.
 	_, err = f.pg.PgW.Exec(t.Context(),
 		"insert into billing_entitlements (org_id, plan_slug) values ($1, 'custom')", f.orgID)
+	var pgErr *pgconn.PgError
 	if err == nil {
 		t.Error("the database accepted a custom entitlement with no quota")
-	} else if !strings.Contains(err.Error(), "billing_entitlements_custom_needs_quota") {
+	} else if !errors.As(err, &pgErr) || pgErr.ConstraintName != "billing_entitlements_custom_needs_quota" {
 		t.Errorf("err = %v, want the custom_needs_quota constraint", err)
 	}
 }

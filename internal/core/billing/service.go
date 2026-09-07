@@ -203,7 +203,10 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 		if plan.Retired && cur.PlanSlug != plan.Slug {
 			return Record{}, ErrPlanRetired
 		}
-		if next.PlanSlug == SlugCustom && next.IncludedEventsOverride <= 0 {
+		// The product id is what a checkout resolves to the custom tier, so it needs
+		// the same quota the custom slug does -- otherwise the org buys the deal and
+		// resolves to the free floor, charged for nothing.
+		if (next.PlanSlug == SlugCustom || next.ProviderProductID != "") && next.IncludedEventsOverride <= 0 {
 			return Record{}, ErrCustomNeedsQuota
 		}
 		// Mirrors the column's `> 0` check, which would otherwise surface as a raw

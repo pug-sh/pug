@@ -25,8 +25,8 @@ const (
 )
 
 // BillingStatus is derived from the clock on every read, never stored. The
-// states a payments provider reports — past due, cancelled — cannot be derived
-// and do not exist yet.
+// states a payments provider reports — past due, cancelled — cannot be derived,
+// so they live on SubscriptionStatus below rather than here.
 type BillingStatus int32
 
 const (
@@ -329,9 +329,9 @@ type GetBillingStatusResponse struct {
 	// Whether a checkout would actually open. True only when billing is enabled, a
 	// payments provider is configured, and there is a product to check out
 	// against -- a configured catalog tier, or the custom tier once this org has a
-	// product id recorded. It is the same condition CreateCheckoutSession refuses
-	// on, read from one helper so the two cannot drift: a button that cannot work
-	// is worse than no button.
+	// product id recorded. It gates the buy button as a whole; whether a
+	// PARTICULAR tier can be bought is PlanOption.purchasable, which does share a
+	// helper with the refusal.
 	//
 	// It says nothing about which tier, and carries no product id -- the dashboard
 	// never sees one.

@@ -304,16 +304,22 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 	until := now.AddDate(0, 1, 0)
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:       "growth",
-		IncludedEvents: new(int64(5_000_000)),
-		DisplayName:    new("Acme Enterprise"),
-		ContractEndsAt: new(until),
+		PlanSlug:          "growth",
+		IncludedEvents:    new(int64(5_000_000)),
+		DisplayName:       new("Acme Enterprise"),
+		ContractEndsAt:    new(until),
+		ProviderProductID: new("prod_acme"),
 	}); err != nil {
 		t.Fatalf("set the deal: %v", err)
 	}
 
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugFree}); err != nil {
+	dropped, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugFree})
+	if err != nil {
 		t.Fatalf("downgrade: %v", err)
+	}
+	// Kept, it would go on offering a buy button for the deal that just ended.
+	if dropped.ProviderProductID != "" {
+		t.Errorf("provider product = %q, want it dropped with the rest", dropped.ProviderProductID)
 	}
 
 	ent, err := f.svc.GetEntitlement(ctx, f.orgID, until.AddDate(5, 0, 0))

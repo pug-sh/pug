@@ -146,9 +146,9 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 
 	// A negotiated deal's quota lives on the entitlement row and the catalog has
 	// none to fall back on, so a custom plan that reached here with no override is
-	// a paid subscription against nothing. The free floor is the honest answer and
-	// the reconcile pass reports it -- a customer paying for nothing must be loud,
-	// not silently unlimited.
+	// a paid subscription against nothing. SetPlan refuses to write that shape;
+	// this is the backstop, and the free floor is the honest answer -- a customer
+	// paying for nothing must not be silently unlimited.
 	if ent.Slug == SlugCustom && ent.IncludedEvents == nil {
 		free := mustPlan(SlugFree)
 		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
@@ -227,14 +227,14 @@ func trialEnd(orgCreateTime time.Time, rec Record) time.Time {
 
 // applyOverrides patches the negotiated fields over the resolved plan, last, so
 // the deal's numbers win over the catalog's. The deal ends when its contract
-// does — without that, an expired 5M grant would keep its 5M. Each override is
+// does, except while the deal itself is still being charged. Each override is
 // independent.
 func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Time) {
-	// The contract bounds a grant an operator made; it cannot expire a
-	// subscription the provider still says is live. Gating the overrides on it
-	// anyway is what would collapse a live custom deal to no quota the day its
-	// agreed term passed, while the customer went on being charged.
-	if !rec.Present || (sub == nil && contractLapsed(rec, now)) {
+	// The contract cannot expire the custom subscription it covers, or a live deal
+	// would collapse to no quota the day its agreed term passed while the customer
+	// went on being charged. Any other subscription is a different purchase, and a
+	// lapsed grant's numbers must not ride along on it.
+	if !rec.Present || (contractLapsed(rec, now) && (sub == nil || sub.PlanSlug != SlugCustom)) {
 		return
 	}
 	if rec.IncludedEventsOverride > 0 {

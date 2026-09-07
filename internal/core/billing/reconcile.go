@@ -45,6 +45,10 @@ type ReconcileReport struct {
 	// Rows the provider could not be read for. Distinguished from a clean pass so
 	// a provider outage does not read as "everything is consistent".
 	Unreadable int
+	// A live subscription pug cannot apply: billed in a currency it does not sell
+	// in, or carrying no status. Counted rather than skipped, or the pass would
+	// report a clean sweep over a row it did nothing with.
+	Unapplicable int
 }
 
 // Reconcile is the backstop for the one thing the inbox cannot cover: a webhook
@@ -91,16 +95,17 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	}
 	for _, row := range unbilled {
 		report.EntitledUnbilled++
-		// Loud on purpose: an org entitled to a paid plan that nobody is charged
-		// for is the failure mode invariant 3 exists to make impossible.
-		slog.ErrorContext(ctx, "org holds a paid entitlement with no live subscription",
+		// Warn, not error: an operator's comped grant is indistinguishable from a
+		// billing failure here, and it is the ordinary case.
+		slog.WarnContext(ctx, "org holds a paid entitlement with no live subscription",
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 
 	slog.InfoContext(ctx, "billing reconcile pass finished",
 		slog.Int("checked", report.Checked), slog.Int("applied", report.Applied),
 		slog.Int("untracked", report.Untracked), slog.Int("entitled_unbilled", report.EntitledUnbilled),
-		slog.Int("unmapped_product", report.UnmappedProduct), slog.Int("unreadable", report.Unreadable))
+		slog.Int("unmapped_product", report.UnmappedProduct), slog.Int("unreadable", report.Unreadable),
+		slog.Int("unapplicable", report.Unapplicable))
 	return report, nil
 }
 
@@ -131,6 +136,19 @@ func (s *Service) reconcileOne(
 	rec, err := s.StoredRecord(ctx, row.OrgID)
 	if err != nil {
 		report.Unreadable++
+		// StoredRecord logs a real read failure; an org that has vanished from under
+		// a live subscription is the one it returns silently.
+		if errors.Is(err, ErrOrgNotFound) {
+			slog.ErrorContext(ctx, "live subscription names an org that is gone",
+				slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID))
+		}
+		return
+	}
+	if cur := normalizeCurrency(event.Currency); cur != Currency || event.Status == "" {
+		report.Unapplicable++
+		slog.ErrorContext(ctx, "live subscription cannot be applied",
+			slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID),
+			slog.String("currency", cur), slog.String("status", string(event.Status)))
 		return
 	}
 	if _, err := s.planForProduct(event.ProductID, rec); err != nil {

@@ -48,10 +48,9 @@ type Payments struct {
 
 func (p *Payments) configured() bool { return p != nil && p.Provider != nil }
 
-// Purchasable reports whether a buy button would actually work for this org. It
-// is what the dashboard renders the button from, and it is the same condition
-// CreateCheckoutSession refuses on -- read from here by both, so a button that
-// cannot work is impossible rather than unlikely.
+// Purchasable reports whether this deployment sells anything to this org at all.
+// It gates the buy button as a whole; whether a PARTICULAR tier can be bought is
+// PlanOption.Purchasable, which shares checkoutProduct with the refusal.
 func (s *Service) Purchasable(rec Record) bool {
 	if !s.billingEnabled || !s.payments.configured() {
 		return false
@@ -265,6 +264,12 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 
 	event, err := provider.FetchCheckoutOutcome(ctx, sessionID)
 	if err != nil {
+		// A decline is an ordinary buyer outcome; only a failed read is a fault.
+		if errors.Is(err, ErrCheckoutFailed) {
+			slog.InfoContext(ctx, "checkout did not settle", slogx.Error(err),
+				slog.String("org_id", orgID))
+			return false, err
+		}
 		slog.ErrorContext(ctx, "failed to read a checkout outcome", slogx.Error(err),
 			slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)

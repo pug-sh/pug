@@ -13,10 +13,14 @@ package billingwebhook
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/otel"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -71,13 +75,37 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), handlerTimeout)
 	defer cancel()
 
+	// This route is outside the Connect chain, so nothing upstream has started a
+	// span and RecordError would resolve to the noop one -- silencing every
+	// rejection alert on the money path.
+	ctx, span := otel.Tracer("server/billingwebhook").Start(ctx, "billing.webhook")
+	defer span.End()
+
+	// net/http recovers per connection, so the process survives either way; this
+	// is what keeps the panic in slog and OTLP rather than on bare stderr.
+	defer func() {
+		if v := recover(); v != nil {
+			slog.ErrorContext(ctx, "panic serving a billing webhook",
+				slog.Any("panic", v), slog.String("provider", h.provider.Name()))
+			telemetry.RecordError(ctx, fmt.Errorf("billingwebhook: panic: %v", v))
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}()
+
 	// The RAW body: re-serializing a decoded payload changes the bytes and breaks
 	// the signature.
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err != nil {
+		// Only an oversized body is the sender's fault. A truncated read is a reset
+		// or a deadline, and 400 would tell the provider to stop retrying a delivery
+		// that never reached the inbox.
+		status := http.StatusInternalServerError
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			status = http.StatusBadRequest
+		}
 		slog.WarnContext(ctx, "failed to read a billing webhook body", slogx.Error(err),
-			slog.String("provider", h.provider.Name()))
-		w.WriteHeader(http.StatusBadRequest)
+			slog.String("provider", h.provider.Name()), slog.Int("status", status))
+		w.WriteHeader(status)
 		return
 	}
 

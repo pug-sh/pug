@@ -51,7 +51,9 @@ on conflict (provider, webhook_id) do update
   set event_type = billing_webhook_deliveries.event_type
 returning *;
 
--- name: MarkBillingWebhookDeliveryProcessed :exec
+-- name: MarkBillingWebhookDeliveryProcessed :execrows
+-- The row is guaranteed by the insert that opened the delivery, so zero rows is a
+-- fault rather than a benign no-op.
 update billing_webhook_deliveries
 set processed_at = now(), error = @error
 where provider = @provider and webhook_id = @webhook_id;
@@ -63,22 +65,11 @@ where provider = @provider and webhook_id = @webhook_id;
 delete from billing_webhook_deliveries
 where processed_at is not null and processed_at < @older_than;
 
--- name: DeleteBillingWebhookDeliveriesForOrg :execrows
--- Org erasure. The deliveries name the org only inside the payload, so they are
--- matched through the subscriptions the org holds. Written ahead of the
--- org-deletion path billing.md §11 defers; nothing calls it yet.
-delete from billing_webhook_deliveries d
-where exists (
-  select 1 from billing_subscriptions s
-  where s.org_id = @org_id
-    and s.provider = d.provider
-    and d.payload->'data'->>'subscription_id' = s.provider_sub_id
-);
-
 -- name: ApplyBillingSubscription :execrows
--- The mirror write, and the only one. CAS on provider_updated_at: deliveries are
--- unordered and each carries the latest object, so an older one must not overwrite
--- a newer. org_id is never updated -- attribution is decided once, on first sight.
+-- The mirror write: one statement, three callers. CAS on provider_updated_at, which
+-- is when a payload ARRIVED, so a delivery that overtakes another is what this
+-- orders -- reconcile corrects the rest. org_id is never updated: attribution is
+-- decided once, on first sight.
 insert into billing_subscriptions (
   currency, current_period_end, current_period_start, id, org_id, plan_slug,
   price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
@@ -96,19 +87,15 @@ set currency = excluded.currency,
     price_cents = excluded.price_cents,
     provider_customer_id = excluded.provider_customer_id,
     provider_status = excluded.provider_status,
-    provider_sub_id = excluded.provider_sub_id,
     provider_updated_at = excluded.provider_updated_at,
     status = excluded.status
 where billing_subscriptions.provider_updated_at <= excluded.provider_updated_at;
 
--- name: GetBillingSubscriptionByProviderSubID :one
-select * from billing_subscriptions
-where provider = @provider and provider_sub_id = @provider_sub_id;
-
 -- name: GetBillingSubscriptionByProviderCustomerID :one
--- Attribution fallback when a delivery carries no org_id metadata. Newest first:
--- a customer that re-subscribed has a dead row beside the live one, and either
--- names the same org.
+-- Attribution fallback when a delivery carries no org_id metadata. Newest first,
+-- which is a guess: one buyer purchasing for two orgs shares a provider customer,
+-- and nothing here can tell those apart. metadata.org_id is tried first for that
+-- reason.
 select * from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
 order by create_time desc

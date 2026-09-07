@@ -1,8 +1,8 @@
 -- +goose Up
--- Taking money. The entitlement table beside this one stays the operator's; both
--- tables here are written only by the webhook, which is what makes drift between
--- the quota and the charge structurally impossible rather than a thing to
--- remember.
+-- Taking money. The entitlement table beside this one stays the operator's;
+-- billing_subscriptions has three writers -- the webhook, the reconcile pass and
+-- ConfirmCheckout -- and they all go through the one CAS below, so no second
+-- notion of "newer" exists.
 
 -- The provider product a negotiated deal is bought against. Operator-written,
 -- like every other column on the entitlement row. NULL is every org that is not a
@@ -57,8 +57,10 @@ create table billing_subscriptions (
     constraint billing_subscriptions_provider_status_check check (provider_status <> ''),
   provider_sub_id text not null
     constraint billing_subscriptions_sub_check check (provider_sub_id <> ''),
-  -- The CAS column: the delivery timestamp a payload arrived with. An apply is
-  -- refused when it is older than what is stored.
+  -- The CAS column: the delivery timestamp a payload arrived with, so ordering
+  -- here is arrival order, not the order the states changed at the provider. An
+  -- apply is refused when it is older than what is stored; the reconcile pass is
+  -- what corrects a delivery that arrived out of order.
   provider_updated_at timestamptz not null,
   -- Pug's vocabulary -- active, past_due, paused, cancelled, expired, failed --
   -- except that a provider state pug has no word for is stored VERBATIM here too.
@@ -93,8 +95,8 @@ update on billing_subscriptions for each row execute procedure moddatetime(updat
 --
 -- payload carries the customer's name, email and billing address -- personal data
 -- pug does not otherwise store -- so the controls are on the row: no RPC reads
--- this table, the reconcile pass prunes 90 days after processed_at, and an org
--- erasure deletes its deliveries.
+-- this table, and the reconcile pass prunes 90 days after processed_at. Pug has
+-- no org-deletion path yet; when it gets one, it deletes these too.
 create table billing_webhook_deliveries (
   error text not null default '',
   event_type text not null,

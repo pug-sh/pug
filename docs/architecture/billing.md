@@ -475,9 +475,10 @@ it.
 
 ## 7. RPC surface & authorization
 
-`proto/dashboard/billing/v1/billing.proto` — `BillingService`, JWT boundary,
-one RPC. `org_id` is on the request so `authzspec.OrgFromMessage` resolves the
-org through the generated `GetOrgId()`.
+`proto/dashboard/billing/v1/billing.proto` — `BillingService`, JWT boundary.
+`org_id` is on the request so `authzspec.OrgFromMessage` resolves the org
+through the generated `GetOrgId()`. This section describes the entitlement-only
+slice; payments added four more RPCs, see payments.md §14.
 
 | RPC | Spec | Returns |
 |---|---|---|
@@ -506,13 +507,15 @@ from the pair rather than assuming two decimal places (§4).
   free and trial floors.
   A client consuming these from `../app` must check presence rather than
   truthiness — `0` is a real value for both.
-- **No `ListPlans`.** A price list whose buy button does not exist yet is a
-  dialog that can only disappoint. It arrives with checkout (§11).
+- **No `ListPlans`** in this slice — a price list whose buy button does not exist
+  yet is a dialog that can only disappoint. It arrived with checkout; see
+  payments.md §14.
 - **Read-only, so read-only permissions.** `authz.ResourceBilling` is added to
   the const block **and** `allResources` (`policy_test.go` fails a
   declared-but-ungranted resource), with `grant(roleViewer, ResourceBilling,
   ActionRead)` putting it on the viewer floor for member and admin to inherit.
-  No create/update/delete action is granted, because no RPC performs one.
+  In this slice no create/update/delete action is granted, because no RPC
+  performs one; payments adds `ActionCreate` for admins (payments.md §14).
 
 All three wiring points are enforced at build or startup: the entry in
 `authz_served.go` and the procedure entry in `authz_registry.go` fail a contract

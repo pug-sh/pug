@@ -10,7 +10,9 @@ create table billing_entitlements (
   -- The end of the deal, not of a quota window.
   contract_ends_at timestamptz,
   create_time timestamptz not null default now(),
-  display_name_override varchar(150),
+  display_name_override varchar(150)
+    constraint billing_entitlements_display_name_check
+      check (display_name_override is null or display_name_override <> ''),
   included_events_override bigint
     constraint billing_entitlements_override_check
       check (included_events_override > 0),
@@ -40,7 +42,9 @@ create table billing_entitlement_history (
       check (anchor_day between 1 and 31),
   changed_at timestamptz not null default now(),
   contract_ends_at timestamptz,
-  display_name_override varchar(150),
+  display_name_override varchar(150)
+    constraint billing_entitlement_history_display_name_check
+      check (display_name_override is null or display_name_override <> ''),
   id char(20) primary key,
   included_events_override bigint
     constraint billing_entitlement_history_override_check
