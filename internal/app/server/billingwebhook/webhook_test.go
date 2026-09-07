@@ -89,7 +89,7 @@ func TestPathFor(t *testing.T) {
 
 	// The provider is named in the URL so no verifier has to be guessed by trying
 	// each in turn.
-	if got := PathFor("dodo"); got != "/webhooks/dodo" {
+	if got := PathFor("dodo"); got != "/billing/webhooks/dodo" {
 		t.Errorf("PathFor(dodo) = %q", got)
 	}
 }
@@ -135,7 +135,7 @@ func TestMountRegistersBothPathForms(t *testing.T) {
 	}
 	// ServeMux exact-matches the bare pattern and only redirects the other way,
 	// so the trailing-slash twin has to be registered rather than relied on.
-	for _, path := range []string{"/webhooks/dodo", "/webhooks/dodo/"} {
+	for _, path := range []string{"/billing/webhooks/dodo", "/billing/webhooks/dodo/"} {
 		if res := post(t, mux, path, goodBody); res.StatusCode != http.StatusNoContent {
 			t.Errorf("POST %s = %d, want 204", path, res.StatusCode)
 		}

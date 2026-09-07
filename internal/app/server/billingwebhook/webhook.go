@@ -21,7 +21,7 @@ import (
 
 // PathFor names the provider in the URL deliberately: sniffing it from the headers
 // would mean trying each verifier in turn, which is a signature oracle.
-func PathFor(provider string) string { return "/webhooks/" + provider }
+func PathFor(provider string) string { return "/billing/webhooks/" + provider }
 
 // Payloads are a few KB; this backstops an unbounded read on an open route.
 const maxBodyBytes = 1 << 20

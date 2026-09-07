@@ -443,10 +443,12 @@ this slice revertible.
 
 ## 8. The webhook
 
-Endpoint `POST /webhooks/<provider>` — `/webhooks/dodo` and `/webhooks/dodo/`
-today — mounted with `mux.Handle` **directly**, never the `handle()` closure in
-`server.go`, which registers into the authz contract and would fail
-`assertServedServicesMatch` at startup. `/mcp` is the precedent.
+Endpoint `POST /billing/webhooks/<provider>` — `/billing/webhooks/dodo` and
+`/billing/webhooks/dodo/` today — mounted with `mux.Handle` **directly**, never
+the `handle()` closure in `server.go`, which registers into the authz contract
+and would fail `assertServedServicesMatch` at startup. `/mcp` is the precedent.
+The path is scoped under `/billing/` rather than a bare `/webhooks/` so the
+generic root stays free for the next subsystem that needs an inbox.
 
 **The path carries the provider name deliberately.** Sniffing the provider from
 the headers would mean trying each verifier in turn, which is both a signature
