@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
@@ -36,8 +37,10 @@ func readLiveSubscription(ctx context.Context, r *dbread.Queries, orgID string) 
 	if !ok {
 		// The query already filtered to active/past_due, so an unparsable word means a
 		// writer stored a status pug cannot name. Not live is the safe reading.
-		slog.ErrorContext(ctx, "live subscription holds a status pug does not know",
-			slog.String("org_id", orgID), slog.String("status", row.Status))
+		err := fmt.Errorf("live subscription holds the unknown status %q", row.Status)
+		slog.ErrorContext(ctx, "live subscription holds a status pug does not know", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
 		return nil, nil
 	}
 	return &sub, nil

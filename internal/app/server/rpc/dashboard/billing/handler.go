@@ -173,7 +173,7 @@ func (s *Server) ConfirmCheckout(
 
 // confirmErr translates the confirm path: every case below has already taken the
 // customer's money, so none may fall through to checkoutErr, which answers as
-// though none had moved. FailedPrecondition throughout -- a person is needed.
+// though none had moved. FailedPrecondition throughout — a person is needed.
 func confirmErr(err error, orgID string) error {
 	paid := func(reason apperr.Reason, msg string) error {
 		return apperr.FailedPrecondition(reason, msg,

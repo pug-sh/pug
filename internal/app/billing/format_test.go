@@ -103,7 +103,7 @@ func TestReportRetentionNamesTheYears(t *testing.T) {
 	}
 }
 
-// Zero is a real price -- the two floors -- and must not read as absence.
+// Zero is a real price — the two floors — and must not read as absence.
 func TestReportRendersZeroPrice(t *testing.T) {
 	zero := int64(0)
 	free := int64(10_000)
@@ -269,5 +269,19 @@ func TestReportShowsStoredSubscriptionsTheResolvedAnswerHides(t *testing.T) {
 
 	if empty := renderWithSubs(t, ent, corebilling.Record{}, nil, nil); !strings.Contains(empty, "(none stored)") {
 		t.Errorf("an org with no rows should say so:\n%s", empty)
+	}
+}
+
+// An org whose entitlement has never been touched must still report an empty
+// history when one is asked for: a clean history and no history are different
+// answers, and only the nil says the operator did not ask.
+func TestHistorySectionSeparatesUnaskedFromEmpty(t *testing.T) {
+	ent := corebilling.Entitlement{Slug: corebilling.SlugFree, DisplayName: "Free"}
+
+	if out := render(t, ent, corebilling.Record{}, []corebilling.HistoryEntry{}); !strings.Contains(out, "(no recorded changes)") {
+		t.Errorf("an empty history did not report itself:\n%s", out)
+	}
+	if out := render(t, ent, corebilling.Record{}, nil); strings.Contains(out, "HISTORY") {
+		t.Errorf("a history nobody asked for was printed anyway:\n%s", out)
 	}
 }

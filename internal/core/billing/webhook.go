@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -20,7 +21,7 @@ import (
 
 // HandleDelivery stores one verified delivery and applies it, returning only once
 // the row is durable. Everything unapplicable is stored, marked processed and NOT
-// retried -- eight retries fix none of it. A body pug cannot DECODE is retried.
+// retried — eight retries fix none of it. A body pug cannot DECODE is retried.
 func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, d Delivery) error {
 	stored, err := s.write().InsertBillingWebhookDelivery(ctx, dbwrite.InsertBillingWebhookDeliveryParams{
 		EventType: d.EventType,
@@ -122,7 +123,7 @@ func (s *Service) applySubscriptionEvent(
 //
 // metadata.org_id is never enough on its own. Static payment links let the buyer
 // set metadata_* from the URL, so an org id in a payload names an org rather than
-// proving one -- it counts only alongside a product an operator staged.
+// proving one — it counts only alongside a product an operator staged.
 func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
 	// Every read here goes through the WRITE pool: a lagging replica would report "no
 	// such org" for an org that just checked out, rejecting the delivery permanently.
@@ -141,7 +142,7 @@ func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvide
 		}
 	}
 	// metadata.org_id, but only for the product an operator already staged this org
-	// to buy -- the negotiated-deal payment link. Buyer-settable metadata alone
+	// to buy — the negotiated-deal payment link. Buyer-settable metadata alone
 	// names an org; paired with a staged product it can only buy what was staged.
 	if event.OrgID != "" && event.ProductID != "" {
 		staged, err := w.GetBillingEntitlementProviderProductID(ctx, event.OrgID)
@@ -171,7 +172,7 @@ func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvide
 	return "", ErrOrgNotFound
 }
 
-// finishDelivery marks the row processed -- for an applied delivery and every
+// finishDelivery marks the row processed — for an applied delivery and every
 // unapplicable one, so no row is left looking like an attempt that died.
 func (s *Service) finishDelivery(ctx context.Context, provider PaymentProvider, d Delivery, reason string) error {
 	n, err := s.write().MarkBillingWebhookDeliveryProcessed(ctx, dbwrite.MarkBillingWebhookDeliveryProcessedParams{
@@ -221,9 +222,18 @@ func storablePayload(raw []byte) []byte {
 	return []byte(`{"raw_base64":"` + base64.StdEncoding.EncodeToString(raw) + `"}`)
 }
 
-func isUniqueViolation(err error) bool {
+// The one-live index is the only unique constraint an apply can trip: the primary
+// key gets a fresh xid, and (provider, provider_sub_id) is the conflict target. A
+// bare 23505 catch would report a future index as a second live subscription, and
+// that one is retried to the DLQ rather than rejected.
+const subscriptionsOneLiveIndex = "billing_subscriptions_one_live_idx"
+
+func isTwoLiveViolation(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == subscriptionsOneLiveIndex
 }
 
 // PruneDeliveries drops deliveries and spent checkout refs older than the
@@ -259,8 +269,8 @@ var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live s
 // reported as a skip, or a pass counts neither an apply nor a finding.
 var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be applied")
 
-// applySubscription is the one writer behind all three paths -- webhook,
-// reconcile and confirm -- so they cannot disagree about what "newer" means. It
+// applySubscription is the one writer behind all three paths — webhook,
+// reconcile and confirm — so they cannot disagree about what "newer" means. It
 // runs under the entitlement lock and re-reads the org's row inside it: a
 // `billing clear` between the mapping and the write would otherwise strand a
 // live custom subscription on the free floor, which is what Clear's own guard
@@ -337,7 +347,7 @@ func (s *Service) applySubscription(
 		Status:             string(event.Status),
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
+		if isTwoLiveViolation(err) {
 			slog.ErrorContext(ctx, "org already holds a live subscription", slogx.Error(err),
 				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)

@@ -36,8 +36,7 @@ func signed(id string, at time.Time, body []byte) http.Header {
 
 func testClient(t *testing.T, now time.Time) *Client {
 	t.Helper()
-	c, err := New(Config{APIKey: "sk_test", Environment: EnvironmentTest, WebhookSecret: secret()},
-		map[string]string{"growth": "prod_growth"})
+	c, err := New(Config{APIKey: "sk_test", Environment: EnvironmentTest, WebhookSecret: secret()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -119,7 +118,7 @@ func TestVerify(t *testing.T) {
 	})
 
 	t.Run("no secret configured verifies nothing", func(t *testing.T) {
-		c, err := New(Config{APIKey: "sk_test"}, nil)
+		c, err := New(Config{APIKey: "sk_test"})
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
@@ -301,11 +300,11 @@ func TestMappedSlug(t *testing.T) {
 }
 
 func TestNewRejectsAnUnknownEnvironment(t *testing.T) {
-	if _, err := New(Config{APIKey: "sk", Environment: "staging"}, nil); err == nil {
+	if _, err := New(Config{APIKey: "sk", Environment: "staging"}); err == nil {
 		t.Fatal("an unknown environment was accepted; it must fail startup")
 	}
 	// No key at all is the self-hosted shape, not an error.
-	c, err := New(Config{}, nil)
+	c, err := New(Config{})
 	if err != nil || c != nil {
 		t.Fatalf("New with no key = (%v, %v), want (nil, nil)", c, err)
 	}
@@ -337,14 +336,14 @@ func TestNewRejectsAnUnusableWebhookSecret(t *testing.T) {
 	}
 
 	// Through New, where a mistyped deploy variable actually lands.
-	if _, err := New(Config{APIKey: "sk_test", WebhookSecret: secretPrefix + "not!base64!"}, nil); !errors.Is(err, ErrMalformedSecret) {
+	if _, err := New(Config{APIKey: "sk_test", WebhookSecret: secretPrefix + "not!base64!"}); !errors.Is(err, ErrMalformedSecret) {
 		t.Errorf("New err = %v, want ErrMalformedSecret", err)
 	}
 }
 
 // The branch that decides where real money goes.
 func TestNewAcceptsLiveMode(t *testing.T) {
-	c, err := New(Config{APIKey: "sk_live", Environment: EnvironmentLive}, nil)
+	c, err := New(Config{APIKey: "sk_live", Environment: EnvironmentLive})
 	if err != nil {
 		t.Fatalf("New in live mode: %v", err)
 	}

@@ -395,8 +395,7 @@ func init() {
 	cronCmd.AddCommand(cronUsageCmd)
 	rootCmd.AddCommand(cronCmd)
 
-	rootCmd.AddCommand(newBillingCmd())
-
+	rootCmd.AddCommand(billingCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)

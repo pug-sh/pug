@@ -21,7 +21,8 @@ service BillingService {
 
   // Verifies one checkout against the provider and applies its subscription:
   // what confirms a returning buyer on a deployment with no reachable webhook
-  // URL. session_id is a claim -- the subscription must carry this org.
+  // URL. Admin-only, like the checkout it settles. session_id is a claim -- the
+  // subscription must carry this org.
   rpc ConfirmCheckout(ConfirmCheckoutRequest) returns (ConfirmCheckoutResponse) {}
 
   // Opens the provider's customer portal, where plan changes, card updates,
@@ -123,7 +124,6 @@ message CreateCheckoutSessionRequest {
   CheckoutTheme theme = 3 [(buf.validate.field).enum.defined_only = true];
 }
 
-// Which palette the provider's checkout renders in.
 enum CheckoutTheme {
   CHECKOUT_THEME_UNSPECIFIED = 0;
   CHECKOUT_THEME_LIGHT = 1;
@@ -175,13 +175,13 @@ message PlanOption {
   string slug = 1;
   string display_name = 2;
   // List price, in minor units of `currency`. ABSENT is the custom tier, whose
-  // price lives in the provider; that is not a price of zero.
+  // price lives in the provider -- absence is never zero, here or below.
   google.protobuf.Int64Value price_cents = 3;
   // ISO 4217.
   string currency = 4;
-  // Events the tier includes. ABSENT is the custom tier. Never render it as 0.
+  // Events the tier includes. ABSENT is the custom tier.
   google.protobuf.Int64Value included_events = 5;
-  // Days of history the tier keeps. ABSENT is the custom tier. Never render as 0.
+  // Days of history the tier keeps. ABSENT is the custom tier.
   google.protobuf.Int64Value retention_days = 7;
   // Whether a checkout for THIS tier would open -- the same helper
   // CreateCheckoutSession refuses on, so a dead button is impossible.

@@ -67,7 +67,7 @@ type Entitlement struct {
 	// nil means NO QUOTA: billing is switched off, or the row names a plan the
 	// catalog no longer knows. Never render it as zero.
 	IncludedEvents *int64
-	// How far back this org's history stays queryable. nil means NO BOUND -- billing
+	// How far back this org's history stays queryable. nil means NO BOUND — billing
 	// off, an unresolvable plan, or a deal that named none. Never render it as zero.
 	RetentionDays *int64
 
@@ -95,8 +95,8 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	if !rec.Present {
 		rec = Record{}
 	}
-	// Only a live subscription supplies anything. A cancelled row is kept -- "when
-	// did this lapse" is a question support asks -- but it is not consulted here.
+	// Only a live subscription supplies anything. A cancelled row is kept — "when
+	// did this lapse" is a question support asks — but it is not consulted here.
 	if sub != nil && !sub.Status.Live() {
 		sub = nil
 	}
@@ -159,7 +159,7 @@ func resolvePlan(orgCreateTime time.Time, rec Record, sub *Subscription, now tim
 	plan, known := PlanBySlug(rec.PlanSlug)
 
 	// Most specific first: somebody is paying for this one. Not gated on the
-	// contract -- that date bounds an operator's grant, not a live subscription.
+	// contract — that date bounds an operator's grant, not a live subscription.
 	if sub != nil {
 		if subPlan, ok := PlanBySlug(sub.PlanSlug); ok {
 			return subPlan, StatusActive
@@ -179,8 +179,8 @@ func resolvePlan(orgCreateTime time.Time, rec Record, sub *Subscription, now tim
 		return mustPlan(SlugTrial), StatusTrialing
 	}
 	if rec.Present && !known {
-		// Keeps the row's own numbers: resolving to "free, 10,000" would tell a
-		// paying customer they are over their limit.
+		// Same reason as the live-subscription case above: keep the row's own slug,
+		// and let applyOverrides supply the deal's numbers.
 		return Plan{Slug: rec.PlanSlug, DisplayName: rec.PlanSlug, Currency: free.Currency}, StatusFree
 	}
 	return free, StatusFree

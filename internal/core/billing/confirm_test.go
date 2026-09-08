@@ -21,7 +21,7 @@ func storedSubscriptions(t *testing.T, f *fixture) int {
 }
 
 // The whole point: a buyer comes back and the plan is theirs with no delivery
-// having arrived -- the only path that works with no reachable webhook URL.
+// having arrived — the only path that works with no reachable webhook URL.
 func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -207,7 +207,7 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	// A live subscription the org already holds -- a cancellation that never
+	// A live subscription the org already holds — a cancellation that never
 	// arrived, which is the deployment this whole path exists for.
 	provider.event = subEvent(f.orgID, "sub00000000000000027", "prod_growth", corebilling.SubStatusActive)
 	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_live", time.Now())); err != nil {

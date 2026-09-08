@@ -13,7 +13,7 @@ import (
 )
 
 // none is what an absent value prints as. Never a zero: absent means no quota, no
-// bound on history and no list price -- "0 days of history" worst of all.
+// bound on history and no list price — "0 days of history" worst of all.
 const none = "(none)"
 
 func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record, subs []dbread.BillingSubscription, history []corebilling.HistoryEntry) error {
@@ -66,13 +66,15 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 		}
 	}
 
+	// nil is "--history was not asked for"; empty is "asked for, and nothing is
+	// recorded" — which has to say so rather than print no section at all.
 	if history != nil {
 		if len(history) == 0 {
 			section(w, "HISTORY", "(no recorded changes)")
 		} else {
 			section(w, "HISTORY", "(newest first)")
 			for _, h := range history {
-				row(w, "  "+instant(h.ChangedAt), h.Actor+"\t"+historyLine(h.Record))
+				fmt.Fprintf(w, "  %s\t%s\t%s\n", instant(h.ChangedAt), h.Actor, historyLine(h.Record))
 			}
 		}
 	}

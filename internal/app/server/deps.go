@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -29,6 +30,7 @@ type deps struct {
 	jwtKey          []byte
 	nats            *nats.NATSClient
 	otelInterceptor *otelconnect.Interceptor
+	payments        *corebilling.Payments
 	pgRo            *pgxpool.Pool
 	pgW             *pgxpool.Pool
 	redis           *redis.Client
@@ -158,6 +160,13 @@ func newDeps(ctx context.Context) (*deps, error) {
 		return nil, err
 	}
 
+	// Nil when no provider is configured, which is a supported mode: only the buy
+	// button is missing. An unrecognised name fails startup.
+	payments, err := newPayments(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("payments provider: %w", err)
+	}
+
 	// Authorization policy is built from static in-code rules; it has no I/O or
 	// lifecycle, so it is constructed here and injected like any other dep. A
 	// malformed policy fails startup via this error (no panic, no global).
@@ -175,6 +184,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		jwtKey:          []byte(serverCfg.JWTKey),
 		nats:            natsClient,
 		otelInterceptor: otelInterceptor,
+		payments:        payments,
 		pgRo:            pgRo,
 		pgW:             pgW,
 		redis:           redisClient,

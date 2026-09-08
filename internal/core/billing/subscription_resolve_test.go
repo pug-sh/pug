@@ -145,7 +145,7 @@ func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 }
 
 // A catalog tier is a different purchase, so a lapsed grant's quota and name must
-// not ride along on it -- the customer would pay Starter for the pilot's quota.
+// not ride along on it — the customer would pay Starter for the pilot's quota.
 func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
 	rec := corebilling.Record{
 		Present: true, PlanSlug: "custom",

@@ -33,7 +33,7 @@ var (
 	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
 	ErrCustomNeedsQuota = errors.New("billing: a custom plan or a provider product requires an events override")
 	// ErrClearWouldStrandSubscription refuses to drop the quota a live custom
-	// subscription resolves from -- by clearing the row or by falling back to a floor.
+	// subscription resolves from — by clearing the row or by falling back to a floor.
 	ErrClearWouldStrandSubscription = errors.New("billing: this org has a live custom subscription; cancel it with the provider first")
 	ErrAnchorDayRange               = errors.New("billing: anchor day must be between 1 and 31")
 	ErrQuotaNegative                = errors.New("billing: the events override must be positive")
@@ -212,7 +212,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 		return Record{}, ErrPlanRetired
 	}
 	// The product id resolves a checkout to the custom tier, so it needs the same
-	// quota the custom slug does -- or the org buys the deal and resolves free.
+	// quota the custom slug does — or the org buys the deal and resolves free.
 	if (next.PlanSlug == SlugCustom || next.ProviderProductID != "") && next.IncludedEventsOverride <= 0 {
 		return Record{}, ErrCustomNeedsQuota
 	}

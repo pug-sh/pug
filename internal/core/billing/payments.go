@@ -30,7 +30,7 @@ var (
 	// ErrNoProvider is billing running with no payments credentials: the
 	// self-hosted mode, where only the buy button is missing.
 	ErrNoProvider = errors.New("billing: no payments provider is configured")
-	// ErrNotPurchasable is a plan with no product to check out against -- an
+	// ErrNotPurchasable is a plan with no product to check out against — an
 	// unconfigured catalog tier, or a deal whose product id nobody pasted on yet.
 	ErrNotPurchasable = errors.New("billing: this plan has no product to check out against")
 	// ErrNoCustomer is a portal asked for by an org that has never checked out.
@@ -38,10 +38,14 @@ var (
 	// ErrCurrencyNotSupported: pug sells and stores USD, and a currency it cannot
 	// render honestly must not become a number on a page.
 	ErrCurrencyNotSupported = errors.New("billing: only USD subscriptions are supported")
+	// ErrCheckoutNotForOrg is a session id whose subscription names a different org
+	// or none, or carries no ref pug minted for this org — the guard that makes a
+	// client-supplied session id safe to act on.
+	ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
 )
 
 // Currency is the one pug sells in, enforced at the webhook boundary so
-// multi-currency changes here -- and renames price_cents with it.
+// multi-currency changes here — and renames price_cents with it.
 const Currency = "USD"
 
 // Payments is the provider wiring. Nil means no provider, which is legal.
@@ -115,7 +119,7 @@ func (s *Service) CreateCheckoutSession(
 	ctx context.Context, in Checkout,
 ) (sessionID, checkoutURL string, err error) {
 	orgID, planSlug := in.OrgID, in.PlanSlug
-	if !s.billingEnabled {
+	if !s.billingEnabled || !s.payments.configured() {
 		return "", "", ErrNoProvider
 	}
 	plan, ok := PlanBySlug(planSlug)
@@ -224,7 +228,7 @@ type PlanOption struct {
 	PriceCents *int64
 	// nil means no quota of its own: the custom tier, whose quota comes from its row.
 	IncludedEvents *int64
-	// nil is the custom tier again, whose retention its deal recorded -- never a zero.
+	// nil is the custom tier again, whose retention its deal recorded — never a zero.
 	RetentionDays *int64
 
 	Purchasable bool
@@ -262,22 +266,9 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 	return out, nil
 }
 
-// ErrCheckoutNotForOrg is a session id whose subscription names a different org
-// or none, or carries no ref pug minted for this org -- the guard that makes a
-// client-supplied session id safe to act on.
-var ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
-
-// ErrCheckoutFailed is a checkout the provider says will not settle. Distinct
-// from a zero event ("not yet"), or a decline reads as a slow payment forever.
-var ErrCheckoutFailed = errors.New("billing: this checkout did not complete")
-
-// ErrSubscriptionNotFound is a subscription the provider no longer knows: a
-// finding for the reconcile pass, not a read failure worth retrying every run.
-var ErrSubscriptionNotFound = errors.New("billing: the provider does not know this subscription")
-
 // ConfirmCheckout verifies one checkout against the provider and writes its
 // subscription through the same CAS the webhook uses. false, nil means the
-// provider has no subscription yet -- the buyer beat their own payment home.
+// provider has no subscription yet — the buyer beat their own payment home.
 func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, now time.Time) (bool, error) {
 	if !s.billingEnabled || !s.payments.configured() {
 		return false, ErrNoProvider

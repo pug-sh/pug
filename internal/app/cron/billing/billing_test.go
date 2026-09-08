@@ -93,7 +93,7 @@ func TestPassPrunesOnlyPastRetention(t *testing.T) {
 }
 
 // unreachableProvider fails every re-read, which is what makes Reconcile report
-// an unreadable subscription -- the pass's failure exit.
+// an unreadable subscription — the pass's failure exit.
 type unreachableProvider struct{}
 
 func (unreachableProvider) Name() string { return dodo.Name }
@@ -101,6 +101,8 @@ func (unreachableProvider) Name() string { return dodo.Name }
 func (unreachableProvider) Verify(http.Header, []byte) (corebilling.Delivery, error) {
 	return corebilling.Delivery{}, errors.New("unused")
 }
+
+func (unreachableProvider) CanVerify() bool { return true }
 
 func (unreachableProvider) Normalize(corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
 	return corebilling.SubscriptionEvent{}, errors.New("unused")
@@ -200,6 +202,24 @@ func TestRunFailsOnAnUnknownProvider(t *testing.T) {
 	}
 }
 
+// The other half: a named provider with no credentials reconciles nothing, and
+// exit 0 would report that as a clean pass. The server degrades here instead.
+func TestRunFailsOnANamedProviderWithNoAPIKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	t.Setenv("PUG_BILLING_ENABLED", "true")
+	t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)
+	t.Setenv("PUG_DODO_API_KEY", "")
+	t.Setenv("DATABASE_URL", pg.PgW.Config().ConnString())
+
+	if err := Run(t.Context()); err == nil {
+		t.Fatal("a named provider with no API key exited 0")
+	}
+}
+
 func TestRunPrunesWithNoProviderConfigured(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -219,7 +239,7 @@ func TestRunPrunesWithNoProviderConfigured(t *testing.T) {
 	}
 }
 
-// Contention is not failure -- but the pass must also not have run. The stale
+// Contention is not failure — but the pass must also not have run. The stale
 // delivery surviving is what proves the lock was respected.
 func TestRunExitsZeroWhenAnotherPassHoldsTheLock(t *testing.T) {
 	if testing.Short() {
@@ -240,69 +260,4 @@ func TestRunExitsZeroWhenAnotherPassHoldsTheLock(t *testing.T) {
 	if got := deliveryIDs(t, pg.PgRO); len(got) != 1 {
 		t.Errorf("deliveries = %v, want the pass skipped entirely", got)
 	}
-}
-
-func TestNewPayments(t *testing.T) {
-	t.Run("no provider named", func(t *testing.T) {
-		p, err := newPayments(t.Context(), "")
-		if err != nil || p != nil {
-			t.Fatalf("newPayments = (%v, %v), want (nil, nil)", p, err)
-		}
-	})
-
-	t.Run("an unknown provider is an error", func(t *testing.T) {
-		if _, err := newPayments(t.Context(), "stripe"); err == nil {
-			t.Fatal("an unknown provider was accepted")
-		}
-	})
-
-	// The server lowercases and trims the same variable, so a name it starts on
-	// must not fail the pass.
-	t.Run("the provider name is normalized", func(t *testing.T) {
-		t.Setenv("PUG_DODO_API_KEY", "sk_test")
-		for _, name := range []string{"  ", "  DODO  ", "Dodo"} {
-			if _, err := newPayments(t.Context(), name); err != nil {
-				t.Errorf("newPayments(%q): %v", name, err)
-			}
-		}
-	})
-
-	// A named provider with no key is a misconfigured CronJob, not the self-hosted
-	// shape: without this the pass reconciles nothing and still reads as healthy.
-	t.Run("a named provider with no api key fails", func(t *testing.T) {
-		t.Setenv("PUG_DODO_API_KEY", "")
-		p, err := newPayments(t.Context(), dodo.Name)
-		if err == nil || p != nil {
-			t.Fatalf("newPayments = (%v, %v), want an error", p, err)
-		}
-	})
-
-	// The self-hosted shape names no provider at all, and that one still passes.
-	t.Run("no provider is not an error", func(t *testing.T) {
-		t.Setenv("PUG_DODO_API_KEY", "")
-		p, err := newPayments(t.Context(), "")
-		if err != nil || p != nil {
-			t.Fatalf("newPayments = (%v, %v), want (nil, nil)", p, err)
-		}
-	})
-
-	t.Run("builds both directions of the product map", func(t *testing.T) {
-		t.Setenv("PUG_DODO_API_KEY", "sk_test")
-		t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_growth")
-
-		p, err := newPayments(t.Context(), dodo.Name)
-		if err != nil {
-			t.Fatalf("newPayments: %v", err)
-		}
-		if p == nil {
-			t.Fatal("newPayments returned no provider for a configured deployment")
-		}
-		if p.ProductBySlug["growth"] != "prod_growth" || p.SlugByProduct["prod_growth"] != "growth" {
-			t.Errorf("product map = %v / %v", p.ProductBySlug, p.SlugByProduct)
-		}
-		// This pass never starts a checkout, so there is nowhere to return a buyer to.
-		if p.ReturnURL != "" {
-			t.Errorf("ReturnURL = %q, want empty", p.ReturnURL)
-		}
-	})
 }

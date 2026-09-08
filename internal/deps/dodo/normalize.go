@@ -65,31 +65,33 @@ func (m *metadata) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func envelopeType(raw []byte) (string, error) {
+func decodeEnvelope(raw []byte) (envelope, error) {
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return "", fmt.Errorf("dodo: decode webhook envelope: %w", err)
+		return envelope{}, fmt.Errorf("dodo: decode webhook envelope: %w", err)
 	}
-	return env.Type, nil
+	return env, nil
+}
+
+func envelopeType(raw []byte) (string, error) {
+	env, err := decodeEnvelope(raw)
+	return env.Type, err
 }
 
 // Normalize maps one verified delivery onto pug's vocabulary. A zero event means
-// "store, mark processed, ignore" -- a type pug does not handle must never 500.
+// "store, mark processed, ignore" — a type pug does not handle must never 500.
 func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
 	if !strings.HasPrefix(d.EventType, subscriptionPrefix) {
 		return corebilling.SubscriptionEvent{}, nil
 	}
 
-	var env envelope
-	if err := json.Unmarshal(d.RawPayload, &env); err != nil {
-		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: decode webhook envelope: %w", err)
+	env, err := decodeEnvelope(d.RawPayload)
+	if err != nil {
+		return corebilling.SubscriptionEvent{}, err
 	}
 	var payload subscriptionPayload
 	if err := json.Unmarshal(env.Data, &payload); err != nil {
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: decode subscription payload: %w", err)
-	}
-	if payload.CustomerID == "" {
-		payload.CustomerID = payload.Customer.CustomerID
 	}
 	event := c.eventFromSubscription(payload)
 	// A subscription event that yields nothing is a payload shape pug no longer
@@ -124,9 +126,8 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 	return event
 }
 
-// statusFromDodo is the first implementation of pug's vocabulary. An unmapped
-// state comes back as the provider's own word, stored verbatim and unparsed at
-// read time -- so it can only withhold a plan, never grant one.
+// An unmapped state comes back as the provider's own word, stored verbatim and
+// unparsed at read time — so it can only withhold a plan, never grant one.
 func statusFromDodo(status string) corebilling.SubStatus {
 	raw := strings.ToLower(strings.TrimSpace(status))
 	switch raw {

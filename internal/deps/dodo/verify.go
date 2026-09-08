@@ -15,7 +15,7 @@ import (
 
 // Standard Webhooks (standardwebhooks.com) headers: HMAC-SHA256 over
 // "{webhook-id}.{webhook-timestamp}.{raw body}", compared in constant time against
-// EACH signature in webhook-signature -- there are several during a rotation.
+// EACH signature in webhook-signature — there are several during a rotation.
 const (
 	headerWebhookID        = "webhook-id"
 	headerWebhookTimestamp = "webhook-timestamp"
@@ -27,7 +27,6 @@ const (
 // 401 every late attempt. The inbox's (provider, webhook_id) key stops a replay.
 const tolerance = 24 * time.Hour
 
-// secretPrefix is the conventional prefix on a Standard Webhooks signing secret.
 const secretPrefix = "whsec_"
 
 var (
@@ -70,7 +69,7 @@ func newVerifier(secret string) (*verifier, error) {
 	return &verifier{wh: wh, now: time.Now}, nil
 }
 
-// Verify authenticates a delivery over the RAW bytes -- re-serializing a decoded
+// Verify authenticates a delivery over the RAW bytes — re-serializing a decoded
 // payload breaks the signature. DeliveredAt is the timestamp this already parsed
 // for the replay window, so the CAS guard is never handed an unauthenticated one.
 func (c *Client) Verify(headers http.Header, rawBody []byte) (corebilling.Delivery, error) {

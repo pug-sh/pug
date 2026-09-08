@@ -7,21 +7,35 @@ import (
 	"time"
 )
 
-// ErrUndecodable is a delivery that VERIFIED and still will not decode. Kept apart
-// from a signature failure so it is retried and recorded, not answered 401.
-var ErrUndecodable = errors.New("billing: webhook body cannot be decoded")
+// The errors an adapter must return; every other provider fault is its own.
+var (
+	// ErrUndecodable is a delivery that VERIFIED and still will not decode. Kept apart
+	// from a signature failure so it is retried and recorded, not answered 401.
+	ErrUndecodable = errors.New("billing: webhook body cannot be decoded")
+	// ErrCheckoutFailed is a checkout the provider says will not settle. Distinct
+	// from a zero event ("not yet"), or a decline reads as a slow payment forever.
+	ErrCheckoutFailed = errors.New("billing: this checkout did not complete")
+	// ErrSubscriptionNotFound is a subscription the provider no longer knows: a
+	// finding for the reconcile pass, not a read failure worth retrying every run.
+	ErrSubscriptionNotFound = errors.New("billing: the provider does not know this subscription")
+)
 
 // PaymentProvider is the whole seam between pug and a merchant of record: nothing
 // else in this slice imports a provider package. The payload is deliberately not
-// abstracted -- a common payload schema across providers cannot be maintained.
+// abstracted — a common payload schema across providers cannot be maintained.
 type PaymentProvider interface {
 	// Name is the provider's slug, stored on every row it produces and the path
-	// segment its webhook mounts at -- changing it orphans stored rows.
+	// segment its webhook mounts at — changing it orphans stored rows.
 	Name() string
 
 	// Verify authenticates a raw delivery, taking the exact bytes because every
 	// signature scheme signs those, not a decoded message.
 	Verify(headers http.Header, rawBody []byte) (Delivery, error)
+
+	// CanVerify reports whether a signing secret is configured, i.e. whether Verify
+	// can authenticate anything. False mounts no webhook route at all rather than
+	// taking unverified deliveries on the money path.
+	CanVerify() bool
 
 	// Normalize maps one verified delivery onto pug's vocabulary. A zero
 	// SubscriptionEvent means "store, mark processed, ignore".
@@ -59,7 +73,7 @@ type Delivery struct {
 type SubscriptionEvent struct {
 	ProviderSubID      string
 	ProviderCustomerID string
-	// ProductID is the provider's product. It is what resolves a plan slug -- from
+	// ProductID is the provider's product. It is what resolves a plan slug — from
 	// config for a catalog tier, from the org's row for a negotiated deal.
 	ProductID string
 	// OrgID is metadata.org_id, which a buyer can set on a static payment link. It
@@ -96,7 +110,7 @@ type CheckoutInput struct {
 	// CustomerEmail pre-fills the provider's form. Never the identity: a person can
 	// admin two orgs, and a shared customer would misattribute a delivery.
 	CustomerEmail string
-	// CustomerName pre-fills the same form and is often empty -- a magic-link signup
+	// CustomerName pre-fills the same form and is often empty — a magic-link signup
 	// stores no name. Only an OIDC claim supplies one.
 	CustomerName string
 	// Theme is the palette the checkout renders in, so an overlay opened from the
@@ -130,7 +144,9 @@ const (
 
 // Live reports whether the subscription supplies a plan. past_due is live on
 // purpose: the card failed, the entitlement did not. The same set is hardcoded in
-// four SQL sites, which TestTheLiveStatusSetAgreesBetweenGoAndSQL pins.
+// three queries and in the one-live index, pinned by
+// TestTheLiveStatusSetAgreesBetweenGoAndSQL, TestPastDueCountsAsBilled and
+// TestPastDueHoldsTheOneLiveSlot.
 func (s SubStatus) Live() bool {
 	switch s {
 	case SubStatusActive, SubStatusPastDue:
@@ -152,7 +168,7 @@ func AllSubStatuses() []SubStatus {
 }
 
 // ParseSubStatus narrows a stored word back to the vocabulary. An unrecognized
-// value is not live, which is the safe direction -- see SubStatus.
+// value is not live, which is the safe direction — see SubStatus.
 func ParseSubStatus(v string) (SubStatus, bool) {
 	switch s := SubStatus(v); s {
 	case SubStatusActive, SubStatusPastDue, SubStatusPaused,

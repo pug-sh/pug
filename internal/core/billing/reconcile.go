@@ -33,7 +33,7 @@ type ReconcileReport struct {
 	// person: nothing here tells a purged subscription from one never theirs.
 	Untracked int
 	// An entitlement granting a paid or custom plan with no live subscription behind
-	// it. An org with NO entitlement row is invisible here -- see UnmappedProduct.
+	// it. An org with NO entitlement row is invisible here — see UnmappedProduct.
 	EntitledUnbilled int
 	// A live subscription against a product nothing maps to: a deploy is missing a
 	// product key, or an operator created a product without pasting its id.
@@ -45,7 +45,7 @@ type ReconcileReport struct {
 	// customer, or a negative price. Counted rather than skipped, or the pass
 	// reports a sweep it did not make.
 	Unapplicable int
-	// Two live subscriptions for one org, refused by the partial unique index -- the
+	// Two live subscriptions for one org, refused by the partial unique index — the
 	// one finding that means an org may be paying twice.
 	TwoLive int
 	// Deliveries accepted and not applied. The walk above cannot see them: one that
@@ -66,7 +66,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	provider := s.payments.Provider
 
 	// Paged by offset rather than keyset: the walk holds no lock, and a row seen
-	// twice or not at all is harmless -- the CAS makes a repeat a no-op.
+	// twice or not at all is harmless — the CAS makes a repeat a no-op.
 	for offset := int32(0); ; offset += reconcilePageSize {
 		rows, err := s.read.ListBillingSubscriptionsByProvider(ctx,
 			dbread.ListBillingSubscriptionsByProviderParams{
@@ -185,7 +185,7 @@ func (s *Service) reconcileOne(
 	applied, err := s.applySubscription(ctx, provider, row.OrgID, event, now)
 	if err != nil {
 		// Already logged at the write, except the two states the writer names rather
-		// than fails on -- and every one of them has to land on a counter, or the pass
+		// than fails on — and every one of them has to land on a counter, or the pass
 		// reports a sweep it did not make.
 		switch {
 		case errors.Is(err, ErrTwoLiveSubscriptions):

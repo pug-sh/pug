@@ -62,7 +62,8 @@ type BillingServiceClient interface {
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
-	// URL. session_id is a claim -- the subscription must carry this org.
+	// URL. Admin-only, like the checkout it settles. session_id is a claim -- the
+	// subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
 	// Opens the provider's customer portal, where plan changes, card updates,
 	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
@@ -164,7 +165,8 @@ type BillingServiceHandler interface {
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
-	// URL. session_id is a claim -- the subscription must carry this org.
+	// URL. Admin-only, like the checkout it settles. session_id is a claim -- the
+	// subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
 	// Opens the provider's customer portal, where plan changes, card updates,
 	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.

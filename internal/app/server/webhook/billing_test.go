@@ -1,4 +1,4 @@
-package billingwebhook
+package webhook
 
 import (
 	"context"
@@ -19,13 +19,16 @@ func TestMain(m *testing.M) { testutil.Main(m) }
 // stubProvider verifies by a magic body rather than a real signature; the
 // signature schemes themselves are tested in each provider's package.
 type stubProvider struct {
-	name      string
-	verifyErr error
+	name         string
+	verifyErr    error
+	cannotVerify bool
 }
 
 const goodBody = "verify-me"
 
 func (p stubProvider) Name() string { return p.name }
+
+func (p stubProvider) CanVerify() bool { return !p.cannotVerify }
 
 func (p stubProvider) Verify(_ http.Header, raw []byte) (corebilling.Delivery, error) {
 	if p.verifyErr != nil {
@@ -83,15 +86,15 @@ func post(t *testing.T, h http.Handler, path, body string) *http.Response {
 	return res
 }
 
-func TestPathFor(t *testing.T) {
+func TestBillingPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	// The provider is named in the URL so no verifier has to be guessed by trying
 	// each in turn.
-	if got := PathFor("dodo"); got != "/billing/webhooks/dodo" {
-		t.Errorf("PathFor(dodo) = %q", got)
+	if got := BillingPath("dodo"); got != "/billing/webhooks/dodo" {
+		t.Errorf("BillingPath(dodo) = %q", got)
 	}
 }
 
@@ -104,20 +107,19 @@ func TestMountRequiresAVerifiableProvider(t *testing.T) {
 
 	svc, _ := newService(t)
 	for name, tc := range map[string]struct {
-		service   *corebilling.Service
-		provider  corebilling.PaymentProvider
-		canVerify bool
+		service  *corebilling.Service
+		provider corebilling.PaymentProvider
 	}{
-		"no service":  {nil, stubProvider{name: "dodo"}, true},
-		"no provider": {svc, nil, true},
-		"no secret":   {svc, stubProvider{name: "dodo"}, false},
+		"no service":  {nil, stubProvider{name: "dodo"}},
+		"no provider": {svc, nil},
+		"no secret":   {svc, stubProvider{name: "dodo", cannotVerify: true}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			if Mount(mux, tc.service, tc.provider, tc.canVerify) {
+			if MountBilling(mux, tc.service, tc.provider) {
 				t.Fatal("Mount reported a route it must not have registered")
 			}
-			if res := post(t, mux, PathFor("dodo"), goodBody); res.StatusCode != http.StatusNotFound {
+			if res := post(t, mux, BillingPath("dodo"), goodBody); res.StatusCode != http.StatusNotFound {
 				t.Errorf("status = %d, want 404", res.StatusCode)
 			}
 		})
@@ -131,7 +133,7 @@ func TestMountRegistersBothPathForms(t *testing.T) {
 
 	svc, _ := newService(t)
 	mux := http.NewServeMux()
-	if !Mount(mux, svc, stubProvider{name: "dodo"}, true) {
+	if !MountBilling(mux, svc, stubProvider{name: "dodo"}) {
 		t.Fatal("Mount did not register the route")
 	}
 	// ServeMux exact-matches the bare pattern and only redirects the other way,
@@ -151,7 +153,7 @@ func TestHandlerStatuses(t *testing.T) {
 	svc, _ := newService(t)
 
 	t.Run("a verified delivery is 204 once durable", func(t *testing.T) {
-		res := post(t, &handler{provider: stubProvider{name: "dodo"}, service: svc}, "/", goodBody)
+		res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/", goodBody)
 		if res.StatusCode != http.StatusNoContent {
 			t.Errorf("status = %d, want 204", res.StatusCode)
 		}
@@ -160,14 +162,14 @@ func TestHandlerStatuses(t *testing.T) {
 	// An auth failure, not a server fault: a 5xx here would ask the provider to
 	// retry a body it can never sign.
 	t.Run("an unsigned body is 401", func(t *testing.T) {
-		res := post(t, &handler{provider: stubProvider{name: "dodo"}, service: svc}, "/", "forged")
+		res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/", "forged")
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401", res.StatusCode)
 		}
 	})
 
 	t.Run("a body past the cap is 400", func(t *testing.T) {
-		res := post(t, &handler{provider: stubProvider{name: "dodo"}, service: svc}, "/",
+		res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/",
 			strings.Repeat("x", maxBodyBytes+1))
 		if res.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", res.StatusCode)
@@ -175,7 +177,7 @@ func TestHandlerStatuses(t *testing.T) {
 	})
 
 	t.Run("a non-POST is 405 and says so", func(t *testing.T) {
-		srv := httptest.NewServer(&handler{provider: stubProvider{name: "dodo"}, service: svc})
+		srv := httptest.NewServer(&billingHandler{provider: stubProvider{name: "dodo"}, service: svc})
 		t.Cleanup(srv.Close)
 		res, err := http.Get(srv.URL)
 		if err != nil {
@@ -201,7 +203,7 @@ func TestAFailedWriteIs500(t *testing.T) {
 	svc, pg := newService(t)
 	pg.PgW.Close()
 
-	res := post(t, &handler{provider: stubProvider{name: "dodo"}, service: svc}, "/", goodBody)
+	res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/", goodBody)
 	if res.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", res.StatusCode)
 	}
@@ -221,11 +223,11 @@ func TestAnUndecodableBodyIsRetriedNotRejected(t *testing.T) {
 		name:      "dodo",
 		verifyErr: fmt.Errorf("%w: unexpected envelope", corebilling.ErrUndecodable),
 	}
-	if !Mount(mux, svc, provider, true) {
+	if !MountBilling(mux, svc, provider) {
 		t.Fatal("Mount did not register the route")
 	}
 
-	if res := post(t, mux, PathFor("dodo"), goodBody); res.StatusCode != http.StatusInternalServerError {
+	if res := post(t, mux, BillingPath("dodo"), goodBody); res.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500 so the provider retries", res.StatusCode)
 	}
 }
@@ -239,11 +241,11 @@ func TestABadSignatureStaysUnauthorized(t *testing.T) {
 
 	svc, _ := newService(t)
 	mux := http.NewServeMux()
-	if !Mount(mux, svc, stubProvider{name: "dodo"}, true) {
+	if !MountBilling(mux, svc, stubProvider{name: "dodo"}) {
 		t.Fatal("Mount did not register the route")
 	}
 
-	if res := post(t, mux, PathFor("dodo"), "not-the-magic-body"); res.StatusCode != http.StatusUnauthorized {
+	if res := post(t, mux, BillingPath("dodo"), "not-the-magic-body"); res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", res.StatusCode)
 	}
 }
@@ -265,11 +267,11 @@ func TestPanicIsContainedAsA500(t *testing.T) {
 	svc, _ := newService(t)
 	mux := http.NewServeMux()
 	provider := panickingProvider{stubProvider{name: "stub"}}
-	if !Mount(mux, svc, provider, true) {
+	if !MountBilling(mux, svc, provider) {
 		t.Fatal("Mount refused a verifiable provider")
 	}
 
-	res := post(t, mux, PathFor("stub"), goodBody)
+	res := post(t, mux, BillingPath("stub"), goodBody)
 	if res.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", res.StatusCode)
 	}

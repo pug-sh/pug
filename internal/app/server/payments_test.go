@@ -21,12 +21,12 @@ func TestNewPaymentsNoProviderConfigured(t *testing.T) {
 			for k, v := range env {
 				t.Setenv(k, v)
 			}
-			payments, canVerify, err := newPayments(t.Context())
+			payments, err := newPayments(t.Context())
 			if err != nil {
 				t.Fatalf("newPayments: %v", err)
 			}
-			if payments != nil || canVerify {
-				t.Errorf("newPayments = (%v, %v), want (nil, false)", payments, canVerify)
+			if payments != nil {
+				t.Errorf("newPayments = %v, want nil", payments)
 			}
 		})
 	}
@@ -36,7 +36,7 @@ func TestNewPaymentsNoProviderConfigured(t *testing.T) {
 // indistinguishable, so the name has to fail startup instead.
 func TestNewPaymentsRejectsAnUnknownProvider(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", "stripe")
-	if _, _, err := newPayments(t.Context()); err == nil {
+	if _, err := newPayments(t.Context()); err == nil {
 		t.Fatal("an unknown PUG_BILLING_PROVIDER was accepted")
 	}
 }
@@ -48,7 +48,7 @@ func TestNewPaymentsRequiresAnAbsoluteDashboardURL(t *testing.T) {
 		t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)
 		t.Setenv("PUG_DODO_API_KEY", "sk_test")
 		t.Setenv("PUG_DASHBOARD_BASE_URL", base)
-		if _, _, err := newPayments(t.Context()); err == nil {
+		if _, err := newPayments(t.Context()); err == nil {
 			t.Errorf("PUG_DASHBOARD_BASE_URL=%q was accepted", base)
 		}
 	}
@@ -62,15 +62,15 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	// The trailing slash is the one a dashboard base URL is usually written with.
 	t.Setenv("PUG_DASHBOARD_BASE_URL", "https://app.example.com/")
 
-	payments, canVerify, err := newPayments(t.Context())
+	payments, err := newPayments(t.Context())
 	if err != nil {
 		t.Fatalf("newPayments: %v", err)
 	}
 	if payments == nil {
 		t.Fatal("newPayments returned no provider for a fully configured deployment")
 	}
-	if !canVerify {
-		t.Error("canVerify = false with a webhook secret configured; the route would not mount")
+	if !payments.Provider.CanVerify() {
+		t.Error("CanVerify = false with a webhook secret configured; the route would not mount")
 	}
 	if want := "https://app.example.com" + checkoutReturnPath; payments.ReturnURL != want {
 		t.Errorf("ReturnURL = %q, want %q", payments.ReturnURL, want)
@@ -85,7 +85,7 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	}
 }
 
-// The route does not mount without a secret, so every delivery 404s -- but
+// The route does not mount without a secret, so every delivery 404s — but
 // checkout still works, and startup must not fail.
 func TestNewPaymentsWithoutAWebhookSecret(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)
@@ -93,12 +93,15 @@ func TestNewPaymentsWithoutAWebhookSecret(t *testing.T) {
 	t.Setenv("PUG_DODO_WEBHOOK_SECRET", "")
 	t.Setenv("PUG_DASHBOARD_BASE_URL", "https://app.example.com")
 
-	payments, canVerify, err := newPayments(t.Context())
+	payments, err := newPayments(t.Context())
 	if err != nil {
 		t.Fatalf("newPayments: %v", err)
 	}
-	if payments == nil || canVerify {
-		t.Errorf("newPayments = (%v, %v), want a provider that cannot verify", payments, canVerify)
+	if payments == nil {
+		t.Fatal("newPayments returned no provider; checkout still works without a webhook secret")
+	}
+	if payments.Provider.CanVerify() {
+		t.Error("CanVerify = true with no webhook secret; the route would mount and take unverified deliveries")
 	}
 }
 
@@ -110,7 +113,7 @@ func TestNewPaymentsRejectsAMisconfiguredCatalog(t *testing.T) {
 	t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_same")
 	t.Setenv("PUG_DODO_PRODUCT_SCALE", "prod_same")
 
-	if _, _, err := newPayments(t.Context()); err == nil {
+	if _, err := newPayments(t.Context()); err == nil {
 		t.Fatal("two tiers sharing a product id was accepted")
 	}
 }
@@ -122,7 +125,7 @@ func TestNewPaymentsRejectsAnUnknownEnvironment(t *testing.T) {
 	// real money nowhere.
 	t.Setenv("PUG_DODO_ENVIRONMENT", "staging")
 
-	if _, _, err := newPayments(t.Context()); err == nil {
+	if _, err := newPayments(t.Context()); err == nil {
 		t.Fatal("an unknown PUG_DODO_ENVIRONMENT was accepted")
 	}
 }

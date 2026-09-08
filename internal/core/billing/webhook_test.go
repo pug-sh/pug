@@ -38,6 +38,8 @@ func (f *fakeProvider) Verify(http.Header, []byte) (corebilling.Delivery, error)
 	return corebilling.Delivery{}, nil
 }
 
+func (f *fakeProvider) CanVerify() bool { return true }
+
 func (f *fakeProvider) Normalize(corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
 	return f.event, f.err
 }
@@ -248,8 +250,25 @@ func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 	}
 }
 
+// past_due sits in 020's one-live index, not only in Live(). Every other collision
+// test pairs two active rows, so dropping past_due from that predicate would let an
+// org hold a second live subscription with nothing failing.
+func TestPastDueHoldsTheOneLiveSlot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	seedSubscription(t, f, "sub00000000000000060", "growth", "past_due")
+
+	provider.event = subEvent(f.orgID, "sub00000000000000061", "prod_scale", corebilling.SubStatusActive)
+	err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_past_due", time.Now()))
+	if !errors.Is(err, corebilling.ErrTwoLiveSubscriptions) {
+		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions — past_due did not hold the slot", err)
+	}
+}
+
 // A live custom subscription resolves its quota from the entitlement row, so
-// deleting it drops an org still being charged -- and reconcile looks for the inverse.
+// deleting it drops an org still being charged — and reconcile looks for the inverse.
 func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -386,7 +405,7 @@ func TestRetryOfAProcessedDeliveryIsANoop(t *testing.T) {
 }
 
 // Every unapplicable delivery has one disposition: stored, marked processed with a
-// reason, never retried -- retrying fixes none of them.
+// reason, never retried — retrying fixes none of them.
 func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -801,7 +820,7 @@ func waitForEntitlementLockWaiter(t *testing.T, f *fixture, done <-chan struct{}
 }
 
 // A product dropped from the config must not refuse a CANCELLATION. Refusing it
-// leaves the row active and the org on a tier it stopped paying for -- an unmapped
+// leaves the row active and the org on a tier it stopped paying for — an unmapped
 // product may withhold a plan, never preserve one.
 func TestCancellationLandsWhenTheProductIsUnmapped(t *testing.T) {
 	if testing.Short() {
@@ -882,7 +901,7 @@ func TestAnUnknownCheckoutRefDoesNotAttribute(t *testing.T) {
 
 // The negotiated-deal payment link: no checkout pug opened, so no ref. It
 // attributes on metadata.org_id paired with the product an operator staged for
-// that org -- which is the only thing a buyer cannot set from a URL.
+// that org — which is the only thing a buyer cannot set from a URL.
 func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -1021,11 +1040,11 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != "growth" {
-		t.Errorf("the ref's org resolved %q, want growth -- attribution did not prefer the ref", ent.Slug)
+		t.Errorf("the ref's org resolved %q, want growth — attribution did not prefer the ref", ent.Slug)
 	}
 }
 
-// A dropped product must not refuse a cancellation -- but with no stored row there
+// A dropped product must not refuse a cancellation — but with no stored row there
 // is no grant to end, so the refusal stands.
 func TestCancellationWithNoStoredRowKeepsTheProductRefusal(t *testing.T) {
 	if testing.Short() {

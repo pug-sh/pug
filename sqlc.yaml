@@ -15,13 +15,11 @@ sql:
             nullable: true
             go_type:
               type: "map[string]any"
-          # thresholds is a JSON array, not an object — return raw bytes so the
-          # service layer can marshal proto repeated fields via protojson.
           - column: "dashboard_tiles.thresholds"
             go_type:
               type: "[]byte"
-          # The delivery as the provider sent it, as raw bytes so nothing re-serializes
-          # it. jsonb sorts keys, so a stored payload never re-verifies a signature.
+          # Raw bytes: jsonb sorts keys, so a re-serialized payload never
+          # re-verifies its signature.
           - column: "billing_webhook_deliveries.payload"
             go_type:
               type: "[]byte"
@@ -40,13 +38,11 @@ sql:
             nullable: true
             go_type:
               type: "map[string]any"
-          # thresholds is a JSON array, not an object — return raw bytes so the
-          # service layer can marshal proto repeated fields via protojson.
           - column: "dashboard_tiles.thresholds"
             go_type:
               type: "[]byte"
-          # The delivery as the provider sent it, as raw bytes so nothing re-serializes
-          # it. jsonb sorts keys, so a stored payload never re-verifies a signature.
+          # Raw bytes: jsonb sorts keys, so a re-serialized payload never
+          # re-verifies its signature.
           - column: "billing_webhook_deliveries.payload"
             go_type:
               type: "[]byte"

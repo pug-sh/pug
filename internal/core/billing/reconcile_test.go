@@ -111,6 +111,36 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 	}
 }
 
+// past_due is live in the unbilled walk too, not only in Live(): narrowing that
+// join to 'active' would report every org whose card failed as entitled to a plan
+// nobody is charged for, on every pass.
+func TestPastDueCountsAsBilled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_growth", corebilling.SubStatusPastDue)
+	provider.event = pastDue
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_past_due_billed", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	svc := f.svcWithProvider(t, &fetchProvider{
+		fakeProvider: *provider,
+		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000070": pastDue},
+	})
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.EntitledUnbilled != 0 {
+		t.Errorf("entitled_unbilled = %d, want 0 — a past_due subscription is still being billed", report.EntitledUnbilled)
+	}
+}
+
 // A provider outage must not read as "everything is consistent", and one
 // unreadable subscription must not abandon the rest of the pass.
 func TestReconcileCountsUnreadableSubscriptions(t *testing.T) {

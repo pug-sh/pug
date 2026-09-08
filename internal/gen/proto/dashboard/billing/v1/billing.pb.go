@@ -148,7 +148,6 @@ func (SubscriptionStatus) EnumDescriptor() ([]byte, []int) {
 	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{1}
 }
 
-// Which palette the provider's checkout renders in.
 type CheckoutTheme int32
 
 const (
@@ -833,13 +832,13 @@ type PlanOption struct {
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	// List price, in minor units of `currency`. ABSENT is the custom tier, whose
-	// price lives in the provider; that is not a price of zero.
+	// price lives in the provider -- absence is never zero, here or below.
 	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
 	// ISO 4217.
 	Currency *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
-	// Events the tier includes. ABSENT is the custom tier. Never render it as 0.
+	// Events the tier includes. ABSENT is the custom tier.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,5,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
-	// Days of history the tier keeps. ABSENT is the custom tier. Never render as 0.
+	// Days of history the tier keeps. ABSENT is the custom tier.
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,7,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
 	// Whether a checkout for THIS tier would open -- the same helper
 	// CreateCheckoutSession refuses on, so a dead button is impossible.

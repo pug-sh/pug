@@ -187,7 +187,7 @@ func TestSubStatusToRPCCoversEveryStoredStatus(t *testing.T) {
 		t.Errorf("the table covers %d statuses, the column permits %d", len(want), len(corebilling.AllSubStatuses()))
 	}
 	// A provider state pug has no word for is stored verbatim and reports
-	// UNSPECIFIED -- the same "not live" resolution gives it.
+	// UNSPECIFIED — the same "not live" resolution gives it.
 	if got := subStatusToRPC("some_state_the_provider_added"); got != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED {
 		t.Errorf("an unmapped status = %s, want UNSPECIFIED", got)
 	}

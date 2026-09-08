@@ -16,9 +16,9 @@ func TestMain(m *testing.M) { testutil.Main(m) }
 
 const actor = "praveen/INV-1"
 
-// newOrg wires the process environment the commands read, since withDeps builds
-// its own pools rather than taking them.
-func newOrg(t *testing.T) string {
+// newBilling wires the process environment New reads, since the CLI opens its own
+// pools, and hands back a command object beside a fresh org to run it against.
+func newBilling(t *testing.T) (*CLI, string) {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
 	t.Setenv("DATABASE_URL", pg.PgW.Config().ConnString())
@@ -32,7 +32,13 @@ func newOrg(t *testing.T) string {
 		t.Fatalf("create org: %v", err)
 	}
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
-	return org.ID
+
+	cli, err := New(t.Context())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(cli.Close)
+	return cli, org.ID
 }
 
 func TestShowAnOrgWithNoRow(t *testing.T) {
@@ -40,9 +46,9 @@ func TestShowAnOrgWithNoRow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	orgID := newOrg(t)
+	cli, orgID := newBilling(t)
 	var out strings.Builder
-	if err := Show(t.Context(), &out, orgID, true); err != nil {
+	if err := cli.Show(t.Context(), &out, orgID, true); err != nil {
 		t.Fatalf("Show: %v", err)
 	}
 	got := out.String()
@@ -60,13 +66,13 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	orgID := newOrg(t)
+	cli, orgID := newBilling(t)
 	events := int64(5_000_000)
 	name := "Acme Enterprise"
 	note := "$400/mo, INV-123"
 
 	var set strings.Builder
-	if err := Set(t.Context(), &set, orgID, actor, corebilling.Change{
+	if err := cli.Set(t.Context(), &set, orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugCustom,
 		IncludedEvents: &events,
 		DisplayName:    &name,
@@ -79,7 +85,7 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 	}
 
 	var show strings.Builder
-	if err := Show(t.Context(), &show, orgID, true); err != nil {
+	if err := cli.Show(t.Context(), &show, orgID, true); err != nil {
 		t.Fatalf("Show: %v", err)
 	}
 	got := show.String()
@@ -95,12 +101,12 @@ func TestExtendTrialReportsTheNewEnd(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	orgID := newOrg(t)
+	cli, orgID := newBilling(t)
 	var out strings.Builder
 	// Bracketed, because the command reads its own clock: a UTC midnight crossing
 	// between the two reads would otherwise fail a correct write.
 	before := time.Now()
-	if err := ExtendTrial(t.Context(), &out, orgID, actor, 30); err != nil {
+	if err := cli.ExtendTrial(t.Context(), &out, orgID, actor, 30); err != nil {
 		t.Fatalf("ExtendTrial: %v", err)
 	}
 	wants := []string{
@@ -119,15 +125,15 @@ func TestClearReturnsToTheFloor(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	orgID := newOrg(t)
+	cli, orgID := newBilling(t)
 	events := int64(1_000_000)
-	if err := Set(t.Context(), &strings.Builder{}, orgID, actor,
+	if err := cli.Set(t.Context(), &strings.Builder{}, orgID, actor,
 		corebilling.Change{PlanSlug: corebilling.SlugCustom, IncludedEvents: &events}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
 	var out strings.Builder
-	if err := Clear(t.Context(), &out, orgID, actor); err != nil {
+	if err := cli.Clear(t.Context(), &out, orgID, actor); err != nil {
 		t.Fatalf("Clear: %v", err)
 	}
 	if !strings.Contains(out.String(), "(no row") {
@@ -142,8 +148,8 @@ func TestUnknownOrgIsReported(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	newOrg(t)
-	err := Show(t.Context(), &strings.Builder{}, "o_nope", false)
+	cli, _ := newBilling(t)
+	err := cli.Show(t.Context(), &strings.Builder{}, "o_nope", false)
 	if !errors.Is(err, corebilling.ErrOrgNotFound) {
 		t.Fatalf("Show on an unknown org = %v, want ErrOrgNotFound", err)
 	}
@@ -156,16 +162,16 @@ func TestRefusedMutationsReportTheirReason(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	orgID := newOrg(t)
+	cli, orgID := newBilling(t)
 	var out strings.Builder
 
-	if err := Set(t.Context(), &out, orgID, actor, corebilling.Change{PlanSlug: "no-such-tier"}); !errors.Is(err, corebilling.ErrPlanNotFound) {
+	if err := cli.Set(t.Context(), &out, orgID, actor, corebilling.Change{PlanSlug: "no-such-tier"}); !errors.Is(err, corebilling.ErrPlanNotFound) {
 		t.Errorf("Set on an unknown slug = %v, want ErrPlanNotFound", err)
 	}
-	if err := ExtendTrial(t.Context(), &out, orgID, actor, 0); !errors.Is(err, corebilling.ErrTrialDaysRange) {
+	if err := cli.ExtendTrial(t.Context(), &out, orgID, actor, 0); !errors.Is(err, corebilling.ErrTrialDaysRange) {
 		t.Errorf("ExtendTrial with no days = %v, want ErrTrialDaysRange", err)
 	}
-	if err := Clear(t.Context(), &out, orgID, actor); !errors.Is(err, corebilling.ErrNoEntitlement) {
+	if err := cli.Clear(t.Context(), &out, orgID, actor); !errors.Is(err, corebilling.ErrNoEntitlement) {
 		t.Errorf("Clear on an org with no row = %v, want ErrNoEntitlement", err)
 	}
 	if out.Len() != 0 {

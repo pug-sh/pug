@@ -56,6 +56,8 @@ func (stubProvider) Verify(http.Header, []byte) (corebilling.Delivery, error) {
 	return corebilling.Delivery{}, nil
 }
 
+func (stubProvider) CanVerify() bool { return true }
+
 func (stubProvider) Normalize(corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
 	return corebilling.SubscriptionEvent{}, nil
 }
@@ -172,7 +174,7 @@ func TestProviderFailuresAreInternalAndSayNothing(t *testing.T) {
 }
 
 // A provider that is fully configured except that no catalog tier has a product
-// id -- the deploy variable is missing. Nothing is purchasable.
+// id — the deploy variable is missing. Nothing is purchasable.
 func newProductlessServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
 	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
@@ -238,7 +240,7 @@ func checkout(t *testing.T, srv *Server, orgID, slug string) (string, error) {
 }
 
 // purchasable is what the dashboard renders the buy button from, and it must agree
-// with what CreateCheckoutSession does -- a button that cannot work is worse than
+// with what CreateCheckoutSession does — a button that cannot work is worse than
 // none. Both read one helper; this asserts they agree in every configuration.
 func TestPurchasableAgreesWithCheckout(t *testing.T) {
 	if testing.Short() {
@@ -297,7 +299,7 @@ func TestCheckoutReturnsAURL(t *testing.T) {
 	if got := resp.Msg.GetCheckoutUrl(); got != checkoutURL {
 		t.Errorf("checkout_url = %q, want %q", got, checkoutURL)
 	}
-	// Without this the buyer confirms with "", which min_len rejects -- the feature
+	// Without this the buyer confirms with "", which min_len rejects — the feature
 	// dies silently and every other assertion here still passes.
 	if got := resp.Msg.GetSessionId(); got != checkoutSessionID {
 		t.Errorf("session_id = %q, want %q", got, checkoutSessionID)
@@ -529,7 +531,7 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 }
 
 // A negotiated deal is buyable from the dashboard by the org whose row records its
-// product and by nobody else -- one pasted id instead of an emailed payment link.
+// product and by nobody else — one pasted id instead of an emailed payment link.
 func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

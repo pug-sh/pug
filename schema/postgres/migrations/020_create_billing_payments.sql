@@ -95,6 +95,7 @@ create table billing_checkout_sessions (
     constraint billing_checkout_sessions_ref_check check (ref <> '')
 );
 
+-- Supports the on-delete cascade; no query filters on org_id alone.
 create index billing_checkout_sessions_org_idx on billing_checkout_sessions (org_id);
 create index billing_checkout_sessions_create_idx on billing_checkout_sessions (create_time);
 
@@ -119,6 +120,12 @@ create table billing_webhook_deliveries (
 -- -- dated from received_at -- is covered rather than left to a seq scan.
 create index billing_webhook_deliveries_prune_idx
   on billing_webhook_deliveries (coalesce(processed_at, received_at));
+
+-- The reconcile pass reads only the rejected rows, and they are the rare ones.
+-- Without this it seq-scans every delivery in the retention window, every pass.
+create index billing_webhook_deliveries_rejected_idx
+  on billing_webhook_deliveries (received_at)
+  where error <> '';
 
 -- +goose Down
 drop table if exists billing_webhook_deliveries;

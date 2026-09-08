@@ -1,12 +1,12 @@
 package billing
 
-// Plan is a catalog tier. The catalog is Go rather than rows: a tier is static
-// product config with revenue consequences, so it belongs in review and deploy.
+// Plan is a catalog tier. The catalog is Go rather than rows so a change to what
+// a tier costs or includes goes through review and deploy.
 type Plan struct {
 	Slug        string
 	DisplayName string
-	// ISO 4217. Mandatory: PriceCents is minor units of THIS currency, and minor
-	// units are not always hundredths (JPY has none, KWD has three).
+	// ISO 4217. PriceCents is minor units of THIS currency, and minor units are not
+	// always hundredths (JPY has none, KWD has three).
 	Currency string
 	// nil means there is no price to show — the custom tier, whose price lives in
 	// the payments provider. Distinct from 0, which is a real price (the floors).
@@ -15,42 +15,36 @@ type Plan struct {
 	// Never a sentinel: a number that reads as a quota invites arithmetic that
 	// produces "0 events remaining".
 	IncludedEvents *int64
-	// How far back the tier's history stays queryable. nil means no bound at all,
-	// which is the custom tier and every org on a deployment with billing off.
+	// How far back the tier's history stays queryable; nil means no bound at all.
 	RetentionDays *int64
-	// Retired tiers stay in the catalog so existing holders keep resolving, but are
-	// never granted to a new org — without this, repricing (which mints a new slug
-	// and retires the old one) would go on handing out the superseded numbers.
+	// A retired tier still resolves for existing holders but is never granted to a
+	// new org, so repricing cannot go on handing out the superseded numbers.
 	Retired bool
 }
 
-// Slugs the resolution rules name directly.
 const (
 	SlugFree   = "free"
 	SlugTrial  = "trial"
 	SlugCustom = "custom"
 )
 
-// RetentionYearDays is what a "year" of retention means here: 365 days flat, so a
-// leap year cannot shorten a term somebody bought. Exported because a renderer
-// saying "7 years" divides by the same number the catalog multiplied by.
+// RetentionYearDays is a flat 365 days, so a leap year cannot shorten a term
+// somebody bought.
 const RetentionYearDays = 365
 
-// TrialDays is how long a new org trials for, measured from orgs.create_time.
-// The trial is the org's age, not stored state — nothing is written at signup.
+// TrialDays is measured from orgs.create_time — the trial is the org's age, not
+// stored state, so nothing is written at signup.
 const TrialDays = 14
 
-// MaxTrialDays caps one extend-trial. A trial is a sales tool measured in weeks;
-// past this the operator wants a comped plan, which has a price and a record.
+// MaxTrialDays caps one extend-trial. Past this the operator wants a comped plan,
+// which has a price and a record.
 const MaxTrialDays = 365
 
 // catalog is every tier pug has ever sold, newest last.
 //
 // A tier's Currency, PriceCents, IncludedEvents and RetentionDays are fixed once
 // any org holds it; repricing mints a new slug (growth-v2) and retires the old.
-// Retention most of all: shortening it is a promise to delete.
-// DisplayName is the exception. TestCatalogIsPinned carries the reasoning and is
-// the only guard against a silent quota cut.
+// TestCatalogIsPinned carries the reasoning and is the guard.
 var catalog = []Plan{
 	{Slug: SlugFree, DisplayName: "Free", Currency: "USD", PriceCents: i64(0),
 		IncludedEvents: i64(10_000), RetentionDays: i64(RetentionYearDays)},
@@ -62,13 +56,13 @@ var catalog = []Plan{
 		IncludedEvents: i64(500_000), RetentionDays: i64(3 * RetentionYearDays)},
 	{Slug: "scale", DisplayName: "Scale", Currency: "USD", PriceCents: i64(3_000),
 		IncludedEvents: i64(1_000_000), RetentionDays: i64(7 * RetentionYearDays)},
-	// No price, no quota and no retention of its own: a negotiated deal supplies them
-	// from the org's row, where a constraint makes the quota mandatory.
+	// A negotiated deal supplies all three from the org's row, where a constraint
+	// makes the quota mandatory.
 	{Slug: SlugCustom, DisplayName: "Custom", Currency: "USD"},
 }
 
 // mustPlan is for the floors only, inside the pure Resolve path, which has no
-// error to return. TestCatalogIsPinned fails if one is ever removed.
+// error to return. NewService checks they exist at wiring time.
 func mustPlan(slug string) Plan {
 	p, ok := PlanBySlug(slug)
 	if !ok {
@@ -77,8 +71,8 @@ func mustPlan(slug string) Plan {
 	return p
 }
 
-// Plans returns every tier the catalog has ever sold, in display order, retired
-// ones included. A grant path must filter on Retired.
+// Plans returns the catalog in display order, retired tiers included. A grant
+// path must filter on Retired.
 func Plans() []Plan {
 	out := make([]Plan, 0, len(catalog))
 	for _, p := range catalog {
@@ -87,9 +81,8 @@ func Plans() []Plan {
 	return out
 }
 
-// PlanBySlug resolves a stored slug. Reports false for a slug the catalog no
-// longer knows, which the caller must treat as "no quota" rather than as free —
-// see Resolve.
+// PlanBySlug reports false for a slug the catalog no longer knows, which the
+// caller must treat as "no quota" rather than as free — see Resolve.
 func PlanBySlug(slug string) (Plan, bool) {
 	for _, p := range catalog {
 		if p.Slug == slug {
@@ -114,7 +107,6 @@ func copyPlan(p Plan) Plan {
 	return p
 }
 
-// isFloor reports the two tiers nothing is ever charged for.
 func (p Plan) isFloor() bool {
 	return p.Slug == SlugFree || p.Slug == SlugTrial
 }
