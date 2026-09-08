@@ -34,17 +34,38 @@ linters:
               desc: business logic must not know the RPC transport; handlers translate errors
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: core is imported by app, never the other way round
+        # Billing is a renderer, never a gate: keeping it out of the ingest and query
+        # paths is what makes "no event is rejected for a quota" structural.
+        ingestion-is-billing-free:
+          files:
+            - "**/internal/core/events/**"
+            - "**/internal/core/insights/**"
+            - "**/internal/app/workers/**"
+            - "**/internal/deps/clickhouse/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/core/billing
+              desc: the paths listed above must not consult billing; a quota never drops an event
         deps-is-domain-free:
-          files: ["**/internal/deps/**", "!**/internal/deps/email/**", "!$test"]
+          files:
+            - "**/internal/deps/**"
+            - "!**/internal/deps/email/**"
+            - "!**/internal/deps/dodo/**"
+            - "!$test"
           deny:
             - pkg: github.com/pug-sh/pug/internal/core
               desc: infrastructure must not depend on domain logic
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: infrastructure must not reach up into the app layer
-        # The email adapters are the one deps package that may see core, and only
-        # because core/email/spec is the port they implement.
+        # The port-implementing adapters are the deps packages that may see core, and
+        # only the one port each implements. Both stay barred from the app layer.
         deps-email-adapters:
           files: ["**/internal/deps/email/**", "!$test"]
+          deny:
+            - pkg: github.com/pug-sh/pug/internal/app/
+              desc: infrastructure must not reach up into the app layer
+        deps-payment-adapters:
+          files: ["**/internal/deps/dodo/**", "!$test"]
           deny:
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: infrastructure must not reach up into the app layer
@@ -120,6 +141,7 @@ linters:
         # setupFailed is the cron pass's RecordError wrapper; spancheck matches the
         # fully-qualified name, so an unqualified pattern would also match other packages.
         - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
+        - github\.com/pug-sh/pug/internal/app/cron/billing\.setupFailed
     gosec:
       excludes:
         - G115

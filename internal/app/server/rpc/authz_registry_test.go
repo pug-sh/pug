@@ -55,6 +55,12 @@ func TestAssertRegistryCoversProcedures(t *testing.T) {
 	if err := assertRegistryCoversProcedures(map[string]bool{}, reg); err == nil {
 		t.Error("stale registry entry (no served procedure) was not rejected")
 	}
+	// Not role-gated, so the interceptor would serve it unauthorized rather than
+	// fail closed the way a missing entry does.
+	undefined := map[string]authzspec.Spec{"/svc/A": {}}
+	if err := assertRegistryCoversProcedures(map[string]bool{"/svc/A": true}, undefined); err == nil {
+		t.Error("undefined Spec{} entry was not rejected")
+	}
 }
 
 // TestPermissionRegistryRoleEntriesAreComplete asserts every entry is built by an

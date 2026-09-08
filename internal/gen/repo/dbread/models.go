@@ -19,6 +19,13 @@ type ApiKey struct {
 	UpdateTime  pgtype.Timestamptz
 }
 
+type BillingCheckoutSession struct {
+	CreateTime pgtype.Timestamptz
+	OrgID      string
+	Provider   string
+	Ref        string
+}
+
 type BillingEntitlement struct {
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
@@ -28,8 +35,10 @@ type BillingEntitlement struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               string
+	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	UpdateTime             pgtype.Timestamptz
+	ProviderProductID      pgtype.Text
 }
 
 type BillingEntitlementHistory struct {
@@ -43,7 +52,37 @@ type BillingEntitlementHistory struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               pgtype.Text
+	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
+	ProviderProductID      pgtype.Text
+}
+
+type BillingSubscription struct {
+	CreateTime         pgtype.Timestamptz
+	Currency           string
+	CurrentPeriodEnd   pgtype.Timestamptz
+	CurrentPeriodStart pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PlanSlug           string
+	PriceCents         int64
+	Provider           string
+	ProviderCustomerID string
+	ProviderStatus     string
+	ProviderSubID      string
+	ProviderUpdatedAt  pgtype.Timestamptz
+	Status             string
+	UpdateTime         pgtype.Timestamptz
+}
+
+type BillingWebhookDelivery struct {
+	Error       string
+	EventType   string
+	Payload     []byte
+	ProcessedAt pgtype.Timestamptz
+	Provider    string
+	ReceivedAt  pgtype.Timestamptz
+	WebhookID   string
 }
 
 type Campaign struct {

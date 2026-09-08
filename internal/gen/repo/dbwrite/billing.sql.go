@@ -11,6 +11,93 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const applyBillingSubscription = `-- name: ApplyBillingSubscription :execrows
+insert into billing_subscriptions (
+  currency, current_period_end, current_period_start, id, org_id, plan_slug,
+  price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
+  provider_updated_at, status
+) values (
+  $1, $2, $3, $4, $5, $6,
+  $7, $8, $9, $10, $11,
+  $12, $13
+)
+on conflict (provider, provider_sub_id) do update
+set currency = excluded.currency,
+    current_period_end = excluded.current_period_end,
+    current_period_start = excluded.current_period_start,
+    plan_slug = excluded.plan_slug,
+    price_cents = excluded.price_cents,
+    provider_customer_id = excluded.provider_customer_id,
+    provider_status = excluded.provider_status,
+    provider_updated_at = excluded.provider_updated_at,
+    status = excluded.status
+where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
+   or (billing_subscriptions.provider_updated_at = excluded.provider_updated_at
+       and billing_subscriptions.status in ('active', 'past_due'))
+`
+
+type ApplyBillingSubscriptionParams struct {
+	Currency           string
+	CurrentPeriodEnd   pgtype.Timestamptz
+	CurrentPeriodStart pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PlanSlug           string
+	PriceCents         int64
+	Provider           string
+	ProviderCustomerID string
+	ProviderStatus     string
+	ProviderSubID      string
+	ProviderUpdatedAt  pgtype.Timestamptz
+	Status             string
+}
+
+// The mirror write: one statement, three callers. CAS on provider_updated_at, when
+// a payload ARRIVED, so this orders a delivery that overtakes another. org_id is
+// never updated: attribution is decided once, on first sight.
+// A tie is not hypothetical: a webhook's stamp is the whole-second
+// webhook-timestamp header, so a cutover's cancellation and activation can share
+// one. On a tie an equal stamp can end a subscription but never revive one.
+func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBillingSubscriptionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, applyBillingSubscription,
+		arg.Currency,
+		arg.CurrentPeriodEnd,
+		arg.CurrentPeriodStart,
+		arg.ID,
+		arg.OrgID,
+		arg.PlanSlug,
+		arg.PriceCents,
+		arg.Provider,
+		arg.ProviderCustomerID,
+		arg.ProviderStatus,
+		arg.ProviderSubID,
+		arg.ProviderUpdatedAt,
+		arg.Status,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const createBillingCheckoutSession = `-- name: CreateBillingCheckoutSession :exec
+insert into billing_checkout_sessions (org_id, provider, ref)
+values ($1, $2, $3)
+`
+
+type CreateBillingCheckoutSessionParams struct {
+	OrgID    string
+	Provider string
+	Ref      string
+}
+
+// Written before the provider is called, because the ref has to be in the
+// checkout's metadata. An abandoned checkout's row is pruned.
+func (q *Queries) CreateBillingCheckoutSession(ctx context.Context, arg CreateBillingCheckoutSessionParams) error {
+	_, err := q.db.Exec(ctx, createBillingCheckoutSession, arg.OrgID, arg.Provider, arg.Ref)
+	return err
+}
+
 const deleteBillingEntitlement = `-- name: DeleteBillingEntitlement :execrows
 delete from billing_entitlements where org_id = $1
 `
@@ -23,8 +110,27 @@ func (q *Queries) DeleteBillingEntitlement(ctx context.Context, orgID string) (i
 	return result.RowsAffected(), nil
 }
 
+const getBillingCheckoutSessionOrgID = `-- name: GetBillingCheckoutSessionOrgID :one
+select org_id from billing_checkout_sessions
+where provider = $1 and ref = $2
+`
+
+type GetBillingCheckoutSessionOrgIDParams struct {
+	Provider string
+	Ref      string
+}
+
+// Attribution: turns a ref that came back on a delivery into the org pug chose
+// when it started the checkout.
+func (q *Queries) GetBillingCheckoutSessionOrgID(ctx context.Context, arg GetBillingCheckoutSessionOrgIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getBillingCheckoutSessionOrgID, arg.Provider, arg.Ref)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
-select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time from billing_entitlements where org_id = $1 for update
+select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id from billing_entitlements where org_id = $1 for update
 `
 
 // Returns no rows for an org that has never been touched, which is normal.
@@ -40,19 +146,56 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.Note,
 		&i.OrgID,
 		&i.PlanSlug,
+		&i.RetentionDaysOverride,
 		&i.TrialEndsAt,
 		&i.UpdateTime,
+		&i.ProviderProductID,
 	)
 	return i, err
+}
+
+const getBillingEntitlementProviderProductID = `-- name: GetBillingEntitlementProviderProductID :one
+select provider_product_id from billing_entitlements where org_id = $1
+`
+
+// The product an operator staged this org to buy. It is what lets a payment
+// link's metadata.org_id attribute: buyer-settable on its own, it only counts
+// when an operator has already pointed this org at this product.
+func (q *Queries) GetBillingEntitlementProviderProductID(ctx context.Context, orgID string) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, getBillingEntitlementProviderProductID, orgID)
+	var provider_product_id pgtype.Text
+	err := row.Scan(&provider_product_id)
+	return provider_product_id, err
+}
+
+const getBillingSubscriptionPlanSlug = `-- name: GetBillingSubscriptionPlanSlug :one
+select plan_slug from billing_subscriptions
+where provider = $1 and provider_sub_id = $2
+`
+
+type GetBillingSubscriptionPlanSlugParams struct {
+	Provider      string
+	ProviderSubID string
+}
+
+// Read inside the apply lock so a delivery that ENDS a subscription keeps the
+// stored slug: a product dropped from config must not refuse a cancellation.
+func (q *Queries) GetBillingSubscriptionPlanSlug(ctx context.Context, arg GetBillingSubscriptionPlanSlugParams) (string, error) {
+	row := q.db.QueryRow(ctx, getBillingSubscriptionPlanSlug, arg.Provider, arg.ProviderSubID)
+	var plan_slug string
+	err := row.Scan(&plan_slug)
+	return plan_slug, err
 }
 
 const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
   actor, anchor_day, contract_ends_at, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, trial_ends_at
+  id, included_events_override, note, org_id, plan_slug, provider_product_id,
+  retention_days_override, trial_ends_at
 ) values (
   $1, $2, $3, $4,
-  $5, $6, $7, $8, $9, $10
+  $5, $6, $7, $8, $9, $10,
+  $11, $12
 )
 `
 
@@ -66,6 +209,8 @@ type InsertBillingEntitlementHistoryParams struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               pgtype.Text
+	ProviderProductID      pgtype.Text
+	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -80,9 +225,83 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
+		arg.ProviderProductID,
+		arg.RetentionDaysOverride,
 		arg.TrialEndsAt,
 	)
 	return err
+}
+
+const insertBillingWebhookDelivery = `-- name: InsertBillingWebhookDelivery :one
+insert into billing_webhook_deliveries (event_type, payload, provider, webhook_id)
+values ($1, $2, $3, $4)
+on conflict (provider, webhook_id) do update
+  set event_type = billing_webhook_deliveries.event_type
+returning error, event_type, payload, processed_at, provider, received_at, webhook_id
+`
+
+type InsertBillingWebhookDeliveryParams struct {
+	EventType string
+	Payload   []byte
+	Provider  string
+	WebhookID string
+}
+
+// The provider's retry reuses its webhook id, so the primary key dedups it. The
+// returned row tells a retry from a first delivery -- an unprocessed row died
+// mid-apply -- so this deliberately does not swallow the conflict.
+func (q *Queries) InsertBillingWebhookDelivery(ctx context.Context, arg InsertBillingWebhookDeliveryParams) (BillingWebhookDelivery, error) {
+	row := q.db.QueryRow(ctx, insertBillingWebhookDelivery,
+		arg.EventType,
+		arg.Payload,
+		arg.Provider,
+		arg.WebhookID,
+	)
+	var i BillingWebhookDelivery
+	err := row.Scan(
+		&i.Error,
+		&i.EventType,
+		&i.Payload,
+		&i.ProcessedAt,
+		&i.Provider,
+		&i.ReceivedAt,
+		&i.WebhookID,
+	)
+	return i, err
+}
+
+const listBillingSubscriptionOrgsByProviderCustomerID = `-- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
+select distinct org_id from billing_subscriptions
+where provider = $1 and provider_customer_id = $2
+limit 2
+`
+
+type ListBillingSubscriptionOrgsByProviderCustomerIDParams struct {
+	Provider           string
+	ProviderCustomerID string
+}
+
+// Attribution's last resort, once the ref missed and no staged product matched.
+// Two rows is the answer that matters: one buyer purchasing for two orgs shares a
+// provider customer, so the caller rejects the delivery rather than guessing.
+func (q *Queries) ListBillingSubscriptionOrgsByProviderCustomerID(ctx context.Context, arg ListBillingSubscriptionOrgsByProviderCustomerIDParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listBillingSubscriptionOrgsByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockBillingEntitlementOrg = `-- name: LockBillingEntitlementOrg :exec
@@ -96,13 +315,67 @@ func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) e
 	return err
 }
 
+const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :execrows
+update billing_webhook_deliveries
+set processed_at = now(), error = $1
+where provider = $2 and webhook_id = $3
+`
+
+type MarkBillingWebhookDeliveryProcessedParams struct {
+	Error     string
+	Provider  string
+	WebhookID string
+}
+
+// The row is guaranteed by the insert that opened the delivery, so zero rows is a
+// fault rather than a benign no-op.
+func (q *Queries) MarkBillingWebhookDeliveryProcessed(ctx context.Context, arg MarkBillingWebhookDeliveryProcessedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markBillingWebhookDeliveryProcessed, arg.Error, arg.Provider, arg.WebhookID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const pruneBillingCheckoutSessions = `-- name: PruneBillingCheckoutSessions :execrows
+delete from billing_checkout_sessions where create_time < $1
+`
+
+// A ref only has to outlive the gap between a checkout and its first delivery.
+func (q *Queries) PruneBillingCheckoutSessions(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneBillingCheckoutSessions, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const pruneBillingWebhookDeliveries = `-- name: PruneBillingWebhookDeliveries :execrows
+delete from billing_webhook_deliveries
+where coalesce(processed_at, received_at) < $1
+`
+
+// The payload holds personal data only replay needs, so it is kept for a window
+// rather than forever. Dated from received_at when a delivery never processed:
+// the provider's retries are spent long before the window closes, so an
+// undecodable body would otherwise keep its payload for good.
+func (q *Queries) PruneBillingWebhookDeliveries(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneBillingWebhookDeliveries, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertBillingEntitlement = `-- name: UpsertBillingEntitlement :one
 insert into billing_entitlements (
   anchor_day, contract_ends_at, display_name_override,
-  included_events_override, note, org_id, plan_slug, trial_ends_at
+  included_events_override, note, org_id, plan_slug, provider_product_id,
+  retention_days_override, trial_ends_at
 ) values (
   $1, $2, $3,
-  $4, $5, $6, $7, $8
+  $4, $5, $6, $7, $8,
+  $9, $10
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
@@ -111,8 +384,10 @@ set anchor_day = excluded.anchor_day,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
+    provider_product_id = excluded.provider_product_id,
+    retention_days_override = excluded.retention_days_override,
     trial_ends_at = excluded.trial_ends_at
-returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, trial_ends_at, update_time
+returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id
 `
 
 type UpsertBillingEntitlementParams struct {
@@ -123,6 +398,8 @@ type UpsertBillingEntitlementParams struct {
 	Note                   string
 	OrgID                  string
 	PlanSlug               string
+	ProviderProductID      pgtype.Text
+	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -137,6 +414,8 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
+		arg.ProviderProductID,
+		arg.RetentionDaysOverride,
 		arg.TrialEndsAt,
 	)
 	var i BillingEntitlement
@@ -149,8 +428,10 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.Note,
 		&i.OrgID,
 		&i.PlanSlug,
+		&i.RetentionDaysOverride,
 		&i.TrialEndsAt,
 		&i.UpdateTime,
+		&i.ProviderProductID,
 	)
 	return i, err
 }
