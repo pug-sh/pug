@@ -83,13 +83,18 @@ func (h *billingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Only an oversized body is the sender's fault: a truncated read is a reset,
 		// and 400 would stop the retry of a delivery that never landed.
-		status := http.StatusInternalServerError
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			status = http.StatusBadRequest
+			slog.WarnContext(ctx, "rejected an oversized billing webhook body", slogx.Error(err),
+				slog.String("provider", h.provider.Name()))
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
-		slog.WarnContext(ctx, "failed to read a billing webhook body", slogx.Error(err),
-			slog.String("provider", h.provider.Name()), slog.Int("status", status))
-		w.WriteHeader(status)
+		// This is the detecting layer, and a systematic read failure burns every retry
+		// and then leaves the delivery stranded with no reason recorded anywhere.
+		slog.ErrorContext(ctx, "failed to read a billing webhook body", slogx.Error(err),
+			slog.String("provider", h.provider.Name()))
+		telemetry.RecordError(ctx, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 

@@ -86,6 +86,7 @@ func TestCreateCheckoutSession(t *testing.T) {
 				// Plain bools: unsent decodes false, which is the case each asserts against.
 				AllowCustomerEditingEmail bool `json:"allow_customer_editing_email"`
 				AllowCustomerEditingName  bool `json:"allow_customer_editing_name"`
+				AlwaysCreateNewCustomer   bool `json:"always_create_new_customer"`
 				// Pointers: both default to true, so unsent is the case each asserts against.
 				AllowDiscountCode          *bool `json:"allow_discount_code"`
 				AllowPhoneNumberCollection *bool `json:"allow_phone_number_collection"`
@@ -164,6 +165,11 @@ func TestCreateCheckoutSession(t *testing.T) {
 		}
 		if got.FeatureFlags.AllowPhoneNumberCollection == nil || *got.FeatureFlags.AllowPhoneNumberCollection {
 			t.Error("allow_phone_number_collection is not false; the form asks for a phone number")
+		}
+		// What makes attribution by customer id sound: without it Dodo reuses a
+		// customer by email, and one person admining two orgs gets one id for both.
+		if !got.FeatureFlags.AlwaysCreateNewCustomer {
+			t.Error("always_create_new_customer is not true; a shared customer misattributes a delivery")
 		}
 		if got.Customization.Theme != "dark" {
 			t.Errorf("customization.theme = %q, want dark", got.Customization.Theme)

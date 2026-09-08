@@ -53,8 +53,8 @@ func TestNewBuildsBothDirectionsOfTheProductMap(t *testing.T) {
 	if p == nil {
 		t.Fatal("New returned no provider for a configured deployment")
 	}
-	if p.ProductBySlug["growth"] != "prod_growth" || p.SlugByProduct["prod_growth"] != "growth" {
-		t.Errorf("product map = %v / %v", p.ProductBySlug, p.SlugByProduct)
+	if p.ProductBySlug["growth"] != "prod_growth" {
+		t.Errorf("product map = %v", p.ProductBySlug)
 	}
 	// Only a caller that starts checkouts knows where a buyer returns to.
 	if p.ReturnURL != "" {

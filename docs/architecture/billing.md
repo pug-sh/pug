@@ -118,12 +118,12 @@ for lookup.
   operator-assignable and will never appear in a purchase catalog, and that
   second distinction belongs to checkout, which does not exist yet — so nothing
   here carries it.
-- `PriceCents` is the tier's **list price**, and display copy in this slice —
-  nothing charges it. When a provider lands it becomes a mirror of the provider's
-  price, and the trap that comes with that (editing it in pug does not reprice a
-  live subscription) is §11's problem, not this slice's. A *negotiated* amount
-  never becomes a field in pug — only, at most, prose in `note`
-  ([`payments.md`](payments.md) §4).
+- `PriceCents` is the tier's **list price** from the Go catalog, and display copy
+  — nothing charges it, and it stays the catalog's number even for an org with a
+  live subscription. What the provider actually charges is mirrored on
+  `billing_subscriptions`, for the operator; no read path copies it here. A
+  *negotiated* amount never becomes a field in pug — only, at most, prose in
+  `note` ([`payments.md`](payments.md) §4).
 - **The marketing site's pricing page is a second copy of this table**, hand-
   maintained in a different repo. Nothing enforces that they agree; a price
   change is two PRs, and this one is the one customers are actually held to.
@@ -358,13 +358,21 @@ Then each present override replaces the corresponding field of the resolved plan
 (§4.1) — quota and display name — patching whatever steps 3–5 produced, so a deal
 survives a catalog reprice untouched.
 
-The overrides apply **only while the granted plan the row names is still the one
-resolved.** They describe a deal on *that* tier, so a lapsed contract or an
-expired trial falls to the free floor with the floor's numbers rather than
-keeping the negotiated ones. Without that gate an expired 5M deal would keep its
-5M forever, which is the one way this function could cost real money. The one
-exception: a **floor** row's overrides survive a resolved slug that differs, so a
-comped free-tier bump is not wiped by the org still being in its trial (§10).
+The overrides are gated on the **contract**, not on the resolved slug: a lapsed
+`contract_ends_at` drops them, and a row with no contract date keeps them however
+the plan resolves. So a comped free-tier bump is not wiped by the org still being
+in its trial (§10) — and, the same way, an open-ended `growth` deal's quota rides
+onto a `starter` plan the org later self-serve buys. `applyOverrides` does not
+compare `plan_slug` to the tier in force.
+
+The one exception to the contract gate runs the other way: a live **custom**
+subscription keeps its overrides past `contract_ends_at`, because that date bounds
+an operator's grant and must not strip the quota of a deal somebody is being
+charged for.
+
+Whether a plan-in-force gate *should* exist is open. Nothing is enforced on a
+quota, so the cost of the gap is a wrong number on a page, and adding the gate
+would drop a live deal's quota the moment the org bought a cheaper tier.
 
 An **unknown `plan_slug`** — only reachable if a slug is removed from Go while
 rows still point at it — resolves to `IncludedEvents` nil (no quota). `Resolve`
@@ -874,9 +882,9 @@ here.
 - **A granted plan is resolved before a live trial date** (§6, steps 3 and 4 are
   swapped relative to the first draft). The original order let a stale
   `trial_ends_at` demote a customer who had converted mid-trial.
-- **Overrides apply only while the row's plan is the plan in force** (§6). The
-  first draft applied them unconditionally, which would have let an expired 5M
-  deal keep its 5M for good.
+- **Overrides are gated on the contract date** (§6), so an expired 5M deal cannot
+  keep its 5M for good. They are *not* gated on the resolved slug: an open-ended
+  deal's numbers ride onto whatever tier is in force.
 - **The `GetUsage` RPC now answers `NotFound` for an unknown org.** It previously
   reported a metered zero for any id, because the period came from the clock
   alone and no lookup could fail. Resolving an anchor requires the org row, so a

@@ -51,10 +51,10 @@ const Currency = "USD"
 // Payments is the provider wiring. Nil means no provider, which is legal.
 type Payments struct {
 	Provider PaymentProvider
-	// ProductBySlug is checkout's direction, SlugByProduct is the webhook's. Derive
-	// the second from the first: a one-way slug takes money and rejects the delivery.
+	// ProductBySlug is the only product mapping. The webhook needs the inverse and
+	// scans for it: a stored second map could disagree, and a slug that maps one way
+	// takes money and then rejects the delivery.
 	ProductBySlug map[string]string
-	SlugByProduct map[string]string
 	// ReturnURL is where the provider sends a buyer after checkout: the dashboard's
 	// own billing page, never a provider page.
 	ReturnURL string
@@ -208,8 +208,10 @@ func (s *Service) planForProduct(productID string, rec Record) (string, error) {
 	if productID == "" {
 		return "", ErrNotPurchasable
 	}
-	if slug, ok := s.payments.SlugByProduct[productID]; ok {
-		return slug, nil
+	for slug, id := range s.payments.ProductBySlug {
+		if id == productID {
+			return slug, nil
+		}
 	}
 	if rec.ProviderProductID != "" && rec.ProviderProductID == productID {
 		return SlugCustom, nil

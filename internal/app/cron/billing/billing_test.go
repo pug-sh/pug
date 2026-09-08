@@ -161,7 +161,6 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
 		Provider:      unreachableProvider{},
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
-		SlugByProduct: map[string]string{"prod_growth": "growth"},
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -174,14 +173,27 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 	}
 }
 
-// Off is the self-hosted shape: a green CronJob on a deployment that does not
-// bill, and one that never asks for a database.
-func TestRunIsANoOpWhenBillingIsDisabled(t *testing.T) {
+// Off means nothing to reconcile, not nothing to do: a deployment that took
+// webhooks and then disabled billing still holds payloads with personal data in
+// them, and this pass is the only thing that prunes them.
+func TestRunPrunesWhenBillingIsDisabled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-corebilling.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_recent", time.Now())
 	t.Setenv("PUG_BILLING_ENABLED", "false")
-	t.Setenv("DATABASE_URL", "")
+	// Named and unbuildable: a disabled pass must not reach the provider at all.
+	t.Setenv("PUG_BILLING_PROVIDER", "stripe")
+	t.Setenv("DATABASE_URL", pg.PgW.Config().ConnString())
 
 	if err := Run(t.Context()); err != nil {
 		t.Fatalf("Run with billing disabled = %v, want nil", err)
+	}
+	if got := deliveryIDs(t, pg.PgRO); len(got) != 1 || got[0] != "evt_recent" {
+		t.Errorf("deliveries = %v, want only evt_recent", got)
 	}
 }
 

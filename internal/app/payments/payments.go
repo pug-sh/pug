@@ -54,15 +54,8 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 		return nil, ErrNoAPIKey
 	}
 
-	// Derived from the one map so checkout's direction and the webhook's cannot
-	// disagree about which tier a product is.
-	slugByProduct := make(map[string]string, len(products))
-	for slug, id := range products {
-		slugByProduct[id] = slug
-	}
 	return &corebilling.Payments{
 		ProductBySlug: products,
 		Provider:      client,
-		SlugByProduct: slugByProduct,
 	}, nil
 }

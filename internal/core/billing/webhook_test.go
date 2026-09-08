@@ -78,7 +78,6 @@ func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
-		SlugByProduct: map[string]string{"prod_growth": "growth", "prod_scale": "scale"},
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -325,6 +324,39 @@ func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
 	}
 	if ent.Slug != corebilling.SlugFree {
 		t.Errorf("slug = %q, want free — a same-second delivery revived a cancelled subscription", ent.Slug)
+	}
+}
+
+// The other half of the tie-break, and the half `<` alone cannot do: a cutover's
+// cancellation shares a whole second with its activation, and dropping it would
+// leave the org on a tier it cancelled while the index refuses its replacement.
+func TestASameSecondCancellationEndsAnActiveSubscription(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	at := time.Now().UTC().Truncate(time.Second)
+
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_active", at)); err != nil {
+		t.Fatalf("HandleDelivery(active): %v", err)
+	}
+	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusCancelled)
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_cancel", at)); err != nil {
+		t.Fatalf("HandleDelivery(cancelled): %v", err)
+	}
+
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != corebilling.SlugFree {
+		t.Errorf("slug = %q, want free — a same-second cancellation was dropped", ent.Slug)
+	}
+	// Applied, not skipped: a reason here would file it as a lost payment.
+	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {
+		t.Errorf("delivery processed=%v error=%q, want processed with no error",
+			d.ProcessedAt.Valid, d.Error)
 	}
 }
 
@@ -648,6 +680,32 @@ func TestUnparseableBodyIsStillStored(t *testing.T) {
 	}
 }
 
+// The other half of storablePayload: this body IS valid JSON, so json.Valid alone
+// lets it through and jsonb then refuses the escape, losing the delivery entirely.
+func TestABodyCarryingANulEscapeIsStillStored(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	provider.event = corebilling.SubscriptionEvent{}
+
+	d := delivery("evt_1", time.Now())
+	d.RawPayload = []byte(`{"note":"a\u0000b"}`)
+	if !json.Valid(d.RawPayload) {
+		t.Fatal("the fixture body is not valid JSON, so it tests the wrong branch")
+	}
+	if err := f.svc.HandleDelivery(t.Context(), provider, d); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+	var wrapped map[string]string
+	if err := json.Unmarshal(storedDelivery(t, f, "evt_1").Payload, &wrapped); err != nil {
+		t.Fatalf("stored payload is not JSON: %v", err)
+	}
+	if wrapped["raw_base64"] == "" {
+		t.Error("a body carrying a NUL escape was stored without its bytes")
+	}
+}
+
 // dbwriteOrg creates a backdated org, so a test asserting a granted plan is not
 // also fighting a live trial window.
 func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
@@ -670,7 +728,6 @@ func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProv
 	svc, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
-		SlugByProduct: map[string]string{"prod_growth": "growth", "prod_scale": "scale"},
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)

@@ -65,6 +65,15 @@ from billing_webhook_deliveries
 where error <> '' and received_at >= @since
 order by received_at;
 
+-- name: ListStrandedBillingWebhookDeliveries :many
+-- Deliveries that never settled: every retry failed, so the row carries no error
+-- either and the query above cannot see it. The provider's retries are spent
+-- long before stale_before, so a row still unprocessed here will never process.
+select provider, webhook_id, event_type
+from billing_webhook_deliveries
+where processed_at is null and received_at < @stale_before
+order by received_at;
+
 -- name: ListBillingSubscriptionsByOrg :many
 -- The operator's view: every stored row, newest first. Neither provider-scoped nor
 -- live-only -- a lapsed row is most of what `show` exists to explain.

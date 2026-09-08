@@ -215,6 +215,12 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 	if err != nil {
 		return corebilling.SubscriptionEvent{}, err
 	}
+	// The payment names a subscription, so one exists: a zero here is a shape change,
+	// not "not yet". Passed through, it would leave the buyer polling for good.
+	if event.IsZero() {
+		return corebilling.SubscriptionEvent{}, fmt.Errorf(
+			"dodo: subscription %s decoded to nothing", payment.SubscriptionID)
+	}
 	// Dodo calls a checkout's metadata the PAYMENT's and pug reads both off the
 	// SUBSCRIPTION; fall back rather than depend on whether it propagates.
 	md := stringMetadata(payment.Metadata)

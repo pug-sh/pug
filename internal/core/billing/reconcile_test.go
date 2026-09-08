@@ -340,6 +340,67 @@ func TestReconcileCountsAcceptedButUnappliedDeliveries(t *testing.T) {
 	}
 }
 
+// A delivery whose retries all failed carries no error and no processed_at, so
+// Rejected cannot see it and it wrote no subscription row for the walk to find.
+// Without this counter it is invisible to everything until the payload is pruned.
+func TestReconcileCountsStrandedDeliveries(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_webhook_deliveries
+		   (event_type, payload, processed_at, provider, received_at, webhook_id)
+		 values ('subscription.active', '{}'::jsonb, null, $1, now() - interval '2 days', 'evt_stranded'),
+		        ('subscription.active', '{}'::jsonb, null, $1, now(), 'evt_in_flight'),
+		        ('subscription.active', '{}'::jsonb, now(), $1, now() - interval '2 days', 'evt_done')`,
+		fakeProviderName); err != nil {
+		t.Fatalf("seed deliveries: %v", err)
+	}
+
+	report, err := f.svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.Stranded != 1 {
+		t.Errorf("stranded = %d, want 1 — a delivery still in flight is not stranded", report.Stranded)
+	}
+	if report.Rejected != 0 {
+		t.Errorf("rejected = %d, want 0 — a stranded delivery carries no reason", report.Rejected)
+	}
+}
+
+// The walk pages, and every other test seeds one row. An off-by-one here would
+// reconcile the first page and exit 0, reporting an estate it never read.
+func TestReconcileWalksPastThePageBoundary(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	const rows = 501
+
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_subscriptions (
+		   currency, id, org_id, plan_slug, price_cents, provider,
+		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
+		 select 'USD', 'sub' || n, $1, 'growth', 2000, $2, 'cus_1', 'cancelled',
+		        'sub' || n, now() - interval '1 hour', 'cancelled'
+		 from generate_series(1, $3) n`,
+		f.orgID, fakeProviderName, rows); err != nil {
+		t.Fatalf("seed subscriptions: %v", err)
+	}
+
+	provider := &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}}
+	report, err := f.svcWithProvider(t, provider).Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.Checked != rows {
+		t.Errorf("checked = %d, want %d — the walk stopped at a page boundary", report.Checked, rows)
+	}
+}
+
 // A finding, not an outage: counted apart from Unreadable, or it holds the
 // CronJob red on every later run.
 func TestReconcileCountsASubscriptionTheProviderDoesNotKnow(t *testing.T) {
@@ -359,26 +420,6 @@ func TestReconcileCountsASubscriptionTheProviderDoesNotKnow(t *testing.T) {
 	}
 	if report.Untracked != 1 || report.Unreadable != 0 {
 		t.Errorf("report = %+v, want 1 untracked and 0 unreadable", report)
-	}
-}
-
-// A shape change, not a dropped subscription: Untracked would exit 0 on a pass
-// that verified nothing.
-func TestReconcileCountsAnUndecodableSubscriptionUnreadable(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000041", "growth")
-
-	// remote has no entry for the id, so the fetch returns a zero event.
-	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}})
-	report, err := svc.Reconcile(t.Context(), time.Now())
-	if err != nil {
-		t.Fatalf("Reconcile: %v", err)
-	}
-	if report.Unreadable != 1 || report.Untracked != 0 {
-		t.Errorf("report = %+v, want 1 unreadable and 0 untracked", report)
 	}
 }
 

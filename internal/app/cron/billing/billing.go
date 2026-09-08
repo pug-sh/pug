@@ -50,23 +50,21 @@ func Run(ctx context.Context) error {
 	if err := envconfig.Process(ctx, &billingCfg); err != nil {
 		return setupFailed(ctx, "billing config", err)
 	}
-	// Off is the self-hosted shape: exit 0 so the CronJob stays green. Warn rather
-	// than info — this pass is also the only thing pruning the inbox's personal data.
-	if !billingCfg.Enabled {
-		slog.WarnContext(ctx, "billing is disabled; nothing to reconcile and no delivery prune")
-		return nil
-	}
-
-	var cfg config
-	if err := envconfig.Process(ctx, &cfg); err != nil {
-		return setupFailed(ctx, "payments config", err)
-	}
-	// A named provider with no API key is a misconfigured CronJob, not the
-	// self-hosted shape: that one leaves PUG_BILLING_PROVIDER empty and builds no
-	// provider without erroring. Reconciling nothing must not exit 0.
-	pay, err := payments.New(ctx, cfg.Provider)
-	if err != nil {
-		return setupFailed(ctx, "payments provider", err)
+	// Off is the self-hosted shape, but the pass still runs: a deployment that took
+	// webhooks and then disabled billing has stored payloads, and nothing else
+	// prunes them. With no provider Reconcile is a no-op, so only the prune happens.
+	var pay *corebilling.Payments
+	if billingCfg.Enabled {
+		var cfg config
+		if err := envconfig.Process(ctx, &cfg); err != nil {
+			return setupFailed(ctx, "payments config", err)
+		}
+		// A named provider with no API key is a misconfigured CronJob, not the
+		// self-hosted shape: that one leaves PUG_BILLING_PROVIDER empty and builds no
+		// provider without erroring. Reconciling nothing must not exit 0.
+		if pay, err = payments.New(ctx, cfg.Provider); err != nil {
+			return setupFailed(ctx, "payments provider", err)
+		}
 	}
 
 	var pgCfg postgres.Config
@@ -90,7 +88,11 @@ func Run(ctx context.Context) error {
 		return setupFailed(ctx, "billing service", err)
 	}
 
-	slog.InfoContext(ctx, "Running a billing reconcile pass")
+	if billingCfg.Enabled {
+		slog.InfoContext(ctx, "Running a billing reconcile pass")
+	} else {
+		slog.WarnContext(ctx, "billing is disabled; pruning deliveries without reconciling")
+	}
 	err = cron.WithLock(ctx, pgW, cron.JobBillingReconcile, func(ctx context.Context) error {
 		return pass(ctx, svc, time.Now())
 	})

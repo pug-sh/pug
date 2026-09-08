@@ -78,11 +78,6 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	if payments.ProductBySlug["growth"] != "prod_growth" {
 		t.Errorf("ProductBySlug = %v", payments.ProductBySlug)
 	}
-	// Both directions come from one map so checkout and the webhook cannot
-	// disagree about which tier a product is.
-	if payments.SlugByProduct["prod_growth"] != "growth" {
-		t.Errorf("SlugByProduct = %v", payments.SlugByProduct)
-	}
 }
 
 // The route does not mount without a secret, so every delivery 404s — but

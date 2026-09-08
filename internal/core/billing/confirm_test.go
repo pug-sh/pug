@@ -337,3 +337,63 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 		t.Errorf("wrote %d subscription rows for another org's checkout, want 0", n)
 	}
 }
+
+// The confirm path's half of the Clear race, and the one with a buyer blocked on
+// the response: the product check runs on a record read outside the lock, so a
+// clear can commit before applySubscription re-reads it. The re-read under the
+// lock is what stops a live custom subscription being stored against a row that
+// is gone -- which would resolve to the free floor for somebody who just paid.
+func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	ctx := t.Context()
+
+	productID := "prod_acme"
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:          corebilling.SlugCustom,
+		IncludedEvents:    new(int64(5_000_000)),
+		ProviderProductID: &productID,
+	}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+
+	tx, err := f.pg.PgW.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx,
+		`select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))`, f.orgID); err != nil {
+		t.Fatalf("take the entitlement lock: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `delete from billing_entitlements where org_id = $1`, f.orgID); err != nil {
+		t.Fatalf("delete the entitlement: %v", err)
+	}
+
+	provider.checkout = subEvent(f.orgID, "sub00000000000000029", productID, corebilling.SubStatusActive)
+	var confirmed bool
+	var confirmErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		confirmed, confirmErr = f.svc.ConfirmCheckout(ctx, f.orgID, "cs_1", time.Now())
+	}()
+
+	waitForEntitlementLockWaiter(t, f, done)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit the clear: %v", err)
+	}
+	<-done
+
+	if !errors.Is(confirmErr, corebilling.ErrNotPurchasable) {
+		t.Errorf("err = %v, want ErrNotPurchasable", confirmErr)
+	}
+	if confirmed {
+		t.Error("confirmed = true for a subscription that was never written")
+	}
+	if n := storedSubscriptions(t, f); n != 0 {
+		t.Errorf("stored %d subscriptions, want 0 — a custom plan with no row behind it resolves free", n)
+	}
+}

@@ -119,7 +119,6 @@ func newFailingServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      failingProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
-		SlugByProduct: map[string]string{"prod_growth": "growth"},
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -193,7 +192,6 @@ func newPayingServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled boo
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
-		SlugByProduct: map[string]string{"prod_growth": "growth"},
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -211,7 +209,6 @@ func TestCheckoutPrefillsTheBuyer(t *testing.T) {
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{in: &in},
 		ReturnURL:     "https://app.example/settings/billing",
-		SlugByProduct: map[string]string{"prod_growth": "growth"},
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -591,7 +588,6 @@ func newConfirmingServer(t *testing.T, pg *testutil.TestPostgres, provider coreb
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
-		SlugByProduct: map[string]string{"prod_growth": "growth"},
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)

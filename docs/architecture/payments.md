@@ -91,7 +91,7 @@ at the edges:
 | Product id namespace | `billing_subscriptions`, `billing_webhook_deliveries` (§6) |
 
 ```go
-// billing.PaymentProvider is the whole seam. Two verbs for the inbound half,
+// billing.PaymentProvider is the whole seam. Three verbs for the inbound half,
 // four for the outbound; nothing else in the slice imports a provider package.
 type PaymentProvider interface {
     Name() string
@@ -99,14 +99,20 @@ type PaymentProvider interface {
     // Verify authenticates a raw delivery. It takes the exact bytes because
     // every scheme signs those, not a decoded message.
     Verify(headers http.Header, rawBody []byte) (Delivery, error)
+    // CanVerify reports whether a signing secret is configured. False mounts no
+    // webhook route at all rather than taking unverified deliveries.
+    CanVerify() bool
     // Normalize maps one verified delivery onto pug's vocabulary. Returning a
     // zero SubscriptionEvent means "store, mark processed, ignore".
     Normalize(Delivery) (SubscriptionEvent, error)
 
-    CreateCheckoutSession(ctx context.Context, in CheckoutInput) (string, error)
+    // The session id is what ConfirmCheckout re-reads by; the URL is the buyer's.
+    CreateCheckoutSession(ctx context.Context, in CheckoutInput) (sessionID, checkoutURL string, err error)
     CreatePortalSession(ctx context.Context, customerID string) (string, error)
     FetchSubscription(ctx context.Context, subID string) (SubscriptionEvent, error)
-    CancelSubscription(ctx context.Context, subID string) error
+    // A zero SubscriptionEvent means "not settled yet"; a checkout the provider
+    // gave up on must return ErrCheckoutFailed instead.
+    FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
 }
 ```
 
@@ -177,10 +183,11 @@ them. What a deal was
 agreed at goes in `--note`, which is already there and is honest about being a
 record rather than a source of truth.
 
-`GetBillingStatus`'s `price_cents` field survives unchanged — for a standard
-tier it is the catalog price, and for an org with a live subscription it is the
-subscription's amount. The RPC surface does not change; only the authorship
-does.
+`GetBillingStatus`'s `price_cents` field survives unchanged — it is always the
+catalog's list price for the resolved tier, never the subscription's amount. What
+an org is actually charged lives in the provider; `billing_subscriptions.price_cents`
+mirrors it for the operator, and no read path copies that onto the entitlement.
+The RPC surface does not change; only the authorship does.
 
 What this buys, beyond one fewer thing to keep in sync: the price/currency pair
 constraint, its asymmetry, the CLI's two guards, and the `price_minor_units`
@@ -536,7 +543,7 @@ If `product_id` maps to no configured tier (§13) and does not match the attribu
 org's `provider_product_id`, there is no `plan_slug` to write, so the delivery is
 stored, marked processed, logged as an error, and **not applied** — the same
 disposition as a foreign currency (§3) and an unattributable delivery, for the
-same reason: retrying cannot fix a mapping that lives in config, and 8 retries
+same reason: retrying cannot fix a mapping that lives in config, and the provider's retries (§8)
 would only delay the alert. Every such delivery is counted and logged by the
 reconcile pass as `Rejected` (§9) — the subscription walk cannot see it, because a
 delivery pug did not apply wrote no subscription row at all.
@@ -581,6 +588,14 @@ API for each. Then the consistency reports, which are the point of invariant 3:
   customer, a negative price. The writer names it (`ErrSubscriptionUnapplicable`)
   rather than reporting a skip, or it would be neither an apply nor a finding and
   the pass would print a sweep it did not make.
+- A delivery that **never settled** (`Stranded`): every retry failed, so no reason
+  was ever written to the row and the rejection query — which keys on a non-empty
+  `error` — cannot see it. It wrote no subscription row either, so without this
+  counter it is invisible to everything until its payload is pruned. Dated from
+  arrival, a day back, which is long past the provider's last retry. The CAS's own
+  skip is deliberately **not** counted here: deliveries arrive unordered, so a
+  newer one having already landed is ordinary and its row is finished with no
+  error at all.
 
 All are logged and counted, not auto-fixed. An automatic repair here would be
 writing to the money side of the system from a guess. A pass that could not read
@@ -658,7 +673,7 @@ deployment whose webhook URL is not reachable (self-hosted behind NAT, or a
 laptop) a purchase could never complete: the poll ran its ~17.5s and told a
 paying customer their payment was "still confirming", forever.
 
-Five rules make it safe:
+Six rules make it safe:
 
 - **`session_id` is a claim, not evidence.** The subscription it resolves to must
   carry the `metadata.org_id` pug wrote at checkout, and it must equal the
@@ -717,6 +732,7 @@ still coming.
 | `PUG_BILLING_ENABLED` | `false` | Unchanged. Off ⇒ no quota, and the checkout RPCs return `Unavailable`. |
 | `PUG_BILLING_PROVIDER` | `""` | Which provider to construct: `dodo` today. Empty ⇒ no provider at all. An unrecognized value **fails startup** rather than silently disabling checkout, since the two are indistinguishable from the dashboard. |
 | `PUG_DODO_API_KEY` | — | Absent ⇒ no provider. Checkout returns `Unavailable`; everything else works. |
+| `PUG_DASHBOARD_BASE_URL` | — | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
 | `PUG_DODO_PRODUCT_<SLUG>` | — | One per purchasable catalog tier (`..._STARTER`, `..._GROWTH`, `..._SCALE`), mapping the slug to a Dodo product id. Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A tier with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |

@@ -21,7 +21,6 @@ func noProviderCases(t *testing.T) (*fixture, map[string]*corebilling.Service) {
 	switchedOff, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, false, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
-		SlugByProduct: map[string]string{"prod_growth": "growth"},
 	})
 	if err != nil {
 		t.Fatalf("new service with billing off: %v", err)

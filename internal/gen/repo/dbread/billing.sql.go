@@ -348,3 +348,39 @@ func (q *Queries) ListRecentRejectedBillingWebhookDeliveries(ctx context.Context
 	}
 	return items, nil
 }
+
+const listStrandedBillingWebhookDeliveries = `-- name: ListStrandedBillingWebhookDeliveries :many
+select provider, webhook_id, event_type
+from billing_webhook_deliveries
+where processed_at is null and received_at < $1
+order by received_at
+`
+
+type ListStrandedBillingWebhookDeliveriesRow struct {
+	Provider  string
+	WebhookID string
+	EventType string
+}
+
+// Deliveries that never settled: every retry failed, so the row carries no error
+// either and the query above cannot see it. The provider's retries are spent
+// long before stale_before, so a row still unprocessed here will never process.
+func (q *Queries) ListStrandedBillingWebhookDeliveries(ctx context.Context, staleBefore pgtype.Timestamptz) ([]ListStrandedBillingWebhookDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listStrandedBillingWebhookDeliveries, staleBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStrandedBillingWebhookDeliveriesRow
+	for rows.Next() {
+		var i ListStrandedBillingWebhookDeliveriesRow
+		if err := rows.Scan(&i.Provider, &i.WebhookID, &i.EventType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

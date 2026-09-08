@@ -21,7 +21,7 @@ import (
 
 // HandleDelivery stores one verified delivery and applies it, returning only once
 // the row is durable. Everything unapplicable is stored, marked processed and NOT
-// retried — eight retries fix none of it. A body pug cannot DECODE is retried.
+// retried — the provider retries and fixes none of it. A body it cannot DECODE is retried.
 func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, d Delivery) error {
 	stored, err := s.write().InsertBillingWebhookDelivery(ctx, dbwrite.InsertBillingWebhookDeliveryParams{
 		EventType: d.EventType,
@@ -72,7 +72,7 @@ func (s *Service) applySubscriptionEvent(
 			errors.New("subscription carries no status"))
 	}
 	// Column checks mirrored here: unguarded they fail the insert, which retries
-	// eight times and then leaves the delivery stored but never processed.
+	// and then leaves the delivery stored but never processed.
 	if event.ProviderCustomerID == "" {
 		return s.rejectDelivery(ctx, provider, d, "customer",
 			errors.New("subscription names no customer"))
@@ -107,11 +107,11 @@ func (s *Service) applySubscriptionEvent(
 		return err
 	}
 	if applied == 0 {
-		// The CAS rejected an out-of-order delivery: a newer one already landed.
-		// Recorded on the row, or the inbox cannot tell applied from skipped.
+		// The CAS rejected an out-of-order delivery: a newer one already landed. The
+		// row is finished with NO error -- the provider guarantees no ordering, so
+		// this is ordinary, and reconcile reports a non-empty error as a lost payment.
 		slog.InfoContext(ctx, "skipped a stale subscription delivery",
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-		return s.finishDelivery(ctx, provider, d, "stale: a newer delivery already applied")
 	}
 	return s.finishDelivery(ctx, provider, d, "")
 }

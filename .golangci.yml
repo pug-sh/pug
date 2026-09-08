@@ -45,7 +45,7 @@ linters:
             - "!$test"
           deny:
             - pkg: github.com/pug-sh/pug/internal/core/billing
-              desc: ingestion and query paths must not consult billing; a quota never drops an event
+              desc: the paths listed above must not consult billing; a quota never drops an event
         deps-is-domain-free:
           files:
             - "**/internal/deps/**"

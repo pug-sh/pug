@@ -21,6 +21,11 @@ const reconcilePageSize = 500
 // personal data pug does not otherwise store, and only replay needs the bytes.
 const DeliveryRetention = 90 * 24 * time.Hour
 
+// deliveryStaleAfter is how long a delivery may sit unprocessed before the pass
+// calls it stranded. The provider's retries are spent within minutes, so a day
+// is well past "still in flight".
+const deliveryStaleAfter = 24 * time.Hour
+
 // ReconcileReport is what one pass found. Nothing is auto-fixed: that would be
 // writing to the money side from a guess. The counts are for alerting.
 type ReconcileReport struct {
@@ -51,6 +56,9 @@ type ReconcileReport struct {
 	// Deliveries accepted and not applied. The walk above cannot see them: one that
 	// was not applied wrote no subscription row.
 	Rejected int
+	// Deliveries that never settled: every retry failed, so nothing recorded a
+	// reason. The one outcome no other counter can represent.
+	Stranded int
 }
 
 // Reconcile is the backstop for the one thing the inbox cannot cover: a webhook
@@ -109,6 +117,8 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 
+	// The whole retention window, not since the last pass: a rejection is a person's
+	// to act on, so it is re-reported every run until the payload ages out.
 	rejected, err := s.read.ListRecentRejectedBillingWebhookDeliveries(ctx,
 		postgres.NewTimestamptz(now.Add(-DeliveryRetention)))
 	if err != nil {
@@ -124,12 +134,28 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 			slog.String("event_type", row.EventType), slog.String("reason", row.Error))
 	}
 
+	stranded, err := s.read.ListStrandedBillingWebhookDeliveries(ctx,
+		postgres.NewTimestamptz(now.Add(-deliveryStaleAfter)))
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list stranded billing webhook deliveries", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return report, err
+	}
+	for _, row := range stranded {
+		report.Stranded++
+		// The delivery is spent: the provider will not send it again, and no reason
+		// was ever recorded. A person has to read the stored payload.
+		slog.ErrorContext(ctx, "billing webhook delivery was never settled",
+			slog.String("provider", row.Provider), slog.String("webhook_id", row.WebhookID),
+			slog.String("event_type", row.EventType))
+	}
+
 	slog.InfoContext(ctx, "billing reconcile pass finished",
 		slog.Int("checked", report.Checked), slog.Int("applied", report.Applied),
 		slog.Int("untracked", report.Untracked), slog.Int("entitled_unbilled", report.EntitledUnbilled),
 		slog.Int("unmapped_product", report.UnmappedProduct), slog.Int("unreadable", report.Unreadable),
 		slog.Int("two_live", report.TwoLive), slog.Int("rejected", report.Rejected),
-		slog.Int("unapplicable", report.Unapplicable))
+		slog.Int("stranded", report.Stranded), slog.Int("unapplicable", report.Unapplicable))
 	return report, nil
 }
 

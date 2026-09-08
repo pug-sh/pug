@@ -108,14 +108,18 @@ func TestVerify(t *testing.T) {
 		}
 	})
 
-	t.Run("missing headers", func(t *testing.T) {
-		c := testClient(t, now)
-		headers := signed("evt_1", now, body)
-		headers.Del(headerWebhookSignature)
-		if _, err := c.Verify(headers, body); err == nil {
-			t.Fatal("a delivery with no signature header verified")
-		}
-	})
+	// All three are checked in one condition, so each needs its own case or two of
+	// the arms are carried by the third.
+	for _, header := range []string{headerWebhookID, headerWebhookTimestamp, headerWebhookSignature} {
+		t.Run("missing "+header, func(t *testing.T) {
+			c := testClient(t, now)
+			headers := signed("evt_1", now, body)
+			headers.Del(header)
+			if _, err := c.Verify(headers, body); err == nil {
+				t.Fatalf("a delivery with no %s header verified", header)
+			}
+		})
+	}
 
 	t.Run("no secret configured verifies nothing", func(t *testing.T) {
 		c, err := New(Config{APIKey: "sk_test"})
