@@ -294,6 +294,25 @@ func TestConfirmCheckoutRefusesARefPugNeverMinted(t *testing.T) {
 	}
 }
 
+// A payment link carries no ref and its metadata.org_id is the buyer's. Only the
+// webhook places those, and only against a staged product.
+func TestConfirmCheckoutRefusesACheckoutCarryingNoRef(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	event := subEvent(f.orgID, "sub00000000000000032", "prod_growth", corebilling.SubStatusActive)
+	event.CheckoutRef = ""
+	provider.checkout = event
+
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
+	}
+	if n := storedSubscriptions(t, f); n != 0 {
+		t.Errorf("wrote %d subscription rows for a checkout carrying no ref, want 0", n)
+	}
+}
+
 // The ref outranks metadata: a session pug opened for another org stays that
 // org's, whatever org_id the payload carries.
 func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {

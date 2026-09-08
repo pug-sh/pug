@@ -608,8 +608,22 @@ func confirm(t *testing.T, srv *Server, orgID string) (bool, error) {
 	return resp.Msg.GetConfirmed(), nil
 }
 
+// confirmRef is the ref pug would have minted for orgID's checkout.
+func confirmRef(orgID string) string { return "ref_" + orgID }
+
+// seedCheckoutRef stands in for the row CreateCheckoutSession writes.
+func seedCheckoutRef(t *testing.T, pg *testutil.TestPostgres, orgID string) {
+	t.Helper()
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_checkout_sessions (org_id, provider, ref) values ($1, $2, $3)`,
+		orgID, stubProvider{}.Name(), confirmRef(orgID)); err != nil {
+		t.Fatalf("seed checkout session: %v", err)
+	}
+}
+
 func confirmEvent(orgID, subID, product string, status corebilling.SubStatus) corebilling.SubscriptionEvent {
 	return corebilling.SubscriptionEvent{
+		CheckoutRef:        confirmRef(orgID),
 		Currency:           "USD",
 		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour),
 		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour),
@@ -629,6 +643,7 @@ func TestConfirmReportsASettledCheckout(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	seedCheckoutRef(t, pg, orgID)
 
 	srv := newConfirmingServer(t, pg, confirmStub{
 		event: confirmEvent(orgID, "sub00000000000000040", "prod_growth", corebilling.SubStatusActive),
@@ -708,6 +723,7 @@ func TestConfirmTranslatesItsRefusals(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+			seedCheckoutRef(t, pg, orgID)
 			_, err := confirm(t, newConfirmingServer(t, pg, tc.stub(orgID)), orgID)
 			if err == nil {
 				t.Fatal("err = nil, want a refusal")
@@ -731,6 +747,7 @@ func TestConfirmRefusesASecondLiveSubscription(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	seedCheckoutRef(t, pg, orgID)
 
 	live := confirmEvent(orgID, "sub00000000000000044", "prod_growth", corebilling.SubStatusActive)
 	if _, err := confirm(t, newConfirmingServer(t, pg, confirmStub{event: live}), orgID); err != nil {
