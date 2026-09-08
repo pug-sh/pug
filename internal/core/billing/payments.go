@@ -98,11 +98,23 @@ func (s *Service) checkoutProduct(rec Record, slug string) (string, error) {
 	return id, nil
 }
 
+// Checkout is what a caller knows: which org buys which tier, and who from which
+// page. The product, the ref and the return URL are the service's to derive.
+type Checkout struct {
+	OrgID    string
+	PlanSlug string
+	// Email and Name pre-fill the provider's form. Both may be empty.
+	Email string
+	Name  string
+	Theme CheckoutTheme
+}
+
 // CreateCheckoutSession opens a provider checkout for one tier and returns the
 // URL to send the buyer to. The amount lives on the product, never here.
 func (s *Service) CreateCheckoutSession(
-	ctx context.Context, orgID, planSlug, customerEmail string,
+	ctx context.Context, in Checkout,
 ) (sessionID, checkoutURL string, err error) {
+	orgID, planSlug := in.OrgID, in.PlanSlug
 	if !s.billingEnabled {
 		return "", "", ErrNoProvider
 	}
@@ -144,7 +156,9 @@ func (s *Service) CreateCheckoutSession(
 
 	sessionID, url, err := s.payments.Provider.CreateCheckoutSession(ctx, CheckoutInput{
 		CheckoutRef:   ref,
-		CustomerEmail: customerEmail,
+		CustomerEmail: in.Email,
+		CustomerName:  in.Name,
+		Theme:         in.Theme,
 		OrgID:         orgID,
 		ProductID:     productID,
 		ReturnURL:     s.payments.ReturnURL,

@@ -40,7 +40,9 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 
 	for name, svc := range services {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := svc.CreateCheckoutSession(t.Context(), f.orgID, "growth", "buyer@example.com"); err == nil {
+			if _, _, err := svc.CreateCheckoutSession(t.Context(), corebilling.Checkout{
+				OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
+			}); err == nil {
 				t.Error("CreateCheckoutSession opened a checkout with no provider")
 			}
 			if _, err := svc.CreatePortalSession(t.Context(), f.orgID); !errors.Is(err, corebilling.ErrNoProvider) {

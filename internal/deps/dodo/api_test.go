@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	dodopayments "github.com/dodopayments/dodopayments-go"
@@ -67,10 +68,31 @@ func TestCreateCheckoutSession(t *testing.T) {
 				ProductID string `json:"product_id"`
 				Quantity  int64  `json:"quantity"`
 			} `json:"product_cart"`
-			Metadata  map[string]string `json:"metadata"`
-			ReturnURL string            `json:"return_url"`
-			Customer  struct {
+			Metadata        map[string]string `json:"metadata"`
+			ReturnURL       string            `json:"return_url"`
+			BillingCurrency string            `json:"billing_currency"`
+			Customization   struct {
+				Theme       string `json:"theme"`
+				ThemeConfig struct {
+					Radius string            `json:"radius"`
+					Light  map[string]string `json:"light"`
+					Dark   map[string]string `json:"dark"`
+				} `json:"theme_config"`
+			} `json:"customization"`
+			FeatureFlags struct {
+				// A pointer, so the flag going unsent -- which is Dodo defaulting it to
+				// true -- reads differently from an explicit false.
+				AllowCurrencySelection *bool `json:"allow_currency_selection"`
+				// Plain bools: unsent decodes false, which is the case each asserts against.
+				AllowCustomerEditingEmail bool `json:"allow_customer_editing_email"`
+				AllowCustomerEditingName  bool `json:"allow_customer_editing_name"`
+				// Pointers: both default to true, so unsent is the case each asserts against.
+				AllowDiscountCode          *bool `json:"allow_discount_code"`
+				AllowPhoneNumberCollection *bool `json:"allow_phone_number_collection"`
+			} `json:"feature_flags"`
+			Customer struct {
 				Email string `json:"email"`
+				Name  string `json:"name"`
 			} `json:"customer"`
 		}
 		var path, method string
@@ -89,6 +111,8 @@ func TestCreateCheckoutSession(t *testing.T) {
 			CheckoutRef:   "ref_deadbeef",
 			ReturnURL:     "https://app.example/settings/billing",
 			CustomerEmail: "buyer@example.com",
+			CustomerName:  "Ada Buyer",
+			Theme:         corebilling.CheckoutThemeDark,
 		})
 		if err != nil {
 			t.Fatalf("CreateCheckoutSession: %v", err)
@@ -117,6 +141,49 @@ func TestCreateCheckoutSession(t *testing.T) {
 		if got.Customer.Email != "buyer@example.com" {
 			t.Errorf("customer.email = %q, want buyer@example.com", got.Customer.Email)
 		}
+		if got.Customer.Name != "Ada Buyer" {
+			t.Errorf("customer.name = %q, want Ada Buyer", got.Customer.Name)
+		}
+		// Dropping either half puts the buyer's own currency on the form: selection is on
+		// by default, and billing_currency alone is ignored while adaptive pricing is off.
+		if got.BillingCurrency != "USD" {
+			t.Errorf("billing_currency = %q, want USD", got.BillingCurrency)
+		}
+		if got.FeatureFlags.AllowCurrencySelection == nil || *got.FeatureFlags.AllowCurrencySelection {
+			t.Error("allow_currency_selection is not false; the buyer can switch off USD")
+		}
+		// Both pre-fills are frozen for the session unless these say otherwise.
+		if !got.FeatureFlags.AllowCustomerEditingEmail {
+			t.Error("allow_customer_editing_email is not true; the receipt cannot be redirected")
+		}
+		if !got.FeatureFlags.AllowCustomerEditingName {
+			t.Error("allow_customer_editing_name is not true; a stale name reaches the invoice")
+		}
+		if got.FeatureFlags.AllowDiscountCode == nil || *got.FeatureFlags.AllowDiscountCode {
+			t.Error("allow_discount_code is not false; the form offers a code pug never mints")
+		}
+		if got.FeatureFlags.AllowPhoneNumberCollection == nil || *got.FeatureFlags.AllowPhoneNumberCollection {
+			t.Error("allow_phone_number_collection is not false; the form asks for a phone number")
+		}
+		if got.Customization.Theme != "dark" {
+			t.Errorf("customization.theme = %q, want dark", got.Customization.Theme)
+		}
+		// Both palettes ride every session; only the theme above picks between them.
+		for mode, colors := range map[string]map[string]string{
+			"light": got.Customization.ThemeConfig.Light,
+			"dark":  got.Customization.ThemeConfig.Dark,
+		} {
+			if len(colors) == 0 {
+				t.Errorf("theme_config.%s carries no colors", mode)
+				continue
+			}
+			if bg := colors["bg_primary"]; !strings.HasPrefix(bg, "oklch(") {
+				t.Errorf("theme_config.%s.bg_primary = %q, want an oklch() token", mode, bg)
+			}
+		}
+		if got.Customization.ThemeConfig.Radius != "0.625rem" {
+			t.Errorf("theme_config.radius = %q, want 0.625rem", got.Customization.ThemeConfig.Radius)
+		}
 	})
 
 	t.Run("omits an unset return url and customer", func(t *testing.T) {
@@ -136,6 +203,52 @@ func TestCreateCheckoutSession(t *testing.T) {
 			if _, ok := raw[key]; ok {
 				t.Errorf("%s was sent for an unset field", key)
 			}
+		}
+	})
+
+	t.Run("omits an unset customer name", func(t *testing.T) {
+		var raw struct {
+			Customer map[string]any `json:"customer"`
+		}
+		c := apiClient(t, jsonHandler(t, http.StatusOK,
+			`{"session_id":"cs_1","checkout_url":"https://checkout.example/cs_1"}`,
+			func(r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+					t.Errorf("decode checkout request: %v", err)
+				}
+			}))
+		if _, _, err := c.CreateCheckoutSession(context.Background(), corebilling.CheckoutInput{
+			ProductID: "prod_growth", OrgID: "org_abc", CustomerEmail: "buyer@example.com",
+		}); err != nil {
+			t.Fatalf("CreateCheckoutSession: %v", err)
+		}
+		// A magic-link signup stores no name; a blank one would be frozen onto the session.
+		if _, ok := raw.Customer["name"]; ok {
+			t.Errorf("customer.name = %v was sent for a customer with no name", raw.Customer["name"])
+		}
+	})
+
+	t.Run("an unset theme sends none", func(t *testing.T) {
+		var raw struct {
+			Customization map[string]any `json:"customization"`
+		}
+		c := apiClient(t, jsonHandler(t, http.StatusOK,
+			`{"session_id":"cs_1","checkout_url":"https://checkout.example/cs_1"}`,
+			func(r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+					t.Errorf("decode checkout request: %v", err)
+				}
+			}))
+		if _, _, err := c.CreateCheckoutSession(context.Background(),
+			corebilling.CheckoutInput{ProductID: "prod_growth", OrgID: "org_abc"}); err != nil {
+			t.Fatalf("CreateCheckoutSession: %v", err)
+		}
+		// Auto is the client declining to say. The colours still ride along.
+		if _, ok := raw.Customization["theme"]; ok {
+			t.Errorf("customization.theme = %v was sent for an unset theme", raw.Customization["theme"])
+		}
+		if _, ok := raw.Customization["theme_config"]; !ok {
+			t.Error("theme_config was dropped along with the theme")
 		}
 	})
 

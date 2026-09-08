@@ -96,7 +96,23 @@ type CheckoutInput struct {
 	// CustomerEmail pre-fills the provider's form. Never the identity: a person can
 	// admin two orgs, and a shared customer would misattribute a delivery.
 	CustomerEmail string
+	// CustomerName pre-fills the same form and is often empty -- a magic-link signup
+	// stores no name. Only an OIDC claim supplies one.
+	CustomerName string
+	// Theme is the palette the checkout renders in, so an overlay opened from the
+	// dashboard does not land light on a dark page.
+	Theme CheckoutTheme
 }
+
+// CheckoutTheme is a resolved mode, never a stored preference: "system" is already
+// light or dark by the time a client sends it. Auto leaves it to the provider.
+type CheckoutTheme string
+
+const (
+	CheckoutThemeAuto  CheckoutTheme = ""
+	CheckoutThemeLight CheckoutTheme = "light"
+	CheckoutThemeDark  CheckoutTheme = "dark"
+)
 
 // SubStatus is pug's subscription vocabulary. It is fixed and does not grow to
 // fit a provider: a state pug has no word for is stored verbatim and refused by

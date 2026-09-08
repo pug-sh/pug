@@ -116,6 +116,18 @@ message CreateCheckoutSessionRequest {
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
   // A catalog slug. Never a price and never a product id.
   string plan_slug = 2 [(buf.validate.field).string.min_len = 1];
+  // The mode the overlay opens over, so it does not land light on a dark page.
+  // The dashboard's resolved theme, not the stored preference -- "system" is
+  // already resolved by the time this is sent. UNSPECIFIED leaves the provider's
+  // own configured default -- it does not follow the buyer's OS.
+  CheckoutTheme theme = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+// Which palette the provider's checkout renders in.
+enum CheckoutTheme {
+  CHECKOUT_THEME_UNSPECIFIED = 0;
+  CHECKOUT_THEME_LIGHT = 1;
+  CHECKOUT_THEME_DARK = 2;
 }
 
 message CreateCheckoutSessionResponse {

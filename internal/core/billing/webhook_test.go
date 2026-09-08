@@ -949,8 +949,9 @@ func TestCheckoutStoresTheRefItSendsToTheProvider(t *testing.T) {
 	}
 	f, provider := newPaidFixture(t)
 
-	if _, _, err := f.svc.CreateCheckoutSession(
-		t.Context(), f.orgID, "growth", "buyer@example.com"); err != nil {
+	if _, _, err := f.svc.CreateCheckoutSession(t.Context(), corebilling.Checkout{
+		OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
+	}); err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)
 	}
 	sent := provider.checkoutIn.CheckoutRef

@@ -69,6 +69,65 @@ func (c *Client) Name() string { return Name }
 // decides that the route mounts at all.
 func (c *Client) CanVerify() bool { return c != nil && c.verifier != nil }
 
+// Pug's own tokens, straight off src/index.css in the dashboard -- the overlay opens
+// over that page, so a mismatch is visible side by side. Both modes are always sent
+// and the theme picks one; hover and secondary-button tones are the app's chip
+// surfaces. The font is deliberately absent: font_primary_url must be a public
+// https URL, and the dashboard's Figtree is bundled behind a hashed filename.
+func customization(theme corebilling.CheckoutTheme) dodopayments.CheckoutSessionCustomizationParam {
+	c := dodopayments.CheckoutSessionCustomizationParam{
+		ThemeConfig: dodopayments.F(dodopayments.ThemeConfigParam{
+			Radius: dodopayments.F("0.625rem"),
+			Light: dodopayments.F(dodopayments.ThemeModeConfigParam{
+				BgPrimary:            dodopayments.F("oklch(0.943 0.005 265)"),
+				BgSecondary:          dodopayments.F("oklch(0.958 0.004 265)"),
+				BorderPrimary:        dodopayments.F("oklch(0.876 0.006 265)"),
+				BorderSecondary:      dodopayments.F("oklch(0.911 0.008 265)"),
+				ButtonPrimary:        dodopayments.F("oklch(0.55 0.18 265)"),
+				ButtonPrimaryHover:   dodopayments.F("oklch(0.50 0.18 265)"),
+				ButtonSecondary:      dodopayments.F("oklch(0.911 0.008 265)"),
+				ButtonSecondaryHover: dodopayments.F("oklch(0.876 0.006 265)"),
+				ButtonTextPrimary:    dodopayments.F("oklch(0.98 0.005 265)"),
+				ButtonTextSecondary:  dodopayments.F("oklch(0.402 0.008 265)"),
+				InputFocusBorder:     dodopayments.F("oklch(0.55 0.18 265)"),
+				TextPrimary:          dodopayments.F("oklch(0.365 0.006 265)"),
+				TextSecondary:        dodopayments.F("oklch(0.49 0.008 265)"),
+				TextPlaceholder:      dodopayments.F("oklch(0.611 0.008 265)"),
+				TextError:            dodopayments.F("oklch(0.462 0.14 25)"),
+				TextSuccess:          dodopayments.F("oklch(0.431 0.14 145)"),
+			}),
+			Dark: dodopayments.F(dodopayments.ThemeModeConfigParam{
+				BgPrimary:            dodopayments.F("oklch(0.215 0.013 265)"),
+				BgSecondary:          dodopayments.F("oklch(0.242 0.013 265)"),
+				BorderPrimary:        dodopayments.F("oklch(0.68 0.022 265 / 0.22)"),
+				BorderSecondary:      dodopayments.F("oklch(0.252 0.014 265)"),
+				ButtonPrimary:        dodopayments.F("oklch(0.55 0.175 265)"),
+				ButtonPrimaryHover:   dodopayments.F("oklch(0.60 0.175 265)"),
+				ButtonSecondary:      dodopayments.F("oklch(0.252 0.014 265)"),
+				ButtonSecondaryHover: dodopayments.F("oklch(0.285 0.016 265)"),
+				ButtonTextPrimary:    dodopayments.F("oklch(0.985 0.005 265)"),
+				ButtonTextSecondary:  dodopayments.F("oklch(0.779 0.005 265)"),
+				InputFocusBorder:     dodopayments.F("oklch(0.62 0.15 265)"),
+				TextPrimary:          dodopayments.F("oklch(0.818 0.004 265)"),
+				TextSecondary:        dodopayments.F("oklch(0.709 0.006 265)"),
+				TextPlaceholder:      dodopayments.F("oklch(0.605 0.007 265)"),
+				TextError:            dodopayments.F("oklch(0.7 0.1 25)"),
+				TextSuccess:          dodopayments.F("oklch(0.71 0.1 145)"),
+			}),
+		}),
+	}
+	switch theme {
+	case corebilling.CheckoutThemeLight:
+		c.Theme = dodopayments.F(dodopayments.CheckoutSessionCustomizationThemeLight)
+	case corebilling.CheckoutThemeDark:
+		c.Theme = dodopayments.F(dodopayments.CheckoutSessionCustomizationThemeDark)
+	case corebilling.CheckoutThemeAuto:
+		// No theme at all, which leaves the mode configured in Dodo's own dashboard.
+		// Not "system": that follows the buyer's OS, which is a different claim.
+	}
+	return c
+}
+
 func (c *Client) CreateCheckoutSession(
 	ctx context.Context, in corebilling.CheckoutInput,
 ) (sessionID, checkoutURL string, err error) {
@@ -84,18 +143,36 @@ func (c *Client) CreateCheckoutSession(
 		md[metadataCheckoutRef] = shared.UnionString(in.CheckoutRef)
 	}
 	req.Metadata = dodopayments.F(md)
+	req.Customization = dodopayments.F(customization(in.Theme))
 	if in.ReturnURL != "" {
 		req.ReturnURL = dodopayments.F(in.ReturnURL)
 	}
+	// USD needs both: selection is on by default, and billing_currency is ignored while
+	// adaptive pricing is off -- alone the flag would just lock in the detected locale.
+	req.BillingCurrency = dodopayments.F(dodopayments.CurrencyUsd)
 	// A new customer per checkout, never a lookup by email: one person can admin two
 	// orgs, and a shared customer would misattribute a delivery. The flag forces it.
 	req.FeatureFlags = dodopayments.F(dodopayments.CheckoutSessionFlagsParam{
-		AlwaysCreateNewCustomer: dodopayments.F(true),
+		AllowCurrencySelection: dodopayments.F(false),
+		// Pug mints no codes, so the box only invites a buyer to go hunting for one.
+		AllowDiscountCode: dodopayments.F(false),
+		// Defaults on, and a phone number buys an analytics upgrade nothing.
+		AllowPhoneNumberCollection: dodopayments.F(false),
+		// Pre-filled from the account and otherwise frozen for the session -- but the name
+		// can be a stale OIDC claim and the receipt often wants accounts payable, and
+		// attribution rides the metadata ref rather than either of these.
+		AllowCustomerEditingEmail: dodopayments.F(true),
+		AllowCustomerEditingName:  dodopayments.F(true),
+		AlwaysCreateNewCustomer:   dodopayments.F(true),
 	})
 	if in.CustomerEmail != "" {
-		req.Customer = dodopayments.F[dodopayments.CustomerRequestUnionParam](
-			dodopayments.NewCustomerParam{Email: dodopayments.F(in.CustomerEmail)},
-		)
+		customer := dodopayments.NewCustomerParam{Email: dodopayments.F(in.CustomerEmail)}
+		// Sent only when there is one: a name given here is frozen for the session, and
+		// an empty one leaves the buyer to type theirs rather than showing a blank field.
+		if in.CustomerName != "" {
+			customer.Name = dodopayments.F(in.CustomerName)
+		}
+		req.Customer = dodopayments.F[dodopayments.CustomerRequestUnionParam](customer)
 	}
 
 	session, err := c.api.CheckoutSessions.New(ctx, dodopayments.CheckoutSessionNewParams{

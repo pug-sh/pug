@@ -105,6 +105,19 @@ func int64Value(v *int64) *wrapperspb.Int64Value {
 	return wrapperspb.Int64(*v)
 }
 
+// An unset theme is the client declining to say, not a light one: the checkout
+// then opens in the provider's own configured default rather than a mode pug guessed.
+func checkoutTheme(t billingv1.CheckoutTheme) corebilling.CheckoutTheme {
+	switch t {
+	case billingv1.CheckoutTheme_CHECKOUT_THEME_LIGHT:
+		return corebilling.CheckoutThemeLight
+	case billingv1.CheckoutTheme_CHECKOUT_THEME_DARK:
+		return corebilling.CheckoutThemeDark
+	default:
+		return corebilling.CheckoutThemeAuto
+	}
+}
+
 // CreateCheckoutSession opens a provider checkout and returns the URL. The request
 // names a plan slug; the amount lives on the provider's product.
 func (s *Server) CreateCheckoutSession(
@@ -116,14 +129,20 @@ func (s *Server) CreateCheckoutSession(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	// The buyer's own address, so the provider's form is pre-filled. Never the
-	// identity: a customer is created per checkout, or attribution lands wrong.
+	// The buyer's own address and name, so the provider's form is pre-filled. Never
+	// the identity: a customer is created per checkout, or attribution lands wrong.
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionID, url, err := s.service.CreateCheckoutSession(ctx, orgID, req.Msg.GetPlanSlug(), principal.Customer.Email)
+	sessionID, url, err := s.service.CreateCheckoutSession(ctx, corebilling.Checkout{
+		OrgID:    orgID,
+		PlanSlug: req.Msg.GetPlanSlug(),
+		Email:    principal.Customer.Email,
+		Name:     principal.Customer.DisplayName,
+		Theme:    checkoutTheme(req.Msg.GetTheme()),
+	})
 	if err != nil {
 		return nil, checkoutErr(err, orgID, req.Msg.GetPlanSlug())
 	}

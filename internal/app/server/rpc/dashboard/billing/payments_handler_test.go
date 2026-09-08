@@ -25,7 +25,9 @@ func buyerCtx(t *testing.T) context.Context {
 	t.Helper()
 	return authn.SetInfo(t.Context(), &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: "cust0000000000000000", Email: "buyer@acme.com"},
+		Customer: &dbread.Customer{
+			ID: "cust0000000000000000", Email: "buyer@acme.com", DisplayName: "Ada Buyer",
+		},
 	})
 }
 
@@ -46,7 +48,7 @@ const (
 	portalURL         = "https://pay.example/portal/abc"
 )
 
-type stubProvider struct{}
+type stubProvider struct{ in *corebilling.CheckoutInput }
 
 func (stubProvider) Name() string { return "stub" }
 
@@ -58,7 +60,12 @@ func (stubProvider) Normalize(corebilling.Delivery) (corebilling.SubscriptionEve
 	return corebilling.SubscriptionEvent{}, nil
 }
 
-func (stubProvider) CreateCheckoutSession(context.Context, corebilling.CheckoutInput) (string, string, error) {
+func (p stubProvider) CreateCheckoutSession(
+	_ context.Context, in corebilling.CheckoutInput,
+) (string, string, error) {
+	if p.in != nil {
+		*p.in = in
+	}
 	return checkoutSessionID, checkoutURL, nil
 }
 
@@ -190,6 +197,34 @@ func newPayingServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled boo
 		t.Fatalf("new service: %v", err)
 	}
 	return NewServer(svc)
+}
+
+func TestCheckoutPrefillsTheBuyer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	var in corebilling.CheckoutInput
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		Provider:      stubProvider{in: &in},
+		ReturnURL:     "https://app.example/settings/billing",
+		SlugByProduct: map[string]string{"prod_growth": "growth"},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	if _, err := checkout(t, NewServer(svc), orgID, "growth"); err != nil {
+		t.Fatalf("CreateCheckoutSession: %v", err)
+	}
+	// Both halves are strings, so a transposed pair compiles and reaches the provider.
+	if in.CustomerEmail != "buyer@acme.com" {
+		t.Errorf("CustomerEmail = %q, want buyer@acme.com", in.CustomerEmail)
+	}
+	if in.CustomerName != "Ada Buyer" {
+		t.Errorf("CustomerName = %q, want Ada Buyer", in.CustomerName)
+	}
 }
 
 func checkout(t *testing.T, srv *Server, orgID, slug string) (string, error) {
