@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	appbilling "github.com/pug-sh/pug/internal/app/billing"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/dotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -216,10 +216,8 @@ func billingRunE(fn func(context.Context, *appbilling.CLI, *cobra.Command, strin
 		ctx, done := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
-		if err := godotenv.Load(); err != nil {
-			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
-		}
 		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+		dotenv.LoadOrExit(ctx)
 
 		cli, err := appbilling.New(ctx)
 		if err != nil {
