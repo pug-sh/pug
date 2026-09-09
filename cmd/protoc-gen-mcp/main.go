@@ -63,6 +63,15 @@ func main() {
 		if !f.Generate {
 			continue
 		}
+		// Upstream emits one MCP tool per UNARY method (generator.go skips
+		// streaming methods) but still writes the file scaffold. For a file
+		// whose services are streaming-only (ai/dashboards/v1/assistant.proto)
+		// that scaffold has unused imports and does not compile, so skip such
+		// files entirely — the same outcome upstream already produces for
+		// files with no services at all.
+		if !hasUnaryMethod(f) {
+			continue
+		}
 		generator.NewFileGenerator(f, gen).Generate(*packageSuffix)
 	}
 
@@ -97,4 +106,15 @@ func readRequest() (*pluginpb.CodeGeneratorRequest, error) {
 func fail(err error) {
 	fmt.Fprintf(os.Stderr, "protoc-gen-mcp: %v\n", err)
 	os.Exit(1)
+}
+
+func hasUnaryMethod(f *protogen.File) bool {
+	for _, svc := range f.Services {
+		for _, m := range svc.Methods {
+			if !m.Desc.IsStreamingClient() && !m.Desc.IsStreamingServer() {
+				return true
+			}
+		}
+	}
+	return false
 }

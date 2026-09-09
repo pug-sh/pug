@@ -1,0 +1,131 @@
+edition = "2023";
+package ai.dashboards.v1;
+
+import "buf/validate/validate.proto";
+import "dashboard/dashboards/v1/dashboards.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/ai/dashboards/v1;aidashboardsv1";
+
+// DashboardAssistantService turns a conversation into validated edits to a
+// dashboard draft. Message history is persisted server-side, scoped to the
+// authenticated caller; only the draft round-trips through the client each turn.
+//
+// The service is implemented by the ai role in this repo (internal/app/ai +
+// internal/core/assistant) and calls back into shared.insights.v1 with the
+// caller's forwarded JWT, so its reads are authorized exactly as the user's own.
+service DashboardAssistantService {
+  // Turn processes one user message against the current draft and streams back
+  // assistant prose plus zero or more validated tile operations.
+  rpc Turn(TurnRequest) returns (stream TurnResponse);
+}
+
+message TurnRequest {
+  // Identifies which persisted conversation this turn belongs to. The caller
+  // mints one (e.g. per dashboard-builder session) and reuses it across turns.
+  // Bounded and pattern-constrained because the value is the last segment of a
+  // Redis key: a ":" here would blur the boundary with the caller scope in
+  // front of it.
+  string conversation_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[A-Za-z0-9_-]+$"
+  }];
+  ConversationState state = 2 [(buf.validate.field).required = true];
+  string message = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 10000
+  }];
+}
+
+message ConversationState {
+  // The draft the operations apply to. Reuses Dashboard so it is the same
+  // message the webapp's draft state already holds and buildUpsertRequest
+  // already consumes. This is still client-supplied every turn — message
+  // history is not; it is persisted server-side, scoped to the caller.
+  //
+  // Not validated: the draft may legitimately hold a tile that fails
+  // DashboardTile rules — the flagged TileOp the assistant itself emitted, which
+  // the user is now asking it to fix. The server only reads the draft.
+  dashboard.dashboards.v1.Dashboard draft = 1 [(buf.validate.field).ignore = IGNORE_ALWAYS];
+}
+
+message Message {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    ROLE_USER = 1;
+    ROLE_ASSISTANT = 2;
+  }
+  Role role = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  string content = 2;
+}
+
+message TurnResponse {
+  oneof chunk {
+    // Assistant prose, streamed incrementally.
+    string text = 1;
+    // One operation. Validated against the tile's own protovalidate rules — but
+    // see TileOp.violations: a tile the assistant could not make valid is still
+    // emitted, flagged, so the user can correct it by hand.
+    TileOp op = 2;
+    TurnDone done = 3;
+  }
+}
+
+message TurnDone {
+  // Tiles the assistant abandoned without producing an op at all. A tile that
+  // merely failed validation is emitted as a flagged TileOp instead, so in
+  // practice this carries only assistant-side faults (e.g. a misconfigured
+  // validator, where flagging would mean shipping a tile nothing ever checked).
+  // Empty on a clean turn; clients should surface it as an error, not as a
+  // correctable draft.
+  repeated FailedOp failed = 1;
+}
+
+message FailedOp {
+  string intent = 1;
+  repeated string violations = 2;
+}
+
+// TileOp is a single edit to the draft. Operations rather than a whole-draft
+// rewrite: a tile the model never mentions is untouched by construction, so
+// silence can never delete. DashboardsService.Upsert deletes tiles absent from
+// its request, which makes that distinction load-bearing.
+message TileOp {
+  oneof op {
+    option (buf.validate.oneof).required = true;
+    AddTile add = 1;
+    UpdateTile update = 2;
+    RemoveTile remove = 3;
+  }
+
+  // Non-empty when the assistant could not make this tile valid within its
+  // repair budget and is surfacing it for manual correction. The strings are
+  // the protovalidate violation messages verbatim — already human-readable
+  // prose, suitable to show the user.
+  //
+  // A flagged tile is deliberately NOT save-safe: DashboardsService.Upsert runs
+  // the same rules server-side and will reject it. Clients must render it as a
+  // must-fix draft state and block save until it validates. An op with no
+  // violations passed validation and can be saved normally.
+  repeated string violations = 4;
+}
+
+message AddTile {
+  dashboard.dashboards.v1.DashboardTileInput tile = 1 [(buf.validate.field).required = true];
+}
+
+// UpdateTile replaces the whole tile rather than carrying a field mask: the
+// model receives the current tile in context and returns the updated one, which
+// is markedly easier for a language model to get right. The blast radius is one
+// tile either way.
+message UpdateTile {
+  string tile_id = 1 [(buf.validate.field).string.min_len = 1];
+  dashboard.dashboards.v1.DashboardTileInput tile = 2 [(buf.validate.field).required = true];
+}
+
+message RemoveTile {
+  string tile_id = 1 [(buf.validate.field).string.min_len = 1];
+}
