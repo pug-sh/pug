@@ -8,24 +8,20 @@ import (
 	"github.com/pug-sh/pug/internal/core/authz"
 )
 
-// permissionRegistry maps every served RPC procedure to its authz decision
-// (authzspec.Spec). Each Spec is built by a constructor — Public/Self/Project/
-// SDKKey for the non-gated kinds, and OrgGated/ProjGated for the role-gated ones
-// (which the interceptor enforces). Because authzspec.Spec's fields are
-// unexported, a role-gated entry cannot be written as a bare literal that forgets
-// orgSource, and a non-gated literal cannot carry a stray (resource, action) — so
-// "role-gated ⟺ resource+action+orgSource" holds by construction.
+// permissionRegistry maps every served RPC procedure to its authz decision. The
+// authzspec constructors are what make "role-gated ⟺ resource+action+orgSource"
+// hold by construction (see that package's doc); the optional trailing string is
+// a note for the reader.
 //
 // OrgGated resolves the caller's org from the request message's GetOrgId (org
 // control plane); ProjGated resolves it from the x-project-id project
 // (principal.Project.OrgID — project data plane + project-lifecycle writes).
 //
 // TestPermissionRegistryCoversAllProcedures asserts this map is exactly the set
-// of served procedures (no missing entry — "no RPC ships without an authz
-// decision" — and no stale entry), deriving the truth from the generated handler
-// interfaces via reflection.
+// of served procedures, derived from the generated handler interfaces by
+// reflection: no RPC ships without a decision, and no entry outlives its RPC.
 var permissionRegistry = map[string]authzspec.Spec{
-	// --- public.auth.v1.AuthService — no auth ---
+	// --- public.auth.v1.AuthService ---
 	"/public.auth.v1.AuthService/SignInWithEmail":    authzspec.Public(),
 	"/public.auth.v1.AuthService/RequestMagicLink":   authzspec.Public(),
 	"/public.auth.v1.AuthService/CompleteMagicLink":  authzspec.Public("invite acceptance is authorized by invite-token possession, not an org role"),
@@ -35,7 +31,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/public.auth.v1.AuthService/SignOut":            authzspec.Public(),
 	"/public.auth.v1.AuthService/DemoSignIn":         authzspec.Public("credential-less demo viewer login; gated by PUG_DEMO_ENABLED, and the minted principal is a read-only org viewer"),
 
-	// --- public.dashboards.v1.SharedDashboardsService — no auth (share token) ---
+	// --- public.dashboards.v1.SharedDashboardsService ---
 	"/public.dashboards.v1.SharedDashboardsService/Query": authzspec.Public("authorized by share_id"),
 
 	// --- dashboard.orgs.v1.OrgsService ---
@@ -63,7 +59,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.projects.v1.ProjectsService/CreateApiKey":         authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionCreate, "admin-only; org resolved from the x-project-id project"),
 	"/dashboard.projects.v1.ProjectsService/DeleteApiKey":         authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionDelete, "admin-only; org resolved from the x-project-id project"),
 
-	// --- dashboard.dashboards.v1.DashboardsService — project-data plane (JWT + x-project-id) ---
+	// --- dashboard.dashboards.v1.DashboardsService ---
 	"/dashboard.dashboards.v1.DashboardsService/Get":            authzspec.ProjGated(authz.ResourceDashboard, authz.ActionRead),
 	"/dashboard.dashboards.v1.DashboardsService/List":           authzspec.ProjGated(authz.ResourceDashboard, authz.ActionRead),
 	"/dashboard.dashboards.v1.DashboardsService/QueryDashboard": authzspec.ProjGated(authz.ResourceDashboard, authz.ActionRead),
@@ -72,26 +68,33 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.dashboards.v1.DashboardsService/Delete":         authzspec.ProjGated(authz.ResourceDashboard, authz.ActionDelete),
 	"/dashboard.dashboards.v1.DashboardsService/Upsert":         authzspec.ProjGated(authz.ResourceDashboard, authz.ActionUpdate, "reconciles tiles of an existing dashboard"),
 
-	// --- dashboard.orgemailproviders.v1.OrgEmailProvidersService — admin-gated (email_provider is admin-only in the policy) ---
+	// --- dashboard.orgemailproviders.v1.OrgEmailProvidersService — admin-only in the policy, reads included ---
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get":      authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionRead),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":      authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionUpdate),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionDelete),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionUpdate),
 
-	// --- dashboard.usage.v1.UsageService — org control plane; read-only, on the viewer floor ---
+	// --- dashboard.usage.v1.UsageService ---
 	"/dashboard.usage.v1.UsageService/GetUsage": authzspec.OrgGated(authz.ResourceUsage, authz.ActionRead),
 
-	// --- dashboard.customers.v1.CustomersService — self-service ---
+	// --- dashboard.billing.v1.BillingService ---
+	"/dashboard.billing.v1.BillingService/GetBillingStatus":      authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead),
+	"/dashboard.billing.v1.BillingService/ListPlans":             authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead, "on the viewer floor: whoever reads the quota banner is who wants to know what the next tier costs"),
+	"/dashboard.billing.v1.BillingService/CreateCheckoutSession": authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; starting a checkout spends money"),
+	"/dashboard.billing.v1.BillingService/CreatePortalSession":   authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; the portal reaches invoices"),
+	"/dashboard.billing.v1.BillingService/ConfirmCheckout":       authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; the other half of starting, and it writes the subscription row"),
+
+	// --- dashboard.customers.v1.CustomersService ---
 	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.Self(),
 	"/dashboard.customers.v1.CustomersService/SetPassword": authzspec.Self(),
 
-	// --- shared.insights.v1.InsightsService — project-data plane (JWT or private key) ---
+	// --- shared.insights.v1.InsightsService ---
 	"/shared.insights.v1.InsightsService/Query":             authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),
 	"/shared.insights.v1.InsightsService/SegmentUsers":      authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),
 	"/shared.insights.v1.InsightsService/GetFilterSchema":   authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),
 	"/shared.insights.v1.InsightsService/GetPropertyValues": authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),
 
-	// --- shared.activity.v1.ActivityService — project-data plane ---
+	// --- shared.activity.v1.ActivityService ---
 	"/shared.activity.v1.ActivityService/GetActivityFeed":    authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 	"/shared.activity.v1.ActivityService/GetEventExplorer":   authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 	"/shared.activity.v1.ActivityService/GetFilterSchema":    authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
@@ -100,7 +103,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/shared.activity.v1.ActivityService/GetProfileSessions": authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 	"/shared.activity.v1.ActivityService/GetProfileStats":    authzspec.ProjGated(authz.ResourceActivity, authz.ActionRead),
 
-	// --- shared.profiles.v1.ProfilesService — project-data plane ---
+	// --- shared.profiles.v1.ProfilesService ---
 	"/shared.profiles.v1.ProfilesService/Get":                authzspec.ProjGated(authz.ResourceProfile, authz.ActionRead),
 	"/shared.profiles.v1.ProfilesService/GetByExternalId":    authzspec.ProjGated(authz.ResourceProfile, authz.ActionRead),
 	"/shared.profiles.v1.ProfilesService/List":               authzspec.ProjGated(authz.ResourceProfile, authz.ActionRead),
@@ -108,24 +111,22 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/shared.profiles.v1.ProfilesService/Delete":             authzspec.ProjGated(authz.ResourceProfile, authz.ActionDelete),
 	"/shared.profiles.v1.ProfilesService/DeleteDataSubject":  authzspec.ProjGated(authz.ResourceProfile, authz.ActionDelete, "GDPR/DPDP erasure; member+ on the JWT path, coarse on private key"),
 
-	// --- sdk.profiles.v1.ProfilesSDKService — API key ---
+	// --- sdk.profiles.v1.ProfilesSDKService ---
 	"/sdk.profiles.v1.ProfilesSDKService/Identify": authzspec.SDKKey(),
 
-	// --- sdk.events.v1.EventsService — API key ---
+	// --- sdk.events.v1.EventsService ---
 	"/sdk.events.v1.EventsService/BatchCreate": authzspec.SDKKey(),
 }
 
-// ServedServiceNames returns the distinct RPC service names that appear in the
-// permission registry (e.g. "dashboard.orgs.v1.OrgsService"), sorted. Because
-// TestPermissionRegistryCoversAllProcedures pins the registry to exactly the set
-// of served procedures, this is the authoritative "what is served" list:
+// ServedServiceNames returns the distinct service names in the registry, sorted.
+// Because TestPermissionRegistryCoversAllProcedures pins the registry to exactly
+// the served procedures, this is the authoritative "what is served" list:
 // server.start uses it both to advertise gRPC reflection and to assert (via
-// assertServedServicesMatch) that every mounted RPC service has an authz decision.
+// assertServedServicesMatch) that every mounted service has an authz decision.
 func ServedServiceNames() []string {
 	seen := map[string]struct{}{}
 	var names []string
 	for proc := range permissionRegistry {
-		// proc is "/<service>/<method>"; take the <service> segment.
 		trimmed := strings.TrimPrefix(proc, "/")
 		slash := strings.LastIndexByte(trimmed, '/')
 		if slash <= 0 {

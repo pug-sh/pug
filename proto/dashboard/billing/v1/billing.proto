@@ -1,0 +1,193 @@
+edition = "2023";
+
+package dashboard.billing.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1;billingv1";
+
+service BillingService {
+  // What the org may send this period: plan, quota, and the window both are
+  // measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
+  // from both. Plan fields arrive already resolved, overrides applied.
+  rpc GetBillingStatus(GetBillingStatusRequest) returns (GetBillingStatusResponse) {}
+
+  // Opens a checkout for one catalog tier. Admin-only: the quota banner is on
+  // the viewer floor, but starting a checkout spends money. The price lives on
+  // the provider's product; this request names a plan slug, never an amount.
+  rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse) {}
+
+  // Verifies one checkout against the provider and applies its subscription:
+  // what confirms a returning buyer on a deployment with no reachable webhook
+  // URL. Admin-only, like the checkout it settles. session_id is a claim -- the
+  // subscription must carry this org.
+  rpc ConfirmCheckout(ConfirmCheckoutRequest) returns (ConfirmCheckoutResponse) {}
+
+  // Opens the provider's customer portal, where plan changes, card updates,
+  // invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+  // FailedPrecondition for an org that has never checked out.
+  rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
+
+  // The tiers this deployment sells, in display order. On the viewer floor: the
+  // person reading the quota banner wants to know what the next tier costs, they
+  // just cannot buy it. Never returns a product id, and never the floors.
+  rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {}
+}
+
+// BillingStatus is derived from the clock on every read, never stored. The
+// states a provider reports live on SubscriptionStatus instead.
+enum BillingStatus {
+  BILLING_STATUS_UNSPECIFIED = 0;
+  // Inside the trial window, which runs from org creation unless extended.
+  BILLING_STATUS_TRIALING = 1;
+  // Holding a granted plan whose contract has not lapsed.
+  BILLING_STATUS_ACTIVE = 2;
+  // The floor: never trialed, trial expired, or a contract that has ended.
+  BILLING_STATUS_FREE = 3;
+}
+
+// SubscriptionStatus is the provider subscription behind the entitlement, in pug's
+// own vocabulary. Only UNSPECIFIED, ACTIVE and PAST_DUE are ever emitted -- the
+// rest exist because a stored row holds them.
+enum SubscriptionStatus {
+  // No live subscription: trialing, free, comped, or no provider configured.
+  SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
+  SUBSCRIPTION_STATUS_ACTIVE = 1;
+  // The card failed and the provider is retrying. The entitlement is UNCHANGED:
+  // worth a banner, never a block.
+  SUBSCRIPTION_STATUS_PAST_DUE = 2;
+  SUBSCRIPTION_STATUS_PAUSED = 3;
+  SUBSCRIPTION_STATUS_CANCELLED = 4;
+  SUBSCRIPTION_STATUS_EXPIRED = 5;
+  SUBSCRIPTION_STATUS_FAILED = 6;
+}
+
+message GetBillingStatusRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Plan is the tier as this org holds it, overrides applied.
+message Plan {
+  string slug = 1;
+  string display_name = 2;
+  // The tier's LIST price, in minor units of `currency` -- never what a negotiated
+  // deal is charged. ABSENT is the custom tier, which is not a price of zero. A
+  // wrapper because a bare int64 would reach the dashboard as 0.
+  google.protobuf.Int64Value price_cents = 3;
+  // ISO 4217.
+  string currency = 4;
+}
+
+message GetBillingStatusResponse {
+  // False on a deployment with billing switched off. Hide every billing surface.
+  bool billing_enabled = 1;
+  Plan plan = 2;
+  BillingStatus status = 3;
+  // Events the org may send this period. ABSENT means NO QUOTA -- billing is off,
+  // or the plan carries none. Never render its absence as 0.
+  google.protobuf.Int64Value included_events = 4;
+  // When the trial ends, or when it ended. Kept once past, where it says why an
+  // org is on the free floor. Absent only with billing switched off.
+  google.protobuf.Timestamp trial_ends_at = 5;
+  // When a granted plan lapses back to the free floor; absent means open-ended.
+  // The end of the agreement, NOT of the quota window.
+  google.protobuf.Timestamp contract_ends_at = 6;
+  // The quota window, which runs from the org's billing anniversary. Identical to
+  // GetUsage's period bounds, which is what makes "X of Y" like for like.
+  google.protobuf.Timestamp period_start = 7;
+  google.protobuf.Timestamp period_end = 8;
+  SubscriptionStatus subscription_status = 9;
+  // When the provider bills next: the MONEY's period, not the quota's above.
+  // Absent when there is no live subscription.
+  google.protobuf.Timestamp current_period_end = 10;
+  // Whether a checkout would open at all -- billing on, a provider configured, and
+  // a product to check out against. Per tier it is PlanOption.purchasable.
+  bool purchasable = 11;
+  // Days of event history the plan promises. ABSENT means NO BOUND and is never
+  // zero. Nothing in pug deletes on this number today.
+  google.protobuf.Int64Value retention_days = 13;
+  // Whether a portal session would open: this org has a customer at the provider,
+  // which only a checkout leaves behind. Not implied by subscription_status.
+  bool manageable = 12;
+}
+
+message CreateCheckoutSessionRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+  // A catalog slug. Never a price and never a product id.
+  string plan_slug = 2 [(buf.validate.field).string.min_len = 1];
+  // The mode the overlay opens over, so it does not land light on a dark page.
+  // The dashboard's resolved theme, not the stored preference -- "system" is
+  // already resolved by the time this is sent. UNSPECIFIED leaves the provider's
+  // own configured default -- it does not follow the buyer's OS.
+  CheckoutTheme theme = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+enum CheckoutTheme {
+  CHECKOUT_THEME_UNSPECIFIED = 0;
+  CHECKOUT_THEME_LIGHT = 1;
+  CHECKOUT_THEME_DARK = 2;
+}
+
+message CreateCheckoutSessionResponse {
+  // Send the buyer here. Single-use and short-lived; never store it.
+  string checkout_url = 1;
+  // Hand back to ConfirmCheckout when the buyer returns. Not proof: the server
+  // re-reads the checkout. Empty if the provider gives no id.
+  string session_id = 2;
+}
+
+message ConfirmCheckoutRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Bounded to the provider's own id alphabet: it is echoed into the provider's
+  // URL path, where a `../` would address another endpoint with pug's API key.
+  string session_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[A-Za-z0-9_-]+$"
+  }];
+}
+
+message ConfirmCheckoutResponse {
+  // False is "not settled yet", never a failure; a checkout that will not settle
+  // is an error instead.
+  bool confirmed = 1;
+}
+
+message CreatePortalSessionRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreatePortalSessionResponse {
+  string portal_url = 1;
+}
+
+message ListPlansRequest {
+  // Scoped to an org because purchasability is: only the org whose row records a
+  // product can buy the custom tier.
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// PlanOption is a tier as this deployment sells it. Plan is a tier as ONE ORG
+// holds it, overrides applied.
+message PlanOption {
+  string slug = 1;
+  string display_name = 2;
+  // List price, in minor units of `currency`. ABSENT is the custom tier, whose
+  // price lives in the provider -- absence is never zero, here or below.
+  google.protobuf.Int64Value price_cents = 3;
+  // ISO 4217.
+  string currency = 4;
+  // Events the tier includes. ABSENT is the custom tier.
+  google.protobuf.Int64Value included_events = 5;
+  // Days of history the tier keeps. ABSENT is the custom tier.
+  google.protobuf.Int64Value retention_days = 7;
+  // Whether a checkout for THIS tier would open -- the same helper
+  // CreateCheckoutSession refuses on, so a dead button is impossible.
+  bool purchasable = 6;
+}
+
+message ListPlansResponse {
+  repeated PlanOption plans = 1;
+}

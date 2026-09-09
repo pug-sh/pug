@@ -20,20 +20,24 @@ import (
 // nothing anybody bought.
 func TestCatalogIsPinned(t *testing.T) {
 	type pin struct {
-		currency string
-		price    *int64
-		events   *int64
-		retired  bool
+		currency  string
+		price     *int64
+		events    *int64
+		retention *int64
+		retired   bool
 	}
 	cents := func(v int64) *int64 { return &v }
 
+	// Retention is pinned as literal days, not as a multiple of RetentionYearDays:
+	// shortening the constant would cut every tier at once.
 	want := map[string]pin{
-		"free":    {currency: "USD", price: cents(0), events: cents(10_000)},
-		"trial":   {currency: "USD", price: cents(0), events: cents(500_000)},
-		"starter": {currency: "USD", price: cents(1_000), events: cents(100_000)},
-		"growth":  {currency: "USD", price: cents(2_000), events: cents(500_000)},
-		"scale":   {currency: "USD", price: cents(3_000), events: cents(1_000_000)},
-		// No price and no quota of its own: both come from the org's row.
+		"free":    {currency: "USD", price: cents(0), events: cents(10_000), retention: cents(365)},
+		"trial":   {currency: "USD", price: cents(0), events: cents(500_000), retention: cents(365)},
+		"starter": {currency: "USD", price: cents(1_000), events: cents(100_000), retention: cents(365)},
+		"growth":  {currency: "USD", price: cents(2_000), events: cents(500_000), retention: cents(1_095)},
+		"scale":   {currency: "USD", price: cents(3_000), events: cents(1_000_000), retention: cents(2_555)},
+		// No price, no quota and no retention of its own: all three come from the
+		// org's row.
 		"custom": {currency: "USD"},
 	}
 
@@ -67,6 +71,10 @@ func TestCatalogIsPinned(t *testing.T) {
 			t.Errorf("%s: included_events = %v, want %v — this changes what every existing "+
 				"customer on this tier gets", p.Slug, str(p.IncludedEvents), str(w.events))
 		}
+		if !samePtr(p.RetentionDays, w.retention) {
+			t.Errorf("%s: retention_days = %v, want %v — shortening this is a promise to "+
+				"delete data a customer already sent", p.Slug, str(p.RetentionDays), str(w.retention))
+		}
 		if p.Retired != w.retired {
 			t.Errorf("%s: retired = %v, want %v", p.Slug, p.Retired, w.retired)
 		}
@@ -85,6 +93,9 @@ func TestCustomPlanCarriesNoNumbersOfItsOwn(t *testing.T) {
 	}
 	if plan.PriceCents != nil {
 		t.Errorf("custom has a price of %d; a deal's price must come from its own row", *plan.PriceCents)
+	}
+	if plan.RetentionDays != nil {
+		t.Errorf("custom retains %d days; a deal's retention must come from its own row", *plan.RetentionDays)
 	}
 	if plan.Retired {
 		t.Error("custom is retired; an operator must still be able to grant a negotiated deal")
@@ -120,12 +131,17 @@ func TestCatalogPointersAreNotShared(t *testing.T) {
 		t.Fatal("growth is missing from the catalog")
 	}
 	want := *got.IncludedEvents
+	wantRetention := *got.RetentionDays
 	*got.IncludedEvents = 1
 	*got.PriceCents = 1
+	*got.RetentionDays = 1
 
 	again, _ := corebilling.PlanBySlug("growth")
 	if *again.IncludedEvents != want {
 		t.Errorf("quota = %d after mutating a returned copy, want %d", *again.IncludedEvents, want)
+	}
+	if *again.RetentionDays != wantRetention {
+		t.Errorf("retention = %d after mutating a returned copy, want %d", *again.RetentionDays, wantRetention)
 	}
 	for _, p := range corebilling.Plans() {
 		if p.Slug == "growth" && *p.IncludedEvents != want {

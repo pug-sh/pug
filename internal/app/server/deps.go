@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"connectrpc.com/otelconnect"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/authz"
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	chdb "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -28,11 +30,13 @@ type deps struct {
 	jwtKey          []byte
 	nats            *nats.NATSClient
 	otelInterceptor *otelconnect.Interceptor
+	payments        *corebilling.Payments
 	pgRo            *pgxpool.Pool
 	pgW             *pgxpool.Pool
 	redis           *redis.Client
 	port            string
 	demoEnabled     bool
+	billingEnabled  bool
 
 	// readyFailures counts consecutive failed readiness probes. It distinguishes
 	// a transient blip (logged at WARN) from a sustained outage (escalated to
@@ -149,6 +153,20 @@ func newDeps(ctx context.Context) (*deps, error) {
 		}
 	})
 
+	// Declared in the core package rather than in config above, so `pug billing`
+	// can read the same switch without importing the server.
+	var billingCfg corebilling.Config
+	if err := envconfig.Process(ctx, &billingCfg); err != nil {
+		return nil, err
+	}
+
+	// Nil when no provider is configured, which is a supported mode: only the buy
+	// button is missing. An unrecognised name fails startup.
+	payments, err := newPayments(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("payments provider: %w", err)
+	}
+
 	// Authorization policy is built from static in-code rules; it has no I/O or
 	// lifecycle, so it is constructed here and injected like any other dep. A
 	// malformed policy fails startup via this error (no panic, no global).
@@ -166,10 +184,12 @@ func newDeps(ctx context.Context) (*deps, error) {
 		jwtKey:          []byte(serverCfg.JWTKey),
 		nats:            natsClient,
 		otelInterceptor: otelInterceptor,
+		payments:        payments,
 		pgRo:            pgRo,
 		pgW:             pgW,
 		redis:           redisClient,
 		port:            serverCfg.Port,
 		demoEnabled:     serverCfg.DemoEnabled,
+		billingEnabled:  billingCfg.Enabled,
 	}, nil
 }
