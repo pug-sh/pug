@@ -15,7 +15,7 @@ import (
 )
 
 // Load applies .env without overriding the environment. godotenv reports a line
-// with no name as success, so that case is rejected here.
+// with no name as success and discards os.Setenv errors, so both are caught here.
 func Load() error {
 	env, err := godotenv.Read()
 	switch {
@@ -27,7 +27,15 @@ func Load() error {
 	if value, ok := env[""]; ok {
 		return fmt.Errorf("load .env: %q has no name", value)
 	}
-	return godotenv.Load()
+	for name, value := range env {
+		if _, ok := os.LookupEnv(name); ok {
+			continue
+		}
+		if err := os.Setenv(name, value); err != nil {
+			return fmt.Errorf("load .env: %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // LoadOrExit logs and exits 1 when Load fails.

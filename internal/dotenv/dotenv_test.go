@@ -74,6 +74,18 @@ func TestLoadMalformedEnvFile(t *testing.T) {
 	}
 }
 
+// os.Setenv rejects a NUL byte and godotenv discards that error.
+func TestLoadRejectsUnsettableValue(t *testing.T) {
+	t.Chdir(writeEnv(t, "PUG_DOTENV_NUL=before\x00after\n"))
+
+	if err := dotenv.Load(); err == nil {
+		t.Fatal("Load() = nil, want an error for a value os.Setenv refuses")
+	}
+	if value, ok := os.LookupEnv("PUG_DOTENV_NUL"); ok {
+		t.Fatalf("PUG_DOTENV_NUL = %q, want unset", value)
+	}
+}
+
 // A directory rather than chmod 000: the test user may be root.
 func TestLoadUnreadableEnvFile(t *testing.T) {
 	dir := t.TempDir()
