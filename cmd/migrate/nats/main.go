@@ -5,17 +5,15 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/joho/godotenv"
 	"github.com/pug-sh/pug/internal/app/migrate/nats"
+	"github.com/pug-sh/pug/internal/dotenv"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
 func main() {
 	ctx := context.Background()
 
-	if err := godotenv.Load(); err != nil {
-		slog.DebugContext(ctx, "No .env file found")
-	}
+	dotenv.LoadOrExit(ctx)
 
 	if err := nats.Run(ctx); err != nil {
 		slog.ErrorContext(ctx, "NATS initialization error", slogx.Error(err))

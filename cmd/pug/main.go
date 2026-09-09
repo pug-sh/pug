@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/joho/godotenv"
 	usagecron "github.com/pug-sh/pug/internal/app/cron/usage"
 	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
 	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
@@ -27,6 +26,7 @@ import (
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/templates"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/dotenv"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -47,9 +47,7 @@ func run(fn func(ctx context.Context) error) func(cmd *cobra.Command, args []str
 		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
-		if err := godotenv.Load(); err != nil {
-			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
-		}
+		dotenv.LoadOrExit(ctx)
 
 		if err := fn(ctx); err != nil {
 			slog.ErrorContext(ctx, "fatal error", slogx.Error(err))
@@ -65,9 +63,7 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
-		if err := godotenv.Load(); err != nil {
-			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
-		}
+		dotenv.LoadOrExit(ctx)
 
 		direction, _ := cmd.Flags().GetString("direction")
 		num, _ := cmd.Flags().GetInt("num")
@@ -207,6 +203,8 @@ var emailPreviewCmd = &cobra.Command{
 	Short: "Render a transactional email to HTML (or --text) for preview",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		dotenv.LoadOrExit(cmd.Context())
+
 		dashboardURL := os.Getenv("PUG_DASHBOARD_BASE_URL")
 		if dashboardURL == "" {
 			dashboardURL = "https://app.pug.sh"
@@ -260,9 +258,7 @@ var devCmd = &cobra.Command{
 		sigCtx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
-		if err := godotenv.Load(); err != nil {
-			slog.DebugContext(sigCtx, "No .env file found, relying on environment variables")
-		}
+		dotenv.LoadOrExit(sigCtx)
 
 		// `pug dev` runs every worker in one local process; the health/readiness
 		// endpoints are for orchestrated deployments, so force them off here to
@@ -367,9 +363,7 @@ var seedCmd = &cobra.Command{
 		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
-		if err := godotenv.Load(); err != nil {
-			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
-		}
+		dotenv.LoadOrExit(ctx)
 
 		count, _ := cmd.Flags().GetInt64("count")
 		batchSize, _ := cmd.Flags().GetInt("batch")

@@ -112,6 +112,12 @@ linters:
           deny:
             - pkg: github.com/pug-sh/pug/internal/testutil
               desc: the testcontainers harness must not link into a production binary
+        # One loader: only dotenv.Load tells an absent .env from a broken one.
+        dotenv-single-loader:
+          files: ["!**/internal/dotenv/**"]
+          deny:
+            - pkg: github.com/joho/godotenv
+              desc: load .env through dotenv.LoadOrExit, which exits on anything but an absent file
     sloglint:
       # no-global is deliberately unset: it wants a logger passed around, but
       # pug calls slog.XxxContext directly everywhere. context is the rule we want.
