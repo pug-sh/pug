@@ -97,8 +97,15 @@ func (f *SignatureFile) validate() error {
 // superseded version reads as unsigned, so a version bump hands the contributor
 // the ordinary sign-me report instead of failing the file as a whole.
 func (f *SignatureFile) signed(id int64) bool {
+	return f.signedAt(id, f.CLAVersion)
+}
+
+// signedAt is signed() against a version the caller chooses, so the base branch's
+// file can be searched for the version the pull request's head declares rather
+// than its own.
+func (f *SignatureFile) signedAt(id int64, version string) bool {
 	return slices.ContainsFunc(f.Signatures, func(s Signature) bool {
-		return s.ID == id && s.CLA == f.CLAVersion
+		return s.ID == id && s.CLA == version
 	})
 }
 
@@ -173,9 +180,11 @@ func noreplyLogin(email string) string {
 }
 
 // appendOnly keeps existing entries immutable and takes only the opener's own
-// signature. The opener is the one principal that cannot be forged: an author, a
-// committer and a trailer are all self-asserted, so accepting a signature for any
-// principal would let a pull request sign for anyone it named.
+// signature. The opener is the one principal in the pull request's own contents
+// that cannot be forged: an author, a committer and a trailer are all
+// self-asserted, so accepting a signature for any principal would let a pull
+// request sign for anyone it named. A /sign comment is the other unforgeable
+// identity, and it writes to the base branch rather than through here.
 //
 // inForce comes from the base branch tip, not from base: a branch that predates a
 // version bump would otherwise sign the retired version and pass.
@@ -193,7 +202,7 @@ func appendOnly(base, head *SignatureFile, signer Principal, inForce string) err
 		switch {
 		case slices.Contains(base.Signatures, h):
 		case h.ID != signer.ID:
-			return fmt.Errorf("this pull request adds a signature for %q, who did not open it; you may only sign for yourself, so a co-author signs in a pull request of their own", h.Login)
+			return fmt.Errorf("this pull request adds a signature for %q, who did not open it; you may only sign for yourself, so a co-author comments /sign on this pull request instead", h.Login)
 		// Signing matches on the id, so a mismatched login would stand in the
 		// record as a signature by whoever it names.
 		case !strings.EqualFold(h.Login, signer.Login):
@@ -212,7 +221,15 @@ func appendOnly(base, head *SignatureFile, signer Principal, inForce string) err
 // and with bots dropped: a machine-authored commit carries no human authorship to
 // license. Every id here was resolved against the API, so a login cannot be
 // shaped to look like a bot and slip through.
-func unsigned(head *SignatureFile, ps []Principal) (missing, checked []Principal) {
+//
+// A principal counts as signed from either file. head is the pull request's own,
+// where a hand-written signature lands; onBase is the base branch as it stands
+// now, where a /sign comment lands one. A contributor's first pull request
+// predates their own signature, so head alone would read them as unsigned however
+// many times they signed. Searching onBase at head's version is safe because
+// appendOnly has already rejected a mismatch between the two files by the time
+// this runs (main.go: appendOnly before unsigned, and it returns on a mismatch).
+func unsigned(head, onBase *SignatureFile, ps []Principal) (missing, checked []Principal) {
 	seen := make(map[int64]bool, len(ps))
 	for _, p := range ps {
 		if p.isBot() || p.ID == 0 || seen[p.ID] {
@@ -220,7 +237,7 @@ func unsigned(head *SignatureFile, ps []Principal) (missing, checked []Principal
 		}
 		seen[p.ID] = true
 		checked = append(checked, p)
-		if !head.signed(p.ID) {
+		if !head.signed(p.ID) && !onBase.signedAt(p.ID, head.CLAVersion) {
 			missing = append(missing, p)
 		}
 	}

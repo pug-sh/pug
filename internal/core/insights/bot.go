@@ -15,11 +15,6 @@ func botExclusionCond(exclude bool, alias string) chq.Condition {
 	return chq.BotFilter(!exclude, alias)
 }
 
-// botSessionHaving excludes at the session level: a row-level WHERE would keep
-// the untagged half of a straddling session (false bounce, truncated
-// entry/exit), and the session rollup is keyed per event, so it must merge first.
 func botSessionHaving(q *chq.Query, exclude bool) {
-	if exclude {
-		q.Having("max(bot) = 0")
-	}
+	chq.SessionBotHaving(q, !exclude)
 }

@@ -47,8 +47,8 @@ func unsignedReport(cfg config, head *SignatureFile, missing []Principal, unknow
 	fmt.Fprintf(&text, "::error::CLA %s not signed by: %s\n", head.CLAVersion, escapeAnnotation(strings.Join(named, ", ")))
 	fmt.Fprintf(&text, "\nThe agreement: %s\n", claURL)
 	if mine != nil {
-		fmt.Fprintf(&text, "\nAdd this entry to tools/cla/signatures.json, then commit and push — that\n")
-		fmt.Fprintf(&text, "commit is your signature:\n\n")
+		fmt.Fprintf(&text, "\nComment /sign on the pull request, or add this entry to\n")
+		fmt.Fprintf(&text, "tools/cla/signatures.json and push it:\n\n")
 		fmt.Fprintf(&text, "%s\n", entryJSON(*mine, head.CLAVersion, "  ", now))
 	}
 	for _, b := range trailerBlocks(others, unknown, verbatim) {
@@ -71,9 +71,10 @@ func mdCode(s string) string { return "`" + strings.ReplaceAll(s, "`", "") + "`"
 
 func verbatim(s string) string { return s }
 
-// appendOnly will not take a co-author's signature from this pull request, and an
-// assistant holds no copyright to license, so each block has to name the way out
-// or the gate is red with none. quote renders the trailer address for whichever
+// appendOnly will not take a co-author's signature out of this pull request's own
+// contents, and an assistant holds no copyright to license, so each block has to
+// name the way out or the gate is red with none. For a co-author that way out is
+// /sign, which is attested by GitHub rather than asserted by the commit. quote renders the trailer address for whichever
 // surface the blocks are bound for; a login needs none of it, since it comes back
 // from the API rather than out of the commit.
 func trailerBlocks(others []Principal, unknown []string, quote func(string) string) []string {
@@ -84,7 +85,7 @@ func trailerBlocks(others []Principal, unknown []string, quote func(string) stri
 			verb = "have work in this pull request and have not signed"
 		}
 		out = append(out, joinNames(loginsOf(others))+" "+verb+
-			". Everyone signs in a pull request they opened themselves, so this one cannot sign for them.")
+			". They can sign by commenting `/sign` here.")
 	}
 	if n := len(unknown); n > 0 {
 		quoted := make([]string, n)
@@ -155,8 +156,9 @@ func signMarkdown(claURL string, head *SignatureFile, mine *Principal, blocks []
 		if mention {
 			name = "@" + name
 		}
-		fmt.Fprintf(&md, "\n**%s** — add this to the `signatures` array in `tools/cla/signatures.json`, "+
-			"then commit and push. That commit is your signature.\n\n```json\n%s\n```\n",
+		fmt.Fprintf(&md, "\n**%s** — comment `/sign` on this pull request and that is done. "+
+			"To sign by hand instead, add this to the `signatures` array in "+
+			"`tools/cla/signatures.json`, then commit and push:\n\n```json\n%s\n```\n",
 			name, entryJSON(*mine, head.CLAVersion, "", now))
 	}
 	for _, b := range blocks {

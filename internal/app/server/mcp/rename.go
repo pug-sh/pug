@@ -55,6 +55,7 @@ var toolPolicy = map[string]toolDisposition{
 	activityv1mcp.ActivityService_GetPropertyValuesTool.Name:  expose("get_activity_property_values"),
 	activityv1mcp.ActivityService_GetActivityHeatmapTool.Name: expose("get_activity_heatmap"),
 	activityv1mcp.ActivityService_GetProfileStatsTool.Name:    expose("get_profile_stats"),
+	activityv1mcp.ActivityService_GetProfileSessionsTool.Name: expose("get_profile_sessions"),
 
 	// profiles
 	profilesv1mcp.ProfilesService_GetTool.Name:                expose("get_profile"),

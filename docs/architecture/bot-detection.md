@@ -151,14 +151,22 @@ and `TestBotExclusion_EverySessionMetric` and end to end by
 `TestIntegrationBotTagging` (counts, toggle, rollup↔raw parity, a straddling
 session dropped whole).
 
-`shared.activity.v1` carries the same toggle as a per-request field on its four
-event reads (`GetActivityFeed`, `GetEventExplorer`, `GetActivityHeatmap`,
-`GetProfileStats`), sharing the row-level predicate via `chq.BotFilter`.
-Three consequences are deliberate. All four are row-level — including when the
-request scopes to one `session_id` — so an event list shows the human half of a
-straddling session that session *metrics* drop whole: an event list is not a
-session judgement, and the four reads agree with each other on the same profile
-page. `GetFilterSchema` and `GetPropertyValues` carry no toggle at all: they
+`shared.activity.v1` carries the same toggle as a per-request field on five
+reads: four event reads (`GetActivityFeed`, `GetEventExplorer`,
+`GetActivityHeatmap`, `GetProfileStats`) sharing the row-level predicate via
+`chq.BotFilter`, plus `GetProfileSessions` via the session-level
+`chq.SessionBotHaving`.
+Four consequences are deliberate. The four event reads are row-level — including
+when the request scopes to one `session_id` — so an event list shows the human
+half of a straddling session that session *metrics* drop whole: an event list is
+not a session judgement, and those four agree with each other on the same profile
+page. `GetProfileSessions` is judged the other way, and for the same reason: its
+rows *are* sessions, so it drops a straddling session whole rather than returning
+one with an understated duration and count. That leaves it shorter than the
+profile's row-level session count when the toggle is off; the dashboard's profile
+pages currently send `include_bots` true, where the two agree on the bot
+judgement (the `uniq` approximation below is separate).
+`GetFilterSchema` and `GetPropertyValues` carry no toggle at all: they
 enumerate what exists in the project, not what a metric counts. And
 `GetProfileStats` returns no stats for a profile whose every event is tagged —
 close to indistinguishable from an id that does not exist, though profile

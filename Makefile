@@ -53,18 +53,11 @@ templ:
 lint-proto:
 	go tool buf lint
 
-# What CI gates on. The tree is clean, so the whole of it is held to the ruleset.
-# --max-same-issues=0 --max-issues-per-linter=0 override golangci-lint's default
-# caps (3 per message, 50 per linter), which would report a moving subset of the
-# tree rather than all of it.
 .PHONY: lint
 lint: lint-conventions
 	go tool golangci-lint run --allow-parallel-runners --timeout 5m \
 		--max-same-issues=0 --max-issues-per-linter=0 ./...
 
-# The conventions are written as analyzers but gated as a lint, not a test: a
-# violation is a style failure, and reading it off the lint job is what makes
-# that legible. `make test` runs the package too, as a backstop.
 .PHONY: lint-conventions
 lint-conventions:
 	go test ./internal/lint/ -count=1
@@ -97,6 +90,7 @@ build:
 	go build -o bin/pug-worker-profile-upsert ./cmd/workers/profile/upsert
 	go build -o bin/pug-worker-compliance ./cmd/workers/compliance
 	go build -o bin/pug-cron-usage ./cmd/cron/usage
+	go build -o bin/pug-cron-billing-reconcile ./cmd/cron/billing-reconcile
 
 .PHONY: fmt
 fmt:
@@ -108,7 +102,7 @@ test:
 
 .PHONY: cover
 cover:
-	go test ./... -race -count=1 -covermode=atomic -coverprofile=coverage.out
+	go test ./... -race -count=1 -covermode=atomic -coverpkg=./... -coverprofile=coverage.out
 
 .PHONY: psql
 psql:

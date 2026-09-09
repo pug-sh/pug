@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"connectrpc.com/validate"
 	"github.com/pug-sh/pug/internal/app/server/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
+	billingrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/billing"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/customers"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
@@ -27,17 +29,17 @@ import (
 	activityrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/activity"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
+	"github.com/pug-sh/pug/internal/app/server/webhook"
 	"github.com/pug-sh/pug/internal/cookieless"
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
-	coreemail "github.com/pug-sh/pug/internal/core/email"
-	"github.com/pug-sh/pug/internal/core/email/fallback"
-	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1/billingv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
@@ -56,7 +58,6 @@ import (
 	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/pug-sh/pug/internal/useragent"
-	"github.com/sethvargo/go-envconfig"
 	"golang.org/x/net/http2"
 )
 
@@ -80,27 +81,15 @@ func start(ctx context.Context, d *deps) error {
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
 	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
 
-	// Interceptor order matters. ErrorInterceptor must wrap validate.NewInterceptor():
-	// validate short-circuits on a bad request (returns the error without calling the
-	// inner chain), so ErrorInterceptor has to be OUTSIDE it to attach error details
-	// (reason + correlation id) to validation failures. It stays inside otel so a span
-	// is present for trace_id. CorrelationInterceptor is first so the id is in context
-	// for every downstream interceptor and handler. LoggingInterceptor must stay
-	// OUTSIDE ErrorInterceptor so it observes the final *connect.Error with its
-	// resolved code for client-vs-server log-level classification (isClientError also
-	// reads *apperr.Error directly as a safety net, but order keeps that path moot).
-	// AuthzInterceptor is innermost — the last gate before the handler — and is the
-	// single authorization gate: it enforces the org role recorded in the permission
-	// registry for every role-gated RPC (orgsSvc resolves the caller's role), and is
-	// a no-op for public/self/SDK procedures and the API-key path. Handlers carry no
-	// authorization of their own.
+	// Order is load-bearing. Correlation first so the id is in context downstream;
+	// otel outside ErrorInterceptor so a span exists for trace_id; ErrorInterceptor
+	// outside validate, which short-circuits a bad request without calling the inner
+	// chain; Logging outside that, so it observes the final resolved code. Authz is
+	// innermost and is the only authorization gate — handlers carry none of their own.
 	//
-	// WithRecover turns a handler panic into a CodeInternal error instead of letting
-	// it unwind. On the network path net/http would contain it per connection (at the
-	// cost of a reset connection and zero telemetry); on the /mcp loopback path the
-	// handler runs on a go-sdk jsonrpc2 goroutine that no recover reaches, so an
-	// escaping panic would kill the process. mcp.loopbackClient.Do keeps a second
-	// recover as a backstop for panics outside this chain.
+	// WithRecover is required, not cosmetic: on the /mcp loopback the handler runs on
+	// a jsonrpc2 goroutine that no net/http recover reaches, so an escaping panic
+	// would kill the process for every tenant.
 	handlerOpts := connect.WithHandlerOptions(
 		connect.WithInterceptors(
 			pogrpc.CorrelationInterceptor(),
@@ -116,26 +105,17 @@ func start(ctx context.Context, d *deps) error {
 		connect.WithReadMaxBytes(pogrpc.MaxRequestBytes),
 	)
 
-	// Middleware
-	// - Dashboard: JWT auth only (for dashboard-only services)
-	// - SDK: API key auth (public or private, no JWT fallback) for SDK-only services
-	// - Shared: Dual auth - private API key or JWT fallback (for services accessible from both)
 	dashboardMW := authn.NewMiddleware(pogrpc.WithJWTAuth(d.jwtKey, queriesRo))
 	sdkMW := authn.NewMiddleware(pogrpc.WithSDKAuth(projectsRepo))
 	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
-
-	// Handlers — grouped by auth boundary
 
 	// Public
 	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled)
 	if err != nil {
 		return fmt.Errorf("auth server: %w", err)
 	}
-	// Log the resolved demo-login state once at startup so an operator can confirm
-	// this pod actually picked up PUG_DEMO_ENABLED. The likeliest demo misconfig is
-	// the server pod missing the flag while the worker has it: without this line
-	// DemoSignIn would just return Unavailable to visitors with no server-side
-	// breadcrumb (the per-request gate stays silent to avoid noise when off).
+	// The likeliest demo misconfig is the server pod missing the flag the worker has,
+	// and DemoSignIn's Unavailable leaves no server-side breadcrumb.
 	slog.InfoContext(ctx, "demo sign-in", slog.Bool("enabled", d.demoEnabled))
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(authServer, handlerOpts)
 
@@ -149,51 +129,12 @@ func start(ctx context.Context, d *deps) error {
 	sharedDashboardsPath, sharedDashboardsHandler := publicdashboardsv1connect.NewSharedDashboardsServiceHandler(
 		publicdashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
 
-	// Email providers — JWT + admin gate. Cipher and OrgProviderRepo are only
-	// present when PUG_EMAIL_PROVIDER_SECRET_KEY is configured; otherwise the
-	// handler's requireCipher gate returns CodeFailedPrecondition with a clear
-	// "not configured" message and SendTest returns the same on nil mailer.
-	var emailKeyCfg struct {
-		KeyB64 string `env:"PUG_EMAIL_PROVIDER_SECRET_KEY"`
+	email, err := newEmail(ctx, queriesRo, d.redis.Unwrap())
+	if err != nil {
+		return fmt.Errorf("email providers: %w", err)
 	}
-	if err := envconfig.Process(ctx, &emailKeyCfg); err != nil {
-		return err
-	}
-
-	var (
-		emailCipher  *secret.Cipher
-		orgEmailRepo *coreemail.OrgProviderRepo
-		emailMailer  *coreemail.Service
-	)
-	if emailKeyCfg.KeyB64 != "" {
-		c, err := secret.NewCipher(emailKeyCfg.KeyB64)
-		if err != nil {
-			return fmt.Errorf("server: init email cipher: %w", err)
-		}
-		emailCipher = c
-
-		orgEmailRepo = coreemail.NewOrgProviderRepo(queriesRo, d.redis.Unwrap())
-
-		var emailCfg coreemail.Config
-		if err := envconfig.Process(ctx, &emailCfg); err != nil {
-			return err
-		}
-		fallbackProvider, err := fallback.NewProvider(ctx)
-		if err != nil {
-			return err
-		}
-		resolver, err := coreemail.NewTenantAwareResolver(orgEmailRepo, emailCipher, fallbackProvider, emailCfg.From, emailCfg.ReplyTo)
-		if err != nil {
-			return err
-		}
-		emailMailer, err = coreemail.NewServiceWithResolver(emailCfg, resolver)
-		if err != nil {
-			return err
-		}
-	}
-
 	orgEmailProvidersPath, orgEmailProvidersHandler := orgemailprovidersv1connect.NewOrgEmailProvidersServiceHandler(
-		orgemailproviders.NewServer(queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer),
+		orgemailproviders.NewServer(queriesRo, dbwrite.New(d.pgW), email.cipher, email.repo, email.mailer),
 		handlerOpts)
 
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
@@ -203,6 +144,22 @@ func start(ctx context.Context, d *deps) error {
 	// MeterWindow is the one method that needs it.
 	usagePath, usageHandler := usagev1connect.NewUsageServiceHandler(
 		usage.NewServer(coreusage.NewService(d.pgRo, d.pgW)), handlerOpts)
+
+	// Postgres only: an entitlement is a row plus the clock, and the quota it
+	// carries enforces nothing, so no ingestion or ClickHouse path is involved.
+	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingEnabled, d.payments)
+	if err != nil {
+		return fmt.Errorf("billing service: %w", err)
+	}
+	provider := ""
+	if d.payments != nil {
+		provider = d.payments.Provider.Name()
+	}
+	// The likeliest misconfig is a pod missing the flag: every org would then read as
+	// having no quota, with nothing failing. Same for a missing provider key.
+	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled), slog.String("provider", provider))
+	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
+		billingrpc.NewServer(billingSvc), handlerOpts)
 
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
@@ -227,19 +184,14 @@ func start(ctx context.Context, d *deps) error {
 
 	mux := http.NewServeMux()
 
-	// Health probes (no auth, no CORS — infra endpoints). Plain paths do not
-	// collide with the RPC routes, which are all /<package>.<Service>/...
+	// No auth, no CORS. Plain paths cannot collide with the RPC routes, which are
+	// all /<package>.<Service>/...
 	mux.HandleFunc("/healthz", livenessHandler)
 	mux.HandleFunc("/readyz", d.readinessHandler)
 
-	// AUTHZ CONTRACT: mount every RPC service through handle(), which records the
-	// service name. assertServedServicesMatch (below) then fails startup unless the
-	// mounted set exactly equals the authz permission registry — so no RPC service
-	// can ship mounted-but-unauthorized (or authorized-but-unmounted) — and
-	// AssertRegistryMatchesServedProcedures tightens that to the PROCEDURE level, so
-	// a new method on an already-mounted service (invisible to the service-level
-	// check) also fails fast. Always mount RPC routes via handle(), never mux.Handle
-	// directly.
+	// AUTHZ CONTRACT: mount every RPC service through handle(), never mux.Handle — it
+	// records the service name, and the assertions below fail startup unless the
+	// mounted set exactly equals the authz registry.
 	mounted := map[string]bool{}
 	handle := func(path string, h http.Handler) {
 		mounted[strings.Trim(path, "/")] = true
@@ -257,6 +209,7 @@ func start(ctx context.Context, d *deps) error {
 	handle(orgEmailProvidersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 	handle(customersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(customersHandler)))
 	handle(usagePath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(usageHandler)))
+	handle(billingPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(billingHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	handle(insightsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(insightsHandler)))
@@ -272,38 +225,39 @@ func start(ctx context.Context, d *deps) error {
 	if err := assertServedServicesMatch(mounted); err != nil {
 		return err
 	}
-	// Procedure-level half of the contract: every served RPC method has an authz
-	// decision (and no entry is stale). Catches a method added to an already-mounted
-	// service, which assertServedServicesMatch (service-level) cannot see.
+	// The procedure-level half: catches a method added to an already-mounted service,
+	// which the service-level check cannot see.
 	if err := pogrpc.AssertRegistryMatchesServedProcedures(); err != nil {
 		return err
 	}
 
-	// Reflection advertises exactly the authorized services — same source
-	// (pogrpc.ServedServiceNames) as the AUTHZ CONTRACT check above.
+	// Advertises exactly the authorized services — same source as the check above.
 	reflector := grpcreflect.NewStaticReflector(pogrpc.ServedServiceNames()...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
-	// MCP: the read-only shared analytics API as Model Context Protocol tools at
-	// /mcp. mcp.Mount owns the whole endpoint — it builds the tool handler, builds
-	// its own private-key-only auth boundary from projectsRepo (so /mcp cannot be
-	// wired to admit a dashboard JWT or a public key), and normalises a
-	// `Bearer prv_...` credential into the x-api-key the loopback re-injects when it
-	// replays each tool call through this same mux, so validation, auth and authz run
-	// identically to an external API request. Mounted directly on the mux (like
-	// reflection), NOT via handle(): it is not a Connect service, so the
-	// authz-registry contract does not apply to it. It fails fast if the generated
-	// tool set drifts from the curated policy table.
+	// mcp.Mount owns the whole endpoint, including its own private-key-only auth
+	// boundary built from projectsRepo, and replays each tool call through this same
+	// mux so validation, auth and authz run as they would for an external request.
+	// Mounted directly like reflection: not a Connect service, so the authz-registry
+	// contract does not apply.
 	if err := mcp.Mount(mux, mux, projectsRepo); err != nil {
 		return fmt.Errorf("mount mcp: %w", err)
 	}
 
-	// WithCorrelationID wraps the whole mux so a correlation id exists before the
-	// authn middleware runs on any route — auth rejections happen outside the
-	// Connect interceptor chain, and this lets them carry an error_id too.
-	// ReadTimeout stays unset because it would cap the body as tightly as the
-	// headers; WithRequestLimits bounds the body's size and time separately.
+	// Mounted directly for the same reason as /mcp. The route is unauthenticated in
+	// the middleware sense: it authenticates by HMAC over the raw body.
+	if d.payments != nil {
+		if webhook.MountBilling(mux, billingSvc, d.payments.Provider) {
+			slog.InfoContext(ctx, "mounted the payments webhook",
+				slog.String("path", webhook.BillingPath(d.payments.Provider.Name())))
+		}
+	}
+
+	// WithCorrelationID wraps the whole mux so auth rejections — which happen outside
+	// the interceptor chain — carry an error_id too. ReadTimeout stays unset: it
+	// would cap the body as tightly as the headers, and WithRequestLimits already
+	// bounds the body's size and time.
 	server := &http.Server{
 		Addr:              ":" + d.port,
 		Handler:           pogrpc.WithCorrelationID(pogrpc.WithRequestLimits(mux)),
@@ -323,7 +277,7 @@ func start(ctx context.Context, d *deps) error {
 	}()
 
 	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt — no span at startup
 		return err
 	}

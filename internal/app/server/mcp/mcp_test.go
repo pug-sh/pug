@@ -73,6 +73,7 @@ var curatedToolNames = []string{
 	"get_insights_property_values",
 	"get_profile",
 	"get_profile_by_external_id",
+	"get_profile_sessions",
 	"get_profile_stats",
 	"query_insights",
 }

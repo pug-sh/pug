@@ -83,14 +83,15 @@ Do **not** hand-edit anything under `internal/gen/` — it is generated.
 Pug is distributed under the [GNU AGPL v3.0](LICENSE).
 
 Before your first pull request is merged, you'll be asked to sign the
-[Contributor License Agreement](CLA.md). Signing is a commit: add yourself to
-[`tools/cla/signatures.json`](tools/cla/signatures.json) in the same pull request. The CLA
-check prints the entry for you, with your GitHub id already filled in — copy it
-from the failed check. You do it once per CLA version; it covers everything you
-contribute afterwards.
+[Contributor License Agreement](CLA.md). Comment `/sign` on your pull request and
+that is done — it records your signature on the base branch as a commit authored
+by you. To sign by hand instead, add yourself to
+[`tools/cla/signatures.json`](tools/cla/signatures.json) in the same pull request; the CLA
+check prints the entry for you, with your GitHub id already filled in. You do it
+once per CLA version; it covers everything you contribute afterwards.
 
-A `Co-authored-by:` trailer naming a person means they have to sign too, in a pull
-request of their own. Use a GitHub noreply address — `<login>@users.noreply.github.com`
+A `Co-authored-by:` trailer naming a person means they have to sign too — they
+comment `/sign` on the same pull request. Use a GitHub noreply address — `<login>@users.noreply.github.com`
 or the `<id>+<login>` form GitHub itself writes. That is the only shape the check
 can resolve to an account, and a trailer it cannot identify blocks the pull request
 whether or not that person has signed. One naming an AI assistant is ignored — it

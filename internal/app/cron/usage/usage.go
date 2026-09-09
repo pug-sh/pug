@@ -97,6 +97,7 @@ const (
 
 	reasonUnverifiedRead  = "unverified_read"
 	reasonUnknownProjects = "unknown_projects"
+	reasonNoOrgs          = "no_orgs"
 )
 
 var (
@@ -253,6 +254,28 @@ type job struct {
 	unrefreshed bool
 }
 
+// meterFrom is the lower bound of one pass's recompute window.
+//
+// A full pass floors at month-to-date, which is what the erasure reconcile needs
+// and what the empty-read guard reads as its evidence window — on the 1st or 2nd
+// that floor is all that keeps a full pass wider than the trailing rescan.
+// Anniversaries only widen it further: on the 3rd, an org anchored on the 10th is
+// still inside a period that began last month, and stopping at the month boundary
+// would re-sum it over a window the pass had not fully read.
+func meterFrom(now time.Time, rescanDays int, full bool, windows []coreusage.OrgPeriod) time.Time {
+	from := coreusage.FloorDayUTC(now.AddDate(0, 0, -rescanDays))
+	if !full {
+		return from
+	}
+	if monthStart := coreusage.FloorMonthUTC(now); monthStart.Before(from) {
+		from = monthStart
+	}
+	if earliest := coreusage.EarliestPeriodStart(windows); !earliest.IsZero() && earliest.Before(from) {
+		from = earliest
+	}
+	return from
+}
+
 func (j *job) run(ctx context.Context) error {
 	return cron.WithLock(ctx, j.pgW, cron.JobUsage, func(ctx context.Context) error {
 		now := time.Now().UTC()
@@ -264,7 +287,8 @@ func (j *job) run(ctx context.Context) error {
 }
 
 // meter recomputes a trailing window, then re-sums every org's current period.
-// Once a day it widens to the whole current month.
+// Once a day it widens to the calendar month, or to the earliest period start in
+// the work list when an anniversary reaches back further.
 func (j *job) meter(ctx context.Context, now time.Time) error {
 	windows, err := j.service.OrgPeriods(ctx, now)
 	if err != nil {
@@ -276,13 +300,8 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		return err
 	}
 
-	from := coreusage.FloorDayUTC(now.AddDate(0, 0, -j.rescanDays))
 	full := now.Sub(lastFull) >= fullRecomputeInterval
-	if full {
-		if periodStart, _ := coreusage.CalendarMonth(now); periodStart.Before(from) {
-			from = periodStart
-		}
-	}
+	from := meterFrom(now, j.rescanDays, full, windows)
 
 	usage, err := j.service.MeterWindow(ctx, from, now)
 	if err != nil {
@@ -391,6 +410,8 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 			return err
 		}
 		slog.WarnContext(ctx, "usage meter found no orgs to refresh; treating as a fresh deployment")
+		unrefreshedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reasonNoOrgs)))
+		j.unrefreshed = true
 	}
 
 	var refreshed, failed int

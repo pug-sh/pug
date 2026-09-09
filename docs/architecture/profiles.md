@@ -43,6 +43,13 @@ Reads serve *persons*, not just profile rows. An app that never calls `identify`
 - `browser`, `browser_version`, `os`, `os_version`, `device`, `country`, `region`, and `city` come from the latest event per distinct ID via `argMaxState(..., occur_time)`, then are merged across aliases at the profile level.
 - There is currently no `channel` field in the profile API. The stable channel derivation now exists — `internal/attribution/channel.go` is the single normative taxonomy, feeding the event-level `$channel` auto-property ([ingestion.md](ingestion.md)) — but exposing a profile-level channel still requires a deliberate proto field and an attribution-window decision; do not invent one ad hoc in handlers.
 
+**Session list.**
+
+- `shared.activity.v1.ActivityService.GetProfileSessions` lists a profile's sessions, one row per `session_id` aggregated in ClickHouse (`internal/core/events/sessions.go`) over the same resolved identity set the summary uses. Keyset-paginated with a sort-bound cursor (start / duration / event count, always descending); a token replayed under another sort is rejected rather than silently seeking on the wrong column.
+- It exists because the dashboard used to group one page of `GetActivityFeed` client-side: past 200 events the oldest sessions vanished and the one on the page boundary rendered a truncated start, duration and count with nothing marking it as partial.
+- `activity.sessions` (the count) and this list are separate queries and can differ in two bounded ways: the count is `uniq(session_id)` (approximate above ~65k), and with `include_bots` false the count excludes bot rows row-level while the list drops a session with *any* tagged event whole (see [bot-detection.md](bot-detection.md)). `include_bots` true — what the dashboard's profile pages send — closes the second gap; the `uniq` approximation remains either way.
+- Every page aggregates the profile's history over the optional `time_range` (its whole history when omitted). Only promoted columns are read, never `auto_properties`, but unlike `GetProfileStats` it groups per session, so it carries `WithSpillThreshold` to degrade to a spilling query rather than hit the memory limit on a heavy profile.
+
 **List / pagination behavior.**
 
 - `ProfilesService.List` is a server-streaming RPC. The server emits `ListResponse` pages until exhaustion.

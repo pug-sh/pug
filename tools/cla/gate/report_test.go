@@ -116,7 +116,7 @@ func TestACoauthorIsNamedButGetsNoEntry(t *testing.T) {
 		if strings.Contains(part, `"id": 7`) {
 			t.Errorf("the co-author must not be handed an entry to paste, got %q", part)
 		}
-		if !strings.Contains(part, "opened themselves") {
+		if !strings.Contains(part, "commenting `/sign`") {
 			t.Errorf("want the way out named, got %q", part)
 		}
 	}
@@ -131,7 +131,7 @@ func TestOnlyACoauthorOutstandingOffersNoEntry(t *testing.T) {
 	if strings.Contains(r.comment, "```json") {
 		t.Errorf("want no entry offered when the opener has signed, got %q", r.comment)
 	}
-	if !strings.Contains(r.comment, "dave") || !strings.Contains(r.comment, "opened themselves") {
+	if !strings.Contains(r.comment, "dave") || !strings.Contains(r.comment, "commenting `/sign`") {
 		t.Errorf("want dave named with the way out, got %q", r.comment)
 	}
 	if strings.Contains(r.comment, "\n\n\n") {

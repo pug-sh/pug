@@ -56,7 +56,7 @@ Project-wide questions ("how many", "what is trending", "where do users drop off
 
 Individual users:
 - get_profile (by pug profile id) and get_profile_by_external_id (by the id your application assigned) look up one user.
-- get_activity_feed, get_activity_heatmap and get_profile_stats each describe a SINGLE user and require that user's distinct_id, which a profile lookup gives you. They cannot answer project-wide questions — use query_insights for those.
+- get_activity_feed, get_activity_heatmap, get_profile_sessions and get_profile_stats each describe a SINGLE user and require that user's distinct_id, which a profile lookup gives you. They cannot answer project-wide questions — use query_insights for those.
 
 Compliance:
 - get_deletion_request reports the status of a previously submitted data-erasure request.

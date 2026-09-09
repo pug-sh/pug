@@ -3,10 +3,10 @@
 //
 // Everyone whose copyright can reach the repository through the pull request —
 // commit author, committer, co-author, and the person who opened it — must appear
-// in tools/cla/signatures.json. The file is read from the pull request's own head, so a
-// contributor signs in the same pull request; the edit must be append-only and may
-// only add the person who opened it, so a co-author signs in a pull request of
-// their own.
+// in tools/cla/signatures.json. The file is read both at the pull request's head,
+// where a hand-written signature lands, and at the base branch tip, where a /sign
+// comment lands one. A hand-written edit must be append-only and may only add the
+// person who opened it, so a co-author signs by commenting /sign instead.
 //
 // Commits and the signature file are read over the API, so no file the pull
 // request controls is read off the runner. The checker's own code and workflow are
@@ -97,13 +97,20 @@ func loadConfig() (config, error) {
 
 // githubAPI is the GitHub surface the gate depends on, named consumer-side so
 // the check can be unit-tested against a fake instead of the live API. Every
-// implementation must report a missing resource as errNotFound: resolveCoauthors
-// reads it as "no such account" rather than as an API failure.
+// implementation must report a missing resource as errNotFound, which
+// resolveCoauthors reads as "no such account" rather than as an API failure; an
+// empty run list as errNoRuns; and a write refused for a stale blob sha as
+// errConflict, which is the only thing the signer's retry keys on.
 type githubAPI interface {
 	signatureFile(ctx context.Context, ref string) (*SignatureFile, error)
 	pullCommits(ctx context.Context, pr int) ([]Commit, error)
 	mergeBase(ctx context.Context, base, head string) (string, error)
 	userByLogin(ctx context.Context, login string) (Principal, error)
+	signatureFileMeta(ctx context.Context, ref string) (*SignatureFile, string, error)
+	putSignatureFile(ctx context.Context, branch string, f *SignatureFile, sha, message string, author Principal) error
+	pullRequest(ctx context.Context, pr int) (PullRequest, error)
+	latestWorkflowRun(ctx context.Context, workflowFile, headSHA string) (WorkflowRun, error)
+	rerunWorkflow(ctx context.Context, runID int64) error
 	comments(ctx context.Context, pr int) ([]Comment, error)
 	createComment(ctx context.Context, pr int, body string) error
 	updateComment(ctx context.Context, id int64, body string) error
@@ -121,12 +128,32 @@ type checker struct {
 	now func() time.Time
 }
 
+// subcommand picks what to run. A bare invocation stays the checker, so cla.yaml
+// is untouched by the signer's arrival. Anything else unrecognised is a typo, not
+// a mode: falling through to the checker would report a signature that was never
+// recorded, which is worse than any error.
+func subcommand(args []string) (func(context.Context) error, bool) {
+	if len(args) < 2 {
+		return run, true
+	}
+	if args[1] == "sign" {
+		return runSign, true
+	}
+	return nil, false
+}
+
 func main() {
 	setupLogging()
 
+	do, ok := subcommand(os.Args)
+	if !ok {
+		fmt.Printf("::error::unknown subcommand %q; use `sign` or no argument\n", escapeAnnotation(os.Args[1]))
+		os.Exit(1)
+	}
+
 	// An unsigned CLA has already been reported with its own annotation; anything
 	// else is a checker fault that nothing has annotated yet.
-	switch err := run(context.Background()); {
+	switch err := do(context.Background()); {
 	case errors.Is(err, errUnsigned):
 		os.Exit(1)
 	case err != nil:
@@ -198,7 +225,7 @@ func (c *checker) verdict(ctx context.Context) error {
 	// An unidentified co-author blocks the gate like an unsigned one — a trailer
 	// names a copyright holder either way — but is reported rather than raised: it
 	// is the contributor's to fix, and a checker error would bury the report.
-	coauthors, unknown, err := c.resolveCoauthors(ctx, commits)
+	coauthors, unknown, err := resolveCoauthors(ctx, c.gh, commits)
 	if err != nil {
 		return err
 	}
@@ -208,9 +235,19 @@ func (c *checker) verdict(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	inForce, err := c.gh.signatureFile(ctx, c.cfg.baseSHA)
+	// The base branch as it stands now, not the event's pinned base.sha. A
+	// workflow re-run replays the original payload, so a signature committed by a
+	// /sign comment after the event fired would be invisible on exactly the run
+	// that has to see it. signatureFile passes its ref to ?ref=, which takes a
+	// branch name; baseRef is a base-repo branch and never the pull request's.
+	inForce, err := c.gh.signatureFile(ctx, c.cfg.baseRef)
 	if err != nil {
 		return fmt.Errorf("reading tools/cla/signatures.json on %s: %w", c.cfg.baseRef, err)
+	}
+	// Validated like head: unsigned now takes a passing verdict from this file, and
+	// signedAt compares only the id and the version.
+	if err := inForce.validate(); err != nil {
+		return fmt.Errorf("tools/cla/signatures.json on %s is invalid: %w", c.cfg.baseRef, err)
 	}
 	if err := appendOnly(base, head, c.cfg.opener, inForce.CLAVersion); err != nil {
 		// A rejected edit is the contributor's to fix, like an unsigned CLA, so it
@@ -221,7 +258,7 @@ func (c *checker) verdict(ctx context.Context) error {
 		return errUnsigned
 	}
 
-	missing, checked := unsigned(head, people)
+	missing, checked := unsigned(head, inForce, people)
 	if len(missing) > 0 || len(unknown) > 0 {
 		report := unsignedReport(c.cfg, head, missing, unknown, c.now())
 		fmt.Fprint(c.out, report.text)
@@ -327,7 +364,11 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 	return base, nil
 }
 
-// resolveCoauthors turns Co-authored-by trailers into principals. A trailer is
+// resolveCoauthors turns Co-authored-by trailers into principals. It takes the
+// API rather than hanging off the checker: the signer needs exactly this list to
+// decide who may sign, and two implementations of "who is a principal" — one
+// deciding who must sign and one deciding who may — is the single disagreement
+// this system cannot survive. A trailer is
 // commit-message text, so nothing in it is taken on trust — the address only
 // chooses which login is looked up, and the id always comes back from the API.
 //
@@ -341,7 +382,7 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 // to answer is an error instead, since "we could not reach GitHub" must not reach
 // the contributor as "your co-author has not signed". A known assistant is
 // neither: it names no copyright holder, so it is skipped rather than reported.
-func (c *checker) resolveCoauthors(ctx context.Context, commits []Commit) (found []Principal, unknown []string, err error) {
+func resolveCoauthors(ctx context.Context, gh githubAPI, commits []Commit) (found []Principal, unknown []string, err error) {
 	for _, email := range coauthorEmails(commits) {
 		if isAssistant(email) {
 			continue
@@ -351,7 +392,7 @@ func (c *checker) resolveCoauthors(ctx context.Context, commits []Commit) (found
 			unknown = append(unknown, email)
 			continue
 		}
-		p, err := c.gh.userByLogin(ctx, login)
+		p, err := gh.userByLogin(ctx, login)
 		if err != nil && !errors.Is(err, errNotFound) {
 			return nil, nil, fmt.Errorf("resolving the co-author %s: %w\nIf GitHub's API was erroring, re-running the job is enough", email, err)
 		}

@@ -1,0 +1,82 @@
+name: CLA sign
+
+# Signing by comment. A comment's author is the one identity in this flow GitHub
+# attests: a commit's author, its committer and a Co-authored-by trailer are all
+# self-asserted, which is exactly why the checker takes a signature from none of
+# them. The signature is still written as a commit, authored as the contributor,
+# so the record lives in git history under the identity that agreed to it.
+#
+# The signature lands on the base branch rather than the pull request's head
+# because GITHUB_TOKEN cannot push to a fork — which is the case the CLA exists
+# for. The checker reads the base branch by name for the same reason.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  # write, so the signature can be committed to the base branch.
+  contents: write
+  # write, so the contributor is told what happened in a comment rather than only
+  # in a log they have to go looking for.
+  pull-requests: write
+  # write, so the pull request's own CLA run can be re-run. Only a
+  # pull_request_target run attaches to a pull request's checks, so dispatching a
+  # fresh one would execute happily and change nothing the merge button can see.
+  actions: write
+
+concurrency:
+  # Per commenter, not per pull request: GitHub cancels a *pending* run when a
+  # newer one joins the group, so a shared group would silently drop the second
+  # of two people signing the same pull request. Concurrent writers are already
+  # safe — the commit is conditional on the blob sha and retried on a conflict.
+  group: cla-sign-${{ github.event.issue.number }}-${{ github.event.comment.user.id }}
+  # Not cancel-in-progress: a cancelled run could stop between committing the
+  # signature and reporting it, leaving a contributor who signed with no reply.
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sign:
+    # A prefilter only. Actions expressions cannot trim, so an exact `==` here
+    # would silently ignore "/sign " and "/sign\r\n" — the worst failure shape,
+    # since the contributor gets no job, no reply and no clue why. The
+    # authoritative match is in Go, which exits 0 without commenting on a
+    # near-miss, and the token is untouched until it passes.
+    if: >-
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/sign')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # issue_comment always runs the default branch's copy of this file in the
+      # base repository's context, so this checkout is never the pull request's.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tools/cla/gate/go.mod
+          cache: false
+
+      - name: Test the signer
+        working-directory: tools/cla/gate
+        run: go test ./...
+
+      - name: Record the signature
+        working-directory: tools/cla/gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENTER_ID: ${{ github.event.comment.user.id }}
+          COMMENTER_LOGIN: ${{ github.event.comment.user.login }}
+          COMMENTER_TYPE: ${{ github.event.comment.user.type }}
+          # issue_comment takes no branches: filter, so the branch cla.yaml gates
+          # is passed in and the signer refuses a pull request targeting any other.
+          BASE_BRANCH: main
+        run: go run . sign

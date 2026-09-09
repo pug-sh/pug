@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -29,11 +30,80 @@ type fakeGitHub struct {
 
 	labelled    []string
 	labelWrites int
+
+	// the signer's surface
+	fileSHA      string
+	pr           PullRequest
+	putFile      *SignatureFile
+	putBranch    string
+	putAttempts  int
+	putConflicts int
+	putErr       error
+	runErr       error
+	rerunID      int64
+	rerunErr     error
+	// landed is committed to the branch by the write that reports the conflict, so
+	// a retry that drops it is visible rather than merely unobserved.
+	landed *Signature
+}
+
+func (f *fakeGitHub) signatureFileMeta(_ context.Context, ref string) (*SignatureFile, string, error) {
+	sf, ok := f.files[ref]
+	if !ok {
+		return nil, "", errNotFound
+	}
+	// A clone, because the signer appends to what it reads and a retry has to see
+	// the file as it stands rather than its own half-finished previous attempt.
+	clone := *sf
+	clone.Signatures = slices.Clone(sf.Signatures)
+	return &clone, f.fileSHA, nil
+}
+
+func (f *fakeGitHub) putSignatureFile(_ context.Context, branch string, sf *SignatureFile, _, _ string, _ Principal) error {
+	f.putAttempts++
+	if f.putConflicts > 0 {
+		f.putConflicts--
+		if f.landed != nil {
+			cur := f.files[branch]
+			cur.Signatures = append(cur.Signatures, *f.landed)
+			f.landed = nil
+		}
+		return errConflict
+	}
+	if f.putErr != nil {
+		return f.putErr
+	}
+	f.putBranch, f.putFile = branch, sf
+	f.files[branch] = sf
+	return nil
+}
+
+func (f *fakeGitHub) pullRequest(context.Context, int) (PullRequest, error) { return f.pr, nil }
+
+func (f *fakeGitHub) latestWorkflowRun(context.Context, string, string) (WorkflowRun, error) {
+	if f.runErr != nil {
+		return WorkflowRun{}, f.runErr
+	}
+	return WorkflowRun{ID: 991}, nil
+}
+
+func (f *fakeGitHub) rerunWorkflow(_ context.Context, id int64) error {
+	f.rerunID = id
+	return f.rerunErr
 }
 
 func (f *fakeGitHub) signatureFile(_ context.Context, ref string) (*SignatureFile, error) {
 	if sf, ok := f.files[ref]; ok {
 		return sf, nil
+	}
+	// The checker reads the version in force at the base branch by name. In the
+	// ordinary case that branch and the merge base carry the same file, so "main"
+	// falls back to the merge base's entry; a test that needs them to differ —
+	// which is what a /sign comment produces — seeds "main" explicitly.
+	if ref == "main" {
+		if sf, ok := f.files["base"]; ok {
+			return sf, nil
+		}
 	}
 	return nil, errNotFound
 }
@@ -162,7 +232,7 @@ func TestCheckReportsTheUnsignedContributor(t *testing.T) {
 	}
 	// alice opened it, so hers is the entry offered; bob authored the commit and
 	// is named, but only he can sign for himself.
-	for _, want := range []string{"alice", "bob", `"id": 1`, "opened themselves"} {
+	for _, want := range []string{"alice", "bob", `"id": 1`, "commenting `/sign`"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("want %q in the report, got %q", want, out.String())
 		}
@@ -214,7 +284,7 @@ func TestResolveCoauthorsRaisesALookupFailure(t *testing.T) {
 		"feat: thing\n\nCo-authored-by: Carol <carol@users.noreply.github.com>\n")}
 
 	c := newChecker(&fakeGitHub{lookupErr: errors.New("403 rate limit exceeded")}, &bytes.Buffer{})
-	_, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	_, unknown, err := resolveCoauthors(t.Context(), c.gh, commits)
 	if err == nil || len(unknown) != 0 {
 		t.Fatalf("want the failure raised, got unknown=%v err=%v", unknown, err)
 	}
@@ -228,7 +298,7 @@ func TestResolveCoauthorsReportsAPlaintextAddress(t *testing.T) {
 		"feat: thing\n\nCo-authored-by: Carol <carol@example.com>\n")}
 
 	c := newChecker(&fakeGitHub{}, &bytes.Buffer{})
-	found, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	found, unknown, err := resolveCoauthors(t.Context(), c.gh, commits)
 	if err != nil || len(found) != 0 || len(unknown) != 1 || unknown[0] != "carol@example.com" {
 		t.Fatalf("want the address reported, got found=%v unknown=%v err=%v", found, unknown, err)
 	}
@@ -241,14 +311,14 @@ func TestResolveCoauthorsReportsAPlaintextAddress(t *testing.T) {
 func TestAnAssistantTrailerIsSkippedButAPersonsIsNot(t *testing.T) {
 	msg := "feat: thing\n\nCo-authored-by: Claude <noreply@anthropic.com>\n"
 	c := newChecker(&fakeGitHub{}, &bytes.Buffer{})
-	found, unknown, err := c.resolveCoauthors(t.Context(),
+	found, unknown, err := resolveCoauthors(t.Context(), c.gh,
 		[]Commit{commit("a1", user("alice", 1), user("alice", 1), msg)})
 	if err != nil || len(found) != 0 || len(unknown) != 0 {
 		t.Fatalf("an assistant licenses nothing and must not block, got found=%v unknown=%v err=%v", found, unknown, err)
 	}
 
 	person := "feat: thing\n\nCo-authored-by: Carol <carol@anthropic.com>\n"
-	_, unknown, err = c.resolveCoauthors(t.Context(),
+	_, unknown, err = resolveCoauthors(t.Context(), c.gh,
 		[]Commit{commit("a1", user("alice", 1), user("alice", 1), person)})
 	if err != nil || len(unknown) != 1 {
 		t.Fatalf("a colleague at the same domain still holds copyright, got unknown=%v err=%v", unknown, err)
@@ -284,7 +354,7 @@ func TestResolveCoauthorsFallsBackToTheAPIForTheIDLessNoreplyForm(t *testing.T) 
 		"feat: thing\n\nCo-authored-by: Bob <bob@users.noreply.github.com>\n")}
 
 	c := newChecker(&fakeGitHub{byLogin: map[string]Principal{"bob": {ID: 99, Login: "bob", Type: "User"}}}, &bytes.Buffer{})
-	found, unknown, err := c.resolveCoauthors(t.Context(), commits)
+	found, unknown, err := resolveCoauthors(t.Context(), c.gh, commits)
 	if err != nil || len(unknown) != 0 || len(found) != 1 || found[0].ID != 99 {
 		t.Fatalf("want bob resolved to id 99, got found=%v unknown=%v err=%v", found, unknown, err)
 	}
@@ -835,4 +905,33 @@ func TestAnAssistantTrailerAloneDoesNotBlockTheGate(t *testing.T) {
 			t.Fatalf("%s must not block: %v (out=%q)", addr, err, out.String())
 		}
 	}
+}
+
+// A mistyped subcommand must not silently fall through to the checker: reporting
+// a signature that was never recorded is the one outcome worse than an error.
+func TestSubcommandRejectsAnUnknownArgument(t *testing.T) {
+	if _, ok := subcommand([]string{"gate", "sing"}); ok {
+		t.Error(`subcommand accepted "sing"`)
+	}
+	// cla.yaml invokes the gate bare. Dispatching that to the signer would find no
+	// COMMENT_BODY, return nil, and turn the required check green having checked
+	// nothing — so the function itself is asserted, not just that one was returned.
+	bare, ok := subcommand([]string{"gate"})
+	if !ok {
+		t.Fatal("subcommand rejected a bare invocation, which is the checker")
+	}
+	if !sameFunc(bare, run) {
+		t.Error("a bare invocation is not the checker")
+	}
+	signing, ok := subcommand([]string{"gate", "sign"})
+	if !ok {
+		t.Fatal(`subcommand rejected "sign"`)
+	}
+	if !sameFunc(signing, runSign) {
+		t.Error(`"sign" is not the signer`)
+	}
+}
+
+func sameFunc(a, b func(context.Context) error) bool {
+	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
