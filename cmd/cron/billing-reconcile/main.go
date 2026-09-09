@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/joho/godotenv"
 	billingcron "github.com/pug-sh/pug/internal/app/cron/billing"
+	"github.com/pug-sh/pug/internal/dotenv"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -16,9 +16,7 @@ func main() {
 	ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer done()
 
-	if err := godotenv.Load(); err != nil {
-		slog.DebugContext(ctx, "No .env file found, relying on environment variables")
-	}
+	dotenv.LoadOrExit(ctx)
 
 	// Run has already logged the failure through the OTLP handler; this line goes
 	// to stderr after telemetry shut down, so it says only what main adds.
