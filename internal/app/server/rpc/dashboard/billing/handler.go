@@ -45,15 +45,6 @@ func (s *Server) GetBillingStatus(
 		}
 		return nil, internalErr()
 	}
-	// The stored row, for purchasable alone: a negotiated deal's product id lives
-	// there and never reaches the wire.
-	rec, err := s.service.StoredRecord(ctx, orgID)
-	if err != nil {
-		if errors.Is(err, corebilling.ErrOrgNotFound) {
-			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
-		}
-		return nil, internalErr()
-	}
 
 	resp := &billingv1.GetBillingStatusResponse{
 		BillingEnabled: proto.Bool(ent.BillingEnabled),
@@ -66,17 +57,18 @@ func (s *Server) GetBillingStatus(
 		PeriodEnd:   timestamppb.New(ent.PeriodEnd),
 		PeriodStart: timestamppb.New(ent.PeriodStart),
 		Status:      statusToRPC(ent.Status).Enum(),
+		Chargeable:  proto.Bool(ent.Chargeable),
+		RateCard:    rateCardToRPC(ent.Card),
+		CustomTerms: termsToRPC(ent.Terms),
 	}
 	// Absent means NO quota, which a disabled deployment and an unresolvable plan both
 	// report. A zero would tell every org on a self-hosted install it is over.
 	resp.IncludedEvents = int64Value(ent.IncludedEvents)
-	// Absent means no bound, never zero: nothing prunes on this number, so a 0
-	// would promise a deletion that has not happened and cannot.
 	resp.RetentionDays = int64Value(ent.RetentionDays)
 	resp.SubscriptionStatus = subStatusToRPC(ent.SubStatus).Enum()
-	// Read from the same helpers the two session RPCs refuse on, so a button the
+	// Read from the same helpers the session RPCs refuse on, so a button the
 	// dashboard renders and a call that would fail cannot drift apart.
-	resp.Purchasable = proto.Bool(s.service.Purchasable(rec))
+	resp.Purchasable = proto.Bool(s.service.Purchasable())
 	resp.Manageable = proto.Bool(s.service.Manageable(ctx, orgID))
 	if !ent.SubPeriodEnd.IsZero() {
 		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
@@ -86,6 +78,9 @@ func (s *Server) GetBillingStatus(
 	}
 	if !ent.ContractEndsAt.IsZero() {
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
+	}
+	if !ent.NextChargeAt.IsZero() {
+		resp.NextChargeAt = timestamppb.New(ent.NextChargeAt)
 	}
 	return connect.NewResponse(resp), nil
 }
@@ -105,8 +100,53 @@ func int64Value(v *int64) *wrapperspb.Int64Value {
 	return wrapperspb.Int64(*v)
 }
 
-// An unset theme is the client declining to say, not a light one: the checkout
-// then opens in the provider's own configured default rather than a mode pug guessed.
+func rateCardToRPC(card *corebilling.RateCard) *billingv1.RateCard {
+	if card == nil {
+		return nil
+	}
+	tiers := make([]*billingv1.RateTier, 0, len(card.Tiers))
+	for _, t := range card.Tiers {
+		tiers = append(tiers, &billingv1.RateTier{
+			UpToBlock:     proto.Int64(t.UpToBlock),
+			CentsPerBlock: proto.Int64(t.CentsPerBlock),
+		})
+	}
+	return &billingv1.RateCard{
+		BlockEvents: proto.Int64(card.BlockEvents),
+		FreeBlocks:  proto.Int64(card.FreeBlocks),
+		Tiers:       tiers,
+	}
+}
+
+func termsToRPC(terms *corebilling.CustomTerms) *billingv1.CustomTerms {
+	if terms == nil {
+		return nil
+	}
+	out := &billingv1.CustomTerms{}
+	if terms.FlatFeeCents > 0 {
+		out.FlatFeeCents = wrapperspb.Int64(terms.FlatFeeCents)
+	}
+	if terms.BlockRateCents > 0 {
+		out.BlockRateCents = wrapperspb.Int64(terms.BlockRateCents)
+		out.IncludedEvents = wrapperspb.Int64(terms.IncludedEvents)
+	}
+	return out
+}
+
+func linesToRPC(lines []corebilling.Line) []*billingv1.InvoiceLine {
+	out := make([]*billingv1.InvoiceLine, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, &billingv1.InvoiceLine{
+			Description:   proto.String(l.Description),
+			Blocks:        proto.Int64(l.Blocks),
+			CentsPerBlock: proto.Int64(l.CentsPerBlock),
+			AmountCents:   proto.Int64(l.AmountCents),
+		})
+	}
+	return out
+}
+
+// An unset theme is the client declining to say, not a light one.
 func checkoutTheme(t billingv1.CheckoutTheme) corebilling.CheckoutTheme {
 	switch t {
 	case billingv1.CheckoutTheme_CHECKOUT_THEME_LIGHT:
@@ -118,8 +158,7 @@ func checkoutTheme(t billingv1.CheckoutTheme) corebilling.CheckoutTheme {
 	}
 }
 
-// CreateCheckoutSession opens a provider checkout and returns the URL. The request
-// names a plan slug; the amount lives on the provider's product.
+// CreateCheckoutSession opens a mandate-only checkout and returns the URL.
 func (s *Server) CreateCheckoutSession(
 	ctx context.Context,
 	req *connect.Request[billingv1.CreateCheckoutSessionRequest],
@@ -129,8 +168,6 @@ func (s *Server) CreateCheckoutSession(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	// The buyer's own address and name, so the provider's form is pre-filled. Never
-	// the identity: a customer is created per checkout, or attribution lands wrong.
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, err
@@ -152,7 +189,6 @@ func (s *Server) CreateCheckoutSession(
 	}), nil
 }
 
-// ConfirmCheckout verifies a returning buyer's checkout against the provider.
 func (s *Server) ConfirmCheckout(
 	ctx context.Context,
 	req *connect.Request[billingv1.ConfirmCheckoutRequest],
@@ -171,44 +207,36 @@ func (s *Server) ConfirmCheckout(
 	}), nil
 }
 
-// confirmErr translates the confirm path: every case below has already taken the
-// customer's money, so none may fall through to checkoutErr, which answers as
-// though none had moved. FailedPrecondition throughout — a person is needed.
+// confirmErr translates the confirm path. FailedPrecondition throughout: a person
+// is needed, and none of these may read as though nothing had happened.
 func confirmErr(err error, orgID string) error {
-	paid := func(reason apperr.Reason, msg string) error {
+	unapplied := func(reason apperr.Reason, msg string) error {
 		return apperr.FailedPrecondition(reason, msg,
 			apperr.Precondition(string(reason), orgID,
-				"the payment succeeded; it cannot be applied automatically"))
+				"the payment method was authorized; it cannot be applied automatically"))
 	}
 	switch {
 	case errors.Is(err, corebilling.ErrCheckoutNotForOrg):
 		return apperr.PermissionDenied(apperr.ReasonBillingCheckoutNotForOrg,
 			"this checkout does not belong to this organization")
 	case errors.Is(err, corebilling.ErrCurrencyNotSupported):
-		return paid(apperr.ReasonBillingCurrencyUnsupported,
+		return unapplied(apperr.ReasonBillingCurrencyUnsupported,
 			"this subscription is billed in a currency pug does not support")
-	case errors.Is(err, corebilling.ErrNotPurchasable):
-		return paid(apperr.ReasonBillingProductUnmapped,
-			"this subscription is for a product pug cannot match to a plan")
 	case errors.Is(err, corebilling.ErrTwoLiveSubscriptions):
-		return paid(apperr.ReasonBillingTwoLiveSubscriptions,
+		return unapplied(apperr.ReasonBillingTwoLiveSubscriptions,
 			"this organization already has a live subscription")
 	case errors.Is(err, corebilling.ErrSubscriptionUnapplicable):
-		return paid(apperr.ReasonBillingSubscriptionUnapplicable,
+		return unapplied(apperr.ReasonBillingSubscriptionUnapplicable,
 			"this subscription is in a state pug cannot record")
 	case errors.Is(err, corebilling.ErrCheckoutFailed):
-		// The one case where no money moved, so it says so plainly rather than
-		// sending the buyer to support.
 		return apperr.FailedPrecondition(apperr.ReasonBillingCheckoutFailed,
 			"this checkout did not complete, and nothing has been charged",
 			apperr.Precondition(string(apperr.ReasonBillingCheckoutFailed), orgID,
-				"the payment did not go through"))
+				"the payment method was not authorized"))
 	}
 	return checkoutErr(err, orgID, "")
 }
 
-// CreatePortalSession opens the provider's customer portal, which is where plan
-// changes, card updates, invoices and cancellation live.
 func (s *Server) CreatePortalSession(
 	ctx context.Context,
 	req *connect.Request[billingv1.CreatePortalSessionRequest],
@@ -227,8 +255,6 @@ func (s *Server) CreatePortalSession(
 	}), nil
 }
 
-// ListPlans returns the tiers this deployment sells. Never a product id: the
-// dashboard renders a buy button from `purchasable` alone.
 func (s *Server) ListPlans(
 	ctx context.Context,
 	req *connect.Request[billingv1.ListPlansRequest],
@@ -252,13 +278,124 @@ func (s *Server) ListPlans(
 			Currency:       proto.String(opt.Currency),
 			DisplayName:    proto.String(opt.DisplayName),
 			IncludedEvents: int64Value(opt.IncludedEvents),
-			PriceCents:     int64Value(opt.PriceCents),
 			Purchasable:    proto.Bool(opt.Purchasable),
 			RetentionDays:  int64Value(opt.RetentionDays),
 			Slug:           proto.String(opt.Slug),
+			RateCard:       rateCardToRPC(opt.Card),
+			CustomTerms:    termsToRPC(opt.Terms),
 		})
 	}
 	return connect.NewResponse(&billingv1.ListPlansResponse{Plans: plans}), nil
+}
+
+func (s *Server) GetUpcomingInvoice(
+	ctx context.Context,
+	req *connect.Request[billingv1.GetUpcomingInvoiceRequest],
+) (*connect.Response[billingv1.GetUpcomingInvoiceResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
+	orgID := req.Msg.GetOrgId()
+	up, err := s.service.UpcomingInvoice(ctx, orgID, time.Now())
+	if err != nil {
+		if errors.Is(err, corebilling.ErrOrgNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
+		}
+		return nil, internalErr()
+	}
+	resp := &billingv1.GetUpcomingInvoiceResponse{
+		PeriodStart: timestamppb.New(up.PeriodStart),
+		PeriodEnd:   timestamppb.New(up.PeriodEnd),
+		Currency:    proto.String(up.Currency),
+	}
+	if !up.NextChargeAt.IsZero() {
+		resp.NextChargeAt = timestamppb.New(up.NextChargeAt)
+	}
+	if !up.UsageComputedAt.IsZero() {
+		resp.UsageComputedAt = timestamppb.New(up.UsageComputedAt)
+	}
+	// The three usage states carried through: no count means no amount, never $0.
+	if up.Counted {
+		resp.Counted = proto.Bool(true)
+		resp.EventCount = proto.Int64(up.EventCount)
+	}
+	if up.Priced {
+		resp.Blocks = proto.Int64(up.Quote.Blocks)
+		resp.Lines = linesToRPC(up.Quote.Lines)
+		resp.AmountCents = wrapperspb.Int64(up.Quote.TotalCents)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (s *Server) ListInvoices(
+	ctx context.Context,
+	req *connect.Request[billingv1.ListInvoicesRequest],
+) (*connect.Response[billingv1.ListInvoicesResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
+	invoices, err := s.service.ListInvoices(ctx, req.Msg.GetOrgId())
+	if err != nil {
+		return nil, internalErr()
+	}
+	out := make([]*billingv1.Invoice, 0, len(invoices))
+	for _, inv := range invoices {
+		out = append(out, invoiceToRPC(inv))
+	}
+	return connect.NewResponse(&billingv1.ListInvoicesResponse{Invoices: out}), nil
+}
+
+// invoiceToRPC carries everything but the error message, which is merchant-facing.
+func invoiceToRPC(inv corebilling.Invoice) *billingv1.Invoice {
+	out := &billingv1.Invoice{
+		Id:                 proto.String(inv.ID),
+		PeriodStart:        timestamppb.New(inv.PeriodStart),
+		PeriodEnd:          timestamppb.New(inv.PeriodEnd),
+		BilledFrom:         timestamppb.New(inv.BilledFrom),
+		BilledTo:           timestamppb.New(inv.BilledTo),
+		EventCount:         proto.Int64(inv.EventCount),
+		Blocks:             proto.Int64(inv.Blocks),
+		Lines:              linesToRPC(inv.Lines),
+		AmountCents:        proto.Int64(inv.AmountCents),
+		Currency:           proto.String(inv.Currency),
+		Status:             invoiceStatusToRPC(inv.Status).Enum(),
+		ProviderInvoiceUrl: proto.String(inv.ProviderInvoiceURL),
+		CreateTime:         timestamppb.New(inv.CreateTime),
+		Attempts:           proto.Int32(int32(inv.Attempts)),
+	}
+	if !inv.PaidAt.IsZero() {
+		out.PaidAt = timestamppb.New(inv.PaidAt)
+	}
+	if !inv.FailedAt.IsZero() {
+		out.FailedAt = timestamppb.New(inv.FailedAt)
+	}
+	if !inv.NextAttemptAt.IsZero() {
+		out.NextAttemptAt = timestamppb.New(inv.NextAttemptAt)
+	}
+	return out
+}
+
+func (s *Server) RemovePaymentMethod(
+	ctx context.Context,
+	req *connect.Request[billingv1.RemovePaymentMethodRequest],
+) (*connect.Response[billingv1.RemovePaymentMethodResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
+	orgID := req.Msg.GetOrgId()
+	if err := s.service.RemovePaymentMethod(ctx, orgID, time.Now()); err != nil {
+		if errors.Is(err, corebilling.ErrNoMandate) {
+			return nil, apperr.FailedPrecondition(apperr.ReasonBillingNoMandate,
+				"this organization has no payment method to remove",
+				apperr.Precondition(string(apperr.ReasonBillingNoMandate), orgID,
+					"no live payment method is on file"))
+		}
+		return nil, checkoutErr(err, orgID, "")
+	}
+	return connect.NewResponse(&billingv1.RemovePaymentMethodResponse{}), nil
 }
 
 // checkoutErr translates the session paths. A provider call that simply failed is
@@ -277,7 +414,7 @@ func checkoutErr(err error, orgID, planSlug string) error {
 		return apperr.FailedPrecondition(apperr.ReasonBillingNotPurchasable,
 			"this plan cannot be purchased",
 			apperr.Precondition(string(apperr.ReasonBillingNotPurchasable), planSlug,
-				"no product is configured for this plan"))
+				"nothing is configured to check out against for this plan"))
 	case errors.Is(err, corebilling.ErrNoCustomer):
 		return apperr.FailedPrecondition(apperr.ReasonBillingNoCustomer,
 			"this organization has no billing account yet",
@@ -295,8 +432,34 @@ func statusToRPC(s corebilling.Status) billingv1.BillingStatus {
 		return billingv1.BillingStatus_BILLING_STATUS_ACTIVE
 	case corebilling.StatusFree:
 		return billingv1.BillingStatus_BILLING_STATUS_FREE
+	case corebilling.StatusPastDue:
+		return billingv1.BillingStatus_BILLING_STATUS_PAST_DUE
 	}
 	return billingv1.BillingStatus_BILLING_STATUS_UNSPECIFIED
+}
+
+func invoiceStatusToRPC(s corebilling.InvoiceStatus) billingv1.InvoiceStatus {
+	switch s {
+	case corebilling.InvoiceOpen:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_OPEN
+	case corebilling.InvoiceCharging:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_CHARGING
+	case corebilling.InvoiceCharged:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_CHARGED
+	case corebilling.InvoicePaid:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_PAID
+	case corebilling.InvoiceFailed:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_FAILED
+	case corebilling.InvoiceUncollectible:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_UNCOLLECTIBLE
+	case corebilling.InvoiceWaived:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_WAIVED
+	case corebilling.InvoiceVoid:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_VOID
+	case corebilling.InvoiceRefunded:
+		return billingv1.InvoiceStatus_INVOICE_STATUS_REFUNDED
+	}
+	return billingv1.InvoiceStatus_INVOICE_STATUS_UNSPECIFIED
 }
 
 // subStatusToRPC maps pug's subscription vocabulary. A stored word outside it

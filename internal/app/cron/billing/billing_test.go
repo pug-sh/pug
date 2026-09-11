@@ -20,7 +20,7 @@ func TestMain(m *testing.M) { testutil.Main(m) }
 
 func newSvc(t *testing.T, pg *testutil.TestPostgres) *corebilling.Service {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, nil)
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true}, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -124,6 +124,30 @@ func (unreachableProvider) FetchCheckoutOutcome(context.Context, string) (corebi
 	return corebilling.SubscriptionEvent{}, errors.New("unused")
 }
 
+func (unreachableProvider) NormalizePayment(corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	return corebilling.PaymentEvent{}, errors.New("unused")
+}
+
+func (unreachableProvider) Charge(context.Context, corebilling.ChargeInput) (string, error) {
+	return "", errors.New("unused")
+}
+
+func (unreachableProvider) ListPayments(context.Context, string, time.Time) ([]corebilling.PaymentRecord, error) {
+	return nil, errors.New("unused")
+}
+
+func (unreachableProvider) FetchPayment(context.Context, string) (corebilling.PaymentRecord, error) {
+	return corebilling.PaymentRecord{}, errors.New("unused")
+}
+
+func (unreachableProvider) SetNextBillingDate(context.Context, string, time.Time) error {
+	return errors.New("unused")
+}
+
+func (unreachableProvider) CancelSubscription(context.Context, string) error {
+	return errors.New("unused")
+}
+
 // seedLiveSubscription gives the pass something to re-read, so a failing
 // provider produces an unreadable report rather than an empty one.
 func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {
@@ -137,9 +161,9 @@ func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {
 	}
 	if _, err := pg.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, current_period_end, id, org_id, plan_slug, price_cents, provider,
+		   currency, current_period_end, id, on_demand, org_id, plan_slug, price_cents, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', now() + interval '20 days', $1, $2, 'growth', 2000, $3,
+		 values ('USD', now() + interval '20 days', $1, true, $2, 'usage-2026-09', 0, $3,
 		         'cus_1', 'active', 'sub_1', now() - interval '1 hour', 'active')`,
 		xid.New().String(), org.ID, dodo.Name); err != nil {
 		t.Fatalf("seed subscription: %v", err)
@@ -158,9 +182,9 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-corebilling.DeliveryRetention-time.Hour))
 	seedLiveSubscription(t, pg.PgW)
 
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
-		Provider:      unreachableProvider{},
-		ProductBySlug: map[string]string{"growth": "prod_growth"},
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true}, &corebilling.Payments{
+		Provider:       unreachableProvider{},
+		MandateProduct: "prod_mandate",
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)

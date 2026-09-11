@@ -63,11 +63,27 @@ func (p stubProvider) FetchSubscription(context.Context, string) (corebilling.Su
 func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
 	return corebilling.SubscriptionEvent{}, errors.New("unused")
 }
+func (p stubProvider) NormalizePayment(corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	return corebilling.PaymentEvent{}, nil
+}
+func (p stubProvider) Charge(context.Context, corebilling.ChargeInput) (string, error) {
+	return "", errors.New("unused")
+}
+func (p stubProvider) ListPayments(context.Context, string, time.Time) ([]corebilling.PaymentRecord, error) {
+	return nil, errors.New("unused")
+}
+func (p stubProvider) FetchPayment(context.Context, string) (corebilling.PaymentRecord, error) {
+	return corebilling.PaymentRecord{}, errors.New("unused")
+}
+func (p stubProvider) SetNextBillingDate(context.Context, string, time.Time) error {
+	return errors.New("unused")
+}
+func (p stubProvider) CancelSubscription(context.Context, string) error { return errors.New("unused") }
 
 func newService(t *testing.T) (*corebilling.Service, *testutil.TestPostgres) {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, nil)
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true}, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

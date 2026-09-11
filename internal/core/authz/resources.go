@@ -43,6 +43,11 @@ const (
 	// ResourceUsage; create is admin-only and mints a session, never an entitlement.
 	ResourceBilling Resource = "billing"
 
+	// ResourceInvoice is an org's invoice ledger. Read-only and admin-only: a
+	// receipt carries a company's billing details, unlike the priced estimate,
+	// which stays on the billing floor.
+	ResourceInvoice Resource = "invoice"
+
 	// ResourceAPIKey is a project's API keys, so its org resolves from the
 	// x-project-id project like the project-data resources below. Minting a
 	// credential for a whole project is an administrative act, so create/delete sit
@@ -72,7 +77,7 @@ const (
 // never matches. Keep these in sync when adding a const.
 var allResources = []Resource{
 	ResourceOrg, ResourceMember, ResourceInvitation, ResourceEmailProvider,
-	ResourceProject, ResourceUsage, ResourceBilling, ResourceAPIKey,
+	ResourceProject, ResourceUsage, ResourceBilling, ResourceInvoice, ResourceAPIKey,
 	ResourceDashboard, ResourceInsight, ResourceActivity, ResourceProfile,
 }
 

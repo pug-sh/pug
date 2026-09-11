@@ -11,22 +11,23 @@ select * from billing_entitlements where org_id = @org_id for update;
 -- Full replace, never coalesce: the caller has already merged its change over
 -- the locked row.
 insert into billing_entitlements (
-  anchor_day, contract_ends_at, display_name_override,
-  included_events_override, note, org_id, plan_slug, provider_product_id,
+  anchor_day, block_rate_cents, contract_ends_at, display_name_override,
+  flat_fee_cents, included_events_override, note, org_id, plan_slug,
   retention_days_override, trial_ends_at
 ) values (
-  @anchor_day, @contract_ends_at, @display_name_override,
-  @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
+  @anchor_day, @block_rate_cents, @contract_ends_at, @display_name_override,
+  @flat_fee_cents, @included_events_override, @note, @org_id, @plan_slug,
   @retention_days_override, @trial_ends_at
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
+    block_rate_cents = excluded.block_rate_cents,
     contract_ends_at = excluded.contract_ends_at,
     display_name_override = excluded.display_name_override,
+    flat_fee_cents = excluded.flat_fee_cents,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
-    provider_product_id = excluded.provider_product_id,
     retention_days_override = excluded.retention_days_override,
     trial_ends_at = excluded.trial_ends_at
 returning *;
@@ -36,12 +37,12 @@ delete from billing_entitlements where org_id = @org_id;
 
 -- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
-  actor, anchor_day, contract_ends_at, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, provider_product_id,
+  actor, anchor_day, block_rate_cents, contract_ends_at, display_name_override,
+  flat_fee_cents, id, included_events_override, note, org_id, plan_slug,
   retention_days_override, trial_ends_at
 ) values (
-  @actor, @anchor_day, @contract_ends_at, @display_name_override,
-  @id, @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
+  @actor, @anchor_day, @block_rate_cents, @contract_ends_at, @display_name_override,
+  @flat_fee_cents, @id, @included_events_override, @note, @org_id, @plan_slug,
   @retention_days_override, @trial_ends_at
 );
 
@@ -75,18 +76,21 @@ where coalesce(processed_at, received_at) < @older_than;
 -- a payload ARRIVED, so this orders a delivery that overtakes another. org_id is
 -- never updated: attribution is decided once, on first sight.
 insert into billing_subscriptions (
-  currency, current_period_end, current_period_start, id, org_id, plan_slug,
-  price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
-  provider_updated_at, status
+  cancel_at_period_end, currency, current_period_end, current_period_start,
+  ended_at, id, on_demand, org_id, plan_slug, price_cents, provider,
+  provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status
 ) values (
-  @currency, @current_period_end, @current_period_start, @id, @org_id, @plan_slug,
-  @price_cents, @provider, @provider_customer_id, @provider_status, @provider_sub_id,
-  @provider_updated_at, @status
+  @cancel_at_period_end, @currency, @current_period_end, @current_period_start,
+  @ended_at, @id, @on_demand, @org_id, @plan_slug, @price_cents, @provider,
+  @provider_customer_id, @provider_status, @provider_sub_id, @provider_updated_at, @status
 )
 on conflict (provider, provider_sub_id) do update
-set currency = excluded.currency,
+set cancel_at_period_end = excluded.cancel_at_period_end,
+    currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
+    ended_at = excluded.ended_at,
+    on_demand = excluded.on_demand,
     plan_slug = excluded.plan_slug,
     price_cents = excluded.price_cents,
     provider_customer_id = excluded.provider_customer_id,
@@ -103,28 +107,22 @@ where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
 -- name: CreateBillingCheckoutSession :exec
 -- Written before the provider is called, because the ref has to be in the
 -- checkout's metadata. An abandoned checkout's row is pruned.
-insert into billing_checkout_sessions (org_id, provider, ref)
-values (@org_id, @provider, @ref);
+insert into billing_checkout_sessions (org_id, plan_slug, provider, ref)
+values (@org_id, @plan_slug, @provider, @ref);
 
--- name: GetBillingCheckoutSessionOrgID :one
+-- name: GetBillingCheckoutSession :one
 -- Attribution: turns a ref that came back on a delivery into the org pug chose
--- when it started the checkout.
-select org_id from billing_checkout_sessions
+-- when it started the checkout, and the card it pinned.
+select org_id, plan_slug from billing_checkout_sessions
 where provider = @provider and ref = @ref;
 
 -- name: PruneBillingCheckoutSessions :execrows
 -- A ref only has to outlive the gap between a checkout and its first delivery.
 delete from billing_checkout_sessions where create_time < @older_than;
 
--- name: GetBillingEntitlementProviderProductID :one
--- The product an operator staged this org to buy. It is what lets a payment
--- link's metadata.org_id attribute: buyer-settable on its own, it only counts
--- when an operator has already pointed this org at this product.
-select provider_product_id from billing_entitlements where org_id = @org_id;
-
 -- name: GetBillingSubscriptionPlanSlug :one
--- Read inside the apply lock so a delivery that ENDS a subscription keeps the
--- stored slug: a product dropped from config must not refuse a cancellation.
+-- The pinned card, read inside the apply lock so a delivery carrying no ref
+-- keeps it.
 select plan_slug from billing_subscriptions
 where provider = @provider and provider_sub_id = @provider_sub_id;
 
@@ -135,3 +133,106 @@ where provider = @provider and provider_sub_id = @provider_sub_id;
 select distinct org_id from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
 limit 2;
+
+-- name: InsertBillingInvoice :one
+-- The unique (org, period) key is the guard against two passes closing one
+-- period: the loser inserts nothing and reads no row.
+insert into billing_invoices (
+  amount_cents, billed_from, billed_to, blocks, currency, event_count, id, lines,
+  next_attempt_at, org_id, period_end, period_start, plan_slug, pricing, provider,
+  provider_sub_id, status, usage_computed_at
+) values (
+  @amount_cents, @billed_from, @billed_to, @blocks, @currency, @event_count, @id, @lines,
+  @next_attempt_at, @org_id, @period_end, @period_start, @plan_slug, @pricing, @provider,
+  @provider_sub_id, @status, @usage_computed_at
+)
+on conflict (org_id, period_start) do nothing
+returning *;
+
+-- name: InsertBillingInvoiceEvent :exec
+insert into billing_invoice_events (actor, detail, from_status, id, invoice_id, to_status)
+values (@actor, @detail, @from_status, @id, @invoice_id, @to_status);
+
+-- name: GetBillingInvoiceForUpdate :one
+select * from billing_invoices where id = @id for update;
+
+-- name: MarkBillingInvoiceCharging :one
+-- Committed before the provider is called: the row is the intent.
+update billing_invoices
+set status = 'charging', provider = @provider, provider_sub_id = @provider_sub_id
+where id = @id and status in ('open', 'failed')
+returning *;
+
+-- name: MarkBillingInvoiceCharged :one
+-- The newest payment: a retry after a decline must be polled, not the payment
+-- that failed.
+update billing_invoices
+set status = 'charged', attempts = attempts + 1, provider_payment_id = @provider_payment_id
+where id = @id and status = 'charging'
+returning *;
+
+-- name: MarkBillingInvoiceOpen :one
+-- The ambiguous charge that, on reading, produced no payment. Counts the
+-- attempt: a charge was POSTed, and without it the charging -> open cycle is
+-- unbounded and can take a real payment on every lap.
+update billing_invoices
+set status = 'open', next_attempt_at = @next_attempt_at, attempts = attempts + 1
+where id = @id and status = 'charging'
+returning *;
+
+-- name: MarkBillingInvoicePaid :one
+-- Every state but the settled ones: a late webhook for a charge settle already
+-- reopened has to land, or the next pass charges the customer twice.
+update billing_invoices
+set status = 'paid', paid_at = @paid_at,
+    provider_payment_id = coalesce(provider_payment_id, @provider_payment_id),
+    provider_invoice_url = coalesce(nullif(@provider_invoice_url, ''), provider_invoice_url)
+where id = @id and status not in ('paid', 'refunded', 'waived', 'void')
+returning *;
+
+-- name: MarkBillingInvoiceFailed :one
+-- A soft decline: retried at next_attempt_at. attempts counts only a refusal that
+-- created no payment; a payment that later fails was counted when it was created.
+update billing_invoices
+set status = 'failed', failed_at = @failed_at, next_attempt_at = @next_attempt_at,
+    last_error_code = @last_error_code, last_error_message = @last_error_message,
+    attempts = attempts + @count_attempt,
+    provider_payment_id = coalesce(provider_payment_id, nullif(@provider_payment_id, ''))
+where id = @id and status in ('charging', 'charged')
+returning *;
+
+-- name: MarkBillingInvoiceUncollectible :one
+update billing_invoices
+set status = 'uncollectible', failed_at = coalesce(@failed_at, failed_at), next_attempt_at = null,
+    last_error_code = @last_error_code, last_error_message = @last_error_message,
+    attempts = attempts + @count_attempt,
+    provider_payment_id = coalesce(provider_payment_id, nullif(@provider_payment_id, ''))
+where id = @id and status in ('open', 'charging', 'charged', 'failed')
+returning *;
+
+-- name: ReopenBillingInvoice :one
+-- A new payment method, or an operator's retry.
+update billing_invoices
+set status = 'open', next_attempt_at = @next_attempt_at
+where id = @id and status in ('failed', 'uncollectible')
+returning *;
+
+-- name: ListDunningBillingInvoicesByOrg :many
+select * from billing_invoices
+where org_id = @org_id and status in ('failed', 'uncollectible')
+order by period_start;
+
+-- name: VoidBillingInvoice :one
+-- Void stops a charge before it happens; one already in flight has to be settled
+-- first, or its payment lands on a row settle no longer scans.
+update billing_invoices
+set status = 'void', next_attempt_at = null
+where id = @id
+  and status not in ('charging', 'charged', 'paid', 'refunded', 'waived', 'void')
+returning *;
+
+-- name: MarkBillingInvoiceRefunded :one
+update billing_invoices
+set status = 'refunded'
+where id = @id and status = 'paid'
+returning *;

@@ -23,6 +23,13 @@ sql:
           - column: "billing_webhook_deliveries.payload"
             go_type:
               type: "[]byte"
+          # Top-level arrays and typed snapshots, decoded by the billing package.
+          - column: "billing_invoices.lines"
+            go_type:
+              type: "[]byte"
+          - column: "billing_invoices.pricing"
+            go_type:
+              type: "[]byte"
   - engine: 'postgresql'
     queries: 'schema/postgres/queries/write/*.sql'
     schema: 'schema/postgres/migrations'
@@ -44,5 +51,12 @@ sql:
           # Raw bytes: jsonb sorts keys, so a re-serialized payload never
           # re-verifies its signature.
           - column: "billing_webhook_deliveries.payload"
+            go_type:
+              type: "[]byte"
+          # Top-level arrays and typed snapshots, decoded by the billing package.
+          - column: "billing_invoices.lines"
+            go_type:
+              type: "[]byte"
+          - column: "billing_invoices.pricing"
             go_type:
               type: "[]byte"

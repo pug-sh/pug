@@ -83,7 +83,7 @@ func Run(ctx context.Context) error {
 	}
 	defer pgW.Close()
 
-	svc, err := corebilling.NewService(pgRO, pgW, billingCfg.Enabled, pay)
+	svc, err := corebilling.NewService(pgRO, pgW, billingCfg, pay)
 	if err != nil {
 		return setupFailed(ctx, "billing service", err)
 	}

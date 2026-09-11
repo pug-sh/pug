@@ -220,18 +220,20 @@ func TestNormalizeIgnoresNonSubscriptionDeliveries(t *testing.T) {
 // state pug has no word for is kept verbatim and is not live.
 func TestStatusMapping(t *testing.T) {
 	cases := map[string]struct {
-		want corebilling.SubStatus
-		live bool
+		want   corebilling.SubStatus
+		live   bool
+		parses bool
 	}{
-		"active":    {corebilling.SubStatusActive, true},
-		"on_hold":   {corebilling.SubStatusPastDue, true},
-		"paused":    {corebilling.SubStatusPaused, false},
-		"cancelled": {corebilling.SubStatusCancelled, false},
-		"expired":   {corebilling.SubStatusExpired, false},
-		"failed":    {corebilling.SubStatusFailed, false},
+		"active":    {corebilling.SubStatusActive, true, true},
+		"on_hold":   {corebilling.SubStatusPastDue, true, true},
+		"past_due":  {corebilling.SubStatusPastDue, true, true},
+		"paused":    {corebilling.SubStatusPaused, false, true},
+		"cancelled": {corebilling.SubStatusCancelled, false, true},
+		"expired":   {corebilling.SubStatusExpired, false, true},
+		"failed":    {corebilling.SubStatusFailed, false, true},
 		// Dodo has this state and pug has no word for it.
-		"pending":            {"pending", false},
-		"something_invented": {"something_invented", false},
+		"pending":            {"pending", false, false},
+		"something_invented": {"something_invented", false, false},
 	}
 	for in, want := range cases {
 		got := statusFromDodo(in)
@@ -241,64 +243,11 @@ func TestStatusMapping(t *testing.T) {
 		if got.Live() != want.live {
 			t.Errorf("statusFromDodo(%q).Live() = %v, want %v", in, got.Live(), want.live)
 		}
-		if _, known := corebilling.ParseSubStatus(string(got)); known != want.live && !want.live {
-			// Only the unmapped ones must fail to parse; paused/cancelled/expired/failed
-			// are pug's own words and parse fine while still not being live.
-			if in == "pending" || in == "something_invented" {
-				t.Errorf("ParseSubStatus(%q) accepted an unmapped provider state", got)
-			}
-		}
-	}
-}
-
-func TestProductIDs(t *testing.T) {
-	env := map[string]string{
-		"PUG_DODO_PRODUCT_STARTER": "prod_s",
-		"PUG_DODO_PRODUCT_GROWTH":  "prod_g",
-		// No SCALE key: a tier with no product is simply not purchasable.
-		"PUG_DODO_PRODUCT_CUSTOM": "prod_never_read",
-		"PUG_DODO_PRODUCT_FREE":   "prod_never_read",
-	}
-	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
-
-	got, err := ProductIDs(lookup)
-	if err != nil {
-		t.Fatalf("ProductIDs: %v", err)
-	}
-	want := map[string]string{"starter": "prod_s", "growth": "prod_g"}
-	if len(got) != len(want) {
-		t.Fatalf("ProductIDs = %v, want %v", got, want)
-	}
-	for slug, id := range want {
-		if got[slug] != id {
-			t.Errorf("ProductIDs[%q] = %q, want %q", slug, got[slug], id)
-		}
-	}
-
-	// Two tiers on one product makes an incoming subscription's tier ambiguous,
-	// and the webhook would pick one silently.
-	env["PUG_DODO_PRODUCT_SCALE"] = "prod_g"
-	if _, err := ProductIDs(lookup); err == nil {
-		t.Fatal("two tiers sharing a product id was accepted")
-	}
-}
-
-// Only the floors and custom are excluded. A retired tier keeps its mapping, or the
-// webhook could not place its existing holders' renewals and cancellations.
-func TestMappedSlug(t *testing.T) {
-	for _, tc := range []struct {
-		plan corebilling.Plan
-		want bool
-	}{
-		{corebilling.Plan{Slug: "growth"}, true},
-		{corebilling.Plan{Slug: "growth-v0", Retired: true}, true},
-		{corebilling.Plan{Slug: corebilling.SlugFree}, false},
-		{corebilling.Plan{Slug: corebilling.SlugTrial}, false},
-		{corebilling.Plan{Slug: corebilling.SlugCustom}, false},
-	} {
-		if got := mappedSlug(tc.plan); got != tc.want {
-			t.Errorf("mappedSlug(%q, retired=%v) = %v, want %v",
-				tc.plan.Slug, tc.plan.Retired, got, tc.want)
+		// An unmapped provider state must fail to parse, so it can only ever
+		// withhold. paused/cancelled/expired/failed are pug's own words: they parse
+		// fine while still not being live.
+		if _, known := corebilling.ParseSubStatus(string(got)); known != want.parses {
+			t.Errorf("ParseSubStatus(%q) known = %v, want %v", got, known, want.parses)
 		}
 	}
 }
@@ -435,5 +384,95 @@ func TestNormalizeRefusesMetadataThatIsNotAnObject(t *testing.T) {
 		RawPayload: []byte(body),
 	}); err == nil {
 		t.Fatal("metadata that is not an object was accepted")
+	}
+}
+
+// The mandate's own fields ride every subscription delivery: whether pug charges
+// it, whether the customer scheduled its end, and when it ended.
+func TestNormalizeCarriesTheMandateFields(t *testing.T) {
+	c := testClient(t, time.Now())
+	body := `{"type":"subscription.cancelled","data":{` +
+		`"subscription_id":"sub_1","product_id":"prod_mandate","status":"cancelled",` +
+		`"currency":"USD","recurring_pre_tax_amount":0,"on_demand":true,` +
+		`"cancel_at_next_billing_date":true,"cancelled_at":"2026-06-20T14:00:00Z",` +
+		`"customer":{"customer_id":"cus_1"},"metadata":{"org_id":"org_abc"}}}`
+
+	event, err := c.Normalize(corebilling.Delivery{EventType: "subscription.cancelled", RawPayload: []byte(body)})
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if !event.OnDemand || !event.CancelAtPeriodEnd {
+		t.Errorf("on_demand/cancel = %v/%v, want both true", event.OnDemand, event.CancelAtPeriodEnd)
+	}
+	if want := time.Date(2026, 6, 20, 14, 0, 0, 0, time.UTC); !event.EndedAt.Equal(want) {
+		t.Errorf("ended_at = %s, want %s", event.EndedAt, want)
+	}
+	if event.PaymentMethodUpdated {
+		t.Error("a cancellation was flagged as a payment method update")
+	}
+
+	updated, err := c.Normalize(corebilling.Delivery{
+		EventType:  "subscription.update_payment_method",
+		RawPayload: []byte(activeBody),
+	})
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if !updated.PaymentMethodUpdated {
+		t.Error("subscription.update_payment_method did not flag the new card")
+	}
+	// A recurring subscription decodes with on_demand false, which the boundary refuses.
+	if updated.OnDemand {
+		t.Error("a payload without on_demand decoded as on-demand")
+	}
+}
+
+// Payments settle invoices by the id pug put in the charge's metadata; a refund
+// names the payment it reversed.
+func TestNormalizePayment(t *testing.T) {
+	c := testClient(t, time.Now())
+	failed := `{"type":"payment.failed","data":{"payment_id":"pay_1","status":"failed",` +
+		`"error_code":"INSUFFICIENT_FUNDS","error_message":"Insufficient funds",` +
+		`"metadata":{"org_id":"org_abc","invoice_id":"inv_1"},"created_at":"2026-06-13T12:00:00Z"}}`
+	event, err := c.NormalizePayment(corebilling.Delivery{EventType: "payment.failed", RawPayload: []byte(failed)})
+	if err != nil {
+		t.Fatalf("NormalizePayment: %v", err)
+	}
+	if event.Refund || event.Payment.PaymentID != "pay_1" || event.Payment.InvoiceID != "inv_1" {
+		t.Errorf("event = %+v", event)
+	}
+	if event.Payment.Status != corebilling.PaymentFailed || event.Payment.ErrorCode != "INSUFFICIENT_FUNDS" {
+		t.Errorf("status/code = %q/%q", event.Payment.Status, event.Payment.ErrorCode)
+	}
+
+	succeeded := `{"type":"payment.succeeded","data":{"payment_id":"pay_2","status":"succeeded",` +
+		`"invoice_url":"https://dodo.example/inv/2","metadata":{"invoice_id":"inv_1"}}}`
+	event, err = c.NormalizePayment(corebilling.Delivery{EventType: "payment.succeeded", RawPayload: []byte(succeeded)})
+	if err != nil {
+		t.Fatalf("NormalizePayment: %v", err)
+	}
+	if event.Payment.Status != corebilling.PaymentSucceeded || event.Payment.InvoiceURL != "https://dodo.example/inv/2" {
+		t.Errorf("event = %+v", event)
+	}
+
+	refund := `{"type":"refund.succeeded","data":{"refund_id":"ref_1","payment_id":"pay_2","status":"succeeded"}}`
+	event, err = c.NormalizePayment(corebilling.Delivery{EventType: "refund.succeeded", RawPayload: []byte(refund)})
+	if err != nil {
+		t.Fatalf("NormalizePayment: %v", err)
+	}
+	if !event.Refund || event.Payment.PaymentID != "pay_2" {
+		t.Errorf("refund event = %+v", event)
+	}
+
+	// Every other type, and a subscription, normalize to nothing here.
+	for _, eventType := range []string{"subscription.active", "dispute.opened", "some.future.thing"} {
+		event, err := c.NormalizePayment(corebilling.Delivery{EventType: eventType, RawPayload: []byte(`{"type":"x","data":{"payment_id":"pay_9"}}`)})
+		if err != nil || !event.IsZero() {
+			t.Errorf("%s: NormalizePayment = %+v, %v; want nothing", eventType, event, err)
+		}
+	}
+	// A payment whose shape has changed is an error, so the delivery is retried.
+	if _, err := c.NormalizePayment(corebilling.Delivery{EventType: "payment.succeeded", RawPayload: []byte(`{"type":"payment.succeeded","data":{}}`)}); err == nil {
+		t.Error("a payment payload carrying no payment id normalized cleanly")
 	}
 }

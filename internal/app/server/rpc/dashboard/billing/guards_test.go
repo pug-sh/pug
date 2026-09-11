@@ -36,7 +36,7 @@ func TestEveryRPCRefusesACancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(buyerCtx(t))
 	cancel()
 
-	slug := "growth"
+	slug := corebilling.CurrentSlug
 	sessionID := checkoutSessionID
 	calls := map[string]func() error{
 		"GetBillingStatus": func() error {
@@ -60,6 +60,18 @@ func TestEveryRPCRefusesACancelledContext(t *testing.T) {
 		},
 		"ListPlans": func() error {
 			_, err := srv.ListPlans(ctx, connect.NewRequest(&billingv1.ListPlansRequest{OrgId: &orgID}))
+			return err
+		},
+		"GetUpcomingInvoice": func() error {
+			_, err := srv.GetUpcomingInvoice(ctx, connect.NewRequest(&billingv1.GetUpcomingInvoiceRequest{OrgId: &orgID}))
+			return err
+		},
+		"ListInvoices": func() error {
+			_, err := srv.ListInvoices(ctx, connect.NewRequest(&billingv1.ListInvoicesRequest{OrgId: &orgID}))
+			return err
+		},
+		"RemovePaymentMethod": func() error {
+			_, err := srv.RemovePaymentMethod(ctx, connect.NewRequest(&billingv1.RemovePaymentMethodRequest{OrgId: &orgID}))
 			return err
 		},
 	}
@@ -102,7 +114,7 @@ func TestSessionPathsReportAnUnknownOrg(t *testing.T) {
 	srv := newPayingServer(t, pg, true)
 	unknown := xid.New().String()
 
-	if _, err := checkout(t, srv, unknown, "growth"); err == nil {
+	if _, err := checkout(t, srv, unknown, corebilling.CurrentSlug); err == nil {
 		t.Error("CreateCheckoutSession opened a checkout for an org that does not exist")
 	} else if ae := appErr(t, err); ae.Code() != connect.CodeNotFound {
 		t.Errorf("CreateCheckoutSession code = %s, want NotFound", ae.Code())
@@ -132,13 +144,14 @@ func TestGetBillingStatusCarriesTheContractEnd(t *testing.T) {
 		t.Errorf("contract_ends_at = %s with no deal stored, want absent", before.GetContractEndsAt().AsTime())
 	}
 
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, nil)
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true}, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
 	ends := time.Now().AddDate(1, 0, 0).UTC().Truncate(time.Second)
 	if _, err := svc.SetPlan(t.Context(), orgID, "tester@localhost", corebilling.Change{
-		PlanSlug:       "growth",
+		PlanSlug:       corebilling.SlugCustom,
+		FlatFeeCents:   new(int64(40_000)),
 		ContractEndsAt: &ends,
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)

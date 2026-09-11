@@ -36,7 +36,7 @@ type deps struct {
 	redis           *redis.Client
 	port            string
 	demoEnabled     bool
-	billingEnabled  bool
+	billingCfg      corebilling.Config
 
 	// readyFailures counts consecutive failed readiness probes. It distinguishes
 	// a transient blip (logged at WARN) from a sustained outage (escalated to
@@ -190,6 +190,6 @@ func newDeps(ctx context.Context) (*deps, error) {
 		redis:           redisClient,
 		port:            serverCfg.Port,
 		demoEnabled:     serverCfg.DemoEnabled,
-		billingEnabled:  billingCfg.Enabled,
+		billingCfg:      billingCfg,
 	}, nil
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
-// CLI is the billing commands and the pools they run against.
 type CLI struct {
 	svc  *corebilling.Service
 	pgRO *pgxpool.Pool
@@ -48,9 +47,8 @@ func New(ctx context.Context) (*CLI, error) {
 		return nil, fmt.Errorf("postgres writer pool: %w", err)
 	}
 
-	// No payments: this CLI never talks to a provider, and a nil Payments is the
-	// same supported shape a deployment without credentials runs in.
-	svc, err := corebilling.NewService(pgRO, pgW, billingCfg.Enabled, nil)
+	// No payments: this CLI never talks to a provider.
+	svc, err := corebilling.NewService(pgRO, pgW, billingCfg, nil)
 	if err != nil {
 		pgRO.Close()
 		pgW.Close()
@@ -64,55 +62,90 @@ func (c *CLI) Close() {
 	c.pgW.Close()
 }
 
+// ShowOptions selects the optional sections of a report.
+type ShowOptions struct {
+	History  bool
+	Invoices bool
+}
+
 // Show prints the resolved entitlement and the stored row beneath it: a lapsed
-// deal's quota is invisible in the resolved answer and still carries onto a set.
-func (c *CLI) Show(ctx context.Context, out io.Writer, orgID string, history bool) error {
+// deal's terms are invisible in the resolved answer and still carry onto a set.
+func (c *CLI) Show(ctx context.Context, out io.Writer, orgID string, opts ShowOptions) error {
 	rec, err := c.svc.StoredRecord(ctx, orgID)
 	if err != nil {
 		return err
 	}
 	var entries []corebilling.HistoryEntry
-	if history {
+	if opts.History {
 		if entries, err = c.svc.History(ctx, orgID); err != nil {
 			return err
 		}
 	}
-	return c.report(ctx, out, orgID, rec, entries)
+	var invoices []corebilling.Invoice
+	if opts.Invoices {
+		if invoices, err = c.svc.ListInvoices(ctx, orgID); err != nil {
+			return err
+		}
+		if invoices == nil {
+			invoices = []corebilling.Invoice{}
+		}
+	}
+	return c.report(ctx, out, orgID, rec, entries, invoices)
 }
 
-// Set grants a plan, merging change over whatever is stored.
 func (c *CLI) Set(ctx context.Context, out io.Writer, orgID, actor string, change corebilling.Change) error {
 	rec, err := c.svc.SetPlan(ctx, orgID, actor, change)
 	if err != nil {
 		return err
 	}
-	return c.report(ctx, out, orgID, rec, nil)
+	return c.report(ctx, out, orgID, rec, nil, nil)
 }
 
-// ExtendTrial moves the org's trial end to days from now.
 func (c *CLI) ExtendTrial(ctx context.Context, out io.Writer, orgID, actor string, days int) error {
 	rec, err := c.svc.ExtendTrial(ctx, orgID, actor, days, time.Now())
 	if err != nil {
 		return err
 	}
-	return c.report(ctx, out, orgID, rec, nil)
+	return c.report(ctx, out, orgID, rec, nil, nil)
 }
 
-// Clear deletes the row, returning the org to the derived trial-then-free floors.
 func (c *CLI) Clear(ctx context.Context, out io.Writer, orgID, actor string) error {
 	if err := c.svc.Clear(ctx, orgID, actor); err != nil {
 		return err
 	}
-	// The empty record rather than a re-read: the delete is what just committed,
-	// so this is the authoritative answer even where the reader is a replica.
-	return c.report(ctx, out, orgID, corebilling.Record{}, nil)
+	// The empty record rather than a re-read: the delete is what just committed.
+	return c.report(ctx, out, orgID, corebilling.Record{}, nil, nil)
 }
 
-// report renders one org's state. rec is passed in rather than re-read so a
-// mutation reports the row its own transaction wrote.
-func (c *CLI) report(ctx context.Context, out io.Writer, orgID string, rec corebilling.Record, history []corebilling.HistoryEntry) error {
-	// The display name is what tells an operator they have the right org; the
-	// service resolves entitlement and knows nothing about it.
+// Preview prices a count of events on what the org would be charged today: the
+// same function the invoice uses.
+func (c *CLI) Preview(ctx context.Context, out io.Writer, orgID string, events int64) error {
+	ent, quote, err := c.svc.Preview(ctx, orgID, events, time.Now())
+	if err != nil {
+		return err
+	}
+	return writePreview(out, ent, events, quote)
+}
+
+func (c *CLI) VoidInvoice(ctx context.Context, out io.Writer, id, actor, note string) error {
+	inv, err := c.svc.VoidInvoice(ctx, id, actor, note)
+	if err != nil {
+		return err
+	}
+	return writeInvoices(out, []corebilling.Invoice{inv})
+}
+
+func (c *CLI) RetryInvoice(ctx context.Context, out io.Writer, id, actor string) error {
+	inv, err := c.svc.RetryInvoice(ctx, id, actor, time.Now())
+	if err != nil {
+		return err
+	}
+	return writeInvoices(out, []corebilling.Invoice{inv})
+}
+
+func (c *CLI) report(ctx context.Context, out io.Writer, orgID string, rec corebilling.Record,
+	history []corebilling.HistoryEntry, invoices []corebilling.Invoice,
+) error {
 	read := dbread.New(c.pgRO)
 	org, err := read.GetOrgByID(ctx, orgID)
 	if err != nil {
@@ -131,5 +164,5 @@ func (c *CLI) report(ctx context.Context, out io.Writer, orgID string, rec coreb
 	if err != nil {
 		return err
 	}
-	return writeReport(out, org, ent, rec, subs, history)
+	return writeReport(out, org, ent, rec, subs, history, invoices)
 }

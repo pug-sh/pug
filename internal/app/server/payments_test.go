@@ -58,7 +58,7 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", strings.ToUpper(dodo.Name))
 	t.Setenv("PUG_DODO_API_KEY", "sk_test")
 	t.Setenv("PUG_DODO_WEBHOOK_SECRET", "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw")
-	t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_growth")
+	t.Setenv("PUG_DODO_MANDATE_PRODUCT", "prod_mandate")
 	// The trailing slash is the one a dashboard base URL is usually written with.
 	t.Setenv("PUG_DASHBOARD_BASE_URL", "https://app.example.com/")
 
@@ -75,8 +75,8 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	if want := "https://app.example.com" + checkoutReturnPath; payments.ReturnURL != want {
 		t.Errorf("ReturnURL = %q, want %q", payments.ReturnURL, want)
 	}
-	if payments.ProductBySlug["growth"] != "prod_growth" {
-		t.Errorf("ProductBySlug = %v", payments.ProductBySlug)
+	if payments.MandateProduct != "prod_mandate" {
+		t.Errorf("MandateProduct = %q", payments.MandateProduct)
 	}
 }
 
@@ -97,19 +97,6 @@ func TestNewPaymentsWithoutAWebhookSecret(t *testing.T) {
 	}
 	if payments.Provider.CanVerify() {
 		t.Error("CanVerify = true with no webhook secret; the route would mount and take unverified deliveries")
-	}
-}
-
-func TestNewPaymentsRejectsAMisconfiguredCatalog(t *testing.T) {
-	t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)
-	t.Setenv("PUG_DODO_API_KEY", "sk_test")
-	// One product cannot back two tiers: the webhook resolves a plan by product
-	// id and would pick one silently.
-	t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_same")
-	t.Setenv("PUG_DODO_PRODUCT_SCALE", "prod_same")
-
-	if _, err := newPayments(t.Context()); err == nil {
-		t.Fatal("two tiers sharing a product id was accepted")
 	}
 }
 

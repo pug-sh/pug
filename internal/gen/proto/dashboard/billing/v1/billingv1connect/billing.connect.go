@@ -48,6 +48,15 @@ const (
 	// BillingServiceListPlansProcedure is the fully-qualified name of the BillingService's ListPlans
 	// RPC.
 	BillingServiceListPlansProcedure = "/dashboard.billing.v1.BillingService/ListPlans"
+	// BillingServiceGetUpcomingInvoiceProcedure is the fully-qualified name of the BillingService's
+	// GetUpcomingInvoice RPC.
+	BillingServiceGetUpcomingInvoiceProcedure = "/dashboard.billing.v1.BillingService/GetUpcomingInvoice"
+	// BillingServiceListInvoicesProcedure is the fully-qualified name of the BillingService's
+	// ListInvoices RPC.
+	BillingServiceListInvoicesProcedure = "/dashboard.billing.v1.BillingService/ListInvoices"
+	// BillingServiceRemovePaymentMethodProcedure is the fully-qualified name of the BillingService's
+	// RemovePaymentMethod RPC.
+	BillingServiceRemovePaymentMethodProcedure = "/dashboard.billing.v1.BillingService/RemovePaymentMethod"
 )
 
 // BillingServiceClient is a client for the dashboard.billing.v1.BillingService service.
@@ -56,23 +65,34 @@ type BillingServiceClient interface {
 	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
 	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-	// the viewer floor, but starting a checkout spends money. The price lives on
-	// the provider's product; this request names a plan slug, never an amount.
+	// Opens a mandate-only checkout: it authorizes a payment method and charges
+	// nothing. Admin-only, since it is the step that lets pug take money. The
+	// request names a plan slug -- the current rate card or custom -- never an
+	// amount; usage is priced and charged by pug after each period.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
 	// URL. Admin-only, like the checkout it settles. session_id is a claim -- the
 	// subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
-	// Opens the provider's customer portal, where plan changes, card updates,
-	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+	// Opens the provider's customer portal, where card updates, invoices and the
+	// provider's own cancellation live -- hence no ChangePlan. Cancelling through
+	// pug is RemovePaymentMethod, which charges the period first.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor: the
-	// person reading the quota banner wants to know what the next tier costs, they
-	// just cannot buy it. Never returns a product id, and never the floors.
+	// The current rate card, plus custom for an org whose row records a deal. On
+	// the viewer floor: the person reading the quota banner wants to know what
+	// usage costs, they just cannot add a card.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
+	// The running period priced so far, on the viewer floor beside the usage
+	// meter: the same count, priced. Read `counted` before rendering an amount.
+	GetUpcomingInvoice(context.Context, *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error)
+	// Closed periods newest first, with the provider's receipt. Admin-only: a
+	// receipt carries a company's billing details.
+	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
+	// Pug's own cancellation, in the order the portal cannot promise: close the
+	// period to date, charge it, then cancel the mandate. Admin-only.
+	RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error)
 }
 
 // NewBillingServiceClient constructs a client for the dashboard.billing.v1.BillingService service.
@@ -116,6 +136,24 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("ListPlans")),
 			connect.WithClientOptions(opts...),
 		),
+		getUpcomingInvoice: connect.NewClient[v1.GetUpcomingInvoiceRequest, v1.GetUpcomingInvoiceResponse](
+			httpClient,
+			baseURL+BillingServiceGetUpcomingInvoiceProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("GetUpcomingInvoice")),
+			connect.WithClientOptions(opts...),
+		),
+		listInvoices: connect.NewClient[v1.ListInvoicesRequest, v1.ListInvoicesResponse](
+			httpClient,
+			baseURL+BillingServiceListInvoicesProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+			connect.WithClientOptions(opts...),
+		),
+		removePaymentMethod: connect.NewClient[v1.RemovePaymentMethodRequest, v1.RemovePaymentMethodResponse](
+			httpClient,
+			baseURL+BillingServiceRemovePaymentMethodProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("RemovePaymentMethod")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -126,6 +164,9 @@ type billingServiceClient struct {
 	confirmCheckout       *connect.Client[v1.ConfirmCheckoutRequest, v1.ConfirmCheckoutResponse]
 	createPortalSession   *connect.Client[v1.CreatePortalSessionRequest, v1.CreatePortalSessionResponse]
 	listPlans             *connect.Client[v1.ListPlansRequest, v1.ListPlansResponse]
+	getUpcomingInvoice    *connect.Client[v1.GetUpcomingInvoiceRequest, v1.GetUpcomingInvoiceResponse]
+	listInvoices          *connect.Client[v1.ListInvoicesRequest, v1.ListInvoicesResponse]
+	removePaymentMethod   *connect.Client[v1.RemovePaymentMethodRequest, v1.RemovePaymentMethodResponse]
 }
 
 // GetBillingStatus calls dashboard.billing.v1.BillingService.GetBillingStatus.
@@ -153,29 +194,55 @@ func (c *billingServiceClient) ListPlans(ctx context.Context, req *connect.Reque
 	return c.listPlans.CallUnary(ctx, req)
 }
 
+// GetUpcomingInvoice calls dashboard.billing.v1.BillingService.GetUpcomingInvoice.
+func (c *billingServiceClient) GetUpcomingInvoice(ctx context.Context, req *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error) {
+	return c.getUpcomingInvoice.CallUnary(ctx, req)
+}
+
+// ListInvoices calls dashboard.billing.v1.BillingService.ListInvoices.
+func (c *billingServiceClient) ListInvoices(ctx context.Context, req *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error) {
+	return c.listInvoices.CallUnary(ctx, req)
+}
+
+// RemovePaymentMethod calls dashboard.billing.v1.BillingService.RemovePaymentMethod.
+func (c *billingServiceClient) RemovePaymentMethod(ctx context.Context, req *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error) {
+	return c.removePaymentMethod.CallUnary(ctx, req)
+}
+
 // BillingServiceHandler is an implementation of the dashboard.billing.v1.BillingService service.
 type BillingServiceHandler interface {
 	// What the org may send this period: plan, quota, and the window both are
 	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
 	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-	// the viewer floor, but starting a checkout spends money. The price lives on
-	// the provider's product; this request names a plan slug, never an amount.
+	// Opens a mandate-only checkout: it authorizes a payment method and charges
+	// nothing. Admin-only, since it is the step that lets pug take money. The
+	// request names a plan slug -- the current rate card or custom -- never an
+	// amount; usage is priced and charged by pug after each period.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
 	// URL. Admin-only, like the checkout it settles. session_id is a claim -- the
 	// subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
-	// Opens the provider's customer portal, where plan changes, card updates,
-	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+	// Opens the provider's customer portal, where card updates, invoices and the
+	// provider's own cancellation live -- hence no ChangePlan. Cancelling through
+	// pug is RemovePaymentMethod, which charges the period first.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor: the
-	// person reading the quota banner wants to know what the next tier costs, they
-	// just cannot buy it. Never returns a product id, and never the floors.
+	// The current rate card, plus custom for an org whose row records a deal. On
+	// the viewer floor: the person reading the quota banner wants to know what
+	// usage costs, they just cannot add a card.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
+	// The running period priced so far, on the viewer floor beside the usage
+	// meter: the same count, priced. Read `counted` before rendering an amount.
+	GetUpcomingInvoice(context.Context, *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error)
+	// Closed periods newest first, with the provider's receipt. Admin-only: a
+	// receipt carries a company's billing details.
+	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
+	// Pug's own cancellation, in the order the portal cannot promise: close the
+	// period to date, charge it, then cancel the mandate. Admin-only.
+	RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -215,6 +282,24 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("ListPlans")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceGetUpcomingInvoiceHandler := connect.NewUnaryHandler(
+		BillingServiceGetUpcomingInvoiceProcedure,
+		svc.GetUpcomingInvoice,
+		connect.WithSchema(billingServiceMethods.ByName("GetUpcomingInvoice")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceListInvoicesHandler := connect.NewUnaryHandler(
+		BillingServiceListInvoicesProcedure,
+		svc.ListInvoices,
+		connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceRemovePaymentMethodHandler := connect.NewUnaryHandler(
+		BillingServiceRemovePaymentMethodProcedure,
+		svc.RemovePaymentMethod,
+		connect.WithSchema(billingServiceMethods.ByName("RemovePaymentMethod")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.billing.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServiceGetBillingStatusProcedure:
@@ -227,6 +312,12 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 			billingServiceCreatePortalSessionHandler.ServeHTTP(w, r)
 		case BillingServiceListPlansProcedure:
 			billingServiceListPlansHandler.ServeHTTP(w, r)
+		case BillingServiceGetUpcomingInvoiceProcedure:
+			billingServiceGetUpcomingInvoiceHandler.ServeHTTP(w, r)
+		case BillingServiceListInvoicesProcedure:
+			billingServiceListInvoicesHandler.ServeHTTP(w, r)
+		case BillingServiceRemovePaymentMethodProcedure:
+			billingServiceRemovePaymentMethodHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -254,4 +345,16 @@ func (UnimplementedBillingServiceHandler) CreatePortalSession(context.Context, *
 
 func (UnimplementedBillingServiceHandler) ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.ListPlans is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) GetUpcomingInvoice(context.Context, *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.GetUpcomingInvoice is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.ListInvoices is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.RemovePaymentMethod is not implemented"))
 }

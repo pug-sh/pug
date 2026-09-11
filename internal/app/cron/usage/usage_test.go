@@ -649,8 +649,8 @@ func TestConfigReadsTheDocumentedEnvVar(t *testing.T) {
 		want      int
 	}{
 		{"documented default", "2", 2},
-		{"unset falls back", "", defaultRescanDays},
-		{"negative is clamped on the way through", "-5", defaultRescanDays},
+		{"unset falls back", "", coreusage.DefaultRescanDays},
+		{"negative is clamped on the way through", "-5", coreusage.DefaultRescanDays},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := map[string]string{}
@@ -677,13 +677,13 @@ func TestRescanDaysClampsToTheDefault(t *testing.T) {
 		name     string
 		in, want int
 	}{
-		{"unset falls back", 0, defaultRescanDays},
-		{"negative falls back", -3, defaultRescanDays},
+		{"unset falls back", 0, coreusage.DefaultRescanDays},
+		{"negative falls back", -3, coreusage.DefaultRescanDays},
 		{"positive is honoured", 5, 5},
-		{"at the retention window is honoured", maxRescanDays, maxRescanDays},
+		{"at the retention window is honoured", coreusage.MaxRescanDays, coreusage.MaxRescanDays},
 		// Past retention the meter re-inserts day cells the same pass's prune then
 		// deletes, forever, and the ClickHouse scan stops pruning partitions.
-		{"absurd clamps to retention", 100_000, maxRescanDays},
+		{"absurd clamps to retention", 100_000, coreusage.MaxRescanDays},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := rescanDays(t.Context(), tc.in); got != tc.want {

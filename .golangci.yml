@@ -41,6 +41,10 @@ linters:
             - "**/internal/core/events/**"
             - "**/internal/core/insights/**"
             - "**/internal/app/workers/**"
+            - "**/internal/app/server/rpc/sdk/**"
+            - "**/internal/attribution/**"
+            - "**/internal/botdetect/**"
+            - "**/internal/cookieless/**"
             - "**/internal/deps/clickhouse/**"
             - "!$test"
           deny:
@@ -148,6 +152,7 @@ linters:
         # fully-qualified name, so an unqualified pattern would also match other packages.
         - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
         - github\.com/pug-sh/pug/internal/app/cron/billing\.setupFailed
+        - github\.com/pug-sh/pug/internal/app/cron/billinginvoice\.setupFailed
     gosec:
       excludes:
         - G115

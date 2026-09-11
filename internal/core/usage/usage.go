@@ -241,3 +241,24 @@ func CeilDayUTC(t time.Time) time.Time {
 	}
 	return day.AddDate(0, 0, 1)
 }
+
+const (
+	// DefaultRescanDays is the trailing window the meter recomputes each run, and
+	// the invoicing grace: after it a period's count is as final as the meter makes it.
+	DefaultRescanDays = 2
+	// Retention is a year of day cells plus 25 days of slack.
+	Retention     = 390 * 24 * time.Hour
+	MaxRescanDays = int(Retention / (24 * time.Hour))
+)
+
+// RescanDays clamps a configured PUG_USAGE_RESCAN_DAYS: unset, 0 and negative
+// fall back to the default, and values past retention clamp to it.
+func RescanDays(configured int) int {
+	switch {
+	case configured > MaxRescanDays:
+		return MaxRescanDays
+	case configured > 0:
+		return configured
+	}
+	return DefaultRescanDays
+}

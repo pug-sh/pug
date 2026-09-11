@@ -26,16 +26,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-const (
-	defaultRescanDays = 2
-
-	// Past the retention window a wider rescan re-inserts day cells that the same
-	// pass's prune then deletes, every pass, forever — and the ClickHouse scan stops
-	// pruning partitions long before that. Expressed from retention so the two
-	// cannot drift.
-	maxRescanDays = int(retention / (24 * time.Hour))
-)
-
 type Config struct {
 	// Trailing window the meter recomputes each run, absorbing late arrivals.
 	// No envconfig default: an unset var and an explicit 0 both resolve through
@@ -47,18 +37,16 @@ type Config struct {
 // negative value would put `from` in the future, so every read comes back empty
 // and the pass meters nothing -- forever, and quietly.
 func rescanDays(ctx context.Context, configured int) int {
+	using := coreusage.RescanDays(configured)
 	switch {
-	case configured > maxRescanDays:
+	case configured > using:
 		slog.WarnContext(ctx, "clamping PUG_USAGE_RESCAN_DAYS to the retention window",
-			slog.Int("configured", configured), slog.Int("using", maxRescanDays))
-		return maxRescanDays
-	case configured > 0:
-		return configured
+			slog.Int("configured", configured), slog.Int("using", using))
 	case configured < 0:
 		slog.WarnContext(ctx, "ignoring a negative PUG_USAGE_RESCAN_DAYS",
-			slog.Int("configured", configured), slog.Int("using", defaultRescanDays))
+			slog.Int("configured", configured), slog.Int("using", using))
 	}
-	return defaultRescanDays
+	return using
 }
 
 // Sub-tasks held to a daily cadence regardless of how often the schedule fires.
@@ -68,8 +56,7 @@ const (
 )
 
 const (
-	// A year of history plus 25 days of slack.
-	retention = 390 * 24 * time.Hour
+	retention = coreusage.Retention
 
 	// Both are measured against cron_state. Pruning stays daily because the
 	// retention boundary only moves once a day, so a more frequent pass would

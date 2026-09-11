@@ -14,9 +14,10 @@ service BillingService {
   // from both. Plan fields arrive already resolved, overrides applied.
   rpc GetBillingStatus(GetBillingStatusRequest) returns (GetBillingStatusResponse) {}
 
-  // Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-  // the viewer floor, but starting a checkout spends money. The price lives on
-  // the provider's product; this request names a plan slug, never an amount.
+  // Opens a mandate-only checkout: it authorizes a payment method and charges
+  // nothing. Admin-only, since it is the step that lets pug take money. The
+  // request names a plan slug -- the current rate card or custom -- never an
+  // amount; usage is priced and charged by pug after each period.
   rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse) {}
 
   // Verifies one checkout against the provider and applies its subscription:
@@ -25,19 +26,32 @@ service BillingService {
   // subscription must carry this org.
   rpc ConfirmCheckout(ConfirmCheckoutRequest) returns (ConfirmCheckoutResponse) {}
 
-  // Opens the provider's customer portal, where plan changes, card updates,
-  // invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+  // Opens the provider's customer portal, where card updates, invoices and the
+  // provider's own cancellation live -- hence no ChangePlan. Cancelling through
+  // pug is RemovePaymentMethod, which charges the period first.
   // FailedPrecondition for an org that has never checked out.
   rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
 
-  // The tiers this deployment sells, in display order. On the viewer floor: the
-  // person reading the quota banner wants to know what the next tier costs, they
-  // just cannot buy it. Never returns a product id, and never the floors.
+  // The current rate card, plus custom for an org whose row records a deal. On
+  // the viewer floor: the person reading the quota banner wants to know what
+  // usage costs, they just cannot add a card.
   rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {}
+
+  // The running period priced so far, on the viewer floor beside the usage
+  // meter: the same count, priced. Read `counted` before rendering an amount.
+  rpc GetUpcomingInvoice(GetUpcomingInvoiceRequest) returns (GetUpcomingInvoiceResponse) {}
+
+  // Closed periods newest first, with the provider's receipt. Admin-only: a
+  // receipt carries a company's billing details.
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse) {}
+
+  // Pug's own cancellation, in the order the portal cannot promise: close the
+  // period to date, charge it, then cancel the mandate. Admin-only.
+  rpc RemovePaymentMethod(RemovePaymentMethodRequest) returns (RemovePaymentMethodResponse) {}
 }
 
-// BillingStatus is derived from the clock on every read, never stored. The
-// states a provider reports live on SubscriptionStatus instead.
+// BillingStatus is derived from the clock and the ledger on every read, never
+// stored. The states a provider reports live on SubscriptionStatus instead.
 enum BillingStatus {
   BILLING_STATUS_UNSPECIFIED = 0;
   // Inside the trial window, which runs from org creation unless extended.
@@ -46,6 +60,34 @@ enum BillingStatus {
   BILLING_STATUS_ACTIVE = 2;
   // The floor: never trialed, trial expired, or a contract that has ended.
   BILLING_STATUS_FREE = 3;
+  // An invoice failed or is uncollectible. Derived from the ledger, so it clears
+  // the moment a retry succeeds -- but nothing ages it out, so an uncollectible
+  // invoice holds it until a retry, a new card or an operator void. Worth a
+  // banner, never a degraded product.
+  BILLING_STATUS_PAST_DUE = 4;
+}
+
+// RateCard prices usage in graduated tiers over cumulative 100k-event blocks:
+// each tier charges the blocks up to and including up_to_block, and the last
+// tier's 0 is unbounded.
+message RateCard {
+  int64 block_events = 1;
+  // Blocks free every period before the first tier applies.
+  int64 free_blocks = 2;
+  repeated RateTier tiers = 3;
+}
+
+message RateTier {
+  int64 up_to_block = 1;
+  int64 cents_per_block = 2;
+}
+
+// CustomTerms is a negotiated deal, priced in pug: a flat fee every period, a
+// flat rate per block over the allowance, or both. ABSENT means none.
+message CustomTerms {
+  google.protobuf.Int64Value flat_fee_cents = 1;
+  google.protobuf.Int64Value block_rate_cents = 2;
+  google.protobuf.Int64Value included_events = 3;
 }
 
 // SubscriptionStatus is the provider subscription behind the entitlement, in pug's
@@ -72,9 +114,10 @@ message GetBillingStatusRequest {
 message Plan {
   string slug = 1;
   string display_name = 2;
-  // The tier's LIST price, in minor units of `currency` -- never what a negotiated
-  // deal is charged. ABSENT is the custom tier, which is not a price of zero. A
-  // wrapper because a bare int64 would reach the dashboard as 0.
+  // ABSENT for every card and every deal: usage is priced per block, so there is
+  // no single price to name -- read rate_card or custom_terms instead. Set only
+  // when billing is switched off, where it is the free floor's 0. A wrapper
+  // because a bare int64 would reach the dashboard as 0.
   google.protobuf.Int64Value price_cents = 3;
   // ISO 4217.
   string currency = 4;
@@ -111,6 +154,13 @@ message GetBillingStatusResponse {
   // Whether a portal session would open: this org has a customer at the provider,
   // which only a checkout leaves behind. Not implied by subscription_status.
   bool manageable = 12;
+  // Exactly one of these is set while billing is on and the plan resolves.
+  RateCard rate_card = 14;
+  CustomTerms custom_terms = 15;
+  // A live payment method pug can charge.
+  bool chargeable = 16;
+  // When the running period is invoiced: period_end plus the invoicing grace.
+  google.protobuf.Timestamp next_charge_at = 17;
 }
 
 message CreateCheckoutSessionRequest {
@@ -165,7 +215,7 @@ message CreatePortalSessionResponse {
 
 message ListPlansRequest {
   // Scoped to an org because purchasability is: only the org whose row records a
-  // product can buy the custom tier.
+  // deal is offered the custom tier.
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
@@ -174,8 +224,9 @@ message ListPlansRequest {
 message PlanOption {
   string slug = 1;
   string display_name = 2;
-  // List price, in minor units of `currency`. ABSENT is the custom tier, whose
-  // price lives in the provider -- absence is never zero, here or below.
+  // Always ABSENT: pug prices usage per block, so an option has no single price.
+  // Kept so a client reading it gets absence rather than a wrong number, and
+  // absence is never zero, here or below.
   google.protobuf.Int64Value price_cents = 3;
   // ISO 4217.
   string currency = 4;
@@ -186,8 +237,87 @@ message PlanOption {
   // Whether a checkout for THIS tier would open -- the same helper
   // CreateCheckoutSession refuses on, so a dead button is impossible.
   bool purchasable = 6;
+  RateCard rate_card = 8;
+  CustomTerms custom_terms = 9;
 }
 
 message ListPlansResponse {
   repeated PlanOption plans = 1;
 }
+
+message InvoiceLine {
+  string description = 1;
+  int64 blocks = 2;
+  int64 cents_per_block = 3;
+  int64 amount_cents = 4;
+}
+
+message GetUpcomingInvoiceRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetUpcomingInvoiceResponse {
+  google.protobuf.Timestamp period_start = 1;
+  google.protobuf.Timestamp period_end = 2;
+  google.protobuf.Timestamp next_charge_at = 3;
+  // The meter's stamp and whether it has summed this period: the same three
+  // states as GetUsage. Without `counted`, event_count and amount_cents are
+  // absent and must render as "computing", never as $0.
+  google.protobuf.Timestamp usage_computed_at = 4;
+  bool counted = 5;
+  int64 event_count = 6;
+  int64 blocks = 7;
+  repeated InvoiceLine lines = 8;
+  // ABSENT until the count is in and the plan can be priced.
+  google.protobuf.Int64Value amount_cents = 9;
+  string currency = 10;
+}
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  INVOICE_STATUS_OPEN = 1;
+  INVOICE_STATUS_CHARGING = 2;
+  INVOICE_STATUS_CHARGED = 3;
+  INVOICE_STATUS_PAID = 4;
+  INVOICE_STATUS_FAILED = 5;
+  INVOICE_STATUS_UNCOLLECTIBLE = 6;
+  INVOICE_STATUS_WAIVED = 7;
+  INVOICE_STATUS_VOID = 8;
+  INVOICE_STATUS_REFUNDED = 9;
+}
+
+message Invoice {
+  string id = 1;
+  google.protobuf.Timestamp period_start = 2;
+  google.protobuf.Timestamp period_end = 3;
+  // The days actually billed: clipped to the mandate and past the trial.
+  google.protobuf.Timestamp billed_from = 4;
+  google.protobuf.Timestamp billed_to = 5;
+  int64 event_count = 6;
+  int64 blocks = 7;
+  repeated InvoiceLine lines = 8;
+  int64 amount_cents = 9;
+  string currency = 10;
+  InvoiceStatus status = 11;
+  // The provider's receipt, once paid.
+  string provider_invoice_url = 12;
+  google.protobuf.Timestamp create_time = 13;
+  google.protobuf.Timestamp paid_at = 14;
+  google.protobuf.Timestamp failed_at = 15;
+  int32 attempts = 16;
+  google.protobuf.Timestamp next_attempt_at = 17;
+}
+
+message ListInvoicesRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+}
+
+message RemovePaymentMethodRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemovePaymentMethodResponse {}

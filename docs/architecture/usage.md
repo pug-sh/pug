@@ -1,5 +1,9 @@
 # Event Usage Metering
 
+> `PUG_USAGE_RESCAN_DAYS` is now the **invoicing grace** as well as the meter's
+> trailing window: a period is priced that many days after it ends, so the two
+> cannot drift. See [`usage-billing.md`](usage-billing.md) §8.1.
+
 Detailed reference for event usage metering (`internal/core/usage`,
 `internal/app/cron`, `proto/dashboard/usage`). Linked from the root
 [`CLAUDE.md`](../../CLAUDE.md) — read this when working on the meter, the
@@ -21,10 +25,12 @@ Three properties everything below preserves.
 2. **The meter is optional.** A deployment that never schedules `pug cron usage`
    has no numbers, and nothing else degrades. `GetUsage` reports an absent
    `usage_computed_at`, which the client renders as "unknown" — never as zero.
-3. **Counts are reporting, not entitlement.** Nothing in pug branches on a usage
-   number. Tiers and quotas do not exist yet: `billing_entitlements` (migration
-   019) carries the schema, and `anchor_day` is the only column anything here
-   reads. There is no over-limit state anywhere.
+3. **Counts are reporting; they are also the invoice.** No *ingestion* path
+   branches on a usage number — nothing is rejected, throttled or dropped for a
+   quota, and there is no over-limit state. But since usage-based pricing landed,
+   a period's count is the amount charged for it
+   ([`usage-billing.md`](usage-billing.md) §4), so a wrong count is a wrong
+   invoice.
 
 ## 2. What gets counted
 
@@ -342,7 +348,7 @@ deleted org, since no RPC deletes one.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2 — the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. |
+| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2 — the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. **It is also the invoicing grace** ([`usage-billing.md`](usage-billing.md) §4): a period is priced this many days after it ends, so raising it delays every invoice by the same amount. |
 
 That is the whole surface. There is no enable flag: scheduling `pug cron usage` is
 the switch, and the RPC serves whatever it stored.

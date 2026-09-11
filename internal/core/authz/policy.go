@@ -131,5 +131,8 @@ func buildPolicyRules() [][]string {
 	// a new verb: both mint a provider session. The READ half stays on the floor.
 	rules = append(rules, grant(roleAdmin, ResourceBilling, ActionCreate)...)
 
+	// admin — the invoice ledger, whose receipts carry billing details.
+	rules = append(rules, grant(roleAdmin, ResourceInvoice, ActionRead)...)
+
 	return rules
 }

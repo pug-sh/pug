@@ -15,6 +15,8 @@ var (
 	later = time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 )
 
+const freeAllowance = 100_000
+
 func quota(t *testing.T, ent corebilling.Entitlement) int64 {
 	t.Helper()
 	if ent.IncludedEvents == nil {
@@ -23,28 +25,44 @@ func quota(t *testing.T, ent corebilling.Entitlement) int64 {
 	return *ent.IncludedEvents
 }
 
-// An org with no row is the ordinary case: its entire entitlement is its age.
+func deal(fee, rate, allowance int64) corebilling.Record {
+	return corebilling.Record{
+		Present: true, PlanSlug: corebilling.SlugCustom,
+		FlatFeeCents: fee, BlockRateCents: rate, IncludedEventsOverride: allowance,
+	}
+}
+
+// An org with no row is the ordinary case: its entitlement is its age and the
+// current card.
 func TestResolveDerivesTheFloorsFromOrgAge(t *testing.T) {
 	inTrial := corebilling.Resolve(created, corebilling.Record{}, nil, created.AddDate(0, 0, 3), true)
 	if inTrial.Status != corebilling.StatusTrialing {
 		t.Errorf("status on day 3 = %s, want TRIALING", inTrial.Status)
 	}
-	if got := quota(t, inTrial); got != 500_000 {
-		t.Errorf("trial quota = %d, want 500000", got)
+	if inTrial.Slug != corebilling.CurrentSlug || inTrial.Card == nil {
+		t.Errorf("slug/card = %q/%v, want the current card", inTrial.Slug, inTrial.Card)
+	}
+	if got := quota(t, inTrial); got != freeAllowance {
+		t.Errorf("trial quota = %d, want the card's free allowance %d", got, freeAllowance)
 	}
 	if want := created.AddDate(0, 0, corebilling.TrialDays); !inTrial.TrialEndsAt.Equal(want) {
 		t.Errorf("trial_ends_at = %s, want %s", inTrial.TrialEndsAt, want)
 	}
 
-	// One tick past the trial, with nothing having run in between: expiry is lazy,
-	// which is the whole reason this subsystem has no sweep job.
+	// One tick past the trial, with nothing having run in between: expiry is lazy.
 	expired := corebilling.Resolve(created, corebilling.Record{}, nil,
 		created.AddDate(0, 0, corebilling.TrialDays).Add(time.Nanosecond), true)
 	if expired.Status != corebilling.StatusFree {
 		t.Errorf("status just past the trial = %s, want FREE", expired.Status)
 	}
-	if got := quota(t, expired); got != 10_000 {
-		t.Errorf("free quota = %d, want 10000", got)
+	if got := quota(t, expired); got != freeAllowance {
+		t.Errorf("free quota = %d, want %d", got, freeAllowance)
+	}
+	if expired.Chargeable {
+		t.Error("an org with no mandate is chargeable")
+	}
+	if expired.PriceCents != nil {
+		t.Errorf("price = %d, want absent — a card has no list price", *expired.PriceCents)
 	}
 }
 
@@ -57,67 +75,104 @@ func TestResolveWindowRunsFromTheAnniversary(t *testing.T) {
 		t.Errorf("period_start = %s, want %s (the org signed up on the 10th)", ent.PeriodStart, wantStart)
 	}
 
-	// A contract end is the end of the AGREEMENT, and must not shorten the window.
-	withContract := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth",
-		ContractEndsAt: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
-	}, nil, later, true)
-	if !withContract.PeriodStart.Equal(ent.PeriodStart) || !withContract.PeriodEnd.Equal(ent.PeriodEnd) {
+	withContract := deal(40_000, 0, 0)
+	withContract.ContractEndsAt = time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	got := corebilling.Resolve(created, withContract, nil, later, true)
+	if !got.PeriodStart.Equal(ent.PeriodStart) || !got.PeriodEnd.Equal(ent.PeriodEnd) {
 		t.Errorf("a contract moved the quota window to [%s, %s), want [%s, %s)",
-			withContract.PeriodStart, withContract.PeriodEnd, ent.PeriodStart, ent.PeriodEnd)
+			got.PeriodStart, got.PeriodEnd, ent.PeriodStart, ent.PeriodEnd)
 	}
 
-	// An explicit anchor overrides the signup day.
 	anchored := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth", AnchorDay: 22,
+		Present: true, PlanSlug: corebilling.SlugFree, AnchorDay: 22,
 	}, nil, later, true)
 	if want := time.Date(2026, 5, 22, 0, 0, 0, 0, time.UTC); !anchored.PeriodStart.Equal(want) {
 		t.Errorf("anchored period_start = %s, want %s", anchored.PeriodStart, want)
 	}
 }
 
-func TestResolveGrantedPlan(t *testing.T) {
+// A pinned card is grandfathering, not a grant: the org still resolves FREE
+// with no mandate, on that card's numbers.
+func TestResolvePinnedCard(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "scale",
+		Present: true, PlanSlug: corebilling.CurrentSlug,
 	}, nil, later, true)
-
-	if ent.Status != corebilling.StatusActive {
-		t.Errorf("status = %s, want ACTIVE", ent.Status)
+	if ent.Status != corebilling.StatusFree {
+		t.Errorf("status = %s, want FREE", ent.Status)
 	}
-	if got := quota(t, ent); got != 1_000_000 {
-		t.Errorf("quota = %d, want 1000000", got)
+	if ent.Card == nil || ent.Card.Slug != corebilling.CurrentSlug {
+		t.Fatalf("card = %v, want the pinned card", ent.Card)
 	}
-	if ent.PriceCents == nil || *ent.PriceCents != 3_000 || ent.Currency != "USD" {
-		t.Errorf("price = %v %s, want 3000 USD", ent.PriceCents, ent.Currency)
+	if got := quota(t, ent); got != freeAllowance {
+		t.Errorf("quota = %d, want %d", got, freeAllowance)
+	}
+	if ent.RetentionDays == nil || *ent.RetentionDays != corebilling.RetentionDays {
+		t.Errorf("retention = %v, want the card's %d", ent.RetentionDays, corebilling.RetentionDays)
 	}
 }
 
-// A lapsed contract falls to the free floor WITH the floor's numbers. Keeping the
-// negotiated quota after the deal ended is the one bug here that costs money.
-func TestResolveDropsAnExpiredContractToTheFloor(t *testing.T) {
-	rec := corebilling.Record{
-		Present: true, PlanSlug: "scale",
-		IncludedEventsOverride: 5_000_000,
-		DisplayNameOverride:    "Acme Enterprise",
-		ContractEndsAt:         later.Add(-time.Hour),
+func TestResolveCustomDeal(t *testing.T) {
+	rec := deal(40_000, 300, 5_000_000)
+	rec.DisplayNameOverride = "Acme Enterprise"
+	ent := corebilling.Resolve(created, rec, nil, later, true)
+
+	if ent.Status != corebilling.StatusActive {
+		t.Errorf("status = %s, want ACTIVE — a deal in force is a contract", ent.Status)
 	}
+	if ent.Slug != corebilling.SlugCustom || ent.Terms == nil {
+		t.Fatalf("slug/terms = %q/%v, want custom with terms", ent.Slug, ent.Terms)
+	}
+	if *ent.Terms != (corebilling.CustomTerms{FlatFeeCents: 40_000, BlockRateCents: 300, IncludedEvents: 5_000_000}) {
+		t.Errorf("terms = %+v", *ent.Terms)
+	}
+	if got := quota(t, ent); got != 5_000_000 {
+		t.Errorf("quota = %d, want the deal's allowance", got)
+	}
+	if ent.DisplayName != "Acme Enterprise" {
+		t.Errorf("display_name = %q, want the negotiated name", ent.DisplayName)
+	}
+	if ent.PriceCents != nil {
+		t.Errorf("price = %d, want absent", *ent.PriceCents)
+	}
+	if ent.Chargeable {
+		t.Error("a deal with no mandate is chargeable")
+	}
+
+	// A fee-only deal has no point at which charges begin.
+	if flat := corebilling.Resolve(created, deal(40_000, 0, 0), nil, later, true); flat.IncludedEvents != nil {
+		t.Errorf("fee-only quota = %d, want none", *flat.IncludedEvents)
+	}
+	// A rate-only deal charges from the first block: a real 0.
+	if metered := corebilling.Resolve(created, deal(0, 300, 0), nil, later, true); metered.IncludedEvents == nil || *metered.IncludedEvents != 0 {
+		t.Errorf("rate-only quota = %v, want 0", metered.IncludedEvents)
+	}
+}
+
+// A lapsed contract falls to the CURRENT CARD, not to free: the customer is
+// still a customer, and the card is what anyone without a deal pays.
+func TestResolveDropsAnExpiredContractToTheCard(t *testing.T) {
+	rec := deal(40_000, 300, 5_000_000)
+	rec.DisplayNameOverride = "Acme Enterprise"
+	rec.ContractEndsAt = later.Add(-time.Hour)
 
 	ent := corebilling.Resolve(created, rec, nil, later, true)
 	if ent.Status != corebilling.StatusFree {
 		t.Errorf("status after the contract ended = %s, want FREE", ent.Status)
 	}
-	if got := quota(t, ent); got != 10_000 {
-		t.Errorf("quota after the contract ended = %d, want the free floor's 10000", got)
+	if ent.Slug != corebilling.CurrentSlug || ent.Terms != nil || ent.Card == nil {
+		t.Errorf("slug = %q terms = %v, want the current card", ent.Slug, ent.Terms)
 	}
-	if ent.DisplayName != "Free" {
-		t.Errorf("display name after the contract ended = %q, want the free floor's", ent.DisplayName)
+	if got := quota(t, ent); got != freeAllowance {
+		t.Errorf("quota after the contract ended = %d, want the card's %d", got, freeAllowance)
+	}
+	if ent.DisplayName != "Usage" {
+		t.Errorf("display name after the contract ended = %q, want the card's", ent.DisplayName)
 	}
 	// The date stays visible: it is now the answer to "when did this end".
 	if !ent.ContractEndsAt.Equal(rec.ContractEndsAt) {
 		t.Errorf("contract_ends_at = %s, want it preserved after expiry", ent.ContractEndsAt)
 	}
 
-	// One tick before it ends, the deal is still fully in force.
 	stillLive := corebilling.Resolve(created, rec, nil, rec.ContractEndsAt.Add(-time.Nanosecond), true)
 	if stillLive.Status != corebilling.StatusActive || quota(t, stillLive) != 5_000_000 {
 		t.Errorf("just before expiry: status=%s quota=%d, want ACTIVE 5000000",
@@ -125,15 +180,10 @@ func TestResolveDropsAnExpiredContractToTheFloor(t *testing.T) {
 	}
 }
 
-// An operator names the last day a deal runs; Resolve compares half-open. The
-// conversion between the two is what keeps the org from losing the day it paid
-// for, so it is pinned against Resolve rather than on its own.
+// An operator names the last day a deal runs; Resolve compares half-open.
 func TestContractEndExclusiveCoversTheWholeNamedDay(t *testing.T) {
-	lastDay := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
-	rec := corebilling.Record{
-		Present: true, PlanSlug: "scale",
-		ContractEndsAt: corebilling.ContractEndExclusive(lastDay),
-	}
+	rec := deal(40_000, 0, 0)
+	rec.ContractEndsAt = corebilling.ContractEndExclusive(time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC))
 
 	lateOnTheLastDay := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 	if got := corebilling.Resolve(created, rec, nil, lateOnTheLastDay, true); got.Status != corebilling.StatusActive {
@@ -145,26 +195,25 @@ func TestContractEndExclusiveCoversTheWholeNamedDay(t *testing.T) {
 	}
 }
 
-// The trial is the org's age, and a row's mere existence is not a decision about
-// it: recording an anchor day or a note must not cut a trial that is still
-// running.
+// A row's mere existence is not a decision about the trial.
 func TestResolveKeepsTheDerivedTrialWhenARowExists(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{
 		Present: true, PlanSlug: corebilling.SlugFree, AnchorDay: 5,
 	}, nil, created.AddDate(0, 0, 3), true)
-
 	if ent.Status != corebilling.StatusTrialing {
 		t.Errorf("status on day 3 = %s, want TRIALING; storing an anchor day ended the trial", ent.Status)
 	}
-	if got := quota(t, ent); got != 500_000 {
-		t.Errorf("quota = %d, want the trial's 500000", got)
+	pinned := corebilling.Resolve(created, corebilling.Record{
+		Present: true, PlanSlug: corebilling.CurrentSlug,
+	}, nil, created.AddDate(0, 0, 3), true)
+	if pinned.Status != corebilling.StatusTrialing {
+		t.Errorf("status on day 3 with a pinned card = %s, want TRIALING; a pin is not a grant", pinned.Status)
 	}
 }
 
-// A comped quota is recorded on a floor plan, which has no grant to lapse — so
-// the trial promotion, which renames the resolved slug to "trial", must not drop
-// it.
-func TestResolveKeepsAFloorPlansOverridesWhileTrialing(t *testing.T) {
+// A comped allowance is a whole number of blocks on the org's card, and it
+// survives the trial promotion.
+func TestResolveCompedAllowanceWhileTrialing(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{
 		Present: true, PlanSlug: corebilling.SlugFree,
 		IncludedEventsOverride: 5_000_000,
@@ -176,151 +225,93 @@ func TestResolveKeepsAFloorPlansOverridesWhileTrialing(t *testing.T) {
 		t.Errorf("status = %s, want TRIALING", ent.Status)
 	}
 	if got := quota(t, ent); got != 5_000_000 {
-		t.Errorf("quota = %d, want the comped 5000000; extending the trial cut it", got)
+		t.Errorf("quota = %d, want the comped 5000000", got)
+	}
+	if ent.Card == nil || ent.Card.FreeBlocks != 50 {
+		t.Errorf("card free blocks = %v, want 50 — the allowance must price as free blocks", ent.Card)
 	}
 	if ent.DisplayName != "Acme (comped)" {
 		t.Errorf("display name = %q, want the negotiated one", ent.DisplayName)
 	}
 }
 
-// A time-boxed grant on a floor plan is a deal like any other, so its overrides
-// end when its contract does. Without this a comped pilot never expires.
-func TestResolveExpiresAFloorPlansOverrides(t *testing.T) {
+// A time-boxed comp is a deal like any other, so its allowance ends when its
+// contract does.
+func TestResolveExpiresACompedAllowance(t *testing.T) {
 	rec := corebilling.Record{
 		Present: true, PlanSlug: corebilling.SlugFree,
 		IncludedEventsOverride: 5_000_000,
 		ContractEndsAt:         later.Add(-time.Hour),
 	}
-	if got := quota(t, corebilling.Resolve(created, rec, nil, later, true)); got != 10_000 {
-		t.Errorf("quota after the pilot ended = %d, want the free floor's 10000", got)
+	if got := quota(t, corebilling.Resolve(created, rec, nil, later, true)); got != freeAllowance {
+		t.Errorf("quota after the pilot ended = %d, want %d", got, freeAllowance)
 	}
-
 	rec.ContractEndsAt = later.AddDate(0, 1, 0)
 	if got := quota(t, corebilling.Resolve(created, rec, nil, later, true)); got != 5_000_000 {
 		t.Errorf("quota while the pilot runs = %d, want 5000000", got)
 	}
 }
 
-func TestResolveAppliesNegotiatedOverrides(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: corebilling.SlugCustom,
-		IncludedEventsOverride: 5_000_000,
-		DisplayNameOverride:    "Acme Enterprise",
-	}, nil, later, true)
-
-	if got := quota(t, ent); got != 5_000_000 {
-		t.Errorf("quota = %d, want the negotiated 5000000", got)
-	}
-	if ent.DisplayName != "Acme Enterprise" {
-		t.Errorf("display_name = %q, want the negotiated name", ent.DisplayName)
-	}
-	if ent.Slug != corebilling.SlugCustom {
-		t.Errorf("slug = %q, want the tier the deal names", ent.Slug)
-	}
-}
-
-// The deal's own price is the payments provider's, so the custom tier reports
-// none rather than a stale copy.
-func TestResolveReportsNoPriceForACustomDeal(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: corebilling.SlugCustom, IncludedEventsOverride: 5_000_000,
-	}, nil, later, true)
-
-	if ent.PriceCents != nil {
-		t.Errorf("price = %d; a deal's price is not pug's to report", *ent.PriceCents)
-	}
-}
-
-// Each override patches only its own field, so a deal that changed the quota
-// alone still shows the catalog's name and price.
-func TestResolveOverridesAreIndependent(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth", IncludedEventsOverride: 2_000_000,
-	}, nil, later, true)
-
-	if got := quota(t, ent); got != 2_000_000 {
-		t.Errorf("quota = %d, want the override", got)
-	}
-	if ent.DisplayName != "Growth" || ent.PriceCents == nil || *ent.PriceCents != 2_000 {
-		t.Errorf("name/price = %q/%v, want the catalog's Growth/2000", ent.DisplayName, ent.PriceCents)
-	}
-}
-
-// The floor tiers are free, which is a price of zero and not the absence of one.
-func TestResolveKeepsTheFloorPriceOfZero(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, nil, later, true)
-
-	if ent.PriceCents == nil {
-		t.Fatal("the free tier reports no price at all; want a price of 0")
-	}
-	if *ent.PriceCents != 0 {
-		t.Errorf("price = %d, want 0", *ent.PriceCents)
-	}
-}
-
 // Switched off means a self-hosted install: no quota anywhere, so no banner can
 // fire even if a client ignores billing_enabled.
 func TestResolveWithBillingOffHasNoQuota(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "scale", IncludedEventsOverride: 5_000_000,
-	}, nil, later, false)
-
+	ent := corebilling.Resolve(created, deal(40_000, 300, 5_000_000), nil, later, false)
 	if ent.BillingEnabled {
 		t.Error("billing_enabled is true with the switch off")
 	}
 	if ent.IncludedEvents != nil {
 		t.Errorf("quota = %d with billing off, want none", *ent.IncludedEvents)
 	}
-	// Same direction as the quota: a self-hosted install bounds nothing, and a
-	// number here would be a retention promise nobody made.
 	if ent.RetentionDays != nil {
 		t.Errorf("retention = %d days with billing off, want none", *ent.RetentionDays)
 	}
-	if ent.Status != corebilling.StatusFree {
-		t.Errorf("status = %s with billing off, want FREE", ent.Status)
+	if ent.Status != corebilling.StatusFree || ent.Slug != corebilling.SlugFree {
+		t.Errorf("status/slug = %s/%s with billing off, want FREE/free", ent.Status, ent.Slug)
 	}
-	// The window is still real: usage is metered whether or not billing is on.
+	if ent.Card != nil || ent.Terms != nil {
+		t.Error("billing off resolved a card or terms")
+	}
 	if ent.PeriodStart.IsZero() || ent.PeriodEnd.IsZero() {
 		t.Error("period bounds are missing with billing off")
 	}
-	// Absent price is the wire encoding for the custom tier, so a self-hosted
-	// install must report the free floor's 0 rather than nothing.
-	if ent.PriceCents == nil {
-		t.Error("price is absent with billing off, which reads as a negotiated deal")
-	} else if *ent.PriceCents != 0 {
-		t.Errorf("price = %d with billing off, want the free floor's 0", *ent.PriceCents)
+	if ent.PriceCents == nil || *ent.PriceCents != 0 {
+		t.Errorf("price = %v with billing off, want the free floor's 0", ent.PriceCents)
 	}
 }
 
-// Only reachable if a slug is dropped from the catalog while rows still name it.
-// Resolving to "free, 10,000" would tell a paying customer they are over their
-// limit, so this fails open on the number instead.
-func TestResolveUnknownPlanHasNoQuota(t *testing.T) {
+// Only reachable if a card is dropped from the catalog while rows still name it.
+// Resolving to the current card's allowance would tell a paying customer they
+// are over their limit, so this fails open on the number instead.
+func TestResolveUnknownCardHasNoQuota(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth-v9",
+		Present: true, PlanSlug: "usage-2020-01",
 	}, nil, later, true)
-
-	if ent.IncludedEvents != nil {
-		t.Errorf("quota = %d for an unknown plan, want none — never the free floor", *ent.IncludedEvents)
+	if ent.IncludedEvents != nil || ent.Card != nil {
+		t.Errorf("quota = %v card = %v for an unknown card, want none", ent.IncludedEvents, ent.Card)
+	}
+	if ent.Slug != "usage-2020-01" {
+		t.Errorf("slug = %q, want the row's own", ent.Slug)
+	}
+	if ent.RetentionDays != nil {
+		t.Errorf("retention = %d days for an unknown card, want none", *ent.RetentionDays)
 	}
 
-	// A negotiated quota on the same row still applies: it is the customer's own
-	// number and owes nothing to the catalog.
-	withOverride := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth-v9", IncludedEventsOverride: 750_000,
-	}, nil, later, true)
-	if got := quota(t, withOverride); got != 750_000 {
-		t.Errorf("quota = %d, want the negotiated 750000", got)
+	// The trial is the org's age and owes nothing to the row's card.
+	young := corebilling.Resolve(created, corebilling.Record{
+		Present: true, PlanSlug: "usage-2020-01",
+	}, nil, created.AddDate(0, 0, 3), true)
+	if young.Status != corebilling.StatusTrialing {
+		t.Errorf("status on day 3 = %s, want TRIALING", young.Status)
 	}
 }
 
-// An extended trial is the one thing that puts a trial date on the row.
+// An extended trial is the one thing that puts a trial date on the row; a deal
+// in force outranks it.
 func TestResolveStoredTrialWins(t *testing.T) {
 	ends := later.AddDate(0, 0, 20)
 	ent := corebilling.Resolve(created, corebilling.Record{
 		Present: true, PlanSlug: corebilling.SlugFree, TrialEndsAt: ends,
 	}, nil, later, true)
-
 	if ent.Status != corebilling.StatusTrialing {
 		t.Errorf("status = %s, want TRIALING", ent.Status)
 	}
@@ -328,20 +319,14 @@ func TestResolveStoredTrialWins(t *testing.T) {
 		t.Errorf("trial_ends_at = %s, want the stored %s", ent.TrialEndsAt, ends)
 	}
 
-	// A paid plan outranks a lingering trial date, so a customer who converted
-	// mid-trial cannot be demoted by a stale timestamp.
-	converted := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "scale", TrialEndsAt: ends,
-	}, nil, later, true)
-	if converted.Status != corebilling.StatusActive {
-		t.Errorf("status = %s for a paid plan with a live trial date, want ACTIVE", converted.Status)
+	rec := deal(40_000, 0, 0)
+	rec.TrialEndsAt = ends
+	if converted := corebilling.Resolve(created, rec, nil, later, true); converted.Status != corebilling.StatusActive {
+		t.Errorf("status = %s for a deal with a live trial date, want ACTIVE", converted.Status)
 	}
 }
 
-// A time-boxed comp is stored as a floor plan, and an operator may extend the
-// trial on one. The contract must still end both: without this the deal expires
-// onto the TRIAL floor's 500,000 rather than the free floor's 10,000, and renews
-// there indefinitely.
+// A time-boxed comp with an extended trial: the contract must still end both.
 func TestResolveExpiresAnExtendedTrialWithItsContract(t *testing.T) {
 	rec := corebilling.Record{
 		Present: true, PlanSlug: corebilling.SlugFree,
@@ -349,16 +334,13 @@ func TestResolveExpiresAnExtendedTrialWithItsContract(t *testing.T) {
 		TrialEndsAt:            later.AddDate(0, 6, 0),
 		ContractEndsAt:         later.Add(-time.Hour),
 	}
-
 	ent := corebilling.Resolve(created, rec, nil, later, true)
 	if ent.Status != corebilling.StatusFree {
 		t.Errorf("status after the comp ended = %s, want FREE", ent.Status)
 	}
-	if got := quota(t, ent); got != 10_000 {
-		t.Errorf("quota after the comp ended = %d, want the free floor's 10000", got)
+	if got := quota(t, ent); got != freeAllowance {
+		t.Errorf("quota after the comp ended = %d, want %d", got, freeAllowance)
 	}
-
-	// One tick before it ends, the extended trial is still running.
 	stillLive := corebilling.Resolve(created, rec, nil, rec.ContractEndsAt.Add(-time.Nanosecond), true)
 	if stillLive.Status != corebilling.StatusTrialing {
 		t.Errorf("status just before the comp ends = %s, want TRIALING", stillLive.Status)
@@ -366,8 +348,7 @@ func TestResolveExpiresAnExtendedTrialWithItsContract(t *testing.T) {
 }
 
 // An operator names a calendar day; the day must mean the one their picker
-// showed, whatever zone it produced. Reading it in UTC first shifts the date for
-// any zone east of UTC and lapses the deal before the named day begins.
+// showed, whatever zone it produced.
 func TestContractEndExclusiveIsZoneStable(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -378,64 +359,41 @@ func TestContractEndExclusiveIsZoneStable(t *testing.T) {
 		{"west of UTC", time.Date(2026, 12, 31, 20, 0, 0, 0, time.FixedZone("PST", -8*3600))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := corebilling.Record{
-				Present: true, PlanSlug: "scale",
-				ContractEndsAt: corebilling.ContractEndExclusive(tc.lastDay),
-			}
+			rec := deal(40_000, 0, 0)
+			rec.ContractEndsAt = corebilling.ContractEndExclusive(tc.lastDay)
 			lateOnTheLastDay := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 			if got := corebilling.Resolve(created, rec, nil, lateOnTheLastDay, true); got.Status != corebilling.StatusActive {
-				t.Errorf("status at %s = %s, want ACTIVE — the named day is inclusive", lateOnTheLastDay, got.Status)
+				t.Errorf("status at %s = %s, want ACTIVE", lateOnTheLastDay, got.Status)
 			}
 			nextMidnight := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 			if got := corebilling.Resolve(created, rec, nil, nextMidnight, true); got.Status != corebilling.StatusFree {
-				t.Errorf("status at %s = %s, want FREE — the deal ends when the day does", nextMidnight, got.Status)
+				t.Errorf("status at %s = %s, want FREE", nextMidnight, got.Status)
 			}
 		})
 	}
 }
 
-// Present is the whole row's discriminator. A caller that builds a Record by
-// hand and forgets it must get the same answer as one that passes none, rather
-// than have its anchor day and trial date honoured while its plan is ignored.
+// Present is the whole row's discriminator.
 func TestResolveIgnoresEveryFieldOfAnAbsentRow(t *testing.T) {
 	absent := corebilling.Resolve(created, corebilling.Record{}, nil, later, true)
 	populated := corebilling.Resolve(created, corebilling.Record{
 		AnchorDay:              22,
-		PlanSlug:               "scale",
+		PlanSlug:               corebilling.SlugCustom,
+		FlatFeeCents:           40_000,
 		IncludedEventsOverride: 5_000_000,
 		RetentionDaysOverride:  3_650,
 		DisplayNameOverride:    "Acme Enterprise",
 		TrialEndsAt:            later.AddDate(0, 1, 0),
 		ContractEndsAt:         later.AddDate(1, 0, 0),
 	}, nil, later, true)
-
-	// Compared flattened: Entitlement holds pointers, so == would compare addresses.
 	if flatten(populated) != flatten(absent) {
 		t.Errorf("a Record with Present unset resolved to\n%s\nwant the no-row answer\n%s",
 			flatten(populated), flatten(absent))
 	}
 }
 
-// A slug the catalog dropped must not cancel a trial the org is still inside;
-// the trial is its age, and owes nothing to the row's plan.
-func TestResolveUnknownPlanKeepsALiveTrial(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth-v9",
-	}, nil, created.AddDate(0, 0, 3), true)
-
-	if ent.Status != corebilling.StatusTrialing {
-		t.Errorf("status on day 3 = %s, want TRIALING", ent.Status)
-	}
-	if got := quota(t, ent); got != 500_000 {
-		t.Errorf("quota = %d, want the trial's 500000", got)
-	}
-}
-
-// The trial date is kept once past, like the contract date, so a client can say
-// when the trial ended rather than only when it will.
 func TestResolveKeepsTheTrialDateAfterItPasses(t *testing.T) {
 	ent := corebilling.Resolve(created, corebilling.Record{}, nil, later, true)
-
 	if ent.Status != corebilling.StatusFree {
 		t.Fatalf("status = %s, want FREE", ent.Status)
 	}
@@ -444,70 +402,36 @@ func TestResolveKeepsTheTrialDateAfterItPasses(t *testing.T) {
 	}
 }
 
-// Retention is a term of the tier like its quota, and it moves with the plan:
-// the ladder is what the pricing page sells.
-func TestResolveReportsThePlansRetention(t *testing.T) {
-	for _, tc := range []struct {
-		slug string
-		want int64
-	}{
-		{"starter", corebilling.RetentionYearDays},
-		{"growth", 3 * corebilling.RetentionYearDays},
-		{"scale", 7 * corebilling.RetentionYearDays},
-	} {
-		t.Run(tc.slug, func(t *testing.T) {
-			ent := corebilling.Resolve(created, corebilling.Record{
-				Present: true, PlanSlug: tc.slug,
-			}, nil, later, true)
-			if got := retention(t, ent); got != tc.want {
-				t.Errorf("retention = %d days, want %d", got, tc.want)
-			}
-		})
+// Retention is five years on every card and every deal; a deal may name more.
+func TestResolveRetention(t *testing.T) {
+	if got := retention(t, corebilling.Resolve(created, corebilling.Record{}, nil, later, true)); got != corebilling.RetentionDays {
+		t.Errorf("retention with no row = %d days, want %d", got, corebilling.RetentionDays)
 	}
-
-	// No row at all is the free floor's year, derived like everything else.
-	if got := retention(t, corebilling.Resolve(created, corebilling.Record{}, nil, later, true)); got != corebilling.RetentionYearDays {
-		t.Errorf("retention with no row = %d days, want the free floor's %d", got, corebilling.RetentionYearDays)
+	if got := retention(t, corebilling.Resolve(created, deal(40_000, 0, 0), nil, later, true)); got != corebilling.RetentionDays {
+		t.Errorf("retention on a deal = %d days, want %d", got, corebilling.RetentionDays)
 	}
-}
-
-// A deal's retention is the org's own, and it expires with the deal — the same
-// rule the quota follows, because both are terms of the same agreement.
-func TestResolveAppliesANegotiatedRetention(t *testing.T) {
-	rec := corebilling.Record{
-		Present: true, PlanSlug: corebilling.SlugCustom,
-		IncludedEventsOverride: 5_000_000,
-		RetentionDaysOverride:  10 * corebilling.RetentionYearDays,
-	}
-
+	rec := deal(40_000, 0, 0)
+	rec.RetentionDaysOverride = 10 * corebilling.RetentionYearDays
 	if got := retention(t, corebilling.Resolve(created, rec, nil, later, true)); got != 3_650 {
 		t.Errorf("retention = %d days, want the negotiated 3650", got)
 	}
-
-	// A lapsed deal falls to the free floor's year with everything else. Worth
-	// pinning: this is the one transition that shortens a retention promise.
 	rec.ContractEndsAt = later.Add(-time.Hour)
-	if got := retention(t, corebilling.Resolve(created, rec, nil, later, true)); got != corebilling.RetentionYearDays {
-		t.Errorf("retention after the deal ended = %d days, want the free floor's %d",
-			got, corebilling.RetentionYearDays)
+	if got := retention(t, corebilling.Resolve(created, rec, nil, later, true)); got != corebilling.RetentionDays {
+		t.Errorf("retention after the deal ended = %d days, want the card's %d", got, corebilling.RetentionDays)
 	}
 }
 
-// A slug the catalog dropped keeps the row's own numbers rather than the floor's:
-// imposing a shorter retention on a paying customer is the wrong way to fail.
-func TestResolveUnknownPlanHasNoRetentionBound(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth-v9",
-	}, nil, later, true)
-	if ent.RetentionDays != nil {
-		t.Errorf("retention = %d days for an unknown plan, want none", *ent.RetentionDays)
+// Every status Resolve produces, plus the ledger's, has a place in the list a
+// wire mapping asserts against.
+func TestAllStatusesIncludesPastDue(t *testing.T) {
+	found := false
+	for _, s := range corebilling.AllStatuses() {
+		if s == corebilling.StatusPastDue {
+			found = true
+		}
 	}
-
-	withOverride := corebilling.Resolve(created, corebilling.Record{
-		Present: true, PlanSlug: "growth-v9", RetentionDaysOverride: 900,
-	}, nil, later, true)
-	if got := retention(t, withOverride); got != 900 {
-		t.Errorf("retention = %d days, want the negotiated 900", got)
+	if !found {
+		t.Error("AllStatuses omits PAST_DUE")
 	}
 }
 
@@ -519,8 +443,16 @@ func retention(t *testing.T, ent corebilling.Entitlement) int64 {
 	return *ent.RetentionDays
 }
 
+func str(v *int64) any {
+	if v == nil {
+		return "none"
+	}
+	return *v
+}
+
 func flatten(e corebilling.Entitlement) string {
-	return fmt.Sprintf("%s/%s/%s/%s quota=%v price=%v retention=%v trial=%s contract=%s window=[%s,%s) enabled=%v",
+	return fmt.Sprintf("%s/%s/%s/%s quota=%v price=%v retention=%v trial=%s contract=%s window=[%s,%s) enabled=%v card=%v terms=%v",
 		e.Slug, e.DisplayName, e.Currency, e.Status, str(e.IncludedEvents), str(e.PriceCents),
-		str(e.RetentionDays), e.TrialEndsAt, e.ContractEndsAt, e.PeriodStart, e.PeriodEnd, e.BillingEnabled)
+		str(e.RetentionDays), e.TrialEndsAt, e.ContractEndsAt, e.PeriodStart, e.PeriodEnd, e.BillingEnabled,
+		e.Card != nil, e.Terms != nil)
 }

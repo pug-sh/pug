@@ -13,7 +13,7 @@ import (
 // fetchProvider serves reconcile: the subscription the provider reports, keyed
 // by id, plus a read that fails.
 type fetchProvider struct {
-	fakeProvider
+	*fakeProvider
 	remote map[string]corebilling.SubscriptionEvent
 	fail   bool
 	// fetchErr is the specific failure, for the dispositions the pass tells apart.
@@ -39,9 +39,9 @@ func seedSubscription(t *testing.T, f *fixture, subID, slug, status string) {
 	t.Helper()
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, current_period_end, id, org_id, plan_slug, price_cents, provider,
+		   currency, current_period_end, id, on_demand, org_id, plan_slug, price_cents, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', now() + interval '20 days', $1, $2, $3, 2000, $4,
+		 values ('USD', now() + interval '20 days', $1, true, $2, $3, 0, $4,
 		         'cus_1', $6, $5, now() - interval '1 hour', $6)`,
 		subID, f.orgID, slug, fakeProviderName, subID, status); err != nil {
 		t.Fatalf("seed subscription: %v", err)
@@ -55,11 +55,11 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000010", "growth")
+	seedLiveSubscription(t, f, "sub00000000000000010", corebilling.CurrentSlug)
 
-	cancelled := subEvent(f.orgID, "sub00000000000000010", "prod_growth", corebilling.SubStatusCancelled)
+	cancelled := subEvent(f.orgID, "sub00000000000000010", "prod_mandate", corebilling.SubStatusCancelled)
 	provider := &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
+		fakeProvider: &fakeProvider{name: fakeProviderName},
 		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000010": cancelled},
 	}
 	svc := f.svcWithProvider(t, provider)
@@ -76,23 +76,25 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
-		t.Errorf("slug = %q, want free — the missed cancellation was not applied", ent.Slug)
+	if ent.Chargeable {
+		t.Error("the missed cancellation was not applied")
 	}
 }
 
-// The report's view of an org entitled to a paid plan nobody is charged for. Not
-// auto-fixed: writing to the money side from a guess is what this must not do.
+// The report's view of a deal nobody is charged for. Not auto-fixed: writing to
+// the money side from a guess is what this must not do.
 func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug: corebilling.SlugCustom, FlatFeeCents: new(int64(40_000)),
+	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
-	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: *provider})
+	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: provider})
 	report, err := svc.Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
@@ -106,8 +108,27 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — reconcile must not revoke a grant", ent.Slug)
+	if ent.Slug != corebilling.SlugCustom {
+		t.Errorf("slug = %q, want custom — reconcile must not revoke a deal", ent.Slug)
+	}
+}
+
+// A pinned card is grandfathering, not a grant, so an org holding one with no
+// mandate is not an org nobody is charging.
+func TestReconcileDoesNotReportAPinnedCardAsUnbilled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: corebilling.CurrentSlug}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+	report, err := f.svcWithProvider(t, &fetchProvider{fakeProvider: provider}).Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.EntitledUnbilled != 0 {
+		t.Errorf("entitled_unbilled = %d, want 0", report.EntitledUnbilled)
 	}
 }
 
@@ -119,17 +140,19 @@ func TestPastDueCountsAsBilled(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug: corebilling.SlugCustom, FlatFeeCents: new(int64(40_000)),
+	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_growth", corebilling.SubStatusPastDue)
+	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_mandate", corebilling.SubStatusPastDue)
 	provider.event = pastDue
 	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_past_due_billed", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: *provider,
+		fakeProvider: provider,
 		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000070": pastDue},
 	})
 	report, err := svc.Reconcile(t.Context(), time.Now())
@@ -148,39 +171,15 @@ func TestReconcileCountsUnreadableSubscriptions(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000011", "growth")
+	seedLiveSubscription(t, f, "sub00000000000000011", corebilling.CurrentSlug)
 
-	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}, fail: true})
+	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: &fakeProvider{name: fakeProviderName}, fail: true})
 	report, err := svc.Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile returned an error; one unreadable row must not abandon the pass: %v", err)
 	}
 	if report.Unreadable != 1 || report.Applied != 0 {
 		t.Errorf("report = %+v, want 1 unreadable and 0 applied", report)
-	}
-}
-
-// A live subscription against a product nothing maps to: a deploy is missing a
-// product key, or an operator made a product without pasting its id.
-func TestReconcileReportsAnUnmappedProduct(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000012", "growth")
-
-	orphan := subEvent(f.orgID, "sub00000000000000012", "prod_nobody_knows", corebilling.SubStatusActive)
-	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
-		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000012": orphan},
-	})
-
-	report, err := svc.Reconcile(t.Context(), time.Now())
-	if err != nil {
-		t.Fatalf("Reconcile: %v", err)
-	}
-	if report.UnmappedProduct != 1 || report.Applied != 0 {
-		t.Errorf("report = %+v, want 1 unmapped_product and 0 applied", report)
 	}
 }
 
@@ -274,12 +273,12 @@ func TestReconcileCountsASubscriptionItCannotStore(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000013", "growth")
+	seedLiveSubscription(t, f, "sub00000000000000013", corebilling.CurrentSlug)
 
-	broken := subEvent(f.orgID, "sub00000000000000013", "prod_growth", corebilling.SubStatusActive)
+	broken := subEvent(f.orgID, "sub00000000000000013", "prod_mandate", corebilling.SubStatusActive)
 	broken.ProviderCustomerID = ""
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
+		fakeProvider: &fakeProvider{name: fakeProviderName},
 		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000013": broken},
 	})
 
@@ -300,10 +299,10 @@ func TestReconcileCountsAnUndecodableSubscriptionAsUnreadable(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000011", "growth")
+	seedLiveSubscription(t, f, "sub00000000000000011", corebilling.CurrentSlug)
 
 	// An empty remote map: the fetch succeeds and yields a zero event.
-	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}})
+	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: &fakeProvider{name: fakeProviderName}})
 	report, err := svc.Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
@@ -382,16 +381,16 @@ func TestReconcileWalksPastThePageBoundary(t *testing.T) {
 
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, id, org_id, plan_slug, price_cents, provider,
+		   currency, id, on_demand, org_id, plan_slug, price_cents, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 select 'USD', 'sub' || n, $1, 'growth', 2000, $2, 'cus_1', 'cancelled',
+		 select 'USD', 'sub' || n, true, $1, 'usage-2026-09', 0, $2, 'cus_1', 'cancelled',
 		        'sub' || n, now() - interval '1 hour', 'cancelled'
 		 from generate_series(1, $3) n`,
 		f.orgID, fakeProviderName, rows); err != nil {
 		t.Fatalf("seed subscriptions: %v", err)
 	}
 
-	provider := &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}}
+	provider := &fetchProvider{fakeProvider: &fakeProvider{name: fakeProviderName}}
 	report, err := f.svcWithProvider(t, provider).Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
@@ -408,10 +407,10 @@ func TestReconcileCountsASubscriptionTheProviderDoesNotKnow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000040", "growth")
+	seedLiveSubscription(t, f, "sub00000000000000040", corebilling.CurrentSlug)
 
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
+		fakeProvider: &fakeProvider{name: fakeProviderName},
 		fetchErr:     fmt.Errorf("%w: sub00000000000000040", corebilling.ErrSubscriptionNotFound),
 	})
 	report, err := svc.Reconcile(t.Context(), time.Now())
@@ -430,14 +429,14 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedSubscription(t, f, "sub00000000000000050", "growth", "cancelled")
-	seedLiveSubscription(t, f, "sub00000000000000051", "scale")
+	seedSubscription(t, f, "sub00000000000000050", corebilling.CurrentSlug, "cancelled")
+	seedLiveSubscription(t, f, "sub00000000000000051", corebilling.CurrentSlug)
 
 	// The provider still calls the old one active, so it collides with the live row.
-	revived := subEvent(f.orgID, "sub00000000000000050", "prod_growth", corebilling.SubStatusActive)
-	current := subEvent(f.orgID, "sub00000000000000051", "prod_scale", corebilling.SubStatusActive)
+	revived := subEvent(f.orgID, "sub00000000000000050", "prod_mandate", corebilling.SubStatusActive)
+	current := subEvent(f.orgID, "sub00000000000000051", "prod_mandate", corebilling.SubStatusActive)
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
+		fakeProvider: &fakeProvider{name: fakeProviderName},
 		remote: map[string]corebilling.SubscriptionEvent{
 			"sub00000000000000050": revived,
 			"sub00000000000000051": current,
@@ -452,20 +451,16 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 		t.Errorf("report = %+v, want 1 two_live", report)
 	}
 
-	// The org stays on the plan it is actually charged for.
-	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
-	if err != nil {
-		t.Fatalf("GetEntitlement: %v", err)
-	}
-	if ent.Slug != "scale" {
-		t.Errorf("slug = %q, want scale — the revived row won", ent.Slug)
+	// The org stays on the mandate it is actually charged through.
+	if got := liveSubID(t, f); got != "sub00000000000000051" {
+		t.Errorf("live subscription = %q, want the current one — the revived row won", got)
 	}
 }
 
 // cancellingProvider cancels from inside the first fetch: a CronJob deadline
 // expiring mid-walk.
 type cancellingProvider struct {
-	fakeProvider
+	*fakeProvider
 	cancel context.CancelFunc
 	calls  int
 }
@@ -483,12 +478,12 @@ func TestReconcileStopsOnACancelledContext(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000060", "growth")
-	seedSubscription(t, f, "sub00000000000000061", "growth", "cancelled")
+	seedLiveSubscription(t, f, "sub00000000000000060", corebilling.CurrentSlug)
+	seedSubscription(t, f, "sub00000000000000061", corebilling.CurrentSlug, "cancelled")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	provider := &cancellingProvider{fakeProvider: fakeProvider{name: fakeProviderName}, cancel: cancel}
+	provider := &cancellingProvider{fakeProvider: &fakeProvider{name: fakeProviderName}, cancel: cancel}
 
 	report, err := f.svcWithProvider(t, provider).Reconcile(ctx, time.Now())
 	if !errors.Is(err, context.Canceled) {

@@ -12,11 +12,13 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
-// none is what an absent value prints as. Never a zero: absent means no quota, no
-// bound on history and no list price — "0 days of history" worst of all.
+// none is what an absent value prints as. Never a zero: absent means no quota and
+// no bound on history.
 const none = "(none)"
 
-func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record, subs []dbread.BillingSubscription, history []corebilling.HistoryEntry) error {
+func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record,
+	subs []dbread.BillingSubscription, history []corebilling.HistoryEntry, invoices []corebilling.Invoice,
+) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	row(w, "org", fmt.Sprintf("%s  %q", org.ID, org.DisplayName))
@@ -24,18 +26,17 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	if ent.BillingEnabled {
 		row(w, "billing", "enabled")
 	} else {
-		// Said in full because every field below it is the disabled answer, not this
-		// org's: with the switch off every org resolves free with no quota at all.
 		row(w, "billing", "DISABLED (PUG_BILLING_ENABLED) — every org resolves with no quota")
 	}
 
 	section(w, "RESOLVED", "")
 	row(w, "  plan", fmt.Sprintf("%s (%s)", ent.DisplayName, ent.Slug))
 	row(w, "  status", string(ent.Status))
+	row(w, "  pricing", pricing(ent))
 	row(w, "  included events", quota(ent.IncludedEvents))
 	row(w, "  retention", retention(ent.RetentionDays))
-	row(w, "  list price", price(ent.PriceCents, ent.Currency))
 	row(w, "  usage period", fmt.Sprintf("%s → %s", instant(ent.PeriodStart), instant(ent.PeriodEnd)))
+	row(w, "  next charge", chargeLine(ent))
 	row(w, "  trial ends", instant(ent.TrialEndsAt))
 	row(w, "  contract ends", contractEnd(ent.ContractEndsAt))
 	row(w, "  subscription", subscription(ent))
@@ -45,12 +46,13 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	} else {
 		section(w, "STORED", "")
 		row(w, "  plan slug", rec.PlanSlug)
+		row(w, "  flat fee", money(rec.FlatFeeCents))
+		row(w, "  block rate", money(rec.BlockRateCents))
 		row(w, "  included events", override(rec.IncludedEventsOverride))
 		row(w, "  retention days", override(rec.RetentionDaysOverride))
 		row(w, "  display name", text(rec.DisplayNameOverride))
 		row(w, "  anchor day", override(int64(rec.AnchorDay)))
 		row(w, "  contract ends", contractEnd(rec.ContractEndsAt))
-		row(w, "  provider product", text(rec.ProviderProductID))
 		row(w, "  trial ends", instant(rec.TrialEndsAt))
 		row(w, "  note", text(rec.Note))
 	}
@@ -60,14 +62,24 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	} else {
 		section(w, "SUBSCRIPTIONS", "")
 		for _, sub := range subs {
-			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  %s  ends %s",
-				sub.PlanSlug, price(&sub.PriceCents, sub.Currency), sub.Provider,
-				sub.ProviderSubID, instant(sub.CurrentPeriodEnd.Time)))
+			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  next %s%s",
+				sub.PlanSlug, sub.Provider, sub.ProviderSubID,
+				instant(sub.CurrentPeriodEnd.Time), cancelFlag(sub)))
 		}
 	}
 
-	// nil is "--history was not asked for"; empty is "asked for, and nothing is
-	// recorded" — which has to say so rather than print no section at all.
+	// nil is "not asked for"; empty is "asked for, and nothing is recorded".
+	if invoices != nil {
+		if len(invoices) == 0 {
+			section(w, "INVOICES", "(none)")
+		} else {
+			section(w, "INVOICES", "(newest first)")
+			for _, inv := range invoices {
+				fmt.Fprintf(w, "  %s\t%s\n", inv.ID, invoiceLine(inv))
+			}
+		}
+	}
+
 	if history != nil {
 		if len(history) == 0 {
 			section(w, "HISTORY", "(no recorded changes)")
@@ -82,12 +94,53 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	return w.Flush()
 }
 
+func writePreview(out io.Writer, ent corebilling.Entitlement, events int64, q corebilling.Quote) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	row(w, "plan", fmt.Sprintf("%s (%s)", ent.DisplayName, ent.Slug))
+	row(w, "pricing", pricing(ent))
+	row(w, "events", comma(events))
+	row(w, "blocks", comma(q.Blocks))
+	for _, l := range q.Lines {
+		row(w, "  "+l.Description, lineAmount(l, ent.Currency))
+	}
+	row(w, "total", price(&q.TotalCents, ent.Currency))
+	return w.Flush()
+}
+
+func writeInvoices(out io.Writer, invoices []corebilling.Invoice) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	for _, inv := range invoices {
+		fmt.Fprintf(w, "%s\t%s\n", inv.ID, invoiceLine(inv))
+	}
+	return w.Flush()
+}
+
+func invoiceLine(inv corebilling.Invoice) string {
+	parts := []string{
+		string(inv.Status),
+		fmt.Sprintf("%s → %s", inv.PeriodStart.UTC().Format(time.DateOnly), inv.PeriodEnd.UTC().Format(time.DateOnly)),
+		"events=" + comma(inv.EventCount),
+		price(&inv.AmountCents, inv.Currency),
+	}
+	if inv.Attempts > 0 {
+		parts = append(parts, "attempts="+strconv.Itoa(inv.Attempts))
+	}
+	if !inv.NextAttemptAt.IsZero() && (inv.Status == corebilling.InvoiceOpen || inv.Status == corebilling.InvoiceFailed) {
+		parts = append(parts, "next="+instant(inv.NextAttemptAt))
+	}
+	if inv.LastErrorCode != "" {
+		parts = append(parts, "error="+inv.LastErrorCode)
+	}
+	if inv.ProviderPaymentID != "" {
+		parts = append(parts, "payment="+inv.ProviderPaymentID)
+	}
+	return strings.Join(parts, "  ")
+}
+
 func row(w io.Writer, label, value string) {
 	fmt.Fprintf(w, "%s\t%s\n", label, value)
 }
 
-// section starts a block. It carries no tab, which keeps the header free of a
-// tabwriter's padding and closes the preceding block so each aligns alone.
 func section(w io.Writer, name, note string) {
 	fmt.Fprintln(w)
 	if note == "" {
@@ -97,13 +150,17 @@ func section(w io.Writer, name, note string) {
 	fmt.Fprintln(w, name+"  "+note)
 }
 
-// historyLine is one recorded snapshot on a single line, carrying only the fields
-// that have a value, so a renewal reads as the two things that changed.
 func historyLine(rec corebilling.Record) string {
 	if !rec.Present {
 		return "cleared"
 	}
 	parts := []string{rec.PlanSlug}
+	if rec.FlatFeeCents > 0 {
+		parts = append(parts, "flat-fee="+money(rec.FlatFeeCents))
+	}
+	if rec.BlockRateCents > 0 {
+		parts = append(parts, "block-rate="+money(rec.BlockRateCents))
+	}
 	if rec.IncludedEventsOverride > 0 {
 		parts = append(parts, "events="+comma(rec.IncludedEventsOverride))
 	}
@@ -122,13 +179,64 @@ func historyLine(rec corebilling.Record) string {
 	if !rec.TrialEndsAt.IsZero() {
 		parts = append(parts, "trial-ends="+instant(rec.TrialEndsAt))
 	}
-	if rec.ProviderProductID != "" {
-		parts = append(parts, "product="+rec.ProviderProductID)
-	}
 	if rec.Note != "" {
 		parts = append(parts, fmt.Sprintf("note=%q", rec.Note))
 	}
 	return strings.Join(parts, "  ")
+}
+
+// pricing renders the card's tiers or the deal's terms: what the customer is
+// charged per block.
+func pricing(ent corebilling.Entitlement) string {
+	switch {
+	case ent.Terms != nil:
+		var parts []string
+		if ent.Terms.FlatFeeCents > 0 {
+			parts = append(parts, money(ent.Terms.FlatFeeCents)+" flat")
+		}
+		if ent.Terms.BlockRateCents > 0 {
+			parts = append(parts, money(ent.Terms.BlockRateCents)+" per block over "+comma(ent.Terms.IncludedEvents))
+		}
+		return strings.Join(parts, ", ")
+	case ent.Card != nil:
+		parts := []string{fmt.Sprintf("%d free", ent.Card.FreeBlocks)}
+		for _, t := range ent.Card.Tiers {
+			if t.UpToBlock == 0 {
+				parts = append(parts, money(t.CentsPerBlock)+" beyond")
+			} else {
+				parts = append(parts, fmt.Sprintf("%s to block %d", money(t.CentsPerBlock), t.UpToBlock))
+			}
+		}
+		return strings.Join(parts, ", ") + fmt.Sprintf("  (blocks of %s events)", comma(ent.Card.BlockEvents))
+	}
+	return none
+}
+
+func chargeLine(ent corebilling.Entitlement) string {
+	if ent.NextChargeAt.IsZero() {
+		return none
+	}
+	if !ent.Chargeable {
+		return instant(ent.NextChargeAt) + "  (no payment method)"
+	}
+	return instant(ent.NextChargeAt)
+}
+
+func cancelFlag(sub dbread.BillingSubscription) string {
+	if sub.CancelAtPeriodEnd {
+		return "  (cancels)"
+	}
+	return ""
+}
+
+func lineAmount(l corebilling.Line, currency string) string {
+	if l.CentsPerBlock == 0 {
+		if l.Blocks > 0 {
+			return fmt.Sprintf("%s blocks", comma(l.Blocks))
+		}
+		return price(&l.AmountCents, currency)
+	}
+	return fmt.Sprintf("%s blocks × %s = %s", comma(l.Blocks), money(l.CentsPerBlock), price(&l.AmountCents, currency))
 }
 
 func subscription(ent corebilling.Entitlement) string {
@@ -137,7 +245,7 @@ func subscription(ent corebilling.Entitlement) string {
 	}
 	out := string(ent.SubStatus)
 	if !ent.SubPeriodEnd.IsZero() {
-		out += "  bills next " + instant(ent.SubPeriodEnd)
+		out += "  next " + instant(ent.SubPeriodEnd)
 	}
 	if ent.ProviderCustomerID != "" {
 		out += "  customer " + ent.ProviderCustomerID
@@ -145,8 +253,6 @@ func subscription(ent corebilling.Entitlement) string {
 	return out
 }
 
-// contractEnd prints the stored instant with the last day it covers beside it. The
-// resolver's comparison is half-open, so the stored value is --until's day plus one.
 func contractEnd(t time.Time) string {
 	if t.IsZero() {
 		return none
@@ -168,7 +274,6 @@ func text(v string) string {
 	return v
 }
 
-// override renders a stored override column, where 0 is the absence of one.
 func override(v int64) string {
 	if v == 0 {
 		return none
@@ -176,8 +281,14 @@ func override(v int64) string {
 	return comma(v)
 }
 
-// retention renders a day count with its years beside it when they divide
-// evenly, since "2,555 days" is read as a typo more readily than as seven years.
+// money renders a stored cents column, where 0 is the absence of a value.
+func money(cents int64) string {
+	if cents == 0 {
+		return none
+	}
+	return price(&cents, corebilling.Currency)
+}
+
 func retention(v *int64) string {
 	if v == nil {
 		return none
@@ -199,8 +310,7 @@ func quota(v *int64) string {
 	return comma(*v)
 }
 
-// price renders minor units. Minor units are not always hundredths (JPY has
-// none), so only the currency pug sells in gets a decimal point.
+// price renders minor units. Only the currency pug sells in gets a decimal point.
 func price(cents *int64, currency string) string {
 	if cents == nil {
 		return none

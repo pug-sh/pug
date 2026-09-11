@@ -42,9 +42,9 @@ func TestNewReportsAMissingAPIKey(t *testing.T) {
 	}
 }
 
-func TestNewBuildsBothDirectionsOfTheProductMap(t *testing.T) {
+func TestNewCarriesTheMandateProduct(t *testing.T) {
 	t.Setenv("PUG_DODO_API_KEY", "sk_test")
-	t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_growth")
+	t.Setenv("PUG_DODO_MANDATE_PRODUCT", " prod_mandate ")
 
 	p, err := New(t.Context(), dodo.Name)
 	if err != nil {
@@ -53,8 +53,8 @@ func TestNewBuildsBothDirectionsOfTheProductMap(t *testing.T) {
 	if p == nil {
 		t.Fatal("New returned no provider for a configured deployment")
 	}
-	if p.ProductBySlug["growth"] != "prod_growth" {
-		t.Errorf("product map = %v", p.ProductBySlug)
+	if p.MandateProduct != "prod_mandate" {
+		t.Errorf("MandateProduct = %q", p.MandateProduct)
 	}
 	// Only a caller that starts checkouts knows where a buyer returns to.
 	if p.ReturnURL != "" {

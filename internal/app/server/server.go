@@ -147,7 +147,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Postgres only: an entitlement is a row plus the clock, and the quota it
 	// carries enforces nothing, so no ingestion or ClickHouse path is involved.
-	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingEnabled, d.payments)
+	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingCfg, d.payments)
 	if err != nil {
 		return fmt.Errorf("billing service: %w", err)
 	}
@@ -157,7 +157,7 @@ func start(ctx context.Context, d *deps) error {
 	}
 	// The likeliest misconfig is a pod missing the flag: every org would then read as
 	// having no quota, with nothing failing. Same for a missing provider key.
-	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled), slog.String("provider", provider))
+	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingCfg.Enabled), slog.String("provider", provider))
 	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
 		billingrpc.NewServer(billingSvc), handlerOpts)
 

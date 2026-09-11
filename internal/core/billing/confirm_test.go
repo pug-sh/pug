@@ -27,7 +27,7 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	provider.checkout = subEvent(f.orgID, "sub00000000000000020", "prod_growth", corebilling.SubStatusActive)
+	provider.checkout = subEvent(f.orgID, "sub00000000000000020", "prod_mandate", corebilling.SubStatusActive)
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
 	if err != nil {
@@ -41,8 +41,8 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — the confirmed checkout did not reach the entitlement", ent.Slug)
+	if ent.Slug != corebilling.CurrentSlug || !ent.Chargeable {
+		t.Errorf("entitlement = %q chargeable=%v — the confirmed checkout did not reach the entitlement", ent.Slug, ent.Chargeable)
 	}
 	if ent.SubStatus != corebilling.SubStatusActive {
 		t.Errorf("sub status = %q, want active", ent.SubStatus)
@@ -56,7 +56,7 @@ func TestConfirmCheckoutRefusesASessionForAnotherOrg(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	provider.checkout = subEvent("some-other-org", "sub00000000000000021", "prod_growth", corebilling.SubStatusActive)
+	provider.checkout = subEvent("some-other-org", "sub00000000000000021", "prod_mandate", corebilling.SubStatusActive)
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
 	if !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
@@ -77,7 +77,7 @@ func TestConfirmCheckoutRefusesACheckoutCarryingNoOrg(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	event := subEvent(f.orgID, "sub00000000000000022", "prod_growth", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000022", "prod_mandate", corebilling.SubStatusActive)
 	// Attribution by customer is what the webhook would fall back to, and it is
 	// exactly what must not happen here.
 	event.OrgID = ""
@@ -115,7 +115,7 @@ func TestConfirmCheckoutDoesNotConfirmAPendingSubscription(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	provider.checkout = subEvent(f.orgID, "sub00000000000000023", "prod_growth", corebilling.SubStatus("pending"))
+	provider.checkout = subEvent(f.orgID, "sub00000000000000023", "prod_mandate", corebilling.SubStatus("pending"))
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
 	if err != nil {
@@ -131,8 +131,8 @@ func TestConfirmCheckoutDoesNotConfirmAPendingSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug == "growth" {
-		t.Error("a pending subscription granted the plan")
+	if ent.Chargeable {
+		t.Error("a pending subscription made the org chargeable")
 	}
 }
 
@@ -143,7 +143,7 @@ func TestConfirmCheckoutRefusesAForeignCurrency(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	event := subEvent(f.orgID, "sub00000000000000024", "prod_growth", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000024", "prod_mandate", corebilling.SubStatusActive)
 	event.Currency = "EUR"
 	provider.checkout = event
 
@@ -155,20 +155,22 @@ func TestConfirmCheckoutRefusesAForeignCurrency(t *testing.T) {
 	}
 }
 
-// A product no config key and no org row maps to. Same disposition: refuse, and
-// say so, rather than write a subscription against nothing.
-func TestConfirmCheckoutRefusesAnUnmappableProduct(t *testing.T) {
+// A recurring subscription would be charged by the provider on its schedule and
+// by pug's invoices, so it is refused at the boundary like a foreign currency.
+func TestConfirmCheckoutRefusesARecurringSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	provider.checkout = subEvent(f.orgID, "sub00000000000000025", "prod_unknown", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000025", "prod_mandate", corebilling.SubStatusActive)
+	event.OnDemand = false
+	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrNotPurchasable) {
-		t.Fatalf("err = %v, want ErrNotPurchasable", err)
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrSubscriptionUnapplicable) {
+		t.Fatalf("err = %v, want ErrSubscriptionUnapplicable", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
-		t.Errorf("wrote %d rows for an unmappable product, want 0", n)
+		t.Errorf("wrote %d rows for a recurring subscription, want 0", n)
 	}
 }
 
@@ -179,7 +181,7 @@ func TestConfirmCheckoutConfirmsWhenTheWebhookLandedFirst(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	event := subEvent(f.orgID, "sub00000000000000026", "prod_growth", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000026", "prod_mandate", corebilling.SubStatusActive)
 	provider.event = event
 	provider.checkout = event
 
@@ -209,11 +211,11 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	// A live subscription the org already holds — a cancellation that never
 	// arrived, which is the deployment this whole path exists for.
-	provider.event = subEvent(f.orgID, "sub00000000000000027", "prod_growth", corebilling.SubStatusActive)
+	provider.event = subEvent(f.orgID, "sub00000000000000027", "prod_mandate", corebilling.SubStatusActive)
 	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_live", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
-	provider.checkout = subEvent(f.orgID, "sub00000000000000028", "prod_scale", corebilling.SubStatusActive)
+	provider.checkout = subEvent(f.orgID, "sub00000000000000028", "prod_mandate", corebilling.SubStatusActive)
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
 	if !errors.Is(err, corebilling.ErrTwoLiveSubscriptions) {
@@ -222,12 +224,8 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	if confirmed {
 		t.Error("confirmed = true for a subscription that was never written")
 	}
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
-	if err != nil {
-		t.Fatalf("GetEntitlement: %v", err)
-	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want the untouched growth", ent.Slug)
+	if got := liveSubID(t, f); got != "sub00000000000000027" {
+		t.Errorf("live subscription = %q, want the untouched first one", got)
 	}
 }
 
@@ -259,7 +257,7 @@ func TestConfirmCheckoutRefusesASubscriptionWithNoStatus(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	event := subEvent(f.orgID, "sub00000000000000029", "prod_growth", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000029", "prod_mandate", corebilling.SubStatusActive)
 	event.Status = ""
 	provider.checkout = event
 
@@ -282,7 +280,7 @@ func TestConfirmCheckoutRefusesARefPugNeverMinted(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	event := subEvent(f.orgID, "sub00000000000000030", "prod_growth", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000030", "prod_mandate", corebilling.SubStatusActive)
 	event.CheckoutRef = "ref_forged"
 	provider.checkout = event
 
@@ -301,7 +299,7 @@ func TestConfirmCheckoutRefusesACheckoutCarryingNoRef(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	event := subEvent(f.orgID, "sub00000000000000032", "prod_growth", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000032", "prod_mandate", corebilling.SubStatusActive)
 	event.CheckoutRef = ""
 	provider.checkout = event
 
@@ -326,7 +324,7 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 	}
 	seedCheckoutRef(t, f, other)
 
-	event := subEvent(f.orgID, "sub00000000000000031", "prod_growth", corebilling.SubStatusActive)
+	event := subEvent(f.orgID, "sub00000000000000031", "prod_mandate", corebilling.SubStatusActive)
 	event.CheckoutRef = checkoutRef(other)
 	provider.checkout = event
 
@@ -335,65 +333,5 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
 		t.Errorf("wrote %d subscription rows for another org's checkout, want 0", n)
-	}
-}
-
-// The confirm path's half of the Clear race, and the one with a buyer blocked on
-// the response: the product check runs on a record read outside the lock, so a
-// clear can commit before applySubscription re-reads it. The re-read under the
-// lock is what stops a live custom subscription being stored against a row that
-// is gone -- which would resolve to the free floor for somebody who just paid.
-func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	f, provider := newPaidFixture(t)
-	ctx := t.Context()
-
-	productID := "prod_acme"
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          corebilling.SlugCustom,
-		IncludedEvents:    new(int64(5_000_000)),
-		ProviderProductID: &productID,
-	}); err != nil {
-		t.Fatalf("SetPlan: %v", err)
-	}
-
-	tx, err := f.pg.PgW.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))`, f.orgID); err != nil {
-		t.Fatalf("take the entitlement lock: %v", err)
-	}
-	if _, err := tx.Exec(ctx, `delete from billing_entitlements where org_id = $1`, f.orgID); err != nil {
-		t.Fatalf("delete the entitlement: %v", err)
-	}
-
-	provider.checkout = subEvent(f.orgID, "sub00000000000000029", productID, corebilling.SubStatusActive)
-	var confirmed bool
-	var confirmErr error
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		confirmed, confirmErr = f.svc.ConfirmCheckout(ctx, f.orgID, "cs_1", time.Now())
-	}()
-
-	waitForEntitlementLockWaiter(t, f, done)
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit the clear: %v", err)
-	}
-	<-done
-
-	if !errors.Is(confirmErr, corebilling.ErrNotPurchasable) {
-		t.Errorf("err = %v, want ErrNotPurchasable", confirmErr)
-	}
-	if confirmed {
-		t.Error("confirmed = true for a subscription that was never written")
-	}
-	if n := storedSubscriptions(t, f); n != 0 {
-		t.Errorf("stored %d subscriptions, want 0 — a custom plan with no row behind it resolves free", n)
 	}
 }

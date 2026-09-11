@@ -1,5 +1,7 @@
 # Payments
 
+> **Stale where it disagrees with [`usage-billing.md`](usage-billing.md).** Usage-based pricing landed 2026-09-12 and replaced the flat tiers, the product-per-tier checkout and the `provider_product_id` column this file still describes. That document is the current reference until it is folded back into this one.
+
 Design reference for the second billing slice: taking money. Entitlement — what
 an org is *allowed* to send — is [`billing.md`](billing.md) and is already
 implemented; counting is [`usage.md`](usage.md). This document covers the
@@ -165,9 +167,12 @@ the number was a note. The moment Dodo bills the org, that same number becomes a
 Dodo's dashboard. The dashboard would then render a stale figure as fact, which
 is worse than rendering nothing.
 
-**Decided: pug stores no money at all.** The columns below were dropped from
-migration 019 before it merged; what follows is why, kept because the question
-comes back every time somebody wants a price on a page.
+**Decided, then reversed.** pug stored no money at all through migration 019;
+migration 021 put a deal's money back on the entitlement row, because an
+on-demand charge carries an amount and only pug holds the count
+([`usage-billing.md`](usage-billing.md) §2). What follows is the original
+argument, kept because the question comes back every time somebody wants a price
+on a page.
 
 | Question | Answer | Source |
 |---|---|---|
@@ -630,9 +635,10 @@ is a read and stays on the viewer floor; the three that spend money are
 **admin-only** through a new `ActionCreate` on `authz.ResourceBilling`, because
 the quota banner stays on the viewer floor but starting a checkout does not:
 
-- `CreateCheckoutSession(plan_slug) → checkout_url`. For `custom` it checks out
-  against the org's own `provider_product_id` and returns `FailedPrecondition`
-  when none is recorded; for a catalog tier it uses the configured product id.
+- `CreateCheckoutSession(plan_slug) → checkout_url`. **Superseded**: every org
+  now authorizes a card against the one `PUG_DODO_MANDATE_PRODUCT` and is charged
+  on demand, so there is no per-tier or per-org product
+  ([`usage-billing.md`](usage-billing.md) §7).
 - `CreatePortalSession() → portal_url`, `FailedPrecondition` for an org with no
   `provider_customer_id` — trialing, free and comped orgs have never checked out.
 - `ConfirmCheckout(session_id) → confirmed` (§12.1), which is how a returning
@@ -735,7 +741,7 @@ still coming.
 | `PUG_DASHBOARD_BASE_URL` | — | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
-| `PUG_DODO_PRODUCT_<SLUG>` | — | One per purchasable catalog tier (`..._STARTER`, `..._GROWTH`, `..._SCALE`), mapping the slug to a Dodo product id. Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A tier with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
+| `PUG_DODO_MANDATE_PRODUCT` | — | **Replaces the per-tier `PUG_DODO_PRODUCT_<SLUG>` vars.** The one on-demand subscription product every org authorizes a card against; its stored price is never charged. Absent ⇒ nothing is purchasable. |
 
 Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's

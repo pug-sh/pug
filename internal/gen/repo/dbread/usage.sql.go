@@ -196,3 +196,23 @@ func (q *Queries) ListUsageDailyByOrgID(ctx context.Context, arg ListUsageDailyB
 	}
 	return items, nil
 }
+
+const sumUsageDaily = `-- name: SumUsageDaily :one
+select coalesce(sum(event_count), 0)::bigint from usage_daily
+where org_id = $1 and day >= $2 and day < $3
+`
+
+type SumUsageDailyParams struct {
+	OrgID   string
+	FromDay pgtype.Date
+	ToDay   pgtype.Date
+}
+
+// An invoice's own count over its clipped window, at the day grain the meter
+// stores; usage_periods stays the dashboard's live number.
+func (q *Queries) SumUsageDaily(ctx context.Context, arg SumUsageDailyParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sumUsageDaily, arg.OrgID, arg.FromDay, arg.ToDay)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}

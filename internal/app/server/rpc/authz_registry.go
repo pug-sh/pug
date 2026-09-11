@@ -83,6 +83,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.billing.v1.BillingService/CreateCheckoutSession": authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; starting a checkout spends money"),
 	"/dashboard.billing.v1.BillingService/CreatePortalSession":   authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; the portal reaches invoices"),
 	"/dashboard.billing.v1.BillingService/ConfirmCheckout":       authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; the other half of starting, and it writes the subscription row"),
+	"/dashboard.billing.v1.BillingService/GetUpcomingInvoice":    authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead, "on the viewer floor: the usage meter everyone sees, priced"),
+	"/dashboard.billing.v1.BillingService/ListInvoices":          authzspec.OrgGated(authz.ResourceInvoice, authz.ActionRead, "admin-only; receipts carry a company's billing details"),
+	"/dashboard.billing.v1.BillingService/RemovePaymentMethod":   authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; ends the mandate that spends money"),
 
 	// --- dashboard.customers.v1.CustomersService ---
 	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.Self(),

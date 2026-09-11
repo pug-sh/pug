@@ -30,7 +30,7 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, billingEnabled, nil)
+	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: billingEnabled}, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -80,14 +80,17 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 		t.Error("billing_enabled is false with the switch on")
 	}
 	if on.GetIncludedEvents() == nil {
-		t.Fatal("included_events is absent with billing on; the free floor has a quota")
+		t.Fatal("included_events is absent with billing on; the card has a free allowance")
 	}
-	if on.GetIncludedEvents().GetValue() != 10_000 {
-		t.Errorf("included_events = %d, want the free floor's 10000", on.GetIncludedEvents().GetValue())
+	if on.GetIncludedEvents().GetValue() != 100_000 {
+		t.Errorf("included_events = %d, want the card's free 100000", on.GetIncludedEvents().GetValue())
 	}
-	if on.GetRetentionDays().GetValue() != corebilling.RetentionYearDays {
-		t.Errorf("retention_days = %d, want the free floor's %d",
-			on.GetRetentionDays().GetValue(), corebilling.RetentionYearDays)
+	if on.GetRetentionDays().GetValue() != corebilling.RetentionDays {
+		t.Errorf("retention_days = %d, want the card's %d",
+			on.GetRetentionDays().GetValue(), corebilling.RetentionDays)
+	}
+	if on.GetRateCard() == nil || on.GetChargeable() {
+		t.Errorf("rate_card = %v chargeable = %v, want the card and not chargeable with no mandate", on.GetRateCard(), on.GetChargeable())
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {
 		t.Errorf("status = %s, want FREE for an org past its trial", on.GetStatus())
@@ -109,16 +112,12 @@ func TestGetBillingStatusReportsATrial(t *testing.T) {
 	if msg.GetTrialEndsAt() == nil {
 		t.Error("trial_ends_at is absent while trialing")
 	}
-	if msg.GetPlan().GetSlug() != corebilling.SlugTrial {
-		t.Errorf("plan = %q, want the trial tier", msg.GetPlan().GetSlug())
+	// The trial is a no-charge window on the current card, not a tier of its own.
+	if msg.GetPlan().GetSlug() != corebilling.CurrentSlug {
+		t.Errorf("plan = %q, want the current card", msg.GetPlan().GetSlug())
 	}
-	// A price of zero is a real price and must survive as one rather than
-	// collapsing into "no price recorded".
-	if msg.GetPlan().GetPriceCents() == nil {
-		t.Fatal("price_cents is absent on the trial tier; free is a price, not the lack of one")
-	}
-	if msg.GetPlan().GetPriceCents().GetValue() != 0 {
-		t.Errorf("price_cents = %d, want 0", msg.GetPlan().GetPriceCents().GetValue())
+	if msg.GetPlan().GetPriceCents() != nil {
+		t.Errorf("price_cents = %v, want absent — a card has no list price", msg.GetPlan().GetPriceCents())
 	}
 	if msg.GetPlan().GetCurrency() == "" {
 		t.Error("currency is empty; an amount without its unit cannot be formatted")
@@ -158,6 +157,7 @@ func TestStatusToRPCCoversEveryResolvedStatus(t *testing.T) {
 		corebilling.StatusTrialing: billingv1.BillingStatus_BILLING_STATUS_TRIALING,
 		corebilling.StatusActive:   billingv1.BillingStatus_BILLING_STATUS_ACTIVE,
 		corebilling.StatusFree:     billingv1.BillingStatus_BILLING_STATUS_FREE,
+		corebilling.StatusPastDue:  billingv1.BillingStatus_BILLING_STATUS_PAST_DUE,
 	}
 	for s, w := range want {
 		if got := statusToRPC(s); got != w {
@@ -190,5 +190,20 @@ func TestSubStatusToRPCCoversEveryStoredStatus(t *testing.T) {
 	// UNSPECIFIED — the same "not live" resolution gives it.
 	if got := subStatusToRPC("some_state_the_provider_added"); got != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED {
 		t.Errorf("an unmapped status = %s, want UNSPECIFIED", got)
+	}
+}
+
+// Every invoice status the ledger records has a wire value.
+func TestInvoiceStatusToRPCCoversEveryStatus(t *testing.T) {
+	seen := map[billingv1.InvoiceStatus]bool{}
+	for _, s := range corebilling.AllInvoiceStatuses() {
+		got := invoiceStatusToRPC(s)
+		if got == billingv1.InvoiceStatus_INVOICE_STATUS_UNSPECIFIED {
+			t.Errorf("invoiceStatusToRPC(%s) = UNSPECIFIED", s)
+		}
+		if seen[got] {
+			t.Errorf("invoiceStatusToRPC(%s) = %s, already used by another status", s, got)
+		}
+		seen[got] = true
 	}
 }

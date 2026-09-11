@@ -50,14 +50,14 @@ func TestBillingChangeOmittedFlagsKeepStoredValues(t *testing.T) {
 	if change.Note != nil {
 		t.Fatalf("note = %q, want nil (keep stored)", *change.Note)
 	}
-	if change.ProviderProductID != nil {
-		t.Fatalf("provider product = %q, want nil (keep stored)", *change.ProviderProductID)
+	if change.FlatFeeCents != nil || change.BlockRateCents != nil {
+		t.Fatalf("money = %v/%v, want nil (keep stored)", change.FlatFeeCents, change.BlockRateCents)
 	}
 }
 
 func TestBillingChangeEmptyValuesClear(t *testing.T) {
 	cmd := billingSetCmd(t, "--plan", "free", "--events", "0", "--retention-days", "0",
-		"--name", "", "--anchor-day", "0", "--until", "", "--note", "", "--provider-product", "")
+		"--name", "", "--anchor-day", "0", "--until", "", "--note", "", "--flat-fee", "0", "--block-rate", "0")
 	change, err := billingChange(cmd)
 	if err != nil {
 		t.Fatalf("billingChange: %v", err)
@@ -80,8 +80,8 @@ func TestBillingChangeEmptyValuesClear(t *testing.T) {
 	if change.Note == nil || *change.Note != "" {
 		t.Fatalf("note = %v, want a pointer to \"\" (clear)", change.Note)
 	}
-	if change.ProviderProductID == nil || *change.ProviderProductID != "" {
-		t.Fatalf("provider product = %v, want a pointer to \"\" (clear)", change.ProviderProductID)
+	if change.FlatFeeCents == nil || *change.FlatFeeCents != 0 || change.BlockRateCents == nil || *change.BlockRateCents != 0 {
+		t.Fatalf("money = %v/%v, want pointers to 0 (clear)", change.FlatFeeCents, change.BlockRateCents)
 	}
 }
 
@@ -105,6 +105,9 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 		want string
 	}{
 		{"negative events", []string{"--plan", "custom", "--events", "-1"}, "--events"},
+		{"partial block", []string{"--plan", "custom", "--events", "250000"}, "--events"},
+		{"negative fee", []string{"--plan", "custom", "--flat-fee", "-1"}, "--flat-fee"},
+		{"negative rate", []string{"--plan", "custom", "--block-rate", "-1"}, "--block-rate"},
 		{"negative retention", []string{"--plan", "custom", "--retention-days", "-1"}, "--retention-days"},
 		{"anchor day too high", []string{"--plan", "free", "--anchor-day", "32"}, "--anchor-day"},
 		{"anchor day negative", []string{"--plan", "free", "--anchor-day", "-1"}, "--anchor-day"},
@@ -129,20 +132,25 @@ func TestGrantableSlugsExcludeTrialAndRetired(t *testing.T) {
 	if slices.Contains(got, corebilling.SlugTrial) {
 		t.Fatalf("slugs = %v, want no %q", got, corebilling.SlugTrial)
 	}
-	for _, p := range corebilling.Plans() {
-		if p.Retired && slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want no retired tier %q", got, p.Slug)
+	for _, want := range []string{corebilling.SlugFree, corebilling.SlugCustom} {
+		if !slices.Contains(got, want) {
+			t.Fatalf("slugs = %v, want it to offer %q", got, want)
 		}
-		if !p.Retired && p.Slug != corebilling.SlugTrial && !slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want it to offer %q", got, p.Slug)
+	}
+	for _, c := range corebilling.Cards() {
+		if c.Retired && slices.Contains(got, c.Slug) {
+			t.Fatalf("slugs = %v, want no retired card %q", got, c.Slug)
+		}
+		if !c.Retired && !slices.Contains(got, c.Slug) {
+			t.Fatalf("slugs = %v, want it to offer %q", got, c.Slug)
 		}
 	}
 }
 
 // Every write is attributed, so none of them may run without an actor.
 func TestBillingWritesRequireAnActor(t *testing.T) {
-	for _, name := range []string{"set", "extend-trial", "clear"} {
-		cmd, _, err := newBillingCmd().Find([]string{name})
+	for _, name := range []string{"set", "extend-trial", "clear", "invoice void", "invoice retry"} {
+		cmd, _, err := newBillingCmd().Find(strings.Fields(name))
 		if err != nil {
 			t.Fatalf("find %s: %v", name, err)
 		}

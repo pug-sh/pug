@@ -351,6 +351,9 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/dashboard.billing.v1.BillingService/CreateCheckoutSession":        true,
 		"/dashboard.billing.v1.BillingService/CreatePortalSession":          true,
 		"/dashboard.billing.v1.BillingService/ListPlans":                    true,
+		"/dashboard.billing.v1.BillingService/GetUpcomingInvoice":           true,
+		"/dashboard.billing.v1.BillingService/ListInvoices":                 true,
+		"/dashboard.billing.v1.BillingService/RemovePaymentMethod":          true,
 		"/shared.insights.v1.InsightsService/Query":                         true,
 		"/shared.insights.v1.InsightsService/SegmentUsers":                  true,
 		"/shared.insights.v1.InsightsService/GetFilterSchema":               true,
@@ -415,6 +418,8 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 		"/dashboard.billing.v1.BillingService/ConfirmCheckout":       true,
 		"/dashboard.billing.v1.BillingService/CreateCheckoutSession": true,
 		"/dashboard.billing.v1.BillingService/CreatePortalSession":   true,
+		"/dashboard.billing.v1.BillingService/ListInvoices":          true,
+		"/dashboard.billing.v1.BillingService/RemovePaymentMethod":   true,
 	}
 
 	for proc, spec := range permissionRegistry {

@@ -11,8 +11,110 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const existsBillingInvoiceForPeriod = `-- name: ExistsBillingInvoiceForPeriod :one
+select exists (
+  select 1 from billing_invoices where org_id = $1 and period_start = $2
+)
+`
+
+type ExistsBillingInvoiceForPeriodParams struct {
+	OrgID       string
+	PeriodStart pgtype.Timestamptz
+}
+
+func (q *Queries) ExistsBillingInvoiceForPeriod(ctx context.Context, arg ExistsBillingInvoiceForPeriodParams) (bool, error) {
+	row := q.db.QueryRow(ctx, existsBillingInvoiceForPeriod, arg.OrgID, arg.PeriodStart)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const getBillingInvoice = `-- name: GetBillingInvoice :one
+select amount_cents, attempts, billed_from, billed_to, blocks, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, update_time, usage_computed_at from billing_invoices where id = $1
+`
+
+func (q *Queries) GetBillingInvoice(ctx context.Context, id string) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, getBillingInvoice, id)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.Blocks,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.UpdateTime,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
+const getBillingInvoiceByPayment = `-- name: GetBillingInvoiceByPayment :one
+select amount_cents, attempts, billed_from, billed_to, blocks, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, update_time, usage_computed_at from billing_invoices
+where provider = $1 and provider_payment_id = $2
+`
+
+type GetBillingInvoiceByPaymentParams struct {
+	Provider          pgtype.Text
+	ProviderPaymentID pgtype.Text
+}
+
+func (q *Queries) GetBillingInvoiceByPayment(ctx context.Context, arg GetBillingInvoiceByPaymentParams) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, getBillingInvoiceByPayment, arg.Provider, arg.ProviderPaymentID)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.Blocks,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.UpdateTime,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
 const getLatestBillingSubscription = `-- name: GetLatestBillingSubscription :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1 and provider = $2
 order by create_time desc
 limit 1
@@ -45,12 +147,15 @@ func (q *Queries) GetLatestBillingSubscription(ctx context.Context, arg GetLates
 		&i.ProviderUpdatedAt,
 		&i.Status,
 		&i.UpdateTime,
+		&i.OnDemand,
+		&i.CancelAtPeriodEnd,
+		&i.EndedAt,
 	)
 	return i, err
 }
 
 const getLiveBillingSubscription = `-- name: GetLiveBillingSubscription :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1 and status in ('active', 'past_due')
 `
 
@@ -75,6 +180,9 @@ func (q *Queries) GetLiveBillingSubscription(ctx context.Context, orgID string) 
 		&i.ProviderUpdatedAt,
 		&i.Status,
 		&i.UpdateTime,
+		&i.OnDemand,
+		&i.CancelAtPeriodEnd,
+		&i.EndedAt,
 	)
 	return i, err
 }
@@ -82,15 +190,17 @@ func (q *Queries) GetLiveBillingSubscription(ctx context.Context, orgID string) 
 const getOrgEntitlement = `-- name: GetOrgEntitlement :one
 select
   o.create_time as org_create_time,
+  e.create_time as entitlement_create_time,
   e.anchor_day,
   e.contract_ends_at,
   e.display_name_override,
   e.included_events_override,
   e.note,
   e.plan_slug,
-  e.provider_product_id,
   e.retention_days_override,
-  e.trial_ends_at
+  e.trial_ends_at,
+  e.flat_fee_cents,
+  e.block_rate_cents
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
 where o.id = $1
@@ -98,15 +208,17 @@ where o.id = $1
 
 type GetOrgEntitlementRow struct {
 	OrgCreateTime          pgtype.Timestamptz
+	EntitlementCreateTime  pgtype.Timestamptz
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
 	DisplayNameOverride    pgtype.Text
 	IncludedEventsOverride pgtype.Int8
 	Note                   pgtype.Text
 	PlanSlug               pgtype.Text
-	ProviderProductID      pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
+	FlatFeeCents           pgtype.Int8
+	BlockRateCents         pgtype.Int8
 }
 
 // Left join rather than two reads: most orgs have no entitlement row, and that
@@ -116,21 +228,38 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 	var i GetOrgEntitlementRow
 	err := row.Scan(
 		&i.OrgCreateTime,
+		&i.EntitlementCreateTime,
 		&i.AnchorDay,
 		&i.ContractEndsAt,
 		&i.DisplayNameOverride,
 		&i.IncludedEventsOverride,
 		&i.Note,
 		&i.PlanSlug,
-		&i.ProviderProductID,
 		&i.RetentionDaysOverride,
 		&i.TrialEndsAt,
+		&i.FlatFeeCents,
+		&i.BlockRateCents,
 	)
 	return i, err
 }
 
+const hasDunningBillingInvoice = `-- name: HasDunningBillingInvoice :one
+select exists (
+  select 1 from billing_invoices
+  where org_id = $1 and status in ('failed', 'uncollectible')
+)
+`
+
+// The one ledger read on the dashboard path: PAST_DUE is derived from it.
+func (q *Queries) HasDunningBillingInvoice(ctx context.Context, orgID string) (bool, error) {
+	row := q.db.QueryRow(ctx, hasDunningBillingInvoice, orgID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, flat_fee_cents, block_rate_cents from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -163,7 +292,168 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.PlanSlug,
 			&i.RetentionDaysOverride,
 			&i.TrialEndsAt,
-			&i.ProviderProductID,
+			&i.FlatFeeCents,
+			&i.BlockRateCents,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingInvoiceOrgs = `-- name: ListBillingInvoiceOrgs :many
+select o.id, o.create_time, e.anchor_day
+from orgs o
+left join billing_entitlements e on e.org_id = o.id
+where e.plan_slug = 'custom'
+   or exists (select 1 from billing_subscriptions s where s.org_id = o.id)
+order by o.id
+`
+
+type ListBillingInvoiceOrgsRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	AnchorDay  pgtype.Int2
+}
+
+// Every org the close step considers: one that ever held a mandate, or one on a
+// deal. A free org gets no invoice.
+func (q *Queries) ListBillingInvoiceOrgs(ctx context.Context) ([]ListBillingInvoiceOrgsRow, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoiceOrgs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBillingInvoiceOrgsRow
+	for rows.Next() {
+		var i ListBillingInvoiceOrgsRow
+		if err := rows.Scan(&i.ID, &i.CreateTime, &i.AnchorDay); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingInvoicesByOrg = `-- name: ListBillingInvoicesByOrg :many
+select amount_cents, attempts, billed_from, billed_to, blocks, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, update_time, usage_computed_at from billing_invoices
+where org_id = $1
+order by period_start desc
+limit $2
+`
+
+type ListBillingInvoicesByOrgParams struct {
+	OrgID    string
+	RowLimit int32
+}
+
+func (q *Queries) ListBillingInvoicesByOrg(ctx context.Context, arg ListBillingInvoicesByOrgParams) ([]BillingInvoice, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoicesByOrg, arg.OrgID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BillingInvoice
+	for rows.Next() {
+		var i BillingInvoice
+		if err := rows.Scan(
+			&i.AmountCents,
+			&i.Attempts,
+			&i.BilledFrom,
+			&i.BilledTo,
+			&i.Blocks,
+			&i.CreateTime,
+			&i.Currency,
+			&i.EventCount,
+			&i.FailedAt,
+			&i.ID,
+			&i.LastErrorCode,
+			&i.LastErrorMessage,
+			&i.Lines,
+			&i.NextAttemptAt,
+			&i.OrgID,
+			&i.PaidAt,
+			&i.PeriodEnd,
+			&i.PeriodStart,
+			&i.PlanSlug,
+			&i.Pricing,
+			&i.Provider,
+			&i.ProviderInvoiceUrl,
+			&i.ProviderPaymentID,
+			&i.ProviderSubID,
+			&i.Status,
+			&i.UpdateTime,
+			&i.UsageComputedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingInvoicesByStatusBefore = `-- name: ListBillingInvoicesByStatusBefore :many
+select amount_cents, attempts, billed_from, billed_to, blocks, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, update_time, usage_computed_at from billing_invoices
+where status = $1 and update_time < $2
+order by update_time
+limit $3
+`
+
+type ListBillingInvoicesByStatusBeforeParams struct {
+	Status   string
+	Before   pgtype.Timestamptz
+	RowLimit int32
+}
+
+// The settle reads: charging rows older than a few minutes, charged rows older
+// than an hour.
+func (q *Queries) ListBillingInvoicesByStatusBefore(ctx context.Context, arg ListBillingInvoicesByStatusBeforeParams) ([]BillingInvoice, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoicesByStatusBefore, arg.Status, arg.Before, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BillingInvoice
+	for rows.Next() {
+		var i BillingInvoice
+		if err := rows.Scan(
+			&i.AmountCents,
+			&i.Attempts,
+			&i.BilledFrom,
+			&i.BilledTo,
+			&i.Blocks,
+			&i.CreateTime,
+			&i.Currency,
+			&i.EventCount,
+			&i.FailedAt,
+			&i.ID,
+			&i.LastErrorCode,
+			&i.LastErrorMessage,
+			&i.Lines,
+			&i.NextAttemptAt,
+			&i.OrgID,
+			&i.PaidAt,
+			&i.PeriodEnd,
+			&i.PeriodStart,
+			&i.PlanSlug,
+			&i.Pricing,
+			&i.Provider,
+			&i.ProviderInvoiceUrl,
+			&i.ProviderPaymentID,
+			&i.ProviderSubID,
+			&i.Status,
+			&i.UpdateTime,
+			&i.UsageComputedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -176,7 +466,7 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 }
 
 const listBillingSubscriptionsByOrg = `-- name: ListBillingSubscriptionsByOrg :many
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1
 order by create_time desc
 `
@@ -208,6 +498,9 @@ func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID strin
 			&i.ProviderUpdatedAt,
 			&i.Status,
 			&i.UpdateTime,
+			&i.OnDemand,
+			&i.CancelAtPeriodEnd,
+			&i.EndedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -220,7 +513,7 @@ func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID strin
 }
 
 const listBillingSubscriptionsByProvider = `-- name: ListBillingSubscriptionsByProvider :many
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where provider = $1
 order by id
 limit $3 offset $2
@@ -259,6 +552,123 @@ func (q *Queries) ListBillingSubscriptionsByProvider(ctx context.Context, arg Li
 			&i.ProviderUpdatedAt,
 			&i.Status,
 			&i.UpdateTime,
+			&i.OnDemand,
+			&i.CancelAtPeriodEnd,
+			&i.EndedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDueBillingInvoices = `-- name: ListDueBillingInvoices :many
+select amount_cents, attempts, billed_from, billed_to, blocks, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, update_time, usage_computed_at from billing_invoices
+where status in ('open', 'failed') and next_attempt_at <= $1
+order by next_attempt_at
+limit $2
+`
+
+type ListDueBillingInvoicesParams struct {
+	Now      pgtype.Timestamptz
+	RowLimit int32
+}
+
+// Open and failed rows whose retry date has come; the pass charges these.
+func (q *Queries) ListDueBillingInvoices(ctx context.Context, arg ListDueBillingInvoicesParams) ([]BillingInvoice, error) {
+	rows, err := q.db.Query(ctx, listDueBillingInvoices, arg.Now, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BillingInvoice
+	for rows.Next() {
+		var i BillingInvoice
+		if err := rows.Scan(
+			&i.AmountCents,
+			&i.Attempts,
+			&i.BilledFrom,
+			&i.BilledTo,
+			&i.Blocks,
+			&i.CreateTime,
+			&i.Currency,
+			&i.EventCount,
+			&i.FailedAt,
+			&i.ID,
+			&i.LastErrorCode,
+			&i.LastErrorMessage,
+			&i.Lines,
+			&i.NextAttemptAt,
+			&i.OrgID,
+			&i.PaidAt,
+			&i.PeriodEnd,
+			&i.PeriodStart,
+			&i.PlanSlug,
+			&i.Pricing,
+			&i.Provider,
+			&i.ProviderInvoiceUrl,
+			&i.ProviderPaymentID,
+			&i.ProviderSubID,
+			&i.Status,
+			&i.UpdateTime,
+			&i.UsageComputedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveBillingSubscriptionsByProvider = `-- name: ListLiveBillingSubscriptionsByProvider :many
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
+where provider = $1 and status in ('active', 'past_due')
+order by id
+limit $3 offset $2
+`
+
+type ListLiveBillingSubscriptionsByProviderParams struct {
+	Provider  string
+	RowOffset int32
+	RowLimit  int32
+}
+
+// The mandates whose next_billing_date the pass pins.
+func (q *Queries) ListLiveBillingSubscriptionsByProvider(ctx context.Context, arg ListLiveBillingSubscriptionsByProviderParams) ([]BillingSubscription, error) {
+	rows, err := q.db.Query(ctx, listLiveBillingSubscriptionsByProvider, arg.Provider, arg.RowOffset, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BillingSubscription
+	for rows.Next() {
+		var i BillingSubscription
+		if err := rows.Scan(
+			&i.CreateTime,
+			&i.Currency,
+			&i.CurrentPeriodEnd,
+			&i.CurrentPeriodStart,
+			&i.ID,
+			&i.OrgID,
+			&i.PlanSlug,
+			&i.PriceCents,
+			&i.Provider,
+			&i.ProviderCustomerID,
+			&i.ProviderStatus,
+			&i.ProviderSubID,
+			&i.ProviderUpdatedAt,
+			&i.Status,
+			&i.UpdateTime,
+			&i.OnDemand,
+			&i.CancelAtPeriodEnd,
+			&i.EndedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -275,7 +685,7 @@ select e.org_id, e.plan_slug
 from billing_entitlements e
 left join billing_subscriptions s
   on s.org_id = e.org_id and s.status in ('active', 'past_due')
-where e.plan_slug not in ('free', 'trial')
+where e.plan_slug = 'custom'
   and (e.contract_ends_at is null or e.contract_ends_at > now())
   and s.org_id is null
 order by e.org_id
@@ -286,8 +696,8 @@ type ListPaidEntitlementsWithoutLiveSubscriptionRow struct {
 	PlanSlug string
 }
 
-// Every paid org should have a provider subscription. A row here is an org
-// entitled to something nobody is charged for.
+// A deal in force with no mandate behind it is an org entitled to something
+// nobody is charged for. A pinned card is grandfathering, not a grant.
 func (q *Queries) ListPaidEntitlementsWithoutLiveSubscription(ctx context.Context) ([]ListPaidEntitlementsWithoutLiveSubscriptionRow, error) {
 	rows, err := q.db.Query(ctx, listPaidEntitlementsWithoutLiveSubscription)
 	if err != nil {
@@ -375,6 +785,58 @@ func (q *Queries) ListStrandedBillingWebhookDeliveries(ctx context.Context, stal
 	for rows.Next() {
 		var i ListStrandedBillingWebhookDeliveriesRow
 		if err := rows.Scan(&i.Provider, &i.WebhookID, &i.EventType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnbilledUsagePeriods = `-- name: ListUnbilledUsagePeriods :many
+select p.org_id, p.period_start, p.period_end, p.event_count
+from usage_periods p
+where p.event_count > $1
+  and p.period_end <= $2 and p.period_end > $3
+  and not exists (
+    select 1 from billing_subscriptions s
+    where s.org_id = p.org_id and s.status in ('active', 'past_due')
+  )
+order by p.org_id, p.period_start
+`
+
+type ListUnbilledUsagePeriodsParams struct {
+	MinEvents    int64
+	ClosedBefore pgtype.Timestamptz
+	Since        pgtype.Timestamptz
+}
+
+type ListUnbilledUsagePeriodsRow struct {
+	OrgID       string
+	PeriodStart pgtype.Timestamptz
+	PeriodEnd   pgtype.Timestamptz
+	EventCount  int64
+}
+
+// Closed periods over the free allowance for orgs with no live mandate: what the
+// free tier costs, reported and never billed.
+func (q *Queries) ListUnbilledUsagePeriods(ctx context.Context, arg ListUnbilledUsagePeriodsParams) ([]ListUnbilledUsagePeriodsRow, error) {
+	rows, err := q.db.Query(ctx, listUnbilledUsagePeriods, arg.MinEvents, arg.ClosedBefore, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnbilledUsagePeriodsRow
+	for rows.Next() {
+		var i ListUnbilledUsagePeriodsRow
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.PeriodStart,
+			&i.PeriodEnd,
+			&i.EventCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

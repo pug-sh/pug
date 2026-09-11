@@ -42,10 +42,6 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
 	}
-	products, err := dodo.ProductIDs(nil)
-	if err != nil {
-		return nil, err
-	}
 	client, err := dodo.New(cfg)
 	if err != nil {
 		return nil, err
@@ -55,7 +51,7 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	}
 
 	return &corebilling.Payments{
-		ProductBySlug: products,
-		Provider:      client,
+		MandateProduct: strings.TrimSpace(cfg.MandateProduct),
+		Provider:       client,
 	}, nil
 }

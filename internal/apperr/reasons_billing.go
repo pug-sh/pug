@@ -16,4 +16,5 @@ var (
 	ReasonBillingTwoLiveSubscriptions     = codes.add("BILLING_TWO_LIVE_SUBSCRIPTIONS")
 	ReasonBillingCheckoutFailed           = codes.add("BILLING_CHECKOUT_FAILED")
 	ReasonBillingSubscriptionUnapplicable = codes.add("BILLING_SUBSCRIPTION_UNAPPLICABLE")
+	ReasonBillingNoMandate                = codes.add("BILLING_NO_MANDATE")
 )

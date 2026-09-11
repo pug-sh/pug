@@ -1,5 +1,7 @@
 # Billing — entitlement
 
+> **Stale where it disagrees with [`usage-billing.md`](usage-billing.md).** Usage-based pricing landed 2026-09-12 and replaced the flat tiers, the product-per-tier checkout and the `provider_product_id` column this file still describes. That document is the current reference until it is folded back into this one.
+
 Design reference for the first billing slice (`internal/core/billing`,
 `proto/dashboard/billing`, `pug billing`). Linked from the root
 [`CLAUDE.md`](../../CLAUDE.md) — read this when working on plans,
@@ -81,18 +83,10 @@ Four properties everything below preserves.
 
 ## 4. The plan catalog
 
-`internal/core/billing/plans.go` — an ordered slice of `Plan{Slug, DisplayName,
-Currency, PriceCents, IncludedEvents, RetentionDays, Retired}`, with `PlanBySlug`
-for lookup.
-
-| slug | name | price | included events / month | retention | retired |
-|---|---|---|---|---|---|
-| `free` | Free | $0 | 10,000 | 365 days | no |
-| `trial` | Trial | $0 | 500,000 | 365 days | no |
-| `starter` | Starter | $10/mo | 100,000 | 365 days | no |
-| `growth` | Growth | $20/mo | 500,000 | 1,095 days (3y) | no |
-| `scale` | Scale | $30/mo | 1,000,000 | 2,555 days (7y) | no |
-| `custom` | Custom | — | *set per org* (§4.1) | *set per org* (§4.1) | no |
+> **Superseded.** `plans.go`, `PlanBySlug` and the flat monthly tiers below were
+> deleted by usage-based pricing. The catalog is now `card.go`'s rate cards, one
+> retention term for all of them, and pricing is per 100k-event block — see
+> [`usage-billing.md`](usage-billing.md) §3-4.
 
 - `free` and `trial` are the **floors**, the answer when nothing else applies.
   `trial` is never stored at all — `extend-trial` writes a `free` row plus a
@@ -152,9 +146,10 @@ layer over whichever plan it names:
 Term is `contract_ends_at`, and the paperwork lives in `note`. Nothing about a
 bespoke deal needs a deploy, a catalog row or a join.
 
-**The deal's price is deliberately absent.** pug stores what the org may *send*;
-what it *pays* lives in the payments provider, which is the only system that can
-charge it — see [`payments.md`](payments.md) §4 for the full argument. Storing
+**Reversed by usage-based pricing: the deal's money is now stored here**
+(`flat_fee_cents`, `block_rate_cents`), because an on-demand charge carries an
+amount and only pug holds the count — see [`usage-billing.md`](usage-billing.md)
+§2. The original argument is kept below because the question comes back. Storing
 both would mean two authorities on one number, disagreeing the first time a deal
 is repriced, with the dashboard rendering the stale one as fact. The agreed
 amount goes in `note` if an operator wants it written down, which is honest about
@@ -652,9 +647,9 @@ rather than by an "ok". Three things about that report are load-bearing:
   re-read. The reader is a replica in principle, and confirming a write against a
   lagging read is how a successful `set` prints the row it replaced. `RESOLVED`
   is re-read, because it needs the subscription (payments §7) as well.
-- **`--provider-product` is the one field that decides whether an org can spend
-  money** (payments §5.2), so it is printed in `STORED` and carried in the
-  history line.
+- **`--provider-product` was dropped** with the product-per-tier checkout; every
+  org now authorizes against the one mandate product. What decides whether a deal
+  can be charged is its money (`--flat-fee` / `--block-rate`).
 
 The report goes to stdout and the logs to stderr, so `show` stays pipeable; a
 refusal is a non-zero exit with the reason on stderr and no usage block.

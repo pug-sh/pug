@@ -24,6 +24,7 @@ type BillingCheckoutSession struct {
 	OrgID      string
 	Provider   string
 	Ref        string
+	PlanSlug   string
 }
 
 type BillingEntitlement struct {
@@ -38,7 +39,8 @@ type BillingEntitlement struct {
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	UpdateTime             pgtype.Timestamptz
-	ProviderProductID      pgtype.Text
+	FlatFeeCents           pgtype.Int8
+	BlockRateCents         pgtype.Int8
 }
 
 type BillingEntitlementHistory struct {
@@ -54,7 +56,48 @@ type BillingEntitlementHistory struct {
 	PlanSlug               pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
-	ProviderProductID      pgtype.Text
+	FlatFeeCents           pgtype.Int8
+	BlockRateCents         pgtype.Int8
+}
+
+type BillingInvoice struct {
+	AmountCents        int64
+	Attempts           int32
+	BilledFrom         pgtype.Date
+	BilledTo           pgtype.Date
+	Blocks             int64
+	CreateTime         pgtype.Timestamptz
+	Currency           string
+	EventCount         int64
+	FailedAt           pgtype.Timestamptz
+	ID                 string
+	LastErrorCode      string
+	LastErrorMessage   string
+	Lines              []byte
+	NextAttemptAt      pgtype.Timestamptz
+	OrgID              string
+	PaidAt             pgtype.Timestamptz
+	PeriodEnd          pgtype.Timestamptz
+	PeriodStart        pgtype.Timestamptz
+	PlanSlug           string
+	Pricing            []byte
+	Provider           pgtype.Text
+	ProviderInvoiceUrl pgtype.Text
+	ProviderPaymentID  pgtype.Text
+	ProviderSubID      pgtype.Text
+	Status             string
+	UpdateTime         pgtype.Timestamptz
+	UsageComputedAt    pgtype.Timestamptz
+}
+
+type BillingInvoiceEvent struct {
+	Actor      string
+	At         pgtype.Timestamptz
+	Detail     string
+	FromStatus string
+	ID         string
+	InvoiceID  string
+	ToStatus   string
 }
 
 type BillingSubscription struct {
@@ -73,6 +116,9 @@ type BillingSubscription struct {
 	ProviderUpdatedAt  pgtype.Timestamptz
 	Status             string
 	UpdateTime         pgtype.Timestamptz
+	OnDemand           bool
+	CancelAtPeriodEnd  bool
+	EndedAt            pgtype.Timestamptz
 }
 
 type BillingWebhookDelivery struct {

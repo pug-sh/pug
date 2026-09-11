@@ -9,189 +9,143 @@ import (
 
 func liveSub(slug string) *corebilling.Subscription {
 	return &corebilling.Subscription{
-		PlanSlug: slug, Status: corebilling.SubStatusActive,
-		PriceCents: 2_000, Currency: "USD",
-		ProviderCustomerID: "cus_1", ProviderSubID: "sub_1",
+		PlanSlug: slug, Status: corebilling.SubStatusActive, OnDemand: true,
+		Currency: "USD", ProviderCustomerID: "cus_1", ProviderSubID: "sub_1",
 		CurrentPeriodEnd: later.AddDate(0, 0, 12),
 	}
 }
 
-// Somebody is paying for this, so it outranks everything beneath it.
-func TestSubscriptionSuppliesThePlan(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("growth"), later, true)
+// A live mandate is what makes an org chargeable, on the card it pinned.
+func TestMandateMakesTheOrgChargeable(t *testing.T) {
+	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub(corebilling.CurrentSlug), later, true)
 	if ent.Status != corebilling.StatusActive {
 		t.Errorf("status = %s, want ACTIVE", ent.Status)
 	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth", ent.Slug)
+	if !ent.Chargeable {
+		t.Error("chargeable = false with a live on-demand mandate")
 	}
-	if got := quota(t, ent); got != 500_000 {
-		t.Errorf("quota = %d, want 500000", got)
+	if ent.Slug != corebilling.CurrentSlug || ent.Card == nil {
+		t.Errorf("slug/card = %q/%v, want the pinned card", ent.Slug, ent.Card)
 	}
-	if ent.SubStatus != corebilling.SubStatusActive {
-		t.Errorf("sub_status = %q, want active", ent.SubStatus)
+	if got := quota(t, ent); got != freeAllowance {
+		t.Errorf("quota = %d, want %d", got, freeAllowance)
 	}
-	if ent.ProviderCustomerID != "cus_1" {
-		t.Errorf("provider_customer_id = %q, want cus_1", ent.ProviderCustomerID)
-	}
-}
-
-// The subscription beats an operator grant naming a different tier: the grant is
-// rule 2 and only applies when nothing is being charged.
-func TestSubscriptionOutranksAnOperatorGrant(t *testing.T) {
-	rec := corebilling.Record{Present: true, PlanSlug: "starter"}
-	ent := corebilling.Resolve(created, rec, liveSub("scale"), later, true)
-	if ent.Slug != "scale" {
-		t.Errorf("slug = %q, want scale (the subscription's, not the grant's)", ent.Slug)
+	if ent.SubStatus != corebilling.SubStatusActive || ent.ProviderCustomerID != "cus_1" {
+		t.Errorf("sub = %q/%q, want active/cus_1", ent.SubStatus, ent.ProviderCustomerID)
 	}
 }
 
-// past_due is live on purpose: the card failed, the entitlement did not.
-func TestPastDueKeepsTheQuota(t *testing.T) {
-	sub := liveSub("growth")
-	sub.Status = corebilling.SubStatusPastDue
-	ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — a failed card must not degrade the plan", ent.Slug)
-	}
-	if got := quota(t, ent); got != 500_000 {
-		t.Errorf("quota = %d, want 500000", got)
+// The operator's pin on the row wins over the mandate's: that is how an org is
+// grandfathered by hand or moved onto new terms deliberately.
+func TestRowPinOutranksTheMandatesPin(t *testing.T) {
+	rec := corebilling.Record{Present: true, PlanSlug: corebilling.CurrentSlug}
+	ent := corebilling.Resolve(created, rec, liveSub("usage-2020-01"), later, true)
+	if ent.Slug != corebilling.CurrentSlug || ent.Card == nil {
+		t.Errorf("slug = %q, want the row's pin over the mandate's unknown card", ent.Slug)
 	}
 }
 
-// Every not-live status supplies nothing and the org falls to what is beneath.
-func TestNotLiveSubscriptionSuppliesNothing(t *testing.T) {
-	for _, status := range corebilling.AllSubStatuses() {
-		if status.Live() {
-			continue
-		}
-		sub := liveSub("scale")
-		sub.Status = status
-		ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
-		if ent.Slug != "free" {
-			t.Errorf("%s subscription resolved to %q, want free", status, ent.Slug)
-		}
-		if ent.SubStatus != "" {
-			t.Errorf("%s subscription reported sub_status %q, want empty", status, ent.SubStatus)
-		}
+// A mandate pinned to a card the catalog dropped keeps its name and no quota:
+// resolving it to the current card would price it on terms nobody agreed to.
+func TestMandateOnAnUnknownCardKeepsItsName(t *testing.T) {
+	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("usage-2020-01"), later, true)
+	if ent.Slug != "usage-2020-01" || ent.Card != nil {
+		t.Errorf("slug/card = %q/%v, want the mandate's own slug and no card", ent.Slug, ent.Card)
 	}
-}
-
-// A cancelled subscription must not shadow a grant the operator made after it.
-func TestCancelledSubscriptionFallsBackToTheGrant(t *testing.T) {
-	sub := liveSub("starter")
-	sub.Status = corebilling.SubStatusCancelled
-	rec := corebilling.Record{Present: true, PlanSlug: "growth"}
-	ent := corebilling.Resolve(created, rec, sub, later, true)
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth (the grant beneath a dead subscription)", ent.Slug)
-	}
-}
-
-// Rule 3: the deal's quota is pug's, and the subscription is what makes the
-// custom tier mean anything.
-func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
-	rec := corebilling.Record{
-		Present: true, PlanSlug: "custom",
-		IncludedEventsOverride: 5_000_000,
-		DisplayNameOverride:    "Acme Enterprise",
-		ProviderProductID:      "prod_acme",
-	}
-	ent := corebilling.Resolve(created, rec, liveSub("custom"), later, true)
-	if got := quota(t, ent); got != 5_000_000 {
-		t.Errorf("quota = %d, want 5000000", got)
-	}
-	if ent.DisplayName != "Acme Enterprise" {
-		t.Errorf("display_name = %q, want Acme Enterprise", ent.DisplayName)
-	}
-	if ent.PriceCents != nil {
-		t.Errorf("price_cents = %d, want absent — a deal's price lives in the provider", *ent.PriceCents)
-	}
-}
-
-// A paid custom subscription with no quota row behind it. The free floor is the
-// honest answer, and reconcile reports it; silently unlimited is the hazard.
-func TestCustomSubscriptionWithNoQuotaFallsToFree(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("custom"), later, true)
-	if ent.Slug != "free" {
-		t.Errorf("slug = %q, want free", ent.Slug)
-	}
-	if ent.Status != corebilling.StatusFree {
-		t.Errorf("status = %s, want FREE", ent.Status)
-	}
-	if got := quota(t, ent); got != 10_000 {
-		t.Errorf("quota = %d, want the free floor", got)
-	}
-}
-
-// A contract bounds an operator's grant. It cannot expire a subscription the
-// provider still says is live, or a live custom deal loses its quota mid-term.
-func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
-	rec := corebilling.Record{
-		Present: true, PlanSlug: "custom",
-		IncludedEventsOverride: 5_000_000,
-		ContractEndsAt:         later.AddDate(0, 0, -1),
-	}
-	ent := corebilling.Resolve(created, rec, liveSub("custom"), later, true)
-	if got := quota(t, ent); got != 5_000_000 {
-		t.Errorf("quota = %d, want 5000000 — the customer is still being charged", got)
-	}
-
-	// With nothing being charged, the lapsed contract does expire the deal.
-	lapsed := corebilling.Resolve(created, rec, nil, later, true)
-	if lapsed.Slug != "free" {
-		t.Errorf("slug with no subscription = %q, want free", lapsed.Slug)
-	}
-}
-
-// A catalog tier is a different purchase, so a lapsed grant's quota and name must
-// not ride along on it — the customer would pay Starter for the pilot's quota.
-func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
-	rec := corebilling.Record{
-		Present: true, PlanSlug: "custom",
-		IncludedEventsOverride: 5_000_000,
-		DisplayNameOverride:    "Acme Pilot",
-		ContractEndsAt:         later.AddDate(0, 0, -1),
-	}
-	ent := corebilling.Resolve(created, rec, liveSub("starter"), later, true)
-	if got := quota(t, ent); got != 100_000 {
-		t.Errorf("quota = %d, want 100000 — the pilot's grant lapsed", got)
-	}
-	if ent.DisplayName != "Starter" {
-		t.Errorf("display name = %q, want Starter", ent.DisplayName)
-	}
-}
-
-// A slug the catalog no longer knows keeps its own name and no quota. Resolving
-// it to "free, 10,000" would tell a paying customer they are over their limit.
-func TestSubscriptionOnAnUnknownSlugKeepsItsName(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("growth-v0"), later, true)
-	if ent.Slug != "growth-v0" {
-		t.Errorf("slug = %q, want growth-v0", ent.Slug)
-	}
-	if ent.Status != corebilling.StatusActive {
-		t.Errorf("status = %s, want ACTIVE", ent.Status)
+	if ent.Status != corebilling.StatusActive || !ent.Chargeable {
+		t.Errorf("status/chargeable = %s/%v, want ACTIVE and chargeable", ent.Status, ent.Chargeable)
 	}
 	if ent.IncludedEvents != nil {
 		t.Errorf("quota = %d, want absent", *ent.IncludedEvents)
 	}
 }
 
-// Billing off is the self-hosted shape: no quota, and no subscription consulted.
-func TestSubscriptionIgnoredWhenBillingIsOff(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("scale"), later, false)
-	if ent.Slug != "free" || ent.IncludedEvents != nil {
-		t.Errorf("slug = %q quota = %v, want free with no quota", ent.Slug, ent.IncludedEvents)
+// A mandate opened for a deal: the terms are pug's, the money is the mandate's.
+func TestCustomDealWithAMandate(t *testing.T) {
+	ent := corebilling.Resolve(created, deal(40_000, 300, 5_000_000), liveSub(corebilling.SlugCustom), later, true)
+	if ent.Slug != corebilling.SlugCustom || ent.Terms == nil {
+		t.Fatalf("slug/terms = %q/%v, want custom", ent.Slug, ent.Terms)
+	}
+	if !ent.Chargeable || ent.Status != corebilling.StatusActive {
+		t.Errorf("chargeable/status = %v/%s, want true/ACTIVE", ent.Chargeable, ent.Status)
+	}
+	if got := quota(t, ent); got != 5_000_000 {
+		t.Errorf("quota = %d, want 5000000", got)
+	}
+}
+
+// A lapsed deal under a live mandate falls to the card, not to free: the org is
+// still a customer, and the card is what anyone without a deal pays.
+func TestLapsedDealUnderAMandateFallsToTheCard(t *testing.T) {
+	rec := deal(40_000, 300, 5_000_000)
+	rec.ContractEndsAt = later.AddDate(0, 0, -1)
+	ent := corebilling.Resolve(created, rec, liveSub(corebilling.SlugCustom), later, true)
+	if ent.Slug != corebilling.CurrentSlug || ent.Card == nil || ent.Terms != nil {
+		t.Errorf("slug = %q, want the current card", ent.Slug)
+	}
+	if !ent.Chargeable || ent.Status != corebilling.StatusActive {
+		t.Errorf("chargeable/status = %v/%s, want true/ACTIVE — the mandate is still live", ent.Chargeable, ent.Status)
+	}
+	if got := quota(t, ent); got != freeAllowance {
+		t.Errorf("quota = %d, want the card's %d", got, freeAllowance)
+	}
+}
+
+// past_due is live on purpose: the card failed, the entitlement did not.
+func TestPastDueMandateStaysLive(t *testing.T) {
+	sub := liveSub(corebilling.CurrentSlug)
+	sub.Status = corebilling.SubStatusPastDue
+	ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
+	if ent.Status != corebilling.StatusActive || !ent.Chargeable {
+		t.Errorf("status/chargeable = %s/%v, want ACTIVE and chargeable", ent.Status, ent.Chargeable)
+	}
+}
+
+// Every not-live status supplies nothing and the org falls to what is beneath.
+func TestNotLiveMandateSuppliesNothing(t *testing.T) {
+	for _, status := range corebilling.AllSubStatuses() {
+		if status.Live() {
+			continue
+		}
+		sub := liveSub("usage-2020-01")
+		sub.Status = status
+		ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
+		if ent.Slug != corebilling.CurrentSlug || ent.Chargeable || ent.Status != corebilling.StatusFree {
+			t.Errorf("%s mandate resolved %q/%s/chargeable=%v, want the current card, FREE, not chargeable",
+				status, ent.Slug, ent.Status, ent.Chargeable)
+		}
+		if ent.SubStatus != "" {
+			t.Errorf("%s mandate reported sub_status %q, want empty", status, ent.SubStatus)
+		}
+	}
+}
+
+// A recurring subscription that somehow got stored is live but not chargeable:
+// charging it would bill the org twice.
+func TestRecurringSubscriptionIsNotChargeable(t *testing.T) {
+	sub := liveSub(corebilling.CurrentSlug)
+	sub.OnDemand = false
+	ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
+	if ent.Chargeable {
+		t.Error("a subscription that is not on-demand is chargeable")
+	}
+}
+
+// Billing off is the self-hosted shape: no quota, and no mandate consulted.
+func TestMandateIgnoredWhenBillingIsOff(t *testing.T) {
+	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub(corebilling.CurrentSlug), later, false)
+	if ent.Slug != corebilling.SlugFree || ent.IncludedEvents != nil || ent.Chargeable {
+		t.Errorf("slug = %q quota = %v chargeable = %v, want free with nothing", ent.Slug, ent.IncludedEvents, ent.Chargeable)
 	}
 	if ent.SubStatus != "" {
 		t.Errorf("sub_status = %q, want empty", ent.SubStatus)
 	}
 }
 
-// The quota window is the org's anniversary; the subscription's period is when
-// the provider bills. They are different questions and must not be conflated.
-func TestSubscriptionPeriodIsNotTheQuotaWindow(t *testing.T) {
-	sub := liveSub("growth")
+// The quota window is the org's anniversary; the mandate's period is the
+// provider's date. They are different questions and must not be conflated.
+func TestMandatePeriodIsNotTheQuotaWindow(t *testing.T) {
+	sub := liveSub(corebilling.CurrentSlug)
 	sub.CurrentPeriodEnd = time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
 	ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
 	if ent.PeriodEnd.Equal(ent.SubPeriodEnd) {
