@@ -132,7 +132,8 @@ func TestCatalogIsPinned(t *testing.T) {
 			continue
 		}
 		if c.Currency != w.Currency || c.BlockEvents != w.BlockEvents || c.FreeBlocks != w.FreeBlocks ||
-			c.RetentionDays != w.RetentionDays || c.Retired != w.Retired || len(c.Tiers) != len(w.Tiers) {
+			c.DisplayName != w.DisplayName || c.RetentionDays != w.RetentionDays ||
+			c.Retired != w.Retired || len(c.Tiers) != len(w.Tiers) {
 			t.Errorf("%s: card = %+v, want %+v — reprice by minting a new slug", c.Slug, c, w)
 			continue
 		}

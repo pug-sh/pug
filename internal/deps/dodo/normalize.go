@@ -70,6 +70,7 @@ type paymentPayload struct {
 	Metadata     metadata   `json:"metadata"`
 	PaymentID    string     `json:"payment_id"`
 	Status       string     `json:"status"`
+	Tax          int64      `json:"tax"`
 	TotalAmount  int64      `json:"total_amount"`
 }
 
@@ -158,7 +159,7 @@ func (c *Client) NormalizePayment(d corebilling.Delivery) (corebilling.PaymentEv
 			ErrorCode:    payload.ErrorCode,
 			ErrorMessage: payload.ErrorMessage,
 			InvoiceURL:   payload.InvoiceURL,
-			AmountCents:  payload.TotalAmount,
+			AmountCents:  payload.TotalAmount - payload.Tax,
 			Currency:     strings.ToUpper(strings.TrimSpace(payload.Currency)),
 		},
 	}

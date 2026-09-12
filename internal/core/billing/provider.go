@@ -26,8 +26,10 @@ var (
 	ErrMandateNotChargeable = errors.New("billing: the mandate can no longer be charged")
 )
 
-// DeclineError is a charge the provider refused outright, with the decline it
-// gave. Anything else a charge returns is ambiguous and settled by reading.
+// DeclineError is a charge the provider refused outright. Code is synthesised
+// from the HTTP status, not the provider's own error_code, which reaches pug
+// later on the payment record. Anything else a charge returns is ambiguous and
+// settled by reading.
 type DeclineError struct {
 	Code    string
 	Message string
@@ -147,7 +149,8 @@ type PaymentRecord struct {
 	ErrorCode    string
 	ErrorMessage string
 	InvoiceURL   string
-	// AmountCents and Currency are what the provider actually took, so pug can
+	// AmountCents and Currency are what the provider actually took, PRE-TAX to
+	// match what pug billed -- the mandate product is tax-exclusive -- so pug can
 	// check it against what it billed rather than trusting the invoice id alone.
 	AmountCents int64
 	Currency    string

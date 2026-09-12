@@ -83,10 +83,11 @@ Four properties everything below preserves.
 
 ## 4. The plan catalog
 
-> **Superseded.** `plans.go`, `PlanBySlug` and the flat monthly tiers below were
-> deleted by usage-based pricing. The catalog is now `card.go`'s rate cards, one
-> retention term for all of them, and pricing is per 100k-event block — see
-> [`usage-billing.md`](usage-billing.md) §3-4.
+> **Partly superseded.** `plans.go`, `PlanBySlug` and the flat monthly tiers in
+> this section's table were deleted by usage-based pricing. The catalog is now
+> `card.go`'s rate cards, one retention term for all of them, and pricing is per
+> 100k-event block — see [`usage-billing.md`](usage-billing.md) §3-4. §4.1 and
+> §4.2 below still describe live behaviour.
 
 - `free` and `trial` are the **floors**, the answer when nothing else applies.
   `trial` is never stored at all — `extend-trial` writes a `free` row plus a
@@ -741,7 +742,10 @@ rewrites what this one stores.
    the provider becomes one more thing that can write it. `ListPlans` and the
    plan catalog's move from Go to rows belong here too, since a purchasable tier
    is bound to a per-environment provider product id, which is the first thing
-   in this subsystem that genuinely cannot be a Go const. Four things must be
+   in this subsystem that genuinely cannot be a Go const. (**Superseded:** the
+   catalog stayed in Go — usage-based pricing put one mandate product behind
+   every org and deleted `provider_product_id`, so nothing binds a card to a
+   per-environment id. See [`usage-billing.md`](usage-billing.md) §4-5.) Four things must be
    decided *in* this slice rather than discovered after it:
    - **The provider is a merchant of record** (Dodo, Paddle, Lemon Squeezy) —
      which is what makes VAT/GST registration, tax collection and legally

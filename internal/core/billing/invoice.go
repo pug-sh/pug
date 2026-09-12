@@ -39,10 +39,10 @@ const (
 // ParseInvoiceStatus refuses a status this build does not know, so a row written
 // by a newer binary cannot silently take a branch meant for another state.
 func ParseInvoiceStatus(s string) (InvoiceStatus, bool) {
-	for _, st := range AllInvoiceStatuses() {
-		if string(st) == s {
-			return st, true
-		}
+	switch st := InvoiceStatus(s); st {
+	case InvoiceOpen, InvoiceCharging, InvoiceCharged, InvoicePaid, InvoiceFailed,
+		InvoiceUncollectible, InvoiceWaived, InvoiceVoid, InvoiceRefunded:
+		return st, true
 	}
 	return "", false
 }
@@ -82,7 +82,9 @@ const (
 // after the first failure.
 var retryBackoff = []time.Duration{3 * 24 * time.Hour, 7 * 24 * time.Hour, 7 * 24 * time.Hour}
 
-// hardDecline is a decline that retrying only damages authorization rates.
+// hardDecline is a decline that retrying only damages authorization rates. It
+// matches the provider's own code, which arrives on the payment record; a
+// synchronous refusal carries an HTTP status instead and is always soft.
 func hardDecline(code string) bool {
 	switch code {
 	case "STOLEN_CARD", "LOST_CARD", "DO_NOT_HONOR", "FRAUDULENT":
@@ -164,6 +166,17 @@ func invoiceFromRow(row dbread.BillingInvoice) (Invoice, error) {
 	if err := json.Unmarshal(row.Pricing, &inv.Pricing); err != nil {
 		return Invoice{}, fmt.Errorf("billing: invoice %s pricing: %w", row.ID, err)
 	}
+	// amount_cents is what gets charged and lines is what the customer sees. They
+	// are written together and read apart, so disagreeing is a defect, not a state.
+	// Blocks are not summed: a fee-only deal prices with no banded line at all.
+	var total int64
+	for _, l := range inv.Lines {
+		total += l.AmountCents
+	}
+	if total != inv.AmountCents {
+		return Invoice{}, fmt.Errorf("billing: invoice %s bills %d but its lines sum to %d",
+			row.ID, inv.AmountCents, total)
+	}
 	return inv, nil
 }
 
@@ -179,10 +192,15 @@ type InvoiceReport struct {
 	Ambiguous   int
 	MandateGone int
 
+	// Uncollectible is every terminal write-off, whatever reached it.
+	Uncollectible int
+
 	Settled  int
 	Reopened int
 	Pinned   int
 	Unbilled int
+	// Dropped is a due period that fell out of the catch-up window unbilled.
+	Dropped int
 	// Foreign is an invoice stamped with another provider: this pass cannot touch
 	// it, and without a count it would be skipped every hour in silence.
 	Foreign int
@@ -199,6 +217,8 @@ func (s *Service) InvoicePass(ctx context.Context, now time.Time) (InvoiceReport
 		slog.InfoContext(ctx, "billing is off or has no provider; nothing to invoice")
 		return r, nil
 	}
+	slog.InfoContext(ctx, "billing invoice pass starting",
+		slog.Duration("grace", s.cfg.Grace()), slog.Time("now", now))
 	for _, step := range []func(context.Context, time.Time, *InvoiceReport) error{
 		s.closePeriods, s.chargeDue, s.settle, s.pinNextCharges, s.reportUnbilled,
 	} {
@@ -213,6 +233,7 @@ func (s *Service) InvoicePass(ctx context.Context, now time.Time) (InvoiceReport
 		slog.Int("mandate_gone", r.MandateGone), slog.Int("settled", r.Settled),
 		slog.Int("reopened", r.Reopened), slog.Int("pinned", r.Pinned),
 		slog.Int("unbilled", r.Unbilled), slog.Int("foreign", r.Foreign),
+		slog.Int("uncollectible", r.Uncollectible), slog.Int("dropped", r.Dropped),
 		slog.Int("unreadable", r.Unreadable))
 	return r, nil
 }
@@ -229,6 +250,10 @@ func (s *Service) closePeriods(ctx context.Context, now time.Time, r *InvoiceRep
 			return err
 		}
 		if err := s.closeOrg(ctx, org, now, r); err != nil {
+			if errors.Is(err, ErrSubscriptionUnreadable) {
+				r.Unreadable++
+				continue
+			}
 			return err
 		}
 	}
@@ -247,29 +272,52 @@ func (s *Service) closeOrg(ctx context.Context, org dbread.ListBillingInvoiceOrg
 	anchor := coreusage.AnchorDay(org.CreateTime.Time, postgres.Int2ToInt(org.AnchorDay))
 	grace := s.cfg.Grace()
 
-	// A scheduled cancellation: invoice the period to date while the mandate is live.
+	// A cancellation that lands before the natural close: invoice the period to
+	// date while the mandate is live. Only then -- the invoice takes the period's
+	// one slot, so closing early when the natural close would still have caught a
+	// live mandate leaves the rest of the period unbillable.
 	if live := liveOf(subs); live != nil && live.CancelAtPeriodEnd {
 		start, end := coreusage.PeriodFor(now, anchor)
-		if to := coreusage.FloorDayUTC(now.Add(-grace)); to.After(start) {
+		early := live.CurrentPeriodEnd.IsZero() || live.CurrentPeriodEnd.Before(end.Add(grace))
+		if to := coreusage.FloorDayUTC(now.Add(-grace)); early && to.After(start) {
 			if _, err := s.closeWindow(ctx, org.ID, org.CreateTime.Time, rec, live, start, end, to, now, r); err != nil {
 				return err
 			}
 		}
 	}
 
+	_, deal := rec.Terms()
 	start, _ := coreusage.PeriodFor(now, anchor)
-	for range maxClosePeriods {
+	for i := range maxClosePeriods {
 		end := start
 		start, _ = coreusage.PeriodFor(end.Add(-time.Nanosecond), anchor)
 		if !end.After(org.CreateTime.Time) {
-			break
+			return nil
 		}
 		if now.Before(end.Add(grace)) {
 			continue
 		}
 		sub := mandateOverlapping(subs, start, end)
-		if _, err := s.closeWindow(ctx, org.ID, org.CreateTime.Time, rec, sub, start, end, end, end.Add(-time.Nanosecond), r); err != nil {
+		inv, err := s.closeWindow(ctx, org.ID, org.CreateTime.Time, rec, sub, start, end, end, end.Add(-time.Nanosecond), r)
+		if err != nil {
 			return err
+		}
+		// The last lap the window reaches. A billable period still unwritten here is
+		// one the next pass can no longer see, and its slot recedes with it.
+		if inv == nil && i == maxClosePeriods-1 && (sub != nil || deal) {
+			exists, err := s.read.ExistsBillingInvoiceForPeriod(ctx, dbread.ExistsBillingInvoiceForPeriodParams{
+				OrgID: org.ID, PeriodStart: postgres.NewTimestamptz(start),
+			})
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to check for a dropped invoice", slogx.Error(err), slog.String("org_id", org.ID))
+				telemetry.RecordError(ctx, err)
+				return err
+			}
+			if !exists {
+				r.Dropped++
+				slog.WarnContext(ctx, "the oldest period in the catch-up window is still unbilled",
+					slog.String("org_id", org.ID), slog.Time("period_start", start))
+			}
 		}
 	}
 	return nil
@@ -317,7 +365,7 @@ func (s *Service) closeWindow(
 	// A deal with no mandate is invoiced from the day it was recorded; a free org
 	// gets no invoice at all.
 	_, deal := rec.Terms()
-	if sub == nil && (!deal || contractLapsed(rec, at) || !end.After(rec.CreateTime)) {
+	if sub == nil && (!deal || contractLapsed(rec, at) || !end.After(rec.dealStart())) {
 		return nil, nil
 	}
 
@@ -347,7 +395,7 @@ func (s *Service) closeWindow(
 			to = minTime(to, coreusage.FloorDayUTC(ended))
 		}
 	} else {
-		from = maxTime(from, coreusage.FloorDayUTC(rec.CreateTime))
+		from = maxTime(from, coreusage.FloorDayUTC(rec.dealStart()))
 	}
 	from = maxTime(from, coreusage.CeilDayUTC(ent.TrialEndsAt))
 
@@ -367,7 +415,16 @@ func (s *Service) closeWindow(
 		return nil, nil
 	}
 
+	if !from.Before(to) {
+		// The clip emptied the window. Only the period's own end may write a zero
+		// row: anywhere else a waived one would block the real close.
+		if billedTo.Before(end) {
+			return nil, nil
+		}
+		to = from
+	}
 	var events int64
+	var quote Quote
 	if from.Before(to) {
 		events, err = s.read.SumUsageDaily(ctx, dbread.SumUsageDailyParams{
 			OrgID: orgID, FromDay: postgres.NewDate(from), ToDay: postgres.NewDate(to),
@@ -377,12 +434,7 @@ func (s *Service) closeWindow(
 			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
-	} else {
-		to = from
-	}
-	var quote Quote
-	if from.Before(to) {
-		quote = pricing.Quote(events)
+		quote, _ = pricing.Quote(events)
 	}
 	status := InvoiceOpen
 	if quote.TotalCents < MinChargeCents {
@@ -390,10 +442,14 @@ func (s *Service) closeWindow(
 	}
 	lines, err := json.Marshal(nonNil(quote.Lines))
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to encode invoice lines", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	pricingJSON, err := json.Marshal(pricing)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to encode the invoice pricing", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	params := dbwrite.InsertBillingInvoiceParams{
@@ -429,6 +485,8 @@ func (s *Service) closeWindow(
 	row, err := w.InsertBillingInvoice(ctx, params)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			slog.InfoContext(ctx, "another pass already invoiced this period",
+				slog.String("org_id", orgID), slog.Time("period_start", start))
 			return nil, nil
 		}
 		slog.ErrorContext(ctx, "failed to insert an invoice", slogx.Error(err), slog.String("org_id", orgID))
@@ -492,7 +550,15 @@ func (s *Service) chargeOne(ctx context.Context, provider PaymentProvider, inv I
 		return err
 	}
 	if sub == nil || !sub.OnDemand {
-		if _, err := s.uncollectible(ctx, inv, "mandate_gone", "no live payment method", "", false, now, ActorInvoicePass); err != nil {
+		if _, err := s.subscriptionsOf(ctx, inv.OrgID); err != nil {
+			if !errors.Is(err, ErrSubscriptionUnreadable) {
+				return err
+			}
+			// Not "no mandate": writing it off here is terminal for a live customer.
+			r.Unreadable++
+			return nil
+		}
+		if _, err := s.uncollectible(ctx, inv, "mandate_gone", "no live payment method", "", false, now, ActorInvoicePass, r); err != nil {
 			return err
 		}
 		r.MandateGone++
@@ -537,12 +603,24 @@ func (s *Service) chargeOne(ctx context.Context, provider PaymentProvider, inv I
 		}
 		r.Charged++
 	case errors.As(err, &decline):
-		if err := s.recordDecline(ctx, inv, decline.Code, decline.Message, "", true, now, ActorInvoicePass); err != nil {
+		if err := s.recordDecline(ctx, inv, decline.Code, decline.Message, "", true, now, ActorInvoicePass, r); err != nil {
 			return err
 		}
 		r.Declined++
 	case errors.Is(err, ErrMandateNotChargeable):
-		if _, err := s.uncollectible(ctx, inv, "mandate_gone", err.Error(), "", true, now, ActorInvoicePass); err != nil {
+		// The charge's 404 is proof only if the provider also disowns the mandate.
+		// Uncorroborated it is a route or environment fault, which would otherwise
+		// write off every open invoice in the deployment in one pass.
+		event, ferr := provider.FetchSubscription(ctx, sub.ProviderSubID)
+		gone := errors.Is(ferr, ErrSubscriptionNotFound) ||
+			(ferr == nil && !event.IsZero() && !event.Status.Live())
+		if !gone {
+			slog.WarnContext(ctx, "a charge reported no mandate but the provider still has one; holding",
+				slogx.Error(err), slog.String("invoice_id", inv.ID), slog.String("org_id", inv.OrgID))
+			r.Ambiguous++
+			break
+		}
+		if _, err := s.uncollectible(ctx, inv, "mandate_gone", err.Error(), "", true, now, ActorInvoicePass, r); err != nil {
 			return err
 		}
 		r.MandateGone++
@@ -572,13 +650,13 @@ func formatEvents(n int64) string {
 
 // recordDecline applies the dunning policy: hard declines and the fourth failure
 // are uncollectible, the rest retry on the backoff schedule.
-func (s *Service) recordDecline(ctx context.Context, inv Invoice, code, message, paymentID string, countAttempt bool, now time.Time, actor string) error {
+func (s *Service) recordDecline(ctx context.Context, inv Invoice, code, message, paymentID string, countAttempt bool, now time.Time, actor string, r *InvoiceReport) error {
 	attempts := inv.Attempts
 	if countAttempt {
 		attempts++
 	}
 	if hardDecline(code) || attempts >= maxChargeAttempts {
-		_, err := s.uncollectible(ctx, inv, code, message, paymentID, countAttempt, now, actor)
+		_, err := s.uncollectible(ctx, inv, code, message, paymentID, countAttempt, now, actor, r)
 		return err
 	}
 	next := now.Add(retryBackoff[min(max(attempts-1, 0), len(retryBackoff)-1)])
@@ -599,7 +677,7 @@ func (s *Service) recordDecline(ctx context.Context, inv Invoice, code, message,
 	return err
 }
 
-func (s *Service) uncollectible(ctx context.Context, inv Invoice, code, message, paymentID string, countAttempt bool, now time.Time, actor string) (Invoice, error) {
+func (s *Service) uncollectible(ctx context.Context, inv Invoice, code, message, paymentID string, countAttempt bool, now time.Time, actor string, r *InvoiceReport) (Invoice, error) {
 	out, err := s.transition(ctx, inv.ID, actor, "uncollectible: "+code, func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 		return w.MarkBillingInvoiceUncollectible(ctx, dbwrite.MarkBillingInvoiceUncollectibleParams{
 			ID:                inv.ID,
@@ -612,6 +690,9 @@ func (s *Service) uncollectible(ctx context.Context, inv Invoice, code, message,
 	})
 	if errors.Is(err, ErrInvoiceTransition) {
 		return inv, nil
+	}
+	if err == nil && r != nil {
+		r.Uncollectible++
 	}
 	return out, err
 }
@@ -632,7 +713,10 @@ func (s *Service) settle(ctx context.Context, now time.Time, r *InvoiceReport) e
 			r.Foreign++
 			continue
 		}
-		payments, err := provider.ListPayments(ctx, inv.ProviderSubID, inv.CreateTime.Add(-time.Hour))
+		// From when the row entered charging, not when it was created: an earlier
+		// attempt's payment shares the invoice id and would settle this one.
+		since := inv.UpdateTime.Add(-time.Minute)
+		payments, err := provider.ListPayments(ctx, inv.ProviderSubID, since)
 		if err != nil {
 			r.Unreadable++
 			slog.ErrorContext(ctx, "failed to list payments to settle a charge", slogx.Error(err),
@@ -640,15 +724,14 @@ func (s *Service) settle(ctx context.Context, now time.Time, r *InvoiceReport) e
 			telemetry.RecordError(ctx, err)
 			continue
 		}
-		found := pickPayment(payments, inv.ID)
+		found := pickPayment(payments, inv.ID, since)
 		if found == nil {
 			// The charge never arrived, so retrying at once is right -- but the reopen
 			// counts an attempt, and at the cap it stops rather than cycling forever.
 			if inv.Attempts+1 >= maxChargeAttempts {
-				if _, err := s.uncollectible(ctx, inv, "unsettled", "no payment found for the charge", "", true, now, ActorInvoicePass); err != nil {
+				if _, err := s.uncollectible(ctx, inv, "unsettled", "no payment found for the charge", "", true, now, ActorInvoicePass, r); err != nil {
 					return err
 				}
-				r.Declined++
 				continue
 			}
 			_, err := s.transition(ctx, inv.ID, ActorInvoicePass, "no payment found; reopened", func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
@@ -666,14 +749,17 @@ func (s *Service) settle(ctx context.Context, now time.Time, r *InvoiceReport) e
 		if rec.Status == PaymentFailed && rec.ErrorCode == "" {
 			// The list carries no reason, and dunning branches on it: a hard decline
 			// must not be retried three more times because the code arrived empty.
-			if full, err := provider.FetchPayment(ctx, rec.PaymentID); err == nil {
-				rec = full
-			} else {
-				slog.WarnContext(ctx, "failed to read a declined payment's reason", slogx.Error(err),
+			full, err := provider.FetchPayment(ctx, rec.PaymentID)
+			if err != nil {
+				r.Unreadable++
+				slog.ErrorContext(ctx, "failed to read a declined payment's reason", slogx.Error(err),
 					slog.String("invoice_id", inv.ID), slog.String("payment_id", rec.PaymentID))
+				telemetry.RecordError(ctx, err)
+				continue
 			}
+			rec = full
 		}
-		if err := s.applyPaymentOutcome(ctx, inv, rec, now, ActorInvoicePass); err != nil {
+		if err := s.applyPaymentOutcome(ctx, inv, rec, now, ActorInvoicePass, r); err != nil {
 			return err
 		}
 		r.Settled++
@@ -693,10 +779,13 @@ func (s *Service) settle(ctx context.Context, now time.Time, r *InvoiceReport) e
 		}
 		rec, err := provider.FetchPayment(ctx, inv.ProviderPaymentID)
 		if errors.Is(err, ErrPaymentNotFound) {
-			if err := s.recordDecline(ctx, inv, "payment_gone", "the provider does not know this payment", "", true, now, ActorInvoicePass); err != nil {
+			before := r.Uncollectible
+			if err := s.recordDecline(ctx, inv, "payment_gone", "the provider does not know this payment", "", true, now, ActorInvoicePass, r); err != nil {
 				return err
 			}
-			r.Reopened++
+			if r.Uncollectible == before {
+				r.Reopened++
+			}
 			continue
 		}
 		if err != nil {
@@ -711,7 +800,7 @@ func (s *Service) settle(ctx context.Context, now time.Time, r *InvoiceReport) e
 				slog.String("payment_id", inv.ProviderPaymentID))
 			continue
 		}
-		if err := s.applyPaymentOutcome(ctx, inv, rec, now, ActorInvoicePass); err != nil {
+		if err := s.applyPaymentOutcome(ctx, inv, rec, now, ActorInvoicePass, r); err != nil {
 			return err
 		}
 		r.Settled++
@@ -722,11 +811,11 @@ func (s *Service) settle(ctx context.Context, now time.Time, r *InvoiceReport) e
 // pickPayment is the payment an invoice settles on: a succeeded one beats a
 // failed one, and the newest beats an earlier attempt. ListPayments promises no
 // order, so taking the first match can settle on the attempt before the retry.
-func pickPayment(payments []PaymentRecord, invoiceID string) *PaymentRecord {
+func pickPayment(payments []PaymentRecord, invoiceID string, since time.Time) *PaymentRecord {
 	var best *PaymentRecord
 	for i := range payments {
 		p := &payments[i]
-		if p.InvoiceID != invoiceID {
+		if p.InvoiceID != invoiceID || (!p.CreatedAt.IsZero() && p.CreatedAt.Before(since)) {
 			continue
 		}
 		switch {
@@ -741,7 +830,7 @@ func pickPayment(payments []PaymentRecord, invoiceID string) *PaymentRecord {
 
 // applyPaymentOutcome moves an invoice on what the provider says about its
 // payment; shared by the webhook and the settle step.
-func (s *Service) applyPaymentOutcome(ctx context.Context, inv Invoice, rec PaymentRecord, now time.Time, actor string) error {
+func (s *Service) applyPaymentOutcome(ctx context.Context, inv Invoice, rec PaymentRecord, now time.Time, actor string, r *InvoiceReport) error {
 	switch rec.Status {
 	case PaymentSucceeded:
 		// The money moved, so the invoice is paid either way -- but pug billed an
@@ -763,11 +852,18 @@ func (s *Service) applyPaymentOutcome(ctx context.Context, inv Invoice, rec Paym
 			})
 		})
 		if errors.Is(err, ErrInvoiceTransition) {
+			if inv.ProviderPaymentID != "" && inv.ProviderPaymentID != rec.PaymentID {
+				err := fmt.Errorf("billing: invoice %s is settled on %s but %s also succeeded",
+					inv.ID, inv.ProviderPaymentID, rec.PaymentID)
+				slog.ErrorContext(ctx, "a second payment succeeded for a settled invoice", slogx.Error(err),
+					slog.String("invoice_id", inv.ID), slog.String("payment_id", rec.PaymentID))
+				telemetry.RecordError(ctx, err)
+			}
 			return nil
 		}
 		return err
 	case PaymentFailed:
-		return s.recordDecline(ctx, inv, rec.ErrorCode, rec.ErrorMessage, rec.PaymentID, inv.Status == InvoiceCharging, now, actor)
+		return s.recordDecline(ctx, inv, rec.ErrorCode, rec.ErrorMessage, rec.PaymentID, inv.Status == InvoiceCharging, now, actor, r)
 	case PaymentPending:
 	}
 	if inv.Status != InvoiceCharging {
@@ -838,6 +934,10 @@ func (s *Service) pinNextCharges(ctx context.Context, now time.Time, r *InvoiceR
 			}
 			if !event.IsZero() {
 				if _, err := s.applySubscription(ctx, provider, row.OrgID, event, now); err != nil {
+					if errors.Is(err, ErrTwoLiveSubscriptions) {
+						slog.ErrorContext(ctx, "an org holds two live mandates", slogx.Error(err), // puglint:exempt — recorded by applySubscription
+							slog.String("org_id", row.OrgID))
+					}
 					r.Unreadable++
 					continue
 				}
@@ -983,7 +1083,7 @@ func (s *Service) ListInvoices(ctx context.Context, orgID string) ([]Invoice, er
 		if err != nil {
 			slog.ErrorContext(ctx, "invoice row does not decode", slogx.Error(err), slog.String("invoice_id", row.ID))
 			telemetry.RecordError(ctx, err)
-			return nil, err
+			continue
 		}
 		out = append(out, inv)
 	}
@@ -1005,15 +1105,16 @@ func (s *Service) invoicesByStatusBefore(ctx context.Context, status InvoiceStat
 		if err != nil {
 			slog.ErrorContext(ctx, "invoice row does not decode", slogx.Error(err), slog.String("invoice_id", row.ID))
 			telemetry.RecordError(ctx, err)
-			return nil, err
+			continue
 		}
 		out = append(out, inv)
 	}
 	return out, nil
 }
 
-// VoidInvoice stops a charge before it happens, or records that a paid one was
-// refunded by hand. It never calls the provider.
+// VoidInvoice stops a charge before it happens. A paid invoice is out of reach:
+// its only onward state is refunded, which the provider's refund webhook writes.
+// It never calls the provider.
 func (s *Service) VoidInvoice(ctx context.Context, id, actor, note string) (Invoice, error) {
 	if actor == "" {
 		return Invoice{}, ErrActorRequired
@@ -1044,10 +1145,10 @@ type Upcoming struct {
 	UsageComputedAt time.Time
 	Counted         bool
 	EventCount      int64
-	Quote           Quote
 	Currency        string
-	// Priced is false when the org's slug cannot be priced.
-	Priced bool
+	// Quote is nil when the org's slug cannot be priced. A zero Quote would render
+	// as $0, which is the one thing an absent amount must never look like.
+	Quote *Quote
 }
 
 func (s *Service) UpcomingInvoice(ctx context.Context, orgID string, now time.Time) (Upcoming, error) {
@@ -1067,13 +1168,14 @@ func (s *Service) UpcomingInvoice(ctx context.Context, orgID string, now time.Ti
 		Counted:         usage.Counted,
 		Currency:        ent.Currency,
 	}
-	pricing := ent.Pricing()
-	if !usage.Counted || pricing.IsZero() {
+	if !usage.Counted {
 		return up, nil
 	}
+	// The count is the count whether or not the plan can be priced.
 	up.EventCount = usage.EventCount
-	up.Quote = pricing.Quote(usage.EventCount)
-	up.Priced = true
+	if quote, ok := ent.Pricing().Quote(usage.EventCount); ok {
+		up.Quote = &quote
+	}
 	return up, nil
 }
 
@@ -1086,9 +1188,16 @@ func (s *Service) subscriptionsOf(ctx context.Context, orgID string) ([]Subscrip
 	}
 	out := make([]Subscription, 0, len(rows))
 	for _, row := range rows {
-		if sub, ok := subscriptionFromRow(row); ok {
-			out = append(out, sub)
+		sub, ok := subscriptionFromRow(row)
+		if !ok {
+			// Dropped silently, this org is billed as if it had no mandate at all.
+			err := fmt.Errorf("%w: %q", ErrSubscriptionUnreadable, row.Status)
+			slog.ErrorContext(ctx, "a subscription holds a status pug does not know", slogx.Error(err),
+				slog.String("org_id", orgID))
+			telemetry.RecordError(ctx, err)
+			return nil, err
 		}
+		out = append(out, sub)
 	}
 	return out, nil
 }

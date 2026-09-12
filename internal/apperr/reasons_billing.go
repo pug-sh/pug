@@ -17,4 +17,5 @@ var (
 	ReasonBillingCheckoutFailed           = codes.add("BILLING_CHECKOUT_FAILED")
 	ReasonBillingSubscriptionUnapplicable = codes.add("BILLING_SUBSCRIPTION_UNAPPLICABLE")
 	ReasonBillingNoMandate                = codes.add("BILLING_NO_MANDATE")
+	ReasonBillingFinalPeriodUnsettled     = codes.add("BILLING_FINAL_PERIOD_UNSETTLED")
 )

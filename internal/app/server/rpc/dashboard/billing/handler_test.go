@@ -193,17 +193,31 @@ func TestSubStatusToRPCCoversEveryStoredStatus(t *testing.T) {
 	}
 }
 
-// Every invoice status the ledger records has a wire value.
+// Every invoice status the ledger records has a wire value, and the exact one:
+// void and refunded are a money-relevant distinction the customer is shown.
 func TestInvoiceStatusToRPCCoversEveryStatus(t *testing.T) {
-	seen := map[billingv1.InvoiceStatus]bool{}
-	for _, s := range corebilling.AllInvoiceStatuses() {
-		got := invoiceStatusToRPC(s)
-		if got == billingv1.InvoiceStatus_INVOICE_STATUS_UNSPECIFIED {
-			t.Errorf("invoiceStatusToRPC(%s) = UNSPECIFIED", s)
+	want := map[corebilling.InvoiceStatus]billingv1.InvoiceStatus{
+		corebilling.InvoiceOpen:          billingv1.InvoiceStatus_INVOICE_STATUS_OPEN,
+		corebilling.InvoiceCharging:      billingv1.InvoiceStatus_INVOICE_STATUS_CHARGING,
+		corebilling.InvoiceCharged:       billingv1.InvoiceStatus_INVOICE_STATUS_CHARGED,
+		corebilling.InvoicePaid:          billingv1.InvoiceStatus_INVOICE_STATUS_PAID,
+		corebilling.InvoiceFailed:        billingv1.InvoiceStatus_INVOICE_STATUS_FAILED,
+		corebilling.InvoiceUncollectible: billingv1.InvoiceStatus_INVOICE_STATUS_UNCOLLECTIBLE,
+		corebilling.InvoiceWaived:        billingv1.InvoiceStatus_INVOICE_STATUS_WAIVED,
+		corebilling.InvoiceVoid:          billingv1.InvoiceStatus_INVOICE_STATUS_VOID,
+		corebilling.InvoiceRefunded:      billingv1.InvoiceStatus_INVOICE_STATUS_REFUNDED,
+	}
+	for s, w := range want {
+		if got := invoiceStatusToRPC(s); got != w {
+			t.Errorf("invoiceStatusToRPC(%s) = %s, want %s", s, got, w)
 		}
-		if seen[got] {
-			t.Errorf("invoiceStatusToRPC(%s) = %s, already used by another status", s, got)
-		}
-		seen[got] = true
+	}
+	if len(want) != len(corebilling.AllInvoiceStatuses()) {
+		t.Errorf("the table covers %d statuses, the ledger records %d", len(want), len(corebilling.AllInvoiceStatuses()))
+	}
+	// A status a newer binary wrote is refused rather than mapped to a branch
+	// meant for another state.
+	if _, ok := corebilling.ParseInvoiceStatus("settling"); ok {
+		t.Error("ParseInvoiceStatus accepted a status this build does not know")
 	}
 }

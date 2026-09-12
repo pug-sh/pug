@@ -1516,6 +1516,7 @@ type Invoice struct {
 	PeriodStart *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=period_start,json=periodStart" json:"period_start,omitempty"`
 	PeriodEnd   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=period_end,json=periodEnd" json:"period_end,omitempty"`
 	// The days actually billed: clipped to the mandate and past the trial.
+	// billed_to is EXCLUSIVE -- the last day billed is the day before it.
 	BilledFrom  *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=billed_from,json=billedFrom" json:"billed_from,omitempty"`
 	BilledTo    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=billed_to,json=billedTo" json:"billed_to,omitempty"`
 	EventCount  *int64                 `protobuf:"varint,6,opt,name=event_count,json=eventCount" json:"event_count,omitempty"`

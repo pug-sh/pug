@@ -199,7 +199,7 @@ func (s *Service) applyPaymentEvent(
 		return s.rejectDelivery(ctx, provider, d, "invoice",
 			errors.New("payment names an invoice charged through another provider"))
 	}
-	if err := s.applyPaymentOutcome(ctx, inv, event.Payment, d.DeliveredAt, actor); err != nil {
+	if err := s.applyPaymentOutcome(ctx, inv, event.Payment, d.DeliveredAt, actor, nil); err != nil {
 		return err
 	}
 	return s.finishDelivery(ctx, provider, d, "")

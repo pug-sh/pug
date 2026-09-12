@@ -305,7 +305,8 @@ func TestCloseSkipsFreeOrgsAndInvoicesDeals(t *testing.T) {
 	// Recorded mid-period: the running period is the deal's first, and the ones
 	// before it are never backfilled.
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`update billing_entitlements set create_time = $2 where org_id = $1`, f.orgID, day(2026, time.May, 15)); err != nil {
+		`update billing_entitlements set create_time = $2, terms_effective_at = $2 where org_id = $1`,
+		f.orgID, day(2026, time.May, 15)); err != nil {
 		t.Fatalf("backdate the deal: %v", err)
 	}
 	report := pass(t, f, invoiceNow)
@@ -563,7 +564,7 @@ func TestUpcomingInvoiceCarriesFreshness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpcomingInvoice: %v", err)
 	}
-	if up.Counted || up.Priced || !up.UsageComputedAt.IsZero() {
+	if up.Counted || up.Quote != nil || !up.UsageComputedAt.IsZero() {
 		t.Errorf("never metered: %+v, want nothing counted and nothing priced", up)
 	}
 	if !up.NextChargeAt.Equal(periodEnd.AddDate(0, 1, 2)) {
@@ -575,8 +576,36 @@ func TestUpcomingInvoiceCarriesFreshness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpcomingInvoice: %v", err)
 	}
-	if !up.Counted || !up.Priced || up.EventCount != 2_340_000 || up.Quote.TotalCents != 9_700 {
+	if !up.Counted || up.Quote == nil || up.EventCount != 2_340_000 || up.Quote.TotalCents != 9_700 {
 		t.Errorf("metered: %+v, want 2340000 events priced at 9700", up)
+	}
+}
+
+// A plan the catalog cannot price still reports the count. Absent pricing must
+// not take the event count down with it and render as "0 events".
+func TestUpcomingInvoiceCountsWithoutAPrice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	// A slug a later deploy dropped: it resolves to no card, so nothing can price
+	// the period. Billing switched off reaches the same branch.
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (org_id, plan_slug) values ($1, 'usage-2019-01')`,
+		f.orgID); err != nil {
+		t.Fatalf("seed entitlement: %v", err)
+	}
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 2_340_000, invoiceNow)
+
+	up, err := f.svc.UpcomingInvoice(t.Context(), f.orgID, invoiceNow)
+	if err != nil {
+		t.Fatalf("UpcomingInvoice: %v", err)
+	}
+	if !up.Counted || up.EventCount != 2_340_000 {
+		t.Errorf("counted = %v, event_count = %d, want true and 2340000", up.Counted, up.EventCount)
+	}
+	if up.Quote != nil {
+		t.Errorf("quote = %+v, want nil: billing is off, so nothing can price the period", up.Quote)
 	}
 }
 
@@ -625,15 +654,54 @@ func TestVoidAndRetry(t *testing.T) {
 	}
 }
 
-// A cancellation scheduled in the portal closes the running period to date, so
-// it is charged while the mandate is still live.
+// A cancellation pug has already pinned past the natural close must NOT close the
+// period early: the invoice takes the period's one slot, and everything after it
+// would then be unbillable on a mandate that is still live.
+func TestScheduledCancellationDoesNotPreemptTheNaturalClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandateWith(t, f, "sub_1", day(2026, time.May, 11), "active", wantPin, true)
+	seedUsage(t, f, project, day(2026, time.June, 10), 500_000)
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 500_000, invoiceNow)
+
+	pass(t, f, invoiceNow)
+	for _, inv := range invoices(t, f) {
+		if inv.PeriodStart.Equal(periodEnd) {
+			t.Fatalf("closed the running period early while the mandate runs to %s: %+v", wantPin, inv)
+		}
+	}
+
+	// The natural close, once period_end + grace has passed, bills the whole month.
+	natural := day(2026, time.July, 12).Add(12 * time.Hour)
+	stampUsage(t, f, f.orgID, periodEnd.AddDate(0, 1, 0), periodEnd.AddDate(0, 2, 0), 500_000, natural)
+	pass(t, f, natural)
+	var closed *corebilling.Invoice
+	for _, inv := range invoices(t, f) {
+		if inv.PeriodStart.Equal(periodEnd) {
+			closed = &inv
+		}
+	}
+	if closed == nil {
+		t.Fatalf("the running period was never billed: %+v", invoices(t, f))
+	}
+	if !closed.BilledTo.Equal(periodEnd.AddDate(0, 1, 0)) || closed.EventCount != 500_000 {
+		t.Errorf("natural close = to %s, %d events; want the whole period", closed.BilledTo, closed.EventCount)
+	}
+}
+
+// A cancellation that lands before the natural close does close the running
+// period to date, so it is charged while the mandate is still live.
 func TestScheduledCancellationClosesThePeriodEarly(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
 	project := seedProject(t, f)
-	seedMandateWith(t, f, "sub_1", day(2026, time.May, 11), "active", wantPin, true)
+	// Unpinned: the mandate ends well before period_end + grace.
+	seedMandateWith(t, f, "sub_1", day(2026, time.May, 11), "active", day(2026, time.June, 20), true)
 	seedUsage(t, f, project, day(2026, time.June, 10), 500_000)
 	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 500_000, invoiceNow)
 
@@ -874,5 +942,301 @@ func TestVoidRefusesAChargeInFlight(t *testing.T) {
 	}
 	if _, err := f.svc.VoidInvoice(t.Context(), inv.ID, "praveen", "customer asked"); !errors.Is(err, corebilling.ErrInvoiceTransition) {
 		t.Errorf("void a charging invoice = %v, want ErrInvoiceTransition", err)
+	}
+}
+
+// A pass catching up on several periods at once: the §18.4 rollout, where a card
+// authorized months ago meets the flag being turned on. Each closed period gets
+// its own non-overlapping window and its own charge, and the bound is real —
+// anything older than the window is simply never billed.
+func TestPassCatchesUpOnAtMostThreePeriods(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandate(t, f, "sub_1", day(2026, time.February, 1))
+	for _, on := range []time.Time{
+		day(2026, time.February, 20), day(2026, time.March, 20),
+		day(2026, time.April, 20), day(2026, time.May, 20),
+	} {
+		seedUsage(t, f, project, on, 500_000)
+	}
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 500_000, invoiceNow)
+
+	report := pass(t, f, invoiceNow)
+	got := invoices(t, f)
+	if len(got) != 3 || report.Closed != 3 || report.Charged != 3 {
+		t.Fatalf("got %d invoices, report %+v; want exactly maxClosePeriods closed and charged", len(got), report)
+	}
+	want := []time.Time{day(2026, time.May, 10), day(2026, time.April, 10), day(2026, time.March, 10)}
+	for i, inv := range got {
+		if !inv.PeriodStart.Equal(want[i]) {
+			t.Errorf("invoice %d starts %s, want %s", i, inv.PeriodStart, want[i])
+		}
+		if !inv.BilledFrom.Equal(inv.PeriodStart) || !inv.BilledTo.Equal(inv.PeriodEnd) {
+			t.Errorf("invoice %d bills %s-%s, want the whole period %s-%s",
+				i, inv.BilledFrom, inv.BilledTo, inv.PeriodStart, inv.PeriodEnd)
+		}
+		if inv.EventCount != 500_000 || inv.AmountCents != 2_000 {
+			t.Errorf("invoice %d = %d events, %d cents; want one period's usage", i, inv.EventCount, inv.AmountCents)
+		}
+	}
+	// February is a period older than the window. It is never invoiced, and its
+	// slot recedes with the window — the bound, pinned deliberately.
+	if !got[2].PeriodStart.After(day(2026, time.February, 28)) {
+		t.Errorf("oldest invoice starts %s, want nothing before March", got[2].PeriodStart)
+	}
+	if len(provider.charges) != 3 {
+		t.Errorf("charged %d times, want one per closed period", len(provider.charges))
+	}
+}
+
+// The oldest period the window still reaches, held back and about to fall out of
+// it, is counted — the revenue is lost silently otherwise.
+func TestOldestHeldPeriodIsReportedBeforeItFallsOutOfTheWindow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandate(t, f, "sub_1", day(2026, time.February, 1))
+	seedUsage(t, f, project, day(2026, time.March, 20), 500_000)
+	// The meter has not run since March, so every due period is held.
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 500_000, day(2026, time.March, 15))
+
+	report := pass(t, f, invoiceNow)
+	if report.Held != 3 || report.Dropped != 1 {
+		t.Errorf("report = %+v, want 3 held and the oldest one reported as dropped", report)
+	}
+	if got := invoices(t, f); len(got) != 0 {
+		t.Errorf("a held meter produced invoices: %+v", got)
+	}
+}
+
+// Removing a payment method must not cancel the mandate when the final charge
+// did not settle: the period would be written off, and the RPC would say it
+// succeeded.
+func TestRemovePaymentMethodKeepsTheMandateWhenTheChargeDoesNotSettle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for _, tc := range []struct {
+		name    string
+		charge  func(corebilling.ChargeInput) (string, error)
+		metered bool
+	}{
+		{"soft decline", func(corebilling.ChargeInput) (string, error) {
+			return "", &corebilling.DeclineError{Code: "INSUFFICIENT_FUNDS"}
+		}, true},
+		{"ambiguous", func(corebilling.ChargeInput) (string, error) {
+			return "", errors.New("connection reset")
+		}, true},
+		{"held meter", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			project := seedProject(t, f)
+			seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+			seedUsage(t, f, project, day(2026, time.June, 10), 500_000)
+			if tc.metered {
+				stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 500_000, invoiceNow)
+			}
+			provider.charge = tc.charge
+
+			err := f.svc.RemovePaymentMethod(t.Context(), f.orgID, invoiceNow)
+			if !errors.Is(err, corebilling.ErrFinalPeriodUnsettled) {
+				t.Fatalf("RemovePaymentMethod = %v, want ErrFinalPeriodUnsettled", err)
+			}
+			if len(provider.cancelled) != 0 {
+				t.Errorf("cancelled %v after an unsettled final charge", provider.cancelled)
+			}
+			ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, invoiceNow)
+			if err != nil {
+				t.Fatalf("GetEntitlement: %v", err)
+			}
+			if !ent.Chargeable {
+				t.Error("the mandate is no longer chargeable; it must be left live to retry")
+			}
+		})
+	}
+}
+
+// The only thing that would notice the provider taking a different amount than
+// pug billed. It must not block the invoice — the money moved either way.
+func TestAPaymentForTheWrongAmountStillSettlesAndIsSurfaced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+	seedUsage(t, f, project, day(2026, time.May, 25), 2_340_000)
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 0, invoiceNow)
+
+	pass(t, f, invoiceNow)
+	inv := onlyInvoice(t, f)
+	if inv.AmountCents != 9_700 {
+		t.Fatalf("billed %d cents, want 9700", inv.AmountCents)
+	}
+	provider.settleWithAmount(inv.ProviderPaymentID, corebilling.PaymentSucceeded, inv.AmountCents*10, "EUR")
+
+	backdate(t, f, inv.ID, invoiceNow.Add(-2*time.Hour))
+	pass(t, f, invoiceNow.Add(2*time.Hour))
+	if inv = onlyInvoice(t, f); inv.Status != corebilling.InvoicePaid {
+		t.Errorf("status = %s, want paid: the money moved whatever the amount was", inv.Status)
+	}
+}
+
+// A payment from an earlier attempt must not settle the attempt running now: the
+// invoice id is shared across attempts, and adopting the old one writes off an
+// invoice whose real outcome is still unknown.
+func TestSettleIgnoresAnEarlierAttemptsPayment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+	seedUsage(t, f, project, day(2026, time.May, 25), 2_340_000)
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 0, invoiceNow)
+	provider.charge = func(corebilling.ChargeInput) (string, error) { return "", errors.New("timeout") }
+
+	pass(t, f, invoiceNow)
+	inv := onlyInvoice(t, f)
+	// A decline that belongs to an attempt resolved long before this one.
+	provider.addPayment(corebilling.PaymentRecord{
+		PaymentID: "pay_old", InvoiceID: inv.ID, Status: corebilling.PaymentFailed,
+		ErrorCode: "STOLEN_CARD", CreatedAt: invoiceNow.Add(-72 * time.Hour),
+	})
+
+	backdate(t, f, inv.ID, invoiceNow.Add(-10*time.Minute))
+	pass(t, f, invoiceNow.Add(time.Hour))
+	if inv = onlyInvoice(t, f); inv.Status == corebilling.InvoiceUncollectible {
+		t.Errorf("status = %s with error %q, want the stale decline ignored",
+			inv.Status, inv.LastErrorCode)
+	}
+}
+
+// A charge that 404s is only a write-off when the provider agrees the mandate is
+// gone. Uncorroborated it is a route or environment fault, and writing off is
+// terminal.
+func TestMandateNotChargeableIsCorroboratedBeforeWritingOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	notChargeable := func(corebilling.ChargeInput) (string, error) {
+		return "", corebilling.ErrMandateNotChargeable
+	}
+	t.Run("the provider still has the mandate", func(t *testing.T) {
+		f, provider := newPaidFixture(t)
+		project := seedProject(t, f)
+		seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+		seedUsage(t, f, project, day(2026, time.May, 25), 2_340_000)
+		stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 0, invoiceNow)
+		provider.charge = notChargeable
+		provider.event = subEvent(f.orgID, "sub_1", "prod_mandate", corebilling.SubStatusActive)
+
+		report := pass(t, f, invoiceNow)
+		if report.MandateGone != 0 || report.Ambiguous != 1 {
+			t.Errorf("report = %+v, want the write-off held back as ambiguous", report)
+		}
+		if inv := onlyInvoice(t, f); inv.Status != corebilling.InvoiceCharging {
+			t.Errorf("status = %s, want charging until reading settles it", inv.Status)
+		}
+	})
+	t.Run("the provider agrees it is gone", func(t *testing.T) {
+		f, provider := newPaidFixture(t)
+		project := seedProject(t, f)
+		seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+		seedUsage(t, f, project, day(2026, time.May, 25), 2_340_000)
+		stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 0, invoiceNow)
+		provider.charge = notChargeable
+		provider.event = subEvent(f.orgID, "sub_1", "prod_mandate", corebilling.SubStatusCancelled)
+
+		report := pass(t, f, invoiceNow)
+		if report.MandateGone != 1 || report.Uncollectible != 1 {
+			t.Errorf("report = %+v, want one corroborated write-off", report)
+		}
+		if inv := onlyInvoice(t, f); inv.Status != corebilling.InvoiceUncollectible {
+			t.Errorf("status = %s, want uncollectible", inv.Status)
+		}
+	})
+}
+
+// A stored status this build has no word for is not "no mandate": billing the org
+// as if it had none writes the invoice off for good.
+func TestAnUnreadableSubscriptionHoldsTheInvoice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+	seedUsage(t, f, project, day(2026, time.May, 25), 2_340_000)
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 0, invoiceNow)
+
+	pass(t, f, invoiceNow)
+	inv := onlyInvoice(t, f)
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_subscriptions set status = 'pending' where org_id = $1`, f.orgID); err != nil {
+		t.Fatalf("store an unmapped status: %v", err)
+	}
+
+	report := pass(t, f, invoiceNow.Add(time.Hour))
+	if report.MandateGone != 0 || report.Unreadable == 0 {
+		t.Errorf("report = %+v, want the invoice held and the pass failed, not written off", report)
+	}
+	if after := onlyInvoice(t, f); after.Status != inv.Status {
+		t.Errorf("status = %s, want it left at %s", after.Status, inv.Status)
+	}
+}
+
+// The grace gate on its own: a period whose end has passed but whose grace has
+// not is not closed, even with a meter that has already run past it.
+func TestAPeriodIsNotClosedBeforeItsGrace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+	seedUsage(t, f, project, day(2026, time.May, 25), 2_340_000)
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 0, invoiceNow)
+
+	// One day after the period ended; the grace is two.
+	if report := pass(t, f, periodEnd.AddDate(0, 0, 1).Add(12*time.Hour)); report.Closed != 0 || report.Held != 0 {
+		t.Errorf("report = %+v, want nothing closed inside the grace", report)
+	}
+	if got := invoices(t, f); len(got) != 0 {
+		t.Fatalf("closed inside the grace: %+v", got)
+	}
+	if report := pass(t, f, invoiceNow); report.Closed != 1 {
+		t.Errorf("report = %+v, want the period closed once the grace passed", report)
+	}
+}
+
+// An invoice stamped with another provider is skipped and counted, never charged
+// by this pass and never left silent.
+func TestAnInvoiceForAnotherProviderIsCounted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	project := seedProject(t, f)
+	seedMandate(t, f, "sub_1", day(2026, time.May, 11))
+	seedUsage(t, f, project, day(2026, time.May, 25), 2_340_000)
+	stampUsage(t, f, f.orgID, periodEnd, periodEnd.AddDate(0, 1, 0), 0, invoiceNow)
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_subscriptions set provider = 'other' where org_id = $1`, f.orgID); err != nil {
+		t.Fatalf("restamp the mandate: %v", err)
+	}
+
+	report := pass(t, f, invoiceNow)
+	if report.Foreign != 1 || report.Charged != 0 || len(provider.charges) != 0 {
+		t.Errorf("report = %+v charges=%v, want the invoice skipped and counted", report, provider.charges)
+	}
+	if inv := onlyInvoice(t, f); inv.Status != corebilling.InvoiceOpen {
+		t.Errorf("status = %s, want it left open for the provider that owns it", inv.Status)
 	}
 }

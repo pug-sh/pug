@@ -26,9 +26,9 @@ func newBillingCmd() *cobra.Command {
 		Use:   "billing",
 		Short: "Grant, extend and inspect org billing entitlements",
 		Long: "Operator commands for the entitlement store — what an org is allowed to\n" +
-			"send. Postgres only: no payments provider is contacted, and no price is\n" +
-			"ever written here. Every write is attributed to --actor and appended to\n" +
-			"the org's history in the same transaction.",
+			"send and what it is priced at. Postgres only: no payments provider is\n" +
+			"contacted, and a deal's money is written here. Every write is attributed\n" +
+			"to --actor and appended to the org's history in the same transaction.",
 	}
 
 	for _, c := range []*cobra.Command{
@@ -149,7 +149,7 @@ func newBillingInvoiceCmd() *cobra.Command {
 	}
 	void := &cobra.Command{
 		Use:   "void <invoice-id>",
-		Short: "Stop a charge before it happens, or record a refund made in the provider's dashboard",
+		Short: "Stop a charge before it happens; a paid invoice cannot be voided",
 		Args:  cobra.ExactArgs(1),
 		RunE: billingRunE(func(ctx context.Context, cli *appbilling.CLI, cmd *cobra.Command, id string) error {
 			actor, _ := cmd.Flags().GetString("actor")

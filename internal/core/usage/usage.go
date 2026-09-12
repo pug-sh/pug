@@ -246,7 +246,9 @@ const (
 	// DefaultRescanDays is the trailing window the meter recomputes each run, and
 	// the invoicing grace: after it a period's count is as final as the meter makes it.
 	DefaultRescanDays = 2
-	// Retention is a year of day cells plus 25 days of slack.
+	// Retention is a year of day cells plus 25 days of slack. It caps the rescan:
+	// past it a wider scan re-inserts day cells the same pass's prune then deletes,
+	// every pass, forever.
 	Retention     = 390 * 24 * time.Hour
 	MaxRescanDays = int(Retention / (24 * time.Hour))
 )

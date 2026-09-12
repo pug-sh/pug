@@ -10,8 +10,12 @@ alter table billing_entitlements
     constraint billing_entitlements_flat_fee_check check (flat_fee_cents >= 0),
   add column block_rate_cents bigint
     constraint billing_entitlements_block_rate_check check (block_rate_cents >= 0),
+  add column terms_effective_at timestamptz,
   add constraint billing_entitlements_custom_needs_price
-    check (plan_slug <> 'custom' or flat_fee_cents is not null or block_rate_cents is not null);
+    check (plan_slug <> 'custom'
+      or coalesce(flat_fee_cents, 0) > 0 or coalesce(block_rate_cents, 0) > 0),
+  add constraint billing_entitlements_allowance_blocks
+    check (included_events_override is null or included_events_override % 100000 = 0);
 
 alter table billing_entitlement_history
   drop constraint billing_entitlement_history_custom_needs_quota,
@@ -22,7 +26,8 @@ alter table billing_entitlement_history
   add column block_rate_cents bigint
     constraint billing_entitlement_history_block_rate_check check (block_rate_cents >= 0),
   add constraint billing_entitlement_history_custom_needs_price
-    check (plan_slug <> 'custom' or flat_fee_cents is not null or block_rate_cents is not null),
+    check (plan_slug <> 'custom'
+      or coalesce(flat_fee_cents, 0) > 0 or coalesce(block_rate_cents, 0) > 0),
   add constraint billing_entitlement_history_deletion_is_empty
     check (plan_slug is not null
       or (anchor_day is null and contract_ends_at is null
@@ -86,7 +91,6 @@ create table billing_invoices (
   constraint billing_invoices_payment_key unique (provider, provider_payment_id)
 );
 
-create index billing_invoices_org_idx on billing_invoices (org_id, period_start desc);
 -- The pass reads by status; the rows it wants are the few not yet settled.
 create index billing_invoices_status_idx on billing_invoices (status, next_attempt_at);
 
@@ -135,7 +139,9 @@ alter table billing_entitlement_history
           and trial_ends_at is null));
 
 alter table billing_entitlements
+  drop constraint if exists billing_entitlements_allowance_blocks,
   drop constraint if exists billing_entitlements_custom_needs_price,
+  drop column if exists terms_effective_at,
   drop column if exists block_rate_cents,
   drop column if exists flat_fee_cents,
   add column provider_product_id text

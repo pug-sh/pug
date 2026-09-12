@@ -89,6 +89,8 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"viewer api_key read", roleViewer, ResourceAPIKey, ActionRead, true},
 		{"viewer usage read", roleViewer, ResourceUsage, ActionRead, true},
 		{"viewer billing read", roleViewer, ResourceBilling, ActionRead, true},
+		{"viewer invoice read", roleViewer, ResourceInvoice, ActionRead, false},
+		{"admin invoice read", roleAdmin, ResourceInvoice, ActionRead, true},
 
 		// viewer — denied every write, plus the admin-only org reads.
 		{"viewer dashboard create", roleViewer, ResourceDashboard, ActionCreate, false},

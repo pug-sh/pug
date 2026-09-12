@@ -145,6 +145,7 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 		Note:                   row.Note.String,
 		PlanSlug:               row.PlanSlug.String,
 		RetentionDaysOverride:  row.RetentionDaysOverride.Int64,
+		TermsEffectiveAt:       row.TermsEffectiveAt.Time,
 		TrialEndsAt:            row.TrialEndsAt.Time,
 	}
 }
@@ -193,6 +194,13 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	next := applyChange(cur, change)
+	// The row often predates the deal, so its create_time cannot date one: without
+	// this the first close would bill every elapsed period at the new rate.
+	if _, deal := next.Terms(); !deal {
+		next.TermsEffectiveAt = time.Time{}
+	} else if next.FlatFeeCents != cur.FlatFeeCents || next.BlockRateCents != cur.BlockRateCents {
+		next.TermsEffectiveAt = time.Now().UTC().Truncate(time.Second)
+	}
 	if isCard && retiredGrant(cur, card) {
 		return Record{}, ErrPlanRetired
 	}
@@ -462,6 +470,7 @@ func upsertParams(orgID string, rec Record) dbwrite.UpsertBillingEntitlementPara
 		OrgID:                  orgID,
 		PlanSlug:               rec.PlanSlug,
 		RetentionDaysOverride:  postgres.NewOptionalInt8(rec.RetentionDaysOverride),
+		TermsEffectiveAt:       postgres.NewOptionalTimestamptz(rec.TermsEffectiveAt),
 		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 }
@@ -549,9 +558,16 @@ func (s *Service) Preview(ctx context.Context, orgID string, events int64, now t
 		telemetry.RecordError(ctx, err)
 		return Entitlement{}, Quote{}, err
 	}
-	ent := Resolve(row.OrgCreateTime.Time, recordFromRow(row), nil, now, true)
-	if ent.Pricing().IsZero() {
+	sub, err := s.liveSubscription(ctx, orgID)
+	if err != nil {
+		return Entitlement{}, Quote{}, err
+	}
+	// With the mandate: a grandfathered org is previewed on the card it pinned,
+	// which is the one it will be charged on.
+	ent := Resolve(row.OrgCreateTime.Time, recordFromRow(row), sub, now, true)
+	quote, ok := ent.Pricing().Quote(events)
+	if !ok {
 		return ent, Quote{}, fmt.Errorf("%w: %s", ErrPlanNotFound, ent.Slug)
 	}
-	return ent, ent.Pricing().Quote(events), nil
+	return ent, quote, nil
 }

@@ -90,7 +90,8 @@ func CardBySlug(slug string) (RateCard, bool) {
 }
 
 // CurrentCard is the newest card that is not retired: what an org with no
-// mandate sees and what a new mandate pins.
+// mandate sees and what a new mandate pins. The panic is unreachable through a
+// wired Service -- checkCatalog refuses an all-retired catalog at startup.
 func CurrentCard() RateCard {
 	for _, c := range slices.Backward(catalog) {
 		if !c.Retired {

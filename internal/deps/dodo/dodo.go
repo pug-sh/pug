@@ -26,7 +26,8 @@ const (
 )
 
 // One stalled connection must not eat a dashboard request's budget, nor a cron
-// pass's 30m — which one hung read could otherwise spend entirely.
+// pass's 30m. The SDK applies it per attempt inside its own retry loop, so a hung
+// read costs this much times MaxRetries+1 -- except Charge, which retries none.
 const requestTimeout = 10 * time.Second
 
 // Config is the provider's own credentials, under its own prefix rather than a
@@ -101,7 +102,8 @@ func (c *Client) CreateCheckoutSession(
 			}),
 		}),
 	}
-	// Both ride every delivery this checkout produces; only the ref proves the org.
+	// The ref is what proves the org; org_id is a convenience for the dashboard and
+	// every reader falls back rather than depending on it propagating.
 	md := dodopayments.MetadataParam{metadataOrgID: shared.UnionString(in.OrgID)}
 	if in.CheckoutRef != "" {
 		md[metadataCheckoutRef] = shared.UnionString(in.CheckoutRef)
@@ -228,8 +230,8 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 	if err != nil {
 		return corebilling.SubscriptionEvent{}, err
 	}
-	// The payment names a subscription, so one exists: a zero here is a shape
-	// change, not "not yet". Passed through, it would leave the buyer polling for good.
+	// A zero here is a shape change, not "not yet": the id was just resolved.
+	// Passed through, it would leave the buyer polling for good.
 	if event.IsZero() {
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: subscription %s decoded to nothing", subID)
 	}
@@ -316,16 +318,17 @@ func (c *Client) ListPayments(ctx context.Context, providerSubID string, since t
 	var out []corebilling.PaymentRecord
 	for iter.Next() {
 		p := iter.Current()
-		// The list endpoint carries no decline reason; settle fetches it when it
-		// needs one, so a dunning row never stores an empty code.
+		// The list endpoint carries no decline reason, and no tax line to take
+		// total_amount back to the pre-tax figure pug billed -- so no amount either,
+		// rather than one the caller would compare against the wrong base. settle
+		// fetches the payment when it needs either.
 		out = append(out, corebilling.PaymentRecord{
-			PaymentID:   p.PaymentID,
-			InvoiceID:   stringMetadata(p.Metadata)[metadataInvoiceID],
-			Status:      paymentStatus(string(p.Status)),
-			InvoiceURL:  p.InvoiceURL,
-			AmountCents: p.TotalAmount,
-			Currency:    strings.ToUpper(string(p.Currency)),
-			CreatedAt:   p.CreatedAt,
+			PaymentID:  p.PaymentID,
+			InvoiceID:  stringMetadata(p.Metadata)[metadataInvoiceID],
+			Status:     paymentStatus(string(p.Status)),
+			InvoiceURL: p.InvoiceURL,
+			Currency:   strings.ToUpper(string(p.Currency)),
+			CreatedAt:  p.CreatedAt,
 		})
 	}
 	if err := iter.Err(); err != nil {
@@ -349,7 +352,7 @@ func (c *Client) FetchPayment(ctx context.Context, paymentID string) (corebillin
 		ErrorCode:    p.ErrorCode,
 		ErrorMessage: p.ErrorMessage,
 		InvoiceURL:   p.InvoiceURL,
-		AmountCents:  p.TotalAmount,
+		AmountCents:  p.TotalAmount - p.Tax,
 		Currency:     strings.ToUpper(string(p.Currency)),
 		CreatedAt:    p.CreatedAt,
 	}, nil
@@ -421,22 +424,17 @@ func optionalTime(t time.Time) *time.Time {
 	return &t
 }
 
-// notFound separates "the provider does not have this" from "could not be
-// reached": a finding versus an outage, identical errors without the status code.
-// declined is a 4xx that means the card or the mandate refused. Anything else --
-// a bad key, a rate limit, a timeout, a request Dodo rejected -- is pug's
-// problem, and calling it a decline would dun a customer for pug's own
-// misconfiguration.
+// declined is a 4xx that means the card or the mandate refused, and only that.
+// Every other 4xx -- a bad key, a rate limit, a route or content type Dodo did
+// not accept -- is pug's problem, and an allow-list is what keeps a dependency
+// bump from dunning every customer at once. The rest go to the ambiguous branch,
+// which is settled by reading and fails the pass.
 func declined(status int) bool {
-	switch status {
-	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
-		http.StatusRequestTimeout, http.StatusConflict,
-		http.StatusUnprocessableEntity, http.StatusTooManyRequests:
-		return false
-	}
-	return true
+	return status == http.StatusPaymentRequired
 }
 
+// notFound separates "the provider does not have this" from "could not be
+// reached": a finding versus an outage, identical errors without the status code.
 func notFound(err error) bool {
 	var apiErr *dodopayments.Error
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound

@@ -13,11 +13,11 @@ select * from billing_entitlements where org_id = @org_id for update;
 insert into billing_entitlements (
   anchor_day, block_rate_cents, contract_ends_at, display_name_override,
   flat_fee_cents, included_events_override, note, org_id, plan_slug,
-  retention_days_override, trial_ends_at
+  retention_days_override, terms_effective_at, trial_ends_at
 ) values (
   @anchor_day, @block_rate_cents, @contract_ends_at, @display_name_override,
   @flat_fee_cents, @included_events_override, @note, @org_id, @plan_slug,
-  @retention_days_override, @trial_ends_at
+  @retention_days_override, @terms_effective_at, @trial_ends_at
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
@@ -29,6 +29,7 @@ set anchor_day = excluded.anchor_day,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
     retention_days_override = excluded.retention_days_override,
+    terms_effective_at = excluded.terms_effective_at,
     trial_ends_at = excluded.trial_ends_at
 returning *;
 
@@ -159,7 +160,8 @@ select * from billing_invoices where id = @id for update;
 -- name: MarkBillingInvoiceCharging :one
 -- Committed before the provider is called: the row is the intent.
 update billing_invoices
-set status = 'charging', provider = @provider, provider_sub_id = @provider_sub_id
+set status = 'charging', provider = @provider, provider_sub_id = @provider_sub_id,
+    last_error_code = '', last_error_message = '', provider_payment_id = null
 where id = @id and status in ('open', 'failed')
 returning *;
 
@@ -232,7 +234,9 @@ where id = @id
 returning *;
 
 -- name: MarkBillingInvoiceRefunded :one
+-- Also from charged: a refund can arrive before the poll that would have marked
+-- the payment paid, and the poll would then leave a refunded invoice reading paid.
 update billing_invoices
 set status = 'refunded'
-where id = @id and status = 'paid'
+where id = @id and status in ('paid', 'charged')
 returning *;

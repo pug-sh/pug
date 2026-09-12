@@ -13,7 +13,8 @@ select
   e.retention_days_override,
   e.trial_ends_at,
   e.flat_fee_cents,
-  e.block_rate_cents
+  e.block_rate_cents,
+  e.terms_effective_at
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
 where o.id = @org_id;

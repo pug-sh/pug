@@ -110,13 +110,42 @@ func (f *fakeProvider) settlePayment(id string, status corebilling.PaymentStatus
 	}
 }
 
-func (f *fakeProvider) ListPayments(context.Context, string, time.Time) ([]corebilling.PaymentRecord, error) {
+// settleWithAmount settles a payment for an amount and currency of its own, which
+// is what the invoice's own figures are checked against.
+func (f *fakeProvider) settleWithAmount(id string, status corebilling.PaymentStatus, cents int64, currency string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.payments {
+		if f.payments[i].PaymentID == id {
+			f.payments[i].Status = status
+			f.payments[i].AmountCents = cents
+			f.payments[i].Currency = currency
+		}
+	}
+}
+
+func (f *fakeProvider) addPayment(rec corebilling.PaymentRecord) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.payments = append(f.payments, rec)
+}
+
+// Honours `since` the way the provider does, so a test can put an earlier
+// attempt's payment out of the window. A record with no timestamp is kept: most
+// tests do not set one.
+func (f *fakeProvider) ListPayments(_ context.Context, _ string, since time.Time) ([]corebilling.PaymentRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
-	return append([]corebilling.PaymentRecord(nil), f.payments...), nil
+	out := make([]corebilling.PaymentRecord, 0, len(f.payments))
+	for _, p := range f.payments {
+		if p.CreatedAt.IsZero() || !p.CreatedAt.Before(since) {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeProvider) FetchPayment(_ context.Context, id string) (corebilling.PaymentRecord, error) {

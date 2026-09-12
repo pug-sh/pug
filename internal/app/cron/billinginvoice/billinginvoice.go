@@ -145,12 +145,12 @@ func Run(ctx context.Context) error {
 // successfully says nothing about the ones that did not.
 func pass(ctx context.Context, svc *corebilling.Service, now time.Time) error {
 	report, err := svc.InvoicePass(ctx, now)
-	if err != nil {
-		return err
-	}
+	// Emitted even on a failed pass: the work already done is what says where it
+	// stopped.
 	for status, n := range map[string]int{
 		"open": report.Closed, "waived": report.Waived, "charged": report.Charged,
-		"failed": report.Declined, "uncollectible": report.MandateGone,
+		"failed": report.Declined, "uncollectible": report.Uncollectible,
+		"mandate_gone": report.MandateGone, "dropped": report.Dropped,
 		"settled": report.Settled, "reopened": report.Reopened,
 		"ambiguous": report.Ambiguous, "held": report.Held,
 		"unpriceable": report.Unpriceable, "unbilled": report.Unbilled,
@@ -160,8 +160,16 @@ func pass(ctx context.Context, svc *corebilling.Service, now time.Time) error {
 			invoiceCounter.Add(ctx, int64(n), metric.WithAttributes(attribute.String("status", status)))
 		}
 	}
+	if err != nil {
+		return err
+	}
 	return exitErr(report)
 }
+
+// maxWriteOffsPerPass bounds how many mandates one pass may declare gone. At any
+// real scale a burst is pug's own fault -- a flipped environment, a rotated key --
+// and writing every open invoice off is not a per-customer finding.
+const maxWriteOffsPerPass = 10
 
 // exitErr is the CronJob's whole success signal, kept separate so it can be
 // tested without a provider.
@@ -171,6 +179,9 @@ func exitErr(report corebilling.InvoiceReport) error {
 	}
 	if report.Ambiguous > 0 {
 		return fmt.Errorf("billing invoice pass left %d charges unresolved", report.Ambiguous)
+	}
+	if report.MandateGone > maxWriteOffsPerPass {
+		return fmt.Errorf("billing invoice pass wrote off %d mandates as gone", report.MandateGone)
 	}
 	return nil
 }

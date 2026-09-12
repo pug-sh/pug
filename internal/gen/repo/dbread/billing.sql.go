@@ -200,7 +200,8 @@ select
   e.retention_days_override,
   e.trial_ends_at,
   e.flat_fee_cents,
-  e.block_rate_cents
+  e.block_rate_cents,
+  e.terms_effective_at
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
 where o.id = $1
@@ -219,6 +220,7 @@ type GetOrgEntitlementRow struct {
 	TrialEndsAt            pgtype.Timestamptz
 	FlatFeeCents           pgtype.Int8
 	BlockRateCents         pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 }
 
 // Left join rather than two reads: most orgs have no entitlement row, and that
@@ -239,6 +241,7 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 		&i.TrialEndsAt,
 		&i.FlatFeeCents,
 		&i.BlockRateCents,
+		&i.TermsEffectiveAt,
 	)
 	return i, err
 }

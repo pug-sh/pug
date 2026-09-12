@@ -12,6 +12,10 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
+// ErrSubscriptionUnreadable is a stored status this build has no word for. It is
+// not "no mandate": billing an org as if it had none writes the invoice off.
+var ErrSubscriptionUnreadable = errors.New("billing: the subscription holds a status pug does not know")
+
 // liveSubscription reads the one row that can be charged. No row is the
 // ordinary answer, so it returns nil rather than an error.
 func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
@@ -33,11 +37,11 @@ func readLiveSubscription(ctx context.Context, r *dbread.Queries, orgID string) 
 	}
 	sub, ok := subscriptionFromRow(row)
 	if !ok {
-		err := fmt.Errorf("live subscription holds the unknown status %q", row.Status)
+		err := fmt.Errorf("%w: %q", ErrSubscriptionUnreadable, row.Status)
 		slog.ErrorContext(ctx, "live subscription holds a status pug does not know", slogx.Error(err),
 			slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return nil, nil
+		return nil, err
 	}
 	return &sub, nil
 }

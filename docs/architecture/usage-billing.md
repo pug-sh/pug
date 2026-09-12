@@ -12,6 +12,9 @@
 > migration 021 and the `cron-billing-invoice` image. **Three things are still
 > open**, and all three are §18.2's test-mode run:
 >
+> §10's `PUG_BILLING_MANDATE_REQUIRED` gate is the one thing here that is
+> designed and deliberately **not** built.
+>
 > 1. **The mandate-only checkout's shape** (§7.1). `FetchCheckoutOutcome` now
 >    walks session → payment → subscription and, when a $0 authorization's
 >    payment names no subscription, falls back to listing the customer's
@@ -192,6 +195,7 @@ the same shape as today, with money in it:
 | Flat fee | `flat_fee_cents` | charged every period regardless of usage; NULL = none |
 | Block rate | `block_rate_cents` | per 100k over the allowance; NULL = usage beyond the allowance is not charged |
 | Allowance | `included_events_override` | events before the block rate applies; NULL = none. Must be a whole number of blocks |
+| Effective from | `terms_effective_at` | stamped when the money columns change; the first day the deal is invoiced from |
 | Retention, name, term, note | as today | |
 
 ```
@@ -206,6 +210,12 @@ month, 5M included, $3 per 100k after" is all three: 7,200,000 events → 72 −
 **A custom deal needs at least one of `flat_fee_cents` / `block_rate_cents`**,
 enforced by a check constraint, replacing today's `custom_needs_quota`. An
 allowance alone is a free tier nobody agreed to.
+
+**A deal is invoiced from `terms_effective_at`, not from the row's birth.** The
+row usually predates the deal — `extend-trial` writes one months earlier — so
+dating the terms by `create_time` would let recording a deal in September
+retroactively invoice every elapsed period at the new rate. Renewing on
+unchanged terms leaves the stamp where it is.
 
 **The price lives in pug now — the reversal of payments.md §4.** That section
 ruled it out because Dodo held the real price and a copy would drift. Under
@@ -227,7 +237,9 @@ was right when the floor was the only alternative to a tier.)
 
 `Resolve` keeps its shape — a pure function over the org's age, the row, the
 mandate and the clock — and its output changes from "a tier" to "a card or a
-deal, and whether it can be charged":
+deal, and whether it can be charged". Rule 5 and `NextChargeAt` sit outside it:
+`GetEntitlement` layers them on after it returns, one of them off a Postgres
+read.
 
 ```
 1. billing disabled           → FREE, no card, no allowance, no bound (unchanged)
@@ -310,14 +322,22 @@ period. Three layers, cheapest first:
    period. **VERIFY** that `PATCH /subscriptions/{id}` accepts
    `next_billing_date` on an on-demand subscription; the SDK exposes it, the
    docs are silent.
-2. **A scheduled cancellation triggers an early close.** On a delivery
-   carrying `cancel_at_next_billing_date = true`, the next pass invoices the
-   period to date and charges while the mandate is live. Whatever is sent
-   between then and the cancellation is the write-off — a day under layer 1,
-   up to a month without it.
+2. **A scheduled cancellation triggers an early close — but only when the
+   cancellation lands first.** On a delivery carrying
+   `cancel_at_next_billing_date = true`, the pass invoices the period to date
+   and charges while the mandate is live **if** the mandate ends before
+   `period_end + grace`. When layer 1 has pinned the cancellation past that
+   instant the natural close already catches a live mandate, and closing early
+   would spend the period's one invoice slot on a few days and leave the rest
+   unbillable. Whatever is sent between the early close and the cancellation is
+   the write-off — a day under layer 1, up to a month without it.
 3. **`RemovePaymentMethod` RPC (admin)** — pug's own cancellation, which does
-   the steps in the right order: close the period at today, charge, then
-   `PATCH status=cancelled`. Offered in the dashboard beside "Manage billing";
+   the steps in the right order: close the period at `now − grace`, charge,
+   then `PATCH status=cancelled`. The days the meter has not finalized are the
+   write-off. It **refuses to cancel unless the charge settled**
+   (`BILLING_FINAL_PERIOD_UNSETTLED`): a decline, an ambiguous charge or a held
+   meter leaves the mandate live, because cancelling first turns a retryable
+   decline into a write-off. Offered in the dashboard beside "Manage billing";
    the portal path stays possible and is covered by 1 and 2.
 
 A cancelled mandate cannot be charged ("no longer chargeable"), so a final
@@ -331,7 +351,7 @@ org's `failed` and `uncollectible` invoices for another attempt (§8.5).
 
 ### 8.1 Closing a period
 
-An hourly pass (`pug cron billing-invoice`, §11) closes each org's period once
+The invoicing pass (`cmd/cron/billing-invoice`, §11) closes each org's period once
 it is safe to price, and prices it:
 
 - **When:** `period_end + grace` has passed, where `grace =
@@ -362,7 +382,7 @@ it is safe to price, and prices it:
 billing_invoices
   id                    char(20) primary key
   org_id                char(20) not null references orgs(id) on delete cascade
-  provider              text                   -- null for waived (nothing to charge)
+  provider              text                   -- null when there is no mandate
   provider_sub_id       text                   -- the mandate charged
   plan_slug             varchar(50) not null   -- card slug or 'custom'
   pricing               jsonb not null         -- the RateCard or CustomTerms used
@@ -402,16 +422,24 @@ Invoices are never pruned — they are the ledger billing.md §11.4 promised.
 
 ```
 open ──charge──▶ charging ──payment_id──▶ charged ──webhook/poll──▶ paid
-  ▲                 │                                 │
-  │   (ambiguous)   │ settle by listing (8.4)          └──▶ failed ──soft, attempts<4──▶ open (next_attempt_at)
-  └─────────────────┘                                        └──hard, or 4th──▶ uncollectible ──new card──▶ open
+  ▲                 │                          │                      ▲
+  │   (ambiguous)   │ settle by listing (8.4)  └──▶ failed ──soft, attempts<4──▶ open
+  └─────────────────┘                                └──hard, or 4th──▶ uncollectible ──new card──▶ open
+charging ──▶ failed          (the charge was refused outright)
+open, failed ──▶ charging    (a retry goes straight back; there is no open hop)
 open, amount < min ──▶ waived
-any non-terminal  ──operator──▶ void
+open, failed, uncollectible ──operator──▶ void
 paid ──refund.succeeded──▶ refunded
 ```
 
+`paid` lands from **every** state but the settled ones, not only from
+`charged`: a late webhook for a charge that settle already reopened has to land,
+or the next pass charges the customer twice. That edge is load-bearing.
+
 Terminal: `paid`, `refunded`, `waived`, `void`, and `uncollectible` until a new
-payment method arrives. Every transition appends to `billing_invoice_events`
+payment method arrives. `void` refuses `charging` and `charged` — a charge in
+flight has to settle first — and refuses `paid`, whose only onward state is
+`refunded`, written by the refund webhook. Every transition appends to `billing_invoice_events`
 with an actor — the pass, a webhook id, or the operator.
 
 ### 8.4 Charging, without an idempotency key
@@ -430,20 +458,27 @@ The pass therefore:
 
 1. Sets `charging` and **commits** (invariant 3).
 2. Calls `POST /subscriptions/{sub}/charge` with `product_price =
-   amount_cents`, `product_currency = USD`, `product_description = "Pug — 2.34M
-   events, 17 Aug – 17 Sep 2026"`, and **explicit metadata** `{org_id,
+   amount_cents`, `product_currency = USD`, `product_description = "Pug: 2.34M
+   events, 17 Aug to 16 Sep 2026"` (`billed_to` is exclusive, so the text names
+   the last day billed), and **explicit metadata** `{org_id,
    invoice_id, period_start}` — the charge inherits the subscription's metadata
    only when none is passed, and pug needs the invoice id on every payment
    webhook.
-3. On a response: `charged` + `provider_payment_id`. On a definitive refusal —
-   a 4xx the **card or mandate** refused — `failed`, the error stored. A 401,
-   403, 408, 409 or 429 is pug's problem, not the card's, and is treated as
-   ambiguous: dunning a customer because a key was rotated or a rate limit was
-   hit would write them off over 17 days. On anything ambiguous — timeout, 5xx,
-   connection reset — **leaves the row in `charging`**.
+3. On a response: `charged` + `provider_payment_id`. A decline is an
+   **allow-list of one**: `402 Payment Required`. Every other 4xx is pug's
+   problem, not the card's, and is treated as ambiguous — a rotated key, a rate
+   limit, or a route or content type a dependency bump changed would otherwise
+   dun every customer at once, over 17 days, behind a green pass. On anything
+   ambiguous — timeout, 5xx, connection reset — **leaves the row in `charging`**.
+   A `404` claims the mandate is not chargeable; it is acted on only when
+   `FetchSubscription` **corroborates** it, since uncorroborated it is equally a
+   flipped environment or a rotated key, which would write off every open
+   invoice in the deployment in one pass.
 4. **Settles `charging` rows older than a few minutes by reading**:
-   `Payments.List(subscription_id, created_at_gte = invoice.create_time)` and
-   look for `metadata.invoice_id`. The list has no promised order and a retry
+   `Payments.List(subscription_id, created_at_gte = when the row entered
+   charging)` and look for `metadata.invoice_id`. From the charging instant, not
+   the invoice's creation: the id is shared across attempts, so a wider window
+   lets a decline resolved days ago settle the attempt running now. The list has no promised order and a retry
    after a decline shares the invoice id with the attempt that failed, so the
    match is the **newest succeeded** payment, not the first one seen. Found →
    adopt the payment id (`charged`); not found → `open`, and the next tick
@@ -469,8 +504,8 @@ and follows Dodo's own recommendation:
 
 | Outcome | Action |
 |---|---|
-| soft decline (`INSUFFICIENT_FUNDS`, `PROCESSING_ERROR`, `NETWORK_ERROR`, `TRY_AGAIN_LATER`) | `failed`; retry at +3d, +7d, +7d after the first attempt (4 attempts over 17 days), then `uncollectible` |
-| hard decline (`STOLEN_CARD`, `LOST_CARD`, `DO_NOT_HONOR`, `FRAUDULENT`, …) | `uncollectible` immediately; retrying damages authorization rates |
+| soft decline — **any code not in the hard list**, an unknown code included | `failed`; retry at +3d, +7d, +7d after the first attempt (4 attempts over 17 days), then `uncollectible` |
+| hard decline — the enumerated list, and only it: `STOLEN_CARD`, `LOST_CARD`, `DO_NOT_HONOR`, `FRAUDULENT` | `uncollectible` immediately; retrying damages authorization rates |
 | a new payment method (`subscription.update_payment_method`) | every `failed`/`uncollectible` invoice → `open`, `next_attempt_at = now` |
 | mandate cancelled / expired | open invoices → `uncollectible`; a finding |
 
@@ -535,7 +570,7 @@ becomes the evaluation window. Not built in this slice; the design keeps
 `Chargeable` on the resolved entitlement so the gate is one check when it
 comes.
 
-Until then the reconcile pass reports **unbilled usage**: a closed period over
+Until then the invoicing pass's last stage reports **unbilled usage**: a closed period over
 the current card's free allowance for an org with no mandate. That is the
 number that says how much the free tier is costing.
 
@@ -553,10 +588,16 @@ order:
    mandate (§8.4).
 3. **Settle** `charging` rows by listing, `charged` rows by polling (§8.4).
 4. **Pin** `next_billing_date` on mandates whose next charge moved (§7.3).
-5. **Report**: periods held back by a stale meter, uncollectible invoices,
-   invoices whose mandate is gone, unbilled usage (§10) — counted and logged,
-   exported as `billing.invoice_pass_total{outcome}` and
-   `billing.invoices_total{status}`, alongside the reconcile counters.
+5. **Report**: periods held back by a stale meter (`held`), write-offs
+   (`uncollectible`) and the subset whose mandate is gone (`mandate_gone`), a
+   due period that reached the end of the catch-up window unbilled (`dropped`),
+   and unbilled usage (§10) — counted and logged, exported as
+   `billing.invoice_pass_total{outcome}` and `billing.invoices_total{status}`,
+   alongside the reconcile counters. The counters are emitted even when the pass
+   returns an error, since the work already done is what says where it stopped.
+   The pass logs the **effective grace** it ran with: the meter and the invoicer
+   are separate CronJobs reading separate env blocks, and nothing makes
+   `PUG_USAGE_RESCAN_DAYS` agree across the two.
 
 A separate binary rather than a stage of `billing-reconcile`: reconcile is
 "nothing auto-fixed" and read-mostly, this one moves money, and the two want
@@ -568,8 +609,10 @@ gitops. Decision §19.9.
 The pass exits non-zero when it could not read or write — Postgres, or **any**
 provider call (`Unreadable`, matching the reconcile pass: one org charging
 successfully says nothing about the ones that did not) — or when it left a
-charge unresolved (`Ambiguous`), since that is money in an unknown state. So a
-red CronJob means the pass itself is broken, not that a customer's card is.
+charge unresolved (`Ambiguous`), since that is money in an unknown state. It
+also exits non-zero when more than ten mandates were written off as gone in one
+pass: at that scale it is pug's own fault, not ten customers'. So a red CronJob
+means the pass itself is broken, not that a customer's card is.
 
 ## 12. Operator CLI
 
@@ -586,18 +629,24 @@ pug billing invoice void  <invoice-id> --actor <who> --note "..."
 pug billing invoice retry <invoice-id> --actor <who>   # uncollectible → open, now
 ```
 
-- `--flat-fee` and `--block-rate` are USD cents; omitted keeps, `0` clears,
-  the same merge rule as every other flag. `--provider-product` is gone.
+- `--flat-fee` and `--block-rate` are USD cents; on `--plan custom`, omitted
+  keeps and `0` clears, the same merge rule as every other flag. On any other
+  plan they are force-cleared whether or not the flag was passed, so a card pin
+  cannot leave a price behind for the next custom set to satisfy its guard with.
+  `--provider-product` is gone. Changing either stamps `terms_effective_at`,
+  which is the day the deal is invoiced from (§5).
 - `set --plan custom` refuses a row with neither fee nor rate, and an
   `--events` that is not a whole number of blocks.
 - `show` prints `RESOLVED` with the card or terms and the next charge date,
   `STORED` with the money columns, and `--invoices` the ledger newest-first
   with status and attempts — the operator's view of a dunning conversation.
-- `preview` is how a deal is sanity-checked before it is set: it is `Price`,
-  which is what the customer will be charged.
-- `void` is the only way to stop a wrong charge before it happens or to record
-  that a paid one was refunded in Dodo's dashboard; it never calls the
-  provider. `retry` is for the customer who fixed their card by phone.
+- `preview` is how a deal is sanity-checked before it is set: it is `Price`, on
+  the org's own terms and its **mandate's** card, which is what the customer
+  will be charged.
+- `void` is the only way to stop a wrong charge before it happens; it never
+  calls the provider and it cannot touch a `paid` invoice, whose only onward
+  state is `refunded` and whose only writer is the refund webhook. `retry` is
+  for the customer who fixed their card by phone.
 
 Every write still appends to `billing_entitlement_history`, which gains the
 two money columns; invoice writes append to `billing_invoice_events`.
@@ -616,10 +665,15 @@ two money columns; invoice writes append to `billing_invoice_events`.
 ## 14. Migration 021
 
 - `billing_entitlements`: `+ flat_fee_cents bigint check (>= 0)`, `+
-  block_rate_cents bigint check (>= 0)`, `− provider_product_id`;
-  `custom_needs_quota` replaced by `custom_needs_price` (§5). The history table
-  mirrors all three, and its deletion constraint is rewritten again.
-- `billing_subscriptions`: `+ on_demand boolean not null`.
+  block_rate_cents bigint check (>= 0)`, `+ terms_effective_at timestamptz`, `−
+  provider_product_id`; `custom_needs_quota` replaced by `custom_needs_price`,
+  which checks `> 0` rather than merely not-null so a hand-written zero cannot
+  silently drop an org onto the list rate (§5), plus `allowance_blocks` matching
+  the CLI's whole-block rule. The history table mirrors the money columns, and
+  its deletion constraint is rewritten again.
+- `billing_subscriptions`: `+ on_demand boolean not null`, `+
+  cancel_at_period_end boolean not null` (drives the early close, §7.3), `+
+  ended_at timestamptz` (clips the last invoice).
 - `billing_checkout_sessions`: `+ plan_slug varchar(50) not null` (§4).
 - `billing_invoices`, `billing_invoice_events` (§8.2).
 - `cron.LockBillingInvoice` joins the advisory-lock iota.
@@ -691,7 +745,7 @@ stays a fake.
 - **RPC freshness** — `GetUpcomingInvoice` carries the three usage states
   through and never renders an unknown count as $0.
 - **Authz** — the registry and policy tests fail until `ResourceInvoice` and
-  the two new procedures are entered; nothing else to write.
+  the three new procedures are entered; nothing else to write.
 
 ## 17. Known imprecision
 
@@ -709,7 +763,11 @@ stays a fake.
 6. **A charge at `period_end + 2d` means the invoice date is not the
    anniversary but two days after it.** The period is; the charge lags by the
    grace, and `next_charge_at` says so.
-7. **Cancellation write-off** (§7.3): at least a day of usage, a month if the
+7. **`RemovePaymentMethod` can refuse.** A decline, an ambiguous charge or a
+   meter that has not reached the period leaves the mandate live and returns
+   `BILLING_FINAL_PERIOD_UNSETTLED`. The admin retries once the charge settles,
+   or voids the invoice. Cancelling first would write the period off.
+8. **Cancellation write-off** (§7.3): at least a day of usage, a month if the
    `next_billing_date` pin turns out unsupported.
 8. The meter's own imprecisions (`usage.md` §8) are inherited unchanged.
 

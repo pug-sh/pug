@@ -83,7 +83,8 @@ func TestListInvoices(t *testing.T) {
 		   amount_cents, billed_from, billed_to, blocks, currency, event_count, id, lines, org_id,
 		   period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, status,
 		   last_error_code, last_error_message, usage_computed_at)
-		 values (9700, '2026-05-10', '2026-06-10', 23, 'USD', 2340000, 'inv00000000000000001', '[]', $1,
+		 values (9700, '2026-05-10', '2026-06-10', 23, 'USD', 2340000, 'inv00000000000000001',
+		         '[{"description":"blocks 2-23","blocks":22,"cents_per_block":500,"amount_cents":9700}]', $1,
 		         '2026-06-10', '2026-05-10', $2, '{}', 'stub', 'https://pay.example/receipt/1', 'paid',
 		         'DO_NOT_HONOR', 'merchant-facing text', now())`, orgID, corebilling.CurrentSlug); err != nil {
 		t.Fatalf("seed invoice: %v", err)

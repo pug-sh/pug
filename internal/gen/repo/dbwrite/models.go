@@ -41,6 +41,7 @@ type BillingEntitlement struct {
 	UpdateTime             pgtype.Timestamptz
 	FlatFeeCents           pgtype.Int8
 	BlockRateCents         pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 }
 
 type BillingEntitlementHistory struct {

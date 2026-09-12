@@ -150,7 +150,7 @@ func (q *Queries) GetBillingCheckoutSession(ctx context.Context, arg GetBillingC
 }
 
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
-select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, flat_fee_cents, block_rate_cents from billing_entitlements where org_id = $1 for update
+select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, flat_fee_cents, block_rate_cents, terms_effective_at from billing_entitlements where org_id = $1 for update
 `
 
 // Returns no rows for an org that has never been touched, which is normal.
@@ -171,6 +171,7 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.UpdateTime,
 		&i.FlatFeeCents,
 		&i.BlockRateCents,
+		&i.TermsEffectiveAt,
 	)
 	return i, err
 }
@@ -585,7 +586,8 @@ func (q *Queries) MarkBillingInvoiceCharged(ctx context.Context, arg MarkBilling
 
 const markBillingInvoiceCharging = `-- name: MarkBillingInvoiceCharging :one
 update billing_invoices
-set status = 'charging', provider = $1, provider_sub_id = $2
+set status = 'charging', provider = $1, provider_sub_id = $2,
+    last_error_code = '', last_error_message = '', provider_payment_id = null
 where id = $3 and status in ('open', 'failed')
 returning amount_cents, attempts, billed_from, billed_to, blocks, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, update_time, usage_computed_at
 `
@@ -808,10 +810,12 @@ func (q *Queries) MarkBillingInvoicePaid(ctx context.Context, arg MarkBillingInv
 const markBillingInvoiceRefunded = `-- name: MarkBillingInvoiceRefunded :one
 update billing_invoices
 set status = 'refunded'
-where id = $1 and status = 'paid'
+where id = $1 and status in ('paid', 'charged')
 returning amount_cents, attempts, billed_from, billed_to, blocks, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, update_time, usage_computed_at
 `
 
+// Also from charged: a refund can arrive before the poll that would have marked
+// the payment paid, and the poll would then leave a refunded invoice reading paid.
 func (q *Queries) MarkBillingInvoiceRefunded(ctx context.Context, id string) (BillingInvoice, error) {
 	row := q.db.QueryRow(ctx, markBillingInvoiceRefunded, id)
 	var i BillingInvoice
@@ -1012,11 +1016,11 @@ const upsertBillingEntitlement = `-- name: UpsertBillingEntitlement :one
 insert into billing_entitlements (
   anchor_day, block_rate_cents, contract_ends_at, display_name_override,
   flat_fee_cents, included_events_override, note, org_id, plan_slug,
-  retention_days_override, trial_ends_at
+  retention_days_override, terms_effective_at, trial_ends_at
 ) values (
   $1, $2, $3, $4,
   $5, $6, $7, $8, $9,
-  $10, $11
+  $10, $11, $12
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
@@ -1028,8 +1032,9 @@ set anchor_day = excluded.anchor_day,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
     retention_days_override = excluded.retention_days_override,
+    terms_effective_at = excluded.terms_effective_at,
     trial_ends_at = excluded.trial_ends_at
-returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, flat_fee_cents, block_rate_cents
+returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, flat_fee_cents, block_rate_cents, terms_effective_at
 `
 
 type UpsertBillingEntitlementParams struct {
@@ -1043,6 +1048,7 @@ type UpsertBillingEntitlementParams struct {
 	OrgID                  string
 	PlanSlug               string
 	RetentionDaysOverride  pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -1060,6 +1066,7 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		arg.OrgID,
 		arg.PlanSlug,
 		arg.RetentionDaysOverride,
+		arg.TermsEffectiveAt,
 		arg.TrialEndsAt,
 	)
 	var i BillingEntitlement
@@ -1077,6 +1084,7 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.UpdateTime,
 		&i.FlatFeeCents,
 		&i.BlockRateCents,
+		&i.TermsEffectiveAt,
 	)
 	return i, err
 }

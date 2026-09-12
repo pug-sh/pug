@@ -45,8 +45,19 @@ type Record struct {
 	FlatFeeCents           int64
 	BlockRateCents         int64
 
-	// CreateTime is when the row was first written: a deal is invoiced from then.
+	// CreateTime is when the row was first written.
 	CreateTime time.Time
+	// TermsEffectiveAt is when the deal's money was last changed. A deal is
+	// invoiced from then, not from the row's birth: the row often predates it.
+	TermsEffectiveAt time.Time
+}
+
+// dealStart is the earliest day a deal can be invoiced from.
+func (r Record) dealStart() time.Time {
+	if !r.TermsEffectiveAt.IsZero() {
+		return r.TermsEffectiveAt
+	}
+	return r.CreateTime
 }
 
 // Terms is the negotiated deal on the row, if the row is one.

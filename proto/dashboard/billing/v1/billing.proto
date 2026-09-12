@@ -46,7 +46,9 @@ service BillingService {
   rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse) {}
 
   // Pug's own cancellation, in the order the portal cannot promise: close the
-  // period to date, charge it, then cancel the mandate. Admin-only.
+  // period to date, charge it, then cancel the mandate. The period is closed at
+  // now minus the invoicing grace, so the days the meter has not finalized are a
+  // write-off, and the mandate is left LIVE unless the charge settled. Admin-only.
   rpc RemovePaymentMethod(RemovePaymentMethodRequest) returns (RemovePaymentMethodResponse) {}
 }
 
@@ -291,6 +293,7 @@ message Invoice {
   google.protobuf.Timestamp period_start = 2;
   google.protobuf.Timestamp period_end = 3;
   // The days actually billed: clipped to the mandate and past the trial.
+  // billed_to is EXCLUSIVE -- the last day billed is the day before it.
   google.protobuf.Timestamp billed_from = 4;
   google.protobuf.Timestamp billed_to = 5;
   int64 event_count = 6;

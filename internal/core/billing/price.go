@@ -2,7 +2,9 @@ package billing
 
 import "fmt"
 
-// Line is one priced row of an invoice.
+// Line is one priced row of an invoice, in one of three shapes: a free or
+// included band (blocks, no rate, no amount), a flat fee (an amount, no blocks),
+// or a charged band (all four). Display only -- the total is Quote.TotalCents.
 type Line struct {
 	Description   string `json:"description"`
 	Blocks        int64  `json:"blocks"`
@@ -100,21 +102,26 @@ type Pricing struct {
 	Terms *CustomTerms `json:"terms,omitempty"`
 }
 
-func (p Pricing) Quote(events int64) Quote {
+// Quote prices a period. The bool is false when nothing here can price one, so
+// a caller cannot mistake a refusal for a zero-cent period.
+func (p Pricing) Quote(events int64) (Quote, bool) {
+	if p.IsZero() {
+		return Quote{}, false
+	}
 	if p.Terms != nil {
-		return PriceCustom(*p.Terms, events)
+		return PriceCustom(*p.Terms, events), true
 	}
-	if p.Card != nil {
-		return Price(*p.Card, events)
-	}
-	return Quote{}
+	return Price(*p.Card, events), true
 }
 
-// IsZero is "nothing here can price a period": no terms, and no card this build
-// can divide by. Callers hold the invoice rather than charging a bogus zero.
+// IsZero is "nothing here can price a period": no terms worth money, and no card
+// this build can divide by.
 func (p Pricing) IsZero() bool {
-	if p.Terms != nil {
-		return false
+	switch {
+	case p.Terms != nil:
+		return p.Terms.FlatFeeCents <= 0 && p.Terms.BlockRateCents <= 0
+	case p.Card != nil:
+		return p.Card.BlockEvents <= 0 || len(p.Card.Tiers) == 0
 	}
-	return p.Card == nil || p.Card.BlockEvents <= 0 || len(p.Card.Tiers) == 0
+	return true
 }

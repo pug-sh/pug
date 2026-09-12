@@ -29,7 +29,7 @@ Three properties everything below preserves.
    branches on a usage number — nothing is rejected, throttled or dropped for a
    quota, and there is no over-limit state. But since usage-based pricing landed,
    a period's count is what the invoice for it is priced from
-   ([`usage-billing.md`](usage-billing.md) §4), so a wrong count is a wrong
+   ([`usage-billing.md`](usage-billing.md) §8.1), so a wrong count is a wrong
    invoice.
 
 ## 2. What gets counted
@@ -348,7 +348,7 @@ deleted org, since no RPC deletes one.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2 — the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. **It is also the invoicing grace** ([`usage-billing.md`](usage-billing.md) §4): a period is priced this many days after it ends, so raising it delays every invoice by the same amount. |
+| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2 — the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. **It is also the invoicing grace** ([`usage-billing.md`](usage-billing.md) §8.1): a period is priced this many days after it ends, so raising it delays every invoice by the same amount. |
 
 That is the whole surface. There is no enable flag: scheduling `pug cron usage` is
 the switch, and the RPC serves whatever it stored.

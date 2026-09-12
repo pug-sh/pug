@@ -36,6 +36,10 @@ var (
 	ErrNoCustomer     = errors.New("billing: this org has no payments customer")
 	// ErrNoMandate is a payment method removal for an org that has none.
 	ErrNoMandate = errors.New("billing: this org has no live payment method")
+	// ErrFinalPeriodUnsettled is the final invoice not reaching a settled charge.
+	// The mandate is left live, because cancelling it turns a retryable decline
+	// into a write-off.
+	ErrFinalPeriodUnsettled = errors.New("billing: the final period could not be billed; the payment method is unchanged")
 	// ErrCurrencyNotSupported: pug sells and stores USD, and a currency it cannot
 	// render honestly must not become a number on a page.
 	ErrCurrencyNotSupported = errors.New("billing: only USD subscriptions are supported")
@@ -313,6 +317,9 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID string, now tim
 		return ErrNoMandate
 	}
 
+	// chargeOne reports the outcome only through the report, so the counters are
+	// the check: cancel on anything but a settled charge and the final period is
+	// written off, with the RPC reporting success.
 	var report InvoiceReport
 	inv, err := s.closeCurrentPeriod(ctx, orgID, sub, coreusage.FloorDayUTC(now.Add(-s.cfg.Grace())), now, &report)
 	if err != nil {
@@ -322,6 +329,13 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID string, now tim
 		if err := s.chargeOne(ctx, provider, *inv, now, &report); err != nil {
 			return err
 		}
+	}
+	if report.Held > 0 || report.Unpriceable > 0 || (inv != nil && inv.Status == InvoiceOpen && report.Charged == 0) {
+		slog.WarnContext(ctx, "the final period did not settle; leaving the mandate live",
+			slog.String("org_id", orgID), slog.Int("held", report.Held),
+			slog.Int("unpriceable", report.Unpriceable), slog.Int("declined", report.Declined),
+			slog.Int("ambiguous", report.Ambiguous), slog.Int("mandate_gone", report.MandateGone))
+		return ErrFinalPeriodUnsettled
 	}
 
 	if err := provider.CancelSubscription(ctx, sub.ProviderSubID); err != nil {

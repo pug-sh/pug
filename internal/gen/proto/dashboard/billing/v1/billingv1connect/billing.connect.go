@@ -91,7 +91,9 @@ type BillingServiceClient interface {
 	// receipt carries a company's billing details.
 	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
 	// Pug's own cancellation, in the order the portal cannot promise: close the
-	// period to date, charge it, then cancel the mandate. Admin-only.
+	// period to date, charge it, then cancel the mandate. The period is closed at
+	// now minus the invoicing grace, so the days the meter has not finalized are a
+	// write-off, and the mandate is left LIVE unless the charge settled. Admin-only.
 	RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error)
 }
 
@@ -241,7 +243,9 @@ type BillingServiceHandler interface {
 	// receipt carries a company's billing details.
 	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
 	// Pug's own cancellation, in the order the portal cannot promise: close the
-	// period to date, charge it, then cancel the mandate. Admin-only.
+	// period to date, charge it, then cancel the mandate. The period is closed at
+	// now minus the invoicing grace, so the days the meter has not finalized are a
+	// write-off, and the mandate is left LIVE unless the charge settled. Admin-only.
 	RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error)
 }
 

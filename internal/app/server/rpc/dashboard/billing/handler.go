@@ -320,7 +320,7 @@ func (s *Server) GetUpcomingInvoice(
 		resp.Counted = proto.Bool(true)
 		resp.EventCount = proto.Int64(up.EventCount)
 	}
-	if up.Priced {
+	if up.Quote != nil {
 		resp.Blocks = proto.Int64(up.Quote.Blocks)
 		resp.Lines = linesToRPC(up.Quote.Lines)
 		resp.AmountCents = wrapperspb.Int64(up.Quote.TotalCents)
@@ -392,6 +392,12 @@ func (s *Server) RemovePaymentMethod(
 				"this organization has no payment method to remove",
 				apperr.Precondition(string(apperr.ReasonBillingNoMandate), orgID,
 					"no live payment method is on file"))
+		}
+		if errors.Is(err, corebilling.ErrFinalPeriodUnsettled) {
+			return nil, apperr.FailedPrecondition(apperr.ReasonBillingFinalPeriodUnsettled,
+				"the final period could not be billed; the payment method is unchanged",
+				apperr.Precondition(string(apperr.ReasonBillingFinalPeriodUnsettled), orgID,
+					"the last charge has not settled"))
 		}
 		return nil, checkoutErr(err, orgID, "")
 	}

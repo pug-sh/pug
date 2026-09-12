@@ -83,7 +83,7 @@ func TestCharge(t *testing.T) {
 		}
 	})
 
-	t.Run("a 4xx is a definitive refusal", func(t *testing.T) {
+	t.Run("a 402 is a definitive refusal", func(t *testing.T) {
 		c := apiClient(t, jsonHandler(t, http.StatusPaymentRequired, `{"message":"card declined"}`, nil))
 		_, err := c.Charge(context.Background(), corebilling.ChargeInput{ProviderSubID: "sub_1", AmountCents: 100, Currency: "USD"})
 		var decline *corebilling.DeclineError
@@ -110,11 +110,16 @@ func TestCharge(t *testing.T) {
 	})
 
 	// Pug's own problem, not the card's: dunning one of these writes a customer
-	// off for a key rotation, a rate limit or a charge request Dodo rejected.
+	// off for a key rotation, a rate limit, or a route or content type a
+	// dependency bump changed. Only 402 is a decline, so an unenumerated 4xx has
+	// to land here and not in dunning.
 	for _, status := range []int{
 		http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
 		http.StatusRequestTimeout, http.StatusConflict,
 		http.StatusUnprocessableEntity, http.StatusTooManyRequests,
+		http.StatusMethodNotAllowed, http.StatusGone, http.StatusPreconditionFailed,
+		http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
+		http.StatusLocked, http.StatusPreconditionRequired, http.StatusUnavailableForLegalReasons,
 	} {
 		t.Run(fmt.Sprintf("a %d is ambiguous, not a decline", status), func(t *testing.T) {
 			c := apiClient(t, jsonHandler(t, status, `{"message":"nope"}`, nil))
