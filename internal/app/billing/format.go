@@ -118,7 +118,7 @@ func writeInvoices(out io.Writer, invoices []corebilling.Invoice) error {
 func invoiceLine(inv corebilling.Invoice) string {
 	parts := []string{
 		string(inv.Status),
-		fmt.Sprintf("%s → %s", inv.PeriodStart.UTC().Format(time.DateOnly), inv.PeriodEnd.UTC().Format(time.DateOnly)),
+		fmt.Sprintf("%s → %s", inv.BilledFrom.UTC().Format(time.DateOnly), inv.BilledTo.UTC().Format(time.DateOnly)),
 		"events=" + comma(inv.EventCount),
 		price(&inv.AmountCents, inv.Currency),
 	}

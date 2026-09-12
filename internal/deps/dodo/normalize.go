@@ -63,12 +63,14 @@ type subscriptionPayload struct {
 
 type paymentPayload struct {
 	CreatedAt    *time.Time `json:"created_at"`
+	Currency     string     `json:"currency"`
 	ErrorCode    string     `json:"error_code"`
 	ErrorMessage string     `json:"error_message"`
 	InvoiceURL   string     `json:"invoice_url"`
 	Metadata     metadata   `json:"metadata"`
 	PaymentID    string     `json:"payment_id"`
 	Status       string     `json:"status"`
+	TotalAmount  int64      `json:"total_amount"`
 }
 
 // metadata narrows Dodo's string|number|bool map to the string values pug writes:
@@ -156,6 +158,8 @@ func (c *Client) NormalizePayment(d corebilling.Delivery) (corebilling.PaymentEv
 			ErrorCode:    payload.ErrorCode,
 			ErrorMessage: payload.ErrorMessage,
 			InvoiceURL:   payload.InvoiceURL,
+			AmountCents:  payload.TotalAmount,
+			Currency:     strings.ToUpper(strings.TrimSpace(payload.Currency)),
 		},
 	}
 	if payload.CreatedAt != nil {

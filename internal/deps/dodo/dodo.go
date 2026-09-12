@@ -424,12 +424,14 @@ func optionalTime(t time.Time) *time.Time {
 // notFound separates "the provider does not have this" from "could not be
 // reached": a finding versus an outage, identical errors without the status code.
 // declined is a 4xx that means the card or the mandate refused. Anything else --
-// a bad key, a rate limit, a timeout -- is pug's problem, and calling it a
-// decline would dun a customer for pug's own misconfiguration.
+// a bad key, a rate limit, a timeout, a request Dodo rejected -- is pug's
+// problem, and calling it a decline would dun a customer for pug's own
+// misconfiguration.
 func declined(status int) bool {
 	switch status {
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestTimeout,
-		http.StatusConflict, http.StatusTooManyRequests:
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+		http.StatusRequestTimeout, http.StatusConflict,
+		http.StatusUnprocessableEntity, http.StatusTooManyRequests:
 		return false
 	}
 	return true

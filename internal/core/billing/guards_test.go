@@ -419,6 +419,37 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 	}
 }
 
+// Pinning a card drops the deal's price too, or the guard that makes an operator
+// name one is satisfied by a number nobody typed.
+func TestPinningACardDropsTheDealsPrice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
+		PlanSlug:     corebilling.SlugCustom,
+		FlatFeeCents: new(int64(40_000)),
+	}); err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+
+	pinned, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: corebilling.CurrentSlug})
+	if err != nil {
+		t.Fatalf("pin the card: %v", err)
+	}
+	if pinned.FlatFeeCents != 0 {
+		t.Errorf("flat fee = %d, want it dropped with the deal", pinned.FlatFeeCents)
+	}
+
+	_, err = f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugCustom})
+	if !errors.Is(err, corebilling.ErrCustomNeedsPrice) {
+		t.Errorf("re-set to custom = %v, want ErrCustomNeedsPrice", err)
+	}
+}
+
 // The other way to store a trial date that resolves to nothing: the trial branch
 // is gated on the contract, so a lapsed one swallows the extension exactly as a
 // granted plan would.

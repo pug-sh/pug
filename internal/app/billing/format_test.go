@@ -317,6 +317,7 @@ func TestReportListsInvoices(t *testing.T) {
 	var buf bytes.Buffer
 	inv := corebilling.Invoice{
 		ID: "inv_1", PeriodStart: time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC),
+		BilledFrom: time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC), BilledTo: time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC),
 		EventCount: 2_340_000, AmountCents: 9_700, Currency: "USD", Status: corebilling.InvoiceFailed,
 		Attempts: 2, NextAttemptAt: time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC), LastErrorCode: "INSUFFICIENT_FUNDS",
 		ProviderPaymentID: "pay_9", LastErrorMessage: "merchant only",
@@ -326,7 +327,9 @@ func TestReportListsInvoices(t *testing.T) {
 		t.Fatalf("writeReport: %v", err)
 	}
 	got := buf.String()
-	for _, want := range []string{"INVOICES", "inv_1", "failed", "2026-05-10 → 2026-06-10", "events=2,340,000", "$97.00 USD",
+	// The billed interval, not the period: a mandate that started on the 20th was
+	// not billed from the 10th.
+	for _, want := range []string{"INVOICES", "inv_1", "failed", "2026-05-20 → 2026-06-10", "events=2,340,000", "$97.00 USD",
 		"attempts=2", "next=2026-06-20T00:00:00Z", "error=INSUFFICIENT_FUNDS", "payment=pay_9"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("invoice line is missing %q:\n%s", want, got)

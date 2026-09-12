@@ -428,12 +428,16 @@ func applyChange(cur Record, c Change) Record {
 	next.FlatFeeCents = orKeep(c.FlatFeeCents, cur.FlatFeeCents)
 	next.BlockRateCents = orKeep(c.BlockRateCents, cur.BlockRateCents)
 
+	if next.PlanSlug != SlugCustom {
+		// Only a deal carries a price, so a card pin cannot leave one behind for the
+		// next custom set to satisfy its guard with.
+		next.FlatFeeCents, next.BlockRateCents = 0, 0
+	}
 	switch next.PlanSlug {
 	case SlugCustom:
 		// A deal in force resolves ahead of any trial date.
 		next.TrialEndsAt = time.Time{}
 	case SlugFree:
-		next.FlatFeeCents, next.BlockRateCents = 0, 0
 		// The contract belongs to the deal, so the floor ends it and the overrides
 		// it gated. A real date here is a comped grant and keeps them.
 		if c.ContractEndsAt == nil || c.ContractEndsAt.IsZero() {

@@ -28,7 +28,7 @@ Three properties everything below preserves.
 3. **Counts are reporting; they are also the invoice.** No *ingestion* path
    branches on a usage number — nothing is rejected, throttled or dropped for a
    quota, and there is no over-limit state. But since usage-based pricing landed,
-   a period's count is the amount charged for it
+   a period's count is what the invoice for it is priced from
    ([`usage-billing.md`](usage-billing.md) §4), so a wrong count is a wrong
    invoice.
 

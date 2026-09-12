@@ -84,10 +84,10 @@ func TestCharge(t *testing.T) {
 	})
 
 	t.Run("a 4xx is a definitive refusal", func(t *testing.T) {
-		c := apiClient(t, jsonHandler(t, http.StatusUnprocessableEntity, `{"message":"subscription is paused"}`, nil))
+		c := apiClient(t, jsonHandler(t, http.StatusPaymentRequired, `{"message":"card declined"}`, nil))
 		_, err := c.Charge(context.Background(), corebilling.ChargeInput{ProviderSubID: "sub_1", AmountCents: 100, Currency: "USD"})
 		var decline *corebilling.DeclineError
-		if !errors.As(err, &decline) || decline.Code != "HTTP_422" {
+		if !errors.As(err, &decline) || decline.Code != "HTTP_402" {
 			t.Fatalf("err = %v, want a DeclineError with the status", err)
 		}
 	})
@@ -110,10 +110,11 @@ func TestCharge(t *testing.T) {
 	})
 
 	// Pug's own problem, not the card's: dunning one of these writes a customer
-	// off for a key rotation or a rate limit.
+	// off for a key rotation, a rate limit or a charge request Dodo rejected.
 	for _, status := range []int{
-		http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestTimeout,
-		http.StatusConflict, http.StatusTooManyRequests,
+		http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+		http.StatusRequestTimeout, http.StatusConflict,
+		http.StatusUnprocessableEntity, http.StatusTooManyRequests,
 	} {
 		t.Run(fmt.Sprintf("a %d is ambiguous, not a decline", status), func(t *testing.T) {
 			c := apiClient(t, jsonHandler(t, status, `{"message":"nope"}`, nil))

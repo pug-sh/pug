@@ -131,6 +131,9 @@ func newBillingPreviewCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: billingRunE(func(ctx context.Context, cli *appbilling.CLI, cmd *cobra.Command, orgID string) error {
 			events, _ := cmd.Flags().GetInt64("events")
+			if events < 0 {
+				return errors.New("--events cannot be negative")
+			}
 			return cli.Preview(ctx, cmd.OutOrStdout(), orgID, events)
 		}),
 	}
