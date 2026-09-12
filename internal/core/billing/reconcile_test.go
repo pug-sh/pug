@@ -220,9 +220,9 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Fatalf("seed deliveries: %v", err)
 	}
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_checkout_sessions (create_time, org_id, provider, ref)
-		 values ($1, $2, $3, 'ref_abandoned')`,
-		past, f.orgID, fakeProviderName); err != nil {
+		`insert into billing_checkout_sessions (create_time, org_id, plan_slug, provider, ref)
+		 values ($1, $2, $3, $4, 'ref_abandoned')`,
+		past, f.orgID, corebilling.CurrentSlug, fakeProviderName); err != nil {
 		t.Fatalf("seed checkout session: %v", err)
 	}
 

@@ -57,8 +57,8 @@ func TestOrgWithNoRowResolvesFromItsAgeAndWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Status != corebilling.StatusFree || ent.Slug != corebilling.SlugFree {
-		t.Errorf("status/slug = %s/%s, want FREE/free for an org past its trial", ent.Status, ent.Slug)
+	if ent.Status != corebilling.StatusFree || ent.Slug != corebilling.CurrentSlug {
+		t.Errorf("status/slug = %s/%s, want FREE on the current card for an org past its trial", ent.Status, ent.Slug)
 	}
 
 	// A read must not materialize a row: "no row" is the normal state, and one

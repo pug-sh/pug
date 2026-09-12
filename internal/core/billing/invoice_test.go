@@ -74,8 +74,9 @@ func seedMandateWith(t *testing.T, f *fixture, subID string, since time.Time, st
 		   cancel_at_period_end, create_time, currency, current_period_end, id, on_demand, org_id, plan_slug,
 		   price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
 		   provider_updated_at, status)
-		 values ($1, $2, 'USD', $3, $4, true, $5, $6, 0, $7, 'cus_1', $8, $4, $2, $8)`,
-		cancelAtEnd, since, periodEnd, subID, f.orgID, corebilling.CurrentSlug, fakeProviderName, status); err != nil {
+		 values ($1, $2, 'USD', $3, $4, true, $5, $6, 0, $7, 'cus_1', $8, $9, $2, $8)`,
+		cancelAtEnd, since, periodEnd, xid.New().String(), f.orgID, corebilling.CurrentSlug,
+		fakeProviderName, status, subID); err != nil {
 		t.Fatalf("seed mandate: %v", err)
 	}
 }
@@ -833,13 +834,13 @@ func TestAnUnsettleableChargeStopsAtTheAttemptCap(t *testing.T) {
 
 	at := invoiceNow
 	for range 10 {
+		pass(t, f, at)
 		inv := onlyInvoice(t, f)
 		if inv.Status == corebilling.InvoiceUncollectible {
 			break
 		}
 		backdate(t, f, inv.ID, at.Add(-10*time.Minute))
 		at = at.Add(time.Hour)
-		pass(t, f, at)
 	}
 
 	inv := onlyInvoice(t, f)

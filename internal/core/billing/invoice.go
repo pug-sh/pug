@@ -351,17 +351,15 @@ func (s *Service) closeWindow(
 	}
 	from = maxTime(from, coreusage.CeilDayUTC(ent.TrialEndsAt))
 
-	// A stalled meter delays an invoice, never mis-bills one. The stamp is this
-	// period's own: an unmetered window sums to 0, which would waive it forever.
-	period, err := s.read.GetUsagePeriod(ctx, dbread.GetUsagePeriodParams{
-		OrgID: orgID, PeriodStart: postgres.NewTimestamptz(start),
-	})
+	// A stalled meter delays an invoice, never mis-bills one. The stamp is the
+	// org's last run, not this period's own row: the meter only keeps the current
+	// period, so that row stops moving at the rollover and never clears the grace.
+	latest, err := s.read.GetLatestUsageComputedAt(ctx, orgID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to read the usage stamp", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
-	latest := period.UsageComputedAt
 	if err != nil || latest.Time.Before(to.Add(s.cfg.Grace())) {
 		r.Held++
 		slog.WarnContext(ctx, "usage is not final yet; holding the invoice",
