@@ -1,5 +1,7 @@
 # Billing — entitlement
 
+> **A design supersedes parts of this file.** [`usage-billing.md`](usage-billing.md) replaces the flat tiers, the `free` and `trial` plans, the product-per-tier checkout, the `provider_product_id` column, the strand guard and the subscription's price mirror with metered, usage-based pricing that pug prices itself; its §21 lists everything that goes. Nothing in it is built yet — everything here is what runs today — but read it before changing any of that.
+
 Design reference for the first billing slice (`internal/core/billing`,
 `proto/dashboard/billing`, `pug billing`). Linked from the root
 [`CLAUDE.md`](../../CLAUDE.md) — read this when working on plans,
