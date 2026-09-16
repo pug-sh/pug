@@ -61,13 +61,11 @@ func rescanDays(ctx context.Context, configured int) int {
 	return defaultRescanDays
 }
 
-// Sub-tasks held to a daily cadence regardless of how often the schedule fires.
+// Sub-tasks whose last run is kept in cron_state.
 const (
 	taskFullRecompute cron.Task = "full_recompute"
 	taskPrune         cron.Task = "prune"
-	// taskMeter is the last pass that refreshed every org. A pass back from an
-	// outage re-reads from that day, or an invoice would close over days no pass
-	// finalized.
+	// taskMeter is the last pass whose day cells all landed; meterFrom reads from it.
 	taskMeter cron.Task = "meter"
 )
 
@@ -267,13 +265,16 @@ type job struct {
 // still inside a period that began last month, and stopping at the month boundary
 // would re-sum it over a window the pass had not fully read.
 //
-// It never starts later than the day of the last successful pass, so a stalled
-// meter re-reads every day it missed before it stamps. Bounded by retention: past
-// it the cells are pruned anyway.
+// It never starts later than the last successful pass's own window, so a meter
+// back from an outage re-reads every day that pass had not finalized. Bounded by
+// retention: past it the cells are pruned anyway.
 func meterFrom(now time.Time, rescanDays int, full bool, windows []coreusage.OrgPeriod, lastMetered time.Time) time.Time {
 	from := coreusage.FloorDayUTC(now.AddDate(0, 0, -rescanDays))
 	if !lastMetered.IsZero() {
-		caughtUp := maxTime(coreusage.FloorDayUTC(lastMetered), coreusage.FloorDayUTC(now.Add(-retention)))
+		caughtUp := coreusage.FloorDayUTC(lastMetered.AddDate(0, 0, -rescanDays))
+		if oldest := coreusage.FloorDayUTC(now.Add(-retention)); caughtUp.Before(oldest) {
+			caughtUp = oldest
+		}
 		if caughtUp.Before(from) {
 			from = caughtUp
 		}
@@ -302,7 +303,8 @@ func (j *job) run(ctx context.Context) error {
 
 // meter recomputes a trailing window, then re-sums every org's current period.
 // Once a day it widens to the calendar month, or to the earliest period start in
-// the work list when an anniversary reaches back further.
+// the work list when an anniversary reaches back further; after an outage, to the
+// last successful pass's window.
 func (j *job) meter(ctx context.Context, now time.Time) error {
 	windows, err := j.service.OrgPeriods(ctx, now)
 	if err != nil {
@@ -432,6 +434,13 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		unrefreshedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reasonNoOrgs)))
 		j.unrefreshed = true
 	}
+	// The cells are in. An org whose refresh fails below keeps its own stale stamp,
+	// which holds its invoices, so one bad org does not widen every later read.
+	if !j.unrefreshed {
+		if err := j.state.MarkRun(ctx, taskMeter, now); err != nil {
+			return err
+		}
+	}
 
 	var refreshed, failed int
 	var firstErr error
@@ -453,11 +462,6 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		err := fmt.Errorf("usage meter left %d of %d orgs unrefreshed: %w", failed, len(windows), firstErr)
 		slog.ErrorContext(ctx, "failed to refresh period usage for some orgs", slogx.Error(err)) // puglint:exempt — each org's failure was recorded at source
 		return err
-	}
-	if !j.unrefreshed {
-		if err := j.state.MarkRun(ctx, taskMeter, now); err != nil {
-			return err
-		}
 	}
 
 	slog.InfoContext(ctx, "metered event usage",
@@ -487,11 +491,4 @@ func (j *job) prune(ctx context.Context, now time.Time) error {
 		slog.InfoContext(ctx, "pruned usage rows", slog.Int64("count", pruned))
 	}
 	return nil
-}
-
-func maxTime(a, b time.Time) time.Time {
-	if b.After(a) {
-		return b
-	}
-	return a
 }

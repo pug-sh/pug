@@ -26,7 +26,13 @@ set cancel_at_period_end = excluded.cancel_at_period_end,
     currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
-    ended_at = excluded.ended_at,
+    -- Once ended, only an earlier date moves it: a later read dated when pug saw it
+    -- must not stretch the days a close bills.
+    ended_at = case
+      when billing_subscriptions.status in ('active', 'past_due')
+        or excluded.status in ('active', 'past_due') then excluded.ended_at
+      else least(billing_subscriptions.ended_at, excluded.ended_at)
+    end,
     on_demand = excluded.on_demand,
     plan_slug = excluded.plan_slug,
     provider_customer_id = excluded.provider_customer_id,
@@ -476,8 +482,8 @@ type LockUncoveredDeferredBillingInvoicesRow struct {
 	UsageCents  int64
 }
 
-// The balance a close carries, locked so a concurrent void cannot pull a row out
-// from under the carrier that is about to count it.
+// The balance a close carries, locked so a concurrent close cannot carry or sweep
+// the same rows.
 func (q *Queries) LockUncoveredDeferredBillingInvoices(ctx context.Context, orgID string) ([]LockUncoveredDeferredBillingInvoicesRow, error) {
 	rows, err := q.db.Query(ctx, lockUncoveredDeferredBillingInvoices, orgID)
 	if err != nil {

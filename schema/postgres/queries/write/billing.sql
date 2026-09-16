@@ -93,7 +93,13 @@ set cancel_at_period_end = excluded.cancel_at_period_end,
     currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
-    ended_at = excluded.ended_at,
+    -- Once ended, only an earlier date moves it: a later read dated when pug saw it
+    -- must not stretch the days a close bills.
+    ended_at = case
+      when billing_subscriptions.status in ('active', 'past_due')
+        or excluded.status in ('active', 'past_due') then excluded.ended_at
+      else least(billing_subscriptions.ended_at, excluded.ended_at)
+    end,
     on_demand = excluded.on_demand,
     plan_slug = excluded.plan_slug,
     provider_customer_id = excluded.provider_customer_id,
@@ -157,8 +163,8 @@ insert into billing_invoice_events (actor, detail, from_status, id, invoice_id, 
 values (@actor, @detail, @from_status, @id, @invoice_id, @to_status);
 
 -- name: LockUncoveredDeferredBillingInvoices :many
--- The balance a close carries, locked so a concurrent void cannot pull a row out
--- from under the carrier that is about to count it.
+-- The balance a close carries, locked so a concurrent close cannot carry or sweep
+-- the same rows.
 select id, period_start, usage_cents from billing_invoices
 where org_id = @org_id and status = 'deferred' and covered_by is null
 order by period_start

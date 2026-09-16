@@ -15,9 +15,9 @@ func TestDeferCloseFollowsTheTable(t *testing.T) {
 	}{
 		{"nothing to bill waits the balance out", 0, 300, false, deferral{status: InvoiceWaived}},
 		{"under the threshold defers", 150, 300, false, deferral{status: InvoiceDeferred}},
-		{"at the threshold charges and carries", 200, 300, false, deferral{status: InvoiceOpen, carry: true}},
-		{"a large close carries a balance", 5_000, 40, false, deferral{status: InvoiceOpen, carry: true}},
-		{"a sweep at a dollar charges whatever the total", 0, 100, true, deferral{status: InvoiceOpen, carry: true}},
+		{"at the threshold charges and carries", 200, 300, false, deferral{status: InvoiceOpen}},
+		{"a large close carries a balance", 5_000, 40, false, deferral{status: InvoiceOpen}},
+		{"a sweep at a dollar charges whatever the total", 0, 100, true, deferral{status: InvoiceOpen}},
 		{"a sweep under a dollar writes it all off", 20, 79, true, deferral{status: InvoiceWaived, waiveBalance: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

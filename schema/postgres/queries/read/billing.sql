@@ -100,7 +100,7 @@ order by o.id;
 
 -- name: GetBillingInvoiceBilledTo :one
 -- Where the org's billing has reached: each close starts here, so no day is
--- billed twice however the period moves. Any status, void included -- a voided
--- day was billed and stopped, not left unbilled.
+-- billed twice however the period moves. Any status: a day on a waived or void row
+-- is never billed again.
 select max(billed_to)::date from billing_invoices
 where org_id = @org_id;

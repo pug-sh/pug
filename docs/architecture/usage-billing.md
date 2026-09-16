@@ -246,7 +246,7 @@ the same shape as today, with money in it:
 | Flat fee | `flat_fee_cents` | charged every period regardless of usage; NULL = none |
 | Rate | `rate_cents_per_million` | per event over the allowance, as cents per million (§3.3); NULL = usage beyond the allowance is not charged |
 | Allowance | `included_events_override` | events before the rate applies; NULL = none. Any whole number of events |
-| Effective from | `terms_effective_at` | stamped when the priced terms change; the first day the deal is invoiced from |
+| Effective from | `terms_effective_at` | stamped when a deal starts or a lapsed one renews; the first day the deal is invoiced from |
 | Retention, name, term, note | as today | |
 
 ```
@@ -266,11 +266,12 @@ fee and rate are pre-tax like the card's (§3.2).
 **A deal is invoiced from `terms_effective_at`, not from the row's birth.** The
 row usually predates the deal — `extend-trial` writes one months earlier — so
 dating the terms by `create_time` would let recording a deal in September
-retroactively invoice every elapsed period at the new rate. The allowance is
-priced terms too, so changing it restamps as a fee or rate does. Renewing a deal
-still in force on unchanged terms leaves the stamp where it is; renewing one
-that had **lapsed** restamps whatever the money says, or the gap it ran through
-would be invoiced at the renewal's rate.
+retroactively invoice every elapsed period at the new rate. Only renewing a
+**lapsed** deal restamps it, whatever the money says, or the gap it ran through
+would be invoiced at the renewal's rate — and the lapsed deal's days not yet
+invoiced leave the deal with the gap (§17.10). Any other write, a reprice or a
+note on a lapsed deal included, keeps the stamp, so the terms price every day
+not yet invoiced; restamping would move those days off the deal.
 
 **The price lives in pug now — the reversal of payments.md §4.** That section
 ruled it out because Dodo held the real price and a copy would drift. Under
@@ -319,13 +320,15 @@ flat price (§21).
 **The trial survives as a no-charge window.** Days inside the trial are
 clipped out of the billable window (§8.1). With 100k free it is moot; if
 the free tier is removed (§10) it is the evaluation period. `TrialDays` stays
-14, `extend-trial` is unchanged.
+14, `extend-trial` is unchanged. Recording a deal ends a running trial at that
+instant rather than erasing the date, so a close still skips the days it covered.
 
 **The anchor question closes.** billing.md §6.1 left open whether to align the
 provider's charge date to pug's anniversary or the reverse. On-demand means
 pug picks the charge instant, so the invoice follows the anniversary by
 exactly the grace (§17.6), and `anchor_day` stays the operator-only override
-it is; moving it is safe, because a close never bills a day twice (§8.1). No
+it is; moving it is safe, because a close never bills a day twice (§8.1),
+though the stub period it leaves is an invoice of its own (§17.11). No
 `anchor_day` is ever written at checkout.
 
 ## 7. The mandate
@@ -402,8 +405,8 @@ period. Three layers, cheapest first:
    `period_end + grace`. When layer 1 has pinned the cancellation past that
    instant the natural close already catches a live mandate, and closing early
    would only split one charge, and its fee (§8.7), into two. An **unread** end
-   date waits for the natural close for the same reason; that close reports
-   `mandate_gone` if the mandate went. Whatever is sent between the early close
+   date waits for the natural close for the same reason; that close sweeps
+   (§8.7) if the mandate went. Whatever is sent between the early close
    and the cancellation is the write-off — a day under layer 1, up to a month
    without it. An invoice already waiting out its notice window (§8.1) is
    charged at once when a cancellation lands that ends the mandate before the
@@ -449,27 +452,30 @@ it is safe to price, and prices it:
   org's most recent `usage_computed_at` to be **at or after** `period_end +
   grace`. That stamp alone proves little — the trailing rescan of any pass after
   that instant starts after the period — so the meter changes in one place: its
-  window never starts later than the day of its last successful pass. A meter
-  back from an outage re-reads every day it missed before it stamps, so a
-  stalled meter delays an invoice, never mis-bills one. A due period is closed
-  by any pass within three periods of its end; one still unclosed after that
-  is `dropped` and fails the pass (§11) for a day, since no later pass can bill
-  it.
+  window never starts later than its last successful pass's own window. A meter
+  back from an outage re-reads every day that pass had not finalized before it
+  stamps, so a stalled meter delays an invoice, never mis-bills one. A pass
+  closes the three newest due periods; every older one still unbilled is
+  written off as a `waived` invoice with a `dropped` event, whatever it cost,
+  which moves `last_billed_to` past it and fails that pass (§11).
 - **What it sums:** `usage_daily` over the **billable window**, at day grain,
   with a new `SumUsageDaily` read — for a card org `[max(period_start,
   last_billed_to, mandate_day, trial_end_day), min(period_end,
   cancellation_day))`, for a deal `[max(period_start, last_billed_to,
-  terms_effective_day, trial_end_day), period_end)`. `last_billed_to` is where
+  terms_effective_day, trial_end_day), min(period_end, contract_end_day))`; a
+  deal org's days outside its deal bill as a card org's do, on the card. `last_billed_to` is where
   the org's latest invoice ended, so no day is billed twice however the period
   moves: an anchor change, an early close, a card removed and added back. The
   first invoice of a mandate covers only days from the day the card was added;
   the last covers only days before it was removed; a deal bills from the day
   its terms took effect, card or not (§5, §19.15); trial days are never
   billed; an empty window writes no row. A period that saw more than one
-  mandate closes once per mandate, each starting where the last ended, so the
-  days between a removed card and its replacement are not billed. `usage_periods` is untouched: it
-  stays the dashboard's live number, and the invoice stores its own count,
-  which is the bill's.
+  mandate closes once, summing only the days a mandate was live and priced on
+  the latest, so it gets one allowance and the days between a removed card and
+  its replacement are not billed, though its `[billed_from, billed_to)` spans
+  them. A subscription in a status pug has no word for is not live, here as
+  everywhere. `usage_periods` is untouched: it stays the dashboard's live
+  number, and the invoice stores its own count, which is the bill's.
 - **Which orgs:** those with a mandate live at any point in the period, and
   those on a custom plan, card or not (§19.15). A free org gets no invoice row;
   its over-allowance usage is reported by the invoicing pass as unbilled usage
@@ -548,10 +554,11 @@ charging ──▶ failed          (the charge was refused outright)
 open, failed ──▶ charging    (a retry goes straight back; there is no open hop)
 failed ──new card──▶ open    (next_attempt_at = now)
 close, nothing to bill ──▶ waived
+close, past the catch-up window ──▶ waived             (8.1; detail: dropped)
 close, total < DeferUnderCents ──▶ deferred            (8.7; carried by a later close)
 deferred ──carrier paid──▶ paid                        (detail: covered by <id>)
 deferred ──carrier void──▶ deferred                    (uncovered; the next close carries it again)
-deferred ──sweep, total < WaiveUnderCents──▶ waived    (8.7; cancellation, the period bound, a gone mandate)
+deferred ──sweep, total < WaiveUnderCents──▶ waived    (8.7; no live mandate or deal, or the period bound)
 open, failed, uncollectible, uncovered deferred ──operator──▶ void
 paid ──refund.succeeded, full──▶ refunded          (a partial refund is recorded and leaves it paid)
 ```
@@ -743,7 +750,8 @@ Dodo's fee schedule and to be moved if it moves:
 
 A **sweep** is the final close of a cancelling mandate (§7.3), a close at
 which the balance would span `MaxDeferPeriods` (12) periods — this one and the
-org's oldest uncovered `deferred` row both counted — or a mandate found gone.
+org's oldest uncovered `deferred` row both counted — or any close with no live
+mandate and no deal in force, older periods a catch-up closes included.
 A deferred row is priced, snapshotted and listed like any other; it is simply
 never charged on its own — one transaction, one 40¢, for however many periods
 it took to reach $5. An org at 162,500 events a month ($2.50) is charged
@@ -896,9 +904,9 @@ pug billing invoice retry <invoice-id> --actor <who>   # uncollectible → open,
   omitted keeps and `0` clears, the same merge rule as every other flag. On any
   other plan — a card, or `--plan ''` — they are force-cleared whether or not
   the flag was passed, so no pin can leave a price behind for the next custom
-  set to satisfy its guard with. `--provider-product` is gone. Changing
-  either — or `--events`, or renewing a lapsed deal — stamps
-  `terms_effective_at`, which is the day the deal is invoiced from (§5).
+  set to satisfy its guard with. `--provider-product` is gone. Starting a deal,
+  or renewing a lapsed one, stamps `terms_effective_at`, which is the day the
+  deal is invoiced from (§5); any other write does not.
 - `set --plan custom` refuses a row with neither fee nor rate. `--events` is
   any whole number of events.
 - `--plan ''` removes a pin and keeps the rest of the row. `free` and `trial`
@@ -1032,11 +1040,16 @@ and the authz tests — each container package keeping `TestMain` and no
   set; the estimate, `preview` and the invoice price one count identically for
   an org on a retired card.
 - **Period close** — clipped windows for a mid-period mandate, a mid-period
-  cancellation, a trial, and a deal billed from `terms_effective_at` before its
-  card (§19.15); a stale meter holds the close, and a meter back from an outage
-  across an anniversary re-reads the period before it closes; an anchor change,
-  an early close and a card removed and added back bill every day exactly
-  once; a period past the catch-up window is `dropped`; a natural close not
+  cancellation, a trial (one a deal ended included), a deal billed from
+  `terms_effective_at` before its card (§19.15), and a deal ending mid-period
+  or starting over a card; a stale meter holds the close, and a meter back from
+  an outage across an anniversary re-reads the period before it closes; an
+  anchor change, an early close, overlapping mandates and a card removed and
+  added back bill every day exactly once, priced on the latest mandate; a
+  recurring mandate, a status pug has no word for and an undated end bill
+  nothing and block nothing; an unpriceable period holds the org; every period
+  past the catch-up window is written off once as `waived` with a `dropped`
+  event; a natural close not
   charged before `ChargeNoticeDays` have passed, while a close forced by a
   going mandate, `RemovePaymentMethod` and a deal's first card charge at once;
   a cancellation landing inside the window pulling the charge forward; `void`
@@ -1045,10 +1058,9 @@ and the authz tests — each container package keeping `TestMain` and no
   total over $5 carried and covered, a covered row paid with its carrier and
   uncovered by a void, eleven periods deferred and the twelfth swept, a gone
   mandate sweeping, a sweep under $1 waived and one over it charged, and the
-  final close of a cancellation carrying the balance; a `deferred` row never
-  makes `PAST_DUE`; a close whose row already exists skips without charging
-  (the unique index, not the lock, is the guard — pre-insert the row rather
-  than racing two passes).
+  final close of a cancellation carrying the balance, a lapsed deal with no
+  card sweeping, and a carried row never carried again; a `deferred` row never
+  makes `PAST_DUE`; a close starts where an existing row ends.
 - **The charge state machine** (Postgres) — every edge of §8.3, including
   `paid` landing on a reopened or `uncollectible` invoice, a success on a
   `void` one reported as `duplicate`, and `void` refusing a covered row;
@@ -1128,7 +1140,24 @@ and the authz tests — each container package keeping `TestMain` and no
    $1, waived at the final sweep (§8.7).
 9. **A deferred balance is collected late**, up to a year after it was earned,
    and a customer who leaves mid-way pays it in one lump on the final invoice. The dashboard shows the balance the whole time.
-10. The meter's own imprecisions (`usage.md` §8) are inherited unchanged.
+10. **A term change prices every day not yet invoiced**: the current period from
+    its start, and the previous one while it is inside its grace. Repricing or
+    clearing a deal, repinning a card and renewing a lapsed deal all reach back
+    that far; a cleared deal with no card bills those days not at all.
+    `extend-trial` on a paying org forgives them, and `clear` on an org with an
+    extended trial bills its trial days on a live card.
+11. **A fee and an allowance are per invoice, not prorated.** A deal starting
+    or an anchor moving mid-period invoices a stub with a whole flat fee or card
+    allowance, the card days either side of a deal inside one period each get
+    their own allowance, and a card-pin comp is priced as it stands at the
+    period's end.
+12. **Deleting a project un-bills it.** Its `usage_daily` rows go with it, so a
+    period not yet closed bills none of its events.
+13. **A deferred balance with no later close stays deferred.** Only a close
+    sweeps, so when the org's last one ran with a mandate or deal still in force
+    — a cancellation read after it, or a deal cleared with no card — nothing
+    carries the balance.
+14. The meter's own imprecisions (`usage.md` §8) are inherited unchanged.
 
 ## 18. Rollout
 
@@ -1142,7 +1171,10 @@ and the authz tests — each container package keeping `TestMain` and no
    of a $0 authorization, tax added on top of a charge and what a tax ID
    changes, and §8.7's unknowns — the 0.5% on an on-demand
    charge, a fee on a decline, the fee's tax base, the mandate ceiling on a USD
-   mandate); run a mandate → close → charge → `payment.succeeded` → portal
+   mandate), and what `cancelled_at` holds once a scheduled cancellation takes
+   effect: it is set when the cancellation is requested, and a close stops
+   billing at it, so a request date kept there leaves the days to the actual end
+   unbilled; run a mandate → close → charge → `payment.succeeded` → portal
    cancel cycle end to end, and a $1.00 charge to read the fee Dodo actually
    takes off a small one.
 3. gitops: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the

@@ -17,8 +17,8 @@ where org_id = $1
 `
 
 // Where the org's billing has reached: each close starts here, so no day is
-// billed twice however the period moves. Any status, void included -- a voided
-// day was billed and stopped, not left unbilled.
+// billed twice however the period moves. Any status: a day on a waived or void row
+// is never billed again.
 func (q *Queries) GetBillingInvoiceBilledTo(ctx context.Context, orgID string) (pgtype.Date, error) {
 	row := q.db.QueryRow(ctx, getBillingInvoiceBilledTo, orgID)
 	var column_1 pgtype.Date

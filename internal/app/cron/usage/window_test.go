@@ -39,7 +39,7 @@ func TestFullPassWidensToAnAnniversaryBeforeTheMonth(t *testing.T) {
 	}
 }
 
-// A non-full pass is the trailing rescan alone, whatever the anchors say.
+// A caught-up non-full pass is the trailing rescan alone, whatever the anchors say.
 func TestNonFullPassIsTheTrailingRescan(t *testing.T) {
 	now := time.Date(2026, time.August, 25, 6, 0, 0, 0, time.UTC)
 	spread := []coreusage.OrgPeriod{{OrgID: "o_1", Start: utc(2026, time.July, 26)}}
@@ -57,8 +57,7 @@ func TestFullPassWithNoOrgsFloorsAtTheMonth(t *testing.T) {
 	}
 }
 
-// A meter back from an outage re-reads from the day of its last successful pass,
-// or an invoice closes over days no pass finalized.
+// A meter back from an outage re-reads from its last successful pass's window.
 func TestPassCatchesUpFromTheLastSuccessfulPass(t *testing.T) {
 	now := time.Date(2026, time.August, 25, 6, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
@@ -69,8 +68,8 @@ func TestPassCatchesUpFromTheLastSuccessfulPass(t *testing.T) {
 	}{
 		{"never metered is the trailing rescan", time.Time{}, false, utc(2026, time.August, 23)},
 		{"a recent pass does not narrow the rescan", now.Add(-time.Hour), false, utc(2026, time.August, 23)},
-		{"an outage widens to the last pass's day", time.Date(2026, time.August, 18, 22, 0, 0, 0, time.UTC), false, utc(2026, time.August, 18)},
-		{"an outage wider than a full pass wins", time.Date(2026, time.July, 20, 1, 0, 0, 0, time.UTC), true, utc(2026, time.July, 20)},
+		{"an outage widens to the last pass's window", time.Date(2026, time.August, 18, 22, 0, 0, 0, time.UTC), false, utc(2026, time.August, 16)},
+		{"an outage wider than a full pass wins", time.Date(2026, time.July, 20, 1, 0, 0, 0, time.UTC), true, utc(2026, time.July, 18)},
 		{"a long outage stops at retention", utc(2024, time.January, 1), false, coreusage.FloorDayUTC(now.Add(-retention))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

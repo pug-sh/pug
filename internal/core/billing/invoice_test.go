@@ -2,8 +2,8 @@ package billing_test
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,19 +26,20 @@ var (
 func day(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, time.UTC) }
 
 type invoiceRow struct {
-	id, planSlug, status   string
-	billedFrom, billedTo   time.Time
-	events, amount, usage  int64
-	nextAttemptAt          *time.Time
-	lines, pricing         []byte
-	periodStart, periodEnd time.Time
+	id, planSlug, status           string
+	billedFrom, billedTo           time.Time
+	events, amount, usage, carried int64
+	coveredBy                      *string
+	nextAttemptAt                  *time.Time
+	lines, pricing                 []byte
+	periodStart, periodEnd         time.Time
 }
 
 func invoices(t *testing.T, f *fixture) []invoiceRow {
 	t.Helper()
 	rows, err := f.pg.PgRO.Query(t.Context(),
 		`select id, plan_slug, status, billed_from, billed_to, event_count, amount_cents, usage_cents,
-		        next_attempt_at, lines, pricing, period_start, period_end
+		        carried_cents, covered_by, next_attempt_at, lines, pricing, period_start, period_end
 		 from billing_invoices where org_id = $1 order by billed_from`, f.orgID)
 	if err != nil {
 		t.Fatalf("query invoices: %v", err)
@@ -46,7 +47,7 @@ func invoices(t *testing.T, f *fixture) []invoiceRow {
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (invoiceRow, error) {
 		var r invoiceRow
 		err := row.Scan(&r.id, &r.planSlug, &r.status, &r.billedFrom, &r.billedTo, &r.events, &r.amount,
-			&r.usage, &r.nextAttemptAt, &r.lines, &r.pricing, &r.periodStart, &r.periodEnd)
+			&r.usage, &r.carried, &r.coveredBy, &r.nextAttemptAt, &r.lines, &r.pricing, &r.periodStart, &r.periodEnd)
 		return r, err
 	})
 	if err != nil {
@@ -111,6 +112,19 @@ func seedMandate(t *testing.T, f *fixture, created, ended time.Time) {
 		 values ($1, 'USD', $2, $3, true, $4, $5, 'fake', 'cus_1', $6, $7, $1, $6)`,
 		created, endedAt, xid.New().String(), f.orgID, currentCard().Slug, status, subID); err != nil {
 		t.Fatalf("seed mandate: %v", err)
+	}
+}
+
+// insertInvoice stores a row as an earlier close left it.
+func insertInvoice(t *testing.T, f *fixture, status string, from, to time.Time, cents int64) {
+	t.Helper()
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_invoices (
+		   amount_cents, billed_from, billed_to, currency, event_count, id, lines, org_id,
+		   period_end, period_start, plan_slug, pricing, status, usage_cents, usage_computed_at)
+		 values ($1, $2, $3, 'USD', 0, $4, '[]', $5, $6, $7, 'x', '{}', $8, $1, now())`,
+		cents, from, to, xid.New().String(), f.orgID, to, from, status); err != nil {
+		t.Fatalf("insert invoice: %v", err)
 	}
 }
 
@@ -218,8 +232,9 @@ func TestCloseStopsAtTheCancellation(t *testing.T) {
 	}
 }
 
-// A card removed and added back bills each mandate's days once, and the gap none.
-func TestCloseBillsEachMandateOnceAndTheGapNever(t *testing.T) {
+// A card removed and added back bills both mandates' days on one invoice, with one
+// allowance, and the gap none.
+func TestCloseBillsEveryMandateOnOneInvoiceAndTheGapNever(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -230,17 +245,15 @@ func TestCloseBillsEachMandateOnceAndTheGapNever(t *testing.T) {
 	seedMandate(t, f, day(time.August, 20), time.Time{})
 	stampMeter(t, f, closeNow)
 
-	if r := closePeriods(t, f, closeNow); r.Closed != 2 {
-		t.Fatalf("report = %+v, want two closes", r)
+	if r := closePeriods(t, f, closeNow); r.Closed != 1 {
+		t.Fatalf("report = %+v, want one close", r)
 	}
 	got := invoices(t, f)
-	if len(got) != 2 ||
-		!got[0].billedFrom.Equal(periodStart) || !got[0].billedTo.Equal(day(time.August, 15)) ||
-		!got[1].billedFrom.Equal(day(time.August, 20)) || !got[1].billedTo.Equal(periodEnd) {
-		t.Fatalf("invoices = %s, want [08-10, 08-15) and [08-20, 09-10)", windows(got))
+	if len(got) != 1 || !got[0].billedFrom.Equal(periodStart) || !got[0].billedTo.Equal(periodEnd) {
+		t.Fatalf("invoices = %s, want [08-10, 09-10)", windows(got))
 	}
-	if got[0].events != 5_000_000 || got[1].events != 21_000_000 {
-		t.Errorf("events = %d and %d, want 5M and 21M", got[0].events, got[1].events)
+	if want := corebilling.Price(currentCard(), 26_000_000); got[0].events != 26_000_000 || got[0].usage != want.TotalCents {
+		t.Errorf("events/usage = %d/%d, want 26M priced once at %d", got[0].events, got[0].usage, want.TotalCents)
 	}
 }
 
@@ -264,6 +277,27 @@ func TestCloseSkipsTheTrial(t *testing.T) {
 	}
 }
 
+// A deal recorded after an extended trial leaves the trial's days unbilled.
+func TestCloseSkipsATrialADealEnded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	project := seedProjectFor(t, f)
+	seedDaily(t, f, project, periodStart, periodEnd, 100_000)
+	seedMandate(t, f, periodStart, time.Time{})
+	if _, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 10, periodStart); err != nil {
+		t.Fatalf("extend the trial: %v", err)
+	}
+	setDealTerms(t, f, day(time.August, 30), time.Time{})
+	stampMeter(t, f, closeNow)
+
+	closePeriods(t, f, closeNow)
+	if got := invoices(t, f); len(got) != 2 || !got[0].billedFrom.Equal(day(time.August, 20)) {
+		t.Errorf("invoices = %s, want the card billed from the trial's end", windows(got))
+	}
+}
+
 // A deal recorded before any card is invoiced from its terms, and reported as
 // waiting on one (§19.15).
 func TestCloseInvoicesADealWithNoCardFromItsTerms(t *testing.T) {
@@ -271,16 +305,7 @@ func TestCloseInvoicesADealWithNoCardFromItsTerms(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f := newFixture(t)
-	change := setDeal()
-	change.RateCentsPerMillion = new(int64(3_000))
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); err != nil {
-		t.Fatalf("SetPlan: %v", err)
-	}
-	if _, err := f.pg.PgW.Exec(t.Context(),
-		`update billing_entitlements set terms_effective_at = $1 where org_id = $2`,
-		day(time.August, 30).Add(10*time.Hour), f.orgID); err != nil {
-		t.Fatalf("backdate terms: %v", err)
-	}
+	setDealTerms(t, f, day(time.August, 30).Add(10*time.Hour), time.Time{})
 	project := seedProjectFor(t, f)
 	seedDaily(t, f, project, day(time.May, 1), periodEnd, 1_000_000)
 	stampMeter(t, f, closeNow)
@@ -398,56 +423,50 @@ func TestCloseAfterAnAnchorChangeBillsNoDayTwice(t *testing.T) {
 	}
 }
 
-// A pass behind by three periods closes them all; the fourth is lost and says so.
-func TestCloseCatchesUpAndReportsWhatFellOut(t *testing.T) {
+// A pass five periods behind closes the newest three and writes off each older one
+// once.
+func TestCloseCatchesUpAndWritesOffWhatFellOut(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f := newFixture(t)
 	project := seedProjectFor(t, f)
-	seedDaily(t, f, project, day(time.May, 10), periodEnd, 100_000)
-	seedMandate(t, f, day(time.May, 10), time.Time{})
+	seedDaily(t, f, project, day(time.April, 10), periodEnd, 100_000)
+	seedMandate(t, f, day(time.April, 10), time.Time{})
 	stampMeter(t, f, closeNow)
 
 	r := closePeriods(t, f, closeNow)
-	if r.Closed != 3 || r.Dropped != 1 {
-		t.Fatalf("report = %+v, want three closed and one dropped", r)
+	if r.Closed != 3 || r.Dropped != 2 {
+		t.Fatalf("report = %+v, want three closed and two written off", r)
 	}
 	got := invoices(t, f)
-	if len(got) != 3 || !got[0].billedFrom.Equal(day(time.June, 10)) {
-		t.Fatalf("invoices = %s, want three from 06-10", windows(got))
+	if len(got) != 5 || got[0].status != string(corebilling.InvoiceWaived) ||
+		got[1].status != string(corebilling.InvoiceWaived) || got[1].nextAttemptAt != nil ||
+		!got[2].billedFrom.Equal(day(time.June, 10)) {
+		t.Fatalf("invoices = %s, want 04-10 and 05-10 waived and three from 06-10", windows(got))
 	}
-
-	// The loss is reported for a day, not every hour until the next anniversary.
-	if r := closePeriods(t, f, closeNow.Add(2*24*time.Hour)); r.Dropped != 0 {
-		t.Errorf("a day later report = %+v, want the drop no longer reported", r)
+	if r := closePeriods(t, f, closeNow.Add(time.Hour)); r != (corebilling.CloseReport{}) {
+		t.Errorf("next pass report = %+v, want the write-offs not reported again", r)
 	}
 }
 
-// The unique index, not the lock, keeps two passes from closing one window.
-func TestCloseSkipsAWindowAnotherPassClosed(t *testing.T) {
+// A window another pass already billed moves where the next close starts.
+func TestCloseStartsWhereAnotherPassStopped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f := newFixture(t)
 	seedMandate(t, f, day(time.August, 20), time.Time{})
 	stampMeter(t, f, closeNow)
-	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_invoices (
-		   amount_cents, billed_from, billed_to, currency, event_count, id, lines, org_id,
-		   period_end, period_start, plan_slug, pricing, status, usage_cents, usage_computed_at)
-		 values (0, '2026-08-20', '2026-08-21', 'USD', 0, $1, '[]', $2, $3, $4, 'x', '{}', 'waived', 0, now())`,
-		xid.New().String(), f.orgID, periodEnd, periodStart); err != nil {
-		t.Fatalf("pre-insert: %v", err)
-	}
-	// Billing has reached 08-21, so the close starts there rather than colliding.
+	insertInvoice(t, f, "waived", day(time.August, 20), day(time.August, 21), 0)
+
 	closePeriods(t, f, closeNow)
 	if got := invoices(t, f); len(got) != 2 || !got[1].billedFrom.Equal(day(time.August, 21)) {
 		t.Errorf("invoices = %s, want the close to start where the first ended", windows(got))
 	}
 }
 
-// Free orgs, orgs with billing off and orgs pug cannot read write nothing.
+// Free orgs and orgs with billing off write nothing.
 func TestCloseWritesNothingItShouldNot(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -478,23 +497,28 @@ func TestCloseWritesNothingItShouldNot(t *testing.T) {
 			t.Errorf("invoices = %d with billing off, want 0", n)
 		}
 	})
+}
 
-	t.Run("an unknown subscription status", func(t *testing.T) {
-		f := newFixture(t)
-		seedMandate(t, f, day(time.January, 1), time.Time{})
-		stampMeter(t, f, closeNow)
-		if _, err := f.pg.PgW.Exec(t.Context(),
-			`update billing_subscriptions set status = 'mystery' where org_id = $1`, f.orgID); err != nil {
-			t.Fatalf("corrupt status: %v", err)
-		}
-		r, err := f.svc.ClosePeriods(t.Context(), closeNow, grace)
-		if err != nil || r.Undecodable != 1 {
-			t.Errorf("report = %+v, err = %v, want the org counted undecodable", r, err)
-		}
-		if errors.Is(err, corebilling.ErrSubscriptionUndecodable) {
-			t.Error("an undecodable org failed the whole step")
-		}
-	})
+// A subscription in a status pug has no word for is not live, and holds up nothing.
+func TestCloseBillsBesideAnUnknownSubscriptionStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	project := seedProjectFor(t, f)
+	seedDaily(t, f, project, periodStart, periodEnd, 100_000)
+	seedMandate(t, f, periodStart, time.Time{})
+	seedMandate(t, f, day(time.August, 20), day(time.August, 20))
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_subscriptions set status = 'pending' where org_id = $1 and status = 'cancelled'`,
+		f.orgID); err != nil {
+		t.Fatalf("leave a checkout pending: %v", err)
+	}
+	stampMeter(t, f, closeNow)
+
+	if r := closePeriods(t, f, closeNow); r.Closed != 1 {
+		t.Errorf("report = %+v, want the live mandate's period closed", r)
+	}
 }
 
 // A replacement card added before the old one's cancellation landed bills the
@@ -512,14 +536,14 @@ func TestCloseBillsOverlappingMandatesOnce(t *testing.T) {
 
 	closePeriods(t, f, closeNow)
 	got := invoices(t, f)
-	if len(got) != 2 || !got[0].billedTo.Equal(day(time.August, 25)) || !got[1].billedFrom.Equal(day(time.August, 25)) {
-		t.Errorf("invoices = %s, want [08-10, 08-25) and [08-25, 09-10)", windows(got))
+	if len(got) != 1 || !got[0].billedFrom.Equal(periodStart) || !got[0].billedTo.Equal(periodEnd) ||
+		got[0].events != 3_100_000 {
+		t.Errorf("invoices = %s, want [08-10, 09-10) counting each day once", windows(got))
 	}
 }
 
-// A lost period nothing later will move past is reported for a day, not every
-// hour until the next anniversary.
-func TestCloseReportsADroppedPeriodForADay(t *testing.T) {
+// A lost period nothing later will move past is written off, so it is reported once.
+func TestCloseWritesOffADroppedPeriodOnce(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -527,11 +551,24 @@ func TestCloseReportsADroppedPeriodForADay(t *testing.T) {
 	seedMandate(t, f, day(time.May, 12), day(time.June, 5))
 	stampMeter(t, f, closeNow)
 
-	if r := closePeriods(t, f, closeNow); r.Dropped != 1 {
+	if r := closePeriods(t, f, closeNow); r != (corebilling.CloseReport{Dropped: 1}) {
 		t.Errorf("report = %+v, want the lost period dropped", r)
 	}
-	if r := closePeriods(t, f, closeNow.Add(2*24*time.Hour)); r.Dropped != 0 {
-		t.Errorf("two days later report = %+v, want it no longer reported", r)
+	got := invoices(t, f)
+	if len(got) != 1 || got[0].status != string(corebilling.InvoiceWaived) ||
+		!got[0].billedFrom.Equal(day(time.May, 12)) || !got[0].billedTo.Equal(day(time.June, 5)) {
+		t.Errorf("invoices = %s, want [05-12, 06-05) waived", windows(got))
+	}
+	var detail string
+	if err := f.pg.PgRO.QueryRow(t.Context(),
+		`select detail from billing_invoice_events where invoice_id = $1`, got[0].id).Scan(&detail); err != nil {
+		t.Fatalf("read invoice event: %v", err)
+	}
+	if detail != "dropped" {
+		t.Errorf("event detail = %q, want dropped", detail)
+	}
+	if r := closePeriods(t, f, closeNow.Add(time.Hour)); r.Dropped != 0 {
+		t.Errorf("next pass report = %+v, want it not reported again", r)
 	}
 }
 
@@ -555,51 +592,31 @@ func closeMonths(t *testing.T, f *fixture, events ...int64) []corebilling.CloseR
 	return out
 }
 
-type carriedRow struct {
-	status               string
-	usage, carried, owed int64
-	coveredBy            *string
-	id                   string
-}
-
-func carriedRows(t *testing.T, f *fixture) []carriedRow {
-	t.Helper()
-	rows, err := f.pg.PgRO.Query(t.Context(),
-		`select id, status, usage_cents, carried_cents, amount_cents, covered_by
-		 from billing_invoices where org_id = $1 order by billed_from`, f.orgID)
-	if err != nil {
-		t.Fatalf("query invoices: %v", err)
-	}
-	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (carriedRow, error) {
-		var r carriedRow
-		err := row.Scan(&r.id, &r.status, &r.usage, &r.carried, &r.owed, &r.coveredBy)
-		return r, err
-	})
-	if err != nil {
-		t.Fatalf("collect invoices: %v", err)
-	}
-	return out
-}
-
-// $2.50 a month is charged $5.00 every second month.
+// $2.50 a month is charged $5.00 every second month, and a carried balance is not
+// carried again.
 func TestCloseDefersASmallInvoiceAndCarriesIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f := newFixture(t)
-	reports := closeMonths(t, f, 162_500, 162_500)
-	if reports[0].Deferred != 1 || reports[1].Closed != 1 {
-		t.Fatalf("reports = %+v, want deferred then charged", reports)
+	reports := closeMonths(t, f, 162_500, 162_500, 162_500)
+	if reports[0].Deferred != 1 || reports[1].Closed != 1 || reports[2].Deferred != 1 {
+		t.Fatalf("reports = %+v, want deferred, charged, deferred", reports)
 	}
-	got := carriedRows(t, f)
-	if len(got) != 2 {
-		t.Fatalf("invoices = %+v, want 2", got)
+	cents := corebilling.Price(currentCard(), 162_500).TotalCents
+	got := invoices(t, f)
+	if len(got) != 3 {
+		t.Fatalf("invoices = %s, want 3", windows(got))
 	}
-	if got[0].status != "deferred" || got[0].coveredBy == nil || *got[0].coveredBy != got[1].id {
+	if got[0].status != "deferred" || got[0].nextAttemptAt != nil ||
+		got[0].coveredBy == nil || *got[0].coveredBy != got[1].id {
 		t.Errorf("first = %+v, want deferred and covered by the second", got[0])
 	}
-	if got[1].status != "open" || got[1].usage != 250 || got[1].carried != 250 || got[1].owed != 500 {
-		t.Errorf("second = %+v, want open owing 250 + 250 carried", got[1])
+	if got[1].status != "open" || got[1].usage != cents || got[1].carried != cents || got[1].amount != 2*cents {
+		t.Errorf("second = %+v, want open owing %d with %d carried", got[1], 2*cents, cents)
+	}
+	if got[2].status != "deferred" || got[2].carried != 0 || got[2].coveredBy != nil {
+		t.Errorf("third = %+v, want deferred with nothing carried", got[2])
 	}
 }
 
@@ -610,10 +627,10 @@ func TestCloseWithNothingToBillLeavesTheBalance(t *testing.T) {
 	}
 	f := newFixture(t)
 	closeMonths(t, f, 162_500, 0)
-	got := carriedRows(t, f)
+	got := invoices(t, f)
 	if len(got) != 2 || got[0].status != "deferred" || got[0].coveredBy != nil ||
 		got[1].status != "waived" || got[1].carried != 0 {
-		t.Errorf("invoices = %+v, want the balance uncovered beside a waived month", got)
+		t.Errorf("invoices = %s, want the balance uncovered beside a waived month", windows(got))
 	}
 }
 
@@ -623,24 +640,18 @@ func TestCloseSweepsABalanceAtTheTwelfthPeriod(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	twelve := func(n int64) []int64 {
-		out := make([]int64, corebilling.MaxDeferPeriods)
-		for i := range out {
-			out[i] = n
-		}
-		return out
-	}
 
 	t.Run("over a dollar is charged", func(t *testing.T) {
 		f := newFixture(t)
-		reports := closeMonths(t, f, twelve(103_750)...)
+		reports := closeMonths(t, f, slices.Repeat([]int64{103_750}, corebilling.MaxDeferPeriods)...)
 		if last := reports[len(reports)-1]; last.Swept != 1 || last.Closed != 1 {
 			t.Fatalf("last report = %+v, want a charged sweep", last)
 		}
-		got := carriedRows(t, f)
+		each := corebilling.Price(currentCard(), 103_750).TotalCents
+		got := invoices(t, f)
 		sweep := got[len(got)-1]
-		if sweep.status != "open" || sweep.carried != 11*15 || sweep.owed != 12*15 {
-			t.Errorf("sweep = %+v, want open owing 180 with 165 carried", sweep)
+		if sweep.status != "open" || sweep.carried != 11*each || sweep.amount != 12*each {
+			t.Errorf("sweep = %+v, want open owing %d with %d carried", sweep, 12*each, 11*each)
 		}
 		for _, row := range got[:len(got)-1] {
 			if row.status != "deferred" || row.coveredBy == nil || *row.coveredBy != sweep.id {
@@ -651,7 +662,7 @@ func TestCloseSweepsABalanceAtTheTwelfthPeriod(t *testing.T) {
 
 	t.Run("under a dollar is written off", func(t *testing.T) {
 		f := newFixture(t)
-		reports := closeMonths(t, f, twelve(100_200)...)
+		reports := closeMonths(t, f, slices.Repeat([]int64{100_200}, corebilling.MaxDeferPeriods)...)
 		for i, r := range reports[:len(reports)-1] {
 			if r.Deferred != 1 || r.Swept != 0 {
 				t.Fatalf("report %d = %+v, want deferred", i, r)
@@ -660,10 +671,180 @@ func TestCloseSweepsABalanceAtTheTwelfthPeriod(t *testing.T) {
 		if last := reports[len(reports)-1]; last.Swept != 1 || last.Waived != 1 {
 			t.Fatalf("last report = %+v, want a waived sweep", last)
 		}
-		for _, row := range carriedRows(t, f) {
-			if row.status != "waived" || row.coveredBy != nil || row.carried != 0 {
+		got := invoices(t, f)
+		for _, row := range got {
+			if row.status != "waived" || row.coveredBy != nil || row.carried != 0 || row.nextAttemptAt != nil {
 				t.Errorf("row = %+v, want every period waived", row)
 			}
 		}
+		var swept int
+		if err := f.pg.PgRO.QueryRow(t.Context(),
+			`select count(*) from billing_invoice_events
+			 where from_status = 'deferred' and to_status = 'waived' and detail = $1`,
+			"swept by "+got[len(got)-1].id).Scan(&swept); err != nil {
+			t.Fatalf("count sweep events: %v", err)
+		}
+		if swept != len(got)-1 {
+			t.Errorf("sweep events = %d, want one per written-off period", swept)
+		}
 	})
+}
+
+// setDealTerms records a deal with a fee and a rate whose terms took effect at from
+// and end at until, when non-zero.
+func setDealTerms(t *testing.T, f *fixture, from, until time.Time) {
+	t.Helper()
+	change := setDeal()
+	change.RateCentsPerMillion = new(int64(3_000))
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+	var ends any
+	if !until.IsZero() {
+		ends = until
+	}
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_entitlements set terms_effective_at = $1, contract_ends_at = $2 where org_id = $3`,
+		from, ends, f.orgID); err != nil {
+		t.Fatalf("date the deal: %v", err)
+	}
+}
+
+// A deal that ends mid-period bills its own days on its terms, and the rest on a
+// card if there is one.
+func TestCloseSplitsAPeriodWhereADealEnds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	t.Run("with a card", func(t *testing.T) {
+		f := newFixture(t)
+		project := seedProjectFor(t, f)
+		seedDaily(t, f, project, periodStart, periodEnd, 100_000)
+		seedMandate(t, f, periodStart, time.Time{})
+		setDealTerms(t, f, periodStart, day(time.August, 25))
+		stampMeter(t, f, closeNow)
+
+		if r := closePeriods(t, f, closeNow); r.Closed != 2 || r.AwaitingCard != 0 {
+			t.Fatalf("report = %+v, want two closes with a card", r)
+		}
+		got := invoices(t, f)
+		if len(got) != 2 ||
+			got[0].planSlug != corebilling.SlugCustom || !got[0].billedTo.Equal(day(time.August, 25)) ||
+			got[1].planSlug != currentCard().Slug || !got[1].billedFrom.Equal(day(time.August, 25)) {
+			t.Errorf("invoices = %s, want the deal to 08-25 and the card after", windows(got))
+		}
+	})
+
+	t.Run("without a card", func(t *testing.T) {
+		f := newFixture(t)
+		project := seedProjectFor(t, f)
+		seedDaily(t, f, project, periodStart, periodEnd, 100_000)
+		setDealTerms(t, f, periodStart, day(time.August, 25))
+		stampMeter(t, f, closeNow)
+
+		closePeriods(t, f, closeNow)
+		got := invoices(t, f)
+		if len(got) != 1 || got[0].planSlug != corebilling.SlugCustom ||
+			!got[0].billedFrom.Equal(periodStart) || !got[0].billedTo.Equal(day(time.August, 25)) {
+			t.Errorf("invoices = %s, want the deal's days [08-10, 08-25)", windows(got))
+		}
+	})
+}
+
+// A deal recorded mid-period over a card leaves the card's earlier days on the card.
+func TestCloseBillsTheCardDaysBeforeADeal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	project := seedProjectFor(t, f)
+	seedDaily(t, f, project, periodStart, periodEnd, 100_000)
+	seedMandate(t, f, periodStart, time.Time{})
+	setDealTerms(t, f, day(time.August, 30).Add(10*time.Hour), time.Time{})
+	stampMeter(t, f, closeNow)
+
+	closePeriods(t, f, closeNow)
+	got := invoices(t, f)
+	if len(got) != 2 ||
+		got[0].planSlug != currentCard().Slug || !got[0].billedTo.Equal(day(time.August, 30)) ||
+		got[1].planSlug != corebilling.SlugCustom || !got[1].billedFrom.Equal(day(time.August, 30)) {
+		t.Errorf("invoices = %s, want the card to 08-30 and the deal after", windows(got))
+	}
+}
+
+// A slug no card answers to holds the invoice rather than billing it at nothing,
+// and the deal days after it wait too.
+func TestCloseHoldsAnUnpriceablePeriod(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	seedMandate(t, f, day(time.August, 12), time.Time{})
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_subscriptions set plan_slug = 'retired_card' where org_id = $1`, f.orgID); err != nil {
+		t.Fatalf("unknown slug: %v", err)
+	}
+	setDealTerms(t, f, day(time.August, 30), time.Time{})
+	stampMeter(t, f, closeNow)
+
+	if r := closePeriods(t, f, closeNow); r != (corebilling.CloseReport{Unpriceable: 1}) {
+		t.Errorf("report = %+v, want unpriceable", r)
+	}
+	if n := len(invoices(t, f)); n != 0 {
+		t.Errorf("invoices = %d, want 0", n)
+	}
+}
+
+// The last close of a gone mandate sweeps: its own $2.50 is charged, not deferred
+// with nothing later to carry it.
+func TestCloseSweepsTheLastCloseOfAGoneMandate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	project := seedProjectFor(t, f)
+	seedDaily(t, f, project, day(time.August, 12), day(time.August, 13), 162_500)
+	seedMandate(t, f, day(time.August, 12), day(time.August, 13))
+	stampMeter(t, f, closeNow)
+
+	if r := closePeriods(t, f, closeNow); r.Closed != 1 || r.Deferred != 0 {
+		t.Errorf("report = %+v, want the final close charged", r)
+	}
+	if got := invoices(t, f); len(got) != 1 || got[0].status != string(corebilling.InvoiceOpen) {
+		t.Errorf("invoices = %s, want one open", windows(got))
+	}
+}
+
+// A deal that lapsed with no card sweeps, since no later close carries its balance;
+// one in force defers it.
+func TestCloseSweepsALapsedDealWithNoCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for name, tc := range map[string]struct {
+		until time.Time
+		want  corebilling.InvoiceStatus
+	}{
+		"lapsed":   {day(time.August, 25), corebilling.InvoiceOpen},
+		"in force": {time.Time{}, corebilling.InvoiceDeferred},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			project := seedProjectFor(t, f)
+			seedDaily(t, f, project, periodStart, day(time.August, 11), 50_000)
+			insertInvoice(t, f, "deferred", day(time.July, 10), day(time.July, 11), 250)
+			setDealTerms(t, f, periodStart, tc.until)
+			if _, err := f.pg.PgW.Exec(t.Context(),
+				`update billing_entitlements set flat_fee_cents = null where org_id = $1`, f.orgID); err != nil {
+				t.Fatalf("drop the fee: %v", err)
+			}
+			stampMeter(t, f, closeNow)
+
+			closePeriods(t, f, closeNow)
+			if got := invoices(t, f); len(got) != 2 || got[1].status != string(tc.want) {
+				t.Errorf("invoices = %s, want the deal's close %s", windows(got), tc.want)
+			}
+		})
+	}
 }

@@ -32,31 +32,20 @@ const (
 const (
 	ActorInvoicePass = "invoice-pass"
 
-	// ChargeNoticeDays is a placeholder: the days an open invoice can be seen, and
-	// voided, before its first charge.
+	// ChargeNoticeDays is a placeholder: the days an open invoice can be seen
+	// before its first charge.
 	ChargeNoticeDays = 3
 
-	// Placeholders pinned to the provider's fixed 40¢ fee (§8.7). Under
-	// DeferUnderCents a close is carried forward rather than charged; a sweep under
-	// WaiveUnderCents is written off rather than charged at a loss, and must stay
-	// above the provider's 50¢ card minimum; a balance spanning MaxDeferPeriods
-	// periods is swept.
+	// Placeholders pinned to the provider's fixed 40¢ fee (§8.7).
 	DeferUnderCents = 500
+	// WaiveUnderCents must stay at or above the provider's 50¢ card minimum.
 	WaiveUnderCents = 100
 	MaxDeferPeriods = 12
 
-	// maxClosePeriods is how many due periods a pass looks back over, so a stalled
-	// meter or pass catches up rather than losing a month.
+	// maxClosePeriods is how many due periods a pass closes; an older one still
+	// unbilled is written off.
 	maxClosePeriods = 3
-	// dropReportWindow bounds how long a period that fell out of the catch-up
-	// window keeps failing the pass. It is lost either way; a day of red is enough
-	// to be seen.
-	dropReportWindow = 24 * time.Hour
 )
-
-// ErrSubscriptionUndecodable is a stored subscription whose status pug has no
-// word for. Skipping it would bill the org as if it never had a mandate.
-var ErrSubscriptionUndecodable = errors.New("billing: a subscription holds an unknown status")
 
 // Pricing is the snapshot an invoice was priced on, so a later catalog edit
 // cannot change what it says it charged. Exactly one field is set.
@@ -73,30 +62,46 @@ type CloseReport struct {
 	Deferred int
 	// Swept is a close that ended a deferred balance, charged or written off.
 	Swept int
-	// Held is a due period the meter has not finalized yet.
-	Held int
-	// Dropped is a due period that left the catch-up window unbilled.
-	Dropped int
-	// AwaitingCard is a deal's invoice closed with no mandate to charge (§19.15).
-	AwaitingCard int
-	// Unpriceable is a period whose slug no card answers to.
+	// Held (the meter is not final) and Unpriceable (no card answers to the slug)
+	// count orgs stopped at a period; their later periods wait behind it.
+	Held        int
 	Unpriceable int
-	Undecodable int
+	// Dropped is a period written off because it left the catch-up window unbilled.
+	Dropped int
+	// AwaitingCard is a deal's invoice closed with no mandate live at its end (§19.15).
+	AwaitingCard int
 }
 
 // period is one anniversary window, [start, end).
 type period struct{ start, end time.Time }
 
-// segment is one billable window inside a period, and what prices it.
+type window struct{ from, to time.Time }
+
+// segment is the billable days inside a period that one invoice prices.
 type segment struct {
-	from, to time.Time
-	ent      Entitlement
-	mandate  bool
+	days    []window
+	ent     Entitlement
+	mandate bool
 }
+
+func (s segment) from() time.Time { return s.days[0].from }
+func (s segment) to() time.Time   { return s.days[len(s.days)-1].to }
+
+type closeKind int
+
+const (
+	closeDue closeKind = iota
+	// closeFinal sweeps: with no live mandate and no deal in force, every close
+	// does, older periods a catch-up closes included.
+	closeFinal
+	// closeDropped writes off a period that left the catch-up window.
+	closeDropped
+)
 
 // ClosePeriods invoices every period that is due and safe to price. grace is the
 // meter's trailing window: after period_end + grace its count is as final as the
-// meter makes it. Postgres failures return; an org pug cannot read is counted.
+// meter makes it. Postgres failures return; Held, Dropped and Unpriceable are
+// findings for the caller, not errors.
 func (s *Service) ClosePeriods(ctx context.Context, now time.Time, grace time.Duration) (CloseReport, error) {
 	var r CloseReport
 	if !s.billingEnabled {
@@ -113,10 +118,6 @@ func (s *Service) ClosePeriods(ctx context.Context, now time.Time, grace time.Du
 			return r, err
 		}
 		if err := s.closeOrg(ctx, org.ID, org.CreateTime.Time, now, grace, &r); err != nil {
-			if errors.Is(err, ErrSubscriptionUndecodable) {
-				r.Undecodable++
-				continue
-			}
 			return r, err
 		}
 	}
@@ -147,21 +148,16 @@ func (s *Service) closeOrg(ctx context.Context, orgID string, orgCreate, now tim
 		return err
 	}
 
-	periods := duePeriods(orgCreate, coreusage.AnchorDay(orgCreate, rec.AnchorDay), now, grace)
-	if len(periods) > maxClosePeriods {
-		lost := periods[maxClosePeriods]
-		if len(billableSegments(orgCreate, rec, subs, lost, billedTo)) > 0 &&
-			now.Before(periods[0].end.Add(grace).Add(dropReportWindow)) {
-			r.Dropped++
-			err := fmt.Errorf("billing: org %s period %s left the catch-up window unbilled",
-				orgID, lost.start.Format(time.DateOnly))
-			slog.ErrorContext(ctx, "a due period was never invoiced", slogx.Error(err), slog.String("org_id", orgID))
-			telemetry.RecordError(ctx, err)
-		}
-		periods = periods[:maxClosePeriods]
+	kind := closeDue
+	if _, deal := rec.Terms(); !liveAt(subs, now) && (!deal || contractLapsed(rec, now)) {
+		kind = closeFinal
 	}
-
-	for _, p := range slices.Backward(periods) {
+	periods := duePeriods(coreusage.AnchorDay(orgCreate, rec.AnchorDay), now, grace, maxTime(orgCreate, billedTo))
+	for i, p := range slices.Backward(periods) {
+		k := kind
+		if i >= maxClosePeriods {
+			k = closeDropped
+		}
 		for _, seg := range billableSegments(orgCreate, rec, subs, p, billedTo) {
 			// A stalled meter delays an invoice, never mis-bills one. Newer periods need
 			// a later stamp still, so the org stops here.
@@ -172,92 +168,113 @@ func (s *Service) closeOrg(ctx context.Context, orgID string, orgCreate, now tim
 					slog.Time("usage_computed_at", stamp.Time))
 				return nil
 			}
-			if _, ok := seg.ent.quote(0); !ok {
-				r.Unpriceable++
-				err := fmt.Errorf("billing: org %s cannot be priced on plan %q", orgID, seg.ent.Slug)
-				slog.ErrorContext(ctx, "period cannot be priced; holding the invoice", slogx.Error(err),
-					slog.String("org_id", orgID), slog.Time("period_start", p.start))
-				telemetry.RecordError(ctx, err)
-				return nil
-			}
-			inserted, err := s.closeSegment(ctx, orgID, p, seg, stamp.Time, now, r)
+			inserted, err := s.closeSegment(ctx, orgID, p, seg, stamp.Time, now, k, r)
 			if err != nil || !inserted {
 				return err
 			}
-			billedTo = seg.to
 		}
 	}
 	return nil
 }
 
-// duePeriods lists the org's periods whose end + grace has passed, newest first,
-// one past the catch-up window so the caller can see what fell out of it.
-func duePeriods(orgCreate time.Time, anchor int, now time.Time, grace time.Duration) []period {
-	start, _ := coreusage.PeriodFor(now.Add(-grace), anchor)
+// duePeriods lists the periods ending after since whose end + grace has passed,
+// newest first.
+func duePeriods(anchor int, now time.Time, grace time.Duration, since time.Time) []period {
 	var out []period
-	for range maxClosePeriods + 1 {
-		end := start
-		start, _ = coreusage.PeriodFor(end.Add(-time.Nanosecond), anchor)
-		if !end.After(orgCreate) {
-			break
-		}
+	end, _ := coreusage.PeriodFor(now.Add(-grace), anchor)
+	for end.After(since) {
+		start, _ := coreusage.PeriodFor(end.Add(-time.Nanosecond), anchor)
 		out = append(out, period{start: start, end: end})
+		end = start
 	}
 	return out
 }
 
 // billableSegments clips a period to the days that can be billed, starting at
-// billedTo so no day is billed twice. A deal bills from its terms, card or not; a
-// card org bills only the days a mandate was live, one segment per mandate. Trial
-// days are never billed.
+// billedTo so no day is billed twice. A deal bills its own days, card or not; the
+// days either side of it bill only while a mandate was live. Trial days are never
+// billed.
 func billableSegments(orgCreate time.Time, rec Record, subs []Subscription, p period, billedTo time.Time) []segment {
-	at := p.end.Add(-time.Nanosecond)
 	floor := maxTime(p.start, billedTo, coreusage.CeilDayUTC(trialEnd(orgCreate, rec)))
-
-	if _, deal := rec.Terms(); deal && !contractLapsed(rec, at) {
-		from := maxTime(floor, coreusage.FloorDayUTC(rec.TermsEffectiveAt))
-		if !from.Before(p.end) {
-			return nil
-		}
-		return []segment{{from: from, to: p.end, ent: Resolve(orgCreate, rec, nil, at, true), mandate: liveAt(subs, at)}}
+	if _, deal := rec.Terms(); !deal {
+		return cardSegments(orgCreate, rec, subs, floor, p.end)
 	}
 
+	dealFrom := maxTime(floor, coreusage.FloorDayUTC(rec.TermsEffectiveAt))
+	dealTo := p.end
+	if !rec.ContractEndsAt.IsZero() && rec.ContractEndsAt.Before(p.end) {
+		dealTo = maxTime(dealFrom, coreusage.FloorDayUTC(rec.ContractEndsAt))
+	}
+	// Cleared, or Resolve would price the card days on the deal with its allowance.
+	noDeal := rec
+	noDeal.PlanSlug, noDeal.IncludedEventsOverride = "", 0
+
+	out := cardSegments(orgCreate, noDeal, subs, floor, minTime(dealFrom, p.end))
+	if dealFrom.Before(dealTo) {
+		at := dealTo.Add(-time.Nanosecond)
+		out = append(out, segment{
+			days: []window{{dealFrom, dealTo}}, ent: Resolve(orgCreate, rec, nil, at, true), mandate: liveAt(subs, at),
+		})
+	}
+	return append(out, cardSegments(orgCreate, noDeal, subs, dealTo, p.end)...)
+}
+
+// cardSegments is the days in [from, to) a mandate was live, as one segment so a
+// change of card adds no allowance. It is priced on the latest mandate: a
+// cancelled one still pins its card.
+func cardSegments(orgCreate time.Time, rec Record, subs []Subscription, from, to time.Time) []segment {
 	mandates := slices.Clone(subs)
 	slices.SortFunc(mandates, func(a, b Subscription) int { return a.CreateTime.Compare(b.CreateTime) })
-	var out []segment
+	var seg segment
 	for _, sub := range mandates {
 		if !sub.OnDemand {
 			continue
 		}
-		from := maxTime(floor, coreusage.FloorDayUTC(sub.CreateTime))
-		to := p.end
-		if ended := sub.endedAt(); !ended.IsZero() && ended.Before(to) {
-			to = coreusage.FloorDayUTC(ended)
+		start := maxTime(from, coreusage.FloorDayUTC(sub.CreateTime))
+		end := to
+		if ended := sub.endedAt(); !ended.IsZero() && ended.Before(end) {
+			end = coreusage.FloorDayUTC(ended)
 		}
-		if !from.Before(to) {
+		if !start.Before(end) {
 			continue
 		}
-		// Priced as the mandate stood: a cancelled one still pins its card.
+		seg.days = append(seg.days, window{start, end})
+		from = end
 		live := sub
 		live.Status = SubStatusActive
-		out = append(out, segment{from: from, to: to, ent: Resolve(orgCreate, rec, &live, at, true), mandate: true})
-		floor = to
+		seg.ent = Resolve(orgCreate, rec, &live, to.Add(-time.Nanosecond), true)
+		seg.mandate = true
 	}
-	return out
+	if len(seg.days) == 0 {
+		return nil
+	}
+	return []segment{seg}
 }
 
 func (s *Service) closeSegment(
-	ctx context.Context, orgID string, p period, seg segment, stamp, now time.Time, r *CloseReport,
+	ctx context.Context, orgID string, p period, seg segment, stamp, now time.Time, kind closeKind, r *CloseReport,
 ) (bool, error) {
-	events, err := dbread.New(s.pgW).SumUsageDaily(ctx, dbread.SumUsageDailyParams{
-		OrgID: orgID, FromDay: postgres.NewDate(seg.from), ToDay: postgres.NewDate(seg.to),
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to sum usage for an invoice", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return false, err
+	var events int64
+	for _, d := range seg.days {
+		n, err := dbread.New(s.pgW).SumUsageDaily(ctx, dbread.SumUsageDailyParams{
+			OrgID: orgID, FromDay: postgres.NewDate(d.from), ToDay: postgres.NewDate(d.to),
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to sum usage for an invoice", slogx.Error(err), slog.String("org_id", orgID))
+			telemetry.RecordError(ctx, err)
+			return false, err
+		}
+		events += n
 	}
-	quote, _ := seg.ent.quote(events)
+	quote, ok := seg.ent.quote(events)
+	if !ok {
+		r.Unpriceable++
+		err := fmt.Errorf("billing: org %s cannot be priced on plan %q", orgID, seg.ent.Slug)
+		slog.ErrorContext(ctx, "period cannot be priced; holding the invoice", slogx.Error(err),
+			slog.String("org_id", orgID), slog.Time("period_start", p.start))
+		telemetry.RecordError(ctx, err)
+		return false, nil
+	}
 	lines, err := json.Marshal(quote.Lines)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to encode the invoice lines", slogx.Error(err), slog.String("org_id", orgID))
@@ -272,8 +289,8 @@ func (s *Service) closeSegment(
 	}
 
 	params := dbwrite.InsertBillingInvoiceParams{
-		BilledFrom:      postgres.NewDate(seg.from),
-		BilledTo:        postgres.NewDate(seg.to),
+		BilledFrom:      postgres.NewDate(seg.from()),
+		BilledTo:        postgres.NewDate(seg.to()),
 		Currency:        seg.ent.Currency,
 		EventCount:      events,
 		ID:              xid.New().String(),
@@ -305,48 +322,60 @@ func (s *Service) closeSegment(
 		balance += c.UsageCents
 		ids = append(ids, c.ID)
 	}
-	sweep := len(carried) > 0 && periodsSpanned(carried[0].PeriodStart.Time, p.start) >= MaxDeferPeriods
+	sweep := kind == closeFinal ||
+		len(carried) > 0 && periodsSpanned(carried[0].PeriodStart.Time, p.start) >= MaxDeferPeriods
 	d := deferClose(quote.TotalCents, balance, sweep)
-	params.Status = string(d.status)
-	if d.carry {
-		params.CarriedCents = balance
+	detail := ""
+	if kind == closeDropped {
+		sweep, d, detail = false, deferral{status: InvoiceWaived}, "dropped"
 	}
-	params.AmountCents = params.UsageCents + params.CarriedCents
+	params.Status = string(d.status)
 	if d.status == InvoiceOpen {
+		params.CarriedCents = balance
 		params.NextAttemptAt = postgres.NewTimestamptz(now.AddDate(0, 0, ChargeNoticeDays))
 	}
+	params.AmountCents = params.UsageCents + params.CarriedCents
 
 	row, err := w.InsertBillingInvoice(ctx, params)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.InfoContext(ctx, "another pass already closed this window",
-				slog.String("org_id", orgID), slog.Time("billed_from", seg.from))
+			slog.WarnContext(ctx, "another pass already closed this window",
+				slog.String("org_id", orgID), slog.Time("billed_from", seg.from()))
 			return false, nil
 		}
-		slog.ErrorContext(ctx, "failed to insert an invoice", slogx.Error(err), slog.String("org_id", orgID))
+		slog.ErrorContext(ctx, "failed to insert an invoice", slogx.Error(err),
+			slog.String("org_id", orgID), slog.Time("billed_from", seg.from()))
 		telemetry.RecordError(ctx, err)
 		return false, err
 	}
-	if err := appendInvoiceEvent(ctx, w, row.ID, "", d.status, ""); err != nil {
+	if err := appendInvoiceEvent(ctx, w, orgID, row.ID, "", d.status, detail); err != nil {
 		return false, err
 	}
 	switch {
-	case d.carry && len(ids) > 0:
-		if _, err := w.CoverBillingInvoices(ctx, dbwrite.CoverBillingInvoicesParams{
+	case d.status == InvoiceOpen && len(ids) > 0:
+		n, err := w.CoverBillingInvoices(ctx, dbwrite.CoverBillingInvoicesParams{
 			CoveredBy: postgres.NewOptionalText(row.ID), Ids: ids,
-		}); err != nil {
+		})
+		if err == nil && n != int64(len(ids)) {
+			err = fmt.Errorf("billing: covered %d of %d deferred invoices", n, len(ids))
+		}
+		if err != nil {
 			slog.ErrorContext(ctx, "failed to cover the deferred balance", slogx.Error(err), slog.String("org_id", orgID))
 			telemetry.RecordError(ctx, err)
 			return false, err
 		}
 	case d.waiveBalance && len(ids) > 0:
-		if _, err := w.WaiveDeferredBillingInvoices(ctx, ids); err != nil {
+		n, err := w.WaiveDeferredBillingInvoices(ctx, ids)
+		if err == nil && n != int64(len(ids)) {
+			err = fmt.Errorf("billing: waived %d of %d deferred invoices", n, len(ids))
+		}
+		if err != nil {
 			slog.ErrorContext(ctx, "failed to waive the deferred balance", slogx.Error(err), slog.String("org_id", orgID))
 			telemetry.RecordError(ctx, err)
 			return false, err
 		}
 		for _, id := range ids {
-			if err := appendInvoiceEvent(ctx, w, id, InvoiceDeferred, InvoiceWaived, "swept by "+row.ID); err != nil {
+			if err := appendInvoiceEvent(ctx, w, orgID, id, InvoiceDeferred, InvoiceWaived, "swept by "+row.ID); err != nil {
 				return false, err
 			}
 		}
@@ -355,18 +384,24 @@ func (s *Service) closeSegment(
 		return false, err
 	}
 
-	switch d.status {
-	case InvoiceWaived:
+	switch {
+	case kind == closeDropped:
+		r.Dropped++
+		err := fmt.Errorf("billing: org %s wrote off [%s, %s), which left the catch-up window unbilled",
+			orgID, seg.from().Format(time.DateOnly), seg.to().Format(time.DateOnly))
+		slog.ErrorContext(ctx, "a due period was never invoiced", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+	case d.status == InvoiceWaived:
 		r.Waived++
-	case InvoiceDeferred:
+	case d.status == InvoiceDeferred:
 		r.Deferred++
-	case InvoiceOpen:
+	case d.status == InvoiceOpen:
 		r.Closed++
 		if seg.ent.Terms != nil && !seg.mandate {
 			r.AwaitingCard++
 		}
 	}
-	if sweep {
+	if sweep && len(ids) > 0 {
 		r.Swept++
 	}
 	return true, nil
@@ -374,17 +409,17 @@ func (s *Service) closeSegment(
 
 type deferral struct {
 	status       InvoiceStatus
-	carry        bool
 	waiveBalance bool
 }
 
 // deferClose is §8.7's table: whether a close is charged, carried forward or
-// written off, given its own usage and the balance earlier closes deferred.
+// written off, given its own usage and the balance earlier closes deferred. An
+// open close carries the balance.
 func deferClose(usage, balance int64, sweep bool) deferral {
 	total := usage + balance
 	switch {
 	case sweep && total >= WaiveUnderCents:
-		return deferral{status: InvoiceOpen, carry: true}
+		return deferral{status: InvoiceOpen}
 	case sweep:
 		return deferral{status: InvoiceWaived, waiveBalance: true}
 	case usage == 0:
@@ -392,7 +427,7 @@ func deferClose(usage, balance int64, sweep bool) deferral {
 	case total < DeferUnderCents:
 		return deferral{status: InvoiceDeferred}
 	}
-	return deferral{status: InvoiceOpen, carry: true}
+	return deferral{status: InvoiceOpen}
 }
 
 // periodsSpanned counts the monthly periods from the one starting at first through
@@ -402,12 +437,15 @@ func periodsSpanned(first, last time.Time) int {
 	return (last.Year()-first.Year())*12 + int(last.Month()-first.Month()) + 1
 }
 
-func appendInvoiceEvent(ctx context.Context, w *dbwrite.Queries, invoiceID string, from, to InvoiceStatus, detail string) error {
+func appendInvoiceEvent(
+	ctx context.Context, w *dbwrite.Queries, orgID, invoiceID string, from, to InvoiceStatus, detail string,
+) error {
 	if err := w.InsertBillingInvoiceEvent(ctx, dbwrite.InsertBillingInvoiceEventParams{
 		Actor: ActorInvoicePass, Detail: detail, FromStatus: string(from), ID: xid.New().String(),
 		InvoiceID: invoiceID, ToStatus: string(to),
 	}); err != nil {
-		slog.ErrorContext(ctx, "failed to record an invoice event", slogx.Error(err), slog.String("invoice_id", invoiceID))
+		slog.ErrorContext(ctx, "failed to record an invoice event", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("invoice_id", invoiceID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
@@ -425,29 +463,22 @@ func (s *Service) subscriptionsOf(ctx context.Context, orgID string) ([]Subscrip
 	}
 	out := make([]Subscription, 0, len(rows))
 	for _, row := range rows {
-		sub, ok := subscriptionFromRow(row)
-		if !ok {
-			err := fmt.Errorf("%w: org %s subscription %s holds %q", ErrSubscriptionUndecodable, orgID, row.ID, row.Status)
-			slog.ErrorContext(ctx, "a subscription holds a status pug does not know", slogx.Error(err),
-				slog.String("org_id", orgID))
-			telemetry.RecordError(ctx, err)
-			return nil, err
-		}
+		sub, _ := subscriptionFromRow(row)
 		out = append(out, sub)
 	}
 	return out, nil
 }
 
-// endedAt is when a mandate stopped: the provider's date, else when pug saw it
-// leave the live set. Zero while live.
+// endedAt is when a mandate stopped, zero while live. Every write stamps an ended
+// row's date, so a missing one bills nothing rather than forever.
 func (s Subscription) endedAt() time.Time {
-	if s.Status.Live() {
+	switch {
+	case s.Status.Live():
 		return time.Time{}
+	case s.EndedAt.IsZero():
+		return s.CreateTime
 	}
-	if !s.EndedAt.IsZero() {
-		return s.EndedAt
-	}
-	return s.UpdateTime
+	return s.EndedAt
 }
 
 func liveAt(subs []Subscription, at time.Time) bool {
@@ -459,6 +490,13 @@ func liveAt(subs []Subscription, at time.Time) bool {
 		}
 	}
 	return false
+}
+
+func minTime(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
 }
 
 func maxTime(first time.Time, rest ...time.Time) time.Time {

@@ -52,9 +52,9 @@ type Record struct {
 	RateCentsPerMillion    int64
 
 	CreateTime time.Time
-	// TermsEffectiveAt is when the deal's priced terms last changed, and the first
-	// day it is invoiced from. The row usually predates the deal — extend-trial
-	// writes one months earlier — so create_time cannot date one.
+	// TermsEffectiveAt is when the deal started, and the first day it is invoiced
+	// from. The row usually predates the deal — extend-trial writes one months
+	// earlier — so create_time cannot date one.
 	TermsEffectiveAt time.Time
 }
 

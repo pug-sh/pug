@@ -1,6 +1,6 @@
 # Event Usage Metering
 
-> **A design depends on this file.** [`usage-billing.md`](usage-billing.md) bills from the meter's counts: `PUG_USAGE_RESCAN_DAYS` becomes its invoicing grace, and after an outage the trailing window must re-read every day since the last successful pass (its §8.1). Nothing in it is built yet — everything here is what runs today — but read it before changing the rescan window.
+> **A design depends on this file.** [`usage-billing.md`](usage-billing.md) bills from the meter's counts: `PUG_USAGE_RESCAN_DAYS` becomes its invoicing grace, and after an outage the meter re-reads from its last successful pass's own window (its §8.1; built, in `meterFrom`, and stamped as `cron_state` task `meter`). Read it before changing the rescan window.
 
 Detailed reference for event usage metering (`internal/core/usage`,
 `internal/app/cron`, `proto/dashboard/usage`). Linked from the root

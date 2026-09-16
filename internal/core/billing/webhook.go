@@ -296,12 +296,17 @@ func (s *Service) applySubscription(
 	if err != nil {
 		return 0, err
 	}
+	// A close bills a mandate until ended_at, so an undated end is dated when pug sees it.
+	endedAt := event.EndedAt
+	if !event.Status.Live() && endedAt.IsZero() {
+		endedAt = at
+	}
 	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
 		CancelAtPeriodEnd:  event.CancelAtPeriodEnd,
 		Currency:           Currency,
 		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
 		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
-		EndedAt:            postgres.NewOptionalTimestamptz(event.EndedAt),
+		EndedAt:            postgres.NewOptionalTimestamptz(endedAt),
 		ID:                 xid.New().String(),
 		OnDemand:           event.OnDemand,
 		OrgID:              orgID,

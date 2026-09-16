@@ -201,13 +201,12 @@ type Subscription struct {
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
 
-	// OnDemand is what makes the row a mandate pug can charge at all; the two
-	// below are what a close clips the last period to.
+	// OnDemand is what makes the row a mandate pug can charge at all; a close bills
+	// it until EndedAt.
 	OnDemand          bool
 	CancelAtPeriodEnd bool
 	EndedAt           time.Time
 
-	// CreateTime is the day the card was added, as far as a close is concerned.
+	// CreateTime is when pug first stored the mandate, which a close bills from.
 	CreateTime time.Time
-	UpdateTime time.Time
 }

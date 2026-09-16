@@ -224,7 +224,7 @@ func TestRunReturnsAFailedPass(t *testing.T) {
 	}
 }
 
-// A failed task must not stamp itself, or its next attempt waits a full interval.
+// A failed pass stamps no task, or the next pass skips work this one never did.
 func TestFailedPassLeavesCronStateUnstamped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -252,8 +252,7 @@ func TestFailedPassLeavesCronStateUnstamped(t *testing.T) {
 	}
 }
 
-// A meter back from an outage re-reads the days it missed before it stamps, so an
-// invoice gated on the stamp never closes over a day no pass finalized.
+// A meter back from an outage re-reads the days it missed.
 func TestMeterCatchesUpAfterAnOutage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -638,6 +637,9 @@ func TestSuspiciousEmptyReadRefreshesNoPeriod(t *testing.T) {
 	}
 	if n := countUsageDaily(t, pg); n != 1 {
 		t.Errorf("usage_daily has %d rows, want 1: the empty read wiped the window", n)
+	}
+	if metered, err := j.state.LastRun(ctx, taskMeter); err != nil || !metered.IsZero() {
+		t.Errorf("meter stamped %s (err %v), want zero: the next pass would not re-read this window", metered, err)
 	}
 }
 
