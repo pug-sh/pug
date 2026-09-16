@@ -24,8 +24,9 @@ import (
 type InvoiceStatus string
 
 const (
-	InvoiceOpen   InvoiceStatus = "open"
-	InvoiceWaived InvoiceStatus = "waived"
+	InvoiceOpen     InvoiceStatus = "open"
+	InvoiceWaived   InvoiceStatus = "waived"
+	InvoiceDeferred InvoiceStatus = "deferred"
 )
 
 const (
@@ -34,6 +35,15 @@ const (
 	// ChargeNoticeDays is a placeholder: the days an open invoice can be seen, and
 	// voided, before its first charge.
 	ChargeNoticeDays = 3
+
+	// Placeholders pinned to the provider's fixed 40¢ fee (§8.7). Under
+	// DeferUnderCents a close is carried forward rather than charged; a sweep under
+	// WaiveUnderCents is written off rather than charged at a loss, and must stay
+	// above the provider's 50¢ card minimum; a balance spanning MaxDeferPeriods
+	// periods is swept.
+	DeferUnderCents = 500
+	WaiveUnderCents = 100
+	MaxDeferPeriods = 12
 
 	// maxClosePeriods is how many due periods a pass looks back over, so a stalled
 	// meter or pass catches up rather than losing a month.
@@ -59,6 +69,10 @@ type Pricing struct {
 type CloseReport struct {
 	Closed int
 	Waived int
+	// Deferred is a close under DeferUnderCents, carried to a later one.
+	Deferred int
+	// Swept is a close that ended a deferred balance, charged or written off.
+	Swept int
 	// Held is a due period the meter has not finalized yet.
 	Held int
 	// Dropped is a due period that left the catch-up window unbilled.
@@ -257,9 +271,7 @@ func (s *Service) closeSegment(
 		return false, err
 	}
 
-	status := InvoiceWaived
 	params := dbwrite.InsertBillingInvoiceParams{
-		AmountCents:     quote.TotalCents,
 		BilledFrom:      postgres.NewDate(seg.from),
 		BilledTo:        postgres.NewDate(seg.to),
 		Currency:        seg.ent.Currency,
@@ -274,11 +286,6 @@ func (s *Service) closeSegment(
 		UsageCents:      quote.TotalCents,
 		UsageComputedAt: postgres.NewTimestamptz(stamp),
 	}
-	if quote.TotalCents > 0 {
-		status = InvoiceOpen
-		params.NextAttemptAt = postgres.NewTimestamptz(now.AddDate(0, 0, ChargeNoticeDays))
-	}
-	params.Status = string(status)
 
 	tx, err := s.begin(ctx)
 	if err != nil {
@@ -286,6 +293,29 @@ func (s *Service) closeSegment(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	w := dbwrite.New(tx)
+	carried, err := w.LockUncoveredDeferredBillingInvoices(ctx, orgID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to lock the deferred balance", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return false, err
+	}
+	var balance int64
+	ids := make([]string, 0, len(carried))
+	for _, c := range carried {
+		balance += c.UsageCents
+		ids = append(ids, c.ID)
+	}
+	sweep := len(carried) > 0 && periodsSpanned(carried[0].PeriodStart.Time, p.start) >= MaxDeferPeriods
+	d := deferClose(quote.TotalCents, balance, sweep)
+	params.Status = string(d.status)
+	if d.carry {
+		params.CarriedCents = balance
+	}
+	params.AmountCents = params.UsageCents + params.CarriedCents
+	if d.status == InvoiceOpen {
+		params.NextAttemptAt = postgres.NewTimestamptz(now.AddDate(0, 0, ChargeNoticeDays))
+	}
+
 	row, err := w.InsertBillingInvoice(ctx, params)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -297,26 +327,91 @@ func (s *Service) closeSegment(
 		telemetry.RecordError(ctx, err)
 		return false, err
 	}
-	if err := w.InsertBillingInvoiceEvent(ctx, dbwrite.InsertBillingInvoiceEventParams{
-		Actor: ActorInvoicePass, ID: xid.New().String(), InvoiceID: row.ID, ToStatus: string(status),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to record an invoice event", slogx.Error(err), slog.String("invoice_id", row.ID))
-		telemetry.RecordError(ctx, err)
+	if err := appendInvoiceEvent(ctx, w, row.ID, "", d.status, ""); err != nil {
 		return false, err
+	}
+	switch {
+	case d.carry && len(ids) > 0:
+		if _, err := w.CoverBillingInvoices(ctx, dbwrite.CoverBillingInvoicesParams{
+			CoveredBy: postgres.NewOptionalText(row.ID), Ids: ids,
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed to cover the deferred balance", slogx.Error(err), slog.String("org_id", orgID))
+			telemetry.RecordError(ctx, err)
+			return false, err
+		}
+	case d.waiveBalance && len(ids) > 0:
+		if _, err := w.WaiveDeferredBillingInvoices(ctx, ids); err != nil {
+			slog.ErrorContext(ctx, "failed to waive the deferred balance", slogx.Error(err), slog.String("org_id", orgID))
+			telemetry.RecordError(ctx, err)
+			return false, err
+		}
+		for _, id := range ids {
+			if err := appendInvoiceEvent(ctx, w, id, InvoiceDeferred, InvoiceWaived, "swept by "+row.ID); err != nil {
+				return false, err
+			}
+		}
 	}
 	if err := s.commit(ctx, tx, orgID); err != nil {
 		return false, err
 	}
 
-	if status == InvoiceWaived {
+	switch d.status {
+	case InvoiceWaived:
 		r.Waived++
-	} else {
+	case InvoiceDeferred:
+		r.Deferred++
+	case InvoiceOpen:
 		r.Closed++
+		if seg.ent.Terms != nil && !seg.mandate {
+			r.AwaitingCard++
+		}
 	}
-	if seg.ent.Terms != nil && !seg.mandate {
-		r.AwaitingCard++
+	if sweep {
+		r.Swept++
 	}
 	return true, nil
+}
+
+type deferral struct {
+	status       InvoiceStatus
+	carry        bool
+	waiveBalance bool
+}
+
+// deferClose is §8.7's table: whether a close is charged, carried forward or
+// written off, given its own usage and the balance earlier closes deferred.
+func deferClose(usage, balance int64, sweep bool) deferral {
+	total := usage + balance
+	switch {
+	case sweep && total >= WaiveUnderCents:
+		return deferral{status: InvoiceOpen, carry: true}
+	case sweep:
+		return deferral{status: InvoiceWaived, waiveBalance: true}
+	case usage == 0:
+		return deferral{status: InvoiceWaived}
+	case total < DeferUnderCents:
+		return deferral{status: InvoiceDeferred}
+	}
+	return deferral{status: InvoiceOpen, carry: true}
+}
+
+// periodsSpanned counts the monthly periods from the one starting at first through
+// the one starting at last, both included.
+func periodsSpanned(first, last time.Time) int {
+	first, last = first.UTC(), last.UTC()
+	return (last.Year()-first.Year())*12 + int(last.Month()-first.Month()) + 1
+}
+
+func appendInvoiceEvent(ctx context.Context, w *dbwrite.Queries, invoiceID string, from, to InvoiceStatus, detail string) error {
+	if err := w.InsertBillingInvoiceEvent(ctx, dbwrite.InsertBillingInvoiceEventParams{
+		Actor: ActorInvoicePass, Detail: detail, FromStatus: string(from), ID: xid.New().String(),
+		InvoiceID: invoiceID, ToStatus: string(to),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to record an invoice event", slogx.Error(err), slog.String("invoice_id", invoiceID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	return nil
 }
 
 // subscriptionsOf is every mandate the org ever held, live or not: a close bills

@@ -534,3 +534,136 @@ func TestCloseReportsADroppedPeriodForADay(t *testing.T) {
 		t.Errorf("two days later report = %+v, want it no longer reported", r)
 	}
 }
+
+// closeMonths closes n consecutive periods from 2025-09-10, each with events on
+// its first day, under a mandate added that day.
+func closeMonths(t *testing.T, f *fixture, events ...int64) []corebilling.CloseReport {
+	t.Helper()
+	project := seedProjectFor(t, f)
+	first := time.Date(2025, 9, 10, 0, 0, 0, 0, time.UTC)
+	seedMandate(t, f, first, time.Time{})
+	var out []corebilling.CloseReport
+	for i, n := range events {
+		start := first.AddDate(0, i, 0)
+		if n > 0 {
+			seedDaily(t, f, project, start, start.AddDate(0, 0, 1), n)
+		}
+		now := start.AddDate(0, 1, 0).Add(grace).Add(6 * time.Hour)
+		stampMeter(t, f, now)
+		out = append(out, closePeriods(t, f, now))
+	}
+	return out
+}
+
+type carriedRow struct {
+	status               string
+	usage, carried, owed int64
+	coveredBy            *string
+	id                   string
+}
+
+func carriedRows(t *testing.T, f *fixture) []carriedRow {
+	t.Helper()
+	rows, err := f.pg.PgRO.Query(t.Context(),
+		`select id, status, usage_cents, carried_cents, amount_cents, covered_by
+		 from billing_invoices where org_id = $1 order by billed_from`, f.orgID)
+	if err != nil {
+		t.Fatalf("query invoices: %v", err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (carriedRow, error) {
+		var r carriedRow
+		err := row.Scan(&r.id, &r.status, &r.usage, &r.carried, &r.owed, &r.coveredBy)
+		return r, err
+	})
+	if err != nil {
+		t.Fatalf("collect invoices: %v", err)
+	}
+	return out
+}
+
+// $2.50 a month is charged $5.00 every second month.
+func TestCloseDefersASmallInvoiceAndCarriesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	reports := closeMonths(t, f, 162_500, 162_500)
+	if reports[0].Deferred != 1 || reports[1].Closed != 1 {
+		t.Fatalf("reports = %+v, want deferred then charged", reports)
+	}
+	got := carriedRows(t, f)
+	if len(got) != 2 {
+		t.Fatalf("invoices = %+v, want 2", got)
+	}
+	if got[0].status != "deferred" || got[0].coveredBy == nil || *got[0].coveredBy != got[1].id {
+		t.Errorf("first = %+v, want deferred and covered by the second", got[0])
+	}
+	if got[1].status != "open" || got[1].usage != 250 || got[1].carried != 250 || got[1].owed != 500 {
+		t.Errorf("second = %+v, want open owing 250 + 250 carried", got[1])
+	}
+}
+
+// A month with nothing to bill waits; it neither charges nor sweeps the balance.
+func TestCloseWithNothingToBillLeavesTheBalance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	closeMonths(t, f, 162_500, 0)
+	got := carriedRows(t, f)
+	if len(got) != 2 || got[0].status != "deferred" || got[0].coveredBy != nil ||
+		got[1].status != "waived" || got[1].carried != 0 {
+		t.Errorf("invoices = %+v, want the balance uncovered beside a waived month", got)
+	}
+}
+
+// Eleven deferred periods and the twelfth sweeps: charged at a dollar, written off
+// under it.
+func TestCloseSweepsABalanceAtTheTwelfthPeriod(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	twelve := func(n int64) []int64 {
+		out := make([]int64, corebilling.MaxDeferPeriods)
+		for i := range out {
+			out[i] = n
+		}
+		return out
+	}
+
+	t.Run("over a dollar is charged", func(t *testing.T) {
+		f := newFixture(t)
+		reports := closeMonths(t, f, twelve(103_750)...)
+		if last := reports[len(reports)-1]; last.Swept != 1 || last.Closed != 1 {
+			t.Fatalf("last report = %+v, want a charged sweep", last)
+		}
+		got := carriedRows(t, f)
+		sweep := got[len(got)-1]
+		if sweep.status != "open" || sweep.carried != 11*15 || sweep.owed != 12*15 {
+			t.Errorf("sweep = %+v, want open owing 180 with 165 carried", sweep)
+		}
+		for _, row := range got[:len(got)-1] {
+			if row.status != "deferred" || row.coveredBy == nil || *row.coveredBy != sweep.id {
+				t.Errorf("row = %+v, want deferred and covered by the sweep", row)
+			}
+		}
+	})
+
+	t.Run("under a dollar is written off", func(t *testing.T) {
+		f := newFixture(t)
+		reports := closeMonths(t, f, twelve(100_200)...)
+		for i, r := range reports[:len(reports)-1] {
+			if r.Deferred != 1 || r.Swept != 0 {
+				t.Fatalf("report %d = %+v, want deferred", i, r)
+			}
+		}
+		if last := reports[len(reports)-1]; last.Swept != 1 || last.Waived != 1 {
+			t.Fatalf("last report = %+v, want a waived sweep", last)
+		}
+		for _, row := range carriedRows(t, f) {
+			if row.status != "waived" || row.coveredBy != nil || row.carried != 0 {
+				t.Errorf("row = %+v, want every period waived", row)
+			}
+		}
+	})
+}

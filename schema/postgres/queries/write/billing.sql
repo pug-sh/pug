@@ -141,11 +141,11 @@ limit 2;
 -- The unique (org, billed_from) key is the guard against two passes closing one
 -- window: the loser inserts nothing and reads no row.
 insert into billing_invoices (
-  amount_cents, billed_from, billed_to, currency, event_count, id, lines,
+  amount_cents, billed_from, billed_to, carried_cents, currency, event_count, id, lines,
   next_attempt_at, org_id, period_end, period_start, plan_slug, pricing, status,
   usage_cents, usage_computed_at
 ) values (
-  @amount_cents, @billed_from, @billed_to, @currency, @event_count, @id, @lines,
+  @amount_cents, @billed_from, @billed_to, @carried_cents, @currency, @event_count, @id, @lines,
   @next_attempt_at, @org_id, @period_end, @period_start, @plan_slug, @pricing, @status,
   @usage_cents, @usage_computed_at
 )
@@ -155,3 +155,19 @@ returning *;
 -- name: InsertBillingInvoiceEvent :exec
 insert into billing_invoice_events (actor, detail, from_status, id, invoice_id, to_status)
 values (@actor, @detail, @from_status, @id, @invoice_id, @to_status);
+
+-- name: LockUncoveredDeferredBillingInvoices :many
+-- The balance a close carries, locked so a concurrent void cannot pull a row out
+-- from under the carrier that is about to count it.
+select id, period_start, usage_cents from billing_invoices
+where org_id = @org_id and status = 'deferred' and covered_by is null
+order by period_start
+for update;
+
+-- name: CoverBillingInvoices :execrows
+update billing_invoices set covered_by = @covered_by
+where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;
+
+-- name: WaiveDeferredBillingInvoices :execrows
+update billing_invoices set status = 'waived'
+where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;

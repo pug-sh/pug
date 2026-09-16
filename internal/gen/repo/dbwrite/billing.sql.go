@@ -86,6 +86,24 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 	return result.RowsAffected(), nil
 }
 
+const coverBillingInvoices = `-- name: CoverBillingInvoices :execrows
+update billing_invoices set covered_by = $1
+where id = any($2::text[]) and status = 'deferred' and covered_by is null
+`
+
+type CoverBillingInvoicesParams struct {
+	CoveredBy pgtype.Text
+	Ids       []string
+}
+
+func (q *Queries) CoverBillingInvoices(ctx context.Context, arg CoverBillingInvoicesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, coverBillingInvoices, arg.CoveredBy, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createBillingCheckoutSession = `-- name: CreateBillingCheckoutSession :exec
 insert into billing_checkout_sessions (org_id, plan_slug, provider, ref)
 values ($1, $2, $3, $4)
@@ -246,13 +264,13 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 
 const insertBillingInvoice = `-- name: InsertBillingInvoice :one
 insert into billing_invoices (
-  amount_cents, billed_from, billed_to, currency, event_count, id, lines,
+  amount_cents, billed_from, billed_to, carried_cents, currency, event_count, id, lines,
   next_attempt_at, org_id, period_end, period_start, plan_slug, pricing, status,
   usage_cents, usage_computed_at
 ) values (
-  $1, $2, $3, $4, $5, $6, $7,
-  $8, $9, $10, $11, $12, $13, $14,
-  $15, $16
+  $1, $2, $3, $4, $5, $6, $7, $8,
+  $9, $10, $11, $12, $13, $14, $15,
+  $16, $17
 )
 on conflict (org_id, billed_from) do nothing
 returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
@@ -262,6 +280,7 @@ type InsertBillingInvoiceParams struct {
 	AmountCents     int64
 	BilledFrom      pgtype.Date
 	BilledTo        pgtype.Date
+	CarriedCents    int64
 	Currency        string
 	EventCount      int64
 	ID              string
@@ -284,6 +303,7 @@ func (q *Queries) InsertBillingInvoice(ctx context.Context, arg InsertBillingInv
 		arg.AmountCents,
 		arg.BilledFrom,
 		arg.BilledTo,
+		arg.CarriedCents,
 		arg.Currency,
 		arg.EventCount,
 		arg.ID,
@@ -443,6 +463,41 @@ func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) e
 	return err
 }
 
+const lockUncoveredDeferredBillingInvoices = `-- name: LockUncoveredDeferredBillingInvoices :many
+select id, period_start, usage_cents from billing_invoices
+where org_id = $1 and status = 'deferred' and covered_by is null
+order by period_start
+for update
+`
+
+type LockUncoveredDeferredBillingInvoicesRow struct {
+	ID          string
+	PeriodStart pgtype.Timestamptz
+	UsageCents  int64
+}
+
+// The balance a close carries, locked so a concurrent void cannot pull a row out
+// from under the carrier that is about to count it.
+func (q *Queries) LockUncoveredDeferredBillingInvoices(ctx context.Context, orgID string) ([]LockUncoveredDeferredBillingInvoicesRow, error) {
+	rows, err := q.db.Query(ctx, lockUncoveredDeferredBillingInvoices, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockUncoveredDeferredBillingInvoicesRow
+	for rows.Next() {
+		var i LockUncoveredDeferredBillingInvoicesRow
+		if err := rows.Scan(&i.ID, &i.PeriodStart, &i.UsageCents); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :execrows
 update billing_webhook_deliveries
 set processed_at = now(), error = $1
@@ -574,4 +629,17 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.TermsEffectiveAt,
 	)
 	return i, err
+}
+
+const waiveDeferredBillingInvoices = `-- name: WaiveDeferredBillingInvoices :execrows
+update billing_invoices set status = 'waived'
+where id = any($1::text[]) and status = 'deferred' and covered_by is null
+`
+
+func (q *Queries) WaiveDeferredBillingInvoices(ctx context.Context, ids []string) (int64, error) {
+	result, err := q.db.Exec(ctx, waiveDeferredBillingInvoices, ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
