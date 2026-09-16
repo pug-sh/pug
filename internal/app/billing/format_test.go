@@ -256,7 +256,6 @@ func TestReportShowsStoredSubscriptionsTheResolvedAnswerHides(t *testing.T) {
 		Currency:      "USD",
 		OrgID:         "o_2f9k",
 		PlanSlug:      "growth",
-		PriceCents:    2000,
 		Provider:      "dodo",
 		ProviderSubID: "sub_1",
 		Status:        "cancelled",

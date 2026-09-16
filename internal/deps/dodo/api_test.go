@@ -332,7 +332,7 @@ func TestFetchSubscriptionMatchesADelivery(t *testing.T) {
 	if fetched != normalized {
 		t.Errorf("fetched = %+v\nnormalized = %+v\nthe two apply paths disagree", fetched, normalized)
 	}
-	if fetched.OrgID != "org_abc" || fetched.Status != corebilling.SubStatusActive || fetched.PriceCents != 2000 {
+	if fetched.OrgID != "org_abc" || fetched.Status != corebilling.SubStatusActive {
 		t.Errorf("event = %+v", fetched)
 	}
 }

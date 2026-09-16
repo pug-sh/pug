@@ -10,7 +10,7 @@ import (
 func liveSub(slug string) *corebilling.Subscription {
 	return &corebilling.Subscription{
 		PlanSlug: slug, Status: corebilling.SubStatusActive,
-		PriceCents: 2_000, Currency: "USD",
+		Currency:           "USD",
 		ProviderCustomerID: "cus_1", ProviderSubID: "sub_1",
 		CurrentPeriodEnd: later.AddDate(0, 0, 12),
 	}

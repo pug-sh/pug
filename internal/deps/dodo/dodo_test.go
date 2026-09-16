@@ -161,8 +161,8 @@ func TestNormalize(t *testing.T) {
 	if event.Status != corebilling.SubStatusActive {
 		t.Errorf("status = %q, want active", event.Status)
 	}
-	if event.PriceCents != 2000 || event.Currency != "USD" {
-		t.Errorf("price = (%d, %q), want (2000, USD)", event.PriceCents, event.Currency)
+	if event.Currency != "USD" {
+		t.Errorf("currency = %q, want USD", event.Currency)
 	}
 	if event.ProductID != "prod_growth" {
 		t.Errorf("product_id = %q, want prod_growth", event.ProductID)

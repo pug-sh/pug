@@ -110,7 +110,6 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 		CheckoutRef:        p.Metadata[metadataCheckoutRef],
 		Currency:           strings.ToUpper(strings.TrimSpace(p.Currency)),
 		OrgID:              p.Metadata[metadataOrgID],
-		PriceCents:         p.RecurringPreTaxAmount,
 		ProductID:          p.ProductID,
 		ProviderCustomerID: p.CustomerID,
 		ProviderStatus:     p.Status,

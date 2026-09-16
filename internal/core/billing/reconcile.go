@@ -46,9 +46,9 @@ type ReconcileReport struct {
 	// Rows the pass could not settle: a failed read or write, or a read that
 	// decoded to nothing. The only counter the CronJob fails on.
 	Unreadable int
-	// A live subscription pug cannot apply: an unsold currency, no status, no
-	// customer, or a negative price. Counted rather than skipped, or the pass
-	// reports a sweep it did not make.
+	// A live subscription pug cannot apply: an unsold currency, no status, or no
+	// customer. Counted rather than skipped, or the pass reports a sweep it did
+	// not make.
 	Unapplicable int
 	// Two live subscriptions for one org, refused by the partial unique index — the
 	// one finding that means an org may be paying twice.

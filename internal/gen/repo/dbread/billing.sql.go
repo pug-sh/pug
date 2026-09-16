@@ -12,7 +12,7 @@ import (
 )
 
 const getLatestBillingSubscription = `-- name: GetLatestBillingSubscription :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
 where org_id = $1 and provider = $2
 order by create_time desc
 limit 1
@@ -37,7 +37,6 @@ func (q *Queries) GetLatestBillingSubscription(ctx context.Context, arg GetLates
 		&i.ID,
 		&i.OrgID,
 		&i.PlanSlug,
-		&i.PriceCents,
 		&i.Provider,
 		&i.ProviderCustomerID,
 		&i.ProviderStatus,
@@ -50,7 +49,7 @@ func (q *Queries) GetLatestBillingSubscription(ctx context.Context, arg GetLates
 }
 
 const getLiveBillingSubscription = `-- name: GetLiveBillingSubscription :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
 where org_id = $1 and status in ('active', 'past_due')
 `
 
@@ -67,7 +66,6 @@ func (q *Queries) GetLiveBillingSubscription(ctx context.Context, orgID string) 
 		&i.ID,
 		&i.OrgID,
 		&i.PlanSlug,
-		&i.PriceCents,
 		&i.Provider,
 		&i.ProviderCustomerID,
 		&i.ProviderStatus,
@@ -130,7 +128,7 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 }
 
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -164,6 +162,8 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.RetentionDaysOverride,
 			&i.TrialEndsAt,
 			&i.ProviderProductID,
+			&i.FlatFeeCents,
+			&i.RateCentsPerMillion,
 		); err != nil {
 			return nil, err
 		}
@@ -176,7 +176,7 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 }
 
 const listBillingSubscriptionsByOrg = `-- name: ListBillingSubscriptionsByOrg :many
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
 where org_id = $1
 order by create_time desc
 `
@@ -200,7 +200,6 @@ func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID strin
 			&i.ID,
 			&i.OrgID,
 			&i.PlanSlug,
-			&i.PriceCents,
 			&i.Provider,
 			&i.ProviderCustomerID,
 			&i.ProviderStatus,
@@ -220,7 +219,7 @@ func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID strin
 }
 
 const listBillingSubscriptionsByProvider = `-- name: ListBillingSubscriptionsByProvider :many
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
 where provider = $1
 order by id
 limit $3 offset $2
@@ -251,7 +250,6 @@ func (q *Queries) ListBillingSubscriptionsByProvider(ctx context.Context, arg Li
 			&i.ID,
 			&i.OrgID,
 			&i.PlanSlug,
-			&i.PriceCents,
 			&i.Provider,
 			&i.ProviderCustomerID,
 			&i.ProviderStatus,

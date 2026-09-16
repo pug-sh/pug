@@ -77,11 +77,6 @@ func (s *Service) applySubscriptionEvent(
 		return s.rejectDelivery(ctx, provider, d, "customer",
 			errors.New("subscription names no customer"))
 	}
-	if event.PriceCents < 0 {
-		return s.rejectDelivery(ctx, provider, d, "price",
-			errors.New("subscription carries a negative price"))
-	}
-
 	orgID, err := s.attributeDelivery(ctx, provider, event)
 	if err != nil {
 		// A read that failed is retryable; accepting it would lose the delivery for
@@ -265,7 +260,7 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live subscription")
 
 // ErrSubscriptionUnapplicable is a provider state no writer can store: an unsold
-// currency, no status, no customer, or a negative price. Returned rather than
+// currency, no status, or no customer. Returned rather than
 // reported as a skip, or a pass counts neither an apply nor a finding.
 var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be applied")
 
@@ -281,7 +276,7 @@ func (s *Service) applySubscription(
 	// Mirrors the column checks: unguarded they fail the insert. Logged here because
 	// the confirm path reaches it with a buyer already charged.
 	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
-		event.ProviderCustomerID == "" || event.PriceCents < 0 {
+		event.ProviderCustomerID == "" {
 		slog.ErrorContext(ctx, "subscription cannot be applied", slogx.Error(ErrSubscriptionUnapplicable),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
 			slog.String("currency", normalizeCurrency(event.Currency)),
@@ -338,7 +333,6 @@ func (s *Service) applySubscription(
 		ID:                 xid.New().String(),
 		OrgID:              orgID,
 		PlanSlug:           planSlug,
-		PriceCents:         event.PriceCents,
 		Provider:           provider.Name(),
 		ProviderCustomerID: event.ProviderCustomerID,
 		ProviderStatus:     event.ProviderStatus,

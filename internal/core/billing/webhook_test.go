@@ -113,7 +113,6 @@ func subEvent(orgID, subID, product string, status corebilling.SubStatus) corebi
 		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second),
 		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour).UTC().Truncate(time.Second),
 		OrgID:              orgID,
-		PriceCents:         2_000,
 		ProductID:          product,
 		ProviderCustomerID: "cus_" + orgID,
 		ProviderStatus:     string(status),
@@ -491,15 +490,6 @@ func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 				return e
 			},
 			reason: "customer",
-		},
-		{
-			name: "negative price",
-			event: func(orgID string) corebilling.SubscriptionEvent {
-				e := subEvent(orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-				e.PriceCents = -1
-				return e
-			},
-			reason: "price",
 		},
 		{
 			name: "no product",

@@ -45,7 +45,7 @@ var (
 )
 
 // Currency is the one pug sells in, enforced at the webhook boundary so
-// multi-currency changes here — and renames price_cents with it.
+// multi-currency changes here — and renames amount_cents with it.
 const Currency = "USD"
 
 // Payments is the provider wiring. Nil means no provider, which is legal.

@@ -88,9 +88,9 @@ func seedCustomer(t *testing.T, pg *testutil.TestPostgres, orgID string) {
 	t.Helper()
 	if _, err := pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, id, org_id, plan_slug, price_cents, provider,
+		   currency, id, org_id, plan_slug, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', 'sub00000000000000009', $1, 'growth', 2000, 'stub',
+		 values ('USD', 'sub00000000000000009', $1, 'growth', 'stub',
 		         'cus_1', 'active', 'psub_9', now(), 'active')`, orgID); err != nil {
 		t.Fatalf("seed subscription: %v", err)
 	}
@@ -396,9 +396,9 @@ func TestCancelledOrgIsStillManageable(t *testing.T) {
 
 	if _, err := pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, id, org_id, plan_slug, price_cents, provider,
+		   currency, id, org_id, plan_slug, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', 'sub00000000000000001', $1, 'growth', 2000, 'stub',
+		 values ('USD', 'sub00000000000000001', $1, 'growth', 'stub',
 		         'cus_1', 'cancelled', 'psub_1', now(), 'cancelled')`, orgID); err != nil {
 		t.Fatalf("seed subscription: %v", err)
 	}
@@ -433,9 +433,9 @@ func TestStatusReportsALiveSubscription(t *testing.T) {
 	periodEnd := time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second)
 	if _, err := pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, current_period_end, id, org_id, plan_slug, price_cents, provider,
+		   currency, current_period_end, id, org_id, plan_slug, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', $1, 'sub00000000000000000', $2, 'growth', 2000, 'stub',
+		 values ('USD', $1, 'sub00000000000000000', $2, 'growth', 'stub',
 		         'cus_1', 'on_hold', 'psub_1', now(), 'past_due')`,
 		periodEnd, orgID); err != nil {
 		t.Fatalf("seed subscription: %v", err)
@@ -626,7 +626,6 @@ func confirmEvent(orgID, subID, product string, status corebilling.SubStatus) co
 		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour),
 		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour),
 		OrgID:              orgID,
-		PriceCents:         2_000,
 		ProductID:          product,
 		ProviderCustomerID: "cus_" + orgID,
 		ProviderStatus:     string(status),

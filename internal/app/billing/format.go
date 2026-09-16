@@ -60,9 +60,9 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	} else {
 		section(w, "SUBSCRIPTIONS", "")
 		for _, sub := range subs {
-			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  %s  ends %s",
-				sub.PlanSlug, price(&sub.PriceCents, sub.Currency), sub.Provider,
-				sub.ProviderSubID, instant(sub.CurrentPeriodEnd.Time)))
+			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  ends %s",
+				sub.PlanSlug, sub.Provider, sub.ProviderSubID,
+				instant(sub.CurrentPeriodEnd.Time)))
 		}
 	}
 

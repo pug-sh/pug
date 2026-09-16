@@ -137,9 +137,9 @@ func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {
 	}
 	if _, err := pg.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, current_period_end, id, org_id, plan_slug, price_cents, provider,
+		   currency, current_period_end, id, org_id, plan_slug, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', now() + interval '20 days', $1, $2, 'growth', 2000, $3,
+		 values ('USD', now() + interval '20 days', $1, $2, 'growth', $3,
 		         'cus_1', 'active', 'sub_1', now() - interval '1 hour', 'active')`,
 		xid.New().String(), org.ID, dodo.Name); err != nil {
 		t.Fatalf("seed subscription: %v", err)

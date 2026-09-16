@@ -150,7 +150,7 @@ inbox, marked processed, logged as an error, and not applied. A currency pug
 cannot render honestly must not silently become a number on a dashboard.
 
 The payoff for writing the guard down instead of leaving it implicit: while it
-holds, `price_cents` is an accurate field name. When multi-currency arrives, the
+holds, `amount_cents` is an accurate field name. When multi-currency arrives, the
 guard is the single place that changes, and the rename to `price_minor_units`
 happens with it — JPY has no cents, so the name and the constraint fall together
 or not at all.
@@ -334,7 +334,6 @@ billing_subscriptions
   plan_slug             varchar(50) not null      -- resolved from the product id
   status                text not null             -- pug's vocabulary; §7
   provider_status       text not null             -- the provider's, verbatim; support reads this
-  price_cents           bigint not null           -- mirror; §4
   currency              varchar(3) not null       -- always USD while §3 holds
   current_period_start  timestamptz
   current_period_end    timestamptz
@@ -587,7 +586,7 @@ API for each. Then the consistency reports, which are the point of invariant 3:
 - Two live subscriptions for one org, refused by the partial unique index. The
   one finding here that means an org may be paying twice.
 - A live subscription no writer can store: an unsold currency, no status, no
-  customer, a negative price. The writer names it (`ErrSubscriptionUnapplicable`)
+  customer. The writer names it (`ErrSubscriptionUnapplicable`)
   rather than reporting a skip, or it would be neither an apply nor a finding and
   the pass would print a sweep it did not make.
 - A delivery that **never settled** (`Stranded`): every retry failed, so no reason
