@@ -157,7 +157,7 @@ the total lands in) has a cliff in the wrong direction: 2,000,000 events →
 more costs less. Graduated is monotonic. Volume would be a one-line change in
 `Price` (§15, item 1).
 
-**Retention is 5 years on every card and every deal:** `RetentionDays =
+**Retention is 5 years on every card and every deal:** `CardRetentionDays =
 5 * RetentionYearDays` (1,825). Still a rendered promise, still unenforced
 (billing.md §13); the per-org override stays for the deal that wants more.
 
@@ -200,7 +200,9 @@ func Price(card RateCard, events int64) Quote   // Quote{Events, Lines, TotalCen
 func PriceCustom(t CustomTerms, events int64) Quote
 ```
 
-`catalog` becomes `[]RateCard`, newest last, first slug `usage-2026-09`. The
+`catalog` becomes `[]RateCard`, newest last, first slug `usage-2026-09-1`, whose
+trailing number counts that month's cards so two prices minted in one month each
+get a slug of their own. The
 existing `TestCatalogIsPinned` golden test carries over: a card's `Currency`,
 `FreeEvents`, `Tiers` and `RetentionDays` are immutable once any org holds it,
 and `Retired` is pinned too, so retiring a card is a deliberate edit to the
@@ -211,7 +213,7 @@ them in production.
 
 Same mechanism billing.md §4.2 already has, applied to cards:
 
-- **A price change mints a new slug** (`usage-2027-01`) and sets
+- **A price change mints a new slug** (`usage-2027-01-1`) and sets
   `Retired: true` on the old one. Nothing is edited in place, nothing deleted.
 - **An org is pinned to the card it was shown when it opened its mandate
   checkout.** Pug writes the current non-retired slug into
@@ -224,7 +226,7 @@ Same mechanism billing.md §4.2 already has, applied to cards:
 - **An org with no mandate always sees the current card.** It agreed to
   nothing, so there is nothing to grandfather; its free allowance is whatever
   the current card says.
-- **The operator overrides both** with `pug billing set --plan usage-2026-09`:
+- **The operator overrides both** with `pug billing set --plan usage-2026-09-1`:
   a card slug on the entitlement row wins over the subscription's, which is how
   a customer is grandfathered by hand, moved onto new terms deliberately, or
   given a retired card as a favour. `SetPlan` keeps refusing a retired slug for
@@ -875,7 +877,7 @@ ledger read refuses rather than returning a customer's history one row short.
 
 ```shell
 pug billing show <org-id> [--history] [--invoices]
-pug billing set  <org-id> --plan usage-2026-09|custom --actor <who>
+pug billing set  <org-id> --plan usage-2026-09-1|custom --actor <who>
                           [--flat-fee 40000] [--rate-per-million 3000] [--events 5000000]
                           [--retention-days N] [--name ...] [--anchor-day N]
                           [--until 2027-01-01] [--note ...]

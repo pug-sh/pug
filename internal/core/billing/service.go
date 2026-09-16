@@ -70,13 +70,16 @@ type Service struct {
 	payments *Payments
 }
 
-// NewService checks the floors at wiring time: mustPlan would otherwise panic
-// inside Resolve on a request, once per dashboard load.
+// NewService checks the floors and the rate cards at wiring time, so a malformed
+// catalog fails startup instead of mispricing or panicking inside a request.
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool, payments *Payments) (*Service, error) {
 	for _, slug := range []string{SlugFree, SlugTrial} {
 		if _, ok := PlanBySlug(slug); !ok {
 			return nil, fmt.Errorf("billing: catalog is missing the floor plan %q", slug)
 		}
+	}
+	if err := checkRateCards(); err != nil {
+		return nil, err
 	}
 	return &Service{
 		read:           dbread.New(pgRO),
