@@ -83,6 +83,65 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 	}
 }
 
+// An undated end is stamped when first seen and never moved later by a re-read, or
+// every pass would stretch the days a close bills. An earlier provider date moves
+// it, and a mandate revived and ended again is dated afresh.
+func TestReconcileStampsAnUndatedEndOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _ := newPaidFixture(t)
+	const subID = "sub00000000000000011"
+	seedLiveSubscription(t, f, subID, "growth")
+	provider := &fetchProvider{
+		fakeProvider: fakeProvider{name: fakeProviderName},
+		remote:       map[string]corebilling.SubscriptionEvent{},
+	}
+	svc := f.svcWithProvider(t, provider)
+
+	reconcile := func(now time.Time, status corebilling.SubStatus, ended time.Time) {
+		t.Helper()
+		event := subEvent(f.orgID, subID, "prod_growth", status)
+		event.EndedAt = ended
+		provider.remote[subID] = event
+		if _, err := svc.Reconcile(t.Context(), now); err != nil {
+			t.Fatalf("Reconcile: %v", err)
+		}
+	}
+	endedAt := func() time.Time {
+		t.Helper()
+		var at time.Time
+		if err := f.pg.PgRO.QueryRow(t.Context(),
+			`select ended_at from billing_subscriptions where provider_sub_id = $1`, subID).Scan(&at); err != nil {
+			t.Fatalf("read ended_at: %v", err)
+		}
+		return at
+	}
+
+	first := time.Now().UTC().Truncate(time.Second)
+	reconcile(first, corebilling.SubStatusCancelled, time.Time{})
+	if got := endedAt(); !got.Equal(first) {
+		t.Fatalf("ended_at = %s, want the first read %s", got, first)
+	}
+	reconcile(first.Add(time.Hour), corebilling.SubStatusCancelled, time.Time{})
+	if got := endedAt(); !got.Equal(first) {
+		t.Errorf("ended_at = %s after a later re-read, want it kept at %s", got, first)
+	}
+
+	earlier := first.Add(-72 * time.Hour)
+	reconcile(first.Add(2*time.Hour), corebilling.SubStatusCancelled, earlier)
+	if got := endedAt(); !got.Equal(earlier) {
+		t.Errorf("ended_at = %s after an earlier provider date, want %s", got, earlier)
+	}
+
+	reconcile(first.Add(3*time.Hour), corebilling.SubStatusActive, time.Time{})
+	again := first.Add(4 * time.Hour)
+	reconcile(again, corebilling.SubStatusCancelled, time.Time{})
+	if got := endedAt(); !got.Equal(again) {
+		t.Errorf("ended_at = %s after a revived mandate ended again, want %s", got, again)
+	}
+}
+
 // The report's view of an org entitled to a paid plan nobody is charged for. Not
 // auto-fixed: writing to the money side from a guess is what this must not do.
 func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {

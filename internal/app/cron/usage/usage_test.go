@@ -224,7 +224,7 @@ func TestRunReturnsAFailedPass(t *testing.T) {
 	}
 }
 
-// A failed task must not stamp itself, or its next attempt waits a full interval.
+// A failed pass stamps no task, or the next pass skips work this one never did.
 func TestFailedPassLeavesCronStateUnstamped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -242,6 +242,56 @@ func TestFailedPassLeavesCronStateUnstamped(t *testing.T) {
 	}
 	if !last.IsZero() {
 		t.Errorf("full_recompute stamped %s after a failed pass, want zero", last)
+	}
+	metered, err := j.state.LastRun(t.Context(), taskMeter)
+	if err != nil {
+		t.Fatalf("LastRun: %v", err)
+	}
+	if !metered.IsZero() {
+		t.Errorf("meter stamped %s after a failed pass, want zero", metered)
+	}
+}
+
+// A meter back from an outage re-reads the days it missed.
+func TestMeterCatchesUpAfterAnOutage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+	j.rescanDays = 1
+
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	missed := time.Date(2026, 6, 16, 9, 0, 0, 0, time.UTC)
+
+	projectID := seedProject(t, pg)
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "user-1", "$pageview",
+		uuid.NewString(), nil, nil, missed)
+
+	if err := j.state.MarkRun(ctx, taskFullRecompute, now.Add(-time.Hour)); err != nil {
+		t.Fatalf("MarkRun: %v", err)
+	}
+	if err := j.state.MarkRun(ctx, taskMeter, time.Date(2026, 6, 15, 23, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("MarkRun: %v", err)
+	}
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter: %v", err)
+	}
+
+	if n, ok := usageDayCount(t, pg, projectID, coreusage.FloorDayUTC(missed)); !ok || n != 1 {
+		t.Errorf("missed day = %d (stored %v), want 1: the pass did not re-read the outage", n, ok)
+	}
+	last, err := j.state.LastRun(ctx, taskMeter)
+	if err != nil {
+		t.Fatalf("LastRun: %v", err)
+	}
+	if !last.Equal(now) {
+		t.Errorf("meter stamped %s, want %s", last, now)
 	}
 }
 
@@ -587,6 +637,9 @@ func TestSuspiciousEmptyReadRefreshesNoPeriod(t *testing.T) {
 	}
 	if n := countUsageDaily(t, pg); n != 1 {
 		t.Errorf("usage_daily has %d rows, want 1: the empty read wiped the window", n)
+	}
+	if metered, err := j.state.LastRun(ctx, taskMeter); err != nil || !metered.IsZero() {
+		t.Errorf("meter stamped %s (err %v), want zero: the next pass would not re-read this window", metered, err)
 	}
 }
 

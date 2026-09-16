@@ -93,7 +93,13 @@ set cancel_at_period_end = excluded.cancel_at_period_end,
     currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
-    ended_at = excluded.ended_at,
+    -- Once ended, only an earlier date moves it: a later read dated when pug saw it
+    -- must not stretch the days a close bills.
+    ended_at = case
+      when billing_subscriptions.status in ('active', 'past_due')
+        or excluded.status in ('active', 'past_due') then excluded.ended_at
+      else least(billing_subscriptions.ended_at, excluded.ended_at)
+    end,
     on_demand = excluded.on_demand,
     plan_slug = excluded.plan_slug,
     provider_customer_id = excluded.provider_customer_id,
@@ -136,3 +142,38 @@ where provider = @provider and provider_sub_id = @provider_sub_id;
 select distinct org_id from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
 limit 2;
+
+-- name: InsertBillingInvoice :one
+-- The unique (org, billed_from) key is the guard against two passes closing one
+-- window: the loser inserts nothing and reads no row.
+insert into billing_invoices (
+  amount_cents, billed_from, billed_to, carried_cents, currency, event_count, id, lines,
+  next_attempt_at, org_id, period_end, period_start, plan_slug, pricing, status,
+  usage_cents, usage_computed_at
+) values (
+  @amount_cents, @billed_from, @billed_to, @carried_cents, @currency, @event_count, @id, @lines,
+  @next_attempt_at, @org_id, @period_end, @period_start, @plan_slug, @pricing, @status,
+  @usage_cents, @usage_computed_at
+)
+on conflict (org_id, billed_from) do nothing
+returning *;
+
+-- name: InsertBillingInvoiceEvent :exec
+insert into billing_invoice_events (actor, detail, from_status, id, invoice_id, to_status)
+values (@actor, @detail, @from_status, @id, @invoice_id, @to_status);
+
+-- name: LockUncoveredDeferredBillingInvoices :many
+-- The balance a close carries, locked so a concurrent close cannot carry or sweep
+-- the same rows.
+select id, period_start, usage_cents from billing_invoices
+where org_id = @org_id and status = 'deferred' and covered_by is null
+order by period_start
+for update;
+
+-- name: CoverBillingInvoices :execrows
+update billing_invoices set covered_by = @covered_by
+where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;
+
+-- name: WaiveDeferredBillingInvoices :execrows
+update billing_invoices set status = 'waived'
+where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;

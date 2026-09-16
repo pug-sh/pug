@@ -26,7 +26,13 @@ set cancel_at_period_end = excluded.cancel_at_period_end,
     currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
-    ended_at = excluded.ended_at,
+    -- Once ended, only an earlier date moves it: a later read dated when pug saw it
+    -- must not stretch the days a close bills.
+    ended_at = case
+      when billing_subscriptions.status in ('active', 'past_due')
+        or excluded.status in ('active', 'past_due') then excluded.ended_at
+      else least(billing_subscriptions.ended_at, excluded.ended_at)
+    end,
     on_demand = excluded.on_demand,
     plan_slug = excluded.plan_slug,
     provider_customer_id = excluded.provider_customer_id,
@@ -80,6 +86,24 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 		arg.ProviderUpdatedAt,
 		arg.Status,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const coverBillingInvoices = `-- name: CoverBillingInvoices :execrows
+update billing_invoices set covered_by = $1
+where id = any($2::text[]) and status = 'deferred' and covered_by is null
+`
+
+type CoverBillingInvoicesParams struct {
+	CoveredBy pgtype.Text
+	Ids       []string
+}
+
+func (q *Queries) CoverBillingInvoices(ctx context.Context, arg CoverBillingInvoicesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, coverBillingInvoices, arg.CoveredBy, arg.Ids)
 	if err != nil {
 		return 0, err
 	}
@@ -244,6 +268,124 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 	return err
 }
 
+const insertBillingInvoice = `-- name: InsertBillingInvoice :one
+insert into billing_invoices (
+  amount_cents, billed_from, billed_to, carried_cents, currency, event_count, id, lines,
+  next_attempt_at, org_id, period_end, period_start, plan_slug, pricing, status,
+  usage_cents, usage_computed_at
+) values (
+  $1, $2, $3, $4, $5, $6, $7, $8,
+  $9, $10, $11, $12, $13, $14, $15,
+  $16, $17
+)
+on conflict (org_id, billed_from) do nothing
+returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
+`
+
+type InsertBillingInvoiceParams struct {
+	AmountCents     int64
+	BilledFrom      pgtype.Date
+	BilledTo        pgtype.Date
+	CarriedCents    int64
+	Currency        string
+	EventCount      int64
+	ID              string
+	Lines           []byte
+	NextAttemptAt   pgtype.Timestamptz
+	OrgID           string
+	PeriodEnd       pgtype.Timestamptz
+	PeriodStart     pgtype.Timestamptz
+	PlanSlug        string
+	Pricing         []byte
+	Status          string
+	UsageCents      int64
+	UsageComputedAt pgtype.Timestamptz
+}
+
+// The unique (org, billed_from) key is the guard against two passes closing one
+// window: the loser inserts nothing and reads no row.
+func (q *Queries) InsertBillingInvoice(ctx context.Context, arg InsertBillingInvoiceParams) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, insertBillingInvoice,
+		arg.AmountCents,
+		arg.BilledFrom,
+		arg.BilledTo,
+		arg.CarriedCents,
+		arg.Currency,
+		arg.EventCount,
+		arg.ID,
+		arg.Lines,
+		arg.NextAttemptAt,
+		arg.OrgID,
+		arg.PeriodEnd,
+		arg.PeriodStart,
+		arg.PlanSlug,
+		arg.Pricing,
+		arg.Status,
+		arg.UsageCents,
+		arg.UsageComputedAt,
+	)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
+const insertBillingInvoiceEvent = `-- name: InsertBillingInvoiceEvent :exec
+insert into billing_invoice_events (actor, detail, from_status, id, invoice_id, to_status)
+values ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertBillingInvoiceEventParams struct {
+	Actor      string
+	Detail     string
+	FromStatus string
+	ID         string
+	InvoiceID  string
+	ToStatus   string
+}
+
+func (q *Queries) InsertBillingInvoiceEvent(ctx context.Context, arg InsertBillingInvoiceEventParams) error {
+	_, err := q.db.Exec(ctx, insertBillingInvoiceEvent,
+		arg.Actor,
+		arg.Detail,
+		arg.FromStatus,
+		arg.ID,
+		arg.InvoiceID,
+		arg.ToStatus,
+	)
+	return err
+}
+
 const insertBillingWebhookDelivery = `-- name: InsertBillingWebhookDelivery :one
 insert into billing_webhook_deliveries (event_type, payload, provider, webhook_id)
 values ($1, $2, $3, $4)
@@ -325,6 +467,41 @@ select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))
 func (q *Queries) LockBillingEntitlementOrg(ctx context.Context, orgID string) error {
 	_, err := q.db.Exec(ctx, lockBillingEntitlementOrg, orgID)
 	return err
+}
+
+const lockUncoveredDeferredBillingInvoices = `-- name: LockUncoveredDeferredBillingInvoices :many
+select id, period_start, usage_cents from billing_invoices
+where org_id = $1 and status = 'deferred' and covered_by is null
+order by period_start
+for update
+`
+
+type LockUncoveredDeferredBillingInvoicesRow struct {
+	ID          string
+	PeriodStart pgtype.Timestamptz
+	UsageCents  int64
+}
+
+// The balance a close carries, locked so a concurrent close cannot carry or sweep
+// the same rows.
+func (q *Queries) LockUncoveredDeferredBillingInvoices(ctx context.Context, orgID string) ([]LockUncoveredDeferredBillingInvoicesRow, error) {
+	rows, err := q.db.Query(ctx, lockUncoveredDeferredBillingInvoices, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockUncoveredDeferredBillingInvoicesRow
+	for rows.Next() {
+		var i LockUncoveredDeferredBillingInvoicesRow
+		if err := rows.Scan(&i.ID, &i.PeriodStart, &i.UsageCents); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :execrows
@@ -458,4 +635,17 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.TermsEffectiveAt,
 	)
 	return i, err
+}
+
+const waiveDeferredBillingInvoices = `-- name: WaiveDeferredBillingInvoices :execrows
+update billing_invoices set status = 'waived'
+where id = any($1::text[]) and status = 'deferred' and covered_by is null
+`
+
+func (q *Queries) WaiveDeferredBillingInvoices(ctx context.Context, ids []string) (int64, error) {
+	result, err := q.db.Exec(ctx, waiveDeferredBillingInvoices, ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

@@ -204,18 +204,17 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	if isCard && card.Retired && cur.PlanSlug != card.Slug {
 		return Record{}, ErrPlanRetired
 	}
-	// The row usually predates the deal — extend-trial writes one months earlier —
-	// so create_time cannot date one: without this the first close would bill every
-	// elapsed period at the new rate. The allowance is priced terms too, and
-	// renewing a LAPSED deal is a new deal even on the old money, or the gap it ran
-	// through would be invoiced at the renewal's rate.
 	now := time.Now().UTC().Truncate(time.Second)
+	// A deal ends a running trial rather than erasing it: a close still skips the days
+	// the trial covered.
+	if next.PlanSlug == SlugCustom && next.TrialEndsAt.After(now) {
+		next.TrialEndsAt = now
+	}
+	// Stamped when a deal starts or a lapsed one renews; any other write keeps it, so
+	// the terms price every day not yet invoiced.
 	if _, deal := next.Terms(); !deal {
 		next.TermsEffectiveAt = time.Time{}
-	} else if contractLapsed(cur, now) ||
-		next.FlatFeeCents != cur.FlatFeeCents ||
-		next.RateCentsPerMillion != cur.RateCentsPerMillion ||
-		next.IncludedEventsOverride != cur.IncludedEventsOverride {
+	} else if _, had := cur.Terms(); !had || contractLapsed(cur, now) && !contractLapsed(next, now) {
 		next.TermsEffectiveAt = now
 	}
 	if next.FlatFeeCents < 0 || next.RateCentsPerMillion < 0 {
@@ -473,11 +472,7 @@ func applyChange(cur Record, c Change) Record {
 	next.FlatFeeCents = orKeep(c.FlatFeeCents, cur.FlatFeeCents)
 	next.RateCentsPerMillion = orKeep(c.RateCentsPerMillion, cur.RateCentsPerMillion)
 
-	if next.PlanSlug == SlugCustom {
-		// A deal in force resolves ahead of any trial date, so leaving one would make
-		// the state depend on which of two the resolver consults first.
-		next.TrialEndsAt = time.Time{}
-	} else {
+	if next.PlanSlug != SlugCustom {
 		// Only a deal carries money, so a card pin — or no pin at all — cannot leave a
 		// price behind for the next custom set to satisfy its guard with.
 		next.FlatFeeCents, next.RateCentsPerMillion = 0, 0
@@ -595,13 +590,11 @@ func (s *Service) Preview(ctx context.Context, orgID string, events int64, now t
 	// With the mandate: a grandfathered org is previewed on the card it pinned,
 	// which is the one it will be charged on.
 	ent := Resolve(row.OrgCreateTime.Time, recordFromRow(row), sub, now, true)
-	switch {
-	case ent.Terms != nil:
-		return ent, PriceCustom(*ent.Terms, events), nil
-	case ent.Card != nil:
-		return ent, Price(*ent.Card, events), nil
+	quote, ok := ent.quote(events)
+	if !ok {
+		return ent, Quote{}, fmt.Errorf("%w: %s", ErrPlanNotFound, ent.Slug)
 	}
-	return ent, Quote{}, fmt.Errorf("%w: %s", ErrPlanNotFound, ent.Slug)
+	return ent, quote, nil
 }
 
 // isOrgFKViolation reports the upsert failing because no such org exists, which

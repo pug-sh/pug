@@ -601,7 +601,8 @@ Three boundary rules the flags do not spell out:
   org's age (§6), derived identically whether a row exists, so recording an
   anchor day or a note on a three-day-old org leaves it trialing. A `set` to a
   *granted* plan does end the trial state — the plan resolves ahead of the trial
-  date (§6), and `applyChange` clears `trial_ends_at` with it.
+  date (§6). Recording a deal ends `trial_ends_at` at that instant rather than
+  clearing it, so a close still skips the trial's days.
 
 A negotiated deal (§4.1) is one `set`:
 

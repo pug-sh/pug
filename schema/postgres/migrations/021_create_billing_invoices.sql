@@ -9,8 +9,7 @@ alter table billing_entitlements
     constraint billing_entitlements_flat_fee_check check (flat_fee_cents >= 0),
   add column rate_cents_per_million bigint
     constraint billing_entitlements_rate_check check (rate_cents_per_million >= 0),
-  -- When these terms start pricing. An earlier period is priced on what it was
-  -- sold under, so a renegotiation cannot reprice a month already used.
+  -- When the deal started, or a lapsed one renewed; a close invoices it from then.
   add column terms_effective_at timestamptz;
 
 -- free and trial stop being plans, so a row carries a trial end, an anchor day or
@@ -58,9 +57,9 @@ alter table billing_entitlement_history
 -- only invites someone to read it as the bill.
 alter table billing_subscriptions drop column price_cents;
 
--- on_demand is what the webhook admits; the two beside it are what a close clips
--- the last period to. They keep their default, because false is a real answer --
--- not chargeable, not ending -- and the safe one for a writer that forgets.
+-- on_demand is what the webhook admits, and a close bills a mandate until ended_at.
+-- The booleans keep their default, because false is a real answer -- not
+-- chargeable, not ending -- and the safe one for a writer that forgets.
 alter table billing_subscriptions
   add column on_demand boolean not null default false,
   add column cancel_at_period_end boolean not null default false,
@@ -113,7 +112,8 @@ create table billing_invoices (
   provider_payment_id text,
   provider_sub_id text,
   status text not null
-    constraint billing_invoices_status_check check (status <> ''),
+    constraint billing_invoices_status_check check (status in ('open', 'charging', 'charged',
+      'paid', 'failed', 'uncollectible', 'waived', 'deferred', 'void', 'refunded')),
   -- Added on top by the provider, from the settled payment; null until paid.
   tax_cents bigint
     constraint billing_invoices_tax_check check (tax_cents >= 0),
@@ -152,7 +152,8 @@ create table billing_invoice_events (
   id char(20) primary key,
   invoice_id char(20) not null references billing_invoices(id) on delete cascade,
   to_status text not null
-    constraint billing_invoice_events_to_status_check check (to_status <> '')
+    constraint billing_invoice_events_to_status_check check (to_status in ('open', 'charging',
+      'charged', 'paid', 'failed', 'uncollectible', 'waived', 'deferred', 'void', 'refunded'))
 );
 
 create index billing_invoice_events_invoice_idx on billing_invoice_events (invoice_id, at);

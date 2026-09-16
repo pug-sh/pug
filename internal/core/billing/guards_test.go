@@ -180,10 +180,9 @@ func TestLeavingCustomClearsTheMoney(t *testing.T) {
 	}
 }
 
-// A deal is invoiced from terms_effective_at, not from the row's birth: the row
-// usually predates it. Unchanged terms leave the stamp where it is, or every
-// renewal would move the day the deal is billed from.
-func TestTermsEffectiveAtStampsOnlyWhenTheMoneyChanges(t *testing.T) {
+// Only a deal starting, or a lapsed one renewing, stamps terms_effective_at; any
+// other write keeps it, so the terms price every day not yet invoiced.
+func TestTermsEffectiveAtStampsOnlyWhenADealStarts(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -197,21 +196,8 @@ func TestTermsEffectiveAtStampsOnlyWhenTheMoneyChanges(t *testing.T) {
 		t.Fatal("a new deal stored no terms_effective_at; it has no day to be invoiced from")
 	}
 
-	// A renewal on unchanged terms: a new end date and nothing else.
-	renewed, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:       corebilling.SlugCustom,
-		ContractEndsAt: new(time.Now().AddDate(1, 0, 0)),
-	})
-	if err != nil {
-		t.Fatalf("renew: %v", err)
-	}
-	if !renewed.TermsEffectiveAt.Equal(first.TermsEffectiveAt) {
-		t.Errorf("terms_effective_at moved to %s on an unchanged renewal, want %s",
-			renewed.TermsEffectiveAt, first.TermsEffectiveAt)
-	}
-
-	// Backdated first: SetPlan stamps to the second and this test does both writes
-	// inside one, so without it a real restamp is invisible.
+	// Backdated: SetPlan stamps to the second and this test writes inside one, so
+	// without it a real restamp is invisible.
 	backdated := first.TermsEffectiveAt.AddDate(0, -1, 0)
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		`update billing_entitlements set terms_effective_at = $2 where org_id = $1`,
@@ -219,7 +205,6 @@ func TestTermsEffectiveAtStampsOnlyWhenTheMoneyChanges(t *testing.T) {
 		t.Fatalf("backdate the stamp: %v", err)
 	}
 
-	// The allowance is priced terms too, so changing it restamps.
 	repriced, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugCustom,
 		IncludedEvents: new(int64(5_000_000)),
@@ -227,9 +212,36 @@ func TestTermsEffectiveAtStampsOnlyWhenTheMoneyChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reprice: %v", err)
 	}
-	if !repriced.TermsEffectiveAt.After(backdated) {
-		t.Errorf("terms_effective_at = %s after changing the allowance, want it restamped past %s",
-			repriced.TermsEffectiveAt, backdated)
+	if !repriced.TermsEffectiveAt.Equal(backdated) {
+		t.Errorf("terms_effective_at moved to %s on a reprice, want %s", repriced.TermsEffectiveAt, backdated)
+	}
+
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_entitlements set contract_ends_at = now() - interval '1 day' where org_id = $1`,
+		f.orgID); err != nil {
+		t.Fatalf("lapse the deal: %v", err)
+	}
+	noted, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug: corebilling.SlugCustom,
+		Note:     new("INV-456"),
+	})
+	if err != nil {
+		t.Fatalf("note: %v", err)
+	}
+	if !noted.TermsEffectiveAt.Equal(backdated) {
+		t.Errorf("terms_effective_at moved to %s on a note to a lapsed deal, want %s", noted.TermsEffectiveAt, backdated)
+	}
+
+	// Renewing a lapsed deal is a new deal, or the gap would bill at its rate.
+	renewed, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugCustom,
+		ContractEndsAt: new(time.Now().AddDate(1, 0, 0)),
+	})
+	if err != nil {
+		t.Fatalf("renew: %v", err)
+	}
+	if !renewed.TermsEffectiveAt.After(backdated) {
+		t.Errorf("terms_effective_at = %s after renewing a lapsed deal, want it restamped", renewed.TermsEffectiveAt)
 	}
 }
 
@@ -328,9 +340,10 @@ func TestAFailedHistoryAppendRollsBackTheChange(t *testing.T) {
 	}
 }
 
-// Recording a deal must drop a stored trial date, or a later `--plan ""`
-// resurrects it and the org resolves TRIALING on terms it is being charged for.
-func TestRecordingADealClearsTheTrialDate(t *testing.T) {
+// Recording a deal ends a running trial, or a later `--plan ""` resurrects it and the
+// org resolves TRIALING on terms it is being charged for. It ends it rather than
+// erasing it, or a close would bill the trial's days.
+func TestRecordingADealEndsTheTrial(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -344,18 +357,18 @@ func TestRecordingADealClearsTheTrialDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record the deal: %v", err)
 	}
-	if !converted.TrialEndsAt.IsZero() {
-		t.Errorf("trial_ends_at = %s after recording a deal, want it cleared", converted.TrialEndsAt)
+	if converted.TrialEndsAt.IsZero() || converted.TrialEndsAt.After(time.Now()) {
+		t.Errorf("trial_ends_at = %s after recording a deal, want it ended now", converted.TrialEndsAt)
 	}
 
-	// The date must stay gone once the pin is removed, which is where a stale one
+	// The trial must stay over once the pin is removed, which is where a stale date
 	// would actually bite.
 	back, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: ""})
 	if err != nil {
 		t.Fatalf("remove the pin: %v", err)
 	}
-	if !back.TrialEndsAt.IsZero() {
-		t.Fatalf("trial_ends_at = %s after removing the pin, want it cleared", back.TrialEndsAt)
+	if back.TrialEndsAt.After(time.Now()) {
+		t.Fatalf("trial_ends_at = %s after removing the pin, want it over", back.TrialEndsAt)
 	}
 	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
