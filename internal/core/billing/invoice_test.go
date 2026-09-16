@@ -499,7 +499,7 @@ func TestCloseWritesNothingItShouldNot(t *testing.T) {
 	})
 }
 
-// A subscription in a status pug has no word for is not live, and holds up nothing.
+// A subscription with an unrecognized status bills none of its days, and holds up nothing.
 func TestCloseBillsBesideAnUnknownSubscriptionStatus(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -507,17 +507,55 @@ func TestCloseBillsBesideAnUnknownSubscriptionStatus(t *testing.T) {
 	f := newFixture(t)
 	project := seedProjectFor(t, f)
 	seedDaily(t, f, project, periodStart, periodEnd, 100_000)
-	seedMandate(t, f, periodStart, time.Time{})
-	seedMandate(t, f, day(time.August, 20), day(time.August, 20))
+	seedMandate(t, f, day(time.August, 20), time.Time{})
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`update billing_subscriptions set status = 'pending' where org_id = $1 and status = 'cancelled'`,
-		f.orgID); err != nil {
+		`update billing_subscriptions set status = 'pending', ended_at = $2 where org_id = $1`,
+		f.orgID, periodEnd.AddDate(1, 0, 0)); err != nil {
 		t.Fatalf("leave a checkout pending: %v", err)
 	}
+	seedMandate(t, f, periodStart, day(time.August, 20))
 	stampMeter(t, f, closeNow)
 
-	if r := closePeriods(t, f, closeNow); r.Closed != 1 {
-		t.Errorf("report = %+v, want the live mandate's period closed", r)
+	closePeriods(t, f, closeNow)
+	if got := invoices(t, f); len(got) != 1 || !got[0].billedTo.Equal(day(time.August, 20)) {
+		t.Errorf("invoices = %s, want [08-10, 08-20) from the cancelled mandate alone", windows(got))
+	}
+}
+
+// One org's failed close does not hold up the orgs listed after it.
+func TestCloseCarriesOnPastAFailingOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	other, err := dbwrite.New(f.pg.PgW).CreateOrg(t.Context(), dbwrite.CreateOrgParams{
+		ID: xid.New().String(), DisplayName: "other",
+	})
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	testutil.SetOrgCreateTime(t, f.pg.PgW, other.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
+	for _, org := range []*fixture{f, {svc: f.svc, pg: f.pg, orgID: other.ID}} {
+		seedDaily(t, org, seedProjectFor(t, org), periodStart, periodEnd, 100_000)
+		seedMandate(t, org, periodStart, time.Time{})
+		stampMeter(t, org, closeNow)
+	}
+	for _, stmt := range []string{
+		`create function fail_first_org() returns trigger language plpgsql as $$ begin
+		   if new.org_id = (select min(id) from orgs) then raise exception 'injected'; end if;
+		   return new;
+		 end $$`,
+		`create trigger fail_first_org before insert on billing_invoices
+		   for each row execute function fail_first_org()`,
+	} {
+		if _, err := f.pg.PgW.Exec(t.Context(), stmt); err != nil {
+			t.Fatalf("fail the first org's close: %v", err)
+		}
+	}
+
+	r, err := f.svc.ClosePeriods(t.Context(), closeNow, grace)
+	if err == nil || r.Closed != 1 {
+		t.Errorf("report = %+v, err = %v, want the second org closed and the failure returned", r, err)
 	}
 }
 

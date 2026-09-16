@@ -100,8 +100,8 @@ const (
 
 // ClosePeriods invoices every period that is due and safe to price. grace is the
 // meter's trailing window: after period_end + grace its count is as final as the
-// meter makes it. Postgres failures return; Held, Dropped and Unpriceable are
-// findings for the caller, not errors.
+// meter makes it. A Postgres failure stops only its own org, and the first is
+// returned; Held, Dropped and Unpriceable are findings for the caller, not errors.
 func (s *Service) ClosePeriods(ctx context.Context, now time.Time, grace time.Duration) (CloseReport, error) {
 	var r CloseReport
 	if !s.billingEnabled {
@@ -113,15 +113,16 @@ func (s *Service) ClosePeriods(ctx context.Context, now time.Time, grace time.Du
 		telemetry.RecordError(ctx, err)
 		return r, err
 	}
+	var firstErr error
 	for _, org := range orgs {
 		if err := ctx.Err(); err != nil {
 			return r, err
 		}
-		if err := s.closeOrg(ctx, org.ID, org.CreateTime.Time, now, grace, &r); err != nil {
-			return r, err
+		if err := s.closeOrg(ctx, org.ID, org.CreateTime.Time, now, grace, &r); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return r, nil
+	return r, firstErr
 }
 
 func (s *Service) closeOrg(ctx context.Context, orgID string, orgCreate, now time.Time, grace time.Duration, r *CloseReport) error {
@@ -453,7 +454,7 @@ func appendInvoiceEvent(
 }
 
 // subscriptionsOf is every mandate the org ever held, live or not: a close bills
-// the days each one covered.
+// the days each one covered. One with an unrecognized status covered none.
 func (s *Service) subscriptionsOf(ctx context.Context, orgID string) ([]Subscription, error) {
 	rows, err := dbread.New(s.pgW).ListBillingSubscriptionsByOrg(ctx, orgID)
 	if err != nil {
@@ -463,8 +464,9 @@ func (s *Service) subscriptionsOf(ctx context.Context, orgID string) ([]Subscrip
 	}
 	out := make([]Subscription, 0, len(rows))
 	for _, row := range rows {
-		sub, _ := subscriptionFromRow(row)
-		out = append(out, sub)
+		if sub, ok := subscriptionFromRow(row); ok {
+			out = append(out, sub)
+		}
 	}
 	return out, nil
 }

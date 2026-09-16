@@ -46,10 +46,11 @@ func readLiveSubscription(ctx context.Context, r *dbread.Queries, orgID string) 
 	return &sub, nil
 }
 
-// subscriptionFromRow keeps a status pug has no word for verbatim, where it is not
-// live; ok reports whether pug knows the word.
 func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
-	_, ok := ParseSubStatus(row.Status)
+	status, ok := ParseSubStatus(row.Status)
+	if !ok {
+		return Subscription{}, false
+	}
 	return Subscription{
 		CancelAtPeriodEnd:  row.CancelAtPeriodEnd,
 		CreateTime:         row.CreateTime.Time,
@@ -61,8 +62,8 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 		PlanSlug:           row.PlanSlug,
 		ProviderCustomerID: row.ProviderCustomerID,
 		ProviderSubID:      row.ProviderSubID,
-		Status:             SubStatus(row.Status),
-	}, ok
+		Status:             status,
+	}, true
 }
 
 // anyProviderCustomer resolves the customer the portal is opened for. Checkout

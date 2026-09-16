@@ -473,9 +473,10 @@ it is safe to price, and prices it:
   mandate closes once, summing only the days a mandate was live and priced on
   the latest, so it gets one allowance and the days between a removed card and
   its replacement are not billed, though its `[billed_from, billed_to)` spans
-  them. A subscription in a status pug has no word for is not live, here as
-  everywhere. `usage_periods` is untouched: it stays the dashboard's live
-  number, and the invoice stores its own count, which is the bill's.
+  them. A subscription with an unrecognized status is not live, here as
+  everywhere, so none of its days are billed. `usage_periods` is untouched: it
+  stays the dashboard's live number, and the invoice stores its own count, which
+  is the bill's.
 - **Which orgs:** those with a mandate live at any point in the period, and
   those on a custom plan, card or not (§19.15). A free org gets no invoice row;
   its over-allowance usage is reported by the invoicing pass as unbilled usage

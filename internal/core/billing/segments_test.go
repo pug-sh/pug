@@ -65,11 +65,7 @@ func TestBillableSegments(t *testing.T) {
 		recurring.OnDemand = false
 		undated := mandate(current.Slug, day(12), time.Time{})
 		undated.Status = SubStatusCancelled
-		pending := mandate(current.Slug, day(12), time.Time{})
-		pending.Status = "pending"
-		for name, sub := range map[string]Subscription{
-			"recurring": recurring, "an undated end": undated, "an unknown status": pending,
-		} {
+		for name, sub := range map[string]Subscription{"recurring": recurring, "an undated end": undated} {
 			if segs := segments(Record{}, sub); len(segs) != 0 {
 				t.Errorf("%s: billed %d segments, want none", name, len(segs))
 			}
