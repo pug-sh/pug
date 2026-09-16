@@ -88,8 +88,7 @@ type SubscriptionEvent struct {
 	// mapping is the thing in question.
 	ProviderStatus string
 
-	PriceCents int64
-	Currency   string
+	Currency string
 
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
@@ -180,10 +179,9 @@ func ParseSubStatus(v string) (SubStatus, bool) {
 
 // Subscription is the stored mirror row, as resolution consumes it.
 type Subscription struct {
-	PlanSlug   string
-	Status     SubStatus
-	PriceCents int64
-	Currency   string
+	PlanSlug string
+	Status   SubStatus
+	Currency string
 
 	ProviderCustomerID string
 	ProviderSubID      string

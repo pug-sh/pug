@@ -98,7 +98,17 @@ func (c *CLI) ExtendTrial(ctx context.Context, out io.Writer, orgID, actor strin
 	return c.report(ctx, out, orgID, rec, nil)
 }
 
-// Clear deletes the row, returning the org to the derived trial-then-free floors.
+// Preview prices a count of events on what the org would be charged today: the
+// same function an invoice uses, so a deal can be sanity-checked before it is set.
+func (c *CLI) Preview(ctx context.Context, out io.Writer, orgID string, events int64) error {
+	ent, quote, err := c.svc.Preview(ctx, orgID, events, time.Now())
+	if err != nil {
+		return err
+	}
+	return writePreview(out, ent, events, quote)
+}
+
+// Clear deletes the row, returning the org to the derived trial-then-card state.
 func (c *CLI) Clear(ctx context.Context, out io.Writer, orgID, actor string) error {
 	if err := c.svc.Clear(ctx, orgID, actor); err != nil {
 		return err

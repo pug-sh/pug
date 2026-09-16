@@ -520,7 +520,7 @@ billing_invoices
   paid_at, failed_at    timestamptz
   create_time, update_time
 
-  unique (org_id, billed_from)                 -- no day billed twice: each close starts at the last billed_to (section 8.1)
+  unique (org_id, billed_from)                 -- one close per start day; no day is billed twice because each close starts at the last billed_to (section 8.1)
 
 billing_invoice_events                          -- append-only, like the entitlement history
   id, invoice_id, at, from_status, to_status, actor, detail

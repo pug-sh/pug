@@ -56,9 +56,10 @@ type BillingServiceClient interface {
 	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
 	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-	// the viewer floor, but starting a checkout spends money. The price lives on
-	// the provider's product; this request names a plan slug, never an amount.
+	// Opens a checkout against the one product every org authorizes against.
+	// Admin-only: the quota banner is on the viewer floor, but this is the step
+	// that lets pug take money. The request names a plan slug -- the current rate
+	// card or custom -- never an amount; usage is priced by pug after each period.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
@@ -69,9 +70,9 @@ type BillingServiceClient interface {
 	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor: the
-	// person reading the quota banner wants to know what the next tier costs, they
-	// just cannot buy it. Never returns a product id, and never the floors.
+	// The current rate card, plus custom for an org whose row records a deal. On
+	// the viewer floor: the person reading the quota banner wants to know what
+	// usage costs, they just cannot buy it. Never returns a product id.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 
@@ -159,9 +160,10 @@ type BillingServiceHandler interface {
 	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
 	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-	// the viewer floor, but starting a checkout spends money. The price lives on
-	// the provider's product; this request names a plan slug, never an amount.
+	// Opens a checkout against the one product every org authorizes against.
+	// Admin-only: the quota banner is on the viewer floor, but this is the step
+	// that lets pug take money. The request names a plan slug -- the current rate
+	// card or custom -- never an amount; usage is priced by pug after each period.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
@@ -172,9 +174,9 @@ type BillingServiceHandler interface {
 	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor: the
-	// person reading the quota banner wants to know what the next tier costs, they
-	// just cannot buy it. Never returns a product id, and never the floors.
+	// The current rate card, plus custom for an org whose row records a deal. On
+	// the viewer floor: the person reading the quota banner wants to know what
+	// usage costs, they just cannot buy it. Never returns a product id.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 

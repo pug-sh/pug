@@ -45,23 +45,12 @@ func (s *Server) GetBillingStatus(
 		}
 		return nil, internalErr()
 	}
-	// The stored row, for purchasable alone: a negotiated deal's product id lives
-	// there and never reaches the wire.
-	rec, err := s.service.StoredRecord(ctx, orgID)
-	if err != nil {
-		if errors.Is(err, corebilling.ErrOrgNotFound) {
-			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
-		}
-		return nil, internalErr()
-	}
-
 	resp := &billingv1.GetBillingStatusResponse{
 		BillingEnabled: proto.Bool(ent.BillingEnabled),
 		Plan: &billingv1.Plan{
 			Slug:        proto.String(ent.Slug),
 			DisplayName: proto.String(ent.DisplayName),
 			Currency:    proto.String(ent.Currency),
-			PriceCents:  int64Value(ent.PriceCents),
 		},
 		PeriodEnd:   timestamppb.New(ent.PeriodEnd),
 		PeriodStart: timestamppb.New(ent.PeriodStart),
@@ -76,11 +65,13 @@ func (s *Server) GetBillingStatus(
 	resp.SubscriptionStatus = subStatusToRPC(ent.SubStatus).Enum()
 	// Read from the same helpers the two session RPCs refuse on, so a button the
 	// dashboard renders and a call that would fail cannot drift apart.
-	resp.Purchasable = proto.Bool(s.service.Purchasable(rec))
+	resp.Purchasable = proto.Bool(s.service.Purchasable())
 	resp.Manageable = proto.Bool(s.service.Manageable(ctx, orgID))
-	if !ent.SubPeriodEnd.IsZero() {
-		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
-	}
+	// Exactly one of these is set while billing is on and the plan resolves; both
+	// are absent with it off, where there is nothing to price.
+	resp.RateCard = rateCardToRPC(ent.Card)
+	resp.CustomTerms = customTermsToRPC(ent.Terms)
+	resp.Chargeable = proto.Bool(ent.Chargeable)
 	if !ent.TrialEndsAt.IsZero() {
 		resp.TrialEndsAt = timestamppb.New(ent.TrialEndsAt)
 	}
@@ -103,6 +94,39 @@ func int64Value(v *int64) *wrapperspb.Int64Value {
 		return nil
 	}
 	return wrapperspb.Int64(*v)
+}
+
+func rateCardToRPC(card *corebilling.RateCard) *billingv1.RateCard {
+	if card == nil {
+		return nil
+	}
+	tiers := make([]*billingv1.RateTier, 0, len(card.Tiers))
+	for _, t := range card.Tiers {
+		tiers = append(tiers, &billingv1.RateTier{
+			UpToEvents:      proto.Int64(t.UpToEvents),
+			CentsPerMillion: proto.Int64(t.CentsPerMillion),
+		})
+	}
+	return &billingv1.RateCard{FreeEvents: proto.Int64(card.FreeEvents), Tiers: tiers}
+}
+
+// customTermsToRPC leaves a term the deal does not carry ABSENT: a zero fee would
+// read as free, and a zero rate as usage nobody is charged for.
+func customTermsToRPC(terms *corebilling.CustomTerms) *billingv1.CustomTerms {
+	if terms == nil {
+		return nil
+	}
+	out := &billingv1.CustomTerms{}
+	if terms.FlatFeeCents > 0 {
+		out.FlatFeeCents = wrapperspb.Int64(terms.FlatFeeCents)
+	}
+	if terms.RateCentsPerMillion > 0 {
+		out.RateCentsPerMillion = wrapperspb.Int64(terms.RateCentsPerMillion)
+	}
+	if terms.IncludedEvents > 0 {
+		out.IncludedEvents = wrapperspb.Int64(terms.IncludedEvents)
+	}
+	return out
 }
 
 // An unset theme is the client declining to say, not a light one: the checkout
@@ -187,9 +211,6 @@ func confirmErr(err error, orgID string) error {
 	case errors.Is(err, corebilling.ErrCurrencyNotSupported):
 		return paid(apperr.ReasonBillingCurrencyUnsupported,
 			"this subscription is billed in a currency pug does not support")
-	case errors.Is(err, corebilling.ErrNotPurchasable):
-		return paid(apperr.ReasonBillingProductUnmapped,
-			"this subscription is for a product pug cannot match to a plan")
 	case errors.Is(err, corebilling.ErrTwoLiveSubscriptions):
 		return paid(apperr.ReasonBillingTwoLiveSubscriptions,
 			"this organization already has a live subscription")
@@ -227,8 +248,9 @@ func (s *Server) CreatePortalSession(
 	}), nil
 }
 
-// ListPlans returns the tiers this deployment sells. Never a product id: the
-// dashboard renders a buy button from `purchasable` alone.
+// ListPlans returns the current card, plus custom for an org whose row records a
+// deal. Never a product id: the dashboard renders a buy button from
+// `purchasable` alone.
 func (s *Server) ListPlans(
 	ctx context.Context,
 	req *connect.Request[billingv1.ListPlansRequest],
@@ -249,13 +271,12 @@ func (s *Server) ListPlans(
 	plans := make([]*billingv1.PlanOption, 0, len(options))
 	for _, opt := range options {
 		plans = append(plans, &billingv1.PlanOption{
-			Currency:       proto.String(opt.Currency),
-			DisplayName:    proto.String(opt.DisplayName),
-			IncludedEvents: int64Value(opt.IncludedEvents),
-			PriceCents:     int64Value(opt.PriceCents),
-			Purchasable:    proto.Bool(opt.Purchasable),
-			RetentionDays:  int64Value(opt.RetentionDays),
-			Slug:           proto.String(opt.Slug),
+			Currency:    proto.String(opt.Currency),
+			CustomTerms: customTermsToRPC(opt.Terms),
+			DisplayName: proto.String(opt.DisplayName),
+			Purchasable: proto.Bool(opt.Purchasable),
+			RateCard:    rateCardToRPC(opt.Card),
+			Slug:        proto.String(opt.Slug),
 		})
 	}
 	return connect.NewResponse(&billingv1.ListPlansResponse{Plans: plans}), nil

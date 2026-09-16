@@ -68,12 +68,14 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 
 	cli, orgID := newBilling(t)
 	events := int64(5_000_000)
+	fee := int64(40_000)
 	name := "Acme Enterprise"
 	note := "$400/mo, INV-123"
 
 	var set strings.Builder
 	if err := cli.Set(t.Context(), &set, orgID, actor, corebilling.Change{
 		PlanSlug:       corebilling.SlugCustom,
+		FlatFeeCents:   &fee,
 		IncludedEvents: &events,
 		DisplayName:    &name,
 		Note:           &note,
@@ -126,9 +128,9 @@ func TestClearReturnsToTheFloor(t *testing.T) {
 	}
 
 	cli, orgID := newBilling(t)
-	events := int64(1_000_000)
+	fee := int64(40_000)
 	if err := cli.Set(t.Context(), &strings.Builder{}, orgID, actor,
-		corebilling.Change{PlanSlug: corebilling.SlugCustom, IncludedEvents: &events}); err != nil {
+		corebilling.Change{PlanSlug: corebilling.SlugCustom, FlatFeeCents: &fee}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 

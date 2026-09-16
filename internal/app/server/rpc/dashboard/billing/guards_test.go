@@ -36,7 +36,7 @@ func TestEveryRPCRefusesACancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(buyerCtx(t))
 	cancel()
 
-	slug := "growth"
+	slug := corebilling.CurrentCard().Slug
 	sessionID := checkoutSessionID
 	calls := map[string]func() error{
 		"GetBillingStatus": func() error {
@@ -102,7 +102,7 @@ func TestSessionPathsReportAnUnknownOrg(t *testing.T) {
 	srv := newPayingServer(t, pg, true)
 	unknown := xid.New().String()
 
-	if _, err := checkout(t, srv, unknown, "growth"); err == nil {
+	if _, err := checkout(t, srv, unknown, corebilling.CurrentCard().Slug); err == nil {
 		t.Error("CreateCheckoutSession opened a checkout for an org that does not exist")
 	} else if ae := appErr(t, err); ae.Code() != connect.CodeNotFound {
 		t.Errorf("CreateCheckoutSession code = %s, want NotFound", ae.Code())
@@ -138,7 +138,7 @@ func TestGetBillingStatusCarriesTheContractEnd(t *testing.T) {
 	}
 	ends := time.Now().AddDate(1, 0, 0).UTC().Truncate(time.Second)
 	if _, err := svc.SetPlan(t.Context(), orgID, "tester@localhost", corebilling.Change{
-		PlanSlug:       "growth",
+		PlanSlug:       corebilling.CurrentCard().Slug,
 		ContractEndsAt: &ends,
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)

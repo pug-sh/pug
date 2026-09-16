@@ -32,9 +32,9 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	section(w, "RESOLVED", "")
 	row(w, "  plan", fmt.Sprintf("%s (%s)", ent.DisplayName, ent.Slug))
 	row(w, "  status", string(ent.Status))
+	row(w, "  pricing", pricing(ent))
 	row(w, "  included events", quota(ent.IncludedEvents))
 	row(w, "  retention", retention(ent.RetentionDays))
-	row(w, "  list price", price(ent.PriceCents, ent.Currency))
 	row(w, "  usage period", fmt.Sprintf("%s → %s", instant(ent.PeriodStart), instant(ent.PeriodEnd)))
 	row(w, "  trial ends", instant(ent.TrialEndsAt))
 	row(w, "  contract ends", contractEnd(ent.ContractEndsAt))
@@ -44,13 +44,15 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 		section(w, "STORED", "(no row — resolving from the org's age)")
 	} else {
 		section(w, "STORED", "")
-		row(w, "  plan slug", rec.PlanSlug)
+		row(w, "  plan slug", text(rec.PlanSlug))
+		row(w, "  flat fee", money(rec.FlatFeeCents))
+		row(w, "  rate per million", money(rec.RateCentsPerMillion))
 		row(w, "  included events", override(rec.IncludedEventsOverride))
 		row(w, "  retention days", override(rec.RetentionDaysOverride))
 		row(w, "  display name", text(rec.DisplayNameOverride))
 		row(w, "  anchor day", override(int64(rec.AnchorDay)))
 		row(w, "  contract ends", contractEnd(rec.ContractEndsAt))
-		row(w, "  provider product", text(rec.ProviderProductID))
+		row(w, "  terms effective", instant(rec.TermsEffectiveAt))
 		row(w, "  trial ends", instant(rec.TrialEndsAt))
 		row(w, "  note", text(rec.Note))
 	}
@@ -60,9 +62,9 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	} else {
 		section(w, "SUBSCRIPTIONS", "")
 		for _, sub := range subs {
-			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  %s  ends %s",
-				sub.PlanSlug, price(&sub.PriceCents, sub.Currency), sub.Provider,
-				sub.ProviderSubID, instant(sub.CurrentPeriodEnd.Time)))
+			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  ends %s",
+				sub.PlanSlug, sub.Provider, sub.ProviderSubID,
+				instant(sub.CurrentPeriodEnd.Time)))
 		}
 	}
 
@@ -103,7 +105,13 @@ func historyLine(rec corebilling.Record) string {
 	if !rec.Present {
 		return "cleared"
 	}
-	parts := []string{rec.PlanSlug}
+	parts := []string{text(rec.PlanSlug)}
+	if rec.FlatFeeCents > 0 {
+		parts = append(parts, "flat-fee="+money(rec.FlatFeeCents))
+	}
+	if rec.RateCentsPerMillion > 0 {
+		parts = append(parts, "rate-per-million="+money(rec.RateCentsPerMillion))
+	}
 	if rec.IncludedEventsOverride > 0 {
 		parts = append(parts, "events="+comma(rec.IncludedEventsOverride))
 	}
@@ -122,13 +130,69 @@ func historyLine(rec corebilling.Record) string {
 	if !rec.TrialEndsAt.IsZero() {
 		parts = append(parts, "trial-ends="+instant(rec.TrialEndsAt))
 	}
-	if rec.ProviderProductID != "" {
-		parts = append(parts, "product="+rec.ProviderProductID)
-	}
 	if rec.Note != "" {
 		parts = append(parts, fmt.Sprintf("note=%q", rec.Note))
 	}
 	return strings.Join(parts, "  ")
+}
+
+func writePreview(out io.Writer, ent corebilling.Entitlement, events int64, q corebilling.Quote) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	row(w, "plan", fmt.Sprintf("%s (%s)", ent.DisplayName, ent.Slug))
+	row(w, "pricing", pricing(ent))
+	row(w, "events", comma(events))
+	for _, l := range q.Lines {
+		row(w, "  "+l.Description, lineAmount(l, ent.Currency))
+	}
+	row(w, "total", price(&q.TotalCents, ent.Currency))
+	return w.Flush()
+}
+
+// pricing renders the card's tiers or the deal's terms: what usage costs, which
+// is the number a rate card replaced a single price with.
+func pricing(ent corebilling.Entitlement) string {
+	switch {
+	case ent.Terms != nil:
+		var parts []string
+		if ent.Terms.FlatFeeCents > 0 {
+			parts = append(parts, money(ent.Terms.FlatFeeCents)+" flat")
+		}
+		if ent.Terms.RateCentsPerMillion > 0 {
+			parts = append(parts, money(ent.Terms.RateCentsPerMillion)+
+				" per million over "+comma(ent.Terms.IncludedEvents))
+		}
+		return strings.Join(parts, ", ")
+	case ent.Card != nil:
+		parts := []string{comma(ent.Card.FreeEvents) + " free"}
+		for _, t := range ent.Card.Tiers {
+			if t.UpToEvents == 0 {
+				parts = append(parts, money(t.CentsPerMillion)+"/M beyond")
+				continue
+			}
+			parts = append(parts, fmt.Sprintf("%s/M to %s", money(t.CentsPerMillion), comma(t.UpToEvents)))
+		}
+		return strings.Join(parts, ", ")
+	}
+	return none
+}
+
+func lineAmount(l corebilling.Line, currency string) string {
+	if l.CentsPerMillion == 0 {
+		if l.Events > 0 {
+			return comma(l.Events) + " events"
+		}
+		return price(&l.AmountCents, currency)
+	}
+	return fmt.Sprintf("%s events × %s/M = %s",
+		comma(l.Events), money(l.CentsPerMillion), price(&l.AmountCents, currency))
+}
+
+// money renders a stored cents column, where 0 is the absence of a value.
+func money(cents int64) string {
+	if cents == 0 {
+		return none
+	}
+	return price(&cents, corebilling.Currency)
 }
 
 func subscription(ent corebilling.Entitlement) string {

@@ -49,8 +49,8 @@ func newPayments(ctx context.Context) (*corebilling.Payments, error) {
 		slog.WarnContext(ctx, "billing provider has no webhook secret; the webhook route will not mount",
 			slog.String("provider", p.Provider.Name()))
 	}
-	if len(p.ProductBySlug) == 0 {
-		slog.WarnContext(ctx, "billing provider configured with no product ids; no catalog tier is purchasable",
+	if p.MandateProduct == "" {
+		slog.WarnContext(ctx, "billing provider configured with no mandate product; nothing is purchasable",
 			slog.String("provider", p.Provider.Name()))
 	}
 

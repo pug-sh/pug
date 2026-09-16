@@ -14,19 +14,18 @@ import (
 const applyBillingSubscription = `-- name: ApplyBillingSubscription :execrows
 insert into billing_subscriptions (
   currency, current_period_end, current_period_start, id, org_id, plan_slug,
-  price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
+  provider, provider_customer_id, provider_status, provider_sub_id,
   provider_updated_at, status
 ) values (
   $1, $2, $3, $4, $5, $6,
-  $7, $8, $9, $10, $11,
-  $12, $13
+  $7, $8, $9, $10,
+  $11, $12
 )
 on conflict (provider, provider_sub_id) do update
 set currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
     plan_slug = excluded.plan_slug,
-    price_cents = excluded.price_cents,
     provider_customer_id = excluded.provider_customer_id,
     provider_status = excluded.provider_status,
     provider_updated_at = excluded.provider_updated_at,
@@ -43,7 +42,6 @@ type ApplyBillingSubscriptionParams struct {
 	ID                 string
 	OrgID              string
 	PlanSlug           string
-	PriceCents         int64
 	Provider           string
 	ProviderCustomerID string
 	ProviderStatus     string
@@ -66,7 +64,6 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 		arg.ID,
 		arg.OrgID,
 		arg.PlanSlug,
-		arg.PriceCents,
 		arg.Provider,
 		arg.ProviderCustomerID,
 		arg.ProviderStatus,
@@ -81,12 +78,13 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 }
 
 const createBillingCheckoutSession = `-- name: CreateBillingCheckoutSession :exec
-insert into billing_checkout_sessions (org_id, provider, ref)
-values ($1, $2, $3)
+insert into billing_checkout_sessions (org_id, plan_slug, provider, ref)
+values ($1, $2, $3, $4)
 `
 
 type CreateBillingCheckoutSessionParams struct {
 	OrgID    string
+	PlanSlug string
 	Provider string
 	Ref      string
 }
@@ -94,7 +92,12 @@ type CreateBillingCheckoutSessionParams struct {
 // Written before the provider is called, because the ref has to be in the
 // checkout's metadata. An abandoned checkout's row is pruned.
 func (q *Queries) CreateBillingCheckoutSession(ctx context.Context, arg CreateBillingCheckoutSessionParams) error {
-	_, err := q.db.Exec(ctx, createBillingCheckoutSession, arg.OrgID, arg.Provider, arg.Ref)
+	_, err := q.db.Exec(ctx, createBillingCheckoutSession,
+		arg.OrgID,
+		arg.PlanSlug,
+		arg.Provider,
+		arg.Ref,
+	)
 	return err
 }
 
@@ -110,27 +113,32 @@ func (q *Queries) DeleteBillingEntitlement(ctx context.Context, orgID string) (i
 	return result.RowsAffected(), nil
 }
 
-const getBillingCheckoutSessionOrgID = `-- name: GetBillingCheckoutSessionOrgID :one
-select org_id from billing_checkout_sessions
+const getBillingCheckoutSession = `-- name: GetBillingCheckoutSession :one
+select org_id, plan_slug from billing_checkout_sessions
 where provider = $1 and ref = $2
 `
 
-type GetBillingCheckoutSessionOrgIDParams struct {
+type GetBillingCheckoutSessionParams struct {
 	Provider string
 	Ref      string
 }
 
+type GetBillingCheckoutSessionRow struct {
+	OrgID    string
+	PlanSlug string
+}
+
 // Attribution: turns a ref that came back on a delivery into the org pug chose
-// when it started the checkout.
-func (q *Queries) GetBillingCheckoutSessionOrgID(ctx context.Context, arg GetBillingCheckoutSessionOrgIDParams) (string, error) {
-	row := q.db.QueryRow(ctx, getBillingCheckoutSessionOrgID, arg.Provider, arg.Ref)
-	var org_id string
-	err := row.Scan(&org_id)
-	return org_id, err
+// when it started the checkout, and the card it pinned.
+func (q *Queries) GetBillingCheckoutSession(ctx context.Context, arg GetBillingCheckoutSessionParams) (GetBillingCheckoutSessionRow, error) {
+	row := q.db.QueryRow(ctx, getBillingCheckoutSession, arg.Provider, arg.Ref)
+	var i GetBillingCheckoutSessionRow
+	err := row.Scan(&i.OrgID, &i.PlanSlug)
+	return i, err
 }
 
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
-select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id from billing_entitlements where org_id = $1 for update
+select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id, flat_fee_cents, rate_cents_per_million, terms_effective_at from billing_entitlements where org_id = $1 for update
 `
 
 // Returns no rows for an org that has never been touched, which is normal.
@@ -150,22 +158,11 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.TrialEndsAt,
 		&i.UpdateTime,
 		&i.ProviderProductID,
+		&i.FlatFeeCents,
+		&i.RateCentsPerMillion,
+		&i.TermsEffectiveAt,
 	)
 	return i, err
-}
-
-const getBillingEntitlementProviderProductID = `-- name: GetBillingEntitlementProviderProductID :one
-select provider_product_id from billing_entitlements where org_id = $1
-`
-
-// The product an operator staged this org to buy. It is what lets a payment
-// link's metadata.org_id attribute: buyer-settable on its own, it only counts
-// when an operator has already pointed this org at this product.
-func (q *Queries) GetBillingEntitlementProviderProductID(ctx context.Context, orgID string) (pgtype.Text, error) {
-	row := q.db.QueryRow(ctx, getBillingEntitlementProviderProductID, orgID)
-	var provider_product_id pgtype.Text
-	err := row.Scan(&provider_product_id)
-	return provider_product_id, err
 }
 
 const getBillingSubscriptionPlanSlug = `-- name: GetBillingSubscriptionPlanSlug :one
@@ -178,8 +175,8 @@ type GetBillingSubscriptionPlanSlugParams struct {
 	ProviderSubID string
 }
 
-// Read inside the apply lock so a delivery that ENDS a subscription keeps the
-// stored slug: a product dropped from config must not refuse a cancellation.
+// The pinned card, read inside the apply lock so a delivery carrying no ref keeps
+// the card the checkout pinned rather than resolving one afresh.
 func (q *Queries) GetBillingSubscriptionPlanSlug(ctx context.Context, arg GetBillingSubscriptionPlanSlugParams) (string, error) {
 	row := q.db.QueryRow(ctx, getBillingSubscriptionPlanSlug, arg.Provider, arg.ProviderSubID)
 	var plan_slug string
@@ -189,13 +186,13 @@ func (q *Queries) GetBillingSubscriptionPlanSlug(ctx context.Context, arg GetBil
 
 const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
-  actor, anchor_day, contract_ends_at, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  actor, anchor_day, contract_ends_at, deleted, display_name_override,
+  flat_fee_cents, id, included_events_override, note, org_id, plan_slug,
+  rate_cents_per_million, retention_days_override, terms_effective_at, trial_ends_at
 ) values (
-  $1, $2, $3, $4,
-  $5, $6, $7, $8, $9, $10,
-  $11, $12
+  $1, $2, $3, $4, $5,
+  $6, $7, $8, $9, $10, $11,
+  $12, $13, $14, $15
 )
 `
 
@@ -203,14 +200,17 @@ type InsertBillingEntitlementHistoryParams struct {
 	Actor                  string
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
+	Deleted                bool
 	DisplayNameOverride    pgtype.Text
+	FlatFeeCents           pgtype.Int8
 	ID                     string
 	IncludedEventsOverride pgtype.Int8
 	Note                   string
 	OrgID                  string
 	PlanSlug               pgtype.Text
-	ProviderProductID      pgtype.Text
+	RateCentsPerMillion    pgtype.Int8
 	RetentionDaysOverride  pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -219,14 +219,17 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 		arg.Actor,
 		arg.AnchorDay,
 		arg.ContractEndsAt,
+		arg.Deleted,
 		arg.DisplayNameOverride,
+		arg.FlatFeeCents,
 		arg.ID,
 		arg.IncludedEventsOverride,
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
-		arg.ProviderProductID,
+		arg.RateCentsPerMillion,
 		arg.RetentionDaysOverride,
+		arg.TermsEffectiveAt,
 		arg.TrialEndsAt,
 	)
 	return err
@@ -369,53 +372,62 @@ func (q *Queries) PruneBillingWebhookDeliveries(ctx context.Context, olderThan p
 
 const upsertBillingEntitlement = `-- name: UpsertBillingEntitlement :one
 insert into billing_entitlements (
-  anchor_day, contract_ends_at, display_name_override,
-  included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  anchor_day, contract_ends_at, display_name_override, flat_fee_cents,
+  included_events_override, note, org_id, plan_slug, rate_cents_per_million,
+  retention_days_override, terms_effective_at, trial_ends_at
 ) values (
-  $1, $2, $3,
-  $4, $5, $6, $7, $8,
-  $9, $10
+  $1, $2, $3, $4,
+  $5, $6, $7, $8, $9,
+  $10, $11, $12
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
     contract_ends_at = excluded.contract_ends_at,
     display_name_override = excluded.display_name_override,
+    flat_fee_cents = excluded.flat_fee_cents,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
-    provider_product_id = excluded.provider_product_id,
+    provider_product_id = null,
+    rate_cents_per_million = excluded.rate_cents_per_million,
     retention_days_override = excluded.retention_days_override,
+    terms_effective_at = excluded.terms_effective_at,
     trial_ends_at = excluded.trial_ends_at
-returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id
+returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id, flat_fee_cents, rate_cents_per_million, terms_effective_at
 `
 
 type UpsertBillingEntitlementParams struct {
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
 	DisplayNameOverride    pgtype.Text
+	FlatFeeCents           pgtype.Int8
 	IncludedEventsOverride pgtype.Int8
 	Note                   string
 	OrgID                  string
-	PlanSlug               string
-	ProviderProductID      pgtype.Text
+	PlanSlug               pgtype.Text
+	RateCentsPerMillion    pgtype.Int8
 	RetentionDaysOverride  pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 	TrialEndsAt            pgtype.Timestamptz
 }
 
 // Full replace, never coalesce: the caller has already merged its change over
 // the locked row.
+// provider_product_id is not written here any more: every org authorizes against
+// the one mandate product, and migration 022 drops the column.
 func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillingEntitlementParams) (BillingEntitlement, error) {
 	row := q.db.QueryRow(ctx, upsertBillingEntitlement,
 		arg.AnchorDay,
 		arg.ContractEndsAt,
 		arg.DisplayNameOverride,
+		arg.FlatFeeCents,
 		arg.IncludedEventsOverride,
 		arg.Note,
 		arg.OrgID,
 		arg.PlanSlug,
-		arg.ProviderProductID,
+		arg.RateCentsPerMillion,
 		arg.RetentionDaysOverride,
+		arg.TermsEffectiveAt,
 		arg.TrialEndsAt,
 	)
 	var i BillingEntitlement
@@ -432,6 +444,9 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.TrialEndsAt,
 		&i.UpdateTime,
 		&i.ProviderProductID,
+		&i.FlatFeeCents,
+		&i.RateCentsPerMillion,
+		&i.TermsEffectiveAt,
 	)
 	return i, err
 }

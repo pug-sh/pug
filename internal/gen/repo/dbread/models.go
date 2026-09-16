@@ -24,6 +24,7 @@ type BillingCheckoutSession struct {
 	OrgID      string
 	Provider   string
 	Ref        string
+	PlanSlug   string
 }
 
 type BillingEntitlement struct {
@@ -34,11 +35,14 @@ type BillingEntitlement struct {
 	IncludedEventsOverride pgtype.Int8
 	Note                   string
 	OrgID                  string
-	PlanSlug               string
+	PlanSlug               pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	UpdateTime             pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
+	FlatFeeCents           pgtype.Int8
+	RateCentsPerMillion    pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 }
 
 type BillingEntitlementHistory struct {
@@ -55,6 +59,53 @@ type BillingEntitlementHistory struct {
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
+	FlatFeeCents           pgtype.Int8
+	RateCentsPerMillion    pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
+	Deleted                bool
+}
+
+type BillingInvoice struct {
+	AmountCents        int64
+	Attempts           int32
+	BilledFrom         pgtype.Date
+	BilledTo           pgtype.Date
+	CarriedCents       int64
+	CoveredBy          pgtype.Text
+	CreateTime         pgtype.Timestamptz
+	Currency           string
+	EventCount         int64
+	FailedAt           pgtype.Timestamptz
+	ID                 string
+	LastErrorCode      string
+	LastErrorMessage   string
+	Lines              []byte
+	NextAttemptAt      pgtype.Timestamptz
+	OrgID              string
+	PaidAt             pgtype.Timestamptz
+	PeriodEnd          pgtype.Timestamptz
+	PeriodStart        pgtype.Timestamptz
+	PlanSlug           string
+	Pricing            []byte
+	Provider           pgtype.Text
+	ProviderInvoiceUrl pgtype.Text
+	ProviderPaymentID  pgtype.Text
+	ProviderSubID      pgtype.Text
+	Status             string
+	TaxCents           pgtype.Int8
+	UpdateTime         pgtype.Timestamptz
+	UsageCents         int64
+	UsageComputedAt    pgtype.Timestamptz
+}
+
+type BillingInvoiceEvent struct {
+	Actor      string
+	At         pgtype.Timestamptz
+	Detail     string
+	FromStatus string
+	ID         string
+	InvoiceID  string
+	ToStatus   string
 }
 
 type BillingSubscription struct {
@@ -65,7 +116,6 @@ type BillingSubscription struct {
 	ID                 string
 	OrgID              string
 	PlanSlug           string
-	PriceCents         int64
 	Provider           string
 	ProviderCustomerID string
 	ProviderStatus     string

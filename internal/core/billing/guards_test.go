@@ -13,6 +13,20 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
+// pinCard is the ordinary operator write: a card pin with no deal behind it.
+func pinCard() corebilling.Change {
+	return corebilling.Change{PlanSlug: currentCard().Slug}
+}
+
+// setDeal is the other one: a deal with money on it, which is what the guards
+// below actually turn on.
+func setDeal() corebilling.Change {
+	return corebilling.Change{
+		PlanSlug:     corebilling.SlugCustom,
+		FlatFeeCents: new(int64(40_000)),
+	}
+}
+
 func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -22,54 +36,53 @@ func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	// 65537 truncates to 1 as an int16, so an unchecked write would store a
 	// plausible day and report success.
 	for _, day := range []int{32, 65537, -1} {
-		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-			PlanSlug:  "growth",
-			AnchorDay: new(day),
-		})
-		if !errors.Is(err, corebilling.ErrAnchorDayRange) {
+		change := pinCard()
+		change.AnchorDay = new(day)
+		if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); !errors.Is(err, corebilling.ErrAnchorDayRange) {
 			t.Errorf("anchor day %d: err = %v, want ErrAnchorDayRange", day, err)
 		}
 	}
 }
 
-func TestExtendTrialIsRefusedOnAGrantedPlan(t *testing.T) {
+// A deal in force resolves ahead of any trial date, so the write would store a
+// date that changes nothing and still print as a success.
+func TestExtendTrialIsRefusedOnADeal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug: "growth",
-	}); err != nil {
-		t.Fatalf("set growth: %v", err)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, setDeal()); err != nil {
+		t.Fatalf("set the deal: %v", err)
 	}
 
-	// A granted plan resolves ahead of any trial date, so the write would store a
-	// date that changes nothing and still print as a success.
 	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, time.Now())
 	if !errors.Is(err, corebilling.ErrTrialOnGrantedPlan) {
 		t.Errorf("err = %v, want ErrTrialOnGrantedPlan", err)
 	}
 }
 
-// A slug the catalog has dropped resolves free without ever consulting a trial
-// date, so extending one would store a date that changes nothing — the same
-// silent success the guard above exists to prevent.
-func TestExtendTrialIsRefusedOnAnUnknownPlan(t *testing.T) {
+// A card pin is not a conversion: it prices the usage a trial is not charged for,
+// so it must NOT block one. The mirror of the refusal above.
+func TestExtendTrialIsAllowedOnACardPin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	f := newFixture(t)
-	// Past SetPlan, which rejects the slug: only a catalog removal produces this.
-	if _, err := f.pg.PgW.Exec(t.Context(),
-		"insert into billing_entitlements (org_id, plan_slug) values ($1, 'growth-v0')", f.orgID); err != nil {
-		t.Fatalf("seed an unknown slug: %v", err)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, pinCard()); err != nil {
+		t.Fatalf("pin the card: %v", err)
 	}
 
-	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, time.Now())
-	if !errors.Is(err, corebilling.ErrTrialOnGrantedPlan) {
-		t.Errorf("err = %v, want ErrTrialOnGrantedPlan", err)
+	rec, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, time.Now())
+	if err != nil {
+		t.Fatalf("ExtendTrial on a card pin: %v", err)
+	}
+	if rec.TrialEndsAt.IsZero() {
+		t.Error("no trial end was stored")
+	}
+	if rec.PlanSlug != currentCard().Slug {
+		t.Errorf("plan slug = %q, want the pin kept", rec.PlanSlug)
 	}
 }
 
@@ -97,41 +110,147 @@ func TestExtendTrialWillNotShortenOne(t *testing.T) {
 	}
 }
 
-// The contract belongs to the granted plan, so a downgrade must not leave a
-// future date behind for a dashboard to render as "your Free plan ends...".
-func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
+// `--plan ""` removes the pin and KEEPS the rest of the row: free is no longer a
+// plan, so there is no downgrade that clears a deal's terms as a side effect.
+// Ending one is `--until ""`, tested below.
+func TestRemovingAPinKeepsTheRestOfTheRow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	f := newFixture(t)
-	until := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:       "growth",
-		ContractEndsAt: new(until),
-	}); err != nil {
-		t.Fatalf("set growth: %v", err)
+	until := time.Now().AddDate(0, 1, 0)
+	change := pinCard()
+	change.IncludedEvents = new(int64(5_000_000))
+	change.DisplayName = new("Acme (comped)")
+	change.AnchorDay = new(17)
+	change.ContractEndsAt = &until
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); err != nil {
+		t.Fatalf("set the comp: %v", err)
 	}
 
-	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugFree})
+	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: ""})
 	if err != nil {
-		t.Fatalf("downgrade: %v", err)
+		t.Fatalf("remove the pin: %v", err)
 	}
-	if !rec.ContractEndsAt.IsZero() {
-		t.Errorf("contract_ends_at = %s after downgrading to free, want it cleared", rec.ContractEndsAt)
+	if rec.PlanSlug != "" {
+		t.Errorf("plan slug = %q, want it removed", rec.PlanSlug)
+	}
+	if rec.IncludedEventsOverride != 5_000_000 || rec.DisplayNameOverride != "Acme (comped)" ||
+		rec.AnchorDay != 17 || rec.ContractEndsAt.IsZero() {
+		t.Errorf("row after removing the pin = %+v, want everything but the pin kept", rec)
+	}
+}
+
+// Money belongs to a deal, so a pin that is not one cannot leave a price behind
+// for the next `--plan custom` to satisfy its guard with.
+func TestLeavingCustomClearsTheMoney(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
 	}
 
-	// A comped pilot names its own end date, and that one is kept.
-	pilot, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:       corebilling.SlugFree,
-		IncludedEvents: new(int64(5_000_000)),
-		ContractEndsAt: new(until),
+	f := newFixture(t)
+	deal := setDeal()
+	deal.RateCentsPerMillion = new(int64(3_000))
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, deal); err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+
+	for name, change := range map[string]corebilling.Change{
+		"a card pin":    pinCard(),
+		"no pin at all": {PlanSlug: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change)
+			if err != nil {
+				t.Fatalf("SetPlan: %v", err)
+			}
+			if rec.FlatFeeCents != 0 || rec.RateCentsPerMillion != 0 {
+				t.Errorf("money after leaving custom = %d/%d, want both cleared",
+					rec.FlatFeeCents, rec.RateCentsPerMillion)
+			}
+			if !rec.TermsEffectiveAt.IsZero() {
+				t.Errorf("terms_effective_at = %s, want it cleared with the money", rec.TermsEffectiveAt)
+			}
+			// Put the deal back for the next case.
+			if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, deal); err != nil {
+				t.Fatalf("restore the deal: %v", err)
+			}
+		})
+	}
+}
+
+// A deal is invoiced from terms_effective_at, not from the row's birth: the row
+// usually predates it. Unchanged terms leave the stamp where it is, or every
+// renewal would move the day the deal is billed from.
+func TestTermsEffectiveAtStampsOnlyWhenTheMoneyChanges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	first, err := f.svc.SetPlan(t.Context(), f.orgID, actor, setDeal())
+	if err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+	if first.TermsEffectiveAt.IsZero() {
+		t.Fatal("a new deal stored no terms_effective_at; it has no day to be invoiced from")
+	}
+
+	// A renewal on unchanged terms: a new end date and nothing else.
+	renewed, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugCustom,
+		ContractEndsAt: new(time.Now().AddDate(1, 0, 0)),
 	})
 	if err != nil {
-		t.Fatalf("set comped pilot: %v", err)
+		t.Fatalf("renew: %v", err)
 	}
-	if !pilot.ContractEndsAt.Equal(until) {
-		t.Errorf("contract_ends_at = %s, want the pilot's %s", pilot.ContractEndsAt, until)
+	if !renewed.TermsEffectiveAt.Equal(first.TermsEffectiveAt) {
+		t.Errorf("terms_effective_at moved to %s on an unchanged renewal, want %s",
+			renewed.TermsEffectiveAt, first.TermsEffectiveAt)
+	}
+
+	// Backdated first: SetPlan stamps to the second and this test does both writes
+	// inside one, so without it a real restamp is invisible.
+	backdated := first.TermsEffectiveAt.AddDate(0, -1, 0)
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_entitlements set terms_effective_at = $2 where org_id = $1`,
+		f.orgID, backdated); err != nil {
+		t.Fatalf("backdate the stamp: %v", err)
+	}
+
+	// The allowance is priced terms too, so changing it restamps.
+	repriced, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugCustom,
+		IncludedEvents: new(int64(5_000_000)),
+	})
+	if err != nil {
+		t.Fatalf("reprice: %v", err)
+	}
+	if !repriced.TermsEffectiveAt.After(backdated) {
+		t.Errorf("terms_effective_at = %s after changing the allowance, want it restamped past %s",
+			repriced.TermsEffectiveAt, backdated)
+	}
+}
+
+// An allowance alone is a free tier nobody agreed to.
+func TestCustomNeedsAFeeOrARate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
+		PlanSlug:       corebilling.SlugCustom,
+		IncludedEvents: new(int64(5_000_000)),
+	})
+	if !errors.Is(err, corebilling.ErrCustomNeedsPrice) {
+		t.Errorf("err = %v, want ErrCustomNeedsPrice", err)
+	}
+
+	negative := corebilling.Change{PlanSlug: corebilling.SlugCustom, FlatFeeCents: new(int64(-1))}
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, negative); !errors.Is(err, corebilling.ErrPriceNegative) {
+		t.Errorf("err = %v, want ErrPriceNegative", err)
 	}
 }
 
@@ -156,21 +275,20 @@ func TestStoredRecordShowsAnOverrideThatIsNotInForce(t *testing.T) {
 
 	f := newFixture(t)
 	lapsed := time.Now().Add(-time.Hour)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:       "scale",
-		IncludedEvents: new(int64(5_000_000)),
-		ContractEndsAt: new(lapsed),
-		Note:           new("annual wire, INV-123"),
-	}); err != nil {
-		t.Fatalf("set scale: %v", err)
+	change := pinCard()
+	change.IncludedEvents = new(int64(5_000_000))
+	change.ContractEndsAt = &lapsed
+	change.Note = new("annual wire, INV-123")
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); err != nil {
+		t.Fatalf("set the comp: %v", err)
 	}
 
 	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if got := ent.IncludedEvents; got == nil || *got != 10_000 {
-		t.Errorf("resolved quota = %v, want the free floor after the contract lapsed", got)
+	if got := ent.IncludedEvents; got == nil || *got != currentCard().FreeEvents {
+		t.Errorf("resolved allowance = %v, want the card's after the contract lapsed", got)
 	}
 
 	// The override the resolved answer hides is the one that carries onto the next
@@ -196,10 +314,7 @@ func TestAFailedHistoryAppendRollsBackTheChange(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	_, err := f.svc.SetPlan(t.Context(), f.orgID, strings.Repeat("x", 200), corebilling.Change{
-		PlanSlug: "growth",
-	})
-	if err == nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, strings.Repeat("x", 200), pinCard()); err == nil {
 		t.Fatal("SetPlan with an over-long actor: err = nil, want the history insert to fail")
 	}
 
@@ -213,10 +328,9 @@ func TestAFailedHistoryAppendRollsBackTheChange(t *testing.T) {
 	}
 }
 
-// The mirror of the contract clear: converting a trial to a paid tier must drop
-// the stored trial date, or a later downgrade to free resurrects it and the org
-// resolves TRIALING on the trial's much larger quota.
-func TestConvertingATrialToAPaidPlanClearsTheTrialDate(t *testing.T) {
+// Recording a deal must drop a stored trial date, or a later `--plan ""`
+// resurrects it and the org resolves TRIALING on terms it is being charged for.
+func TestRecordingADealClearsTheTrialDate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -226,29 +340,29 @@ func TestConvertingATrialToAPaidPlanClearsTheTrialDate(t *testing.T) {
 		t.Fatalf("extend trial: %v", err)
 	}
 
-	converted, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"})
+	converted, err := f.svc.SetPlan(t.Context(), f.orgID, actor, setDeal())
 	if err != nil {
-		t.Fatalf("convert to growth: %v", err)
+		t.Fatalf("record the deal: %v", err)
 	}
 	if !converted.TrialEndsAt.IsZero() {
-		t.Errorf("trial_ends_at = %s after converting to growth, want it cleared", converted.TrialEndsAt)
+		t.Errorf("trial_ends_at = %s after recording a deal, want it cleared", converted.TrialEndsAt)
 	}
 
-	// The date must stay gone through a later downgrade, which is where a stale
-	// one would actually bite.
-	back, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugFree})
+	// The date must stay gone once the pin is removed, which is where a stale one
+	// would actually bite.
+	back, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: ""})
 	if err != nil {
-		t.Fatalf("downgrade: %v", err)
+		t.Fatalf("remove the pin: %v", err)
 	}
 	if !back.TrialEndsAt.IsZero() {
-		t.Fatalf("trial_ends_at = %s after downgrading, want it cleared", back.TrialEndsAt)
+		t.Fatalf("trial_ends_at = %s after removing the pin, want it cleared", back.TrialEndsAt)
 	}
 	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Status != corebilling.StatusFree {
-		t.Errorf("status = %s, want FREE; a stale trial date restored a trial quota", ent.Status)
+		t.Errorf("status = %s, want FREE; a stale trial date restored a trial", ent.Status)
 	}
 }
 
@@ -261,8 +375,8 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
-		t.Fatalf("set growth: %v", err)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, pinCard()); err != nil {
+		t.Fatalf("pin the card: %v", err)
 	}
 
 	tx, err := f.pg.PgW.Begin(t.Context())
@@ -291,10 +405,10 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 	}
 }
 
-// `--until ""` is how an operator ENDS a deal, so it clears the overrides the
-// contract gated exactly as omitting the flag does. It reaches the service as a
-// non-nil pointer to the zero time — the one input that looks like a date.
-func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
+// `--until ""` is how an operator ENDS a deal. It reaches the service as a
+// non-nil pointer to the zero time — the one input that looks like a date — and
+// what it ends is the contract, which is what expires the overrides it gated.
+func TestClearingTheContractEndsTheDeal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -303,119 +417,39 @@ func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	ctx := t.Context()
 	until := time.Now().AddDate(0, 1, 0)
 
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          "growth",
-		IncludedEvents:    new(int64(5_000_000)),
-		RetentionDays:     new(int64(3650)),
-		DisplayName:       new("Acme Enterprise"),
-		ContractEndsAt:    new(until),
-		ProviderProductID: new("prod_acme"),
-	}); err != nil {
+	deal := setDeal()
+	deal.RateCentsPerMillion = new(int64(3_000))
+	deal.IncludedEvents = new(int64(5_000_000))
+	deal.DisplayName = new("Acme Enterprise")
+	deal.ContractEndsAt = &until
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, deal); err != nil {
 		t.Fatalf("set the deal: %v", err)
 	}
 
 	var zero time.Time
 	dropped, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:       corebilling.SlugFree,
+		PlanSlug:       corebilling.SlugCustom,
 		ContractEndsAt: &zero,
 	})
 	if err != nil {
-		t.Fatalf("downgrade: %v", err)
-	}
-	if dropped.IncludedEventsOverride != 0 || dropped.RetentionDaysOverride != 0 ||
-		dropped.DisplayNameOverride != "" || dropped.ProviderProductID != "" {
-		t.Errorf("overrides after an explicit --until \"\" = %+v, want them all cleared", dropped)
+		t.Fatalf("clear the contract: %v", err)
 	}
 	if !dropped.ContractEndsAt.IsZero() {
 		t.Errorf("contract_ends_at = %v, want it cleared", dropped.ContractEndsAt)
 	}
-}
-
-// The mirror of the case above: a floor plan WITH a date is a comped grant, and
-// its overrides are the whole point of it.
-func TestAFloorPlanWithAContractKeepsItsOverrides(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	ctx := t.Context()
-	until := time.Now().AddDate(0, 1, 0)
-
-	comped, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:       corebilling.SlugFree,
-		IncludedEvents: new(int64(2_000_000)),
-		ContractEndsAt: &until,
-	})
-	if err != nil {
-		t.Fatalf("comped grant: %v", err)
-	}
-	if comped.IncludedEventsOverride != 2_000_000 || comped.ContractEndsAt.IsZero() {
-		t.Errorf("comped grant = %+v, want the quota and the date kept", comped)
-	}
-}
-
-// The contract is what expires an override, so clearing it on a downgrade has to
-// take the overrides with it — otherwise the deal a lapse would have ended
-// becomes permanent, and "downgrade to free" leaves a larger quota than doing
-// nothing at all.
-func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	ctx := t.Context()
-	now := time.Now()
-	until := now.AddDate(0, 1, 0)
-
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          "growth",
-		IncludedEvents:    new(int64(5_000_000)),
-		DisplayName:       new("Acme Enterprise"),
-		ContractEndsAt:    new(until),
-		ProviderProductID: new("prod_acme"),
-	}); err != nil {
-		t.Fatalf("set the deal: %v", err)
-	}
-
-	dropped, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: corebilling.SlugFree})
-	if err != nil {
-		t.Fatalf("downgrade: %v", err)
-	}
-	// Kept, it would go on offering a buy button for the deal that just ended.
-	if dropped.ProviderProductID != "" {
-		t.Errorf("provider product = %q, want it dropped with the rest", dropped.ProviderProductID)
-	}
-
-	ent, err := f.svc.GetEntitlement(ctx, f.orgID, until.AddDate(5, 0, 0))
+	// Open-ended, not ended: clearing the date removes the bound on the deal, and
+	// the deal itself is ended by removing its money.
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if got := ent.IncludedEvents; got == nil || *got != 10_000 {
-		t.Errorf("quota five years after the downgrade = %v, want the free floor's 10000", got)
-	}
-	if ent.DisplayName != "Free" {
-		t.Errorf("display name = %q, want the free floor's, not the deal's", ent.DisplayName)
-	}
-
-	// A comped grant on the floor names its own terms, and those survive.
-	pilot, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:       corebilling.SlugFree,
-		IncludedEvents: new(int64(5_000_000)),
-		ContractEndsAt: new(until),
-	})
-	if err != nil {
-		t.Fatalf("set comped pilot: %v", err)
-	}
-	if pilot.IncludedEventsOverride != 5_000_000 {
-		t.Errorf("pilot quota = %d, want the named 5000000", pilot.IncludedEventsOverride)
+	if ent.Terms == nil {
+		t.Error("the deal ended when its contract date was cleared; an open-ended deal runs on")
 	}
 }
 
 // The other way to store a trial date that resolves to nothing: the trial branch
-// is gated on the contract, so a lapsed one swallows the extension exactly as a
-// granted plan would.
+// is gated on the contract, so a lapsed one swallows the extension.
 func TestExtendTrialIsRefusedOnALapsedContract(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -423,11 +457,10 @@ func TestExtendTrialIsRefusedOnALapsedContract(t *testing.T) {
 
 	f := newFixture(t)
 	now := time.Now()
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:       corebilling.SlugFree,
-		IncludedEvents: new(int64(5_000_000)),
-		ContractEndsAt: new(now.Add(-time.Hour)),
-	}); err != nil {
+	change := pinCard()
+	change.IncludedEvents = new(int64(5_000_000))
+	change.ContractEndsAt = new(now.Add(-time.Hour))
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, change); err != nil {
 		t.Fatalf("set an ended pilot: %v", err)
 	}
 
@@ -445,19 +478,16 @@ func TestOverLongDisplayNameIsRefused(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:    "growth",
-		DisplayName: new(strings.Repeat("x", corebilling.MaxDisplayNameLen+1)),
-	})
-	if !errors.Is(err, corebilling.ErrDisplayNameLong) {
+	long := pinCard()
+	long.DisplayName = new(strings.Repeat("x", corebilling.MaxDisplayNameLen+1))
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, long); !errors.Is(err, corebilling.ErrDisplayNameLong) {
 		t.Errorf("err = %v, want ErrDisplayNameLong", err)
 	}
 
 	// varchar(150) bounds characters, so a multi-byte name at the limit fits.
-	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:    "growth",
-		DisplayName: new(strings.Repeat("\u00e9", corebilling.MaxDisplayNameLen)),
-	})
+	atLimit := pinCard()
+	atLimit.DisplayName = new(strings.Repeat("é", corebilling.MaxDisplayNameLen))
+	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, atLimit)
 	if err != nil {
 		t.Fatalf("set plan with a 150-character non-ASCII name: %v", err)
 	}
@@ -486,7 +516,7 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"})
+		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, pinCard())
 		done <- err
 	}()
 
@@ -504,9 +534,10 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 	}
 }
 
-// The guard runs inside mutate's transaction, which already holds a connection.
-// Off the pool it waits on that connection and only stops at the deadline.
-func TestSetPlanGuardTakesNoSecondConnection(t *testing.T) {
+// Every read SetPlan makes runs inside its own transaction, which already holds a
+// connection. Off the pool it would wait on that connection and only stop at the
+// deadline.
+func TestSetPlanTakesNoSecondConnection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -527,7 +558,7 @@ func TestSetPlanGuardTakesNoSecondConnection(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	if _, err := svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := svc.SetPlan(ctx, f.orgID, actor, pinCard()); err != nil {
 		t.Fatalf("SetPlan on a one-connection pool: %v", err)
 	}
 }
@@ -542,42 +573,40 @@ func TestNegativeOverridesAreRefused(t *testing.T) {
 	f := newFixture(t)
 	negative := int64(-1)
 
-	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug: "growth", IncludedEvents: &negative,
-	})
-	if !errors.Is(err, corebilling.ErrQuotaNegative) {
+	events := pinCard()
+	events.IncludedEvents = &negative
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, events); !errors.Is(err, corebilling.ErrQuotaNegative) {
 		t.Errorf("err = %v, want ErrQuotaNegative", err)
 	}
-	_, err = f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug: "growth", RetentionDays: &negative,
-	})
-	if !errors.Is(err, corebilling.ErrRetentionNegative) {
+	retention := pinCard()
+	retention.RetentionDays = &negative
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, retention); !errors.Is(err, corebilling.ErrRetentionNegative) {
 		t.Errorf("err = %v, want ErrRetentionNegative", err)
 	}
 }
 
-// Rows outlive a tier dropped from the Go catalog, so failing the read would take
+// Rows outlive a card dropped from the Go catalog, so failing the read would take
 // the dashboard down for whoever holds it.
-func TestAnEntitlementNamingAnUnknownPlanStillReads(t *testing.T) {
+func TestAnEntitlementNamingAnUnknownCardStillReads(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, pinCard()); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	// Straight to the column: no writer would store this.
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`update billing_entitlements set plan_slug = 'growth-v9' where org_id = $1`, f.orgID); err != nil {
+		`update billing_entitlements set plan_slug = 'usage-2019-01-1' where org_id = $1`, f.orgID); err != nil {
 		t.Fatalf("rewrite the slug: %v", err)
 	}
 
 	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
-		t.Fatalf("GetEntitlement on a slug the catalog dropped: %v", err)
+		t.Fatalf("GetEntitlement on a card the catalog dropped: %v", err)
 	}
-	// Fails open: "free, 10,000" would tell a paying customer they are over.
+	// Fails open: pricing it on the current card would charge terms nobody sold.
 	if ent.IncludedEvents != nil {
 		t.Errorf("included_events = %d, want absent", *ent.IncludedEvents)
 	}

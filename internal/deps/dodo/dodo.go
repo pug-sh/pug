@@ -32,9 +32,13 @@ const requestTimeout = 10 * time.Second
 // Config is the provider's own credentials, under its own prefix rather than a
 // generic PUG_PAYMENTS_*, so a second provider's keys sit beside these.
 type Config struct {
-	APIKey        string `env:"PUG_DODO_API_KEY"`
-	Environment   string `env:"PUG_DODO_ENVIRONMENT,default=test"`
-	WebhookSecret string `env:"PUG_DODO_WEBHOOK_SECRET"`
+	APIKey      string `env:"PUG_DODO_API_KEY"`
+	Environment string `env:"PUG_DODO_ENVIRONMENT,default=test"`
+	// MandateProduct is the one product every org authorizes against. Its stored
+	// price is never charged: pug prices the period and charges that amount.
+	// Absent means nothing is purchasable, as a missing tier key used to.
+	MandateProduct string `env:"PUG_DODO_MANDATE_PRODUCT"`
+	WebhookSecret  string `env:"PUG_DODO_WEBHOOK_SECRET"`
 }
 
 type Client struct {
@@ -167,15 +171,14 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get subscription: %w", err)
 	}
 	return c.eventFromSubscription(subscriptionPayload{
-		Currency:              string(sub.Currency),
-		CustomerID:            sub.Customer.CustomerID,
-		Metadata:              stringMetadata(sub.Metadata),
-		NextBillingDate:       &sub.NextBillingDate,
-		PreviousBillingDate:   &sub.PreviousBillingDate,
-		ProductID:             sub.ProductID,
-		RecurringPreTaxAmount: sub.RecurringPreTaxAmount,
-		Status:                string(sub.Status),
-		SubscriptionID:        sub.SubscriptionID,
+		Currency:            string(sub.Currency),
+		CustomerID:          sub.Customer.CustomerID,
+		Metadata:            stringMetadata(sub.Metadata),
+		NextBillingDate:     &sub.NextBillingDate,
+		PreviousBillingDate: &sub.PreviousBillingDate,
+		ProductID:           sub.ProductID,
+		Status:              string(sub.Status),
+		SubscriptionID:      sub.SubscriptionID,
 	}), nil
 }
 
