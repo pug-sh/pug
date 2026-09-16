@@ -427,14 +427,15 @@ func TestStatusReportsALiveSubscription(t *testing.T) {
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 	srv := newPayingServer(t, pg, true)
 
+	card := corebilling.CurrentCard()
 	periodEnd := time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second)
 	if _, err := pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
 		   currency, current_period_end, id, org_id, plan_slug, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', $1, 'sub00000000000000000', $2, 'usage-2026-09-1', 'stub',
+		 values ('USD', $1, 'sub00000000000000000', $2, $3, 'stub',
 		         'cus_1', 'on_hold', 'psub_1', now(), 'past_due')`,
-		periodEnd, orgID); err != nil {
+		periodEnd, orgID, card.Slug); err != nil {
 		t.Fatalf("seed subscription: %v", err)
 	}
 
@@ -443,7 +444,7 @@ func TestStatusReportsALiveSubscription(t *testing.T) {
 		t.Errorf("subscription_status = %s, want PAST_DUE", status.GetSubscriptionStatus())
 	}
 	// past_due keeps the plan: a failed card is worth a banner, never a block.
-	if status.GetPlan().GetSlug() != corebilling.CurrentCard().Slug {
+	if status.GetPlan().GetSlug() != card.Slug {
 		t.Errorf("plan = %q, want the card the mandate pinned", status.GetPlan().GetSlug())
 	}
 	// A failed card is still a card: the org stays chargeable.

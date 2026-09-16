@@ -76,7 +76,7 @@ Four properties everything below preserves.
 | Quota window | **Billing anniversary**, anchored to `orgs.create_time` | An org's month runs from the day it signed up, which is the date its trial already runs from. The alternative — a calendar month — is one line of code cheaper but resets everyone on the 1st regardless of when they bought, which is a support conversation the day a card is charged. §6.1. |
 | Anchor representation | **Day-of-month integer, UTC midnight** | The meter's period sum is exact only for midnight-aligned windows. An anchor stored as an instant would silently drop a partial day from the total while leaving it in the daily series. §6.1. |
 | Retention | **A day count on the tier, plus a per-org override** (§4) | How long history is kept is a term of the agreement like the quota, so it sits beside it, is pinned immutable (§4.2) and is negotiable per deal. Days, not months: whatever eventually enforces this will subtract from `now`, and `AddDate` normalises `Feb 31` into March. Nothing subtracts today and nothing deletes — §13. |
-| Unpaid orgs | **14-day trial → free tier** | Trial is the org's age, not stored state: no row, no provider object, no card. |
+| Unpaid orgs | **14-day trial → the current card's free allowance** | Trial is the org's age, not stored state: no row, no provider object, no card. |
 | Quota audience | **Every org member** | Reads sit on the viewer floor, exactly like `ResourceUsage`: the person who notices the limit is rarely the admin. |
 | Enforcement | **None** | Invariant 1. |
 | Grant mechanism | **CLI only** | pug has no staff/superadmin concept, and inventing one to put a quota field on a web page is not worth the auth surface. `pug billing` sits at the same trust level as `pug postgres migrate`. |
@@ -154,13 +154,12 @@ layer over whichever plan it names:
 Term is `contract_ends_at`, and the paperwork lives in `note`. Nothing about a
 bespoke deal needs a deploy, a catalog row or a join.
 
-**The deal's price is deliberately absent.** pug stores what the org may *send*;
-what it *pays* lives in the payments provider, which is the only system that can
-charge it — see [`payments.md`](payments.md) §4 for the full argument. Storing
-both would mean two authorities on one number, disagreeing the first time a deal
-is repriced, with the dashboard rendering the stale one as fact. The agreed
-amount goes in `note` if an operator wants it written down, which is honest about
-being a record rather than a source of truth.
+**The deal's price lives here, as of 021.** pug stores what the org may *send*
+and what it *pays*: `flat_fee_cents` and `rate_cents_per_million` are the terms
+pug prices and charges on, and the provider only moves the money — see
+[`payments.md`](payments.md) §4. The earlier rule was the opposite, to avoid two
+authorities on one number; usage billing made pug the single authority instead,
+so `note` went back to being the paperwork rather than the amount.
 
 **Retention is negotiable and, unlike the quota, optional.** `custom` requires a
 quota because an absent one on a paid tier resolves as *unlimited sending*, which
@@ -527,8 +526,9 @@ The plan fields are the **resolved** ones — overrides already applied (§4.1),
 a client never reconstructs a deal from a base plan plus patches. `note` and the
 history never cross the wire; both are operator data.
 
-`currency` is always present alongside `price_cents`, and a client must format
-from the pair rather than assuming two decimal places (§4).
+`currency` is always present, and a client must format from it rather than
+assuming two decimal places (§4). Its partner is no longer `price_cents`: the
+amounts are the card's tier rates, or the deal's `custom_terms`.
 
 - **No consumption number.** The client makes two calls —
   `UsageService.GetUsage` for X, `GetBillingStatus` for Y. Folding usage into
@@ -541,11 +541,11 @@ from the pair rather than assuming two decimal places (§4).
   NON-optional bigint, so absence would reach the dashboard as `0`. This is the
   one place billing diverges from `GetUsageResponse.used_events`, which is a bare
   `int64` a client can pair with `usage_computed_at` to detect absence — quota has
-  no such companion field. The same applies to `Plan.price_cents` — the tier's
-  list price — where absent is the `custom` tier, which has none, and 0 is the
-  free and trial floors.
+  no such companion field. The same applies to `custom_terms`' `flat_fee_cents`
+  and `rate_cents_per_million`, wrappers for the same reason: a deal may carry a
+  fee, a rate or both, and absent means no such term.
   A client consuming these from `../app` must check presence rather than
-  truthiness — `0` is a real value for both.
+  truthiness.
 - **`retention_days` is absent-able on the same terms**, and is the same
   `Int64Value` wrapper for the same reason — absent is *no bound*, and "0 days of
   history" is the one thing it must never say. It states what the plan promises,
@@ -572,16 +572,17 @@ mounted.
 ```shell
 pug billing show <org-id> [--history]
 pug billing set  <org-id> --plan <slug> --actor <who> [--events N]
+                          [--flat-fee 40000] [--rate-per-million 3000]
                           [--retention-days N]
                           [--name "Acme Enterprise"] [--anchor-day 17]
                           [--until 2027-01-01] [--note "$400/mo, INV-123"]
-                          [--provider-product prod_2f9k...]
 pug billing extend-trial <org-id> --days 30 --actor <who>
 pug billing clear <org-id> --actor <who>
+pug billing preview <org-id> --events 5000000
 ```
 
 Postgres only — no provider, no network. `set` upserts the row, `clear` deletes
-it (returning the org to derived trial-then-free), and `show` prints the resolved
+it (returning the org to the current card), and `show` prints the resolved
 entitlement *and* the stored row beneath it, since the interesting bugs live in
 the gap between them — a lapsed deal's quota is invisible in the resolved answer
 but still carries onto the next `set`.
@@ -605,13 +606,15 @@ Three boundary rules the flags do not spell out:
 A negotiated deal (§4.1) is one `set`:
 
 ```shell
-pug billing set o_2f9k --plan custom --events 5000000 --retention-days 2555 \
+pug billing set o_2f9k --plan custom --flat-fee 40000 --rate-per-million 3000 \
+                       --events 5000000 --retention-days 2555 \
                        --name "Acme Enterprise" --actor "praveen/INV-123" \
                        --until 2027-01-01 --note "$400/mo, INV-123"
 ```
 
-There is no `--price`: what the deal is charged lives in the payments provider
-(§4.1), and `--note` is where an operator writes it down.
+There is no `--price`: a deal's money is `--flat-fee` and `--rate-per-million`
+(§4.1), the terms pug prices and charges on, and `--note` stays the record of
+why.
 
 `--events`, `--retention-days`, `--name` and `--anchor-day` write the override
 columns; omitting one on a re-`set` leaves the stored value alone, and passing
@@ -644,19 +647,17 @@ conveniences over the same two columns.
 
 Every command prints the same report — the org, the switch, `RESOLVED`, `STORED`
 and optionally `HISTORY` — so a write is confirmed by the state it produced
-rather than by an "ok". Three things about that report are load-bearing:
+rather than by an "ok". Two things about that report are load-bearing:
 
 - **An absent value prints `(none)`, never `0`.** Absent `included_events` means
-  NO quota and absent `price_cents` means no list price (§7); a zero would state
-  a billing figure the deployment never claimed. A price of `0` is real — the two
-  floors — and prints as `$0.00 USD`.
+  NO quota and an absent fee or rate means no such term (§7); a zero would state
+  a billing figure the deployment never claimed. A stored `0` prints as `(none)`
+  too, since the empty value of `--flat-fee` and `--rate-per-million` is what
+  clears them.
 - **A mutation's `STORED` half is the row its own transaction wrote**, not a
   re-read. The reader is a replica in principle, and confirming a write against a
   lagging read is how a successful `set` prints the row it replaced. `RESOLVED`
   is re-read, because it needs the subscription (payments §7) as well.
-- **`--provider-product` is the one field that decides whether an org can spend
-  money** (payments §5.2), so it is printed in `STORED` and carried in the
-  history line.
 
 The report goes to stdout and the logs to stderr, so `show` stays pipeable; a
 refusal is a non-zero exit with the reason on stderr and no usage block.
@@ -679,21 +680,21 @@ and no `t.Parallel()` for the container-backed cases
 ([`CLAUDE.md`](../../CLAUDE.md) § Testing). `Resolve` itself is pure, so the rule
 table is a plain unit test.
 
-- **Resolution** — no row resolves trial-then-free off `orgs.create_time` and
-  writes nothing; a trial past `trial_ends_at` resolves free with no sweep
-  having run; a contract past `contract_ends_at` does the same; each override
-  patches only its own field and a catalog reprice leaves a deal untouched; an
+- **Resolution** — no row resolves trial-then-card off `orgs.create_time` and
+  writes nothing; a trial past `trial_ends_at` resolves to the current card with
+  no sweep having run; a contract past `contract_ends_at` does the same; each
+  override patches only its own field and a catalog reprice leaves a deal
+  untouched; an
   unknown slug resolves to no quota; billing disabled resolves to no quota
   regardless of the row.
-- **Retention** — each tier resolves its own ladder value; a negotiated
+- **Retention** — every card promises the same five years; a negotiated
   `retention_days_override` wins and lapses with its contract; an unknown slug
-  and a disabled deployment both report *no bound* rather than the floor's year,
+  and a disabled deployment both report *no bound* rather than a card's term,
   which is the same fail-open direction the quota takes.
-- **The floor-plan corners**, which is where a comped deal lives and where three
-  bugs hid: a row's existence does not end a derived trial; a floor plan's
-  overrides survive the trial promotion that renames the resolved slug to
-  `trial`; and a floor plan's `contract_ends_at` still expires them, so a
-  time-boxed comped pilot lapses like any other deal.
+- **The comped-deal corners**, where three bugs hid: a row's existence does not
+  end a derived trial; a pin's overrides survive the trial promotion; and a
+  pinned card's `contract_ends_at` still expires them, so a time-boxed comped
+  pilot lapses like any other deal.
 - **Window** — the period `Resolve` reports and the period the meter sums are the
   same half-open window for the same clock and anchor. This is the assertion that
   keeps the two halves of "X of Y" honest, and it is the one that matters most in
@@ -812,7 +813,7 @@ so its schema is not the target.
   is cut short once, and that month's number will look small next to its
   neighbours.
 - **A lapse or a downgrade shortens retention retroactively.** A 10-year deal
-  that ends resolves to the free floor's 365 days the same instant its quota
+  that ends resolves to the current card's five years the same instant its quota
   drops, so the *stated* bound moves across years of already-stored history at
   once. Harmless while nothing prunes; it is the specific reason enforcement
   (§11.3) needs a grace period rather than a nightly delete.
@@ -892,8 +893,9 @@ here.
   alone and no lookup could fail. Resolving an anchor requires the org row, so a
   missing one is now a real error — same `ORG_NOT_FOUND` reason the orgs service
   uses.
-- **`included_events` and `price_cents` ship as `Int64Value` wrappers**, not the
-  bare edition-2023 scalars §7 originally specified. protoc-gen-go would have given
+- **`included_events` and the `custom_terms` money fields ship as `Int64Value`
+  wrappers**, not the bare edition-2023 scalars §7 originally specified.
+  protoc-gen-go would have given
   those presence, but protoc-gen-es renders a singular scalar as a non-optional
   bigint, so "no quota" would have reached the dashboard as `0` — the one thing
   the field must never say. Verified against the generated TS.
@@ -913,7 +915,7 @@ here.
   catches the wrong org before the write, and it is cheap.
 - **`--until ""` clears the contract end.** §8 lists the empty value of every
   other override as its clear but not this one, which left a deal's end date
-  unremovable without a `set` back to a floor plan.
+  unremovable without a `set` that replaced the whole row.
 - **The CLI validates `--anchor-day` and `--events` itself**, as §8 says for the
   anchor day and does not for the quota. Both are also checked in the service,
   which is what a second caller would hit; the CLI's copy exists so the message

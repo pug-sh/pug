@@ -46,20 +46,22 @@ today.
 
 ## 2. Structural invariants
 
-1. **Pug owns the quota; the provider owns the money.** `included_events` is
-   pug's number and changing it changes what an org may send. The amount charged
-   is the provider's, and pug cannot alter it by writing to Postgres.
+1. **Pug owns the price as well as the quota; the provider only moves the
+   money.** `included_events` is pug's number and changing it changes what an org
+   may send. Since 021 the amount is pug's too — the card's rates, or a deal's
+   `--flat-fee` and `--rate-per-million` — and the one mandate product's own
+   recurring price is never charged.
 2. **One writer per row.** The operator writes `billing_entitlements`. The
    payments side writes `billing_subscriptions` — the webhook, reconcile and
    `ConfirmCheckout`, all through the one CAS in `applySubscription`, so there is
    no second notion of "newer". Neither side writes the other's table. This is
    what makes drift structurally impossible rather than a thing to remember (§4).
-   The two sides still meet on one org: a custom subscription takes its quota
-   from the entitlement row, so `applySubscription` takes the same
-   `pg_advisory_xact_lock` a `billing clear` does and re-reads that row inside
-   it. Otherwise a clear can commit between the mapping and the write, leaving a
-   live custom subscription against no row — the free floor, and exactly the
-   stranding `Clear`'s own guard refuses to cause.
+   The two sides still meet on one org: a subscription is priced on a card, so
+   `applySubscription` takes the same `pg_advisory_xact_lock` a `billing clear`
+   does and reads the card inside it. Otherwise two deliveries for one
+   subscription both miss the stored slug and the later one prices the mandate on
+   a card nobody pinned. A clear strands nothing now — the mandate resolves
+   nothing from the org's row.
 3. **Every paid org has a provider subscription**, negotiated deals included.
    There is no manual-payment path, so "entitlement with no live subscription"
    is a reconcilable defect rather than a legitimate state.
@@ -167,38 +169,40 @@ the number was a note. The moment Dodo bills the org, that same number becomes a
 Dodo's dashboard. The dashboard would then render a stale figure as fact, which
 is worse than rendering nothing.
 
-**Decided: pug stores no money at all.** The columns below were dropped from
-migration 019 before it merged; what follows is why, kept because the question
-comes back every time somebody wants a price on a page.
+**Decided: pug stores no money at all — and usage billing reversed it.** The
+columns below were dropped from migration 019 before it merged; 021 put money
+back on the row as `flat_fee_cents` and `rate_cents_per_million`, written by an
+operator rather than mirrored from the provider. What follows is why it is not
+the provider's amount that came back.
 
 | Question | Answer | Source |
 |---|---|---|
 | What may this org send? | `included_events` | pug — catalog, or the org's override |
 | How long is its history kept? | `retention_days` | pug — catalog, or the org's override |
-| What does this org pay? | the amount | Dodo — the subscription, mirrored read-only |
-| What is the list price of a tier? | `price_cents` | pug — the Go catalog, a marketing number |
+| What does this org pay? | `rate_card` or `custom_terms` | pug — the card in force, or the deal's terms |
 
 Concretely (**done**): `price_cents_override` and `currency_override` are gone
 from migration 019, `--price` / `--currency` are gone from `pug billing set`, and
 `ErrPriceNeedsCurrency`, `ErrCurrencyNeedsPrice` and `isCurrencyCode` went with
-them. What a deal was
-agreed at goes in `--note`, which is already there and is honest about being a
-record rather than a source of truth.
+them. What a deal was agreed at is a price pug charges on rather than a note:
+`--flat-fee` and `--rate-per-million` carry it, and `--note` stays the record of
+why.
 
-`GetBillingStatus`'s `price_cents` field survives unchanged — it is always the
-catalog's list price for the resolved tier, never the subscription's amount. What
-an org is actually charged lives in the provider; `billing_subscriptions.price_cents`
-mirrors it for the operator, and no read path copies that onto the entitlement.
-The RPC surface does not change; only the authorship does.
+`price_cents` is now gone from both ends: reserved as field 3 on `Plan` and
+`PlanOption`, and dropped from `billing_subscriptions` by migration 021. Usage is
+priced per event, so a card has no single price to report, and a mandate's
+recurring amount is never what pug charges — `rate_card` or `custom_terms`
+carries the price, exactly one of the two.
 
 What this buys, beyond one fewer thing to keep in sync: the price/currency pair
 constraint, its asymmetry, the CLI's two guards, and the `price_minor_units`
 naming question all stop existing.
 
-**The counter-argument, recorded:** a comped or annual deal has an agreed
-amount an operator may want stored where a query can reach it. `--note` is
-prose. If that turns out to matter, the column comes back — as a nullable
-mirror written by the webhook, never by a person.
+**The counter-argument won.** A comped or annual deal has an agreed amount an
+operator needs where a query can reach it, and `--note` is prose. The columns
+came back in 021 — but written by an operator through `pug billing set
+--flat-fee --rate-per-million`, never mirrored from the provider, because pug
+prices the period itself and Dodo only moves the money.
 
 ## 5. Custom deals
 
@@ -280,7 +284,7 @@ product an operator already staged for it.
 
 **The one ordering hazard:** if the operator never runs `pug billing set`, the
 org holds a `custom` subscription with no quota row, and `custom` has no catalog
-quota to fall back on. Resolution treats that as the free floor and the reconcile
+quota to fall back on. Resolution falls back to the current card and the reconcile
 pass reports it (§9) — a customer paying for nothing is exactly the kind of thing
 that must be loud. Recording the product id first makes this the ordinary path
 rather than a thing to remember, since the quota is written by the same command.
@@ -736,7 +740,7 @@ still coming.
 | `PUG_DASHBOARD_BASE_URL` | — | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
-| `PUG_DODO_PRODUCT_<SLUG>` | — | One per purchasable catalog tier (`..._STARTER`, `..._GROWTH`, `..._SCALE`), mapping the slug to a Dodo product id. Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A tier with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
+| `PUG_DODO_MANDATE_PRODUCT` | — | The one product every org authorizes against, deal or not. Its own recurring price is never charged: pug prices the period and charges that amount. Absent ⇒ nothing is purchasable, as a missing tier key used to mean. |
 
 Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's
@@ -777,8 +781,10 @@ likely to be wrong in a way nothing else catches, and it is per provider.
    The two costs paid up front are in storage (§6): the subscription key permits
    an org to hold a dead and a live row at once, and both the inbox and the
    subscription row name their provider.
-2. **§4 — pug stores no money.** DECIDED yes, and already applied to migration
-   019 and the CLI.
+2. **§4 — pug stores no money.** DECIDED yes, and applied to migration 019 and
+   the CLI — then REVERSED by usage billing: 021 stores a deal's `flat_fee_cents`
+   and `rate_cents_per_million`, written by the operator, because pug prices the
+   period itself.
 3. **§3 — USD only**, enforced at the webhook boundary. DECIDED.
 4. **§5.1 — custom products are created by hand in Dodo**, not over the API.
    DECIDED for v1.
@@ -853,7 +859,7 @@ the drift this is meant to prevent, and a test caught it.
 
 **A lapsed contract no longer gates the overrides when a subscription is live
 (§7).** `applyOverrides` was contract-gated, which collapsed a live custom deal
-to no quota — and then to the free floor — on the day its agreed term passed,
+to no quota on the day its agreed term passed,
 while Dodo went on charging. The contract bounds a grant an operator made; it
 cannot expire a subscription the provider still says is live.
 
