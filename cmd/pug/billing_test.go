@@ -169,3 +169,22 @@ func TestBillingWritesRequireAnActor(t *testing.T) {
 		}
 	}
 }
+
+// preview reads and prices; it writes nothing, so it takes no --actor and the
+// count it prices is not optional.
+func TestBillingPreviewIsReadOnly(t *testing.T) {
+	cmd, _, err := newBillingCmd().Find([]string{"preview"})
+	if err != nil {
+		t.Fatalf("find preview: %v", err)
+	}
+	if cmd.Flags().Lookup("actor") != nil {
+		t.Error("preview takes --actor; it writes nothing")
+	}
+	events := cmd.Flags().Lookup("events")
+	if events == nil {
+		t.Fatal("preview has no --events flag")
+	}
+	if events.Annotations[cobra.BashCompOneRequiredFlag] == nil {
+		t.Error("preview --events is not required; there is no count to price without it")
+	}
+}

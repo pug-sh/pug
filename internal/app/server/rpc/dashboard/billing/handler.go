@@ -211,9 +211,6 @@ func confirmErr(err error, orgID string) error {
 	case errors.Is(err, corebilling.ErrCurrencyNotSupported):
 		return paid(apperr.ReasonBillingCurrencyUnsupported,
 			"this subscription is billed in a currency pug does not support")
-	case errors.Is(err, corebilling.ErrNotPurchasable):
-		return paid(apperr.ReasonBillingProductUnmapped,
-			"this subscription is for a product pug cannot match to a plan")
 	case errors.Is(err, corebilling.ErrTwoLiveSubscriptions):
 		return paid(apperr.ReasonBillingTwoLiveSubscriptions,
 			"this organization already has a live subscription")
@@ -251,8 +248,9 @@ func (s *Server) CreatePortalSession(
 	}), nil
 }
 
-// ListPlans returns the tiers this deployment sells. Never a product id: the
-// dashboard renders a buy button from `purchasable` alone.
+// ListPlans returns the current card, plus custom for an org whose row records a
+// deal. Never a product id: the dashboard renders a buy button from
+// `purchasable` alone.
 func (s *Server) ListPlans(
 	ctx context.Context,
 	req *connect.Request[billingv1.ListPlansRequest],

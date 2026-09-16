@@ -171,15 +171,14 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get subscription: %w", err)
 	}
 	return c.eventFromSubscription(subscriptionPayload{
-		Currency:              string(sub.Currency),
-		CustomerID:            sub.Customer.CustomerID,
-		Metadata:              stringMetadata(sub.Metadata),
-		NextBillingDate:       &sub.NextBillingDate,
-		PreviousBillingDate:   &sub.PreviousBillingDate,
-		ProductID:             sub.ProductID,
-		RecurringPreTaxAmount: sub.RecurringPreTaxAmount,
-		Status:                string(sub.Status),
-		SubscriptionID:        sub.SubscriptionID,
+		Currency:            string(sub.Currency),
+		CustomerID:          sub.Customer.CustomerID,
+		Metadata:            stringMetadata(sub.Metadata),
+		NextBillingDate:     &sub.NextBillingDate,
+		PreviousBillingDate: &sub.PreviousBillingDate,
+		ProductID:           sub.ProductID,
+		Status:              string(sub.Status),
+		SubscriptionID:      sub.SubscriptionID,
 	}), nil
 }
 

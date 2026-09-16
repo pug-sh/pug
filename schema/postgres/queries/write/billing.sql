@@ -43,11 +43,11 @@ delete from billing_entitlements where org_id = @org_id;
 insert into billing_entitlement_history (
   actor, anchor_day, contract_ends_at, deleted, display_name_override,
   flat_fee_cents, id, included_events_override, note, org_id, plan_slug,
-  rate_cents_per_million, retention_days_override, trial_ends_at
+  rate_cents_per_million, retention_days_override, terms_effective_at, trial_ends_at
 ) values (
   @actor, @anchor_day, @contract_ends_at, @deleted, @display_name_override,
   @flat_fee_cents, @id, @included_events_override, @note, @org_id, @plan_slug,
-  @rate_cents_per_million, @retention_days_override, @trial_ends_at
+  @rate_cents_per_million, @retention_days_override, @terms_effective_at, @trial_ends_at
 );
 
 -- name: InsertBillingWebhookDelivery :one

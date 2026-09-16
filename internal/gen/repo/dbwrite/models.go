@@ -61,6 +61,7 @@ type BillingEntitlementHistory struct {
 	ProviderProductID      pgtype.Text
 	FlatFeeCents           pgtype.Int8
 	RateCentsPerMillion    pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 	Deleted                bool
 }
 

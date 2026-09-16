@@ -739,3 +739,62 @@ func TestConfirmRefusesASecondLiveSubscription(t *testing.T) {
 		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonBillingTwoLiveSubscriptions)
 	}
 }
+
+// The tier values ARE the public price table. Asserting only the tier count lets
+// a transposed pair ship $40.00/M rendered as "2,000,000".
+func TestListPlansCarriesTheCardsTierValues(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	srv := newPayingServer(t, pg, true)
+
+	card := corebilling.CurrentCard()
+	got := listPlans(t, srv, orgID)[0].GetRateCard().GetTiers()
+	if len(got) != len(card.Tiers) {
+		t.Fatalf("rate_card has %d tiers, want %d", len(got), len(card.Tiers))
+	}
+	for i, want := range card.Tiers {
+		if got[i].GetUpToEvents() != want.UpToEvents || got[i].GetCentsPerMillion() != want.CentsPerMillion {
+			t.Errorf("tier %d = up_to %d at %d c/M, want up_to %d at %d c/M", i,
+				got[i].GetUpToEvents(), got[i].GetCentsPerMillion(), want.UpToEvents, want.CentsPerMillion)
+		}
+	}
+}
+
+// A term the deal does not carry is ABSENT, never zero: a zero rate reads as
+// usage nobody is charged for, and a zero allowance as "0 events included".
+func TestListPlansLeavesATermTheDealDoesNotCarryAbsent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	srv := newPayingServer(t, pg, true)
+
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (flat_fee_cents, org_id, plan_slug) values (40000, $1, 'custom')`,
+		orgID); err != nil {
+		t.Fatalf("seed a flat-fee deal: %v", err)
+	}
+
+	var terms *billingv1.CustomTerms
+	for _, plan := range listPlans(t, srv, orgID) {
+		if plan.GetSlug() == corebilling.SlugCustom {
+			terms = plan.GetCustomTerms()
+		}
+	}
+	if terms == nil {
+		t.Fatal("custom is not offered to the org whose row records a deal")
+	}
+	if terms.GetFlatFeeCents().GetValue() != 40_000 {
+		t.Errorf("flat fee = %v, want the row's 40000", terms.GetFlatFeeCents())
+	}
+	if terms.RateCentsPerMillion != nil {
+		t.Errorf("rate = %v, want ABSENT — this deal has no rate", terms.RateCentsPerMillion)
+	}
+	if terms.IncludedEvents != nil {
+		t.Errorf("included events = %v, want ABSENT — this deal has no allowance", terms.IncludedEvents)
+	}
+}

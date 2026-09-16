@@ -127,7 +127,7 @@ message GetBillingStatusResponse {
   // own, so the date that matters is when pug charges the running period.
   reserved 10;
   // Whether a checkout would open at all -- billing on, a provider configured, and
-  // a product to check out against. Per tier it is PlanOption.purchasable.
+  // a mandate product to check out against. Per plan it is PlanOption.purchasable.
   bool purchasable = 11;
   // Days of event history the plan promises. ABSENT means NO BOUND and is never
   // zero. Nothing in pug deletes on this number today.
@@ -145,7 +145,7 @@ message GetBillingStatusResponse {
 
 message CreateCheckoutSessionRequest {
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
-  // A catalog slug. Never a price and never a product id.
+  // The current card's slug, or custom. Never a price and never a product id.
   string plan_slug = 2 [(buf.validate.field).string.min_len = 1];
   // The mode the overlay opens over, so it does not land light on a dark page.
   // The dashboard's resolved theme, not the stored preference -- "system" is
@@ -194,8 +194,8 @@ message CreatePortalSessionResponse {
 }
 
 message ListPlansRequest {
-  // Scoped to an org because purchasability is: only the org whose row records a
-  // product can buy the custom tier.
+  // Scoped to an org because the options are: custom is offered only to the org
+  // whose row records a deal.
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 

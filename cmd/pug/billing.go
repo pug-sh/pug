@@ -26,9 +26,9 @@ func newBillingCmd() *cobra.Command {
 		Use:   "billing",
 		Short: "Grant, extend and inspect org billing entitlements",
 		Long: "Operator commands for the entitlement store — what an org is allowed to\n" +
-			"send. Postgres only: no payments provider is contacted, and no price is\n" +
-			"ever written here. Every write is attributed to --actor and appended to\n" +
-			"the org's history in the same transaction.",
+			"send, and what a deal is priced at. Postgres only: no payments provider is\n" +
+			"contacted. Every write is attributed to --actor and appended to the org's\n" +
+			"history in the same transaction.",
 	}
 
 	for _, c := range []*cobra.Command{

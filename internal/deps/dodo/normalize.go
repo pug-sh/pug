@@ -36,13 +36,12 @@ type subscriptionPayload struct {
 	Customer   struct {
 		CustomerID string `json:"customer_id"`
 	} `json:"customer"`
-	Metadata              metadata   `json:"metadata"`
-	NextBillingDate       *time.Time `json:"next_billing_date"`
-	PreviousBillingDate   *time.Time `json:"previous_billing_date"`
-	ProductID             string     `json:"product_id"`
-	RecurringPreTaxAmount int64      `json:"recurring_pre_tax_amount"`
-	Status                string     `json:"status"`
-	SubscriptionID        string     `json:"subscription_id"`
+	Metadata            metadata   `json:"metadata"`
+	NextBillingDate     *time.Time `json:"next_billing_date"`
+	PreviousBillingDate *time.Time `json:"previous_billing_date"`
+	ProductID           string     `json:"product_id"`
+	Status              string     `json:"status"`
+	SubscriptionID      string     `json:"subscription_id"`
 }
 
 // metadata narrows Dodo's string|number|bool map to the string values pug writes:

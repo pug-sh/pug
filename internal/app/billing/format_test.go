@@ -93,8 +93,12 @@ func TestReportRendersWhatUsageCosts(t *testing.T) {
 		Slug: card.Slug, DisplayName: card.DisplayName, Currency: card.Currency,
 		Status: corebilling.StatusFree, Card: &card, BillingEnabled: true,
 	}, corebilling.Record{}, nil)
-	if got := line(t, onCard, "RESOLVED", "pricing"); !strings.Contains(got, "free") || !strings.Contains(got, "/M") {
-		t.Errorf("card pricing = %q, want the free allowance and the per-million rates", got)
+	got := line(t, onCard, "RESOLVED", "pricing")
+	// Both tier shapes: a bounded band names its ceiling, the last one is open.
+	for _, want := range []string{"free", comma(card.Tiers[0].UpToEvents), "beyond"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("card pricing = %q, want it to carry %s", got, want)
+		}
 	}
 
 	terms := corebilling.CustomTerms{FlatFeeCents: 40_000, RateCentsPerMillion: 3_000, IncludedEvents: 5_000_000}
@@ -102,7 +106,7 @@ func TestReportRendersWhatUsageCosts(t *testing.T) {
 		Slug: "custom", DisplayName: "Custom", Currency: "USD",
 		Status: corebilling.StatusActive, Terms: &terms, BillingEnabled: true,
 	}, corebilling.Record{}, nil)
-	got := line(t, onDeal, "RESOLVED", "pricing")
+	got = line(t, onDeal, "RESOLVED", "pricing")
 	for _, want := range []string{"$400.00", "flat", "$30.00", "5,000,000"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("deal pricing = %q, want it to carry %s", got, want)
@@ -317,5 +321,30 @@ func TestHistorySectionSeparatesUnaskedFromEmpty(t *testing.T) {
 	}
 	if out := render(t, ent, corebilling.Record{}, nil); strings.Contains(out, "HISTORY") {
 		t.Errorf("a history nobody asked for was printed anyway:\n%s", out)
+	}
+}
+
+// The preview is the last thing an operator reads before committing a price, so
+// every band it charges has to appear beside the total.
+func TestPreviewRendersEachBandAndTheTotal(t *testing.T) {
+	card := corebilling.CurrentCard()
+	var buf bytes.Buffer
+	ent := corebilling.Entitlement{
+		Slug: card.Slug, DisplayName: card.DisplayName, Currency: card.Currency,
+		Status: corebilling.StatusFree, Card: &card, BillingEnabled: true,
+	}
+	quote := corebilling.Price(card, 1_000_000)
+	if err := writePreview(&buf, ent, 1_000_000, quote); err != nil {
+		t.Fatalf("writePreview: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"1,000,000", "free", "×", "/M", "$36.00"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("preview = %q, want it to carry %s", out, want)
+		}
+	}
+	if len(quote.Lines) == 0 {
+		t.Fatal("the quote has no lines to render")
 	}
 }

@@ -33,6 +33,7 @@ alter table billing_entitlement_history
     constraint billing_entitlement_history_flat_fee_check check (flat_fee_cents >= 0),
   add column rate_cents_per_million bigint
     constraint billing_entitlement_history_rate_check check (rate_cents_per_million >= 0),
+  add column terms_effective_at timestamptz,
   -- A deletion used to be encoded as a NULL plan_slug. Now that a live row can
   -- hold one, the marker has to be its own column.
   add column deleted boolean not null default false;
@@ -50,7 +51,8 @@ alter table billing_entitlement_history
           and display_name_override is null and flat_fee_cents is null
           and included_events_override is null and plan_slug is null
           and provider_product_id is null and rate_cents_per_million is null
-          and retention_days_override is null and trial_ends_at is null));
+          and retention_days_override is null and terms_effective_at is null
+          and trial_ends_at is null));
 
 -- A mandate's recurring price is never what pug charges: usage is. Mirroring it
 -- only invites someone to read it as the bill.
@@ -142,6 +144,7 @@ create table billing_invoice_events (
   id char(20) primary key,
   invoice_id char(20) not null references billing_invoices(id) on delete cascade,
   to_status text not null
+    constraint billing_invoice_events_to_status_check check (to_status <> '')
 );
 
 create index billing_invoice_events_invoice_idx on billing_invoice_events (invoice_id, at);
@@ -157,10 +160,17 @@ alter table billing_subscriptions
     constraint billing_subscriptions_price_check check (price_cents >= 0);
 alter table billing_subscriptions alter column price_cents drop default;
 
+-- 021 allows rows the constraints below cannot express: a pin-less row, and a
+-- deal whose price is in the columns this rollback drops. Normalizing every one
+-- is also what keeps a re-applied Up from rejecting what Down left.
+update billing_entitlement_history set plan_slug = 'free'
+  where not deleted and (plan_slug is null or plan_slug = 'custom');
+
 alter table billing_entitlement_history
   drop constraint if exists billing_entitlement_history_deletion_is_empty,
   drop constraint if exists billing_entitlement_history_custom_needs_price,
   drop column if exists deleted,
+  drop column if exists terms_effective_at,
   drop column if exists rate_cents_per_million,
   drop column if exists flat_fee_cents;
 
@@ -173,6 +183,10 @@ alter table billing_entitlement_history
           and display_name_override is null and included_events_override is null
           and provider_product_id is null and retention_days_override is null
           and trial_ends_at is null));
+
+-- As above: no deal survives a rollback that drops the money it was priced on.
+update billing_entitlements set plan_slug = 'free'
+  where plan_slug is null or plan_slug = 'custom';
 
 alter table billing_entitlements
   drop constraint if exists billing_entitlements_custom_needs_price,

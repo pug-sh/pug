@@ -108,7 +108,7 @@ func (c *CLI) Preview(ctx context.Context, out io.Writer, orgID string, events i
 	return writePreview(out, ent, events, quote)
 }
 
-// Clear deletes the row, returning the org to the derived trial-then-free floors.
+// Clear deletes the row, returning the org to the derived trial-then-card state.
 func (c *CLI) Clear(ctx context.Context, out io.Writer, orgID, actor string) error {
 	if err := c.svc.Clear(ctx, orgID, actor); err != nil {
 		return err

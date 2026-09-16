@@ -496,7 +496,7 @@ type GetBillingStatusResponse struct {
 	PeriodEnd          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=period_end,json=periodEnd" json:"period_end,omitempty"`
 	SubscriptionStatus *SubscriptionStatus    `protobuf:"varint,9,opt,name=subscription_status,json=subscriptionStatus,enum=dashboard.billing.v1.SubscriptionStatus" json:"subscription_status,omitempty"`
 	// Whether a checkout would open at all -- billing on, a provider configured, and
-	// a product to check out against. Per tier it is PlanOption.purchasable.
+	// a mandate product to check out against. Per plan it is PlanOption.purchasable.
 	Purchasable *bool `protobuf:"varint,11,opt,name=purchasable" json:"purchasable,omitempty"`
 	// Days of event history the plan promises. ABSENT means NO BOUND and is never
 	// zero. Nothing in pug deletes on this number today.
@@ -652,7 +652,7 @@ func (x *GetBillingStatusResponse) GetChargeable() bool {
 type CreateCheckoutSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// A catalog slug. Never a price and never a product id.
+	// The current card's slug, or custom. Never a price and never a product id.
 	PlanSlug *string `protobuf:"bytes,2,opt,name=plan_slug,json=planSlug" json:"plan_slug,omitempty"`
 	// The mode the overlay opens over, so it does not land light on a dark page.
 	// The dashboard's resolved theme, not the stored preference -- "system" is
@@ -959,8 +959,8 @@ func (x *CreatePortalSessionResponse) GetPortalUrl() string {
 
 type ListPlansRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Scoped to an org because purchasability is: only the org whose row records a
-	// product can buy the custom tier.
+	// Scoped to an org because the options are: custom is offered only to the org
+	// whose row records a deal.
 	OrgId         *string `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

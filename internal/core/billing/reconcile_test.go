@@ -514,3 +514,25 @@ func TestReconcileStopsOnACancelledContext(t *testing.T) {
 		t.Errorf("unreadable = %d; a cancellation was counted as a provider outage", report.Unreadable)
 	}
 }
+
+// A pinned card is grandfathering, not a grant: an org holding one with no
+// mandate simply is not invoiced. Reporting it would put most orgs in the
+// counter and drown the finding it exists to surface.
+func TestReconcileDoesNotReportACardPinAsUnbilled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, pinCard()); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+
+	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: *provider})
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.EntitledUnbilled != 0 {
+		t.Errorf("entitled_unbilled = %d, want 0 — a card pin is not a grant", report.EntitledUnbilled)
+	}
+}

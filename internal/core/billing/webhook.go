@@ -92,12 +92,7 @@ func (s *Service) applySubscriptionEvent(
 
 	applied, err := s.applySubscription(ctx, provider, orgID, event, d.DeliveredAt)
 	if err != nil {
-		// A deploy is missing a product key, or an operator created a product without
-		// pasting its id. Neither is fixed by retrying, and reconcile reports it.
-		if errors.Is(err, ErrNotPurchasable) {
-			return s.rejectDelivery(ctx, provider, d, "product", err)
-		}
-		// Everything else is retried, ErrTwoLiveSubscriptions included: that one is a
+		// Everything is retried, ErrTwoLiveSubscriptions included: that one is a
 		// cutover whose old cancellation has not landed, and the retry then succeeds.
 		return err
 	}
@@ -253,9 +248,9 @@ var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be ap
 
 // applySubscription is the one writer behind all three paths — webhook,
 // reconcile and confirm — so they cannot disagree about what "newer" means. 0
-// applied is the CAS refusing an older read. It takes no entitlement lock: a
-// deal's terms live on the org's row and the mandate no longer resolves anything
-// from it, so there is nothing for a concurrent `billing clear` to strand.
+// applied is the CAS refusing an older read. The org lock is what makes the card
+// read and the write one step; a concurrent `billing clear` has nothing to
+// strand, since the mandate resolves nothing from the org's row.
 func (s *Service) applySubscription(
 	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time,
 ) (int64, error) {
@@ -270,11 +265,23 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
 	}
-	planSlug, err := s.pinnedCard(ctx, provider, event)
+	tx, err := s.begin(ctx)
 	if err != nil {
 		return 0, err
 	}
-	applied, err := s.write().ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Under the lock: two deliveries for one subscription would otherwise both miss
+	// the stored slug and the later one price the mandate on a card nobody pinned.
+	w := dbwrite.New(tx)
+	if err := lockOrg(ctx, w, orgID); err != nil {
+		return 0, err
+	}
+	planSlug, err := pinnedCard(ctx, w, provider, event)
+	if err != nil {
+		return 0, err
+	}
+	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
 		Currency:           Currency,
 		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
 		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
@@ -300,6 +307,9 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, err)
 		return 0, err
 	}
+	if err := s.commit(ctx, tx, orgID); err != nil {
+		return 0, err
+	}
 	return applied, nil
 }
 
@@ -307,8 +317,7 @@ func (s *Service) applySubscription(
 // else the one already stored, else the current card. A delivery's PRODUCT
 // decides nothing — every org authorizes against the same one — and a renewal or
 // cancellation carries no ref, so re-resolving would move a grandfathered price.
-func (s *Service) pinnedCard(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
-	w := s.write()
+func pinnedCard(ctx context.Context, w *dbwrite.Queries, provider PaymentProvider, event SubscriptionEvent) (string, error) {
 	if event.CheckoutRef != "" {
 		session, err := w.GetBillingCheckoutSession(ctx, dbwrite.GetBillingCheckoutSessionParams{
 			Provider: provider.Name(),
@@ -338,6 +347,10 @@ func (s *Service) pinnedCard(ctx context.Context, provider PaymentProvider, even
 		return "", err
 	}
 	// A payment link pug never opened a checkout for: the buyer saw the current
-	// card, because that is the only one on sale.
-	return CurrentCard().Slug, nil
+	// card, because that is the only one on sale. Warned because this is the only
+	// path that prices a mandate on a card it did not pin.
+	slug := CurrentCard().Slug
+	slog.WarnContext(ctx, "no pinned or stored card for a subscription; pricing it on the current card",
+		slog.String("provider_sub_id", event.ProviderSubID), slog.String("plan_slug", slug))
+	return slug, nil
 }

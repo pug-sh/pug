@@ -139,7 +139,7 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 }
 
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million, deleted from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million, terms_effective_at, deleted from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -175,6 +175,7 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.ProviderProductID,
 			&i.FlatFeeCents,
 			&i.RateCentsPerMillion,
+			&i.TermsEffectiveAt,
 			&i.Deleted,
 		); err != nil {
 			return nil, err

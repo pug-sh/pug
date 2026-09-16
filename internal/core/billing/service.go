@@ -519,6 +519,7 @@ func appendHistory(ctx context.Context, w *dbwrite.Queries, orgID, actor string,
 		PlanSlug:               postgres.NewOptionalText(rec.PlanSlug),
 		RateCentsPerMillion:    postgres.NewOptionalInt8(rec.RateCentsPerMillion),
 		RetentionDaysOverride:  postgres.NewOptionalInt8(rec.RetentionDaysOverride),
+		TermsEffectiveAt:       postgres.NewOptionalTimestamptz(rec.TermsEffectiveAt),
 		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 	if err := w.InsertBillingEntitlementHistory(ctx, params); err != nil {
@@ -566,6 +567,7 @@ func (s *Service) History(ctx context.Context, orgID string) ([]HistoryEntry, er
 			PlanSlug:               row.PlanSlug.String,
 			RateCentsPerMillion:    row.RateCentsPerMillion.Int64,
 			RetentionDaysOverride:  row.RetentionDaysOverride.Int64,
+			TermsEffectiveAt:       row.TermsEffectiveAt.Time,
 			TrialEndsAt:            row.TrialEndsAt.Time,
 		}
 		out = append(out, HistoryEntry{Actor: row.Actor, ChangedAt: row.ChangedAt.Time, Record: rec})

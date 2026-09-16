@@ -188,11 +188,11 @@ const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistor
 insert into billing_entitlement_history (
   actor, anchor_day, contract_ends_at, deleted, display_name_override,
   flat_fee_cents, id, included_events_override, note, org_id, plan_slug,
-  rate_cents_per_million, retention_days_override, trial_ends_at
+  rate_cents_per_million, retention_days_override, terms_effective_at, trial_ends_at
 ) values (
   $1, $2, $3, $4, $5,
   $6, $7, $8, $9, $10, $11,
-  $12, $13, $14
+  $12, $13, $14, $15
 )
 `
 
@@ -210,6 +210,7 @@ type InsertBillingEntitlementHistoryParams struct {
 	PlanSlug               pgtype.Text
 	RateCentsPerMillion    pgtype.Int8
 	RetentionDaysOverride  pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -228,6 +229,7 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 		arg.PlanSlug,
 		arg.RateCentsPerMillion,
 		arg.RetentionDaysOverride,
+		arg.TermsEffectiveAt,
 		arg.TrialEndsAt,
 	)
 	return err
