@@ -10,24 +10,29 @@ select * from billing_entitlements where org_id = @org_id for update;
 -- name: UpsertBillingEntitlement :one
 -- Full replace, never coalesce: the caller has already merged its change over
 -- the locked row.
+-- provider_product_id is not written here any more: every org authorizes against
+-- the one mandate product, and migration 022 drops the column.
 insert into billing_entitlements (
-  anchor_day, contract_ends_at, display_name_override,
-  included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  anchor_day, contract_ends_at, display_name_override, flat_fee_cents,
+  included_events_override, note, org_id, plan_slug, rate_cents_per_million,
+  retention_days_override, terms_effective_at, trial_ends_at
 ) values (
-  @anchor_day, @contract_ends_at, @display_name_override,
-  @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
-  @retention_days_override, @trial_ends_at
+  @anchor_day, @contract_ends_at, @display_name_override, @flat_fee_cents,
+  @included_events_override, @note, @org_id, @plan_slug, @rate_cents_per_million,
+  @retention_days_override, @terms_effective_at, @trial_ends_at
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
     contract_ends_at = excluded.contract_ends_at,
     display_name_override = excluded.display_name_override,
+    flat_fee_cents = excluded.flat_fee_cents,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
-    provider_product_id = excluded.provider_product_id,
+    provider_product_id = null,
+    rate_cents_per_million = excluded.rate_cents_per_million,
     retention_days_override = excluded.retention_days_override,
+    terms_effective_at = excluded.terms_effective_at,
     trial_ends_at = excluded.trial_ends_at
 returning *;
 
@@ -36,13 +41,13 @@ delete from billing_entitlements where org_id = @org_id;
 
 -- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
-  actor, anchor_day, contract_ends_at, display_name_override,
-  id, included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  actor, anchor_day, contract_ends_at, deleted, display_name_override,
+  flat_fee_cents, id, included_events_override, note, org_id, plan_slug,
+  rate_cents_per_million, retention_days_override, trial_ends_at
 ) values (
-  @actor, @anchor_day, @contract_ends_at, @display_name_override,
-  @id, @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
-  @retention_days_override, @trial_ends_at
+  @actor, @anchor_day, @contract_ends_at, @deleted, @display_name_override,
+  @flat_fee_cents, @id, @included_events_override, @note, @org_id, @plan_slug,
+  @rate_cents_per_million, @retention_days_override, @trial_ends_at
 );
 
 -- name: InsertBillingWebhookDelivery :one
@@ -102,28 +107,22 @@ where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
 -- name: CreateBillingCheckoutSession :exec
 -- Written before the provider is called, because the ref has to be in the
 -- checkout's metadata. An abandoned checkout's row is pruned.
-insert into billing_checkout_sessions (org_id, provider, ref)
-values (@org_id, @provider, @ref);
+insert into billing_checkout_sessions (org_id, plan_slug, provider, ref)
+values (@org_id, @plan_slug, @provider, @ref);
 
--- name: GetBillingCheckoutSessionOrgID :one
+-- name: GetBillingCheckoutSession :one
 -- Attribution: turns a ref that came back on a delivery into the org pug chose
--- when it started the checkout.
-select org_id from billing_checkout_sessions
+-- when it started the checkout, and the card it pinned.
+select org_id, plan_slug from billing_checkout_sessions
 where provider = @provider and ref = @ref;
 
 -- name: PruneBillingCheckoutSessions :execrows
 -- A ref only has to outlive the gap between a checkout and its first delivery.
 delete from billing_checkout_sessions where create_time < @older_than;
 
--- name: GetBillingEntitlementProviderProductID :one
--- The product an operator staged this org to buy. It is what lets a payment
--- link's metadata.org_id attribute: buyer-settable on its own, it only counts
--- when an operator has already pointed this org at this product.
-select provider_product_id from billing_entitlements where org_id = @org_id;
-
 -- name: GetBillingSubscriptionPlanSlug :one
--- Read inside the apply lock so a delivery that ENDS a subscription keeps the
--- stored slug: a product dropped from config must not refuse a cancellation.
+-- The pinned card, read inside the apply lock so a delivery carrying no ref keeps
+-- the card the checkout pinned rather than resolving one afresh.
 select plan_slug from billing_subscriptions
 where provider = @provider and provider_sub_id = @provider_sub_id;
 

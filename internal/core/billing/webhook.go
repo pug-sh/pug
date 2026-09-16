@@ -112,40 +112,27 @@ func (s *Service) applySubscriptionEvent(
 }
 
 // attributeDelivery places a delivery on an org: the ref from a checkout pug
-// started, then a staged deal's product, then the provider customer, and that one
-// only while it names a single org. A delivery resolving to no org, or to two, is
-// never applied to a guess.
+// started, then the provider customer, and that one only while it names a single
+// org. A delivery resolving to no org, or to two, is never applied to a guess.
 //
-// metadata.org_id is never enough on its own. Static payment links let the buyer
-// set metadata_* from the URL, so an org id in a payload names an org rather than
-// proving one — it counts only alongside a product an operator staged.
+// metadata.org_id is never enough on its own, and there is no longer a staged
+// product to pair it with: static payment links let the buyer set metadata_* from
+// the URL, so an org id in a payload names an org rather than proving one.
 func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
 	// Every read here goes through the WRITE pool: a lagging replica would report "no
 	// such org" for an org that just checked out, rejecting the delivery permanently.
 	w := s.write()
 	if event.CheckoutRef != "" {
-		orgID, err := w.GetBillingCheckoutSessionOrgID(ctx, dbwrite.GetBillingCheckoutSessionOrgIDParams{
+		session, err := w.GetBillingCheckoutSession(ctx, dbwrite.GetBillingCheckoutSessionParams{
 			Provider: provider.Name(),
 			Ref:      event.CheckoutRef,
 		})
 		if err == nil {
-			return orgID, nil
+			return session.OrgID, nil
 		}
 		// A ref nobody minted is worth nothing, not a rejection: a payment link has none.
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return "", err
-		}
-	}
-	// metadata.org_id, but only for the product an operator already staged this org
-	// to buy — the negotiated-deal payment link. Buyer-settable metadata alone
-	// names an org; paired with a staged product it can only buy what was staged.
-	if event.OrgID != "" && event.ProductID != "" {
-		staged, err := w.GetBillingEntitlementProviderProductID(ctx, event.OrgID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return "", err
-		}
-		if err == nil && staged.Valid && staged.String == event.ProductID {
-			return event.OrgID, nil
 		}
 	}
 	if event.ProviderCustomerID != "" {
@@ -265,11 +252,10 @@ var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live s
 var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be applied")
 
 // applySubscription is the one writer behind all three paths — webhook,
-// reconcile and confirm — so they cannot disagree about what "newer" means. It
-// runs under the entitlement lock and re-reads the org's row inside it: a
-// `billing clear` between the mapping and the write would otherwise strand a
-// live custom subscription on the free floor, which is what Clear's own guard
-// exists to prevent. 0 applied is the CAS refusing an older read.
+// reconcile and confirm — so they cannot disagree about what "newer" means. 0
+// applied is the CAS refusing an older read. It takes no entitlement lock: a
+// deal's terms live on the org's row and the mandate no longer resolves anything
+// from it, so there is nothing for a concurrent `billing clear` to strand.
 func (s *Service) applySubscription(
 	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time,
 ) (int64, error) {
@@ -284,49 +270,11 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
 	}
-	tx, err := s.begin(ctx)
+	planSlug, err := s.pinnedCard(ctx, provider, event)
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	w := dbwrite.New(tx)
-	if err := w.LockBillingEntitlementOrg(ctx, orgID); err != nil {
-		slog.ErrorContext(ctx, "failed to lock the org for a subscription write", slogx.Error(err),
-			slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return 0, err
-	}
-	// The org's own row, for the negotiated-deal product, read under the lock so
-	// the mapping and the write see the same row.
-	rec, err := currentRecord(ctx, w, orgID)
-	if err != nil {
-		return 0, err
-	}
-	planSlug, err := s.planForProduct(event.ProductID, rec)
-	if err != nil {
-		// A product only has to resolve to GRANT a plan. Refusing a cancellation whose
-		// product left the config would strand the org on a tier it stopped paying for.
-		if event.Status.Live() || !errors.Is(err, ErrNotPurchasable) {
-			return 0, err
-		}
-		stored, storedErr := w.GetBillingSubscriptionPlanSlug(ctx, dbwrite.GetBillingSubscriptionPlanSlugParams{
-			Provider:      provider.Name(),
-			ProviderSubID: event.ProviderSubID,
-		})
-		if storedErr != nil {
-			// No row means no grant to end, so the original refusal stands.
-			if errors.Is(storedErr, pgx.ErrNoRows) {
-				return 0, err
-			}
-			slog.ErrorContext(ctx, "failed to read the stored plan slug for a cancellation", slogx.Error(storedErr),
-				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-			telemetry.RecordError(ctx, storedErr)
-			return 0, storedErr
-		}
-		planSlug = stored
-	}
-	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
+	applied, err := s.write().ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
 		Currency:           Currency,
 		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
 		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
@@ -352,8 +300,44 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, err)
 		return 0, err
 	}
-	if err := s.commit(ctx, tx, orgID); err != nil {
-		return 0, err
-	}
 	return applied, nil
+}
+
+// pinnedCard is the card this mandate is priced on: the one its checkout pinned,
+// else the one already stored, else the current card. A delivery's PRODUCT
+// decides nothing — every org authorizes against the same one — and a renewal or
+// cancellation carries no ref, so re-resolving would move a grandfathered price.
+func (s *Service) pinnedCard(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
+	w := s.write()
+	if event.CheckoutRef != "" {
+		session, err := w.GetBillingCheckoutSession(ctx, dbwrite.GetBillingCheckoutSessionParams{
+			Provider: provider.Name(),
+			Ref:      event.CheckoutRef,
+		})
+		if err == nil {
+			return session.PlanSlug, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed to read the checkout session for a subscription", slogx.Error(err),
+				slog.String("provider_sub_id", event.ProviderSubID))
+			telemetry.RecordError(ctx, err)
+			return "", err
+		}
+	}
+	stored, err := w.GetBillingSubscriptionPlanSlug(ctx, dbwrite.GetBillingSubscriptionPlanSlugParams{
+		Provider:      provider.Name(),
+		ProviderSubID: event.ProviderSubID,
+	})
+	if err == nil {
+		return stored, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to read the stored plan slug for a subscription", slogx.Error(err),
+			slog.String("provider_sub_id", event.ProviderSubID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	// A payment link pug never opened a checkout for: the buyer saw the current
+	// card, because that is the only one on sale.
+	return CurrentCard().Slug, nil
 }

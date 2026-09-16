@@ -80,14 +80,19 @@ func (q *Queries) GetLiveBillingSubscription(ctx context.Context, orgID string) 
 const getOrgEntitlement = `-- name: GetOrgEntitlement :one
 select
   o.create_time as org_create_time,
+  -- What says the row exists: plan_slug is nullable now, so an org can hold a
+  -- trial end or an anchor day with no pin at all.
+  e.create_time as entitlement_create_time,
   e.anchor_day,
   e.contract_ends_at,
   e.display_name_override,
+  e.flat_fee_cents,
   e.included_events_override,
   e.note,
   e.plan_slug,
-  e.provider_product_id,
+  e.rate_cents_per_million,
   e.retention_days_override,
+  e.terms_effective_at,
   e.trial_ends_at
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
@@ -96,14 +101,17 @@ where o.id = $1
 
 type GetOrgEntitlementRow struct {
 	OrgCreateTime          pgtype.Timestamptz
+	EntitlementCreateTime  pgtype.Timestamptz
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
 	DisplayNameOverride    pgtype.Text
+	FlatFeeCents           pgtype.Int8
 	IncludedEventsOverride pgtype.Int8
 	Note                   pgtype.Text
 	PlanSlug               pgtype.Text
-	ProviderProductID      pgtype.Text
+	RateCentsPerMillion    pgtype.Int8
 	RetentionDaysOverride  pgtype.Int8
+	TermsEffectiveAt       pgtype.Timestamptz
 	TrialEndsAt            pgtype.Timestamptz
 }
 
@@ -114,21 +122,24 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 	var i GetOrgEntitlementRow
 	err := row.Scan(
 		&i.OrgCreateTime,
+		&i.EntitlementCreateTime,
 		&i.AnchorDay,
 		&i.ContractEndsAt,
 		&i.DisplayNameOverride,
+		&i.FlatFeeCents,
 		&i.IncludedEventsOverride,
 		&i.Note,
 		&i.PlanSlug,
-		&i.ProviderProductID,
+		&i.RateCentsPerMillion,
 		&i.RetentionDaysOverride,
+		&i.TermsEffectiveAt,
 		&i.TrialEndsAt,
 	)
 	return i, err
 }
 
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million, deleted from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -164,6 +175,7 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.ProviderProductID,
 			&i.FlatFeeCents,
 			&i.RateCentsPerMillion,
+			&i.Deleted,
 		); err != nil {
 			return nil, err
 		}
@@ -273,7 +285,7 @@ select e.org_id, e.plan_slug
 from billing_entitlements e
 left join billing_subscriptions s
   on s.org_id = e.org_id and s.status in ('active', 'past_due')
-where e.plan_slug not in ('free', 'trial')
+where e.plan_slug = 'custom'
   and (e.contract_ends_at is null or e.contract_ends_at > now())
   and s.org_id is null
 order by e.org_id
@@ -281,11 +293,12 @@ order by e.org_id
 
 type ListPaidEntitlementsWithoutLiveSubscriptionRow struct {
 	OrgID    string
-	PlanSlug string
+	PlanSlug pgtype.Text
 }
 
-// Every paid org should have a provider subscription. A row here is an org
-// entitled to something nobody is charged for.
+// A deal in force with no mandate behind it: an org entitled to something nobody
+// is charged for. A pinned card is grandfathering rather than a grant, so it is
+// not one of these -- an org with no mandate simply is not invoiced.
 func (q *Queries) ListPaidEntitlementsWithoutLiveSubscription(ctx context.Context) ([]ListPaidEntitlementsWithoutLiveSubscriptionRow, error) {
 	rows, err := q.db.Query(ctx, listPaidEntitlementsWithoutLiveSubscription)
 	if err != nil {

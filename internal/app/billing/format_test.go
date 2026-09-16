@@ -66,7 +66,7 @@ func isSectionHeader(line string) bool {
 	return false
 }
 
-// Absent means NO quota and NO list price. Rendering either as 0 states a
+// Absent means NO allowance and nothing to price. Rendering either as 0 states a
 // billing figure the deployment never claimed.
 func TestReportNeverRendersAbsentAsZero(t *testing.T) {
 	out := render(t, corebilling.Entitlement{
@@ -77,11 +77,36 @@ func TestReportNeverRendersAbsentAsZero(t *testing.T) {
 	if got := line(t, out, "RESOLVED", "included events"); got != none {
 		t.Fatalf("included events = %q, want %q", got, none)
 	}
-	if got := line(t, out, "RESOLVED", "list price"); got != none {
-		t.Fatalf("list price = %q, want %q", got, none)
+	if got := line(t, out, "RESOLVED", "pricing"); got != none {
+		t.Fatalf("pricing = %q, want %q", got, none)
 	}
 	if got := line(t, out, "RESOLVED", "retention"); got != none {
 		t.Fatalf("retention = %q, want %q", got, none)
+	}
+}
+
+// The card's tiers and the deal's terms are what replaced a single list price, so
+// each has to reach the operator's report.
+func TestReportRendersWhatUsageCosts(t *testing.T) {
+	card := corebilling.CurrentCard()
+	onCard := render(t, corebilling.Entitlement{
+		Slug: card.Slug, DisplayName: card.DisplayName, Currency: card.Currency,
+		Status: corebilling.StatusFree, Card: &card, BillingEnabled: true,
+	}, corebilling.Record{}, nil)
+	if got := line(t, onCard, "RESOLVED", "pricing"); !strings.Contains(got, "free") || !strings.Contains(got, "/M") {
+		t.Errorf("card pricing = %q, want the free allowance and the per-million rates", got)
+	}
+
+	terms := corebilling.CustomTerms{FlatFeeCents: 40_000, RateCentsPerMillion: 3_000, IncludedEvents: 5_000_000}
+	onDeal := render(t, corebilling.Entitlement{
+		Slug: "custom", DisplayName: "Custom", Currency: "USD",
+		Status: corebilling.StatusActive, Terms: &terms, BillingEnabled: true,
+	}, corebilling.Record{}, nil)
+	got := line(t, onDeal, "RESOLVED", "pricing")
+	for _, want := range []string{"$400.00", "flat", "$30.00", "5,000,000"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("deal pricing = %q, want it to carry %s", got, want)
+		}
 	}
 }
 
@@ -103,20 +128,28 @@ func TestReportRetentionNamesTheYears(t *testing.T) {
 	}
 }
 
-// Zero is a real price — the two floors — and must not read as absence.
-func TestReportRendersZeroPrice(t *testing.T) {
-	zero := int64(0)
-	free := int64(10_000)
+// A stored deal's money is printed beside the resolved answer, because a lapsed
+// deal's terms are invisible in the resolved half and still carry onto the next set.
+func TestReportPrintsTheStoredMoney(t *testing.T) {
 	out := render(t, corebilling.Entitlement{
-		Slug: "free", DisplayName: "Free", Currency: "USD", Status: corebilling.StatusFree,
-		PriceCents: &zero, IncludedEvents: &free, BillingEnabled: true,
-	}, corebilling.Record{}, nil)
+		Slug: "custom", DisplayName: "Custom", Currency: "USD", Status: corebilling.StatusActive,
+		BillingEnabled: true,
+	}, corebilling.Record{
+		Present: true, PlanSlug: "custom",
+		FlatFeeCents: 40_000, RateCentsPerMillion: 3_000, IncludedEventsOverride: 5_000_000,
+	}, nil)
 
-	if got := line(t, out, "RESOLVED", "list price"); got != "$0.00 USD" {
-		t.Fatalf("list price = %q, want $0.00 USD", got)
+	if got := line(t, out, "STORED", "flat fee"); got != "$400.00 USD" {
+		t.Errorf("stored flat fee = %q, want $400.00 USD", got)
 	}
-	if got := line(t, out, "RESOLVED", "included events"); got != "10,000" {
-		t.Fatalf("included events = %q, want 10,000", got)
+	if got := line(t, out, "STORED", "rate per million"); got != "$30.00 USD" {
+		t.Errorf("stored rate = %q, want $30.00 USD", got)
+	}
+	// Zero is the absence of a term here, not a price of nothing.
+	bare := render(t, corebilling.Entitlement{BillingEnabled: true},
+		corebilling.Record{Present: true, PlanSlug: "usage-2026-09-1"}, nil)
+	if got := line(t, bare, "STORED", "flat fee"); got != none {
+		t.Errorf("stored flat fee = %q, want %q for a card pin", got, none)
 	}
 }
 
@@ -180,14 +213,16 @@ func TestHistoryLine(t *testing.T) {
 		Present: true, PlanSlug: "custom", IncludedEventsOverride: 5_000_000,
 		RetentionDaysOverride: 3_650,
 		DisplayNameOverride:   "Acme Enterprise", AnchorDay: 17,
-		ContractEndsAt:    time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
-		TrialEndsAt:       time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
-		ProviderProductID: "prod_2f9k", Note: "$400/mo, INV-123",
+		ContractEndsAt:      time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		TrialEndsAt:         time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+		FlatFeeCents:        40_000,
+		RateCentsPerMillion: 3_000,
+		Note:                "$400/mo, INV-123",
 	})
 	for _, want := range []string{
 		"custom", "events=5,000,000", "retention=3,650d", `name="Acme Enterprise"`, "anchor-day=17",
 		"until=2027-01-01T00:00:00Z", "trial-ends=2026-10-01T00:00:00Z",
-		"product=prod_2f9k", `note="$400/mo, INV-123"`,
+		"flat-fee=$400.00 USD", "rate-per-million=$30.00 USD", `note="$400/mo, INV-123"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("history line = %q, want it to carry %s", got, want)
@@ -195,7 +230,7 @@ func TestHistoryLine(t *testing.T) {
 	}
 
 	// A renewal reads as the fields that carry a value, not as eight (none)s.
-	renewal := historyLine(corebilling.Record{Present: true, PlanSlug: "growth"})
+	renewal := historyLine(corebilling.Record{Present: true, PlanSlug: "usage-2026-09-1"})
 	if strings.Contains(renewal, none) {
 		t.Fatalf("renewal line = %q, want no absent fields spelled out", renewal)
 	}

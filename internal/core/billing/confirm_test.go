@@ -41,8 +41,8 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — the confirmed checkout did not reach the entitlement", ent.Slug)
+	if ent.Slug != currentCard().Slug {
+		t.Errorf("slug = %q, want the pinned card — the confirmed checkout did not reach the entitlement", ent.Slug)
 	}
 	if ent.SubStatus != corebilling.SubStatusActive {
 		t.Errorf("sub status = %q, want active", ent.SubStatus)
@@ -131,8 +131,8 @@ func TestConfirmCheckoutDoesNotConfirmAPendingSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug == "growth" {
-		t.Error("a pending subscription granted the plan")
+	if ent.Chargeable {
+		t.Error("a pending subscription made the org chargeable")
 	}
 }
 
@@ -155,20 +155,28 @@ func TestConfirmCheckoutRefusesAForeignCurrency(t *testing.T) {
 	}
 }
 
-// A product no config key and no org row maps to. Same disposition: refuse, and
-// say so, rather than write a subscription against nothing.
-func TestConfirmCheckoutRefusesAnUnmappableProduct(t *testing.T) {
+// Every org authorizes against the one mandate product, so a product pug does not
+// recognise decides nothing: the card comes from the checkout the ref names.
+func TestConfirmCheckoutIgnoresTheProduct(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
 	provider.checkout = subEvent(f.orgID, "sub00000000000000025", "prod_unknown", corebilling.SubStatusActive)
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrNotPurchasable) {
-		t.Fatalf("err = %v, want ErrNotPurchasable", err)
+	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
+	if err != nil {
+		t.Fatalf("ConfirmCheckout: %v", err)
 	}
-	if n := storedSubscriptions(t, f); n != 0 {
-		t.Errorf("wrote %d rows for an unmappable product, want 0", n)
+	if !confirmed {
+		t.Error("confirmed = false; the product is not what places a subscription")
+	}
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != currentCard().Slug {
+		t.Errorf("slug = %q, want the card the checkout pinned", ent.Slug)
 	}
 }
 
@@ -226,8 +234,8 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want the untouched growth", ent.Slug)
+	if !ent.Chargeable {
+		t.Error("the org lost its live mandate to a subscription that was never written")
 	}
 }
 
@@ -338,62 +346,40 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 	}
 }
 
-// The confirm path's half of the Clear race, and the one with a buyer blocked on
-// the response: the product check runs on a record read outside the lock, so a
-// clear can commit before applySubscription re-reads it. The re-read under the
-// lock is what stops a live custom subscription being stored against a row that
-// is gone -- which would resolve to the free floor for somebody who just paid.
-func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
+// A mandate no longer resolves anything from the org's row, so a `billing clear`
+// racing a confirm cannot strand it: the subscription is written either way, and
+// a cleared org simply falls to the current card.
+func TestClearDuringAConfirmStillWritesTheMandate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
 	ctx := t.Context()
 
-	productID := "prod_acme"
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          corebilling.SlugCustom,
-		IncludedEvents:    new(int64(5_000_000)),
-		ProviderProductID: &productID,
+		PlanSlug:     corebilling.SlugCustom,
+		FlatFeeCents: new(int64(40_000)),
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
+	if err := f.svc.Clear(ctx, f.orgID, actor); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
 
-	tx, err := f.pg.PgW.Begin(ctx)
+	provider.checkout = subEvent(f.orgID, "sub00000000000000029", "prod_mandate", corebilling.SubStatusActive)
+	confirmed, err := f.svc.ConfirmCheckout(ctx, f.orgID, "cs_1", time.Now())
 	if err != nil {
-		t.Fatalf("begin: %v", err)
+		t.Fatalf("ConfirmCheckout after a clear: %v", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))`, f.orgID); err != nil {
-		t.Fatalf("take the entitlement lock: %v", err)
+	if !confirmed {
+		t.Error("confirmed = false; clearing the row must not refuse a mandate")
 	}
-	if _, err := tx.Exec(ctx, `delete from billing_entitlements where org_id = $1`, f.orgID); err != nil {
-		t.Fatalf("delete the entitlement: %v", err)
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
 	}
-
-	provider.checkout = subEvent(f.orgID, "sub00000000000000029", productID, corebilling.SubStatusActive)
-	var confirmed bool
-	var confirmErr error
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		confirmed, confirmErr = f.svc.ConfirmCheckout(ctx, f.orgID, "cs_1", time.Now())
-	}()
-
-	waitForEntitlementLockWaiter(t, f, done)
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit the clear: %v", err)
-	}
-	<-done
-
-	if !errors.Is(confirmErr, corebilling.ErrNotPurchasable) {
-		t.Errorf("err = %v, want ErrNotPurchasable", confirmErr)
-	}
-	if confirmed {
-		t.Error("confirmed = true for a subscription that was never written")
-	}
-	if n := storedSubscriptions(t, f); n != 0 {
-		t.Errorf("stored %d subscriptions, want 0 — a custom plan with no row behind it resolves free", n)
+	if !ent.Chargeable || ent.Slug != currentCard().Slug {
+		t.Errorf("entitlement = %q chargeable=%v, want the current card and a live mandate",
+			ent.Slug, ent.Chargeable)
 	}
 }

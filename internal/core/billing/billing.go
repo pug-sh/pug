@@ -1,6 +1,6 @@
-// Package billing answers what an org is entitled to send. It counts nothing:
-// consumption is internal/core/usage's job, and the two meet only in a client
-// rendering "X of Y".
+// Package billing answers what an org is entitled to send and what it is priced
+// at. It counts nothing: consumption is internal/core/usage's job, and the two
+// meet only in a client rendering "X of Y".
 //
 // A quota drives a banner and never a rejected event, so a wrong row costs a
 // wrong number on a page. Nothing on the ingestion path imports this package,
@@ -30,9 +30,11 @@ const (
 func AllStatuses() []Status { return []Status{StatusTrialing, StatusActive, StatusFree} }
 
 // Record is the stored entitlement row. Absent for almost every org — that is
-// the normal state, not a defect, and Resolve derives the floors from the org's
+// the normal state, not a defect, and Resolve derives the rest from the org's
 // age instead.
 type Record struct {
+	// Present is the row existing, which is no longer the same question as its
+	// plan: a row can carry a trial end or an anchor day with no pin at all.
 	Present bool
 
 	AnchorDay           int
@@ -40,35 +42,50 @@ type Record struct {
 	DisplayNameOverride string
 	Note                string
 	PlanSlug            string
-	// The provider product a negotiated deal is bought against; empty for every org
-	// that is not one. Operator-written, and what makes a custom deal purchasable.
-	ProviderProductID string
-	TrialEndsAt       time.Time
+	TrialEndsAt         time.Time
 
-	// 0 means no override: both columns are checked > 0, so zero cannot be a
-	// stored value and neither needs a pointer to stay distinguishable.
+	// 0 means no override: every one of these columns is checked, so zero cannot
+	// be a stored value and none needs a pointer to stay distinguishable.
 	IncludedEventsOverride int64
 	RetentionDaysOverride  int64
+	FlatFeeCents           int64
+	RateCentsPerMillion    int64
+
+	CreateTime time.Time
+	// TermsEffectiveAt is when the deal's priced terms last changed, and the first
+	// day it is invoiced from. The row usually predates the deal — extend-trial
+	// writes one months earlier — so create_time cannot date one.
+	TermsEffectiveAt time.Time
 }
 
-// Entitlement is the resolved answer: the plan as this org actually holds it,
-// with any negotiated overrides already applied. Nothing downstream recombines
-// a base plan with patches.
+// Terms is the negotiated deal on the row, if the row is one. A deal needs a fee
+// or a rate: an allowance alone is a free tier nobody agreed to.
+func (r Record) Terms() (CustomTerms, bool) {
+	if !r.Present || r.PlanSlug != SlugCustom || (r.FlatFeeCents <= 0 && r.RateCentsPerMillion <= 0) {
+		return CustomTerms{}, false
+	}
+	return CustomTerms{
+		FlatFeeCents:        r.FlatFeeCents,
+		RateCentsPerMillion: r.RateCentsPerMillion,
+		IncludedEvents:      r.IncludedEventsOverride,
+	}, true
+}
+
+// Entitlement is the resolved answer: the card or deal as this org actually
+// holds it, with any negotiated overrides already applied. Nothing downstream
+// recombines a base plan with patches.
 type Entitlement struct {
 	Slug        string
 	DisplayName string
 	Currency    string
 	Status      Status
 
-	// nil means NO LIST PRICE: the custom tier, whose price lives in the payments
-	// provider, or a row naming a plan the catalog no longer knows. Zero is a real
-	// price — the two floors.
-	PriceCents *int64
-	// nil means NO QUOTA: billing is switched off, or the row names a plan the
-	// catalog no longer knows. Never render it as zero.
+	// IncludedEvents is events this period before charges begin — a card's free
+	// allowance or a deal's. nil means NO QUOTA: billing off, a slug no card
+	// answers to, or a flat-fee deal with no rate. Never render it as zero.
 	IncludedEvents *int64
-	// How far back this org's history stays queryable. nil means NO BOUND — billing
-	// off, an unresolvable plan, or a deal that named none. Never render it as zero.
+	// How far back this org's history stays queryable. nil means NO BOUND. Never
+	// render it as zero.
 	RetentionDays *int64
 
 	TrialEndsAt    time.Time
@@ -83,6 +100,14 @@ type Entitlement struct {
 	SubStatus          SubStatus
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
+
+	// Exactly one of Card and Terms is set while billing is on and the slug
+	// resolves; whichever it is, is what prices the period.
+	Card  *RateCard
+	Terms *CustomTerms
+	// Chargeable is a live payment method pug can charge. False is an org nothing
+	// can be collected from, not an org with no usage.
+	Chargeable bool
 }
 
 // Resolve is the whole rule set, as a pure function. Expiry is lazy: a trial that
@@ -111,11 +136,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	// OPEN on the number, so no banner can fire even if a client forgets to check
 	// the flag. Safe precisely because the number enforces nothing.
 	if !billingEnabled {
-		free := mustPlan(SlugFree)
-		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
-		// The free tier's price of 0, not nil: absent means a tier with no list price,
-		// which a client would read as a negotiated deal. Retention stays absent.
-		ent.PriceCents = free.PriceCents
+		ent.Slug, ent.DisplayName, ent.Currency = SlugFree, "Free", Currency
 		ent.Status = StatusFree
 		return ent
 	}
@@ -124,71 +145,90 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 		ent.SubStatus = sub.Status
 		ent.SubPeriodEnd = sub.CurrentPeriodEnd
 		ent.ProviderCustomerID = sub.ProviderCustomerID
+		ent.Chargeable = true
 	}
-
-	plan, status := resolvePlan(orgCreateTime, rec, sub, now)
-	ent.Status = status
-	ent.Slug, ent.DisplayName, ent.Currency = plan.Slug, plan.DisplayName, plan.Currency
-	ent.PriceCents, ent.IncludedEvents = plan.PriceCents, plan.IncludedEvents
-	ent.RetentionDays = plan.RetentionDays
 	// Both dates stay once they are past, where they answer "when did this lapse"
 	// rather than "when will it".
 	ent.TrialEndsAt = trialEnd(orgCreateTime, rec)
 	ent.ContractEndsAt = rec.ContractEndsAt
+	lapsed := contractLapsed(rec, now)
 
-	applyOverrides(&ent, rec, sub, now)
-
-	// A custom plan that reached here with no override is a paid subscription
-	// against nothing. SetPlan refuses to write it; the free floor is the backstop.
-	if ent.Slug == SlugCustom && ent.IncludedEvents == nil {
-		free := mustPlan(SlugFree)
-		ent.Slug, ent.DisplayName, ent.Currency = free.Slug, free.DisplayName, free.Currency
-		ent.PriceCents, ent.IncludedEvents = free.PriceCents, free.IncludedEvents
-		ent.RetentionDays = free.RetentionDays
+	switch {
+	case sub != nil:
+		ent.Status = StatusActive
+	case !lapsed && now.Before(ent.TrialEndsAt):
+		ent.Status = StatusTrialing
+	default:
 		ent.Status = StatusFree
+	}
+
+	if terms, ok := rec.Terms(); ok && !lapsed {
+		ent.Slug, ent.DisplayName, ent.Currency = SlugCustom, "Custom", Currency
+		ent.Terms = &terms
+		ent.Status = StatusActive
+		// A flat-fee deal with no rate has no point at which charges begin, so it
+		// has no allowance to render either.
+		if terms.RateCentsPerMillion > 0 {
+			ent.IncludedEvents = i64(terms.IncludedEvents)
+		}
+		ent.RetentionDays = i64(CardRetentionDays)
+	} else {
+		// A lapsed deal falls to the current card, not to free: the customer still
+		// has a mandate, and the card is what anyone without a deal pays.
+		resolveCard(&ent, rec, sub, lapsed)
+	}
+
+	if rec.Present && !lapsed {
+		if rec.RetentionDaysOverride > 0 {
+			ent.RetentionDays = i64(rec.RetentionDaysOverride)
+		}
+		if rec.DisplayNameOverride != "" {
+			ent.DisplayName = rec.DisplayNameOverride
+		}
 	}
 	return ent
 }
 
-// resolvePlan picks the tier and the state it is held in, in order: a granted
-// plan beats a lingering trial date, so a customer who converted mid-trial can
-// never be demoted by a stale timestamp.
-func resolvePlan(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time) (Plan, Status) {
-	free := mustPlan(SlugFree)
-	lapsed := contractLapsed(rec, now)
-	plan, known := PlanBySlug(rec.PlanSlug)
-
-	// Most specific first: somebody is paying for this one. Not gated on the
-	// contract — that date bounds an operator's grant, not a live subscription.
-	if sub != nil {
-		if subPlan, ok := PlanBySlug(sub.PlanSlug); ok {
-			return subPlan, StatusActive
+// resolveCard picks the card an org is priced on: the operator's pin first, then
+// the one its mandate checkout pinned, then the current card. An org with no
+// mandate agreed to nothing, so there is nothing to grandfather.
+func resolveCard(ent *Entitlement, rec Record, sub *Subscription, lapsed bool) {
+	slug := ""
+	switch {
+	case rec.Present && isCardSlug(rec.PlanSlug):
+		slug = rec.PlanSlug
+	case sub != nil && isCardSlug(sub.PlanSlug):
+		slug = sub.PlanSlug
+	}
+	var card RateCard
+	if slug == "" {
+		card = CurrentCard()
+	} else if known, ok := CardBySlug(slug); ok {
+		card = known
+	} else {
+		// The catalog dropped a slug rows still name. Resolving to the current
+		// card's allowance would price a customer on terms nobody sold them.
+		ent.Slug, ent.DisplayName, ent.Currency = slug, slug, Currency
+		// A negotiated allowance is the customer's own number and owes nothing to the
+		// catalog, so it survives its card being dropped.
+		if rec.Present && !lapsed && rec.IncludedEventsOverride > 0 {
+			ent.IncludedEvents = i64(rec.IncludedEventsOverride)
 		}
-		// The catalog dropped a slug rows still name. Resolving to "free, 10,000" would
-		// tell a paying customer they are over their limit.
-		return Plan{Slug: sub.PlanSlug, DisplayName: sub.PlanSlug, Currency: free.Currency}, StatusActive
+		return
 	}
-
-	if rec.Present && known && !plan.isFloor() && !lapsed {
-		return plan, StatusActive
+	// The override replaces the card's free allowance outright — a comp is a card
+	// pin with a bigger number, with no arithmetic in between.
+	if rec.Present && !lapsed && rec.IncludedEventsOverride > 0 {
+		card.FreeEvents = rec.IncludedEventsOverride
 	}
-	// Gated on the contract too: a time-boxed comp is stored as a floor plan, so
-	// an extended trial on one would otherwise outlive the deal it belongs to and
-	// keep handing back the trial floor's much larger quota.
-	if !lapsed && now.Before(trialEnd(orgCreateTime, rec)) {
-		return mustPlan(SlugTrial), StatusTrialing
-	}
-	if rec.Present && !known {
-		// Same reason as the live-subscription case above: keep the row's own slug,
-		// and let applyOverrides supply the deal's numbers.
-		return Plan{Slug: rec.PlanSlug, DisplayName: rec.PlanSlug, Currency: free.Currency}, StatusFree
-	}
-	return free, StatusFree
+	ent.Slug, ent.DisplayName, ent.Currency = card.Slug, card.DisplayName, card.Currency
+	ent.Card = &card
+	ent.IncludedEvents = i64(card.FreeEvents)
+	ent.RetentionDays = i64(card.RetentionDays)
 }
 
 // contractLapsed reports a deal whose end date has passed; a zero date is
-// open-ended. Consulted for the floors too, because a time-boxed comped grant is
-// stored as a floor plan and nothing else would expire it.
+// open-ended.
 func contractLapsed(rec Record, now time.Time) bool {
 	return !rec.ContractEndsAt.IsZero() && !now.Before(rec.ContractEndsAt)
 }
@@ -212,26 +252,4 @@ func trialEnd(orgCreateTime time.Time, rec Record) time.Time {
 		return rec.TrialEndsAt
 	}
 	return orgCreateTime.Add(TrialDays * 24 * time.Hour)
-}
-
-// applyOverrides patches the negotiated fields over the resolved plan, last, so
-// the deal's numbers win over the catalog's. Each override is independent.
-func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Time) {
-	// The contract cannot expire the custom subscription it covers, or a live deal
-	// would lose its quota the day its agreed term passed. Others are a different
-	// purchase, and a lapsed grant's numbers must not ride along on one.
-	if !rec.Present || (contractLapsed(rec, now) && (sub == nil || sub.PlanSlug != SlugCustom)) {
-		return
-	}
-	if rec.IncludedEventsOverride > 0 {
-		v := rec.IncludedEventsOverride
-		ent.IncludedEvents = &v
-	}
-	if rec.RetentionDaysOverride > 0 {
-		v := rec.RetentionDaysOverride
-		ent.RetentionDays = &v
-	}
-	if rec.DisplayNameOverride != "" {
-		ent.DisplayName = rec.DisplayNameOverride
-	}
 }

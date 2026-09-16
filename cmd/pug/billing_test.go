@@ -50,14 +50,19 @@ func TestBillingChangeOmittedFlagsKeepStoredValues(t *testing.T) {
 	if change.Note != nil {
 		t.Fatalf("note = %q, want nil (keep stored)", *change.Note)
 	}
-	if change.ProviderProductID != nil {
-		t.Fatalf("provider product = %q, want nil (keep stored)", *change.ProviderProductID)
+	if change.FlatFeeCents != nil {
+		t.Fatalf("flat fee = %d, want nil (keep stored)", *change.FlatFeeCents)
+	}
+	if change.RateCentsPerMillion != nil {
+		t.Fatalf("rate per million = %d, want nil (keep stored)", *change.RateCentsPerMillion)
 	}
 }
 
 func TestBillingChangeEmptyValuesClear(t *testing.T) {
-	cmd := billingSetCmd(t, "--plan", "free", "--events", "0", "--retention-days", "0",
-		"--name", "", "--anchor-day", "0", "--until", "", "--note", "", "--provider-product", "")
+	// --plan "" is how a pin is removed, and every other empty value clears its own.
+	cmd := billingSetCmd(t, "--plan", "", "--events", "0", "--retention-days", "0",
+		"--name", "", "--anchor-day", "0", "--until", "", "--note", "",
+		"--flat-fee", "0", "--rate-per-million", "0")
 	change, err := billingChange(cmd)
 	if err != nil {
 		t.Fatalf("billingChange: %v", err)
@@ -80,8 +85,11 @@ func TestBillingChangeEmptyValuesClear(t *testing.T) {
 	if change.Note == nil || *change.Note != "" {
 		t.Fatalf("note = %v, want a pointer to \"\" (clear)", change.Note)
 	}
-	if change.ProviderProductID == nil || *change.ProviderProductID != "" {
-		t.Fatalf("provider product = %v, want a pointer to \"\" (clear)", change.ProviderProductID)
+	if change.FlatFeeCents == nil || *change.FlatFeeCents != 0 {
+		t.Fatalf("flat fee = %v, want a pointer to 0 (clear)", change.FlatFeeCents)
+	}
+	if change.RateCentsPerMillion == nil || *change.RateCentsPerMillion != 0 {
+		t.Fatalf("rate per million = %v, want a pointer to 0 (clear)", change.RateCentsPerMillion)
 	}
 }
 
@@ -105,9 +113,11 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 		want string
 	}{
 		{"negative events", []string{"--plan", "custom", "--events", "-1"}, "--events"},
+		{"negative flat fee", []string{"--plan", "custom", "--flat-fee", "-1"}, "--flat-fee"},
+		{"negative rate", []string{"--plan", "custom", "--rate-per-million", "-1"}, "--rate-per-million"},
 		{"negative retention", []string{"--plan", "custom", "--retention-days", "-1"}, "--retention-days"},
-		{"anchor day too high", []string{"--plan", "free", "--anchor-day", "32"}, "--anchor-day"},
-		{"anchor day negative", []string{"--plan", "free", "--anchor-day", "-1"}, "--anchor-day"},
+		{"anchor day too high", []string{"--plan", "", "--anchor-day", "32"}, "--anchor-day"},
+		{"anchor day negative", []string{"--plan", "", "--anchor-day", "-1"}, "--anchor-day"},
 		{"until is not a date", []string{"--plan", "custom", "--until", "31/12/2026"}, "--until"},
 		{"until carries a time", []string{"--plan", "custom", "--until", "2026-12-31T00:00:00Z"}, "--until"},
 	} {
@@ -123,19 +133,23 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 	}
 }
 
-// The trial slug has one writer, and it is not `set`.
-func TestGrantableSlugsExcludeTrialAndRetired(t *testing.T) {
+// A retired card keeps its holders but is never offered to somebody new, and the
+// list has to name the two things that are not cards: a deal, and no pin at all.
+func TestGrantableSlugsOfferTheLiveCardsCustomAndNoPin(t *testing.T) {
 	got := grantableSlugs()
-	if slices.Contains(got, corebilling.SlugTrial) {
-		t.Fatalf("slugs = %v, want no %q", got, corebilling.SlugTrial)
+	for _, c := range corebilling.Cards() {
+		if c.Retired && slices.Contains(got, c.Slug) {
+			t.Errorf("slugs = %v, want no retired card %q", got, c.Slug)
+		}
+		if !c.Retired && !slices.Contains(got, c.Slug) {
+			t.Errorf("slugs = %v, want it to offer %q", got, c.Slug)
+		}
 	}
-	for _, p := range corebilling.Plans() {
-		if p.Retired && slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want no retired tier %q", got, p.Slug)
-		}
-		if !p.Retired && p.Slug != corebilling.SlugTrial && !slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want it to offer %q", got, p.Slug)
-		}
+	if !slices.Contains(got, corebilling.SlugCustom) {
+		t.Errorf("slugs = %v, want it to offer %q", got, corebilling.SlugCustom)
+	}
+	if !slices.Contains(got, `""`) {
+		t.Errorf("slugs = %v, want it to name the empty slug that removes a pin", got)
 	}
 }
 

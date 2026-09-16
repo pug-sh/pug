@@ -37,12 +37,9 @@ type ReconcileReport struct {
 	// A subscription pug stores that the provider no longer knows. A finding for a
 	// person: nothing here tells a purged subscription from one never theirs.
 	Untracked int
-	// An entitlement granting a paid or custom plan with no live subscription behind
-	// it. An org with NO entitlement row is invisible here — see UnmappedProduct.
+	// A deal in force with no mandate behind it: an org entitled to terms nobody is
+	// charged on. A pinned card is grandfathering, so it is not one of these.
 	EntitledUnbilled int
-	// A live subscription against a product nothing maps to: a deploy is missing a
-	// product key, or an operator created a product without pasting its id.
-	UnmappedProduct int
 	// Rows the pass could not settle: a failed read or write, or a read that
 	// decoded to nothing. The only counter the CronJob fails on.
 	Unreadable int
@@ -113,8 +110,8 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 		report.EntitledUnbilled++
 		// Warn, not error: an operator's comped grant is indistinguishable from a
 		// billing failure here, and it is the ordinary case.
-		slog.WarnContext(ctx, "org holds a paid entitlement with no live subscription",
-			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
+		slog.WarnContext(ctx, "org holds a deal with no live mandate",
+			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug.String))
 	}
 
 	// The whole retention window, not since the last pass: a rejection is a person's
@@ -153,7 +150,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	slog.InfoContext(ctx, "billing reconcile pass finished",
 		slog.Int("checked", report.Checked), slog.Int("applied", report.Applied),
 		slog.Int("untracked", report.Untracked), slog.Int("entitled_unbilled", report.EntitledUnbilled),
-		slog.Int("unmapped_product", report.UnmappedProduct), slog.Int("unreadable", report.Unreadable),
+		slog.Int("unreadable", report.Unreadable),
 		slog.Int("two_live", report.TwoLive), slog.Int("rejected", report.Rejected),
 		slog.Int("stranded", report.Stranded), slog.Int("unapplicable", report.Unapplicable))
 	return report, nil
@@ -194,8 +191,7 @@ func (s *Service) reconcileOne(
 		return
 	}
 
-	// Only to tell an org that has vanished from an ordinary read failure: the
-	// writer re-reads the row itself, under the lock it applies in.
+	// Only to tell an org that has vanished from an ordinary read failure.
 	if _, err := s.StoredRecord(ctx, row.OrgID); err != nil {
 		report.Unreadable++
 		// StoredRecord logs a real read failure; an org that has vanished from under
@@ -223,12 +219,7 @@ func (s *Service) reconcileOne(
 			slog.ErrorContext(ctx, "live subscription cannot be applied", slogx.Error(err),
 				slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID),
 				slog.String("currency", normalizeCurrency(event.Currency)),
-				slog.String("status", string(event.Status)))
-		case errors.Is(err, ErrNotPurchasable):
-			report.UnmappedProduct++
-			slog.ErrorContext(ctx, "live subscription names a product pug cannot place", slogx.Error(err),
-				slog.String("org_id", row.OrgID), slog.String("product_id", event.ProductID))
-			telemetry.RecordError(ctx, err)
+				slog.String("status", string(event.Status))) // puglint:exempt — recorded at the write in applySubscription
 		default:
 			report.Unreadable++
 		}

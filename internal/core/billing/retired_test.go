@@ -10,25 +10,52 @@ import (
 	"github.com/rs/xid"
 )
 
-// No tier is retired yet, so the guard has nothing in the real catalog to act on
-// — and an unexercised guard is one that stops working without anyone noticing.
-// This test appends a retired tier for its duration, which is why it lives inside
-// the package rather than in billing_test.
-//
-// What it protects: repricing mints a new slug and retires the old one (see the
-// immutability rule in plans.go). If the retired slug could still be granted,
-// every reprice would go on handing out the superseded numbers.
-func TestRetiredPlanCannotBeGrantedToANewOrg(t *testing.T) {
+// Repricing mints a new card and retires the old one (see the immutability rule
+// in catalog.go). A holder keeps resolving against the card they agreed to; an
+// org with no mandate agreed to nothing and sees the current one. No card is
+// retired in the real catalog, so these swap it for their duration — which is why
+// they live inside the package.
+func TestRetiredCardKeepsResolvingForItsHolder(t *testing.T) {
+	original := rateCards
+	t.Cleanup(func() { rateCards = original })
+
+	next := copyCard(original[0])
+	next.Slug, next.FreeEvents = "usage-2027-01-1", 0
+	old := copyCard(original[0])
+	old.Retired = true
+	rateCards = []RateCard{old, next}
+
+	created := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+
+	holder := &Subscription{PlanSlug: old.Slug, Status: SubStatusActive}
+	pinned := Resolve(created, Record{}, holder, now, true)
+	if pinned.Slug != old.Slug || pinned.Card == nil || pinned.Card.FreeEvents != old.FreeEvents {
+		t.Errorf("a holder resolved %q, want the retired card %q with its own free allowance",
+			pinned.Slug, old.Slug)
+	}
+
+	fresh := Resolve(created, Record{}, nil, now, true)
+	if fresh.Slug != next.Slug || fresh.Card == nil || fresh.Card.FreeEvents != 0 {
+		t.Errorf("an org with no mandate resolved %q, want the current card %q", fresh.Slug, next.Slug)
+	}
+	if got := CurrentCard().Slug; got != next.Slug {
+		t.Errorf("CurrentCard = %q, want %q", got, next.Slug)
+	}
+}
+
+// The write half: an operator must not put a new org on a card that has been
+// withdrawn, or every reprice would go on handing out the superseded rates.
+func TestRetiredCardCannotBeGrantedToANewOrg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	original := catalog
-	t.Cleanup(func() { catalog = original })
-	catalog = append(append([]Plan(nil), original...), Plan{
-		Slug: "growth-v0", DisplayName: "Growth (2025)", Currency: "USD",
-		PriceCents: i64(1_500), IncludedEvents: i64(400_000), Retired: true,
-	})
+	original := rateCards
+	t.Cleanup(func() { rateCards = original })
+	retired := copyCard(original[0])
+	retired.Slug, retired.Retired = "usage-2025-01-1", true
+	rateCards = append([]RateCard{retired}, original...)
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
@@ -38,45 +65,19 @@ func TestRetiredPlanCannotBeGrantedToANewOrg(t *testing.T) {
 	}
 
 	newOrg := seedOrg(t, pg)
-	if _, err := svc.SetPlan(ctx, newOrg, "tester", Change{PlanSlug: "growth-v0"}); !errors.Is(err, ErrPlanRetired) {
-		t.Fatalf("granting a retired tier to a new org: err = %v, want ErrPlanRetired", err)
+	if _, err := svc.SetPlan(ctx, newOrg, "tester", Change{PlanSlug: retired.Slug}); !errors.Is(err, ErrPlanRetired) {
+		t.Fatalf("pinning a retired card on a new org: err = %v, want ErrPlanRetired", err)
 	}
-
-	// A live tier is unaffected, so the guard is refusing retirement rather than
+	// The live card is unaffected, so the guard refuses retirement rather than
 	// everything.
-	if _, err := svc.SetPlan(ctx, newOrg, "tester", Change{PlanSlug: "growth"}); err != nil {
-		t.Errorf("granting a live tier: %v", err)
-	}
-
-}
-
-// Plans() must keep listing a retired tier: that list is what the webhook resolves
-// an incoming product against, so dropping it rejects its holders' renewals AND
-// cancellations permanently — one reprice freezes every incumbent's subscription.
-func TestRetiredPlanStaysInThePlanList(t *testing.T) {
-	original := catalog
-	t.Cleanup(func() { catalog = original })
-	catalog = append(append([]Plan(nil), original...), Plan{
-		Slug: "growth-v0", DisplayName: "Growth (2025)", Currency: "USD",
-		PriceCents: i64(1_500), IncludedEvents: i64(400_000), Retired: true,
-	})
-
-	var found bool
-	for _, p := range Plans() {
-		if p.Slug == "growth-v0" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("a retired tier is missing from Plans(), so nothing can map its product back to a slug")
+	if _, err := svc.SetPlan(ctx, newOrg, "tester", Change{PlanSlug: CurrentCard().Slug}); err != nil {
+		t.Errorf("pinning the current card: %v", err)
 	}
 }
 
 // The other half of the rule, and the entire point of retiring rather than
-// deleting a tier: an org already on one keeps it and can still be renewed.
-// Retiring an EXISTING slug needs no migration — the check constraint already
-// knows it — so this seeds on the real `growth` and then retires it.
-func TestRetiredPlanIsStillRenewableByItsHolder(t *testing.T) {
+// deleting a card: an org already on one keeps it and can still be renewed.
+func TestRetiredCardIsStillRenewableByItsHolder(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -88,32 +89,32 @@ func TestRetiredPlanIsStillRenewableByItsHolder(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 
+	held := CurrentCard().Slug
 	incumbent := seedOrg(t, pg)
-	if _, err := svc.SetPlan(ctx, incumbent, "tester", Change{PlanSlug: "growth"}); err != nil {
-		t.Fatalf("seed the incumbent on a live tier: %v", err)
+	if _, err := svc.SetPlan(ctx, incumbent, "tester", Change{PlanSlug: held}); err != nil {
+		t.Fatalf("seed the incumbent on the live card: %v", err)
 	}
 
-	original := catalog
-	t.Cleanup(func() { catalog = original })
-	retired := append([]Plan(nil), original...)
-	for i := range retired {
-		if retired[i].Slug == "growth" {
-			retired[i].Retired = true
-		}
-	}
-	catalog = retired
+	original := rateCards
+	t.Cleanup(func() { rateCards = original })
+	retired := copyCard(original[0])
+	retired.Retired = true
+	next := copyCard(original[0])
+	next.Slug = "usage-2027-01-1"
+	rateCards = []RateCard{retired, next}
 
 	// A renewal is a re-set with a new end date on unchanged terms.
+	until := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := svc.SetPlan(ctx, incumbent, "tester", Change{
-		PlanSlug:       "growth",
-		ContractEndsAt: new(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+		PlanSlug:       held,
+		ContractEndsAt: &until,
 	}); err != nil {
-		t.Errorf("renewing a holder of a now-retired tier: %v", err)
+		t.Errorf("renewing a holder of a now-retired card: %v", err)
 	}
 
 	newcomer := seedOrg(t, pg)
-	if _, err := svc.SetPlan(ctx, newcomer, "tester", Change{PlanSlug: "growth"}); !errors.Is(err, ErrPlanRetired) {
-		t.Errorf("granting the same tier to a newcomer: err = %v, want ErrPlanRetired", err)
+	if _, err := svc.SetPlan(ctx, newcomer, "tester", Change{PlanSlug: held}); !errors.Is(err, ErrPlanRetired) {
+		t.Errorf("pinning the same card on a newcomer: err = %v, want ErrPlanRetired", err)
 	}
 }
 

@@ -21,7 +21,7 @@ func TestNewServiceRefusesAMalformedRateCard(t *testing.T) {
 		"a slug declared twice":       {copyCard(original[0]), copyCard(original[0])},
 		"every card retired":          card(func(c *RateCard) { c.Retired = true }),
 		"two current cards":           {copyCard(original[0]), newer},
-		"a floor slug":                card(func(c *RateCard) { c.Slug = SlugTrial }),
+		"the free slug":               card(func(c *RateCard) { c.Slug = SlugFree }),
 		"an empty slug":               card(func(c *RateCard) { c.Slug = "" }),
 		"no retention":                card(func(c *RateCard) { c.RetentionDays = 0 }),
 		"the custom slug":             card(func(c *RateCard) { c.Slug = SlugCustom }),

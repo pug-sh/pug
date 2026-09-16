@@ -36,6 +36,7 @@ func newBillingCmd() *cobra.Command {
 		newBillingSetCmd(),
 		newBillingExtendTrialCmd(),
 		newBillingClearCmd(),
+		newBillingPreviewCmd(),
 	} {
 		// Cobra reads this off the executed command, not its parent: without it a
 		// failed query prints the usage block under the error.
@@ -62,11 +63,14 @@ func newBillingShowCmd() *cobra.Command {
 func newBillingSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <org-id>",
-		Short: "Grant a plan, merging the flags given over whatever is stored",
-		Long: "Grants a plan. Omitting an override flag leaves the stored value alone —\n" +
-			"the common re-set is a renewal on terms that have not changed — and\n" +
-			"passing its empty value (--events 0, --retention-days 0, --name \"\",\n" +
-			"--anchor-day 0, --until \"\") clears it back to the plan's.\n\n" +
+		Short: "Pin a rate card or record a deal, merging the flags given over whatever is stored",
+		Long: "Pins a rate card or records a deal. Omitting a flag leaves the stored value\n" +
+			"alone — the common re-set is a renewal on terms that have not changed — and\n" +
+			"passing its empty value (--flat-fee 0, --rate-per-million 0, --events 0,\n" +
+			"--retention-days 0, --name \"\", --anchor-day 0, --until \"\") clears it.\n\n" +
+			"--plan custom needs a flat fee or a rate; --events is its allowance. On any\n" +
+			"other plan the money is cleared whether or not the flag was passed. --plan \"\"\n" +
+			"removes the pin and keeps the rest of the row.\n\n" +
 			"--until is INCLUSIVE of the date given: --until 2026-12-31 runs the plan\n" +
 			"through all of 31 December, and `show` prints the stored instant, which is\n" +
 			"therefore the 1st.",
@@ -85,14 +89,15 @@ func newBillingSetCmd() *cobra.Command {
 			return err
 		}),
 	}
-	cmd.Flags().String("plan", "", "catalog slug to grant")
-	cmd.Flags().Int64("events", 0, "negotiated monthly event quota; 0 clears the override")
+	cmd.Flags().String("plan", "", "rate card slug, custom, or empty to remove the pin")
+	cmd.Flags().Int64("flat-fee", 0, "USD cents charged every period regardless of usage; 0 clears it")
+	cmd.Flags().Int64("rate-per-million", 0, "USD cents per million events over the allowance; 0 clears it")
+	cmd.Flags().Int64("events", 0, "events per period before charges begin; 0 clears the override")
 	cmd.Flags().Int64("retention-days", 0, "negotiated days of event history kept; 0 clears the override")
 	cmd.Flags().String("name", "", "display name shown to the org; empty clears the override")
 	cmd.Flags().Int("anchor-day", 0, "day of month the usage period turns over (1-31); 0 clears the override")
 	cmd.Flags().String("until", "", "last day the deal runs, YYYY-MM-DD and inclusive; empty clears it")
 	cmd.Flags().String("note", "", "free text an operator settles a renewal argument from; empty clears it")
-	cmd.Flags().String("provider-product", "", "provider product a negotiated deal is bought against; empty clears it")
 	mustMarkRequired(cmd, "plan")
 	requireActor(cmd)
 	return cmd
@@ -118,6 +123,27 @@ func newBillingExtendTrialCmd() *cobra.Command {
 	return cmd
 }
 
+func newBillingPreviewCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "preview <org-id>",
+		Short: "Price a number of events on what the org would be charged today",
+		Long: "Prices --events on the org's own deal, or on the card its mandate pinned —\n" +
+			"whichever it resolves to, which is what it will actually be charged. Reads\n" +
+			"only: nothing is written and no provider is contacted.",
+		Args: cobra.ExactArgs(1),
+		RunE: billingRunE(func(ctx context.Context, cli *appbilling.CLI, cmd *cobra.Command, orgID string) error {
+			events, _ := cmd.Flags().GetInt64("events")
+			if events < 0 {
+				return errors.New("--events cannot be negative")
+			}
+			return cli.Preview(ctx, cmd.OutOrStdout(), orgID, events)
+		}),
+	}
+	cmd.Flags().Int64("events", 0, "events in the period to price")
+	mustMarkRequired(cmd, "events")
+	return cmd
+}
+
 func newBillingClearCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clear <org-id>",
@@ -138,13 +164,14 @@ func billingChange(cmd *cobra.Command) (corebilling.Change, error) {
 	flags := cmd.Flags()
 	planSlug, _ := flags.GetString("plan")
 	change := corebilling.Change{
-		PlanSlug:          planSlug,
-		IncludedEvents:    flagIfSet(cmd, "events", flags.GetInt64),
-		RetentionDays:     flagIfSet(cmd, "retention-days", flags.GetInt64),
-		DisplayName:       flagIfSet(cmd, "name", flags.GetString),
-		AnchorDay:         flagIfSet(cmd, "anchor-day", flags.GetInt),
-		Note:              flagIfSet(cmd, "note", flags.GetString),
-		ProviderProductID: flagIfSet(cmd, "provider-product", flags.GetString),
+		PlanSlug:            planSlug,
+		IncludedEvents:      flagIfSet(cmd, "events", flags.GetInt64),
+		RetentionDays:       flagIfSet(cmd, "retention-days", flags.GetInt64),
+		DisplayName:         flagIfSet(cmd, "name", flags.GetString),
+		AnchorDay:           flagIfSet(cmd, "anchor-day", flags.GetInt),
+		Note:                flagIfSet(cmd, "note", flags.GetString),
+		FlatFeeCents:        flagIfSet(cmd, "flat-fee", flags.GetInt64),
+		RateCentsPerMillion: flagIfSet(cmd, "rate-per-million", flags.GetInt64),
 	}
 	if err := checkOverrides(change); err != nil {
 		return corebilling.Change{}, err
@@ -161,6 +188,10 @@ func checkOverrides(change corebilling.Change) error {
 	switch {
 	case change.IncludedEvents != nil && *change.IncludedEvents < 0:
 		return errors.New("--events cannot be negative; pass 0 to clear the override")
+	case change.FlatFeeCents != nil && *change.FlatFeeCents < 0:
+		return errors.New("--flat-fee cannot be negative; pass 0 to clear it")
+	case change.RateCentsPerMillion != nil && *change.RateCentsPerMillion < 0:
+		return errors.New("--rate-per-million cannot be negative; pass 0 to clear it")
 	case change.RetentionDays != nil && *change.RetentionDays < 0:
 		return errors.New("--retention-days cannot be negative; pass 0 to clear the override")
 	case change.AnchorDay != nil && (*change.AnchorDay < 0 || *change.AnchorDay > 31):
@@ -196,17 +227,18 @@ func flagIfSet[T any](cmd *cobra.Command, name string, get func(string) (T, erro
 	return &v
 }
 
-// What --plan accepts for a NEW grant. Trial is extend-trial's alone; a retired
-// tier is kept for its holders and stays settable for an org already on it.
+// What --plan accepts for a NEW pin: the cards on sale, custom for a deal, and
+// "" to remove a pin. A retired card is kept for its holders and stays settable
+// for an org already on it.
 func grantableSlugs() []string {
-	out := make([]string, 0, len(corebilling.Plans()))
-	for _, p := range corebilling.Plans() {
-		if p.Slug == corebilling.SlugTrial || p.Retired {
-			continue
+	cards := corebilling.Cards()
+	out := make([]string, 0, len(cards)+2)
+	for _, c := range cards {
+		if !c.Retired {
+			out = append(out, c.Slug)
 		}
-		out = append(out, p.Slug)
 	}
-	return out
+	return append(out, corebilling.SlugCustom, `""`)
 }
 
 // Logs move to stderr so a command's report is the only thing on stdout. args[0]

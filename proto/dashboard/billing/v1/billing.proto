@@ -14,9 +14,10 @@ service BillingService {
   // from both. Plan fields arrive already resolved, overrides applied.
   rpc GetBillingStatus(GetBillingStatusRequest) returns (GetBillingStatusResponse) {}
 
-  // Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-  // the viewer floor, but starting a checkout spends money. The price lives on
-  // the provider's product; this request names a plan slug, never an amount.
+  // Opens a checkout against the one product every org authorizes against.
+  // Admin-only: the quota banner is on the viewer floor, but this is the step
+  // that lets pug take money. The request names a plan slug -- the current rate
+  // card or custom -- never an amount; usage is priced by pug after each period.
   rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse) {}
 
   // Verifies one checkout against the provider and applies its subscription:
@@ -30,10 +31,34 @@ service BillingService {
   // FailedPrecondition for an org that has never checked out.
   rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
 
-  // The tiers this deployment sells, in display order. On the viewer floor: the
-  // person reading the quota banner wants to know what the next tier costs, they
-  // just cannot buy it. Never returns a product id, and never the floors.
+  // The current rate card, plus custom for an org whose row records a deal. On
+  // the viewer floor: the person reading the quota banner wants to know what
+  // usage costs, they just cannot buy it. Never returns a product id.
   rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {}
+}
+
+// RateCard prices usage in graduated tiers over cumulative events: each tier
+// charges the events up to and including up_to_events, and the last tier's 0 is
+// unbounded. A rate is cents per MILLION events, so a fraction of a cent per
+// event is still a whole number.
+message RateCard {
+  // Events free every period before the first tier applies.
+  int64 free_events = 1;
+  repeated RateTier tiers = 2;
+}
+
+message RateTier {
+  int64 up_to_events = 1;
+  int64 cents_per_million = 2;
+}
+
+// CustomTerms is a negotiated deal, priced in pug: a flat fee every period, a
+// flat rate per million events over the allowance, or both. ABSENT means none --
+// never zero, which would read as free.
+message CustomTerms {
+  google.protobuf.Int64Value flat_fee_cents = 1;
+  google.protobuf.Int64Value rate_cents_per_million = 2;
+  google.protobuf.Int64Value included_events = 3;
 }
 
 // BillingStatus is derived from the clock on every read, never stored. The
@@ -68,14 +93,13 @@ message GetBillingStatusRequest {
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
-// Plan is the tier as this org holds it, overrides applied.
+// Plan is the card or deal as this org holds it, overrides applied.
 message Plan {
   string slug = 1;
   string display_name = 2;
-  // The tier's LIST price, in minor units of `currency` -- never what a negotiated
-  // deal is charged. ABSENT is the custom tier, which is not a price of zero. A
-  // wrapper because a bare int64 would reach the dashboard as 0.
-  google.protobuf.Int64Value price_cents = 3;
+  // 3 was price_cents: usage is priced per event, so no card has a single price.
+  // Read rate_card or custom_terms instead.
+  reserved 3;
   // ISO 4217.
   string currency = 4;
 }
@@ -99,9 +123,9 @@ message GetBillingStatusResponse {
   google.protobuf.Timestamp period_start = 7;
   google.protobuf.Timestamp period_end = 8;
   SubscriptionStatus subscription_status = 9;
-  // When the provider bills next: the MONEY's period, not the quota's above.
-  // Absent when there is no live subscription.
-  google.protobuf.Timestamp current_period_end = 10;
+  // 10 was current_period_end: the provider no longer bills on a schedule of its
+  // own, so the date that matters is when pug charges the running period.
+  reserved 10;
   // Whether a checkout would open at all -- billing on, a provider configured, and
   // a product to check out against. Per tier it is PlanOption.purchasable.
   bool purchasable = 11;
@@ -111,6 +135,12 @@ message GetBillingStatusResponse {
   // Whether a portal session would open: this org has a customer at the provider,
   // which only a checkout leaves behind. Not implied by subscription_status.
   bool manageable = 12;
+  // Exactly one of these is set while billing is on and the plan resolves.
+  RateCard rate_card = 14;
+  CustomTerms custom_terms = 15;
+  // A live payment method pug can charge. False is an org that owes nothing
+  // because nothing can be collected from it, not an org with no usage.
+  bool chargeable = 16;
 }
 
 message CreateCheckoutSessionRequest {
@@ -169,23 +199,22 @@ message ListPlansRequest {
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
-// PlanOption is a tier as this deployment sells it. Plan is a tier as ONE ORG
+// PlanOption is a plan as this deployment sells it. Plan is a plan as ONE ORG
 // holds it, overrides applied.
 message PlanOption {
   string slug = 1;
   string display_name = 2;
-  // List price, in minor units of `currency`. ABSENT is the custom tier, whose
-  // price lives in the provider -- absence is never zero, here or below.
-  google.protobuf.Int64Value price_cents = 3;
+  // 3 was price_cents, 5 included_events and 7 retention_days: rate_card or
+  // custom_terms carries the allowance, and retention is the same on every card.
+  reserved 3, 5, 7;
   // ISO 4217.
   string currency = 4;
-  // Events the tier includes. ABSENT is the custom tier.
-  google.protobuf.Int64Value included_events = 5;
-  // Days of history the tier keeps. ABSENT is the custom tier.
-  google.protobuf.Int64Value retention_days = 7;
-  // Whether a checkout for THIS tier would open -- the same helper
+  // Whether a checkout for THIS plan would open -- the same helper
   // CreateCheckoutSession refuses on, so a dead button is impossible.
   bool purchasable = 6;
+  // Exactly one of these is set.
+  RateCard rate_card = 8;
+  CustomTerms custom_terms = 9;
 }
 
 message ListPlansResponse {

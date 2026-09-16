@@ -1,8 +1,7 @@
 -- +goose Up
 -- Usage-based pricing: pug owns the price as well as the quota, and the ledger it
--- bills from. Nothing reads the new columns yet -- the code lands beside the
--- constraints it breaks, in the commits after this one. The price_cents drop is
--- the exception: the code it breaks lands here.
+-- bills from. The ledger's own tables are still unread -- the pass lands later --
+-- but everything the resolver touches lands beside the code it breaks.
 
 -- A deal's money. NULL on every org that is not a deal: a card's rates are Go.
 alter table billing_entitlements
@@ -14,29 +13,55 @@ alter table billing_entitlements
   -- sold under, so a renegotiation cannot reprice a month already used.
   add column terms_effective_at timestamptz;
 
+-- free and trial stop being plans, so a row carries a trial end, an anchor day or
+-- an override with no pin at all. NULL is "no pin"; create_time is what says the
+-- row exists.
+alter table billing_entitlements alter column plan_slug drop not null;
+
+-- An allowance alone is a free tier nobody agreed to. `> 0` rather than not-null,
+-- so a hand-written zero cannot turn a deal into one.
+alter table billing_entitlements
+  drop constraint billing_entitlements_custom_needs_quota,
+  add constraint billing_entitlements_custom_needs_price
+    check (plan_slug <> 'custom'
+      or coalesce(flat_fee_cents, 0) > 0 or coalesce(rate_cents_per_million, 0) > 0);
+
 -- The history is a snapshot of the row above, so it takes the money columns too.
 -- The deletion constraint enumerates the value columns, so it is replaced.
 alter table billing_entitlement_history
   add column flat_fee_cents bigint
     constraint billing_entitlement_history_flat_fee_check check (flat_fee_cents >= 0),
   add column rate_cents_per_million bigint
-    constraint billing_entitlement_history_rate_check check (rate_cents_per_million >= 0);
+    constraint billing_entitlement_history_rate_check check (rate_cents_per_million >= 0),
+  -- A deletion used to be encoded as a NULL plan_slug. Now that a live row can
+  -- hold one, the marker has to be its own column.
+  add column deleted boolean not null default false;
 
 alter table billing_entitlement_history
-  drop constraint billing_entitlement_history_deletion_is_empty;
-
-alter table billing_entitlement_history
+  drop constraint billing_entitlement_history_custom_needs_quota,
+  drop constraint billing_entitlement_history_deletion_is_empty,
+  add constraint billing_entitlement_history_custom_needs_price
+    check (plan_slug <> 'custom'
+      or coalesce(flat_fee_cents, 0) > 0 or coalesce(rate_cents_per_million, 0) > 0),
+  -- A snapshot of a deletion carries no values; actor and note still describe it.
   add constraint billing_entitlement_history_deletion_is_empty
-    check (plan_slug is not null
+    check (not deleted
       or (anchor_day is null and contract_ends_at is null
           and display_name_override is null and flat_fee_cents is null
-          and included_events_override is null and provider_product_id is null
-          and rate_cents_per_million is null and retention_days_override is null
-          and trial_ends_at is null));
+          and included_events_override is null and plan_slug is null
+          and provider_product_id is null and rate_cents_per_million is null
+          and retention_days_override is null and trial_ends_at is null));
 
 -- A mandate's recurring price is never what pug charges: usage is. Mirroring it
 -- only invites someone to read it as the bill.
 alter table billing_subscriptions drop column price_cents;
+
+-- The card in force when the checkout opened, carried onto the subscription the
+-- delivery produces, so a retirement mid-checkout cannot move the price the buyer
+-- agreed to. No default: nothing has opened a checkout, and every writer names one.
+alter table billing_checkout_sessions
+  add column plan_slug varchar(50) not null
+    constraint billing_checkout_sessions_plan_slug_check check (plan_slug <> '');
 
 -- The ledger. One row per close, keyed (org, billed_from), written by the
 -- invoicing pass and the payment webhooks; never pruned. No FK to orgs, like the
@@ -125,6 +150,8 @@ create index billing_invoice_events_invoice_idx on billing_invoice_events (invoi
 drop table if exists billing_invoice_events;
 drop table if exists billing_invoices;
 
+alter table billing_checkout_sessions drop column if exists plan_slug;
+
 alter table billing_subscriptions
   add column price_cents bigint not null default 0
     constraint billing_subscriptions_price_check check (price_cents >= 0);
@@ -132,10 +159,14 @@ alter table billing_subscriptions alter column price_cents drop default;
 
 alter table billing_entitlement_history
   drop constraint if exists billing_entitlement_history_deletion_is_empty,
+  drop constraint if exists billing_entitlement_history_custom_needs_price,
+  drop column if exists deleted,
   drop column if exists rate_cents_per_million,
   drop column if exists flat_fee_cents;
 
 alter table billing_entitlement_history
+  add constraint billing_entitlement_history_custom_needs_quota
+    check (plan_slug <> 'custom' or included_events_override is not null),
   add constraint billing_entitlement_history_deletion_is_empty
     check (plan_slug is not null
       or (anchor_day is null and contract_ends_at is null
@@ -144,6 +175,13 @@ alter table billing_entitlement_history
           and trial_ends_at is null));
 
 alter table billing_entitlements
+  drop constraint if exists billing_entitlements_custom_needs_price,
   drop column if exists terms_effective_at,
   drop column if exists rate_cents_per_million,
   drop column if exists flat_fee_cents;
+
+alter table billing_entitlements alter column plan_slug set not null;
+
+alter table billing_entitlements
+  add constraint billing_entitlements_custom_needs_quota
+    check (plan_slug <> 'custom' or included_events_override is not null);

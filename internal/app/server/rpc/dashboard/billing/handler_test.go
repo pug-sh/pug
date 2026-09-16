@@ -79,18 +79,29 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 	if !on.GetBillingEnabled() {
 		t.Error("billing_enabled is false with the switch on")
 	}
+	card := corebilling.CurrentCard()
 	if on.GetIncludedEvents() == nil {
-		t.Fatal("included_events is absent with billing on; the free floor has a quota")
+		t.Fatal("included_events is absent with billing on; the card has a free allowance")
 	}
-	if on.GetIncludedEvents().GetValue() != 10_000 {
-		t.Errorf("included_events = %d, want the free floor's 10000", on.GetIncludedEvents().GetValue())
+	if on.GetIncludedEvents().GetValue() != card.FreeEvents {
+		t.Errorf("included_events = %d, want the card's %d", on.GetIncludedEvents().GetValue(), card.FreeEvents)
 	}
-	if on.GetRetentionDays().GetValue() != corebilling.RetentionYearDays {
-		t.Errorf("retention_days = %d, want the free floor's %d",
-			on.GetRetentionDays().GetValue(), corebilling.RetentionYearDays)
+	if on.GetRetentionDays().GetValue() != corebilling.CardRetentionDays {
+		t.Errorf("retention_days = %d, want the card's %d",
+			on.GetRetentionDays().GetValue(), corebilling.CardRetentionDays)
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {
 		t.Errorf("status = %s, want FREE for an org past its trial", on.GetStatus())
+	}
+	// The card is what replaced a single price, so it has to reach the wire.
+	if on.GetRateCard() == nil || len(on.GetRateCard().GetTiers()) != len(card.Tiers) {
+		t.Errorf("rate_card = %v, want the current card's %d tiers", on.GetRateCard(), len(card.Tiers))
+	}
+	if on.GetCustomTerms() != nil {
+		t.Error("custom_terms is set for an org with no deal; exactly one of the two is")
+	}
+	if off.GetRateCard() != nil || off.GetCustomTerms() != nil {
+		t.Error("billing off resolved something to price; there is nothing to charge")
 	}
 }
 
@@ -109,16 +120,13 @@ func TestGetBillingStatusReportsATrial(t *testing.T) {
 	if msg.GetTrialEndsAt() == nil {
 		t.Error("trial_ends_at is absent while trialing")
 	}
-	if msg.GetPlan().GetSlug() != corebilling.SlugTrial {
-		t.Errorf("plan = %q, want the trial tier", msg.GetPlan().GetSlug())
+	// The trial is a no-charge window, not a plan: the org is on the current card
+	// either side of it.
+	if msg.GetPlan().GetSlug() != corebilling.CurrentCard().Slug {
+		t.Errorf("plan = %q, want the current card", msg.GetPlan().GetSlug())
 	}
-	// A price of zero is a real price and must survive as one rather than
-	// collapsing into "no price recorded".
-	if msg.GetPlan().GetPriceCents() == nil {
-		t.Fatal("price_cents is absent on the trial tier; free is a price, not the lack of one")
-	}
-	if msg.GetPlan().GetPriceCents().GetValue() != 0 {
-		t.Errorf("price_cents = %d, want 0", msg.GetPlan().GetPriceCents().GetValue())
+	if msg.GetRateCard() == nil {
+		t.Error("rate_card is absent while trialing; the card is what prices the period after it")
 	}
 	if msg.GetPlan().GetCurrency() == "" {
 		t.Error("currency is empty; an amount without its unit cannot be formatted")

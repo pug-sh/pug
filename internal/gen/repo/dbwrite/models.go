@@ -24,6 +24,7 @@ type BillingCheckoutSession struct {
 	OrgID      string
 	Provider   string
 	Ref        string
+	PlanSlug   string
 }
 
 type BillingEntitlement struct {
@@ -34,7 +35,7 @@ type BillingEntitlement struct {
 	IncludedEventsOverride pgtype.Int8
 	Note                   string
 	OrgID                  string
-	PlanSlug               string
+	PlanSlug               pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	UpdateTime             pgtype.Timestamptz
@@ -60,6 +61,7 @@ type BillingEntitlementHistory struct {
 	ProviderProductID      pgtype.Text
 	FlatFeeCents           pgtype.Int8
 	RateCentsPerMillion    pgtype.Int8
+	Deleted                bool
 }
 
 type BillingInvoice struct {

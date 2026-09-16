@@ -159,8 +159,8 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 	seedLiveSubscription(t, pg.PgW)
 
 	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
-		Provider:      unreachableProvider{},
-		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		Provider:       unreachableProvider{},
+		MandateProduct: "prod_mandate",
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)

@@ -5,6 +5,28 @@ import (
 	"slices"
 )
 
+// SlugCustom is the one slug that is not a card: its terms live on the org's row.
+const SlugCustom = "custom"
+
+// SlugFree is the slug an org resolves to when nothing prices it — billing off,
+// or a stored slug no card answers to. It names a STATE, not a plan: `pug billing
+// set` never stores it, and an empty plan_slug is what "no pin" looks like.
+const SlugFree = "free"
+
+// RetentionYearDays is a flat 365 days, so a leap year cannot shorten a term
+// somebody bought.
+const RetentionYearDays = 365
+
+// TrialDays is measured from orgs.create_time — the trial is the org's age, not
+// stored state, so nothing is written at signup.
+const TrialDays = 14
+
+// MaxTrialDays caps one extend-trial. Past this the operator wants a deal, which
+// has terms and a record.
+const MaxTrialDays = 365
+
+// CardRetentionDays is the one retention term every card promises: rendered,
+// never enforced. A deal that negotiated more overrides it on its own row.
 const CardRetentionDays = 5 * RetentionYearDays
 
 type RateCard struct {
@@ -79,9 +101,13 @@ func copyCard(c RateCard) RateCard {
 	return c
 }
 
+// isCardSlug reports whether a stored plan_slug names a card rather than a deal
+// or the resolved free state; the slug may still be one the catalog dropped.
 func isCardSlug(slug string) bool {
-	return slug != "" && slug != SlugFree && slug != SlugTrial && slug != SlugCustom
+	return slug != "" && slug != SlugFree && slug != SlugCustom
 }
+
+func i64(v int64) *int64 { return &v }
 
 func checkRateCards() error {
 	seen := make(map[string]bool, len(rateCards))

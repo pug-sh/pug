@@ -76,8 +76,10 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
-		t.Errorf("slug = %q, want free — the missed cancellation was not applied", ent.Slug)
+	// A dead mandate falls to the current card, not to free, so what the
+	// cancellation actually removes is the ability to charge.
+	if ent.Chargeable {
+		t.Error("the org is still chargeable; the missed cancellation was not applied")
 	}
 }
 
@@ -88,7 +90,7 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, setDeal()); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
@@ -101,13 +103,13 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 		t.Errorf("entitled_unbilled = %d, want 1", report.EntitledUnbilled)
 	}
 
-	// Still granted: the report is a report, not a repair.
+	// Still in force: the report is a report, not a repair.
 	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — reconcile must not revoke a grant", ent.Slug)
+	if ent.Terms == nil {
+		t.Error("the deal is gone — reconcile must not revoke one")
 	}
 }
 
@@ -119,7 +121,7 @@ func TestPastDueCountsAsBilled(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, setDeal()); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_growth", corebilling.SubStatusPastDue)
@@ -160,14 +162,15 @@ func TestReconcileCountsUnreadableSubscriptions(t *testing.T) {
 	}
 }
 
-// A live subscription against a product nothing maps to: a deploy is missing a
-// product key, or an operator made a product without pasting its id.
-func TestReconcileReportsAnUnmappedProduct(t *testing.T) {
+// A product pug does not recognise is no longer a finding: every org authorizes
+// against the same one, so the re-read applies on the card already stored.
+func TestReconcileAppliesRegardlessOfTheProduct(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedLiveSubscription(t, f, "sub00000000000000012", "growth")
+	pinned := currentCard().Slug
+	seedLiveSubscription(t, f, "sub00000000000000012", pinned)
 
 	orphan := subEvent(f.orgID, "sub00000000000000012", "prod_nobody_knows", corebilling.SubStatusActive)
 	svc := f.svcWithProvider(t, &fetchProvider{
@@ -179,8 +182,15 @@ func TestReconcileReportsAnUnmappedProduct(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if report.UnmappedProduct != 1 || report.Applied != 0 {
-		t.Errorf("report = %+v, want 1 unmapped_product and 0 applied", report)
+	if report.Unreadable != 0 || report.Unapplicable != 0 {
+		t.Errorf("report = %+v, want an unrecognised product to be no finding at all", report)
+	}
+	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != pinned {
+		t.Errorf("slug = %q, want the stored card %q kept", ent.Slug, pinned)
 	}
 }
 
@@ -221,9 +231,9 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Fatalf("seed deliveries: %v", err)
 	}
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_checkout_sessions (create_time, org_id, provider, ref)
-		 values ($1, $2, $3, 'ref_abandoned')`,
-		past, f.orgID, fakeProviderName); err != nil {
+		`insert into billing_checkout_sessions (create_time, org_id, plan_slug, provider, ref)
+		 values ($1, $2, $3, $4, 'ref_abandoned')`,
+		past, f.orgID, currentCard().Slug, fakeProviderName); err != nil {
 		t.Fatalf("seed checkout session: %v", err)
 	}
 
@@ -430,12 +440,12 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	seedSubscription(t, f, "sub00000000000000050", "growth", "cancelled")
-	seedLiveSubscription(t, f, "sub00000000000000051", "scale")
+	seedSubscription(t, f, "sub00000000000000050", "usage-2019-01-1", "cancelled")
+	seedLiveSubscription(t, f, "sub00000000000000051", currentCard().Slug)
 
 	// The provider still calls the old one active, so it collides with the live row.
-	revived := subEvent(f.orgID, "sub00000000000000050", "prod_growth", corebilling.SubStatusActive)
-	current := subEvent(f.orgID, "sub00000000000000051", "prod_scale", corebilling.SubStatusActive)
+	revived := subEvent(f.orgID, "sub00000000000000050", mandateProduct, corebilling.SubStatusActive)
+	current := subEvent(f.orgID, "sub00000000000000051", mandateProduct, corebilling.SubStatusActive)
 	svc := f.svcWithProvider(t, &fetchProvider{
 		fakeProvider: fakeProvider{name: fakeProviderName},
 		remote: map[string]corebilling.SubscriptionEvent{
@@ -452,13 +462,16 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 		t.Errorf("report = %+v, want 1 two_live", report)
 	}
 
-	// The org stays on the plan it is actually charged for.
-	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
-	if err != nil {
-		t.Fatalf("GetEntitlement: %v", err)
+	// The org keeps the mandate it is actually charged on: both rows resolve to a
+	// card now, so which one holds the live slot is the thing worth asserting.
+	var live string
+	if err := f.pg.PgRO.QueryRow(t.Context(),
+		`select provider_sub_id from billing_subscriptions
+		 where org_id = $1 and status in ('active', 'past_due')`, f.orgID).Scan(&live); err != nil {
+		t.Fatalf("read the live subscription: %v", err)
 	}
-	if ent.Slug != "scale" {
-		t.Errorf("slug = %q, want scale — the revived row won", ent.Slug)
+	if live != "sub00000000000000051" {
+		t.Errorf("live subscription = %q, want sub00000000000000051 — the revived row won", live)
 	}
 }
 
