@@ -41,12 +41,12 @@ type subscriptionPayload struct {
 	ExpiresAt           *time.Time `json:"expires_at"`
 	Metadata            metadata   `json:"metadata"`
 	NextBillingDate     *time.Time `json:"next_billing_date"`
-	OnDemand            bool       `json:"on_demand"`
+	OnDemand            *bool      `json:"on_demand"`
 	PreviousBillingDate *time.Time `json:"previous_billing_date"`
 	ProductID           string     `json:"product_id"`
 	Status              string     `json:"status"`
 	SubscriptionID      string     `json:"subscription_id"`
-	TaxInclusive        bool       `json:"tax_inclusive"`
+	TaxInclusive        *bool      `json:"tax_inclusive"`
 }
 
 // metadata narrows Dodo's string|number|bool map to the string values pug writes:
@@ -103,6 +103,12 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 	if event.IsZero() {
 		return corebilling.SubscriptionEvent{}, errors.New("dodo: subscription payload carries no subscription id")
 	}
+	// Absent is not false: a missing on_demand would refuse a real mandate for good,
+	// and a missing tax_inclusive would accept one pug under-collects on.
+	if payload.OnDemand == nil || payload.TaxInclusive == nil {
+		return corebilling.SubscriptionEvent{}, errors.New(
+			"dodo: subscription payload carries no on_demand or tax_inclusive")
+	}
 	return event, nil
 }
 
@@ -115,14 +121,14 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 		CancelAtPeriodEnd:  p.CancelAtNextBillingDate,
 		CheckoutRef:        p.Metadata[metadataCheckoutRef],
 		Currency:           strings.ToUpper(strings.TrimSpace(p.Currency)),
-		OnDemand:           p.OnDemand,
+		OnDemand:           p.OnDemand != nil && *p.OnDemand,
 		OrgID:              p.Metadata[metadataOrgID],
 		ProductID:          p.ProductID,
 		ProviderCustomerID: p.CustomerID,
 		ProviderStatus:     p.Status,
 		ProviderSubID:      p.SubscriptionID,
 		Status:             status,
-		TaxInclusive:       p.TaxInclusive,
+		TaxInclusive:       p.TaxInclusive != nil && *p.TaxInclusive,
 	}
 	if p.PreviousBillingDate != nil {
 		event.CurrentPeriodStart = *p.PreviousBillingDate
@@ -130,13 +136,15 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 	if p.NextBillingDate != nil {
 		event.CurrentPeriodEnd = *p.NextBillingDate
 	}
-	// expires_at is set on a live subscription too, where it is the trial's end
-	// rather than the mandate's.
-	switch {
-	case p.CancelledAt != nil && !p.CancelledAt.IsZero():
-		event.EndedAt = *p.CancelledAt
-	case !status.Live() && p.ExpiresAt != nil && !p.ExpiresAt.IsZero():
-		event.EndedAt = *p.ExpiresAt
+	// Both are stamped on a live subscription too: expires_at as the trial's end,
+	// cancelled_at as a cancellation only scheduled.
+	if !status.Live() {
+		switch {
+		case p.CancelledAt != nil && !p.CancelledAt.IsZero():
+			event.EndedAt = *p.CancelledAt
+		case p.ExpiresAt != nil && !p.ExpiresAt.IsZero():
+			event.EndedAt = *p.ExpiresAt
+		}
 	}
 	return event
 }

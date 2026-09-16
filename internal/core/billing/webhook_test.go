@@ -412,13 +412,29 @@ func TestASameSecondCancellationEndsAnActiveSubscription(t *testing.T) {
 	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_active", at)); err != nil {
 		t.Fatalf("HandleDelivery(active): %v", err)
 	}
-	provider.event = subEvent(f.orgID, "sub_1", mandateProduct, corebilling.SubStatusCancelled)
+	cancelled := subEvent(f.orgID, "sub_1", mandateProduct, corebilling.SubStatusCancelled)
+	cancelled.CancelAtPeriodEnd, cancelled.EndedAt = true, at
+	provider.event = cancelled
 	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_cancel", at)); err != nil {
 		t.Fatalf("HandleDelivery(cancelled): %v", err)
 	}
 
 	if chargeable(t, f) {
 		t.Error("a same-second cancellation was dropped")
+	}
+	// The update arm rather than the insert: the activation already wrote the row.
+	var (
+		cancelAtPeriodEnd bool
+		endedAt           time.Time
+	)
+	if err := f.pg.PgW.QueryRow(t.Context(),
+		`select cancel_at_period_end, ended_at from billing_subscriptions
+		 where provider_sub_id = $1`, "sub_1").Scan(&cancelAtPeriodEnd, &endedAt); err != nil {
+		t.Fatalf("read the stored subscription: %v", err)
+	}
+	if !cancelAtPeriodEnd || !endedAt.Equal(at) {
+		t.Errorf("stored cancel_at_period_end=%v ended_at=%v, want true and %v",
+			cancelAtPeriodEnd, endedAt, at)
 	}
 	// Applied, not skipped: a reason here would file it as a lost payment.
 	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {

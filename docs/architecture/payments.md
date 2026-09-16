@@ -341,6 +341,9 @@ billing_subscriptions
   currency              varchar(3) not null       -- always USD while §3 holds
   current_period_start  timestamptz
   current_period_end    timestamptz
+  on_demand             boolean not null default false  -- the mandate; §7.1
+  cancel_at_period_end  boolean not null default false
+  ended_at              timestamptz               -- null until it stopped
   provider_updated_at   timestamptz not null      -- the CAS column; §8
   create_time           timestamptz not null default now()
   update_time           timestamptz not null default now()
@@ -434,6 +437,7 @@ is the first implementation of it:
 |---|---|---|
 | `active` | `active` | yes |
 | `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11) |
+| `past_due` | `past_due` | yes — same reason as `on_hold` |
 | `paused` | `paused` | no |
 | `cancelled`, `expired`, `failed` | same word | no |
 | anything else | stored verbatim, treated as not live | no |
@@ -590,7 +594,8 @@ API for each. Then the consistency reports, which are the point of invariant 3:
 - Two live subscriptions for one org, refused by the partial unique index. The
   one finding here that means an org may be paying twice.
 - A live subscription no writer can store: an unsold currency, no status, no
-  customer. The writer names it (`ErrSubscriptionUnapplicable`)
+  customer, or a subscription pug must not charge against — recurring, or
+  tax-inclusive. The writer names it (`ErrSubscriptionUnapplicable`)
   rather than reporting a skip, or it would be neither an apply nor a finding and
   the pass would print a sweep it did not make.
 - A delivery that **never settled** (`Stranded`): every retry failed, so no reason
@@ -667,7 +672,9 @@ provider** and applies it through `applySubscription` — the same CAS the webho
 and reconcile write through, so no third notion of "newer" exists.
 For Dodo the walk is session → payment → subscription (`FetchCheckoutOutcome`),
 because the session status carries a payment id but no subscription id, and only
-the subscription object carries the product, price, period and metadata. The last
+the subscription object carries the product, period and metadata. A mandate-only
+payment may name no subscription either, in which case the customer's
+subscriptions are listed and matched on the `checkout_ref` pug minted. The last
 hop is `FetchSubscription` itself, which is what keeps the event the same shape
 as the one a delivery normalizes to.
 
@@ -710,8 +717,9 @@ Six rules make it safe:
   stores its row — which is what leaves the org a customer to manage — and grants
   nothing, so telling the buyer it worked would be a lie.
 - **Every paid-but-unplaceable case is returned, not swallowed.** A foreign
-  currency (§3), an unmappable product, a second live subscription and a
-  subscription carrying no status at all are the dispositions §8 stores and
+  currency (§3), an unmappable product, a second live subscription, a
+  subscription carrying no status at all and one pug must not charge against —
+  recurring, or tax-inclusive — are the dispositions §8 stores and
   alerts on, but here somebody is waiting, so each surfaces as
   `FailedPrecondition` under its own reason and the dashboard says the payment
   needs a person rather than that the page will update shortly. None may fall

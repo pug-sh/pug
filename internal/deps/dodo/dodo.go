@@ -191,12 +191,12 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 		ExpiresAt:               optionalTime(sub.ExpiresAt),
 		Metadata:                stringMetadata(sub.Metadata),
 		NextBillingDate:         &sub.NextBillingDate,
-		OnDemand:                sub.OnDemand,
+		OnDemand:                &sub.OnDemand,
 		PreviousBillingDate:     &sub.PreviousBillingDate,
 		ProductID:               sub.ProductID,
 		Status:                  string(sub.Status),
 		SubscriptionID:          sub.SubscriptionID,
-		TaxInclusive:            sub.TaxInclusive,
+		TaxInclusive:            &sub.TaxInclusive,
 	}), nil
 }
 
@@ -263,8 +263,8 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 }
 
 // findSubscription is the second route to a mandate: the customer's subscriptions
-// since the checkout opened, matched on the ref pug minted. Every checkout creates
-// its own customer, so a match is the only candidate anyway.
+// since the checkout opened, matched on the ref pug minted — a customer can hold
+// more than one.
 func (c *Client) findSubscription(ctx context.Context, customerID, ref string, since time.Time) (string, error) {
 	if customerID == "" || ref == "" {
 		return "", nil

@@ -61,8 +61,9 @@ func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, 
 func (s *Service) applySubscriptionEvent(
 	ctx context.Context, provider PaymentProvider, d Delivery, event SubscriptionEvent,
 ) error {
-	// Not constraint mirroring like the two below: the insert writes the Currency
-	// constant, so an unguarded foreign-currency event would be STORED as USD.
+	// Not constraint mirroring like the status and customer checks: the insert
+	// writes the Currency constant, so an unguarded foreign-currency event would be
+	// STORED as USD.
 	if cur := normalizeCurrency(event.Currency); cur != Currency {
 		return s.rejectDelivery(ctx, provider, d, "currency",
 			errors.New("subscription is billed in "+cur+", not "+Currency))
@@ -267,8 +268,8 @@ var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be ap
 func (s *Service) applySubscription(
 	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time,
 ) (int64, error) {
-	// Mirrors the column checks: unguarded they fail the insert. Logged here because
-	// the confirm path reaches it with a buyer already charged.
+	// The first three mirror column checks; the mandate ones have no column behind
+	// them. Logged here because the confirm path reaches it with a buyer charged.
 	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
 		event.ProviderCustomerID == "" || !event.OnDemand || event.TaxInclusive {
 		slog.ErrorContext(ctx, "subscription cannot be applied", slogx.Error(ErrSubscriptionUnapplicable),

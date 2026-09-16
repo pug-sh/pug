@@ -49,6 +49,7 @@ func jsonHandler(t *testing.T, status int, body string, record func(*http.Reques
 const subscriptionJSONBody = `{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
 	`"currency":"USD","recurring_pre_tax_amount":2000,"on_demand":true,` +
+	`"tax_inclusive":true,"cancel_at_next_billing_date":true,` +
 	`"customer":{"customer_id":"cus_1"},` +
 	`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}`
@@ -58,6 +59,7 @@ const subscriptionJSONBody = `{` +
 const subscriptionWithoutMetadataJSONBody = `{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
 	`"currency":"USD","recurring_pre_tax_amount":2000,"on_demand":true,` +
+	`"tax_inclusive":true,"cancel_at_next_billing_date":true,` +
 	`"customer":{"customer_id":"cus_1"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}`
 
