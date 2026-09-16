@@ -283,6 +283,36 @@ func TestConfirmCheckoutRefusesASubscriptionWithNoStatus(t *testing.T) {
 	}
 }
 
+// The webhook's two mandate refusals, on the path where a buyer is waiting on the
+// answer rather than a retry.
+func TestConfirmCheckoutRefusesASubscriptionPugMustNotCharge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for name, mangle := range map[string]func(*corebilling.SubscriptionEvent){
+		"recurring":     func(e *corebilling.SubscriptionEvent) { e.OnDemand = false },
+		"tax inclusive": func(e *corebilling.SubscriptionEvent) { e.TaxInclusive = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			event := subEvent(f.orgID, "sub00000000000000033", "prod_growth", corebilling.SubStatusActive)
+			mangle(&event)
+			provider.checkout = event
+
+			confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
+			if !errors.Is(err, corebilling.ErrSubscriptionUnapplicable) {
+				t.Fatalf("err = %v, want ErrSubscriptionUnapplicable", err)
+			}
+			if confirmed {
+				t.Error("confirmed = true for a subscription pug must not charge")
+			}
+			if n := storedSubscriptions(t, f); n != 0 {
+				t.Errorf("wrote %d rows for a subscription pug must not charge, want 0", n)
+			}
+		})
+	}
+}
+
 // metadata.org_id is buyer-settable on a static payment link, so a checkout pug
 // never opened must not confirm even when it names the caller's own org.
 func TestConfirmCheckoutRefusesARefPugNeverMinted(t *testing.T) {

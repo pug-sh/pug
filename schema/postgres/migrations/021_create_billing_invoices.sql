@@ -58,6 +58,14 @@ alter table billing_entitlement_history
 -- only invites someone to read it as the bill.
 alter table billing_subscriptions drop column price_cents;
 
+-- on_demand is what the webhook admits; the two beside it are what a close clips
+-- the last period to. They keep their default, because false is a real answer --
+-- not chargeable, not ending -- and the safe one for a writer that forgets.
+alter table billing_subscriptions
+  add column on_demand boolean not null default false,
+  add column cancel_at_period_end boolean not null default false,
+  add column ended_at timestamptz;
+
 -- The card in force when the checkout opened, carried onto the subscription the
 -- delivery produces, so a retirement mid-checkout cannot move the price the buyer
 -- agreed to. No default: nothing has opened a checkout, and every writer names one.
@@ -153,7 +161,17 @@ create index billing_invoice_events_invoice_idx on billing_invoice_events (invoi
 drop table if exists billing_invoice_events;
 drop table if exists billing_invoices;
 
+-- The pinned card is what an open checkout's row is for, and the column is going.
+-- These are pruned ephemera either way, and a row left behind with no slug is what
+-- a re-applied Up would refuse to add its not-null column to.
+delete from billing_checkout_sessions;
+
 alter table billing_checkout_sessions drop column if exists plan_slug;
+
+alter table billing_subscriptions
+  drop column if exists ended_at,
+  drop column if exists cancel_at_period_end,
+  drop column if exists on_demand;
 
 alter table billing_subscriptions
   add column price_cents bigint not null default 0

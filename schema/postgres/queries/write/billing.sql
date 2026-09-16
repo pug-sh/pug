@@ -80,18 +80,21 @@ where coalesce(processed_at, received_at) < @older_than;
 -- a payload ARRIVED, so this orders a delivery that overtakes another. org_id is
 -- never updated: attribution is decided once, on first sight.
 insert into billing_subscriptions (
-  currency, current_period_end, current_period_start, id, org_id, plan_slug,
-  provider, provider_customer_id, provider_status, provider_sub_id,
-  provider_updated_at, status
+  cancel_at_period_end, currency, current_period_end, current_period_start,
+  ended_at, id, on_demand, org_id, plan_slug, provider, provider_customer_id,
+  provider_status, provider_sub_id, provider_updated_at, status
 ) values (
-  @currency, @current_period_end, @current_period_start, @id, @org_id, @plan_slug,
-  @provider, @provider_customer_id, @provider_status, @provider_sub_id,
-  @provider_updated_at, @status
+  @cancel_at_period_end, @currency, @current_period_end, @current_period_start,
+  @ended_at, @id, @on_demand, @org_id, @plan_slug, @provider, @provider_customer_id,
+  @provider_status, @provider_sub_id, @provider_updated_at, @status
 )
 on conflict (provider, provider_sub_id) do update
-set currency = excluded.currency,
+set cancel_at_period_end = excluded.cancel_at_period_end,
+    currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
+    ended_at = excluded.ended_at,
+    on_demand = excluded.on_demand,
     plan_slug = excluded.plan_slug,
     provider_customer_id = excluded.provider_customer_id,
     provider_status = excluded.provider_status,

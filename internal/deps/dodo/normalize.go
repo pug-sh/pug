@@ -31,17 +31,22 @@ type envelope struct {
 // subscriptionPayload is the subscription object as both a delivery and a direct
 // read carry it, so Normalize and FetchSubscription produce identical events.
 type subscriptionPayload struct {
-	Currency   string `json:"currency"`
-	CustomerID string `json:"-"`
-	Customer   struct {
+	CancelAtNextBillingDate bool       `json:"cancel_at_next_billing_date"`
+	CancelledAt             *time.Time `json:"cancelled_at"`
+	Currency                string     `json:"currency"`
+	CustomerID              string     `json:"-"`
+	Customer                struct {
 		CustomerID string `json:"customer_id"`
 	} `json:"customer"`
+	ExpiresAt           *time.Time `json:"expires_at"`
 	Metadata            metadata   `json:"metadata"`
 	NextBillingDate     *time.Time `json:"next_billing_date"`
+	OnDemand            bool       `json:"on_demand"`
 	PreviousBillingDate *time.Time `json:"previous_billing_date"`
 	ProductID           string     `json:"product_id"`
 	Status              string     `json:"status"`
 	SubscriptionID      string     `json:"subscription_id"`
+	TaxInclusive        bool       `json:"tax_inclusive"`
 }
 
 // metadata narrows Dodo's string|number|bool map to the string values pug writes:
@@ -105,21 +110,33 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 	if p.CustomerID == "" {
 		p.CustomerID = p.Customer.CustomerID
 	}
+	status := statusFromDodo(p.Status)
 	event := corebilling.SubscriptionEvent{
+		CancelAtPeriodEnd:  p.CancelAtNextBillingDate,
 		CheckoutRef:        p.Metadata[metadataCheckoutRef],
 		Currency:           strings.ToUpper(strings.TrimSpace(p.Currency)),
+		OnDemand:           p.OnDemand,
 		OrgID:              p.Metadata[metadataOrgID],
 		ProductID:          p.ProductID,
 		ProviderCustomerID: p.CustomerID,
 		ProviderStatus:     p.Status,
 		ProviderSubID:      p.SubscriptionID,
-		Status:             statusFromDodo(p.Status),
+		Status:             status,
+		TaxInclusive:       p.TaxInclusive,
 	}
 	if p.PreviousBillingDate != nil {
 		event.CurrentPeriodStart = *p.PreviousBillingDate
 	}
 	if p.NextBillingDate != nil {
 		event.CurrentPeriodEnd = *p.NextBillingDate
+	}
+	// expires_at is set on a live subscription too, where it is the trial's end
+	// rather than the mandate's.
+	switch {
+	case p.CancelledAt != nil && !p.CancelledAt.IsZero():
+		event.EndedAt = *p.CancelledAt
+	case !status.Live() && p.ExpiresAt != nil && !p.ExpiresAt.IsZero():
+		event.EndedAt = *p.ExpiresAt
 	}
 	return event
 }
@@ -131,8 +148,9 @@ func statusFromDodo(status string) corebilling.SubStatus {
 	switch raw {
 	case "active":
 		return corebilling.SubStatusActive
-	// The card failed, the entitlement does not.
-	case "on_hold":
+	// The card failed, the entitlement does not. Dodo's on-demand guide is explicit
+	// that on_hold does not stop a charge, so a failed invoice retries against both.
+	case "on_hold", "past_due":
 		return corebilling.SubStatusPastDue
 	case "paused":
 		return corebilling.SubStatusPaused

@@ -123,6 +123,9 @@ type BillingSubscription struct {
 	ProviderUpdatedAt  pgtype.Timestamptz
 	Status             string
 	UpdateTime         pgtype.Timestamptz
+	OnDemand           bool
+	CancelAtPeriodEnd  bool
+	EndedAt            pgtype.Timestamptz
 }
 
 type BillingWebhookDelivery struct {

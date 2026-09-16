@@ -77,6 +77,18 @@ func (s *Service) applySubscriptionEvent(
 		return s.rejectDelivery(ctx, provider, d, "customer",
 			errors.New("subscription names no customer"))
 	}
+	// A recurring subscription would be charged by the provider on its own schedule
+	// AND by pug's invoices.
+	if !event.OnDemand {
+		return s.rejectDelivery(ctx, provider, d, "on_demand",
+			errors.New("subscription is not on-demand"))
+	}
+	// A tax-inclusive mandate carves the tax out of pug's amount instead of adding
+	// it on top, and nothing downstream would notice.
+	if event.TaxInclusive {
+		return s.rejectDelivery(ctx, provider, d, "tax_inclusive",
+			errors.New("subscription is tax-inclusive"))
+	}
 	orgID, err := s.attributeDelivery(ctx, provider, event)
 	if err != nil {
 		// A read that failed is retryable; accepting it would lose the delivery for
@@ -242,7 +254,8 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live subscription")
 
 // ErrSubscriptionUnapplicable is a provider state no writer can store: an unsold
-// currency, no status, or no customer. Returned rather than
+// currency, no status, no customer, or a subscription pug must not charge against
+// — recurring, or tax-inclusive. Returned rather than
 // reported as a skip, or a pass counts neither an apply nor a finding.
 var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be applied")
 
@@ -257,11 +270,12 @@ func (s *Service) applySubscription(
 	// Mirrors the column checks: unguarded they fail the insert. Logged here because
 	// the confirm path reaches it with a buyer already charged.
 	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
-		event.ProviderCustomerID == "" {
+		event.ProviderCustomerID == "" || !event.OnDemand || event.TaxInclusive {
 		slog.ErrorContext(ctx, "subscription cannot be applied", slogx.Error(ErrSubscriptionUnapplicable),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
 			slog.String("currency", normalizeCurrency(event.Currency)),
-			slog.String("status", string(event.Status)))
+			slog.String("status", string(event.Status)),
+			slog.Bool("on_demand", event.OnDemand), slog.Bool("tax_inclusive", event.TaxInclusive))
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
 	}
@@ -282,10 +296,13 @@ func (s *Service) applySubscription(
 		return 0, err
 	}
 	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
+		CancelAtPeriodEnd:  event.CancelAtPeriodEnd,
 		Currency:           Currency,
 		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
 		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
+		EndedAt:            postgres.NewOptionalTimestamptz(event.EndedAt),
 		ID:                 xid.New().String(),
+		OnDemand:           event.OnDemand,
 		OrgID:              orgID,
 		PlanSlug:           planSlug,
 		Provider:           provider.Name(),

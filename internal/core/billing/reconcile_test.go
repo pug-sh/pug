@@ -39,9 +39,9 @@ func seedSubscription(t *testing.T, f *fixture, subID, slug, status string) {
 	t.Helper()
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (
-		   currency, current_period_end, id, org_id, plan_slug, provider,
+		   currency, current_period_end, id, on_demand, org_id, plan_slug, provider,
 		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
-		 values ('USD', now() + interval '20 days', $1, $2, $3, $4,
+		 values ('USD', now() + interval '20 days', $1, true, $2, $3, $4,
 		         'cus_1', $6, $5, now() - interval '1 hour', $6)`,
 		subID, f.orgID, slug, fakeProviderName, subID, status); err != nil {
 		t.Fatalf("seed subscription: %v", err)

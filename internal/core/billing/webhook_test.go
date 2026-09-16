@@ -116,6 +116,7 @@ func subEvent(orgID, subID, product string, status corebilling.SubStatus) corebi
 		Currency:           "USD",
 		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second),
 		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour).UTC().Truncate(time.Second),
+		OnDemand:           true,
 		OrgID:              orgID,
 		ProductID:          product,
 		ProviderCustomerID: "cus_" + orgID,
@@ -271,6 +272,71 @@ func TestPastDueHoldsTheOneLiveSlot(t *testing.T) {
 	err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_past_due", time.Now()))
 	if !errors.Is(err, corebilling.ErrTwoLiveSubscriptions) {
 		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions — past_due did not hold the slot", err)
+	}
+}
+
+// A recurring subscription would be charged by the provider on its own schedule
+// as well as by pug's invoices, and a tax-inclusive one would carve pug's tax out
+// of pug's own amount. Both are refused where a foreign currency is.
+func TestWebhookRefusesASubscriptionPugMustNotCharge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for name, mangle := range map[string]func(*corebilling.SubscriptionEvent){
+		"recurring":     func(e *corebilling.SubscriptionEvent) { e.OnDemand = false },
+		"tax inclusive": func(e *corebilling.SubscriptionEvent) { e.TaxInclusive = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			event := subEvent(f.orgID, "sub00000000000000031", mandateProduct, corebilling.SubStatusActive)
+			mangle(&event)
+			provider.event = event
+
+			// Accepted, not retried: the provider would only send the same subscription
+			// again.
+			if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now().UTC())); err != nil {
+				t.Fatalf("HandleDelivery: %v", err)
+			}
+			if d := storedDelivery(t, f, "evt_1"); !d.ProcessedAt.Valid || d.Error == "" {
+				t.Errorf("delivery processed=%v error=%q, want processed with a reason",
+					d.ProcessedAt.Valid, d.Error)
+			}
+			if n := storedSubscriptions(t, f); n != 0 {
+				t.Errorf("wrote %d rows for a subscription pug must not charge, want 0", n)
+			}
+		})
+	}
+}
+
+// Nothing reads these two yet — the close that clips a last period to them lands
+// later, and it cannot recover what was never stored.
+func TestWebhookRecordsTheCancellationFields(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	ended := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	event := subEvent(f.orgID, "sub00000000000000032", mandateProduct, corebilling.SubStatusCancelled)
+	event.CancelAtPeriodEnd, event.EndedAt = true, ended
+	provider.event = event
+
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now().UTC())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+
+	var (
+		onDemand, cancelAtPeriodEnd bool
+		endedAt                     time.Time
+	)
+	if err := f.pg.PgW.QueryRow(t.Context(),
+		`select on_demand, cancel_at_period_end, ended_at from billing_subscriptions
+		 where provider_sub_id = $1`, "sub00000000000000032").
+		Scan(&onDemand, &cancelAtPeriodEnd, &endedAt); err != nil {
+		t.Fatalf("read the stored subscription: %v", err)
+	}
+	if !onDemand || !cancelAtPeriodEnd || !endedAt.Equal(ended) {
+		t.Errorf("stored on_demand=%v cancel_at_period_end=%v ended_at=%v, want true, true and %v",
+			onDemand, cancelAtPeriodEnd, endedAt, ended)
 	}
 }
 
