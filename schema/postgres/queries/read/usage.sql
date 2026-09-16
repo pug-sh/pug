@@ -56,3 +56,9 @@ where o.id = @org_id;
 -- still there. This asks the question directly -- see docs/architecture/usage.md
 -- section 4.
 select count(*) from projects where id = any(@project_ids::text[]);
+
+-- name: SumUsageDaily :one
+-- An invoice's own count over its clipped window, at the day grain the meter
+-- stores; usage_periods stays the dashboard's live number.
+select coalesce(sum(event_count), 0)::bigint from usage_daily
+where org_id = @org_id and day >= @from_day and day < @to_day;

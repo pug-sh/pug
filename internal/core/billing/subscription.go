@@ -53,6 +53,7 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 	}
 	return Subscription{
 		CancelAtPeriodEnd:  row.CancelAtPeriodEnd,
+		CreateTime:         row.CreateTime.Time,
 		Currency:           row.Currency,
 		CurrentPeriodEnd:   row.CurrentPeriodEnd.Time,
 		CurrentPeriodStart: row.CurrentPeriodStart.Time,
@@ -62,6 +63,7 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 		ProviderCustomerID: row.ProviderCustomerID,
 		ProviderSubID:      row.ProviderSubID,
 		Status:             status,
+		UpdateTime:         row.UpdateTime.Time,
 	}, true
 }
 

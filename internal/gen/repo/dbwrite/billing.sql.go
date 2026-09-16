@@ -244,6 +244,122 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 	return err
 }
 
+const insertBillingInvoice = `-- name: InsertBillingInvoice :one
+insert into billing_invoices (
+  amount_cents, billed_from, billed_to, currency, event_count, id, lines,
+  next_attempt_at, org_id, period_end, period_start, plan_slug, pricing, status,
+  usage_cents, usage_computed_at
+) values (
+  $1, $2, $3, $4, $5, $6, $7,
+  $8, $9, $10, $11, $12, $13, $14,
+  $15, $16
+)
+on conflict (org_id, billed_from) do nothing
+returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
+`
+
+type InsertBillingInvoiceParams struct {
+	AmountCents     int64
+	BilledFrom      pgtype.Date
+	BilledTo        pgtype.Date
+	Currency        string
+	EventCount      int64
+	ID              string
+	Lines           []byte
+	NextAttemptAt   pgtype.Timestamptz
+	OrgID           string
+	PeriodEnd       pgtype.Timestamptz
+	PeriodStart     pgtype.Timestamptz
+	PlanSlug        string
+	Pricing         []byte
+	Status          string
+	UsageCents      int64
+	UsageComputedAt pgtype.Timestamptz
+}
+
+// The unique (org, billed_from) key is the guard against two passes closing one
+// window: the loser inserts nothing and reads no row.
+func (q *Queries) InsertBillingInvoice(ctx context.Context, arg InsertBillingInvoiceParams) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, insertBillingInvoice,
+		arg.AmountCents,
+		arg.BilledFrom,
+		arg.BilledTo,
+		arg.Currency,
+		arg.EventCount,
+		arg.ID,
+		arg.Lines,
+		arg.NextAttemptAt,
+		arg.OrgID,
+		arg.PeriodEnd,
+		arg.PeriodStart,
+		arg.PlanSlug,
+		arg.Pricing,
+		arg.Status,
+		arg.UsageCents,
+		arg.UsageComputedAt,
+	)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
+const insertBillingInvoiceEvent = `-- name: InsertBillingInvoiceEvent :exec
+insert into billing_invoice_events (actor, detail, from_status, id, invoice_id, to_status)
+values ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertBillingInvoiceEventParams struct {
+	Actor      string
+	Detail     string
+	FromStatus string
+	ID         string
+	InvoiceID  string
+	ToStatus   string
+}
+
+func (q *Queries) InsertBillingInvoiceEvent(ctx context.Context, arg InsertBillingInvoiceEventParams) error {
+	_, err := q.db.Exec(ctx, insertBillingInvoiceEvent,
+		arg.Actor,
+		arg.Detail,
+		arg.FromStatus,
+		arg.ID,
+		arg.InvoiceID,
+		arg.ToStatus,
+	)
+	return err
+}
+
 const insertBillingWebhookDelivery = `-- name: InsertBillingWebhookDelivery :one
 insert into billing_webhook_deliveries (event_type, payload, provider, webhook_id)
 values ($1, $2, $3, $4)

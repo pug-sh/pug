@@ -86,3 +86,21 @@ order by received_at;
 select * from billing_subscriptions
 where org_id = @org_id
 order by create_time desc;
+
+-- name: ListBillingInvoiceOrgs :many
+-- Every org a close considers: one that ever held a mandate, or one on a deal,
+-- lapsed or not, since a lapsed deal still owes the periods it ran through. A free
+-- org gets no invoice.
+select o.id, o.create_time
+from orgs o
+left join billing_entitlements e on e.org_id = o.id
+where e.plan_slug = 'custom'
+   or exists (select 1 from billing_subscriptions s where s.org_id = o.id)
+order by o.id;
+
+-- name: GetBillingInvoiceBilledTo :one
+-- Where the org's billing has reached: each close starts here, so no day is
+-- billed twice however the period moves. Any status, void included -- a voided
+-- day was billed and stopped, not left unbilled.
+select max(billed_to)::date from billing_invoices
+where org_id = @org_id;

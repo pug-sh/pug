@@ -136,3 +136,22 @@ where provider = @provider and provider_sub_id = @provider_sub_id;
 select distinct org_id from billing_subscriptions
 where provider = @provider and provider_customer_id = @provider_customer_id
 limit 2;
+
+-- name: InsertBillingInvoice :one
+-- The unique (org, billed_from) key is the guard against two passes closing one
+-- window: the loser inserts nothing and reads no row.
+insert into billing_invoices (
+  amount_cents, billed_from, billed_to, currency, event_count, id, lines,
+  next_attempt_at, org_id, period_end, period_start, plan_slug, pricing, status,
+  usage_cents, usage_computed_at
+) values (
+  @amount_cents, @billed_from, @billed_to, @currency, @event_count, @id, @lines,
+  @next_attempt_at, @org_id, @period_end, @period_start, @plan_slug, @pricing, @status,
+  @usage_cents, @usage_computed_at
+)
+on conflict (org_id, billed_from) do nothing
+returning *;
+
+-- name: InsertBillingInvoiceEvent :exec
+insert into billing_invoice_events (actor, detail, from_status, id, invoice_id, to_status)
+values (@actor, @detail, @from_status, @id, @invoice_id, @to_status);

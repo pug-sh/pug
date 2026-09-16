@@ -20,7 +20,7 @@ func TestFullPassNeverNarrowerThanMonthToDate(t *testing.T) {
 	now := time.Date(2026, time.August, 25, 6, 0, 0, 0, time.UTC)
 	clustered := []coreusage.OrgPeriod{{OrgID: "o_1", Start: utc(2026, time.August, 24)}}
 
-	if got := meterFrom(now, 2, true, clustered); !got.Equal(utc(2026, time.August, 1)) {
+	if got := meterFrom(now, 2, true, clustered, time.Time{}); !got.Equal(utc(2026, time.August, 1)) {
 		t.Errorf("full pass from = %s, want 2026-08-01 (month-to-date)", got)
 	}
 }
@@ -34,7 +34,7 @@ func TestFullPassWidensToAnAnniversaryBeforeTheMonth(t *testing.T) {
 		{OrgID: "o_2", Start: utc(2026, time.July, 26)},
 	}
 
-	if got := meterFrom(now, 2, true, spread); !got.Equal(utc(2026, time.July, 26)) {
+	if got := meterFrom(now, 2, true, spread, time.Time{}); !got.Equal(utc(2026, time.July, 26)) {
 		t.Errorf("full pass from = %s, want 2026-07-26 (the earliest anniversary)", got)
 	}
 }
@@ -44,7 +44,7 @@ func TestNonFullPassIsTheTrailingRescan(t *testing.T) {
 	now := time.Date(2026, time.August, 25, 6, 0, 0, 0, time.UTC)
 	spread := []coreusage.OrgPeriod{{OrgID: "o_1", Start: utc(2026, time.July, 26)}}
 
-	if got := meterFrom(now, 2, false, spread); !got.Equal(utc(2026, time.August, 23)) {
+	if got := meterFrom(now, 2, false, spread, time.Time{}); !got.Equal(utc(2026, time.August, 23)) {
 		t.Errorf("incremental pass from = %s, want 2026-08-23", got)
 	}
 }
@@ -52,7 +52,31 @@ func TestNonFullPassIsTheTrailingRescan(t *testing.T) {
 // No orgs at all still gets the month floor rather than a zero time.
 func TestFullPassWithNoOrgsFloorsAtTheMonth(t *testing.T) {
 	now := time.Date(2026, time.August, 25, 6, 0, 0, 0, time.UTC)
-	if got := meterFrom(now, 2, true, nil); !got.Equal(utc(2026, time.August, 1)) {
+	if got := meterFrom(now, 2, true, nil, time.Time{}); !got.Equal(utc(2026, time.August, 1)) {
 		t.Errorf("full pass with no orgs from = %s, want 2026-08-01", got)
+	}
+}
+
+// A meter back from an outage re-reads from the day of its last successful pass,
+// or an invoice closes over days no pass finalized.
+func TestPassCatchesUpFromTheLastSuccessfulPass(t *testing.T) {
+	now := time.Date(2026, time.August, 25, 6, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name        string
+		lastMetered time.Time
+		full        bool
+		want        time.Time
+	}{
+		{"never metered is the trailing rescan", time.Time{}, false, utc(2026, time.August, 23)},
+		{"a recent pass does not narrow the rescan", now.Add(-time.Hour), false, utc(2026, time.August, 23)},
+		{"an outage widens to the last pass's day", time.Date(2026, time.August, 18, 22, 0, 0, 0, time.UTC), false, utc(2026, time.August, 18)},
+		{"an outage wider than a full pass wins", time.Date(2026, time.July, 20, 1, 0, 0, 0, time.UTC), true, utc(2026, time.July, 20)},
+		{"a long outage stops at retention", utc(2024, time.January, 1), false, coreusage.FloorDayUTC(now.Add(-retention))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := meterFrom(now, 2, tc.full, nil, tc.lastMetered); !got.Equal(tc.want) {
+				t.Errorf("from = %s, want %s", got, tc.want)
+			}
+		})
 	}
 }

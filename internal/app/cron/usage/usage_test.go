@@ -243,6 +243,57 @@ func TestFailedPassLeavesCronStateUnstamped(t *testing.T) {
 	if !last.IsZero() {
 		t.Errorf("full_recompute stamped %s after a failed pass, want zero", last)
 	}
+	metered, err := j.state.LastRun(t.Context(), taskMeter)
+	if err != nil {
+		t.Fatalf("LastRun: %v", err)
+	}
+	if !metered.IsZero() {
+		t.Errorf("meter stamped %s after a failed pass, want zero", metered)
+	}
+}
+
+// A meter back from an outage re-reads the days it missed before it stamps, so an
+// invoice gated on the stamp never closes over a day no pass finalized.
+func TestMeterCatchesUpAfterAnOutage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+	j.rescanDays = 1
+
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	missed := time.Date(2026, 6, 16, 9, 0, 0, 0, time.UTC)
+
+	projectID := seedProject(t, pg)
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "user-1", "$pageview",
+		uuid.NewString(), nil, nil, missed)
+
+	if err := j.state.MarkRun(ctx, taskFullRecompute, now.Add(-time.Hour)); err != nil {
+		t.Fatalf("MarkRun: %v", err)
+	}
+	if err := j.state.MarkRun(ctx, taskMeter, time.Date(2026, 6, 15, 23, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("MarkRun: %v", err)
+	}
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter: %v", err)
+	}
+
+	if n, ok := usageDayCount(t, pg, projectID, coreusage.FloorDayUTC(missed)); !ok || n != 1 {
+		t.Errorf("missed day = %d (stored %v), want 1: the pass did not re-read the outage", n, ok)
+	}
+	last, err := j.state.LastRun(ctx, taskMeter)
+	if err != nil {
+		t.Fatalf("LastRun: %v", err)
+	}
+	if !last.Equal(now) {
+		t.Errorf("meter stamped %s, want %s", last, now)
+	}
 }
 
 // Contention is not failure: another replica holding the lock is doing this work,

@@ -65,6 +65,10 @@ func rescanDays(ctx context.Context, configured int) int {
 const (
 	taskFullRecompute cron.Task = "full_recompute"
 	taskPrune         cron.Task = "prune"
+	// taskMeter is the last pass that refreshed every org. A pass back from an
+	// outage re-reads from that day, or an invoice would close over days no pass
+	// finalized.
+	taskMeter cron.Task = "meter"
 )
 
 const (
@@ -262,8 +266,18 @@ type job struct {
 // Anniversaries only widen it further: on the 3rd, an org anchored on the 10th is
 // still inside a period that began last month, and stopping at the month boundary
 // would re-sum it over a window the pass had not fully read.
-func meterFrom(now time.Time, rescanDays int, full bool, windows []coreusage.OrgPeriod) time.Time {
+//
+// It never starts later than the day of the last successful pass, so a stalled
+// meter re-reads every day it missed before it stamps. Bounded by retention: past
+// it the cells are pruned anyway.
+func meterFrom(now time.Time, rescanDays int, full bool, windows []coreusage.OrgPeriod, lastMetered time.Time) time.Time {
 	from := coreusage.FloorDayUTC(now.AddDate(0, 0, -rescanDays))
+	if !lastMetered.IsZero() {
+		caughtUp := maxTime(coreusage.FloorDayUTC(lastMetered), coreusage.FloorDayUTC(now.Add(-retention)))
+		if caughtUp.Before(from) {
+			from = caughtUp
+		}
+	}
 	if !full {
 		return from
 	}
@@ -300,8 +314,13 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		return err
 	}
 
+	lastMetered, err := j.state.LastRun(ctx, taskMeter)
+	if err != nil {
+		return err
+	}
+
 	full := now.Sub(lastFull) >= fullRecomputeInterval
-	from := meterFrom(now, j.rescanDays, full, windows)
+	from := meterFrom(now, j.rescanDays, full, windows, lastMetered)
 
 	usage, err := j.service.MeterWindow(ctx, from, now)
 	if err != nil {
@@ -435,6 +454,11 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 		slog.ErrorContext(ctx, "failed to refresh period usage for some orgs", slogx.Error(err)) // puglint:exempt — each org's failure was recorded at source
 		return err
 	}
+	if !j.unrefreshed {
+		if err := j.state.MarkRun(ctx, taskMeter, now); err != nil {
+			return err
+		}
+	}
 
 	slog.InfoContext(ctx, "metered event usage",
 		slog.Time("from", from), slog.Int("cells", len(usage)),
@@ -463,4 +487,11 @@ func (j *job) prune(ctx context.Context, now time.Time) error {
 		slog.InfoContext(ctx, "pruned usage rows", slog.Int64("count", pruned))
 	}
 	return nil
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }

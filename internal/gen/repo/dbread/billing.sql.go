@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getBillingInvoiceBilledTo = `-- name: GetBillingInvoiceBilledTo :one
+select max(billed_to)::date from billing_invoices
+where org_id = $1
+`
+
+// Where the org's billing has reached: each close starts here, so no day is
+// billed twice however the period moves. Any status, void included -- a voided
+// day was billed and stopped, not left unbilled.
+func (q *Queries) GetBillingInvoiceBilledTo(ctx context.Context, orgID string) (pgtype.Date, error) {
+	row := q.db.QueryRow(ctx, getBillingInvoiceBilledTo, orgID)
+	var column_1 pgtype.Date
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getLatestBillingSubscription = `-- name: GetLatestBillingSubscription :one
 select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1 and provider = $2
@@ -184,6 +199,43 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.TermsEffectiveAt,
 			&i.Deleted,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingInvoiceOrgs = `-- name: ListBillingInvoiceOrgs :many
+select o.id, o.create_time
+from orgs o
+left join billing_entitlements e on e.org_id = o.id
+where e.plan_slug = 'custom'
+   or exists (select 1 from billing_subscriptions s where s.org_id = o.id)
+order by o.id
+`
+
+type ListBillingInvoiceOrgsRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+}
+
+// Every org a close considers: one that ever held a mandate, or one on a deal,
+// lapsed or not, since a lapsed deal still owes the periods it ran through. A free
+// org gets no invoice.
+func (q *Queries) ListBillingInvoiceOrgs(ctx context.Context) ([]ListBillingInvoiceOrgsRow, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoiceOrgs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBillingInvoiceOrgsRow
+	for rows.Next() {
+		var i ListBillingInvoiceOrgsRow
+		if err := rows.Scan(&i.ID, &i.CreateTime); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

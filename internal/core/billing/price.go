@@ -39,6 +39,18 @@ func Price(card RateCard, events int64) Quote {
 	return q
 }
 
+// quote picks the pricing function from the resolved entitlement, the one place
+// that choice is made. False is a slug no card answers to.
+func (e Entitlement) quote(events int64) (Quote, bool) {
+	switch {
+	case e.Terms != nil:
+		return PriceCustom(*e.Terms, events), true
+	case e.Card != nil:
+		return Price(*e.Card, events), true
+	}
+	return Quote{}, false
+}
+
 func PriceCustom(t CustomTerms, events int64) Quote {
 	q := Quote{Events: events, Lines: []Line{}}
 	if t.FlatFeeCents > 0 {

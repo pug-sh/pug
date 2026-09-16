@@ -206,4 +206,8 @@ type Subscription struct {
 	OnDemand          bool
 	CancelAtPeriodEnd bool
 	EndedAt           time.Time
+
+	// CreateTime is the day the card was added, as far as a close is concerned.
+	CreateTime time.Time
+	UpdateTime time.Time
 }

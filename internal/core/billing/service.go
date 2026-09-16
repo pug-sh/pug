@@ -595,13 +595,11 @@ func (s *Service) Preview(ctx context.Context, orgID string, events int64, now t
 	// With the mandate: a grandfathered org is previewed on the card it pinned,
 	// which is the one it will be charged on.
 	ent := Resolve(row.OrgCreateTime.Time, recordFromRow(row), sub, now, true)
-	switch {
-	case ent.Terms != nil:
-		return ent, PriceCustom(*ent.Terms, events), nil
-	case ent.Card != nil:
-		return ent, Price(*ent.Card, events), nil
+	quote, ok := ent.quote(events)
+	if !ok {
+		return ent, Quote{}, fmt.Errorf("%w: %s", ErrPlanNotFound, ent.Slug)
 	}
-	return ent, Quote{}, fmt.Errorf("%w: %s", ErrPlanNotFound, ent.Slug)
+	return ent, quote, nil
 }
 
 // isOrgFKViolation reports the upsert failing because no such org exists, which

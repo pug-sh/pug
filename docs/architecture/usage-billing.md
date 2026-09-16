@@ -453,7 +453,8 @@ it is safe to price, and prices it:
   back from an outage re-reads every day it missed before it stamps, so a
   stalled meter delays an invoice, never mis-bills one. A due period is closed
   by any pass within three periods of its end; one still unclosed after that
-  is `dropped` and fails the pass (§11).
+  is `dropped` and fails the pass (§11) for a day, since no later pass can bill
+  it.
 - **What it sums:** `usage_daily` over the **billable window**, at day grain,
   with a new `SumUsageDaily` read — for a card org `[max(period_start,
   last_billed_to, mandate_day, trial_end_day), min(period_end,
@@ -464,7 +465,9 @@ it is safe to price, and prices it:
   first invoice of a mandate covers only days from the day the card was added;
   the last covers only days before it was removed; a deal bills from the day
   its terms took effect, card or not (§5, §19.15); trial days are never
-  billed; an empty window writes no row. `usage_periods` is untouched: it
+  billed; an empty window writes no row. A period that saw more than one
+  mandate closes once per mandate, each starting where the last ended, so the
+  days between a removed card and its replacement are not billed. `usage_periods` is untouched: it
   stays the dashboard's live number, and the invoice stores its own count,
   which is the bill's.
 - **Which orgs:** those with a mandate live at any point in the period, and
