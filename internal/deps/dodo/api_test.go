@@ -48,7 +48,8 @@ func jsonHandler(t *testing.T, status int, body string, record func(*http.Reques
 // direct read and the delivery can be compared.
 const subscriptionJSONBody = `{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
-	`"currency":"USD","recurring_pre_tax_amount":2000,` +
+	`"currency":"USD","recurring_pre_tax_amount":2000,"on_demand":true,` +
+	`"tax_inclusive":true,"cancel_at_next_billing_date":true,` +
 	`"customer":{"customer_id":"cus_1"},` +
 	`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}`
@@ -57,7 +58,8 @@ const subscriptionJSONBody = `{` +
 // a checkout's metadata onto the subscription object.
 const subscriptionWithoutMetadataJSONBody = `{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
-	`"currency":"USD","recurring_pre_tax_amount":2000,` +
+	`"currency":"USD","recurring_pre_tax_amount":2000,"on_demand":true,` +
+	`"tax_inclusive":true,"cancel_at_next_billing_date":true,` +
 	`"customer":{"customer_id":"cus_1"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}`
 
@@ -68,12 +70,18 @@ func TestCreateCheckoutSession(t *testing.T) {
 				ProductID string `json:"product_id"`
 				Quantity  int64  `json:"quantity"`
 			} `json:"product_cart"`
-			Metadata        map[string]string `json:"metadata"`
-			ReturnURL       string            `json:"return_url"`
-			BillingCurrency string            `json:"billing_currency"`
-			Customization   struct {
-				Theme       string `json:"theme"`
-				ThemeConfig struct {
+			Metadata         map[string]string `json:"metadata"`
+			ReturnURL        string            `json:"return_url"`
+			BillingCurrency  string            `json:"billing_currency"`
+			SubscriptionData struct {
+				OnDemand struct {
+					MandateOnly bool `json:"mandate_only"`
+				} `json:"on_demand"`
+			} `json:"subscription_data"`
+			Customization struct {
+				Theme           string `json:"theme"`
+				ShowOnDemandTag bool   `json:"show_on_demand_tag"`
+				ThemeConfig     struct {
 					Radius string            `json:"radius"`
 					Light  map[string]string `json:"light"`
 					Dark   map[string]string `json:"dark"`
@@ -90,6 +98,7 @@ func TestCreateCheckoutSession(t *testing.T) {
 				// Pointers: both default to true, so unsent is the case each asserts against.
 				AllowDiscountCode          *bool `json:"allow_discount_code"`
 				AllowPhoneNumberCollection *bool `json:"allow_phone_number_collection"`
+				AllowTaxID                 *bool `json:"allow_tax_id"`
 			} `json:"feature_flags"`
 			Customer struct {
 				Email string `json:"email"`
@@ -170,6 +179,18 @@ func TestCreateCheckoutSession(t *testing.T) {
 		// customer by email, and one person admining two orgs gets one id for both.
 		if !got.FeatureFlags.AlwaysCreateNewCustomer {
 			t.Error("always_create_new_customer is not true; a shared customer misattributes a delivery")
+		}
+		// The whole shape of the sale: without it the buyer is charged the mandate
+		// product's own price, which pug never means to collect.
+		if !got.SubscriptionData.OnDemand.MandateOnly {
+			t.Error("subscription_data.on_demand.mandate_only is not true; the checkout takes money")
+		}
+		if !got.Customization.ShowOnDemandTag {
+			t.Error("show_on_demand_tag is not true; the page does not say the card is only authorized")
+		}
+		// Prices exclude tax, so a business needs somewhere to put its VAT or GST number.
+		if got.FeatureFlags.AllowTaxID == nil || !*got.FeatureFlags.AllowTaxID {
+			t.Error("allow_tax_id is not true; a business cannot give its tax id")
 		}
 		if got.Customization.Theme != "dark" {
 			t.Errorf("customization.theme = %q, want dark", got.Customization.Theme)
@@ -462,6 +483,57 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 		}
 		if got.OrgID != "org_abc" {
 			t.Errorf("org_id = %q, want org_abc from the payment's metadata", got.OrgID)
+		}
+	})
+
+	// A mandate-only checkout authorizes a card and charges nothing, so its payment
+	// may name no subscription. The session carries no customer of its own, which
+	// leaves the payment's — filtered on the ref pug minted.
+	t.Run("a mandate-only authorization is found by its ref", func(t *testing.T) {
+		var query string
+		m := http.NewServeMux()
+		m.Handle("/checkouts/cs_1", jsonHandler(t, http.StatusOK,
+			`{"id":"cs_1","created_at":"2026-06-01T00:00:00Z","payment_id":"pay_1","payment_status":"succeeded"}`, nil))
+		m.Handle("/payments/pay_1", jsonHandler(t, http.StatusOK,
+			`{"payment_id":"pay_1","status":"succeeded","customer":{"customer_id":"cus_1"},`+
+				`"metadata":{"checkout_ref":"ref_deadbeef"}}`, nil))
+		m.Handle("/subscriptions", jsonHandler(t, http.StatusOK,
+			`{"items":[{"subscription_id":"sub_other","metadata":{"checkout_ref":"ref_other"}},`+
+				`{"subscription_id":"sub_1","metadata":{"checkout_ref":"ref_deadbeef"}}]}`,
+			func(r *http.Request) { query = r.URL.RawQuery }))
+		m.Handle("/subscriptions/sub_1", jsonHandler(t, http.StatusOK, subscriptionJSONBody, nil))
+
+		got, err := apiClient(t, m).FetchCheckoutOutcome(context.Background(), "cs_1")
+		if err != nil {
+			t.Fatalf("FetchCheckoutOutcome: %v", err)
+		}
+		// The other row shares the customer and not the ref: taking the first match
+		// would hand the buyer somebody else's mandate.
+		if got.ProviderSubID != "sub_1" {
+			t.Errorf("provider_sub_id = %q, want the subscription carrying this checkout's ref", got.ProviderSubID)
+		}
+		if !strings.Contains(query, "customer_id=cus_1") {
+			t.Errorf("subscriptions query = %q, want it scoped to the payment's customer", query)
+		}
+	})
+
+	// The ref is the whole safety of that fallback: with none there is nothing to
+	// match on, and the webhook stays the authority.
+	t.Run("a mandate-only authorization with no ref stays unsettled", func(t *testing.T) {
+		m := http.NewServeMux()
+		m.Handle("/checkouts/cs_1", jsonHandler(t, http.StatusOK,
+			`{"id":"cs_1","created_at":"2026-06-01T00:00:00Z","payment_id":"pay_1","payment_status":"succeeded"}`, nil))
+		m.Handle("/payments/pay_1", jsonHandler(t, http.StatusOK,
+			`{"payment_id":"pay_1","status":"succeeded","customer":{"customer_id":"cus_1"}}`, nil))
+		m.Handle("/subscriptions", jsonHandler(t, http.StatusOK,
+			`{"items":[{"subscription_id":"sub_1","metadata":{"checkout_ref":"ref_deadbeef"}}]}`, nil))
+
+		got, err := apiClient(t, m).FetchCheckoutOutcome(context.Background(), "cs_1")
+		if err != nil {
+			t.Fatalf("FetchCheckoutOutcome: %v", err)
+		}
+		if !got.IsZero() {
+			t.Errorf("event = %+v, want zero — a ref-less authorization matched something", got)
 		}
 	})
 

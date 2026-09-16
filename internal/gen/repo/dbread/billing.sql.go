@@ -12,7 +12,7 @@ import (
 )
 
 const getLatestBillingSubscription = `-- name: GetLatestBillingSubscription :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1 and provider = $2
 order by create_time desc
 limit 1
@@ -44,12 +44,15 @@ func (q *Queries) GetLatestBillingSubscription(ctx context.Context, arg GetLates
 		&i.ProviderUpdatedAt,
 		&i.Status,
 		&i.UpdateTime,
+		&i.OnDemand,
+		&i.CancelAtPeriodEnd,
+		&i.EndedAt,
 	)
 	return i, err
 }
 
 const getLiveBillingSubscription = `-- name: GetLiveBillingSubscription :one
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1 and status in ('active', 'past_due')
 `
 
@@ -73,6 +76,9 @@ func (q *Queries) GetLiveBillingSubscription(ctx context.Context, orgID string) 
 		&i.ProviderUpdatedAt,
 		&i.Status,
 		&i.UpdateTime,
+		&i.OnDemand,
+		&i.CancelAtPeriodEnd,
+		&i.EndedAt,
 	)
 	return i, err
 }
@@ -189,7 +195,7 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 }
 
 const listBillingSubscriptionsByOrg = `-- name: ListBillingSubscriptionsByOrg :many
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1
 order by create_time desc
 `
@@ -220,6 +226,9 @@ func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID strin
 			&i.ProviderUpdatedAt,
 			&i.Status,
 			&i.UpdateTime,
+			&i.OnDemand,
+			&i.CancelAtPeriodEnd,
+			&i.EndedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -232,7 +241,7 @@ func (q *Queries) ListBillingSubscriptionsByOrg(ctx context.Context, orgID strin
 }
 
 const listBillingSubscriptionsByProvider = `-- name: ListBillingSubscriptionsByProvider :many
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where provider = $1
 order by id
 limit $3 offset $2
@@ -270,6 +279,9 @@ func (q *Queries) ListBillingSubscriptionsByProvider(ctx context.Context, arg Li
 			&i.ProviderUpdatedAt,
 			&i.Status,
 			&i.UpdateTime,
+			&i.OnDemand,
+			&i.CancelAtPeriodEnd,
+			&i.EndedAt,
 		); err != nil {
 			return nil, err
 		}

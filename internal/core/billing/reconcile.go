@@ -43,9 +43,9 @@ type ReconcileReport struct {
 	// Rows the pass could not settle: a failed read or write, or a read that
 	// decoded to nothing. The only counter the CronJob fails on.
 	Unreadable int
-	// A live subscription pug cannot apply: an unsold currency, no status, or no
-	// customer. Counted rather than skipped, or the pass reports a sweep it did
-	// not make.
+	// A live subscription pug cannot apply: an unsold currency, no status, no
+	// customer, or a mandate that is not on-demand. Counted rather than skipped, or
+	// the pass reports a sweep it did not make.
 	Unapplicable int
 	// Two live subscriptions for one org, refused by the partial unique index — the
 	// one finding that means an org may be paying twice.
@@ -219,7 +219,9 @@ func (s *Service) reconcileOne(
 			slog.ErrorContext(ctx, "live subscription cannot be applied", slogx.Error(err),
 				slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID),
 				slog.String("currency", normalizeCurrency(event.Currency)),
-				slog.String("status", string(event.Status))) // puglint:exempt — recorded at the write in applySubscription
+				slog.String("status", string(event.Status)),
+				slog.Bool("on_demand", event.OnDemand),
+				slog.Bool("tax_inclusive", event.TaxInclusive)) // puglint:exempt — recorded at the write in applySubscription
 		default:
 			report.Unreadable++
 		}

@@ -46,7 +46,8 @@ func testClient(t *testing.T, now time.Time) *Client {
 
 const activeBody = `{"type":"subscription.active","data":{` +
 	`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
-	`"currency":"USD","recurring_pre_tax_amount":2000,` +
+	`"currency":"USD","recurring_pre_tax_amount":2000,"on_demand":true,` +
+	`"tax_inclusive":true,"cancel_at_next_billing_date":true,` +
 	`"customer":{"customer_id":"cus_1"},` +
 	`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
 	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"}}`
@@ -180,6 +181,7 @@ func TestNormalizeKeepsAttributionBesideNonStringMetadata(t *testing.T) {
 	body := `{"type":"subscription.active","data":{` +
 		`"subscription_id":"sub_1","product_id":"prod_growth","status":"active",` +
 		`"currency":"USD","recurring_pre_tax_amount":2000,` +
+		`"on_demand":true,"tax_inclusive":false,` +
 		`"customer":{"customer_id":"cus_1"},` +
 		`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef","seats":5,"trial":true}}}`
 
@@ -216,6 +218,38 @@ func TestNormalizeIgnoresNonSubscriptionDeliveries(t *testing.T) {
 	}
 }
 
+// Both stamps appear on a live subscription — expires_at as the trial's end,
+// cancelled_at as a cancellation only scheduled — so only a dead one takes them.
+func TestEndedAtIsOnlyAMandateThatStopped(t *testing.T) {
+	c := testClient(t, time.Now())
+	stopped := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		fields string
+		want   time.Time
+	}{
+		"cancelled":             {`"status":"cancelled","cancelled_at":"2026-06-10T09:00:00Z"`, stopped},
+		"expired":               {`"status":"expired","expires_at":"2026-06-10T09:00:00Z"`, stopped},
+		"live with a trial end": {`"status":"active","expires_at":"2026-06-10T09:00:00Z"`, time.Time{}},
+		"live with a scheduled cancellation": {
+			`"status":"active","cancelled_at":"2026-06-10T09:00:00Z"`, time.Time{},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			event, err := c.Normalize(corebilling.Delivery{
+				EventType: "subscription.updated",
+				RawPayload: []byte(`{"type":"subscription.updated","data":{"subscription_id":"sub_1",` +
+					`"currency":"USD","on_demand":true,"tax_inclusive":false,` + tc.fields + `}}`),
+			})
+			if err != nil {
+				t.Fatalf("Normalize: %v", err)
+			}
+			if !event.EndedAt.Equal(tc.want) {
+				t.Errorf("ended_at = %v, want %v", event.EndedAt, tc.want)
+			}
+		})
+	}
+}
+
 // Section 7's mapping table, in full. The last row is the one that matters: a
 // state pug has no word for is kept verbatim and is not live.
 func TestStatusMapping(t *testing.T) {
@@ -225,6 +259,7 @@ func TestStatusMapping(t *testing.T) {
 	}{
 		"active":    {corebilling.SubStatusActive, true},
 		"on_hold":   {corebilling.SubStatusPastDue, true},
+		"past_due":  {corebilling.SubStatusPastDue, true},
 		"paused":    {corebilling.SubStatusPaused, false},
 		"cancelled": {corebilling.SubStatusCancelled, false},
 		"expired":   {corebilling.SubStatusExpired, false},
@@ -359,7 +394,8 @@ func TestNormalizeRefusesASubscriptionItCannotRead(t *testing.T) {
 func TestNormalizeTakesTheCustomerFromTheNestedObject(t *testing.T) {
 	c := testClient(t, time.Now())
 	body := `{"type":"subscription.active","data":{` +
-		`"subscription_id":"sub_1","status":"active","customer":{"customer_id":"cus_1"}}}`
+		`"subscription_id":"sub_1","status":"active","on_demand":true,"tax_inclusive":false,` +
+		`"customer":{"customer_id":"cus_1"}}}`
 	event, err := c.Normalize(corebilling.Delivery{
 		EventType:  "subscription.active",
 		RawPayload: []byte(body),

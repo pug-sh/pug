@@ -609,6 +609,7 @@ func confirmEvent(orgID, subID, product string, status corebilling.SubStatus) co
 		Currency:           "USD",
 		CurrentPeriodEnd:   time.Now().Add(20 * 24 * time.Hour),
 		CurrentPeriodStart: time.Now().Add(-10 * 24 * time.Hour),
+		OnDemand:           true,
 		OrgID:              orgID,
 		ProductID:          product,
 		ProviderCustomerID: "cus_" + orgID,

@@ -41,8 +41,9 @@ type PaymentProvider interface {
 	// SubscriptionEvent means "store, mark processed, ignore".
 	Normalize(Delivery) (SubscriptionEvent, error)
 
-	// CreateCheckoutSession returns the session's id alongside the buyer's URL. The
-	// id is what ConfirmCheckout re-reads by; an empty one leaves only the webhook.
+	// CreateCheckoutSession opens a mandate-only checkout: it authorizes a payment
+	// method against ProductID and charges nothing. The id is what ConfirmCheckout
+	// re-reads by; an empty one leaves only the webhook.
 	CreateCheckoutSession(ctx context.Context, in CheckoutInput) (sessionID, checkoutURL string, err error)
 	CreatePortalSession(ctx context.Context, customerID string) (string, error)
 	// FetchSubscription re-reads one subscription for the reconcile pass, in the
@@ -92,6 +93,17 @@ type SubscriptionEvent struct {
 
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+
+	// OnDemand is what makes the subscription a mandate pug charges, rather than
+	// one the provider bills on its own schedule as well.
+	OnDemand bool
+	// TaxInclusive would carve the tax out of pug's own amount instead of adding it
+	// on top, and nothing downstream would notice.
+	TaxInclusive bool
+	// CancelAtPeriodEnd is a cancellation the customer scheduled at the provider.
+	CancelAtPeriodEnd bool
+	// EndedAt is when a cancelled or expired mandate stopped, when the provider says.
+	EndedAt time.Time
 }
 
 // IsZero reports the "nothing to apply" disposition.
@@ -188,4 +200,10 @@ type Subscription struct {
 
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+
+	// OnDemand is what makes the row a mandate pug can charge at all; the two
+	// below are what a close clips the last period to.
+	OnDemand          bool
+	CancelAtPeriodEnd bool
+	EndedAt           time.Time
 }

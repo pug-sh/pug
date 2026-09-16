@@ -13,18 +13,21 @@ import (
 
 const applyBillingSubscription = `-- name: ApplyBillingSubscription :execrows
 insert into billing_subscriptions (
-  currency, current_period_end, current_period_start, id, org_id, plan_slug,
-  provider, provider_customer_id, provider_status, provider_sub_id,
-  provider_updated_at, status
+  cancel_at_period_end, currency, current_period_end, current_period_start,
+  ended_at, id, on_demand, org_id, plan_slug, provider, provider_customer_id,
+  provider_status, provider_sub_id, provider_updated_at, status
 ) values (
-  $1, $2, $3, $4, $5, $6,
-  $7, $8, $9, $10,
-  $11, $12
+  $1, $2, $3, $4,
+  $5, $6, $7, $8, $9, $10, $11,
+  $12, $13, $14, $15
 )
 on conflict (provider, provider_sub_id) do update
-set currency = excluded.currency,
+set cancel_at_period_end = excluded.cancel_at_period_end,
+    currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
+    ended_at = excluded.ended_at,
+    on_demand = excluded.on_demand,
     plan_slug = excluded.plan_slug,
     provider_customer_id = excluded.provider_customer_id,
     provider_status = excluded.provider_status,
@@ -36,10 +39,13 @@ where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
 `
 
 type ApplyBillingSubscriptionParams struct {
+	CancelAtPeriodEnd  bool
 	Currency           string
 	CurrentPeriodEnd   pgtype.Timestamptz
 	CurrentPeriodStart pgtype.Timestamptz
+	EndedAt            pgtype.Timestamptz
 	ID                 string
+	OnDemand           bool
 	OrgID              string
 	PlanSlug           string
 	Provider           string
@@ -58,10 +64,13 @@ type ApplyBillingSubscriptionParams struct {
 // one. On a tie an equal stamp can end a subscription but never revive one.
 func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBillingSubscriptionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, applyBillingSubscription,
+		arg.CancelAtPeriodEnd,
 		arg.Currency,
 		arg.CurrentPeriodEnd,
 		arg.CurrentPeriodStart,
+		arg.EndedAt,
 		arg.ID,
+		arg.OnDemand,
 		arg.OrgID,
 		arg.PlanSlug,
 		arg.Provider,

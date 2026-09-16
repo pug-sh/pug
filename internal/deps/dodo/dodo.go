@@ -96,6 +96,13 @@ func (c *Client) CreateCheckoutSession(
 			ProductID: dodopayments.F(in.ProductID),
 			Quantity:  dodopayments.F(int64(1)),
 		}}),
+		// The whole point of the checkout: authorize the card and charge nothing. Pug
+		// prices each period and charges that against the mandate it leaves behind.
+		SubscriptionData: dodopayments.F(dodopayments.SubscriptionDataParam{
+			OnDemand: dodopayments.F(dodopayments.OnDemandSubscriptionParam{
+				MandateOnly: dodopayments.F(true),
+			}),
+		}),
 	}
 	// Both ride every delivery this checkout produces; only the ref proves the org.
 	md := dodopayments.MetadataParam{metadataOrgID: shared.UnionString(in.OrgID)}
@@ -103,7 +110,10 @@ func (c *Client) CreateCheckoutSession(
 		md[metadataCheckoutRef] = shared.UnionString(in.CheckoutRef)
 	}
 	req.Metadata = dodopayments.F(md)
-	req.Customization = dodopayments.F(customization(in.Theme))
+	custom := customization(in.Theme)
+	// So the page says what it is: a card being authorized, not charged.
+	custom.ShowOnDemandTag = dodopayments.F(true)
+	req.Customization = dodopayments.F(custom)
 	if in.ReturnURL != "" {
 		req.ReturnURL = dodopayments.F(in.ReturnURL)
 	}
@@ -116,6 +126,9 @@ func (c *Client) CreateCheckoutSession(
 		AllowDiscountCode: dodopayments.F(false),
 		// Defaults on, and a phone number buys an analytics upgrade nothing.
 		AllowPhoneNumberCollection: dodopayments.F(false),
+		// Dodo's default, sent explicitly because pug's prices exclude tax: a business
+		// giving its VAT or GST number is how the tax added on top comes out right.
+		AllowTaxID: dodopayments.F(true),
 		// Pre-filled from the account and otherwise frozen for the session — but the name
 		// can be a stale OIDC claim and the receipt often wants accounts payable, and
 		// attribution rides the metadata ref rather than either of these.
@@ -171,14 +184,19 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get subscription: %w", err)
 	}
 	return c.eventFromSubscription(subscriptionPayload{
-		Currency:            string(sub.Currency),
-		CustomerID:          sub.Customer.CustomerID,
-		Metadata:            stringMetadata(sub.Metadata),
-		NextBillingDate:     &sub.NextBillingDate,
-		PreviousBillingDate: &sub.PreviousBillingDate,
-		ProductID:           sub.ProductID,
-		Status:              string(sub.Status),
-		SubscriptionID:      sub.SubscriptionID,
+		CancelAtNextBillingDate: sub.CancelAtNextBillingDate,
+		CancelledAt:             optionalTime(sub.CancelledAt),
+		Currency:                string(sub.Currency),
+		CustomerID:              sub.Customer.CustomerID,
+		ExpiresAt:               optionalTime(sub.ExpiresAt),
+		Metadata:                stringMetadata(sub.Metadata),
+		NextBillingDate:         &sub.NextBillingDate,
+		OnDemand:                &sub.OnDemand,
+		PreviousBillingDate:     &sub.PreviousBillingDate,
+		ProductID:               sub.ProductID,
+		Status:                  string(sub.Status),
+		SubscriptionID:          sub.SubscriptionID,
+		TaxInclusive:            &sub.TaxInclusive,
 	}), nil
 }
 
@@ -211,22 +229,30 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 	if terminalIntent(string(payment.Status)) {
 		return corebilling.SubscriptionEvent{}, corebilling.ErrCheckoutFailed
 	}
-	if payment.SubscriptionID == "" {
-		return corebilling.SubscriptionEvent{}, nil
+	md := stringMetadata(payment.Metadata)
+	subID := payment.SubscriptionID
+	if subID == "" {
+		// A mandate-only authorization may name no subscription. The session carries no
+		// customer of its own, so the payment's is the only route left to one.
+		if subID, err = c.findSubscription(ctx,
+			payment.Customer.CustomerID, md[metadataCheckoutRef], session.CreatedAt); err != nil {
+			return corebilling.SubscriptionEvent{}, err
+		}
+		if subID == "" {
+			return corebilling.SubscriptionEvent{}, nil
+		}
 	}
-	event, err := c.FetchSubscription(ctx, payment.SubscriptionID)
+	event, err := c.FetchSubscription(ctx, subID)
 	if err != nil {
 		return corebilling.SubscriptionEvent{}, err
 	}
-	// The payment names a subscription, so one exists: a zero here is a shape change,
-	// not "not yet". Passed through, it would leave the buyer polling for good.
+	// The id was resolved just now, so a zero here is a shape change, not "not yet".
+	// Passed through, it would leave the buyer polling for good.
 	if event.IsZero() {
-		return corebilling.SubscriptionEvent{}, fmt.Errorf(
-			"dodo: subscription %s decoded to nothing", payment.SubscriptionID)
+		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: subscription %s decoded to nothing", subID)
 	}
 	// Dodo calls a checkout's metadata the PAYMENT's and pug reads both off the
 	// SUBSCRIPTION; fall back rather than depend on whether it propagates.
-	md := stringMetadata(payment.Metadata)
 	if event.OrgID == "" {
 		event.OrgID = md[metadataOrgID]
 	}
@@ -234,6 +260,39 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 		event.CheckoutRef = md[metadataCheckoutRef]
 	}
 	return event, nil
+}
+
+// findSubscription is the second route to a mandate: the customer's subscriptions
+// since the checkout opened, matched on the ref pug minted — a customer can hold
+// more than one.
+func (c *Client) findSubscription(ctx context.Context, customerID, ref string, since time.Time) (string, error) {
+	if customerID == "" || ref == "" {
+		return "", nil
+	}
+	iter := c.api.Subscriptions.ListAutoPaging(ctx, dodopayments.SubscriptionListParams{
+		CustomerID: dodopayments.F(customerID),
+		// A minute back: the subscription is created from the same checkout, and the
+		// two clocks are not pug's to reconcile.
+		CreatedAtGte: dodopayments.F(since.UTC().Add(-time.Minute)),
+		PageSize:     dodopayments.F(int64(100)),
+	})
+	for iter.Next() {
+		sub := iter.Current()
+		if stringMetadata(sub.Metadata)[metadataCheckoutRef] == ref {
+			return sub.SubscriptionID, nil
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return "", fmt.Errorf("dodo: list subscriptions: %w", err)
+	}
+	return "", nil
+}
+
+func optionalTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 // terminalIntent reports a payment Dodo will not carry further. A short allowlist

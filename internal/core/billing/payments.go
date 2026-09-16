@@ -299,6 +299,17 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return false, ErrSubscriptionUnapplicable
 	}
+	// A recurring mandate would be billed by the provider on its own schedule as
+	// well as by pug's invoices; a tax-inclusive one would carve the tax out of
+	// pug's amount. Refused here too, so the buyer is told rather than polling.
+	if !event.OnDemand || event.TaxInclusive {
+		slog.ErrorContext(ctx, "confirmed checkout is not a mandate pug can charge",
+			slogx.Error(ErrSubscriptionUnapplicable),
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
+			slog.Bool("on_demand", event.OnDemand), slog.Bool("tax_inclusive", event.TaxInclusive))
+		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
+		return false, ErrSubscriptionUnapplicable
+	}
 	// The customer has paid and pug cannot place it. A person has to act either
 	// way, but somebody is waiting here, so it is returned as well as logged.
 	if cur := normalizeCurrency(event.Currency); cur != Currency {
