@@ -345,6 +345,60 @@ func (q *Queries) ListBillingSubscriptionsByProvider(ctx context.Context, arg Li
 	return items, nil
 }
 
+const listDueBillingInvoices = `-- name: ListDueBillingInvoices :many
+select i.amount_cents, i.billed_from, i.billed_to, i.carried_cents, i.currency, i.event_count,
+       i.id, i.org_id, i.period_start,
+       (select count(*) from billing_invoices c where c.covered_by = i.id) as carried_periods
+from billing_invoices i
+where i.status in ('open', 'failed') and i.next_attempt_at <= $1
+order by i.next_attempt_at, i.billed_from
+`
+
+type ListDueBillingInvoicesRow struct {
+	AmountCents    int64
+	BilledFrom     pgtype.Date
+	BilledTo       pgtype.Date
+	CarriedCents   int64
+	Currency       string
+	EventCount     int64
+	ID             string
+	OrgID          string
+	PeriodStart    pgtype.Timestamptz
+	CarriedPeriods int64
+}
+
+// Oldest first, so a deal's backlog is charged in order once its first card arrives.
+func (q *Queries) ListDueBillingInvoices(ctx context.Context, now pgtype.Timestamptz) ([]ListDueBillingInvoicesRow, error) {
+	rows, err := q.db.Query(ctx, listDueBillingInvoices, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDueBillingInvoicesRow
+	for rows.Next() {
+		var i ListDueBillingInvoicesRow
+		if err := rows.Scan(
+			&i.AmountCents,
+			&i.BilledFrom,
+			&i.BilledTo,
+			&i.CarriedCents,
+			&i.Currency,
+			&i.EventCount,
+			&i.ID,
+			&i.OrgID,
+			&i.PeriodStart,
+			&i.CarriedPeriods,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPaidEntitlementsWithoutLiveSubscription = `-- name: ListPaidEntitlementsWithoutLiveSubscription :many
 select e.org_id, e.plan_slug
 from billing_entitlements e

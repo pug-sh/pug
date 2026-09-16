@@ -177,3 +177,42 @@ where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;
 -- name: WaiveDeferredBillingInvoices :execrows
 update billing_invoices set status = 'waived'
 where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;
+
+-- name: GetBillingInvoiceStatusForUpdate :one
+select status from billing_invoices where id = @id for update;
+
+-- name: MarkBillingInvoiceCharging :one
+-- The intent, committed before the provider is called. Each attempt stamps the
+-- mandate it charges and clears what the previous attempt left.
+update billing_invoices
+set status = 'charging', provider = @provider, provider_sub_id = @provider_sub_id,
+    provider_payment_id = null, last_error_code = '', last_error_message = ''
+where id = @id and status in ('open', 'failed')
+returning *;
+
+-- name: MarkBillingInvoiceCharged :one
+update billing_invoices
+set status = 'charged', attempts = attempts + 1, provider_payment_id = @provider_payment_id
+where id = @id and status = 'charging'
+returning *;
+
+-- name: MarkBillingInvoiceFailed :one
+update billing_invoices
+set status = 'failed', attempts = attempts + 1, failed_at = @failed_at, next_attempt_at = null,
+    last_error_code = @last_error_code, last_error_message = @last_error_message
+where id = @id and status = 'charging'
+returning *;
+
+-- name: MarkBillingInvoiceUncollectible :one
+update billing_invoices
+set status = 'uncollectible', failed_at = @failed_at, next_attempt_at = null,
+    last_error_code = @last_error_code, last_error_message = @last_error_message
+where id = @id and status in ('open', 'charging', 'failed')
+returning *;
+
+-- name: RecordBillingInvoiceChargeError :execrows
+-- A code on a charging row is a refusal that took nothing; an unknown outcome
+-- keeps only its message.
+update billing_invoices
+set last_error_code = @last_error_code, last_error_message = @last_error_message
+where id = @id and status = 'charging';

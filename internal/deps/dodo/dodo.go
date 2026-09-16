@@ -262,6 +262,38 @@ func (c *Client) FetchCheckoutOutcome(ctx context.Context, sessionID string) (co
 	return event, nil
 }
 
+// Charge POSTs once. The endpoint takes no idempotency key, so the SDK's retry would
+// re-send a charge that may already have taken the money.
+func (c *Client) Charge(ctx context.Context, in corebilling.ChargeInput) (string, error) {
+	res, err := c.api.Subscriptions.Charge(ctx, in.ProviderSubID, dodopayments.SubscriptionChargeParams{
+		Metadata: dodopayments.F(dodopayments.MetadataParam{
+			metadataInvoiceID:   shared.UnionString(in.InvoiceID),
+			metadataOrgID:       shared.UnionString(in.OrgID),
+			metadataPeriodStart: shared.UnionString(in.PeriodStart.UTC().Format(time.RFC3339)),
+		}),
+		ProductCurrency:    dodopayments.F(dodopayments.Currency(in.Currency)),
+		ProductDescription: dodopayments.F(in.Description),
+		ProductPrice:       dodopayments.F(in.AmountCents),
+	}, option.WithMaxRetries(0))
+	if err != nil {
+		var apiErr *dodopayments.Error
+		if !errors.As(err, &apiErr) || apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 {
+			return "", fmt.Errorf("dodo: charge subscription: %w", err)
+		}
+		return "", &corebilling.ChargeError{
+			Code:    fmt.Sprintf("HTTP_%d", apiErr.StatusCode),
+			Message: apiErr.Error(),
+			// Only a 402: dunning any other 4xx would dun every customer over a rotated key.
+			Declined:      apiErr.StatusCode == http.StatusPaymentRequired,
+			NotChargeable: apiErr.StatusCode == http.StatusNotFound,
+		}
+	}
+	if res.PaymentID == "" {
+		return "", errors.New("dodo: charge returned no payment_id")
+	}
+	return res.PaymentID, nil
+}
+
 // findSubscription is the second route to a mandate: the customer's subscriptions
 // since the checkout opened, matched on the ref pug minted — a customer can hold
 // more than one.

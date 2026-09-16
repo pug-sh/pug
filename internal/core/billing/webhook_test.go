@@ -30,6 +30,9 @@ type fakeProvider struct {
 	// checkoutIn is the last input CreateCheckoutSession was handed, so a test can
 	// join the ref pug stored against the ref it sent.
 	checkoutIn corebilling.CheckoutInput
+	// charges is every charge asked for; onCharge answers each, and nil succeeds.
+	charges  []corebilling.ChargeInput
+	onCharge func(corebilling.ChargeInput) (string, error)
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -61,6 +64,14 @@ func (f *fakeProvider) FetchSubscription(context.Context, string) (corebilling.S
 
 func (f *fakeProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
 	return f.checkout, f.checkoutErr
+}
+
+func (f *fakeProvider) Charge(_ context.Context, in corebilling.ChargeInput) (string, error) {
+	f.charges = append(f.charges, in)
+	if f.onCharge != nil {
+		return f.onCharge(in)
+	}
+	return "pay_" + in.InvoiceID, nil
 }
 
 const (

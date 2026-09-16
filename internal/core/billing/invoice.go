@@ -24,9 +24,13 @@ import (
 type InvoiceStatus string
 
 const (
-	InvoiceOpen     InvoiceStatus = "open"
-	InvoiceWaived   InvoiceStatus = "waived"
-	InvoiceDeferred InvoiceStatus = "deferred"
+	InvoiceOpen          InvoiceStatus = "open"
+	InvoiceWaived        InvoiceStatus = "waived"
+	InvoiceDeferred      InvoiceStatus = "deferred"
+	InvoiceCharging      InvoiceStatus = "charging"
+	InvoiceCharged       InvoiceStatus = "charged"
+	InvoiceFailed        InvoiceStatus = "failed"
+	InvoiceUncollectible InvoiceStatus = "uncollectible"
 )
 
 const (

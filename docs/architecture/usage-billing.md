@@ -552,6 +552,7 @@ open ──charge──▶ charging ──payment_id──▶ charged ──webh
   │   (ambiguous)   │ settle by listing (8.4)  └──▶ failed ──soft──▶ waits for next_attempt_at
   └─────────────────┘                                └──hard, or 4th──▶ uncollectible ──new card, invoice retry──▶ open
 charging ──▶ failed          (the charge was refused outright)
+open, charging, failed ──mandate gone──▶ uncollectible   (7.3; from charging only once a read agrees)
 open, failed ──▶ charging    (a retry goes straight back; there is no open hop)
 failed ──new card──▶ open    (next_attempt_at = now)
 close, nothing to bill ──▶ waived
@@ -616,7 +617,8 @@ The pass therefore:
    ambiguous — a non-402 4xx (its status kept in `last_error_code`), timeout,
    5xx, connection reset — **leaves the row in `charging`**. A `404` claims the
    mandate is not chargeable; it is acted on only when `FetchSubscription`
-   **corroborates** it by reading the subscription back in a non-live status.
+   **corroborates** it by reading the subscription back in a status pug knows is
+   not live; a word it has no name for corroborates nothing.
    A second `404` corroborates nothing — a flipped environment answers both
    calls the same way — so it counts as `Unreadable` (§11): acted on, it would
    write off every open invoice in the deployment, one anniversary at a time.
