@@ -84,6 +84,18 @@ func TestCharge(t *testing.T) {
 		})
 	}
 
+	// A decline's own code is what makes it hard or soft; every other refusal keeps its status.
+	t.Run("only a decline takes its code from the body", func(t *testing.T) {
+		for status, want := range map[int]string{http.StatusPaymentRequired: "STOLEN_CARD", http.StatusNotFound: "HTTP_404"} {
+			c := apiClient(t, jsonHandler(t, status, `{"code":"STOLEN_CARD","message":"no"}`, nil))
+			_, err := c.Charge(context.Background(), in)
+			var refused *corebilling.ChargeError
+			if !errors.As(err, &refused) || refused.Code != want {
+				t.Errorf("%d: err = %v, want code %s", status, err, want)
+			}
+		}
+	})
+
 	for name, h := range map[string]http.Handler{
 		"a 5xx":         jsonHandler(t, http.StatusBadGateway, `{"message":"upstream"}`, nil),
 		"no payment id": jsonHandler(t, http.StatusOK, `{}`, nil),

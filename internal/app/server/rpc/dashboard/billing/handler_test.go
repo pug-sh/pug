@@ -166,6 +166,7 @@ func TestStatusToRPCCoversEveryResolvedStatus(t *testing.T) {
 		corebilling.StatusTrialing: billingv1.BillingStatus_BILLING_STATUS_TRIALING,
 		corebilling.StatusActive:   billingv1.BillingStatus_BILLING_STATUS_ACTIVE,
 		corebilling.StatusFree:     billingv1.BillingStatus_BILLING_STATUS_FREE,
+		corebilling.StatusPastDue:  billingv1.BillingStatus_BILLING_STATUS_PAST_DUE,
 	}
 	for s, w := range want {
 		if got := statusToRPC(s); got != w {
@@ -174,6 +175,47 @@ func TestStatusToRPCCoversEveryResolvedStatus(t *testing.T) {
 	}
 	if len(want) != len(corebilling.AllStatuses()) {
 		t.Errorf("the table covers %d statuses, the resolver produces %d", len(want), len(corebilling.AllStatuses()))
+	}
+}
+
+func TestPastDueReasonToRPC(t *testing.T) {
+	for in, want := range map[corebilling.PastDueReason]billingv1.PastDueReason{
+		corebilling.PastDueDeclined:    billingv1.PastDueReason_PAST_DUE_REASON_DECLINED,
+		corebilling.PastDueReauthorize: billingv1.PastDueReason_PAST_DUE_REASON_REAUTHORIZE,
+		"":                             billingv1.PastDueReason_PAST_DUE_REASON_UNSPECIFIED,
+	} {
+		if got := pastDueReasonToRPC(in); got != want {
+			t.Errorf("pastDueReasonToRPC(%q) = %s, want %s", in, got, want)
+		}
+	}
+}
+
+// A failed invoice reaches the wire as PAST_DUE with the reason the banner shows, and
+// the reason is absent while nothing is owed.
+func TestGetBillingStatusReportsPastDue(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	srv := newServer(t, pg, true)
+	if got := getStatus(t, srv, orgID); got.GetStatus() == billingv1.BillingStatus_BILLING_STATUS_PAST_DUE ||
+		got.PastDueReason != nil {
+		t.Errorf("status = (%s, %v) with nothing owed, want neither past due nor a reason",
+			got.GetStatus(), got.PastDueReason)
+	}
+
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_invoices (
+		   amount_cents, billed_from, billed_to, currency, event_count, id, lines, org_id, period_end,
+		   period_start, plan_slug, pricing, status, usage_cents, usage_computed_at)
+		 values (500, '2026-08-10', '2026-09-10', 'USD', 0, $1, '[]', $2, '2026-09-10', '2026-08-10',
+		         'x', '{}', 'failed', 500, now())`, xid.New().String(), orgID); err != nil {
+		t.Fatalf("seed a failed invoice: %v", err)
+	}
+	if got := getStatus(t, srv, orgID); got.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_PAST_DUE ||
+		got.GetPastDueReason() != billingv1.PastDueReason_PAST_DUE_REASON_REAUTHORIZE {
+		t.Errorf("status = (%s, %s), want PAST_DUE with no mandate to charge", got.GetStatus(), got.GetPastDueReason())
 	}
 }
 

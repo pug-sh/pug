@@ -159,6 +159,23 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 	return i, err
 }
 
+const hasDunningBillingInvoice = `-- name: HasDunningBillingInvoice :one
+select exists (
+  select 1 from billing_invoices
+  where org_id = $1 and (status in ('failed', 'uncollectible')
+    or (status in ('open', 'charging', 'charged') and failed_at is not null))
+)
+`
+
+// What makes an org PAST_DUE: an invoice that failed and is not yet paid, so a retry
+// in flight keeps it. Never a deferred row: nothing was asked of the customer.
+func (q *Queries) HasDunningBillingInvoice(ctx context.Context, orgID string) (bool, error) {
+	row := q.db.QueryRow(ctx, hasDunningBillingInvoice, orgID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
 select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million, terms_effective_at, deleted from billing_entitlement_history
 where org_id = $1
@@ -236,6 +253,57 @@ func (q *Queries) ListBillingInvoiceOrgs(ctx context.Context) ([]ListBillingInvo
 	for rows.Next() {
 		var i ListBillingInvoiceOrgsRow
 		if err := rows.Scan(&i.ID, &i.CreateTime); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingInvoicesToSettle = `-- name: ListBillingInvoicesToSettle :many
+select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.status,
+       coalesce((
+         select max(e.at) from billing_invoice_events e
+         where e.invoice_id = i.id and e.to_status = i.status and e.from_status <> e.to_status
+       ), i.update_time)::timestamptz as entered_at
+from billing_invoices i
+where i.status in ('charging', 'charged')
+order by entered_at
+`
+
+type ListBillingInvoicesToSettleRow struct {
+	ID                string
+	OrgID             string
+	Provider          pgtype.Text
+	ProviderPaymentID pgtype.Text
+	ProviderSubID     pgtype.Text
+	Status            string
+	EnteredAt         pgtype.Timestamptz
+}
+
+// Charges a read settles, dated from when each entered its status: update_time
+// also moves when a charge error is recorded.
+func (q *Queries) ListBillingInvoicesToSettle(ctx context.Context) ([]ListBillingInvoicesToSettleRow, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoicesToSettle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBillingInvoicesToSettleRow
+	for rows.Next() {
+		var i ListBillingInvoicesToSettleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Provider,
+			&i.ProviderPaymentID,
+			&i.ProviderSubID,
+			&i.Status,
+			&i.EnteredAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

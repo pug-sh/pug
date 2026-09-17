@@ -24,8 +24,10 @@ const (
 // ChargeReport is what one charge step did and found.
 type ChargeReport struct {
 	Charged int
-	// Declined is a charge the card refused, left failed.
+	// Declined is a charge the card refused, left failed with its retry dated.
 	Declined int
+	// Uncollectible is a refusal that is final: a hard decline, or the last attempt.
+	Uncollectible int
 	// Ambiguous is a charge left charging, to be settled by reading.
 	Ambiguous int
 	// MandateGone is an invoice written off because the org's mandate has ended.
@@ -86,7 +88,7 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 
 	// Committed before the provider is called, so a process dying in between leaves a
 	// row that says so.
-	claimed, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, "mandate "+mandate.ProviderSubID,
+	claimed, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "mandate "+mandate.ProviderSubID,
 		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 			return w.MarkBillingInvoiceCharging(ctx, dbwrite.MarkBillingInvoiceChargingParams{
 				ID:            inv.ID,
@@ -116,14 +118,24 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 	case chargeErr == nil:
 		ctx, cancel := recording(ctx)
 		defer cancel()
-		moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, "payment "+paymentID,
+		moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "payment "+paymentID,
 			func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 				return w.MarkBillingInvoiceCharged(ctx, dbwrite.MarkBillingInvoiceChargedParams{
 					ID: inv.ID, ProviderPaymentID: postgres.NewOptionalText(paymentID),
 				})
 			})
 		if err == nil && !moved {
-			err = fmt.Errorf("billing: invoice %s moved before its payment was recorded", inv.ID)
+			// The payment's own webhook can settle the invoice before this answer arrives.
+			cur, readErr := s.write().GetBillingInvoice(ctx, inv.ID)
+			switch {
+			case readErr != nil:
+				err = readErr
+			case cur.Status == string(InvoicePaid) && cur.ProviderPaymentID.String == paymentID:
+				r.Charged++
+				return nil
+			default:
+				err = fmt.Errorf("billing: invoice %s moved before its payment was recorded", inv.ID)
+			}
 			telemetry.RecordError(ctx, err)
 		}
 		if err != nil {
@@ -141,16 +153,13 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 			slog.String("invoice_id", inv.ID), slog.String("code", refused.Code))
 		ctx, cancel := recording(ctx)
 		defer cancel()
-		moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, "declined "+refused.Code,
-			func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
-				return w.MarkBillingInvoiceFailed(ctx, dbwrite.MarkBillingInvoiceFailedParams{
-					FailedAt:         postgres.NewTimestamptz(now),
-					ID:               inv.ID,
-					LastErrorCode:    refused.Code,
-					LastErrorMessage: refused.Message,
-				})
-			})
-		if moved {
+		moved, final, err := s.decline(ctx, inv.OrgID, inv.ID, InvoiceCharging,
+			Payment{ErrorCode: refused.Code, ErrorMessage: refused.Message}, now, ActorInvoicePass)
+		switch {
+		case !moved:
+		case final:
+			r.Uncollectible++
+		default:
 			r.Declined++
 		}
 		return err
@@ -267,7 +276,7 @@ func (s *Service) writeOff(
 	ctx context.Context, inv dbread.ListDueBillingInvoicesRow, from InvoiceStatus, message string, now time.Time,
 	r *ChargeReport,
 ) error {
-	moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, codeMandateGone,
+	moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, codeMandateGone,
 		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 			return w.MarkBillingInvoiceUncollectible(ctx, dbwrite.MarkBillingInvoiceUncollectibleParams{
 				FailedAt:         postgres.NewTimestamptz(now),
@@ -289,7 +298,7 @@ func (s *Service) writeOff(
 // moveInvoice applies one guarded update under the row's lock and records it. false
 // is an invoice another writer moved first.
 func (s *Service) moveInvoice(
-	ctx context.Context, orgID, invoiceID, detail string,
+	ctx context.Context, orgID, invoiceID, actor, detail string,
 	update func(*dbwrite.Queries) (dbwrite.BillingInvoice, error),
 ) (bool, error) {
 	tx, err := s.begin(ctx)
@@ -298,7 +307,7 @@ func (s *Service) moveInvoice(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	w := dbwrite.New(tx)
-	from, err := w.GetBillingInvoiceStatusForUpdate(ctx, invoiceID)
+	cur, err := w.GetBillingInvoiceForUpdate(ctx, invoiceID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to lock an invoice", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("invoice_id", invoiceID))
@@ -307,8 +316,8 @@ func (s *Service) moveInvoice(
 	}
 	row, err := update(w)
 	if errors.Is(err, pgx.ErrNoRows) {
-		slog.WarnContext(ctx, "an invoice moved before this write landed", slog.String("org_id", orgID),
-			slog.String("invoice_id", invoiceID), slog.String("status", from))
+		slog.WarnContext(ctx, "an invoice was not in a state this write moves", slog.String("org_id", orgID),
+			slog.String("invoice_id", invoiceID), slog.String("status", cur.Status), slog.String("detail", detail))
 		return false, nil
 	}
 	if err != nil {
@@ -317,7 +326,7 @@ func (s *Service) moveInvoice(
 		telemetry.RecordError(ctx, err)
 		return false, err
 	}
-	if err := appendInvoiceEvent(ctx, w, orgID, invoiceID, InvoiceStatus(from), InvoiceStatus(row.Status), detail); err != nil {
+	if err := appendInvoiceEvent(ctx, w, orgID, invoiceID, actor, InvoiceStatus(cur.Status), InvoiceStatus(row.Status), detail); err != nil {
 		return false, err
 	}
 	if err := s.commit(ctx, tx, orgID); err != nil {
@@ -337,6 +346,5 @@ func chargeDescription(inv dbread.ListDueBillingInvoicesRow) string {
 	if inv.CarriedPeriods == 1 {
 		periods = "period"
 	}
-	return desc + fmt.Sprintf(", and $%d.%02d carried from %d earlier %s",
-		inv.CarriedCents/100, inv.CarriedCents%100, inv.CarriedPeriods, periods)
+	return desc + fmt.Sprintf(", and %s carried from %d earlier %s", usd(inv.CarriedCents), inv.CarriedPeriods, periods)
 }

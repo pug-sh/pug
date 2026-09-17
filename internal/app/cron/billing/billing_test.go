@@ -128,6 +128,18 @@ func (unreachableProvider) Charge(context.Context, corebilling.ChargeInput) (str
 	return "", errors.New("unused")
 }
 
+func (unreachableProvider) NormalizePayment(corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	return corebilling.PaymentEvent{}, nil
+}
+
+func (unreachableProvider) ListPayments(context.Context, string, time.Time) ([]corebilling.Payment, error) {
+	return nil, errors.New("unused")
+}
+
+func (unreachableProvider) FetchPayment(context.Context, string) (corebilling.Payment, error) {
+	return corebilling.Payment{}, errors.New("unused")
+}
+
 // seedLiveSubscription gives the pass something to re-read, so a failing
 // provider produces an unreadable report rather than an empty one.
 func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {

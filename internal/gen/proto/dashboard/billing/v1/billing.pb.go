@@ -24,8 +24,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// BillingStatus is derived from the clock on every read, never stored. The
-// states a provider reports live on SubscriptionStatus instead.
+// BillingStatus is derived from the clock and the invoice ledger on every read,
+// never stored. The states a provider reports live on SubscriptionStatus instead.
 type BillingStatus int32
 
 const (
@@ -36,6 +36,9 @@ const (
 	BillingStatus_BILLING_STATUS_ACTIVE BillingStatus = 2
 	// The floor: never trialed, trial expired, or a contract that has ended.
 	BillingStatus_BILLING_STATUS_FREE BillingStatus = 3
+	// An invoice failed and is not yet paid, whatever the plan: a retry in flight keeps
+	// it, a payment clears it. Worth a banner, never a block: events are still accepted.
+	BillingStatus_BILLING_STATUS_PAST_DUE BillingStatus = 4
 )
 
 // Enum value maps for BillingStatus.
@@ -45,12 +48,14 @@ var (
 		1: "BILLING_STATUS_TRIALING",
 		2: "BILLING_STATUS_ACTIVE",
 		3: "BILLING_STATUS_FREE",
+		4: "BILLING_STATUS_PAST_DUE",
 	}
 	BillingStatus_value = map[string]int32{
 		"BILLING_STATUS_UNSPECIFIED": 0,
 		"BILLING_STATUS_TRIALING":    1,
 		"BILLING_STATUS_ACTIVE":      2,
 		"BILLING_STATUS_FREE":        3,
+		"BILLING_STATUS_PAST_DUE":    4,
 	}
 )
 
@@ -81,6 +86,58 @@ func (BillingStatus) EnumDescriptor() ([]byte, []int) {
 	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{0}
 }
 
+// PastDueReason is what a past-due org has to do about it.
+type PastDueReason int32
+
+const (
+	PastDueReason_PAST_DUE_REASON_UNSPECIFIED PastDueReason = 0
+	// A charge failed on the live payment method: update it in the portal.
+	PastDueReason_PAST_DUE_REASON_DECLINED PastDueReason = 1
+	// No live payment method to charge: add one at checkout.
+	PastDueReason_PAST_DUE_REASON_REAUTHORIZE PastDueReason = 2
+)
+
+// Enum value maps for PastDueReason.
+var (
+	PastDueReason_name = map[int32]string{
+		0: "PAST_DUE_REASON_UNSPECIFIED",
+		1: "PAST_DUE_REASON_DECLINED",
+		2: "PAST_DUE_REASON_REAUTHORIZE",
+	}
+	PastDueReason_value = map[string]int32{
+		"PAST_DUE_REASON_UNSPECIFIED": 0,
+		"PAST_DUE_REASON_DECLINED":    1,
+		"PAST_DUE_REASON_REAUTHORIZE": 2,
+	}
+)
+
+func (x PastDueReason) Enum() *PastDueReason {
+	p := new(PastDueReason)
+	*p = x
+	return p
+}
+
+func (x PastDueReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PastDueReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_dashboard_billing_v1_billing_proto_enumTypes[1].Descriptor()
+}
+
+func (PastDueReason) Type() protoreflect.EnumType {
+	return &file_dashboard_billing_v1_billing_proto_enumTypes[1]
+}
+
+func (x PastDueReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PastDueReason.Descriptor instead.
+func (PastDueReason) EnumDescriptor() ([]byte, []int) {
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{1}
+}
+
 // SubscriptionStatus is the provider subscription behind the entitlement, in pug's
 // own vocabulary. Only UNSPECIFIED, ACTIVE and PAST_DUE are ever emitted -- the
 // rest exist because a stored row holds them.
@@ -90,8 +147,8 @@ const (
 	// No live subscription: trialing, free, comped, or no provider configured.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED SubscriptionStatus = 0
 	SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE      SubscriptionStatus = 1
-	// The card failed and the provider is retrying. The entitlement is UNCHANGED:
-	// worth a banner, never a block.
+	// The provider holds the mandate past due, and pug still charges it. The
+	// entitlement is UNCHANGED: worth a banner, never a block.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE  SubscriptionStatus = 2
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAUSED    SubscriptionStatus = 3
 	SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELLED SubscriptionStatus = 4
@@ -132,11 +189,11 @@ func (x SubscriptionStatus) String() string {
 }
 
 func (SubscriptionStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_dashboard_billing_v1_billing_proto_enumTypes[1].Descriptor()
+	return file_dashboard_billing_v1_billing_proto_enumTypes[2].Descriptor()
 }
 
 func (SubscriptionStatus) Type() protoreflect.EnumType {
-	return &file_dashboard_billing_v1_billing_proto_enumTypes[1]
+	return &file_dashboard_billing_v1_billing_proto_enumTypes[2]
 }
 
 func (x SubscriptionStatus) Number() protoreflect.EnumNumber {
@@ -145,7 +202,7 @@ func (x SubscriptionStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SubscriptionStatus.Descriptor instead.
 func (SubscriptionStatus) EnumDescriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{1}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{2}
 }
 
 type CheckoutTheme int32
@@ -181,11 +238,11 @@ func (x CheckoutTheme) String() string {
 }
 
 func (CheckoutTheme) Descriptor() protoreflect.EnumDescriptor {
-	return file_dashboard_billing_v1_billing_proto_enumTypes[2].Descriptor()
+	return file_dashboard_billing_v1_billing_proto_enumTypes[3].Descriptor()
 }
 
 func (CheckoutTheme) Type() protoreflect.EnumType {
-	return &file_dashboard_billing_v1_billing_proto_enumTypes[2]
+	return &file_dashboard_billing_v1_billing_proto_enumTypes[3]
 }
 
 func (x CheckoutTheme) Number() protoreflect.EnumNumber {
@@ -194,7 +251,7 @@ func (x CheckoutTheme) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CheckoutTheme.Descriptor instead.
 func (CheckoutTheme) EnumDescriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{2}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{3}
 }
 
 // RateCard prices usage in graduated tiers over cumulative events: each tier
@@ -509,7 +566,9 @@ type GetBillingStatusResponse struct {
 	CustomTerms *CustomTerms `protobuf:"bytes,15,opt,name=custom_terms,json=customTerms" json:"custom_terms,omitempty"`
 	// A live payment method pug can charge. False is an org that owes nothing
 	// because nothing can be collected from it, not an org with no usage.
-	Chargeable    *bool `protobuf:"varint,16,opt,name=chargeable" json:"chargeable,omitempty"`
+	Chargeable *bool `protobuf:"varint,16,opt,name=chargeable" json:"chargeable,omitempty"`
+	// Set exactly when status is PAST_DUE.
+	PastDueReason *PastDueReason `protobuf:"varint,17,opt,name=past_due_reason,json=pastDueReason,enum=dashboard.billing.v1.PastDueReason" json:"past_due_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -647,6 +706,13 @@ func (x *GetBillingStatusResponse) GetChargeable() bool {
 		return *x.Chargeable
 	}
 	return false
+}
+
+func (x *GetBillingStatusResponse) GetPastDueReason() PastDueReason {
+	if x != nil && x.PastDueReason != nil {
+		return *x.PastDueReason
+	}
+	return PastDueReason_PAST_DUE_REASON_UNSPECIFIED
 }
 
 type CreateCheckoutSessionRequest struct {
@@ -1159,7 +1225,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x04Plan\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1a\n" +
-	"\bcurrency\x18\x04 \x01(\tR\bcurrencyJ\x04\b\x03\x10\x04\"\x80\a\n" +
+	"\bcurrency\x18\x04 \x01(\tR\bcurrencyJ\x04\b\x03\x10\x04\"\xcd\a\n" +
 	"\x18GetBillingStatusResponse\x12'\n" +
 	"\x0fbilling_enabled\x18\x01 \x01(\bR\x0ebillingEnabled\x12.\n" +
 	"\x04plan\x18\x02 \x01(\v2\x1a.dashboard.billing.v1.PlanR\x04plan\x12;\n" +
@@ -1180,7 +1246,8 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\fcustom_terms\x18\x0f \x01(\v2!.dashboard.billing.v1.CustomTermsR\vcustomTerms\x12\x1e\n" +
 	"\n" +
 	"chargeable\x18\x10 \x01(\bR\n" +
-	"chargeableJ\x04\b\n" +
+	"chargeable\x12K\n" +
+	"\x0fpast_due_reason\x18\x11 \x01(\x0e2#.dashboard.billing.v1.PastDueReasonR\rpastDueReasonJ\x04\b\n" +
 	"\x10\v\"\xa9\x01\n" +
 	"\x1cCreateCheckoutSessionRequest\x12\x1e\n" +
 	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\x12$\n" +
@@ -1212,12 +1279,17 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\trate_card\x18\b \x01(\v2\x1e.dashboard.billing.v1.RateCardR\brateCard\x12D\n" +
 	"\fcustom_terms\x18\t \x01(\v2!.dashboard.billing.v1.CustomTermsR\vcustomTermsJ\x04\b\x03\x10\x04J\x04\b\x05\x10\x06J\x04\b\a\x10\b\"K\n" +
 	"\x11ListPlansResponse\x126\n" +
-	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x80\x01\n" +
+	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x9d\x01\n" +
 	"\rBillingStatus\x12\x1e\n" +
 	"\x1aBILLING_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17BILLING_STATUS_TRIALING\x10\x01\x12\x19\n" +
 	"\x15BILLING_STATUS_ACTIVE\x10\x02\x12\x17\n" +
-	"\x13BILLING_STATUS_FREE\x10\x03*\xff\x01\n" +
+	"\x13BILLING_STATUS_FREE\x10\x03\x12\x1b\n" +
+	"\x17BILLING_STATUS_PAST_DUE\x10\x04*o\n" +
+	"\rPastDueReason\x12\x1f\n" +
+	"\x1bPAST_DUE_REASON_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18PAST_DUE_REASON_DECLINED\x10\x01\x12\x1f\n" +
+	"\x1bPAST_DUE_REASON_REAUTHORIZE\x10\x02*\xff\x01\n" +
 	"\x12SubscriptionStatus\x12#\n" +
 	"\x1fSUBSCRIPTION_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aSUBSCRIPTION_STATUS_ACTIVE\x10\x01\x12 \n" +
@@ -1249,65 +1321,67 @@ func file_dashboard_billing_v1_billing_proto_rawDescGZIP() []byte {
 	return file_dashboard_billing_v1_billing_proto_rawDescData
 }
 
-var file_dashboard_billing_v1_billing_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_dashboard_billing_v1_billing_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_dashboard_billing_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_dashboard_billing_v1_billing_proto_goTypes = []any{
 	(BillingStatus)(0),                    // 0: dashboard.billing.v1.BillingStatus
-	(SubscriptionStatus)(0),               // 1: dashboard.billing.v1.SubscriptionStatus
-	(CheckoutTheme)(0),                    // 2: dashboard.billing.v1.CheckoutTheme
-	(*RateCard)(nil),                      // 3: dashboard.billing.v1.RateCard
-	(*RateTier)(nil),                      // 4: dashboard.billing.v1.RateTier
-	(*CustomTerms)(nil),                   // 5: dashboard.billing.v1.CustomTerms
-	(*GetBillingStatusRequest)(nil),       // 6: dashboard.billing.v1.GetBillingStatusRequest
-	(*Plan)(nil),                          // 7: dashboard.billing.v1.Plan
-	(*GetBillingStatusResponse)(nil),      // 8: dashboard.billing.v1.GetBillingStatusResponse
-	(*CreateCheckoutSessionRequest)(nil),  // 9: dashboard.billing.v1.CreateCheckoutSessionRequest
-	(*CreateCheckoutSessionResponse)(nil), // 10: dashboard.billing.v1.CreateCheckoutSessionResponse
-	(*ConfirmCheckoutRequest)(nil),        // 11: dashboard.billing.v1.ConfirmCheckoutRequest
-	(*ConfirmCheckoutResponse)(nil),       // 12: dashboard.billing.v1.ConfirmCheckoutResponse
-	(*CreatePortalSessionRequest)(nil),    // 13: dashboard.billing.v1.CreatePortalSessionRequest
-	(*CreatePortalSessionResponse)(nil),   // 14: dashboard.billing.v1.CreatePortalSessionResponse
-	(*ListPlansRequest)(nil),              // 15: dashboard.billing.v1.ListPlansRequest
-	(*PlanOption)(nil),                    // 16: dashboard.billing.v1.PlanOption
-	(*ListPlansResponse)(nil),             // 17: dashboard.billing.v1.ListPlansResponse
-	(*wrapperspb.Int64Value)(nil),         // 18: google.protobuf.Int64Value
-	(*timestamppb.Timestamp)(nil),         // 19: google.protobuf.Timestamp
+	(PastDueReason)(0),                    // 1: dashboard.billing.v1.PastDueReason
+	(SubscriptionStatus)(0),               // 2: dashboard.billing.v1.SubscriptionStatus
+	(CheckoutTheme)(0),                    // 3: dashboard.billing.v1.CheckoutTheme
+	(*RateCard)(nil),                      // 4: dashboard.billing.v1.RateCard
+	(*RateTier)(nil),                      // 5: dashboard.billing.v1.RateTier
+	(*CustomTerms)(nil),                   // 6: dashboard.billing.v1.CustomTerms
+	(*GetBillingStatusRequest)(nil),       // 7: dashboard.billing.v1.GetBillingStatusRequest
+	(*Plan)(nil),                          // 8: dashboard.billing.v1.Plan
+	(*GetBillingStatusResponse)(nil),      // 9: dashboard.billing.v1.GetBillingStatusResponse
+	(*CreateCheckoutSessionRequest)(nil),  // 10: dashboard.billing.v1.CreateCheckoutSessionRequest
+	(*CreateCheckoutSessionResponse)(nil), // 11: dashboard.billing.v1.CreateCheckoutSessionResponse
+	(*ConfirmCheckoutRequest)(nil),        // 12: dashboard.billing.v1.ConfirmCheckoutRequest
+	(*ConfirmCheckoutResponse)(nil),       // 13: dashboard.billing.v1.ConfirmCheckoutResponse
+	(*CreatePortalSessionRequest)(nil),    // 14: dashboard.billing.v1.CreatePortalSessionRequest
+	(*CreatePortalSessionResponse)(nil),   // 15: dashboard.billing.v1.CreatePortalSessionResponse
+	(*ListPlansRequest)(nil),              // 16: dashboard.billing.v1.ListPlansRequest
+	(*PlanOption)(nil),                    // 17: dashboard.billing.v1.PlanOption
+	(*ListPlansResponse)(nil),             // 18: dashboard.billing.v1.ListPlansResponse
+	(*wrapperspb.Int64Value)(nil),         // 19: google.protobuf.Int64Value
+	(*timestamppb.Timestamp)(nil),         // 20: google.protobuf.Timestamp
 }
 var file_dashboard_billing_v1_billing_proto_depIdxs = []int32{
-	4,  // 0: dashboard.billing.v1.RateCard.tiers:type_name -> dashboard.billing.v1.RateTier
-	18, // 1: dashboard.billing.v1.CustomTerms.flat_fee_cents:type_name -> google.protobuf.Int64Value
-	18, // 2: dashboard.billing.v1.CustomTerms.rate_cents_per_million:type_name -> google.protobuf.Int64Value
-	18, // 3: dashboard.billing.v1.CustomTerms.included_events:type_name -> google.protobuf.Int64Value
-	7,  // 4: dashboard.billing.v1.GetBillingStatusResponse.plan:type_name -> dashboard.billing.v1.Plan
+	5,  // 0: dashboard.billing.v1.RateCard.tiers:type_name -> dashboard.billing.v1.RateTier
+	19, // 1: dashboard.billing.v1.CustomTerms.flat_fee_cents:type_name -> google.protobuf.Int64Value
+	19, // 2: dashboard.billing.v1.CustomTerms.rate_cents_per_million:type_name -> google.protobuf.Int64Value
+	19, // 3: dashboard.billing.v1.CustomTerms.included_events:type_name -> google.protobuf.Int64Value
+	8,  // 4: dashboard.billing.v1.GetBillingStatusResponse.plan:type_name -> dashboard.billing.v1.Plan
 	0,  // 5: dashboard.billing.v1.GetBillingStatusResponse.status:type_name -> dashboard.billing.v1.BillingStatus
-	18, // 6: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
-	19, // 7: dashboard.billing.v1.GetBillingStatusResponse.trial_ends_at:type_name -> google.protobuf.Timestamp
-	19, // 8: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
-	19, // 9: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
-	19, // 10: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
-	1,  // 11: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
-	18, // 12: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
-	3,  // 13: dashboard.billing.v1.GetBillingStatusResponse.rate_card:type_name -> dashboard.billing.v1.RateCard
-	5,  // 14: dashboard.billing.v1.GetBillingStatusResponse.custom_terms:type_name -> dashboard.billing.v1.CustomTerms
-	2,  // 15: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
-	3,  // 16: dashboard.billing.v1.PlanOption.rate_card:type_name -> dashboard.billing.v1.RateCard
-	5,  // 17: dashboard.billing.v1.PlanOption.custom_terms:type_name -> dashboard.billing.v1.CustomTerms
-	16, // 18: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
-	6,  // 19: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
-	9,  // 20: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
-	11, // 21: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
-	13, // 22: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
-	15, // 23: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
-	8,  // 24: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
-	10, // 25: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
-	12, // 26: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
-	14, // 27: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
-	17, // 28: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
-	24, // [24:29] is the sub-list for method output_type
-	19, // [19:24] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	19, // 6: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
+	20, // 7: dashboard.billing.v1.GetBillingStatusResponse.trial_ends_at:type_name -> google.protobuf.Timestamp
+	20, // 8: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
+	20, // 9: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
+	20, // 10: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
+	2,  // 11: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
+	19, // 12: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
+	4,  // 13: dashboard.billing.v1.GetBillingStatusResponse.rate_card:type_name -> dashboard.billing.v1.RateCard
+	6,  // 14: dashboard.billing.v1.GetBillingStatusResponse.custom_terms:type_name -> dashboard.billing.v1.CustomTerms
+	1,  // 15: dashboard.billing.v1.GetBillingStatusResponse.past_due_reason:type_name -> dashboard.billing.v1.PastDueReason
+	3,  // 16: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
+	4,  // 17: dashboard.billing.v1.PlanOption.rate_card:type_name -> dashboard.billing.v1.RateCard
+	6,  // 18: dashboard.billing.v1.PlanOption.custom_terms:type_name -> dashboard.billing.v1.CustomTerms
+	17, // 19: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
+	7,  // 20: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
+	10, // 21: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
+	12, // 22: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
+	14, // 23: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
+	16, // 24: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
+	9,  // 25: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
+	11, // 26: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
+	13, // 27: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
+	15, // 28: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
+	18, // 29: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
+	25, // [25:30] is the sub-list for method output_type
+	20, // [20:25] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_billing_v1_billing_proto_init() }
@@ -1320,7 +1394,7 @@ func file_dashboard_billing_v1_billing_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_billing_v1_billing_proto_rawDesc), len(file_dashboard_billing_v1_billing_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      4,
 			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,

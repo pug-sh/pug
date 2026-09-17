@@ -109,7 +109,24 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 			return Entitlement{}, err
 		}
 	}
-	return Resolve(row.OrgCreateTime.Time, rec, sub, now, s.billingEnabled), nil
+	ent := Resolve(row.OrgCreateTime.Time, rec, sub, now, s.billingEnabled)
+	if !s.billingEnabled {
+		return ent, nil
+	}
+	dunning, err := dbread.New(s.pgW).HasDunningBillingInvoice(ctx, orgID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to read the org's unpaid invoices", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return Entitlement{}, err
+	}
+	if dunning {
+		// A card update reopens a live mandate's invoices; with none live only a checkout can.
+		ent.Status, ent.PastDueReason = StatusPastDue, PastDueDeclined
+		if !ent.Chargeable {
+			ent.PastDueReason = PastDueReauthorize
+		}
+	}
+	return ent, nil
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the

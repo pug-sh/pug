@@ -204,7 +204,7 @@ func (s *Service) reconcileOne(
 	}
 	// `now` rather than a delivery timestamp: a read is as fresh as the clock it was
 	// made at, and the CAS then refuses it only if a webhook landed something newer.
-	applied, err := s.applySubscription(ctx, provider, row.OrgID, event, now)
+	applied, err := s.applySubscription(ctx, provider, row.OrgID, event, now, ActorReconcilePass)
 	if err != nil {
 		// Already logged at the write, except the two states the writer names rather
 		// than fails on — and every one of them has to land on a counter, or the pass

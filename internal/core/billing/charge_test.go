@@ -240,7 +240,7 @@ func TestChargeRetriesAFailedInvoice(t *testing.T) {
 }
 
 // A decline is the card's answer: the invoice fails, and nothing charges it again
-// until it is dated for a retry.
+// before its retry date.
 func TestChargeRecordsADecline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -258,8 +258,8 @@ func TestChargeRecordsADecline(t *testing.T) {
 	state := chargeStateOf(t, f, id)
 	if state.status != string(corebilling.InvoiceFailed) || state.attempts != 1 || state.code != "HTTP_402" ||
 		state.message != "card declined" || state.failedAt == nil || !state.failedAt.Equal(closeNow) ||
-		state.nextAttemptAt != nil {
-		t.Errorf("invoice = %+v, want failed at the charge with one attempt and no retry dated", state)
+		state.nextAttemptAt == nil || !state.nextAttemptAt.Equal(closeNow.AddDate(0, 0, 3)) {
+		t.Errorf("invoice = %+v, want failed at the charge with one attempt and a retry in three days", state)
 	}
 	if got, want := transitions(t, f, id), []string{"open>charging mandate " + subID, "charging>failed declined HTTP_402"}; !slices.Equal(got, want) {
 		t.Errorf("events = %q, want %q", got, want)
@@ -368,6 +368,30 @@ func TestChargeFailsOnAPaymentItCannotRecord(t *testing.T) {
 		t.Errorf("report = %+v, err = %v, want an error and nothing counted", r, err)
 	}
 	if got, want := transitions(t, f, id), []string{"open>charging mandate " + subID}; !slices.Equal(got, want) {
+		t.Errorf("events = %q, want %q", got, want)
+	}
+}
+
+// A payment's webhook can settle the invoice before the charge that made it answers,
+// and that answer is then already recorded.
+func TestChargeAcceptsAPaymentItsWebhookSettledFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	subID := seedMandate(t, f, periodStart, time.Time{})
+	id := seedDue(t, f, periodStart, 10_000, closeNow)
+	provider.onCharge = func(in corebilling.ChargeInput) (string, error) {
+		deliverPayment(t, f, provider, "evt_1", corebilling.PaymentEvent{
+			Payment: paymentOf("pay_1", in.InvoiceID, in.ProviderSubID, corebilling.PaymentSucceeded, closeNow),
+		})
+		return "pay_1", nil
+	}
+
+	if r, err := f.svc.ChargeDue(t.Context(), closeNow); err != nil || r != (corebilling.ChargeReport{Charged: 1}) {
+		t.Errorf("report = %+v, err = %v, want one charged", r, err)
+	}
+	if got, want := transitions(t, f, id), []string{"open>charging mandate " + subID, "charging>paid payment pay_1"}; !slices.Equal(got, want) {
 		t.Errorf("events = %q, want %q", got, want)
 	}
 }

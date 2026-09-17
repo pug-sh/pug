@@ -13,21 +13,36 @@ import (
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 )
 
-// Status is the entitlement state, DERIVED at read time from the timestamps and
-// the clock. A stored status would be a second source of truth that can disagree
-// with the dates beside it, and keeping it honest costs a sweep job.
+// Status is the entitlement state, DERIVED at read time from the timestamps, the
+// clock and the invoice ledger. A stored status would be a second source of truth
+// that can disagree with the dates beside it, and keeping it honest costs a sweep job.
 type Status string
 
 const (
 	StatusTrialing Status = "TRIALING"
 	StatusActive   Status = "ACTIVE"
 	StatusFree     Status = "FREE"
+	// StatusPastDue is an invoice that failed and is not yet paid, layered over whatever
+	// Resolve returned. A retry in flight keeps it; a payment clears it.
+	StatusPastDue Status = "PAST_DUE"
 )
 
-// AllStatuses is every status Resolve can produce, so a table-driven RPC mapping
-// can assert it covers them: a status added here and missed there ships as
+// AllStatuses is every status an entitlement can carry, so a table-driven RPC
+// mapping can assert it covers them: a status added here and missed there ships as
 // UNSPECIFIED.
-func AllStatuses() []Status { return []Status{StatusTrialing, StatusActive, StatusFree} }
+func AllStatuses() []Status { return []Status{StatusTrialing, StatusActive, StatusFree, StatusPastDue} }
+
+// PastDueReason is what a past-due org has to do about it.
+type PastDueReason string
+
+const (
+	// PastDueDeclined is a charge that failed on a live mandate: a card update reopens it.
+	PastDueDeclined PastDueReason = "DECLINED"
+	// PastDueReauthorize is an org with no live mandate, which only a new checkout
+	// reopens. A charge over a mandate's ceiling belongs here too, once the provider's
+	// error for one is known.
+	PastDueReauthorize PastDueReason = "REAUTHORIZE"
+)
 
 // Record is the stored entitlement row. Absent for almost every org — that is
 // the normal state, not a defect, and Resolve derives the rest from the org's
@@ -108,6 +123,8 @@ type Entitlement struct {
 	// Chargeable is a live payment method pug can charge. False is an org nothing
 	// can be collected from, not an org with no usage.
 	Chargeable bool
+	// PastDueReason is set exactly when Status is PAST_DUE.
+	PastDueReason PastDueReason
 }
 
 // Resolve is the whole rule set, as a pure function. Expiry is lazy: a trial that

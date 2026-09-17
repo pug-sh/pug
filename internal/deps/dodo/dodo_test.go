@@ -218,6 +218,29 @@ func TestNormalizeIgnoresNonSubscriptionDeliveries(t *testing.T) {
 	}
 }
 
+// A new card arrives as its own subscription event, and only that one reopens the
+// org's unpaid invoices.
+func TestNormalizeMarksANewPaymentMethod(t *testing.T) {
+	c := testClient(t, time.Now())
+	for eventType, want := range map[string]bool{
+		"subscription.update_payment_method": true,
+		"subscription.active":                false,
+		"subscription.updated":               false,
+	} {
+		event, err := c.Normalize(corebilling.Delivery{
+			EventType: eventType,
+			RawPayload: []byte(`{"type":"` + eventType + `","data":{"subscription_id":"sub_1",` +
+				`"currency":"USD","on_demand":true,"tax_inclusive":false}}`),
+		})
+		if err != nil {
+			t.Fatalf("%s: Normalize: %v", eventType, err)
+		}
+		if event.PaymentMethodUpdated != want {
+			t.Errorf("%s: payment method updated = %v, want %v", eventType, event.PaymentMethodUpdated, want)
+		}
+	}
+}
+
 // Both stamps appear on a live subscription — expires_at as the trial's end,
 // cancelled_at as a cancellation only scheduled — so only a dead one takes them.
 func TestEndedAtIsOnlyAMandateThatStopped(t *testing.T) {

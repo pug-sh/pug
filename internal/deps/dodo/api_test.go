@@ -512,8 +512,8 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 		if got.ProviderSubID != "sub_1" {
 			t.Errorf("provider_sub_id = %q, want the subscription carrying this checkout's ref", got.ProviderSubID)
 		}
-		if !strings.Contains(query, "customer_id=cus_1") {
-			t.Errorf("subscriptions query = %q, want it scoped to the payment's customer", query)
+		if !strings.Contains(query, "customer_id=cus_1") || !strings.Contains(query, "page_number=0") {
+			t.Errorf("subscriptions query = %q, want it scoped to the payment's customer from page 0", query)
 		}
 	})
 
