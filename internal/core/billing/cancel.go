@@ -66,7 +66,15 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 		return err
 	}
 	var charged ChargeReport
+	// Once a charge has gone through, every failure below it has money behind it.
+	incomplete := func(err error) error {
+		if charged.Charged == 0 {
+			return err
+		}
+		return fmt.Errorf("%w: %w", ErrRemoveIncomplete, err)
+	}
 	for _, inv := range due {
+		// Unconditional: chargeOne's own last step is taking the money.
 		if err := s.chargeOne(ctx, inv, now, actor, &charged); err != nil {
 			return fmt.Errorf("%w: %w", ErrRemoveIncomplete, err)
 		}
@@ -76,7 +84,7 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list the charges a removal waits on", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return err
+		return incomplete(err)
 	}
 	var settled SettleReport
 	for _, inv := range charges {
@@ -84,7 +92,7 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 			continue
 		}
 		if err := s.pollCharged(ctx, inv, now, actor, &settled); err != nil {
-			return err
+			return incomplete(err)
 		}
 	}
 	// The ledger rather than the reports: a retry of this call may close and charge nothing.
@@ -92,7 +100,7 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to read the invoices a removal waits on", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return err
+		return incomplete(err)
 	}
 	if unsettled || closed.Held > 0 || closed.Unpriceable > 0 {
 		slog.WarnContext(ctx, "not removing a payment method before its charges settle",
