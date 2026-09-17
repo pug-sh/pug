@@ -99,6 +99,14 @@ func (stubProvider) FetchPayment(context.Context, string) (corebilling.Payment, 
 	return corebilling.Payment{}, errors.New("unused")
 }
 
+func (stubProvider) SetNextBillingDate(context.Context, string, time.Time) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
+
+func (stubProvider) CancelSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
+
 // seedCustomer stands in for a completed checkout: the portal needs a customer.
 func seedCustomer(t *testing.T, pg *testutil.TestPostgres, orgID string) {
 	t.Helper()

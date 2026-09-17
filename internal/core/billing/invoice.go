@@ -82,6 +82,14 @@ type CloseReport struct {
 // period is one anniversary window, [start, end).
 type period struct{ start, end time.Time }
 
+// closing is a period's days up to `to`, as one pass closes them.
+type closing struct {
+	period
+	to       time.Time
+	kind     closeKind
+	chargeAt time.Time
+}
+
 type window struct{ from, to time.Time }
 
 // segment is the billable days inside a period that one invoice prices.
@@ -98,8 +106,8 @@ type closeKind int
 
 const (
 	closeDue closeKind = iota
-	// closeFinal sweeps: with no live mandate and no deal in force, every close
-	// does, older periods a catch-up closes included.
+	// closeFinal sweeps: with no live mandate and no deal in force, or while a
+	// mandate is going, every close does, older periods a catch-up closes included.
 	closeFinal
 	// closeDropped writes off a period that left the catch-up window.
 	closeDropped
@@ -125,14 +133,21 @@ func (s *Service) ClosePeriods(ctx context.Context, now time.Time, grace time.Du
 		if err := ctx.Err(); err != nil {
 			return r, err
 		}
-		if err := s.closeOrg(ctx, org.ID, org.CreateTime.Time, now, grace, &r); err != nil && firstErr == nil {
+		err := s.closeOrg(ctx, org.ID, org.CreateTime.Time, now, grace, time.Time{}, ActorInvoicePass, &r)
+		if err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
 	return r, firstErr
 }
 
-func (s *Service) closeOrg(ctx context.Context, orgID string, orgCreate, now time.Time, grace time.Duration, r *CloseReport) error {
+// closeOrg invoices the org's due periods. cutoff is the last instant a going mandate can
+// be charged, read off a scheduled cancellation when zero; while set, closes sweep and charge
+// by it, and the days finalized before it close early.
+func (s *Service) closeOrg(
+	ctx context.Context, orgID string, orgCreate, now time.Time, grace time.Duration, cutoff time.Time, actor string,
+	r *CloseReport,
+) error {
 	rec, err := s.StoredRecord(ctx, orgID)
 	if err != nil {
 		return err
@@ -156,27 +171,51 @@ func (s *Service) closeOrg(ctx context.Context, orgID string, orgCreate, now tim
 		return err
 	}
 
-	kind := closeDue
+	kind, chargeAt := closeDue, now.AddDate(0, 0, ChargeNoticeDays)
 	if _, deal := rec.Terms(); !liveAt(subs, now) && (!deal || contractLapsed(rec, now)) {
 		kind = closeFinal
 	}
-	periods := duePeriods(coreusage.AnchorDay(orgCreate, rec.AnchorDay), now, grace, maxTime(orgCreate, billedTo))
-	for i, p := range slices.Backward(periods) {
-		k := kind
-		if i >= maxClosePeriods {
-			k = closeDropped
+	if cutoff.IsZero() {
+		cutoff = scheduledCutoff(subs)
+	}
+	if !cutoff.IsZero() {
+		by := maxTime(now, cutoff)
+		if err := s.chargeBy(ctx, orgID, by); err != nil {
+			return err
 		}
-		for _, seg := range billableSegments(orgCreate, rec, subs, p, billedTo) {
+		kind, chargeAt = closeFinal, minTime(chargeAt, by)
+	}
+	anchor := coreusage.AnchorDay(orgCreate, rec.AnchorDay)
+	var closes []closing
+	for i, p := range slices.Backward(duePeriods(anchor, now, grace, maxTime(orgCreate, billedTo))) {
+		c := closing{period: p, to: p.end, kind: kind, chargeAt: chargeAt}
+		if i >= maxClosePeriods {
+			c.kind = closeDropped
+		}
+		closes = append(closes, c)
+	}
+	if !cutoff.IsZero() {
+		// The days the meter has finalized before the cutoff, unless their period closes in
+		// time on its own; never a deal's, which waits for a card and would pay its fee twice.
+		through := coreusage.FloorDayUTC(cutoff.Add(-grace))
+		start, end := coreusage.PeriodFor(through.Add(-time.Nanosecond), anchor)
+		_, deal := rec.Terms()
+		if !now.Before(through.Add(grace)) && through.Before(end) && (!deal || contractLapsed(rec, through)) {
+			closes = append(closes, closing{period: period{start, end}, to: through, kind: closeFinal, chargeAt: chargeAt})
+		}
+	}
+	for _, c := range closes {
+		for _, seg := range billableSegments(orgCreate, rec, subs, period{c.start, c.to}, billedTo) {
 			// A stalled meter delays an invoice, never mis-bills one. Newer periods need
 			// a later stamp still, so the org stops here.
-			if !stamp.Valid || stamp.Time.Before(p.end.Add(grace)) {
+			if !stamp.Valid || stamp.Time.Before(c.to.Add(grace)) {
 				r.Held++
 				slog.WarnContext(ctx, "usage is not final yet; holding the invoice",
-					slog.String("org_id", orgID), slog.Time("period_start", p.start),
+					slog.String("org_id", orgID), slog.Time("period_start", c.start),
 					slog.Time("usage_computed_at", stamp.Time))
 				return nil
 			}
-			inserted, err := s.closeSegment(ctx, orgID, p, seg, stamp.Time, now, k, r)
+			inserted, err := s.closeSegment(ctx, orgID, c, seg, stamp.Time, actor, r)
 			if err != nil || !inserted {
 				return err
 			}
@@ -260,7 +299,7 @@ func cardSegments(orgCreate time.Time, rec Record, subs []Subscription, from, to
 }
 
 func (s *Service) closeSegment(
-	ctx context.Context, orgID string, p period, seg segment, stamp, now time.Time, kind closeKind, r *CloseReport,
+	ctx context.Context, orgID string, c closing, seg segment, stamp time.Time, actor string, r *CloseReport,
 ) (bool, error) {
 	var events int64
 	for _, d := range seg.days {
@@ -279,7 +318,7 @@ func (s *Service) closeSegment(
 		r.Unpriceable++
 		err := fmt.Errorf("billing: org %s cannot be priced on plan %q", orgID, seg.ent.Slug)
 		slog.ErrorContext(ctx, "period cannot be priced; holding the invoice", slogx.Error(err),
-			slog.String("org_id", orgID), slog.Time("period_start", p.start))
+			slog.String("org_id", orgID), slog.Time("period_start", c.start))
 		telemetry.RecordError(ctx, err)
 		return false, nil
 	}
@@ -304,8 +343,8 @@ func (s *Service) closeSegment(
 		ID:              xid.New().String(),
 		Lines:           lines,
 		OrgID:           orgID,
-		PeriodEnd:       postgres.NewTimestamptz(p.end),
-		PeriodStart:     postgres.NewTimestamptz(p.start),
+		PeriodEnd:       postgres.NewTimestamptz(c.end),
+		PeriodStart:     postgres.NewTimestamptz(c.start),
 		PlanSlug:        seg.ent.Slug,
 		Pricing:         pricing,
 		UsageCents:      quote.TotalCents,
@@ -326,21 +365,21 @@ func (s *Service) closeSegment(
 	}
 	var balance int64
 	ids := make([]string, 0, len(carried))
-	for _, c := range carried {
-		balance += c.UsageCents
-		ids = append(ids, c.ID)
+	for _, deferred := range carried {
+		balance += deferred.UsageCents
+		ids = append(ids, deferred.ID)
 	}
-	sweep := kind == closeFinal ||
-		len(carried) > 0 && periodsSpanned(carried[0].PeriodStart.Time, p.start) >= MaxDeferPeriods
+	sweep := c.kind == closeFinal ||
+		len(carried) > 0 && periodsSpanned(carried[0].PeriodStart.Time, c.start) >= MaxDeferPeriods
 	d := deferClose(quote.TotalCents, balance, sweep)
 	detail := ""
-	if kind == closeDropped {
+	if c.kind == closeDropped {
 		sweep, d, detail = false, deferral{status: InvoiceWaived}, "dropped"
 	}
 	params.Status = string(d.status)
 	if d.status == InvoiceOpen {
 		params.CarriedCents = balance
-		params.NextAttemptAt = postgres.NewTimestamptz(now.AddDate(0, 0, ChargeNoticeDays))
+		params.NextAttemptAt = postgres.NewTimestamptz(c.chargeAt)
 	}
 	params.AmountCents = params.UsageCents + params.CarriedCents
 
@@ -356,7 +395,7 @@ func (s *Service) closeSegment(
 		telemetry.RecordError(ctx, err)
 		return false, err
 	}
-	if err := appendInvoiceEvent(ctx, w, orgID, row.ID, ActorInvoicePass, "", d.status, detail); err != nil {
+	if err := appendInvoiceEvent(ctx, w, orgID, row.ID, actor, "", d.status, detail); err != nil {
 		return false, err
 	}
 	switch {
@@ -383,7 +422,7 @@ func (s *Service) closeSegment(
 			return false, err
 		}
 		for _, id := range ids {
-			if err := appendInvoiceEvent(ctx, w, orgID, id, ActorInvoicePass, InvoiceDeferred, InvoiceWaived, "swept by "+row.ID); err != nil {
+			if err := appendInvoiceEvent(ctx, w, orgID, id, actor, InvoiceDeferred, InvoiceWaived, "swept by "+row.ID); err != nil {
 				return false, err
 			}
 		}
@@ -393,7 +432,7 @@ func (s *Service) closeSegment(
 	}
 
 	switch {
-	case kind == closeDropped:
+	case c.kind == closeDropped:
 		r.Dropped++
 		err := fmt.Errorf("billing: org %s wrote off [%s, %s), which left the catch-up window unbilled",
 			orgID, seg.from().Format(time.DateOnly), seg.to().Format(time.DateOnly))

@@ -98,6 +98,26 @@ where e.plan_slug = 'custom'
    or exists (select 1 from billing_subscriptions s where s.org_id = o.id)
 order by o.id;
 
+-- name: ListUnbilledUsage :many
+-- What the free tier costs: every org's latest closed period over the allowance that
+-- no mandate or deal has covered since it began. An ended one still counts as cover
+-- for the period it ended in, which the close billed in part.
+select p.event_count
+from (
+  select distinct on (org_id) org_id, event_count, period_start
+  from usage_periods
+  where period_end <= @closed_before
+  order by org_id, period_start desc
+) p
+left join billing_entitlements e on e.org_id = p.org_id
+where p.event_count > @free_events::bigint
+  and (e.plan_slug is distinct from 'custom' or e.contract_ends_at <= p.period_start)
+  and not exists (
+    select 1 from billing_subscriptions s
+    where s.org_id = p.org_id
+      and (s.status in ('active', 'past_due') or s.ended_at > p.period_start)
+  );
+
 -- name: GetBillingInvoiceBilledTo :one
 -- Where the org's billing has reached: each close starts here, so no day is
 -- billed twice however the period moves. Any status: a day on a waived or void row
@@ -106,18 +126,20 @@ select max(billed_to)::date from billing_invoices
 where org_id = @org_id;
 
 -- name: ListDueBillingInvoices :many
--- Oldest first, so a deal's backlog is charged in order once a card arrives.
+-- Oldest first, so a deal's backlog is charged in order once a card arrives. An
+-- empty org_id lists every org's.
 select i.amount_cents, i.billed_from, i.billed_to, i.carried_cents, i.currency, i.event_count,
        i.id, i.org_id, i.period_start, i.plan_slug, i.status,
        (select count(distinct c.period_start) from billing_invoices c where c.covered_by = i.id)
          as carried_periods
 from billing_invoices i
 where i.status in ('open', 'failed') and i.next_attempt_at <= @now
+  and (@org_id::text = '' or i.org_id = @org_id::text)
 order by i.next_attempt_at, i.billed_from;
 
 -- name: ListBillingInvoicesToSettle :many
 -- Charges a read settles, dated from when each entered its status: update_time
--- also moves when a charge error is recorded.
+-- also moves when a charge error is recorded. An empty org_id lists every org's.
 select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.status,
        coalesce((
          select max(e.at) from billing_invoice_events e
@@ -125,13 +147,37 @@ select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.s
        ), i.update_time)::timestamptz as entered_at
 from billing_invoices i
 where i.status in ('charging', 'charged')
+  and (@org_id::text = '' or i.org_id = @org_id::text)
 order by entered_at;
+
+-- name: HasUnsettledBillingInvoice :one
+-- What keeps a mandate from being removed: a charge still to make, retry or hear
+-- back on, or a card's deferred balance no close has swept yet.
+select exists (
+  select 1 from billing_invoices
+  where org_id = @org_id and (status in ('open', 'charging', 'charged', 'failed')
+    or (status = 'deferred' and covered_by is null and plan_slug <> 'custom'))
+);
+
+-- name: ListPinnableBillingMandates :many
+-- Live mandates a pin may move, with what anchors the org's period. A scheduled
+-- cancellation is left where it is, or it would never arrive.
+select s.org_id, s.provider_sub_id, s.current_period_end,
+       o.create_time as org_create_time, e.anchor_day
+from billing_subscriptions s
+join orgs o on o.id = s.org_id
+left join billing_entitlements e on e.org_id = s.org_id
+where s.provider = @provider and s.on_demand and not s.cancel_at_period_end
+  and s.status in ('active', 'past_due')
+order by s.id;
 
 -- name: HasDunningBillingInvoice :one
 -- What makes an org PAST_DUE: an invoice that failed and is not yet paid, so a retry
--- in flight keeps it. Never a deferred row: nothing was asked of the customer.
+-- in flight keeps it. Never a deferred row or a gone mandate's write-off: neither is
+-- a declined card.
 select exists (
   select 1 from billing_invoices
-  where org_id = @org_id and (status in ('failed', 'uncollectible')
-    or (status in ('open', 'charging', 'charged') and failed_at is not null))
+  where org_id = @org_id and last_error_code <> 'mandate_gone'
+    and (status in ('failed', 'uncollectible')
+      or (status in ('open', 'charging', 'charged') and failed_at is not null))
 );

@@ -63,6 +63,10 @@ type PaymentProvider interface {
 	// need not carry amounts; FetchPayment reads one whole.
 	ListPayments(ctx context.Context, providerSubID string, since time.Time) ([]Payment, error)
 	FetchPayment(ctx context.Context, paymentID string) (Payment, error)
+	// SetNextBillingDate moves where a cancellation from the provider's portal lands. Both
+	// writes return the subscription as it now stands, in a delivery's shape.
+	SetNextBillingDate(ctx context.Context, providerSubID string, at time.Time) (SubscriptionEvent, error)
+	CancelSubscription(ctx context.Context, providerSubID string) (SubscriptionEvent, error)
 }
 
 // PaymentStatus is what a payment says about the invoice it was made for.

@@ -2,8 +2,8 @@
 // project per day in ClickHouse and stores the totals in Postgres, then returns.
 // Scheduling is the deployment's job (a k8s CronJob), not this process's.
 //
-// Metering is optional: without it GetUsage answers with an absent
-// usage_computed_at rather than a wrong count, and nothing else degrades.
+// Metering is optional with billing off: without it GetUsage answers with an absent
+// usage_computed_at rather than a wrong count. With billing on, nothing is invoiced.
 package usage
 
 import (
@@ -26,41 +26,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-const (
-	defaultRescanDays = 2
-
-	// Past the retention window a wider rescan re-inserts day cells that the same
-	// pass's prune then deletes, every pass, forever — and the ClickHouse scan stops
-	// pruning partitions long before that. Expressed from retention so the two
-	// cannot drift.
-	maxRescanDays = int(retention / (24 * time.Hour))
-)
-
-type Config struct {
-	// Trailing window the meter recomputes each run, absorbing late arrivals.
-	// No envconfig default: an unset var and an explicit 0 both resolve through
-	// rescanDays, so defaultRescanDays stays the single source for the number.
-	RescanDays int `env:"PUG_USAGE_RESCAN_DAYS"`
-}
-
-// rescanDays clamps a configured window to something the meter can act on. A
-// negative value would put `from` in the future, so every read comes back empty
-// and the pass meters nothing -- forever, and quietly.
-func rescanDays(ctx context.Context, configured int) int {
-	switch {
-	case configured > maxRescanDays:
-		slog.WarnContext(ctx, "clamping PUG_USAGE_RESCAN_DAYS to the retention window",
-			slog.Int("configured", configured), slog.Int("using", maxRescanDays))
-		return maxRescanDays
-	case configured > 0:
-		return configured
-	case configured < 0:
-		slog.WarnContext(ctx, "ignoring a negative PUG_USAGE_RESCAN_DAYS",
-			slog.Int("configured", configured), slog.Int("using", defaultRescanDays))
-	}
-	return defaultRescanDays
-}
-
 // Sub-tasks whose last run is kept in cron_state.
 const (
 	taskFullRecompute cron.Task = "full_recompute"
@@ -70,8 +35,7 @@ const (
 )
 
 const (
-	// A year of history plus 25 days of slack.
-	retention = 390 * 24 * time.Hour
+	retention = coreusage.Retention
 
 	// Both are measured against cron_state. Pruning stays daily because the
 	// retention boundary only moves once a day, so a more frequent pass would
@@ -176,11 +140,6 @@ func Run(ctx context.Context) error {
 		passDuration.Record(ctx, time.Since(start).Seconds(), attrs)
 	}()
 
-	var cfg Config
-	if err := envconfig.Process(ctx, &cfg); err != nil {
-		return setupFailed(ctx, "usage config", err)
-	}
-
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
 		return setupFailed(ctx, "postgres config", err)
@@ -215,7 +174,7 @@ func Run(ctx context.Context) error {
 		service:    coreusage.NewService(pgRO, pgW).WithClickHouse(ch),
 		state:      cron.NewState(pgRO, pgW, cron.JobUsage),
 		pgW:        pgW,
-		rescanDays: rescanDays(ctx, cfg.RescanDays),
+		rescanDays: coreusage.RescanDays,
 	}
 
 	slog.InfoContext(ctx, "Running a usage metering pass", slog.Int("rescan_days", j.rescanDays))

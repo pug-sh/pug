@@ -12,7 +12,6 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
-	"github.com/sethvargo/go-envconfig"
 )
 
 func TestMain(m *testing.M) {
@@ -686,62 +685,5 @@ func TestIdleEmptyReadStillRefreshesTheOrgPeriod(t *testing.T) {
 	}
 	if got.EventCount != 0 {
 		t.Errorf("period event_count = %d, want 0", got.EventCount)
-	}
-}
-
-// The clamp lived inside Run, which needs env vars and real pools, so nothing
-// exercised it. A negative window puts `from` in the future: every read comes back
-// empty and the pass meters nothing, quietly, forever.
-// rescanDays is tested in isolation below, which cannot catch a typo'd struct tag
-// or a Run that forgets to route the config through the clamp — both of which
-// silently disable the documented .env knob, or ship a negative window that meters
-// nothing forever.
-func TestConfigReadsTheDocumentedEnvVar(t *testing.T) {
-	for _, tc := range []struct {
-		name, env string
-		want      int
-	}{
-		{"documented default", "2", 2},
-		{"unset falls back", "", defaultRescanDays},
-		{"negative is clamped on the way through", "-5", defaultRescanDays},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			env := map[string]string{}
-			if tc.env != "" {
-				env["PUG_USAGE_RESCAN_DAYS"] = tc.env
-			}
-
-			var cfg Config
-			if err := envconfig.ProcessWith(t.Context(), &envconfig.Config{
-				Target:   &cfg,
-				Lookuper: envconfig.MapLookuper(env),
-			}); err != nil {
-				t.Fatalf("ProcessWith: %v", err)
-			}
-			if got := rescanDays(t.Context(), cfg.RescanDays); got != tc.want {
-				t.Errorf("PUG_USAGE_RESCAN_DAYS=%q resolved to %d, want %d", tc.env, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestRescanDaysClampsToTheDefault(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		in, want int
-	}{
-		{"unset falls back", 0, defaultRescanDays},
-		{"negative falls back", -3, defaultRescanDays},
-		{"positive is honoured", 5, 5},
-		{"at the retention window is honoured", maxRescanDays, maxRescanDays},
-		// Past retention the meter re-inserts day cells the same pass's prune then
-		// deletes, forever, and the ClickHouse scan stops pruning partitions.
-		{"absurd clamps to retention", 100_000, maxRescanDays},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := rescanDays(t.Context(), tc.in); got != tc.want {
-				t.Errorf("rescanDays(%d) = %d, want %d", tc.in, got, tc.want)
-			}
-		})
 	}
 }

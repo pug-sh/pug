@@ -50,7 +50,9 @@ func (s *Service) ChargeDue(ctx context.Context, now time.Time) (ChargeReport, e
 	if !s.billingEnabled {
 		return r, nil
 	}
-	due, err := dbread.New(s.pgW).ListDueBillingInvoices(ctx, postgres.NewTimestamptz(now))
+	due, err := dbread.New(s.pgW).ListDueBillingInvoices(ctx, dbread.ListDueBillingInvoicesParams{
+		Now: postgres.NewTimestamptz(now),
+	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list the invoices due a charge", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -67,28 +69,30 @@ func (s *Service) ChargeDue(ctx context.Context, now time.Time) (ChargeReport, e
 		if err := ctx.Err(); err != nil {
 			return r, err
 		}
-		if err := s.chargeOne(ctx, inv, now, &r); err != nil && firstErr == nil {
+		if err := s.chargeOne(ctx, inv, now, ActorInvoicePass, &r); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
 	return r, firstErr
 }
 
-func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoicesRow, now time.Time, r *ChargeReport) error {
+func (s *Service) chargeOne(
+	ctx context.Context, inv dbread.ListDueBillingInvoicesRow, now time.Time, actor string, r *ChargeReport,
+) error {
 	subs, unnamed, err := s.subscriptionsOf(ctx, inv.OrgID)
 	if err != nil {
 		return err
 	}
 	live := slices.IndexFunc(subs, func(sub Subscription) bool { return sub.OnDemand && sub.Status.Live() })
 	if live < 0 {
-		return s.holdOrWriteOff(ctx, inv, subs, unnamed, now, r)
+		return s.holdOrWriteOff(ctx, inv, subs, unnamed, now, actor, r)
 	}
 	mandate := subs[live]
 	provider := s.payments.Provider
 
 	// Committed before the provider is called, so a process dying in between leaves a
 	// row that says so.
-	claimed, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "mandate "+mandate.ProviderSubID,
+	claimed, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, actor, "mandate "+mandate.ProviderSubID,
 		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 			return w.MarkBillingInvoiceCharging(ctx, dbwrite.MarkBillingInvoiceChargingParams{
 				ID:            inv.ID,
@@ -118,7 +122,7 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 	case chargeErr == nil:
 		ctx, cancel := recording(ctx)
 		defer cancel()
-		moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "payment "+paymentID,
+		moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, actor, "payment "+paymentID,
 			func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 				return w.MarkBillingInvoiceCharged(ctx, dbwrite.MarkBillingInvoiceChargedParams{
 					ID: inv.ID, ProviderPaymentID: postgres.NewOptionalText(paymentID),
@@ -154,7 +158,7 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 		ctx, cancel := recording(ctx)
 		defer cancel()
 		moved, final, err := s.decline(ctx, inv.OrgID, inv.ID, InvoiceCharging,
-			Payment{ErrorCode: refused.Code, ErrorMessage: refused.Message}, now, ActorInvoicePass)
+			Payment{ErrorCode: refused.Code, ErrorMessage: refused.Message}, now, actor)
 		switch {
 		case !moved:
 		case final:
@@ -164,7 +168,7 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 		}
 		return err
 	case refused.NotChargeable:
-		return s.corroborate(ctx, provider, inv, mandate, refused, now, r)
+		return s.corroborate(ctx, provider, inv, mandate, refused, now, actor, r)
 	default:
 		r.Ambiguous++
 		return s.leaveCharging(ctx, inv, refused.Code, refused.Message, refused)
@@ -176,7 +180,7 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 // can resume, and a status pug has no word for proves nothing.
 func (s *Service) holdOrWriteOff(
 	ctx context.Context, inv dbread.ListDueBillingInvoicesRow, subs []Subscription, unnamed int, now time.Time,
-	r *ChargeReport,
+	actor string, r *ChargeReport,
 ) error {
 	var mandates, paused int
 	for _, sub := range subs {
@@ -202,7 +206,7 @@ func (s *Service) holdOrWriteOff(
 		r.MandatePaused++
 		return nil
 	}
-	return s.writeOff(ctx, inv, InvoiceStatus(inv.Status), "no live mandate to charge", now, r)
+	return s.writeOff(ctx, inv, InvoiceStatus(inv.Status), "no live mandate to charge", now, actor, r)
 }
 
 // corroborate writes an invoice off on a not-chargeable refusal only once the mandate
@@ -210,7 +214,7 @@ func (s *Service) holdOrWriteOff(
 // environment answers both.
 func (s *Service) corroborate(
 	ctx context.Context, provider PaymentProvider, inv dbread.ListDueBillingInvoicesRow,
-	mandate Subscription, refused *ChargeError, now time.Time, r *ChargeReport,
+	mandate Subscription, refused *ChargeError, now time.Time, actor string, r *ChargeReport,
 ) error {
 	event, err := provider.FetchSubscription(ctx, mandate.ProviderSubID)
 	if err == nil && event.IsZero() {
@@ -227,7 +231,7 @@ func (s *Service) corroborate(
 	}
 	ctx, cancel := recording(ctx)
 	defer cancel()
-	return s.writeOff(ctx, inv, InvoiceCharging, refused.Message, now, r)
+	return s.writeOff(ctx, inv, InvoiceCharging, refused.Message, now, actor, r)
 }
 
 // recording detaches a write that records a provider's answer: money may have moved,
@@ -274,9 +278,9 @@ func (s *Service) leaveCharging(
 
 func (s *Service) writeOff(
 	ctx context.Context, inv dbread.ListDueBillingInvoicesRow, from InvoiceStatus, message string, now time.Time,
-	r *ChargeReport,
+	actor string, r *ChargeReport,
 ) error {
-	moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, codeMandateGone,
+	moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, actor, codeMandateGone,
 		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 			return w.MarkBillingInvoiceUncollectible(ctx, dbwrite.MarkBillingInvoiceUncollectibleParams{
 				FailedAt:         postgres.NewTimestamptz(now),

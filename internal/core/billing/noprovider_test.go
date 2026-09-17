@@ -51,6 +51,9 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 			if _, err := svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrNoProvider) {
 				t.Errorf("ConfirmCheckout err = %v, want ErrNoProvider", err)
 			}
+			if err := svc.RemovePaymentMethod(t.Context(), f.orgID, actor, time.Now(), grace); !errors.Is(err, corebilling.ErrNoProvider) {
+				t.Errorf("RemovePaymentMethod err = %v, want ErrNoProvider", err)
+			}
 		})
 	}
 }

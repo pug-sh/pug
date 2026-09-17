@@ -330,7 +330,7 @@ is already erasure-exempt by documented decision (anonymous aggregates), and the
 deleted row-level by `session_id`, so new state columns ride along.
 
 **Deploy runbook (single-step — one normal release).** Ship 008+009+010 and the binaries in one
-gitops commit and sync once. Order is not a choice: `migrate-clickhouse.job.yaml` is an ArgoCD
+release and sync once. Order is not a choice: `migrate-clickhouse.job.yaml` is an ArgoCD
 `PreSync` hook running `pug clickhouse migrate` with no bound (`goose.UpContext` = all pending), so
 every migration completes before the server/worker Deployments sync. That is also the required
 order — the new binary's INSERT lists all 26 promoted columns and hard-fails on a pre-008 schema,

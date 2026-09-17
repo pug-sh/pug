@@ -273,6 +273,12 @@ update billing_invoices set status = 'open', next_attempt_at = @next_attempt_at
 where id = @id and status in ('failed', 'uncollectible')
 returning *;
 
+-- name: ChargeBillingInvoicesBy :execrows
+-- A mandate that is going: an open invoice dated past the last instant it can be
+-- charged is charged by then instead.
+update billing_invoices set next_attempt_at = @charge_by
+where org_id = @org_id and status = 'open' and next_attempt_at > @charge_by;
+
 -- name: MarkBillingInvoiceRefunded :one
 update billing_invoices set status = 'refunded'
 where id = @id and status = 'paid'

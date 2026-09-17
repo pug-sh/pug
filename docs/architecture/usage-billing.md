@@ -26,8 +26,9 @@
 >    session names its subscription, or whether the customer's subscription list
 >    has to be matched back on the `checkout_ref`.
 > 2. **`PATCH /subscriptions/{id}` accepting `next_billing_date`** on an
->    on-demand subscription (§7.3 layer 1). If Dodo refuses it, the cancellation
->    write-off grows from a day to a month.
+>    on-demand subscription (§7.3 layer 1). If Dodo refuses it, a portal
+>    cancellation lands wherever Dodo's own date falls, and the part of that period
+>    before it is closed and charged early, a fee of its own (§8.7).
 > 3. **What the checkout page shows a buyer** for a mandate-only session.
 > 4. **What a small charge really costs** (§8.7): whether an on-demand charge
 >    carries the 0.5% usage-billing surcharge, whether a declined attempt is
@@ -100,8 +101,8 @@ inbox and its CAS, the provider seam, `ConfirmCheckout`, the portal, USD-only.
    stays derived from the clock (billing.md invariant 3); invoice status is a
    recorded state machine because a charge is an event, not a comparison.
 6. **Every invoice write is a guarded transition.** Operator →
-   `billing_entitlements`. Subscription webhooks, reconcile and confirm →
-   `billing_subscriptions`. `billing_invoices` has more than one writer — the
+   `billing_entitlements`. Subscription webhooks, reconcile, confirm, the pin
+   and `RemovePaymentMethod` → `billing_subscriptions`. `billing_invoices` has more than one writer — the
    invoicing pass, payment webhooks, `subscription.update_payment_method`,
    `RemovePaymentMethod` and the operator's `invoice void` and `retry` — and
    none of them holds the pass's lock, so every invoice transition is an update
@@ -389,51 +390,61 @@ does to that tax.
 The charge comes *after* the usage, so the mandate has to outlive the last
 period. Three layers, cheapest first:
 
-1. **Pug pins Dodo's `next_billing_date`** a day after the org's
-   `NextChargeAt` (`period_end + grace + ChargeNoticeDays + 1d`, §8.6) on
-   activation and after every invoice; the day absorbs the meter's hourly
-   stamp and the pass's own hour (§8.1). Dodo's portal hides "cancel now" for on-demand subscriptions
+1. **Pug pins Dodo's `next_billing_date`** a day after the current period's
+   charge (`period_end + grace + ChargeNoticeDays + 1d`, compared at day
+   grain); the day absorbs the meter's hourly stamp and the pass's own hour
+   (§8.1). The pass pins every live mandate with no cancellation scheduled, so a
+   new mandate is pinned within the hour and each moves on at its anniversary; a
+   scheduled cancellation keeps its date, or it would never arrive. Dodo's
+   portal hides "cancel now" for on-demand subscriptions
    and schedules cancellation for `next_billing_date`, so a customer
    cancelling in the portal keeps the mandate alive until just after pug has
-   charged the final period. **VERIFY** that `PATCH /subscriptions/{id}`
+   charged the period they cancelled in. **VERIFY** that `PATCH /subscriptions/{id}`
    accepts `next_billing_date` on an on-demand subscription; the SDK exposes
    it, the docs are silent.
-2. **A scheduled cancellation triggers an early close — but only when the
-   cancellation lands first.** On a delivery carrying
-   `cancel_at_next_billing_date = true`, the pass invoices the period to date
-   and charges while the mandate is live **if** the mandate ends before
-   `period_end + grace`. When layer 1 has pinned the cancellation past that
-   instant the natural close already catches a live mandate, and closing early
-   would only split one charge, and its fee (§8.7), into two. An **unread** end
-   date waits for the natural close for the same reason; that close sweeps
-   (§8.7) if the mandate went. Whatever is sent between the early close
-   and the cancellation is the write-off — a day under layer 1, up to a month
-   without it. An invoice already waiting out its notice window (§8.1) is
-   charged at once when a cancellation lands that ends the mandate before the
-   invoice's charge date.
+2. **A scheduled cancellation closes early — but only what its period's own
+   close would reach too late.** A live mandate with
+   `cancel_at_next_billing_date = true` and a known end can be charged until a
+   day before that end, its cutoff. While one is going, every close sweeps
+   (§8.7), and every `open` invoice's charge, one already waiting out its notice
+   window (§8.1) included, is dated no later than the cutoff; a `failed` one keeps
+   its retry date, since pulling it forward would retry it every hour. Once the
+   meter has finalized the days before `cutoff − grace`, the pass closes them,
+   once, unless their period closes in time on its own: under layer 1 the natural
+   close catches the period the customer cancelled in, and only the next period's
+   first days close early. A deal in force never closes early: its days wait for a
+   card anyway (§19.15), and closing part of its period would charge the fee
+   twice. An **unread** end date waits for the natural close;
+   that close sweeps if the mandate went. What is sent in the last `grace` and
+   a day or two before the end is the write-off, pinned or not; without layer 1
+   the early close takes the part of a period before Dodo's date, with a fee of
+   its own (§8.7).
 3. **`RemovePaymentMethod` RPC (admin)** — pug's own cancellation, which does
-   the steps in the right order: close the period at `now − grace`, charge it
-   and any invoice still in its notice window at once, then `PATCH
+   the steps in the right order: close every day before `now − grace`, a
+   period still inside its grace included, charge that and any invoice still in
+   its notice window at once, then `PATCH
    status=cancelled`. The days the meter has not finalized are the
-   write-off. It **refuses to cancel unless the charge settled**
-   (`BILLING_FINAL_PERIOD_UNSETTLED`): a decline, an ambiguous charge or a held
-   meter leaves the mandate live, because cancelling first turns a retryable
-   decline into a write-off. "Settled" is the provider's answer about the
+   write-off. It **refuses to cancel unless every charge settled**
+   (`BILLING_FINAL_PERIOD_UNSETTLED`): a soft decline with retries left, an
+   ambiguous charge, a held meter or an unpriceable period leaves the mandate
+   live, because cancelling first turns a retryable decline into a write-off; a
+   hard decline is final either way. "Settled" is the provider's answer about the
    payment, not its acceptance of the charge — the RPC polls the payment it just
    made, and any of the org's invoices still `open`, `charging`, `charged` or
    `failed` refuses, including on a retry of the RPC that closes nothing and
-   charges nothing. So does a previous period not yet closed: within `grace` of
-   an anniversary there is nothing to close yet, and cancelling would leave
-   that whole period to a gone mandate. The final close is a sweep (§8.7): it
-   folds any carried balance into the last invoice, and a last invoice `waived`
-   under the sweep floor counts as settled. A refused cancellation leaves the
+   charges nothing. Its closes sweep (§8.7): any carried balance is folded into
+   the last invoice, and a card's balance still `deferred` with no close to fold
+   it into refuses until the next UTC day has one. A last invoice `waived`
+   under the sweep floor counts as settled. A cancel the provider refuses, or
+   answers with the mandate still live, fails the RPC. A refused cancellation leaves the
    rest of the period to the natural close, which starts where this one ended
    (§8.1). Offered in the dashboard beside "Manage billing"; the portal path
    stays possible and is covered by 1 and 2.
 
 A cancelled mandate cannot be charged ("no longer chargeable"), so a final
 invoice that finds one is `uncollectible` (§8.5) and reported by the invoicing
-pass as `mandate_gone` (§11), not a retry loop.
+pass as `mandate_gone` (§11), not a retry loop. It does not make the org
+`PAST_DUE` (§8.6), since no card declined it; a card added later still re-opens it.
 
 `subscription.update_payment_method` (a new card via the portal) re-opens the
 org's `failed` and `uncollectible` invoices for another attempt, and a mandate
@@ -447,7 +458,7 @@ The invoicing pass (`cmd/cron/billing-invoice`, §11) closes each org's period o
 it is safe to price, and prices it:
 
 - **When:** `period_end + grace` has passed, where `grace =
-  PUG_USAGE_RESCAN_DAYS` (2 days, the meter's own trailing window). After that
+  coreusage.RescanDays` (2 days, the meter's own trailing window). After that
   instant the trailing rescan no longer re-reads the period's last day, so the
   count is as final as the meter makes it. The pass additionally requires the
   org's most recent `usage_computed_at` to be **at or after** `period_end +
@@ -492,10 +503,10 @@ it is safe to price, and prices it:
 - **When it is charged:** not in the pass that closes it. An `open` row's
   first charge is dated `ChargeNoticeDays` (§13) after the close, in
   `next_attempt_at`, so the invoice can be seen — and voided (§12) — before the
-  card is charged; the billing email that announces it is a later PR. Two cases
-  charge at once: a close forced by a mandate that is going (§7.3), and a
-  deal's backlog when a card arrives, whose notice ran while it waited
-  (§19.15).
+  card is charged; the billing email that announces it is a later PR. A
+  going mandate's `open` invoices are charged by a day before it ends (§7.3),
+  and `RemovePaymentMethod`'s at once; a deal's backlog is charged at once when a
+  card arrives, since its notice ran while it waited (§19.15).
 
 ### 8.2 Storage (migration 021)
 
@@ -715,7 +726,8 @@ no — a cancelled mandate is one that can never be retried.
 
 - `BillingStatus` gains `PAST_DUE` (additive enum value): any invoice that failed
   and is not yet paid — `failed`, `uncollectible`, or retried and still `open`,
-  `charging` or `charged` with `failed_at` set — never a `deferred` one. Derived
+  `charging` or `charged` with `failed_at` set — never a `deferred` one, nor a
+  gone mandate's write-off (§7.3). Derived
   at read time from the ledger, so a retry in flight keeps it and it clears the
   instant a retry succeeds, with no sweep.
 - `NextChargeAt` = the next scheduled charge: the earliest `next_attempt_at`
@@ -780,7 +792,7 @@ Dodo's fee schedule and to be moved if it moves:
 | sweep, `total ≥ WaiveUnderCents` ($1) | `open`, carrying, whatever the total | as above |
 | sweep, `total < WaiveUnderCents` | `waived` | `waived` |
 
-A **sweep** is the final close of a cancelling mandate (§7.3), a close at
+A **sweep** is any close while a mandate is going (§7.3), a close at
 which the balance would span `MaxDeferPeriods` (12) periods — this one and the
 org's oldest uncovered `deferred` row both counted — or any close with no live
 mandate and no deal in force, older periods a catch-up closes included.
@@ -860,9 +872,14 @@ becomes the evaluation window. Not built in this slice; the design keeps
 `Chargeable` on the resolved entitlement so the gate is one check when it
 comes.
 
-Until then the invoicing pass's last stage reports **unbilled usage**: a closed period over
-the current card's free allowance for an org with no mandate. That is the
-number that says how much the free tier is costing.
+Until then the invoicing pass's last stage reports **unbilled usage**: each org
+whose latest closed period went over the current card's free allowance and that
+no mandate or deal has covered at any time since that period began, counted
+again on every pass and logged priced on that card. An org whose mandate ended
+or whose deal lapsed is among them once a whole closed period falls after the
+end, since the close considers it but bills none of those days; the period the
+end fell in was billed in part and is not. That is the number that says how much
+the free tier is costing.
 
 ## 11. The invoicing pass
 
@@ -880,7 +897,8 @@ order:
 2. **Charge** every `open` or `failed` invoice with `next_attempt_at ≤ now`
    and a live mandate (§8.4).
 3. **Settle** `charging` rows by listing, `charged` rows by polling (§8.4).
-4. **Pin** `next_billing_date` on mandates whose next charge moved (§7.3).
+4. **Pin** `next_billing_date` a day past each live mandate's current-period
+   charge, a scheduled cancellation excepted (§7.3).
 5. **Report**: periods held back by a stale meter (`held`), write-offs counted
    apart — a decline or unsettled charge made final (`uncollectible`), and a
    mandate gone (`mandate_gone`) — a
@@ -894,15 +912,11 @@ order:
    or a `duplicate` records it on the invoice's events and logs it as an error.
    The counters are emitted even when the pass returns an error, since the work
    already done is what says where it stopped.
-   The pass logs the **effective grace** it ran with: the meter and the invoicer
-   are separate CronJobs reading separate env blocks, and nothing makes
-   `PUG_USAGE_RESCAN_DAYS` agree across the two; §17.1 says what a mismatch
-   costs.
 
 A separate binary rather than a stage of `billing-reconcile`: reconcile is
 "nothing auto-fixed" and read-mostly, this one moves money, and the two want
-different cadences and different alerts. The cost is another CronJob in
-gitops. Decision §19.9.
+different cadences and different alerts. The cost is another CronJob to
+deploy. Decision §19.9.
 
 **Every failure that is a person's to fix is a finding, not an exit code**
 (a declined card, a cancelled mandate, a period the meter has not reached).
@@ -911,16 +925,21 @@ provider call (`Unreadable`, matching the reconcile pass: one org charging
 successfully says nothing about the ones that did not; a payment with no outcome
 for three days counts too) — or when it left a
 charge unresolved (`Ambiguous`), since that is money in an unknown state, or
-dropped a period (`dropped`), which no later pass will bill. It also exits
-non-zero when more than ten mandates were written off as gone in one
-pass: at that scale it is pug's own fault, not ten customers'. So a red CronJob
-means the pass itself is broken, not that a customer's card is. A stored invoice
-this build cannot read (`Undecodable`) is the same kind of thing: the row is
-skipped wherever it is met — so it is never charged and never settled — and the
-ledger read refuses rather than returning a customer's history one row short.
-So is a mandate stored in a status this build has no word for, whose invoices
-are held as `Unreadable`, and an invoice due with no provider configured to
-charge it.
+dropped a period (`dropped`), which no later pass will bill, or met a period no
+card prices (`unpriceable`), a catalog this build lacks, which holds the org until
+a deploy fixes it. It also exits
+non-zero when more than ten invoices were written off in one pass because their
+mandate was gone: at that scale it is pug's own fault, not ten customers'. Each
+cancellation's last days are one such write-off (§17.8), so the ten assumes no more
+than ten cancellations share an anniversary. So a
+red CronJob means the pass itself is broken, not that a customer's card is. A
+mandate stored in a status this build has no word for, whose invoices are held
+as `Unreadable`, is the same kind of thing, and so is an invoice due with no
+provider configured to charge it. The pass never decodes a stored invoice: it
+lists rows by status and reads their columns, so a status this build has no
+word for is never met. Only the ledger read (§9) decodes one, and a row it
+cannot read (`Undecodable`) makes it refuse rather than return a customer's
+history one row short.
 
 ## 12. Operator CLI
 
@@ -975,12 +994,12 @@ two money columns; invoice writes append to `billing_invoice_events`.
 | `PUG_BILLING_PROVIDER` | `""` | unchanged |
 | `PUG_DODO_API_KEY`, `PUG_DODO_ENVIRONMENT`, `PUG_DODO_WEBHOOK_SECRET` | | unchanged |
 | `PUG_DODO_MANDATE_PRODUCT` | — | the one on-demand product every org authorizes against. **Replaces** `PUG_DODO_PRODUCT_STARTER/GROWTH/SCALE`. Absent ⇒ not purchasable, as a missing tier key is today |
-| `PUG_USAGE_RESCAN_DAYS` | `2` | now also the invoicing grace (§8.1). The invoice pass resolves it through the meter's own function (unset, 0 or negative → 2), never a raw read, but nothing makes the two CronJobs see the same value, so the pass logs the grace it ran with (§11) |
+| `coreusage.RescanDays` | 2 | a Go const: the meter's trailing window and the invoicing grace (§8.1). **Replaces** `PUG_USAGE_RESCAN_DAYS`, which each deployment read from its own env, so the meter and the invoicer could disagree |
 | `DeferUnderCents` | 500 | a Go const, placeholder: under it a close is `deferred` and carried forward (§8.7) |
 | `WaiveUnderCents` | 100 | a Go const, placeholder: under it a sweep writes the balance off instead of charging at a loss (§8.7); must stay at or above Dodo's 50¢ card minimum, which also clears the ~42¢ break-even |
 | `MaxDeferPeriods` | 12 | a Go const, placeholder: how many periods a balance may span before a close becomes a sweep (§8.7) |
 | `MaxChargeAttempts` | 4 | a Go const: charge attempts before a soft decline is final (§8.5); a new card or mandate, or `invoice retry`, reopens with the attempts left, and at least one |
-| `ChargeNoticeDays` | 3 | a Go const, placeholder: days between a natural close and its first charge, the notice a billing email will announce (§8.1); a close forced by a going mandate charges at once |
+| `ChargeNoticeDays` | 3 | a Go const, placeholder: days between a natural close and its first charge, the notice a billing email will announce (§8.1); a going mandate's `open` invoices are charged by a day before it ends (§7.3) |
 
 ## 14. Migrations 021 and 022
 
@@ -1017,7 +1036,7 @@ production has neither.
 
 No data migration and no backfill: production has billing off and every
 billing table empty. The three tier product keys go from any deployment that
-set them (gitops sets none today); the Dodo products behind them are retired
+set them (production sets none today); the Dodo products behind them are retired
 in Dodo's dashboard by hand.
 
 ## 15. Alternatives considered
@@ -1044,9 +1063,9 @@ And around the on-demand design:
    customer who added a card on the 28th is not billed for the 27 days before
    it. Cheap because usage is day-grain already.
 5. **Pug pins Dodo's `next_billing_date`** (§7.3) — the one trick that makes
-   the portal's cancellation land after the final charge instead of before it.
-   Verify it first; it is the difference between a one-day and a one-month
-   write-off on every cancellation.
+   the portal's cancellation land after the period's own charge instead of
+   before it, so the period a customer leaves in is charged whole, once, rather
+   than closed early.
 6. **A customer-set spend alert, later** — not a cap. Usage billing without a
    number the customer controls is what people fear about it; the meter
    already has the data and the estimate already exists. A notification, on
@@ -1088,10 +1107,12 @@ and the authz tests — each container package keeping `TestMain` and no
   nothing and block nothing; an unpriceable period holds the org; every period
   past the catch-up window is written off once as `waived` with a `dropped`
   event; a natural close not
-  charged before `ChargeNoticeDays` have passed, while a close forced by a
-  going mandate, `RemovePaymentMethod` and a card arriving for a deal charge at
-  once;
-  a cancellation landing inside the window pulling the charge forward; `void`
+  charged before `ChargeNoticeDays` have passed, a going mandate's `open`
+  invoices charged by a day before its end and a `failed` one keeping its retry
+  date, and `RemovePaymentMethod` and a card arriving for a deal charging at once;
+  a cancellation landing inside the window pulling the charge forward, and
+  nothing moved while no cancellation is scheduled, its end is unread or past
+  the window; `void`
   inside the window stopping the charge with no provider call; every row of §8.7's
   table: nothing to bill waived, under $5 deferred, a balance that tips the
   total over $5 carried and covered, a covered row paid with its carrier and
@@ -1134,22 +1155,33 @@ and the authz tests — each container package keeping `TestMain` and no
   charge POSTs exactly once against a 502 and a 429, sends whole cents and
   `metadata.invoice_id`, and maps only a 402 to a decline, keeping the code its
   body names. The provider fake cannot see the SDK's own retries.
-- **Cancellation** (§7.3) — `next_billing_date` pinned on activation and after
-  every invoice; the early close only when the mandate ends first;
-  `RemovePaymentMethod` refusing on any `open`, `charging`, `charged` or
-  `failed` invoice, on an unclosed previous period, and again on a repeat call
-  after `charged`, and counting a final invoice the sweep waived as settled.
-- **The invoicing pass** (§11) — `Unreadable`, `Ambiguous`, `dropped` and more
-  than ten gone mandates exit non-zero; ten gone mandates, lock contention and
-  billing off exit 0; a failing pass still emits its counters; an
-  `Undecodable` row is counted and never charged.
+- **Cancellation** (§7.3) — `next_billing_date` pinned by the first pass after
+  activation and at each anniversary, never again once the provider holds that
+  day at any time of day, never on a scheduled cancellation, and a refusal or a
+  date the provider did not keep counted `Unreadable`; the early close
+  once, a day before the end, only when the period's own close comes too
+  late, and never for a deal in force; `RemovePaymentMethod` refusing on a soft
+  decline, an ambiguous charge, a payment still processing, a held meter, an
+  unpriceable period, a pending retry or a balance deferred with no close to
+  sweep it, and again on a repeat call after `charged`, cancelling over a hard
+  decline, failing when the cancel does not take, closing a period still
+  inside its grace through the finalized days, never touching another org's
+  invoices, counting a final invoice the sweep waived as settled, and its last
+  days written off without `PAST_DUE`.
+- **The invoicing pass** (§11) — `Unreadable`, `Ambiguous`, `dropped`, `unpriceable` and more
+  than ten invoices written off for a gone mandate exit non-zero; ten of them,
+  lock contention and billing off exit 0; a failing pass still emits its
+  counters; unbilled usage counts an org on its latest closed period, including
+  one whose mandate ended or deal lapsed as that period began, and not one a
+  mandate or deal covered at any time since.
 - **Operator CLI** (§12) — the money flags keep when omitted and clear on `0`;
   a card pin or `--plan ''` force-clears them; `void` refuses `charging`,
   `charged`, `paid` and a covered row; `retry` works only from `uncollectible`.
 - **Migrations** (§14) — a raw zero-price custom insert is refused by
   `custom_needs_price`; `provider_product_id` still exists after 021.
 - **RPC freshness** — `GetUpcomingInvoice` carries the three usage states
-  through and never renders an unknown count as $0.
+  through and never renders an unknown count as $0; `ListInvoices` refuses a
+  row it cannot decode.
 - **Authz** — the registry and policy tests fail until `ResourceInvoice` and
   the three new procedures are entered, and `ListInvoices` and
   `RemovePaymentMethod` join `TestRoleGatedAdminOnlyRPCs`' admin-only list, the
@@ -1160,10 +1192,6 @@ and the authz tests — each container package keeping `TestMain` and no
 1. **Events arriving more than `grace` days after their `occur_time` are never
    billed.** They land in `usage_daily` (the dashboard sees them) but the
    invoice has closed. Errs in the customer's favour, at most their rate each.
-   If the meter and the pass run with different `PUG_USAGE_RESCAN_DAYS` (§11),
-   only events within the smaller value are sure to be billed: a shorter grace
-   closes while the meter still re-reads the period, and a shorter meter window
-   stops re-reading it before the close.
 2. **An erasure after invoicing credits nothing.** The invoice froze its count
    (§8.1). A credit note is a refund in Dodo's dashboard ($1 a time, §8.7) and
    `invoice void` — or a negative carry once §19.13 lands.
@@ -1181,14 +1209,16 @@ and the authz tests — each container package keeping `TestMain` and no
    still.** The period is anniversary-aligned; the invoice follows it by the
    grace, the charge follows the invoice by `ChargeNoticeDays` (§8.1), and
    `next_charge_at` says when the money moves.
-7. **`RemovePaymentMethod` can refuse.** A decline, an ambiguous charge, a
-   meter that has not reached the period or a previous period still inside its
-   grace leaves the mandate live and returns
+7. **`RemovePaymentMethod` can refuse.** A soft decline, an ambiguous charge, a
+   meter that has not reached the period (in the minutes after UTC midnight too,
+   until the meter's first pass of the day), a pending retry or a balance deferred
+   within the last day leaves the mandate live and returns
    `BILLING_FINAL_PERIOD_UNSETTLED`. The admin retries once the charge settles,
    or voids the invoice. Cancelling first would write the period off.
-8. **Cancellation write-off** (§7.3): at least a day of usage, a month if the
-   `next_billing_date` pin turns out unsupported — plus a carried balance under
-   $1, waived at the final sweep (§8.7).
+8. **Cancellation write-off** (§7.3): the last `grace` and a day or two of
+   usage before the mandate ends, a failed invoice whose retry falls after the
+   end, and all of a period whose cancellation is read only after its end — plus
+   a carried balance under $1, waived at the final sweep (§8.7).
 9. **A deferred balance is collected late**, up to a year after it was earned,
    and a customer who leaves mid-way pays it in one lump on the final invoice. The dashboard shows the balance the whole time.
 10. **A term change prices every day not yet invoiced**: the current period from
@@ -1201,7 +1231,8 @@ and the authz tests — each container package keeping `TestMain` and no
     or an anchor moving mid-period invoices a stub with a whole flat fee or card
     allowance, the card days either side of a deal inside one period each get
     their own allowance, and a card-pin comp is priced as it stands at the
-    period's end.
+    period's end. A card's early close (§7.3), and each retry of a refused
+    removal on a later day, is a stub with its own allowance too.
 12. **Deleting a project un-bills it.** Its `usage_daily` rows go with it, so a
     period not yet closed bills none of its events.
 13. **A deferred balance with no later close stays deferred.** Only a close
@@ -1226,14 +1257,15 @@ and the authz tests — each container package keeping `TestMain` and no
    changes, and §8.7's unknowns — the 0.5% on an on-demand
    charge, a fee on a decline, the fee's tax base, the mandate ceiling on a USD
    mandate), whether a decline answers the charge with a 402 at all and names its
-   card code under `code`, and what `cancelled_at` holds once a scheduled
+   card code under `code`, what a repeated `PATCH status=cancelled` answers (the
+   SDK retries it after a lost response), and what `cancelled_at` holds once a scheduled
    cancellation takes effect: it is set when the cancellation is requested, and a
    close stops billing at it, so a request date kept there leaves the days to the
    actual end unbilled; run a mandate → close → charge → `payment.succeeded` → portal
    cancel cycle end to end, and a $1.00 charge to read the fee Dodo actually
    takes off a small one.
-3. gitops: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the
-   invoice pass, the invoice one hourly. It sets no tier keys today.
+3. Deployment: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the
+   invoice pass, the invoice one hourly. Production sets no tier keys today.
 4. Flip `PUG_BILLING_ENABLED` when the dashboard side (`../app`: rate card,
    estimate, invoices, "Add payment method" replacing "Upgrade") has landed.
 5. `CLAUDE.md` pointers and the fold-in of this document into the three docs
@@ -1321,7 +1353,7 @@ Against the block model built on `feat/usage-billing` (revised 2026-09-15):
 | `rate_card{block_events, free_blocks, tiers{up_to_block, cents_per_block}}`, `custom_terms.block_rate_cents`, `lines{blocks, cents_per_block}` on the wire | per-event names throughout, `+ usage_cents`, `+ carried_cents`, `+ defer_under_cents`, `+ past_due_reason`, `INVOICE_STATUS_DEFERRED` (§9). None of the block fields reached `main`, so they are replaced, not reserved |
 | `unique (org_id, period_start)`; a payment settled on `metadata.invoice_id` alone; a `404` from `FetchSubscription` taken as corroboration | `unique (org_id, billed_from)`, each close starting at the last `billed_to` (§8.1); the payment's `subscription_id` checked; only a subscription read back non-live corroborates (§8.4) |
 | the payment's tax used only to check the amount | prices stated excluding tax (§3.2), a tax-inclusive mandate refused (§7.2), `tax_cents` on the invoice (§8.2) |
-| an `open` invoice's first attempt dated at its close, so the pass that closes it charges it | `ChargeNoticeDays` after the close, and at once only for a going mandate or a card arriving for a deal (§8.1) |
+| an `open` invoice's first attempt dated at its close, so the pass that closes it charges it | `ChargeNoticeDays` after the close; by a day before a going mandate ends, and at once for `RemovePaymentMethod` or a card arriving for a deal (§8.1) |
 
 ## 21. What goes
 
@@ -1455,14 +1487,14 @@ constraints break.
 10. **Dunning** (§8.5–§8.6). Soft and hard declines, the retry schedule,
     `uncollectible`, reopening on a new payment method or mandate, a mandate
     gone, and `PAST_DUE` with its `past_due_reason` read off the ledger.
-11. **Cancellation** (§7.3). Pinning `next_billing_date`, the early close, the
-    final close as a sweep, and `RemovePaymentMethod`'s charge-then-cancel
-    order, refusing while any invoice is unsettled or the previous period is
-    unclosed, and an invoice in its notice window charged at once when the
-    mandate is going.
+11. **Cancellation** (§7.3). Pinning `next_billing_date`, the early close,
+    every close of a going mandate as a sweep, and `RemovePaymentMethod`'s
+    charge-then-cancel order, refusing while any invoice is unsettled, and an
+    invoice in its notice window charged by a day before the mandate ends.
 12. **The invoicing pass** (§11). `cmd/cron/billing-invoice`,
-    `LockBillingInvoice`, exit codes and counters, depguard, `make build`, the
-    `cron-billing-invoice` image in the release matrix, and `.env.example`.
+    `LockBillingInvoice`, exit codes and counters, the unbilled-usage report,
+    depguard, `make build`, the `cron-billing-invoice` image in the release
+    matrix, and `.env.example`.
 13. **RPCs** (§9). `GetUpcomingInvoice`, `ListInvoices` and
     `RemovePaymentMethod`: proto, handlers, authz registry entries,
     `ResourceInvoice` and reasons.
@@ -1475,5 +1507,5 @@ constraints break.
 
 Pull requests follow the seams: 2–5 for pricing and mandates, 6–11 for the
 ledger, 12–15 for the pass, the surface and the docs, and 16 on its own.
-Outside this repo: gitops (§18.3), the dashboard in `../app` (§18.4), and the
+Outside this repo: the deployment (§18.3), the dashboard in `../app` (§18.4), and the
 Dodo test-mode run (§18.2), which gates turning billing on, not merging.

@@ -430,8 +430,8 @@ var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live s
 // reported as a skip, or a pass counts neither an apply nor a finding.
 var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be applied")
 
-// applySubscription is the one writer behind all three paths — webhook,
-// reconcile and confirm — so they cannot disagree about what "newer" means. 0
+// applySubscription is the one writer behind every path — webhook, reconcile,
+// confirm, the pin and a removal — so they cannot disagree about what "newer" means. 0
 // applied is the CAS refusing an older read. The org lock is what makes the card
 // read and the write one step; a concurrent `billing clear` has nothing to
 // strand, since the mandate resolves nothing from the org's row.

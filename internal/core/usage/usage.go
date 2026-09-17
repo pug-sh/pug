@@ -241,3 +241,12 @@ func CeilDayUTC(t time.Time) time.Time {
 	}
 	return day.AddDate(0, 0, 1)
 }
+
+const (
+	// Retention is a year of day cells plus 25 days of slack.
+	Retention = 390 * 24 * time.Hour
+
+	// RescanDays is the meter's trailing window and the invoicing grace: a constant,
+	// so the two cannot disagree.
+	RescanDays = 2
+)

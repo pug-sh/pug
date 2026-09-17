@@ -59,7 +59,7 @@ func (s *Service) SettleCharges(ctx context.Context, now time.Time) (SettleRepor
 	if !s.billingEnabled {
 		return r, nil
 	}
-	rows, err := dbread.New(s.pgW).ListBillingInvoicesToSettle(ctx)
+	rows, err := dbread.New(s.pgW).ListBillingInvoicesToSettle(ctx, "")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list the invoices to settle", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -95,7 +95,7 @@ func (s *Service) SettleCharges(ctx context.Context, now time.Time) (SettleRepor
 		if inv.Status == string(InvoiceCharging) {
 			err = s.settleCharging(ctx, inv, now, &r)
 		} else {
-			err = s.pollCharged(ctx, inv, now, &r)
+			err = s.pollCharged(ctx, inv, now, ActorInvoicePass, &r)
 		}
 		if err != nil && firstErr == nil {
 			firstErr = err
@@ -214,18 +214,20 @@ func (s *Service) reopenCharge(ctx context.Context, inv dbread.ListBillingInvoic
 	return err
 }
 
-// pollCharged asks what became of a charge the provider accepted, for a deployment
-// its webhook never reaches.
-func (s *Service) pollCharged(ctx context.Context, inv dbread.ListBillingInvoicesToSettleRow, now time.Time, r *SettleReport) error {
+// pollCharged asks what became of a charge the provider accepted, without waiting on
+// its webhook.
+func (s *Service) pollCharged(
+	ctx context.Context, inv dbread.ListBillingInvoicesToSettleRow, now time.Time, actor string, r *SettleReport,
+) error {
 	payment, ok := s.fetchPayment(ctx, inv, inv.ProviderPaymentID.String, r)
 	if !ok {
 		return nil
 	}
 	switch payment.Status {
 	case PaymentSucceeded:
-		return s.settlePaid(ctx, inv.OrgID, inv.ID, payment, now, ActorInvoicePass, r)
+		return s.settlePaid(ctx, inv.OrgID, inv.ID, payment, now, actor, r)
 	case PaymentFailed:
-		return s.settleFailed(ctx, inv.OrgID, inv.ID, InvoiceCharged, payment, now, ActorInvoicePass, r)
+		return s.settleFailed(ctx, inv.OrgID, inv.ID, InvoiceCharged, payment, now, actor, r)
 	case PaymentProcessing:
 	}
 	if inv.EnteredAt.Time.Before(now.Add(-staleChargeAfter)) {

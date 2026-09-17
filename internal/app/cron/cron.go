@@ -46,4 +46,5 @@ type Job struct {
 var (
 	JobUsage            = Job{Key: LockUsage, Name: "usage"}
 	JobBillingReconcile = Job{Key: LockBillingReconcile, Name: "billing_reconcile"}
+	JobBillingInvoice   = Job{Key: LockBillingInvoice, Name: "billing_invoice"}
 )
