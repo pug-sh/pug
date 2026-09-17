@@ -11,8 +11,9 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// UnbilledUsage counts the orgs the close leaves out whose latest closed period went
-// over the current card's allowance, and logs what that usage would have cost on it.
+// UnbilledUsage counts the orgs whose latest closed period went over the current card's
+// allowance with no mandate or deal covering it, and logs what that usage would have
+// cost on the card.
 func (s *Service) UnbilledUsage(ctx context.Context, now time.Time, grace time.Duration) (int, error) {
 	if !s.billingEnabled {
 		return 0, nil

@@ -873,10 +873,13 @@ becomes the evaluation window. Not built in this slice; the design keeps
 comes.
 
 Until then the invoicing pass's last stage reports **unbilled usage**: each org
-the close leaves out (§8.1) whose latest closed period went over the current
-card's free allowance, counted again on every pass and logged priced on that
-card. An org whose mandate ended is not among them, since the close still
-considers it. That is the number that says how much the free tier is costing.
+whose latest closed period went over the current card's free allowance and that
+no mandate or deal has covered at any time since that period began, counted
+again on every pass and logged priced on that card. An org whose mandate ended
+or whose deal lapsed is among them once a whole closed period falls after the
+end, since the close considers it but bills none of those days; the period the
+end fell in was billed in part and is not. That is the number that says how much
+the free tier is costing.
 
 ## 11. The invoicing pass
 
@@ -1172,8 +1175,9 @@ and the authz tests — each container package keeping `TestMain` and no
 - **The invoicing pass** (§11) — `Unreadable`, `Ambiguous`, `dropped`, `unpriceable` and more
   than ten invoices written off for a gone mandate exit non-zero; ten of them,
   lock contention and billing off exit 0; a failing pass still emits its
-  counters; unbilled usage counts only an org the close leaves out, on its
-  latest closed period.
+  counters; unbilled usage counts an org on its latest closed period, including
+  one whose mandate ended or deal lapsed as that period began, and not one a
+  mandate or deal covered at any time since.
 - **Operator CLI** (§12) — the money flags keep when omitted and clear on `0`;
   a card pin or `--plan ''` force-clears them; `void` refuses `charging`,
   `charged`, `paid` and a covered row; `retry` works only from `uncollectible`.
@@ -1269,7 +1273,10 @@ and the authz tests — each container package keeping `TestMain` and no
    cancel cycle end to end, and a $1.00 charge to read the fee Dodo actually
    takes off a small one.
 3. Deployment: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the
-   invoice pass, the invoice one hourly. Production sets no tier keys today.
+   invoice pass, the invoice one hourly. Production sets no tier keys today. One
+   explicit `PUG_USAGE_RESCAN_DAYS` goes on `cron-usage`, the invoice CronJob
+   and the server, whose `RemovePaymentMethod` closes by the same grace:
+   nothing else keeps them equal (§17.1).
 4. Flip `PUG_BILLING_ENABLED` when the dashboard side (`../app`: rate card,
    estimate, invoices, "Add payment method" replacing "Upgrade") has landed.
 5. `CLAUDE.md` pointers and the fold-in of this document into the three docs

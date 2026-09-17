@@ -665,15 +665,19 @@ func (q *Queries) ListStrandedBillingWebhookDeliveries(ctx context.Context, stal
 const listUnbilledUsage = `-- name: ListUnbilledUsage :many
 select p.event_count
 from (
-  select distinct on (org_id) org_id, event_count
+  select distinct on (org_id) org_id, event_count, period_start
   from usage_periods
   where period_end <= $1
   order by org_id, period_start desc
 ) p
 left join billing_entitlements e on e.org_id = p.org_id
 where p.event_count > $2::bigint
-  and e.plan_slug is distinct from 'custom'
-  and not exists (select 1 from billing_subscriptions s where s.org_id = p.org_id)
+  and (e.plan_slug is distinct from 'custom' or e.contract_ends_at <= p.period_start)
+  and not exists (
+    select 1 from billing_subscriptions s
+    where s.org_id = p.org_id
+      and (s.status in ('active', 'past_due') or s.ended_at > p.period_start)
+  )
 `
 
 type ListUnbilledUsageParams struct {
@@ -681,8 +685,9 @@ type ListUnbilledUsageParams struct {
 	FreeEvents   int64
 }
 
-// What the free tier costs: every org the close leaves out, with its latest closed
-// period's count when that is over the allowance.
+// What the free tier costs: every org's latest closed period over the allowance that
+// no mandate or deal has covered since it began. An ended one still counts as cover
+// for the period it ended in, which the close billed in part.
 func (q *Queries) ListUnbilledUsage(ctx context.Context, arg ListUnbilledUsageParams) ([]int64, error) {
 	rows, err := q.db.Query(ctx, listUnbilledUsage, arg.ClosedBefore, arg.FreeEvents)
 	if err != nil {

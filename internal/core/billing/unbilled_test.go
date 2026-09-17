@@ -26,8 +26,8 @@ func seedPeriodCounts(t *testing.T, f *fixture, previous, last int64) {
 	}
 }
 
-// Unbilled usage is an org the close leaves out, judged on its latest closed period.
-func TestUnbilledUsageCountsOnlyOrgsTheCloseLeavesOut(t *testing.T) {
+// Unbilled usage is an org no mandate or deal covered, judged on its latest closed period.
+func TestUnbilledUsageCountsOnlyUsageNothingCovered(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -43,11 +43,20 @@ func TestUnbilledUsageCountsOnlyOrgsTheCloseLeavesOut(t *testing.T) {
 		"at its allowance":             {last: free, now: closeNow},
 		"over only in an older period": {previous: free + 1, now: closeNow},
 		"over inside its grace":        {last: free + 1, now: periodEnd.Add(grace).Add(-time.Hour)},
-		"with a mandate that ended": {last: free + 1, now: closeNow, setup: func(t *testing.T, f *fixture) {
-			seedMandate(t, f, day(time.June, 1), day(time.July, 1))
+		"with a mandate that ended as it began": {last: free + 1, now: closeNow, want: 1, setup: func(t *testing.T, f *fixture) {
+			seedMandate(t, f, day(time.June, 1), periodStart)
 		}},
-		"on a lapsed deal": {last: free + 1, now: closeNow, setup: func(t *testing.T, f *fixture) {
-			setDealTerms(t, f, day(time.June, 1), day(time.July, 1))
+		"with a mandate that ended inside it": {last: free + 1, now: closeNow, setup: func(t *testing.T, f *fixture) {
+			seedMandate(t, f, day(time.June, 1), day(time.August, 20))
+		}},
+		"with a live mandate": {last: free + 1, now: closeNow, setup: func(t *testing.T, f *fixture) {
+			seedMandate(t, f, day(time.June, 1), time.Time{})
+		}},
+		"on a deal that lapsed as it began": {last: free + 1, now: closeNow, want: 1, setup: func(t *testing.T, f *fixture) {
+			setDealTerms(t, f, day(time.June, 1), periodStart)
+		}},
+		"on a deal that lapsed inside it": {last: free + 1, now: closeNow, setup: func(t *testing.T, f *fixture) {
+			setDealTerms(t, f, day(time.June, 1), day(time.August, 20))
 		}},
 		"with billing off": {last: free + 1, now: closeNow, billingOff: true},
 	} {

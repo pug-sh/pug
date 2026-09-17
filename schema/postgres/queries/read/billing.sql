@@ -99,19 +99,24 @@ where e.plan_slug = 'custom'
 order by o.id;
 
 -- name: ListUnbilledUsage :many
--- What the free tier costs: every org the close leaves out, with its latest closed
--- period's count when that is over the allowance.
+-- What the free tier costs: every org's latest closed period over the allowance that
+-- no mandate or deal has covered since it began. An ended one still counts as cover
+-- for the period it ended in, which the close billed in part.
 select p.event_count
 from (
-  select distinct on (org_id) org_id, event_count
+  select distinct on (org_id) org_id, event_count, period_start
   from usage_periods
   where period_end <= @closed_before
   order by org_id, period_start desc
 ) p
 left join billing_entitlements e on e.org_id = p.org_id
 where p.event_count > @free_events::bigint
-  and e.plan_slug is distinct from 'custom'
-  and not exists (select 1 from billing_subscriptions s where s.org_id = p.org_id);
+  and (e.plan_slug is distinct from 'custom' or e.contract_ends_at <= p.period_start)
+  and not exists (
+    select 1 from billing_subscriptions s
+    where s.org_id = p.org_id
+      and (s.status in ('active', 'past_due') or s.ended_at > p.period_start)
+  );
 
 -- name: GetBillingInvoiceBilledTo :one
 -- Where the org's billing has reached: each close starts here, so no day is
