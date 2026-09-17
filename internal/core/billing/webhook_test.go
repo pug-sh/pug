@@ -1,6 +1,7 @@
 package billing_test
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,10 +45,14 @@ type fakeProvider struct {
 	listedSince time.Time
 	fetched     []string
 	// pins and cancels are every write to a mandate, each left on event as the provider
-	// would hold it; pinErr refuses a pin.
-	pins    []time.Time
-	pinErr  error
-	cancels []string
+	// would hold it; pinErr and cancelErr refuse one, pinShift moves the date the provider
+	// keeps, and a set cancelStatus is the status a cancel leaves.
+	pins         []time.Time
+	pinErr       error
+	pinShift     time.Duration
+	cancels      []string
+	cancelErr    error
+	cancelStatus corebilling.SubStatus
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -125,13 +130,17 @@ func (f *fakeProvider) SetNextBillingDate(_ context.Context, _ string, at time.T
 		return corebilling.SubscriptionEvent{}, f.pinErr
 	}
 	f.pins = append(f.pins, at)
-	f.event.CurrentPeriodEnd = at
+	f.event.CurrentPeriodEnd = at.Add(f.pinShift)
 	return f.event, nil
 }
 
 func (f *fakeProvider) CancelSubscription(_ context.Context, id string) (corebilling.SubscriptionEvent, error) {
+	if f.cancelErr != nil {
+		return corebilling.SubscriptionEvent{}, f.cancelErr
+	}
 	f.cancels = append(f.cancels, id)
-	f.event.Status, f.event.ProviderStatus = corebilling.SubStatusCancelled, string(corebilling.SubStatusCancelled)
+	status := cmp.Or(f.cancelStatus, corebilling.SubStatusCancelled)
+	f.event.Status, f.event.ProviderStatus = status, string(status)
 	return f.event, nil
 }
 

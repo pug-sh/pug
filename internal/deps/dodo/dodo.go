@@ -187,7 +187,7 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 	return c.eventFromSDK(sub), nil
 }
 
-// SetNextBillingDate is only a PATCH, so the SDK's retry is safe here.
+// Both mandate writes set absolute values, so the SDK's retries cannot compound them.
 func (c *Client) SetNextBillingDate(
 	ctx context.Context, providerSubID string, at time.Time,
 ) (corebilling.SubscriptionEvent, error) {

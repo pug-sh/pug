@@ -9,7 +9,7 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
-// removeNow is two days into the period after the fixture's periodEnd.
+// removeNow is two days after closeNow.
 var removeNow = day(time.September, 14).Add(6 * time.Hour)
 
 func pinNextCharges(t *testing.T, svc *corebilling.Service, now time.Time) corebilling.PinReport {
@@ -60,7 +60,7 @@ func removePaymentMethod(t *testing.T, f *fixture) error {
 }
 
 // The pin sits a day past the current period's charge, is not sent again once the
-// provider holds it, and moves on at the anniversary.
+// provider holds that day at a time of its own, and moves on at the anniversary.
 func TestPinFollowsTheCurrentPeriodsCharge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -68,6 +68,7 @@ func TestPinFollowsTheCurrentPeriodsCharge(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	subID := seedMandate(t, f, periodStart, time.Time{})
 	provider.event = subEvent(f.orgID, subID, mandateProduct, corebilling.SubStatusActive)
+	provider.pinShift = 6 * time.Hour
 
 	if r := pinNextCharges(t, f.svc, closeNow); r != (corebilling.PinReport{Pinned: 1}) ||
 		len(provider.pins) != 1 || !provider.pins[0].Equal(day(time.October, 16)) {
@@ -77,7 +78,7 @@ func TestPinFollowsTheCurrentPeriodsCharge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if !ent.SubPeriodEnd.Equal(day(time.October, 16)) {
+	if !ent.SubPeriodEnd.Equal(day(time.October, 16).Add(provider.pinShift)) {
 		t.Errorf("stored next billing date = %s, want the provider's answer to the pin", ent.SubPeriodEnd)
 	}
 	if r := pinNextCharges(t, f.svc, closeNow.Add(time.Hour)); r != (corebilling.PinReport{}) || len(provider.pins) != 1 {
@@ -89,7 +90,7 @@ func TestPinFollowsTheCurrentPeriodsCharge(t *testing.T) {
 }
 
 // A scheduled cancellation keeps its date, or it would never arrive; a pin the provider
-// refuses is unreadable.
+// refuses, or keeps on another day, is unreadable.
 func TestPinLeavesAScheduledCancellationAndCountsARefusal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -109,6 +110,10 @@ func TestPinLeavesAScheduledCancellationAndCountsARefusal(t *testing.T) {
 	provider.pinErr = errors.New("422 Unprocessable Entity")
 	if r := pinNextCharges(t, f.svc, closeNow); r != (corebilling.PinReport{Unreadable: 1}) {
 		t.Errorf("report = %+v, want the refusal unreadable", r)
+	}
+	provider.pinErr, provider.pinShift = nil, -24*time.Hour
+	if r := pinNextCharges(t, f.svc, closeNow); r != (corebilling.PinReport{Unreadable: 1}) {
+		t.Errorf("report = %+v, want a date the provider did not keep unreadable", r)
 	}
 }
 
@@ -155,7 +160,7 @@ func TestCloseBillsAGoingMandateBeforeItEnds(t *testing.T) {
 }
 
 // A mandate pinned past its period's close is caught by that close, which keeps its
-// notice window up to a day before the end; the next period's final days close after.
+// notice window up to a day before the end; the next period's first days close after.
 func TestCloseChargesAMandatePinnedPastItsPeriodBeforeItEnds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -183,15 +188,16 @@ func TestCloseChargesAMandatePinnedPastItsPeriodBeforeItEnds(t *testing.T) {
 	}
 }
 
-// With no cancellation scheduled, or with its end unread, a close waits out its notice
-// window and nothing closes ahead of the period.
-func TestCloseKeepsItsNoticeWindowWithNoCancellationDated(t *testing.T) {
+// With no cancellation scheduled, its end unread or past the notice window, a close waits
+// out its notice window and nothing closes ahead of the period.
+func TestCloseKeepsItsNoticeWindowUnlessACancellationCutsItShort(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	for name, set := range map[string]string{
 		"no cancellation": "cancel_at_period_end = false, current_period_end = '2026-09-16'",
 		"an unread end":   "cancel_at_period_end = true, current_period_end = null",
+		"a later end":     "cancel_at_period_end = true, current_period_end = '2026-10-16'",
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
@@ -217,7 +223,7 @@ func TestCloseKeepsItsNoticeWindowWithNoCancellationDated(t *testing.T) {
 }
 
 // A cancellation landing inside an invoice's notice window brings its charge to a day
-// before the end, and leaves one due sooner alone.
+// before the end, and leaves one due sooner, or a failed one's retry, alone.
 func TestACancellationInsideTheNoticeWindowBringsTheChargeForward(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -226,6 +232,8 @@ func TestACancellationInsideTheNoticeWindowBringsTheChargeForward(t *testing.T) 
 	seedMandate(t, f, periodStart, time.Time{})
 	waiting := seedDue(t, f, periodStart, 10_000, day(time.September, 15))
 	sooner := seedDue(t, f, day(time.July, 10), 10_000, day(time.September, 13))
+	retrying := seedDue(t, f, day(time.June, 10), 10_000, day(time.September, 20))
+	updateInvoice(t, f, retrying, "status = 'failed', attempts = 1")
 	scheduleCancel(t, f, day(time.September, 14).Add(12*time.Hour))
 
 	closePeriods(t, f, closeNow)
@@ -235,6 +243,9 @@ func TestACancellationInsideTheNoticeWindowBringsTheChargeForward(t *testing.T) 
 	}
 	if state := chargeStateOf(t, f, sooner); state.nextAttemptAt == nil || !state.nextAttemptAt.Equal(day(time.September, 13)) {
 		t.Errorf("sooner = %+v, want its own date kept", state)
+	}
+	if state := chargeStateOf(t, f, retrying); state.nextAttemptAt == nil || !state.nextAttemptAt.Equal(day(time.September, 20)) {
+		t.Errorf("retrying = %+v, want its retry date kept", state)
 	}
 }
 
@@ -449,5 +460,124 @@ func TestRemovePaymentMethodNeedsALiveMandateAndAnActor(t *testing.T) {
 	}
 	if err := f.svc.RemovePaymentMethod(t.Context(), f.orgID, " ", removeNow, grace); !errors.Is(err, corebilling.ErrActorRequired) {
 		t.Errorf("with no actor = %v, want ErrActorRequired", err)
+	}
+}
+
+// A cancel the provider refuses, or answers with the mandate still live, fails the removal
+// and leaves the payment method in place.
+func TestRemovePaymentMethodFailsWhenTheCancelDoesNotTake(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for name, setup := range map[string]func(*fakeProvider){
+		"a refusal":            func(p *fakeProvider) { p.cancelErr = errors.New("503 Service Unavailable") },
+		"an answer still live": func(p *fakeProvider) { p.cancelStatus = corebilling.SubStatusActive },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, provider, _ := removalFixture(t)
+			payOnCharge(provider, corebilling.PaymentSucceeded)
+			setup(provider)
+			if err := removePaymentMethod(t, f); err == nil || errors.Is(err, corebilling.ErrFinalPeriodUnsettled) {
+				t.Fatalf("RemovePaymentMethod = %v, want the cancel's failure", err)
+			}
+			if !chargeable(t, f) {
+				t.Error("not chargeable, want the mandate left live")
+			}
+		})
+	}
+}
+
+// A hard decline is final whether or not the mandate stays, so the removal cancels over it.
+func TestRemovePaymentMethodCancelsOverAHardDecline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider, subID := removalFixture(t)
+	provider.onCharge = func(corebilling.ChargeInput) (string, error) {
+		return "", &corebilling.ChargeError{Code: "DO_NOT_HONOR", Message: "do not honor", Declined: true}
+	}
+	if err := removePaymentMethod(t, f); err != nil {
+		t.Fatalf("RemovePaymentMethod: %v", err)
+	}
+	if got := invoices(t, f); len(got) != 1 || got[0].status != string(corebilling.InvoiceUncollectible) ||
+		!slices.Equal(provider.cancels, []string{subID}) {
+		t.Errorf("invoices = %s, cancels = %v, want the invoice uncollectible and the mandate cancelled", windows(got), provider.cancels)
+	}
+}
+
+// Right after the pass deferred a card's last period the removal has no close to sweep the
+// balance into, so it waits a day for one.
+func TestRemovePaymentMethodWaitsForADeferredBalanceToBeSwept(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	seedDaily(t, f, seedProjectFor(t, f), periodStart, periodStart.AddDate(0, 0, 1), 175_000)
+	subID := seedMandate(t, f, periodStart, time.Time{})
+	provider.event = subEvent(f.orgID, subID, mandateProduct, corebilling.SubStatusActive)
+	stampMeter(t, f, closeNow)
+	if r := closePeriods(t, f, closeNow); r != (corebilling.CloseReport{Deferred: 1}) {
+		t.Fatalf("report = %+v, want the period deferred", r)
+	}
+	payOnCharge(provider, corebilling.PaymentSucceeded)
+
+	at := closeNow.Add(time.Hour)
+	stampMeter(t, f, at)
+	if err := f.svc.RemovePaymentMethod(t.Context(), f.orgID, actor, at, grace); !errors.Is(err, corebilling.ErrFinalPeriodUnsettled) {
+		t.Fatalf("RemovePaymentMethod = %v, want ErrFinalPeriodUnsettled", err)
+	}
+	at = at.AddDate(0, 0, 1)
+	stampMeter(t, f, at)
+	if err := f.svc.RemovePaymentMethod(t.Context(), f.orgID, actor, at, grace); err != nil {
+		t.Fatalf("a day later: RemovePaymentMethod: %v", err)
+	}
+	if len(provider.charges) != 1 || provider.charges[0].AmountCents != 300 || !slices.Equal(provider.cancels, []string{subID}) {
+		t.Errorf("charges = %+v, cancels = %v, want the $3 balance charged, then the mandate cancelled", provider.charges, provider.cancels)
+	}
+}
+
+// The days a removal leaves close once the mandate is gone and are written off, which does
+// not put the org past due.
+func TestARemovalsLastDaysAreWrittenOffWithoutPastDue(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider, _ := removalFixture(t)
+	payOnCharge(provider, corebilling.PaymentSucceeded)
+	if err := removePaymentMethod(t, f); err != nil {
+		t.Fatalf("RemovePaymentMethod: %v", err)
+	}
+	at := day(time.October, 12).Add(6 * time.Hour)
+	stampMeter(t, f, at)
+	closePeriods(t, f, at)
+	at = at.AddDate(0, 0, corebilling.ChargeNoticeDays)
+	if r := chargeDue(t, f.svc, at); r != (corebilling.ChargeReport{MandateGone: 1}) {
+		t.Fatalf("report = %+v, want the last days written off", r)
+	}
+	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, at)
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Status == corebilling.StatusPastDue {
+		t.Error("past due over a gone mandate's write-off")
+	}
+}
+
+// A deal's days wait for a card anyway, so removing its card closes none of them early and
+// its period pays one fee.
+func TestRemovingADealsCardClosesItsPeriodOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, _, _ := removalFixture(t)
+	setDealTerms(t, f, periodEnd, time.Time{})
+	if err := removePaymentMethod(t, f); err != nil {
+		t.Fatalf("RemovePaymentMethod: %v", err)
+	}
+	at := day(time.October, 12).Add(6 * time.Hour)
+	stampMeter(t, f, at)
+	closePeriods(t, f, at)
+	if got := invoices(t, f); len(got) != 1 || !got[0].billedFrom.Equal(periodEnd) || !got[0].billedTo.Equal(day(time.October, 10)) {
+		t.Errorf("invoices = %s, want [09-10, 10-10) closed once", windows(got))
 	}
 }

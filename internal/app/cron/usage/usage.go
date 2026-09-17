@@ -2,8 +2,8 @@
 // project per day in ClickHouse and stores the totals in Postgres, then returns.
 // Scheduling is the deployment's job (a k8s CronJob), not this process's.
 //
-// Metering is optional: without it GetUsage answers with an absent
-// usage_computed_at rather than a wrong count, and nothing else degrades.
+// Metering is optional with billing off: without it GetUsage answers with an absent
+// usage_computed_at rather than a wrong count. With billing on, nothing is invoiced.
 package usage
 
 import (

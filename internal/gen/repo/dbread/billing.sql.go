@@ -162,13 +162,15 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 const hasDunningBillingInvoice = `-- name: HasDunningBillingInvoice :one
 select exists (
   select 1 from billing_invoices
-  where org_id = $1 and (status in ('failed', 'uncollectible')
-    or (status in ('open', 'charging', 'charged') and failed_at is not null))
+  where org_id = $1 and last_error_code <> 'mandate_gone'
+    and (status in ('failed', 'uncollectible')
+      or (status in ('open', 'charging', 'charged') and failed_at is not null))
 )
 `
 
 // What makes an org PAST_DUE: an invoice that failed and is not yet paid, so a retry
-// in flight keeps it. Never a deferred row: nothing was asked of the customer.
+// in flight keeps it. Never a deferred row or a gone mandate's write-off: neither is
+// a declined card.
 func (q *Queries) HasDunningBillingInvoice(ctx context.Context, orgID string) (bool, error) {
 	row := q.db.QueryRow(ctx, hasDunningBillingInvoice, orgID)
 	var exists bool
@@ -179,12 +181,13 @@ func (q *Queries) HasDunningBillingInvoice(ctx context.Context, orgID string) (b
 const hasUnsettledBillingInvoice = `-- name: HasUnsettledBillingInvoice :one
 select exists (
   select 1 from billing_invoices
-  where org_id = $1 and status in ('open', 'charging', 'charged', 'failed')
+  where org_id = $1 and (status in ('open', 'charging', 'charged', 'failed')
+    or (status = 'deferred' and covered_by is null and plan_slug <> 'custom'))
 )
 `
 
-// What keeps a mandate from being removed: a charge the provider has not answered
-// for, or one still owed.
+// What keeps a mandate from being removed: a charge still to make, retry or hear
+// back on, or a card's deferred balance no close has swept yet.
 func (q *Queries) HasUnsettledBillingInvoice(ctx context.Context, orgID string) (bool, error) {
 	row := q.db.QueryRow(ctx, hasUnsettledBillingInvoice, orgID)
 	var exists bool

@@ -106,8 +106,8 @@ type closeKind int
 
 const (
 	closeDue closeKind = iota
-	// closeFinal sweeps: with no live mandate and no deal in force, every close
-	// does, older periods a catch-up closes included.
+	// closeFinal sweeps: with no live mandate and no deal in force, or while a
+	// mandate is going, every close does, older periods a catch-up closes included.
 	closeFinal
 	// closeDropped writes off a period that left the catch-up window.
 	closeDropped
@@ -142,7 +142,8 @@ func (s *Service) ClosePeriods(ctx context.Context, now time.Time, grace time.Du
 }
 
 // closeOrg invoices the org's due periods. cutoff is the last instant a going mandate can
-// be charged, read off a scheduled cancellation when zero; while set, closes sweep and charge by it.
+// be charged, read off a scheduled cancellation when zero; while set, closes sweep and charge
+// by it, and the days finalized before it close early.
 func (s *Service) closeOrg(
 	ctx context.Context, orgID string, orgCreate, now time.Time, grace time.Duration, cutoff time.Time, actor string,
 	r *CloseReport,
@@ -194,11 +195,12 @@ func (s *Service) closeOrg(
 		closes = append(closes, c)
 	}
 	if !cutoff.IsZero() {
-		// The days the meter has finalized before the cutoff, unless their period's own
-		// close comes in time to charge them.
+		// The days the meter has finalized before the cutoff, unless their period closes in
+		// time on its own; never a deal's, which waits for a card and would pay its fee twice.
 		through := coreusage.FloorDayUTC(cutoff.Add(-grace))
 		start, end := coreusage.PeriodFor(through.Add(-time.Nanosecond), anchor)
-		if !now.Before(through.Add(grace)) && cutoff.Before(end.Add(grace)) {
+		_, deal := rec.Terms()
+		if !now.Before(through.Add(grace)) && through.Before(end) && (!deal || contractLapsed(rec, through)) {
 			closes = append(closes, closing{period: period{start, end}, to: through, kind: closeFinal, chargeAt: chargeAt})
 		}
 	}
@@ -213,7 +215,7 @@ func (s *Service) closeOrg(
 					slog.Time("usage_computed_at", stamp.Time))
 				return nil
 			}
-			inserted, err := s.closeSegment(ctx, orgID, c, seg, stamp.Time, now, actor, r)
+			inserted, err := s.closeSegment(ctx, orgID, c, seg, stamp.Time, actor, r)
 			if err != nil || !inserted {
 				return err
 			}
@@ -297,7 +299,7 @@ func cardSegments(orgCreate time.Time, rec Record, subs []Subscription, from, to
 }
 
 func (s *Service) closeSegment(
-	ctx context.Context, orgID string, c closing, seg segment, stamp, now time.Time, actor string, r *CloseReport,
+	ctx context.Context, orgID string, c closing, seg segment, stamp time.Time, actor string, r *CloseReport,
 ) (bool, error) {
 	var events int64
 	for _, d := range seg.days {

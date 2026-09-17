@@ -3,8 +3,8 @@ package billing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 
@@ -28,7 +28,8 @@ var (
 )
 
 // RemovePaymentMethod is pug's own cancellation, in the order the portal cannot promise:
-// close and charge every day the meter has finalized, and cancel once every charge settled.
+// close and charge every day the meter has finalized, and refuse to cancel until every
+// charge has settled.
 func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, now time.Time, grace time.Duration) error {
 	if !s.billingEnabled || !s.payments.configured() {
 		return ErrNoProvider
@@ -36,12 +37,11 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 	if strings.TrimSpace(actor) == "" {
 		return ErrActorRequired
 	}
-	subs, _, err := s.subscriptionsOf(ctx, orgID)
+	mandate, err := s.liveSubscription(ctx, orgID)
 	if err != nil {
 		return err
 	}
-	live := slices.IndexFunc(subs, func(sub Subscription) bool { return sub.OnDemand && sub.Status.Live() })
-	if live < 0 {
+	if mandate == nil || !mandate.OnDemand {
 		return ErrNoMandate
 	}
 	orgCreate, err := orgCreateTime(ctx, s.write(), orgID)
@@ -84,7 +84,7 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 			return err
 		}
 	}
-	// The ledger rather than the reports: a retry of this call closes and charges nothing.
+	// The ledger rather than the reports: a retry of this call may close and charge nothing.
 	unsettled, err := read.HasUnsettledBillingInvoice(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to read the invoices a removal waits on", slogx.Error(err), slog.String("org_id", orgID))
@@ -97,8 +97,11 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 		return ErrFinalPeriodUnsettled
 	}
 
-	provider, mandate := s.payments.Provider, subs[live]
+	provider := s.payments.Provider
 	event, err := provider.CancelSubscription(ctx, mandate.ProviderSubID)
+	if err == nil && event.Status.Live() {
+		err = fmt.Errorf("billing: subscription %s still reads %s once cancelled", mandate.ProviderSubID, event.Status)
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to cancel a mandate", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", mandate.ProviderSubID))
@@ -106,7 +109,9 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 		return err
 	}
 	// The cancellation stands either way; the webhook and reconcile mirror it too.
-	if _, err := s.applySubscription(ctx, provider, orgID, event, now, actor); err != nil {
+	ctx, cancel := recording(ctx)
+	defer cancel()
+	if applied, err := s.applySubscription(ctx, provider, orgID, event, now, actor); err != nil || applied == 0 {
 		slog.WarnContext(ctx, "a removed payment method is not mirrored yet", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", mandate.ProviderSubID))
 	}
@@ -120,8 +125,9 @@ type PinReport struct {
 	Unreadable int
 }
 
-// PinNextCharges moves each live mandate's next billing date to a day after its current
-// period's charge, which is where a cancellation from the provider's portal lands.
+// PinNextCharges moves the next billing date of each live mandate with no cancellation
+// scheduled to a day after its current period's charge, which is where a cancellation
+// from the provider's portal lands.
 func (s *Service) PinNextCharges(ctx context.Context, now time.Time, grace time.Duration) (PinReport, error) {
 	var r PinReport
 	if !s.billingEnabled || !s.payments.configured() {
@@ -141,10 +147,15 @@ func (s *Service) PinNextCharges(ctx context.Context, now time.Time, grace time.
 		_, end := coreusage.PeriodFor(now, coreusage.AnchorDay(row.OrgCreateTime.Time, postgres.Int2ToInt(row.AnchorDay)))
 		want := end.Add(grace).AddDate(0, 0, ChargeNoticeDays).Add(cancelMargin)
 		// At day grain: the provider may keep a time of day of its own.
-		if coreusage.FloorDayUTC(row.CurrentPeriodEnd.Time).Equal(coreusage.FloorDayUTC(want)) {
+		wantDay := coreusage.FloorDayUTC(want)
+		if coreusage.FloorDayUTC(row.CurrentPeriodEnd.Time).Equal(wantDay) {
 			continue
 		}
 		event, err := provider.SetNextBillingDate(ctx, row.ProviderSubID, want)
+		if err == nil && !coreusage.FloorDayUTC(event.CurrentPeriodEnd).Equal(wantDay) {
+			err = fmt.Errorf("billing: subscription %s holds %s after a pin to %s", row.ProviderSubID,
+				event.CurrentPeriodEnd.Format(time.DateOnly), wantDay.Format(time.DateOnly))
+		}
 		if err != nil {
 			r.Unreadable++
 			slog.ErrorContext(ctx, "failed to pin a mandate's next billing date", slogx.Error(err),

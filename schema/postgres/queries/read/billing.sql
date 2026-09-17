@@ -146,11 +146,12 @@ where i.status in ('charging', 'charged')
 order by entered_at;
 
 -- name: HasUnsettledBillingInvoice :one
--- What keeps a mandate from being removed: a charge the provider has not answered
--- for, or one still owed.
+-- What keeps a mandate from being removed: a charge still to make, retry or hear
+-- back on, or a card's deferred balance no close has swept yet.
 select exists (
   select 1 from billing_invoices
-  where org_id = @org_id and status in ('open', 'charging', 'charged', 'failed')
+  where org_id = @org_id and (status in ('open', 'charging', 'charged', 'failed')
+    or (status = 'deferred' and covered_by is null and plan_slug <> 'custom'))
 );
 
 -- name: ListPinnableBillingMandates :many
@@ -167,9 +168,11 @@ order by s.id;
 
 -- name: HasDunningBillingInvoice :one
 -- What makes an org PAST_DUE: an invoice that failed and is not yet paid, so a retry
--- in flight keeps it. Never a deferred row: nothing was asked of the customer.
+-- in flight keeps it. Never a deferred row or a gone mandate's write-off: neither is
+-- a declined card.
 select exists (
   select 1 from billing_invoices
-  where org_id = @org_id and (status in ('failed', 'uncollectible')
-    or (status in ('open', 'charging', 'charged') and failed_at is not null))
+  where org_id = @org_id and last_error_code <> 'mandate_gone'
+    and (status in ('failed', 'uncollectible')
+      or (status in ('open', 'charging', 'charged') and failed_at is not null))
 );

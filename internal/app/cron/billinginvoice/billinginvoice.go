@@ -220,6 +220,9 @@ func (r report) failure() error {
 	if r.charge.Ambiguous > 0 {
 		errs = append(errs, fmt.Errorf("billing invoice pass left %d charges unresolved", r.charge.Ambiguous))
 	}
+	if r.close.Unpriceable > 0 {
+		errs = append(errs, fmt.Errorf("billing invoice pass found %d orgs no card prices", r.close.Unpriceable))
+	}
 	if r.close.Dropped > 0 {
 		errs = append(errs, fmt.Errorf("billing invoice pass wrote off %d periods no pass had billed", r.close.Dropped))
 	}

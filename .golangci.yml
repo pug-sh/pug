@@ -43,8 +43,11 @@ linters:
             - "**/internal/app/workers/**"
             - "**/internal/app/server/rpc/sdk/**"
             - "**/internal/attribution/**"
+            - "**/internal/autoprop/**"
             - "**/internal/botdetect/**"
             - "**/internal/cookieless/**"
+            - "**/internal/geo/**"
+            - "**/internal/useragent/**"
             - "**/internal/deps/clickhouse/**"
             - "!$test"
           deny:

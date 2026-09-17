@@ -214,8 +214,8 @@ func (s *Service) reopenCharge(ctx context.Context, inv dbread.ListBillingInvoic
 	return err
 }
 
-// pollCharged asks what became of a charge the provider accepted, for a deployment
-// its webhook never reaches.
+// pollCharged asks what became of a charge the provider accepted, without waiting on
+// its webhook.
 func (s *Service) pollCharged(
 	ctx context.Context, inv dbread.ListBillingInvoicesToSettleRow, now time.Time, actor string, r *SettleReport,
 ) error {

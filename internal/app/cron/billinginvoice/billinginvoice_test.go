@@ -82,7 +82,7 @@ func TestFailureIsThePassNotACustomer(t *testing.T) {
 			settle: corebilling.SettleReport{Paid: 1}, pin: corebilling.PinReport{Pinned: 1},
 		}, false},
 		{"a declined card", report{charge: corebilling.ChargeReport{Declined: 4, Uncollectible: 1}}, false},
-		{"a stale meter", report{close: corebilling.CloseReport{Held: 5, Unpriceable: 1}}, false},
+		{"a stale meter", report{close: corebilling.CloseReport{Held: 5}}, false},
 		{"a deal awaiting a card", report{charge: corebilling.ChargeReport{AwaitingCard: 2, MandatePaused: 1}}, false},
 		{"a payment to refund by hand", report{settle: corebilling.SettleReport{Duplicate: 1, AmountMismatch: 1}}, false},
 		{"usage nothing bills", report{unbilled: 7}, false},
@@ -93,6 +93,7 @@ func TestFailureIsThePassNotACustomer(t *testing.T) {
 		{"a pin that could not reach the provider", report{pin: corebilling.PinReport{Unreadable: 1}}, true},
 		{"a charge left unresolved", report{charge: corebilling.ChargeReport{Ambiguous: 1}}, true},
 		{"a period dropped unbilled", report{close: corebilling.CloseReport{Dropped: 1}}, true},
+		{"a period no card prices", report{close: corebilling.CloseReport{Unpriceable: 1}}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := tc.report.failure(); (err != nil) != tc.wantErr {
