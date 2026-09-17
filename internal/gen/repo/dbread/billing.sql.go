@@ -246,6 +246,57 @@ func (q *Queries) ListBillingInvoiceOrgs(ctx context.Context) ([]ListBillingInvo
 	return items, nil
 }
 
+const listBillingInvoicesToSettle = `-- name: ListBillingInvoicesToSettle :many
+select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.status,
+       coalesce((
+         select max(e.at) from billing_invoice_events e
+         where e.invoice_id = i.id and e.to_status = i.status and e.from_status <> e.to_status
+       ), i.update_time)::timestamptz as entered_at
+from billing_invoices i
+where i.status in ('charging', 'charged')
+order by entered_at
+`
+
+type ListBillingInvoicesToSettleRow struct {
+	ID                string
+	OrgID             string
+	Provider          pgtype.Text
+	ProviderPaymentID pgtype.Text
+	ProviderSubID     pgtype.Text
+	Status            string
+	EnteredAt         pgtype.Timestamptz
+}
+
+// Charges only a read can settle, dated from when each entered its status:
+// update_time also moves when a charge error is recorded.
+func (q *Queries) ListBillingInvoicesToSettle(ctx context.Context) ([]ListBillingInvoicesToSettleRow, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoicesToSettle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBillingInvoicesToSettleRow
+	for rows.Next() {
+		var i ListBillingInvoicesToSettleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Provider,
+			&i.ProviderPaymentID,
+			&i.ProviderSubID,
+			&i.Status,
+			&i.EnteredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBillingSubscriptionsByOrg = `-- name: ListBillingSubscriptionsByOrg :many
 select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, on_demand, cancel_at_period_end, ended_at from billing_subscriptions
 where org_id = $1

@@ -40,6 +40,8 @@ type PaymentProvider interface {
 	// Normalize maps one verified delivery onto pug's vocabulary. A zero
 	// SubscriptionEvent means "store, mark processed, ignore".
 	Normalize(Delivery) (SubscriptionEvent, error)
+	// NormalizePayment maps a payment or refund delivery the same way.
+	NormalizePayment(Delivery) (PaymentEvent, error)
 
 	// CreateCheckoutSession opens a mandate-only checkout: it authorizes a payment
 	// method against ProductID and charges nothing. The id is what ConfirmCheckout
@@ -56,7 +58,54 @@ type PaymentProvider interface {
 	// Charge takes an amount pug computed against a mandate and returns the payment id.
 	// A *ChargeError took nothing; any other error leaves the outcome unknown.
 	Charge(ctx context.Context, in ChargeInput) (paymentID string, err error)
+	// ListPayments is a mandate's payments created at or after since. The list carries
+	// no amounts; FetchPayment reads one whole.
+	ListPayments(ctx context.Context, providerSubID string, since time.Time) ([]Payment, error)
+	FetchPayment(ctx context.Context, paymentID string) (Payment, error)
 }
+
+// PaymentStatus is what a payment says about the invoice it was made for.
+type PaymentStatus string
+
+const (
+	// PaymentProcessing is every state that is not yet an outcome, a word pug has no
+	// name for included, so it can delay a settle but never invent one.
+	PaymentProcessing PaymentStatus = "processing"
+	PaymentSucceeded  PaymentStatus = "succeeded"
+	PaymentFailed     PaymentStatus = "failed"
+)
+
+// Payment is one payment as the provider reports it.
+type Payment struct {
+	PaymentID     string
+	ProviderSubID string
+	// InvoiceID is the metadata every charge pug makes carries, so it is empty on a
+	// payment pug did not make.
+	InvoiceID string
+	Status    PaymentStatus
+	// TotalCents includes TaxCents, the tax the provider added on top of pug's amount.
+	TotalCents   int64
+	TaxCents     int64
+	Currency     string
+	ErrorCode    string
+	ErrorMessage string
+	InvoiceURL   string
+	CreatedAt    time.Time
+}
+
+// PaymentEvent is a payment or refund delivery in pug's vocabulary. The zero value
+// means there is nothing to apply.
+type PaymentEvent struct {
+	// Payment is the payment delivered, or the one a refund returned money on.
+	Payment Payment
+	// RefundID is set on a refund.
+	RefundID      string
+	RefundCents   int64
+	PartialRefund bool
+}
+
+// IsZero reports the "nothing to apply" disposition.
+func (e PaymentEvent) IsZero() bool { return e.Payment.PaymentID == "" }
 
 // ChargeInput is one charge against a mandate, in whole cents.
 type ChargeInput struct {

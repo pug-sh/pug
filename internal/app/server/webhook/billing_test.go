@@ -66,6 +66,15 @@ func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling
 func (p stubProvider) Charge(context.Context, corebilling.ChargeInput) (string, error) {
 	return "", errors.New("unused")
 }
+func (p stubProvider) NormalizePayment(corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	return corebilling.PaymentEvent{}, nil
+}
+func (p stubProvider) ListPayments(context.Context, string, time.Time) ([]corebilling.Payment, error) {
+	return nil, errors.New("unused")
+}
+func (p stubProvider) FetchPayment(context.Context, string) (corebilling.Payment, error) {
+	return corebilling.Payment{}, errors.New("unused")
+}
 
 func newService(t *testing.T) (*corebilling.Service, *testutil.TestPostgres) {
 	t.Helper()

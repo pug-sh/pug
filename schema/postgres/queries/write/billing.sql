@@ -218,3 +218,59 @@ returning *;
 update billing_invoices
 set last_error_code = @last_error_code, last_error_message = @last_error_message
 where id = @id and status = 'charging';
+
+-- name: ReopenBillingInvoiceCharge :one
+-- A charge a read found no payment for. The reopen counts the attempt unless the
+-- provider answered the charge, which took nothing.
+update billing_invoices
+set status = 'open', next_attempt_at = @next_attempt_at,
+    attempts = attempts + case when last_error_code = '' then 1 else 0 end
+where id = @id and status = 'charging'
+returning *;
+
+-- name: GetBillingInvoiceForPayment :one
+-- What a payment delivery is checked against: the mandate the invoice was charged on.
+select id, org_id, provider, provider_payment_id, provider_sub_id, status
+from billing_invoices where id = @id;
+
+-- name: GetBillingInvoiceByPayment :one
+select id, org_id, status from billing_invoices
+where provider = @provider and provider_payment_id = @provider_payment_id;
+
+-- name: GetBillingInvoicePaymentForUpdate :one
+select amount_cents, currency, provider_payment_id, status
+from billing_invoices where id = @id for update;
+
+-- name: MarkBillingInvoicePaid :one
+-- From any state still owed, not only charged: a late success for a charge settle
+-- already reopened has to land, or the next pass charges it again. A deferred row
+-- is paid only through its carrier.
+update billing_invoices
+set status = 'paid', paid_at = @paid_at, next_attempt_at = null,
+    attempts = attempts + case when status = 'charging' then 1 else 0 end,
+    provider_invoice_url = @provider_invoice_url, provider_payment_id = @provider_payment_id,
+    tax_cents = @tax_cents
+where id = @id and status in ('open', 'charging', 'charged', 'failed', 'uncollectible')
+returning *;
+
+-- name: PayCoveredBillingInvoices :many
+update billing_invoices set status = 'paid', paid_at = @paid_at
+where covered_by = @covered_by and status = 'deferred'
+returning id;
+
+-- name: MarkBillingInvoicePaymentFailed :one
+-- From charging when a read found the payment, from charged only for the payment
+-- the invoice holds: an earlier attempt's failure must not fail a later one.
+update billing_invoices
+set status = 'failed', failed_at = @failed_at, next_attempt_at = null,
+    attempts = attempts + case when status = 'charging' then 1 else 0 end,
+    last_error_code = @last_error_code, last_error_message = @last_error_message,
+    provider_payment_id = @provider_payment_id
+where id = @id and status = @from_status
+  and (status = 'charging' or (status = 'charged' and provider_payment_id = @provider_payment_id))
+returning *;
+
+-- name: MarkBillingInvoiceRefunded :one
+update billing_invoices set status = 'refunded'
+where id = @id and status = 'paid'
+returning *;

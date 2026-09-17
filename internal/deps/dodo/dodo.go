@@ -294,6 +294,53 @@ func (c *Client) Charge(ctx context.Context, in corebilling.ChargeInput) (string
 	return res.PaymentID, nil
 }
 
+// ListPayments is a mandate's payments since an instant, with no amounts: the list
+// carries total_amount but not the tax inside it.
+func (c *Client) ListPayments(ctx context.Context, providerSubID string, since time.Time) ([]corebilling.Payment, error) {
+	iter := c.api.Payments.ListAutoPaging(ctx, dodopayments.PaymentListParams{
+		CreatedAtGte: dodopayments.F(since.UTC()),
+		// The auto-pager reads an absent page number as 1 and asks for page 2 next.
+		PageNumber:     dodopayments.F(int64(0)),
+		PageSize:       dodopayments.F(int64(100)),
+		SubscriptionID: dodopayments.F(providerSubID),
+	})
+	var out []corebilling.Payment
+	for iter.Next() {
+		p := iter.Current()
+		out = append(out, corebilling.Payment{
+			CreatedAt:     p.CreatedAt,
+			InvoiceID:     stringMetadata(p.Metadata)[metadataInvoiceID],
+			PaymentID:     p.PaymentID,
+			ProviderSubID: p.SubscriptionID,
+			Status:        paymentStatus(string(p.Status)),
+		})
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("dodo: list payments: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) FetchPayment(ctx context.Context, paymentID string) (corebilling.Payment, error) {
+	p, err := c.api.Payments.Get(ctx, paymentID)
+	if err != nil {
+		return corebilling.Payment{}, fmt.Errorf("dodo: get payment: %w", err)
+	}
+	return paymentFrom(paymentPayload{
+		CreatedAt:      p.CreatedAt,
+		Currency:       string(p.Currency),
+		ErrorCode:      p.ErrorCode,
+		ErrorMessage:   p.ErrorMessage,
+		InvoiceURL:     p.InvoiceURL,
+		Metadata:       stringMetadata(p.Metadata),
+		PaymentID:      p.PaymentID,
+		Status:         string(p.Status),
+		SubscriptionID: p.SubscriptionID,
+		Tax:            p.Tax,
+		TotalAmount:    p.TotalAmount,
+	}), nil
+}
+
 // findSubscription is the second route to a mandate: the customer's subscriptions
 // since the checkout opened, matched on the ref pug minted — a customer can hold
 // more than one.

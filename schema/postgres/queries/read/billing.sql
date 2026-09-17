@@ -114,3 +114,15 @@ select i.amount_cents, i.billed_from, i.billed_to, i.carried_cents, i.currency, 
 from billing_invoices i
 where i.status in ('open', 'failed') and i.next_attempt_at <= @now
 order by i.next_attempt_at, i.billed_from;
+
+-- name: ListBillingInvoicesToSettle :many
+-- Charges only a read can settle, dated from when each entered its status:
+-- update_time also moves when a charge error is recorded.
+select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.status,
+       coalesce((
+         select max(e.at) from billing_invoice_events e
+         where e.invoice_id = i.id and e.to_status = i.status and e.from_status <> e.to_status
+       ), i.update_time)::timestamptz as entered_at
+from billing_invoices i
+where i.status in ('charging', 'charged')
+order by entered_at;

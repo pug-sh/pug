@@ -26,6 +26,12 @@ const (
 // payload's status, not the event name, so pausing needs no branch of its own.
 const subscriptionPrefix = "subscription."
 
+const (
+	eventPaymentSucceeded = "payment.succeeded"
+	eventPaymentFailed    = "payment.failed"
+	eventRefundSucceeded  = "refund.succeeded"
+)
+
 // envelope decodes only what pug consumes. The schema is the provider's and
 // evolves without us, so anything not named here is ignored rather than rejected.
 type envelope struct {
@@ -52,6 +58,29 @@ type subscriptionPayload struct {
 	Status              string     `json:"status"`
 	SubscriptionID      string     `json:"subscription_id"`
 	TaxInclusive        *bool      `json:"tax_inclusive"`
+}
+
+// paymentPayload is the payment object as both a delivery and a direct read carry
+// it, so NormalizePayment and FetchPayment produce identical payments.
+type paymentPayload struct {
+	CreatedAt      time.Time `json:"created_at"`
+	Currency       string    `json:"currency"`
+	ErrorCode      string    `json:"error_code"`
+	ErrorMessage   string    `json:"error_message"`
+	InvoiceURL     string    `json:"invoice_url"`
+	Metadata       metadata  `json:"metadata"`
+	PaymentID      string    `json:"payment_id"`
+	Status         string    `json:"status"`
+	SubscriptionID string    `json:"subscription_id"`
+	Tax            int64     `json:"tax"`
+	TotalAmount    int64     `json:"total_amount"`
+}
+
+type refundPayload struct {
+	Amount    int64  `json:"amount"`
+	IsPartial *bool  `json:"is_partial"`
+	PaymentID string `json:"payment_id"`
+	RefundID  string `json:"refund_id"`
 }
 
 // metadata narrows Dodo's string|number|bool map to the string values pug writes:
@@ -115,6 +144,77 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 			"dodo: subscription payload carries no on_demand or tax_inclusive")
 	}
 	return event, nil
+}
+
+// NormalizePayment maps the payment and refund deliveries that settle an invoice.
+// Every other type, a payment still processing included, is a zero event.
+func (c *Client) NormalizePayment(d corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	switch d.EventType {
+	case eventPaymentSucceeded, eventPaymentFailed:
+		var p paymentPayload
+		if err := decodeData(d.RawPayload, &p); err != nil {
+			return corebilling.PaymentEvent{}, err
+		}
+		if p.PaymentID == "" {
+			return corebilling.PaymentEvent{}, errors.New("dodo: payment payload carries no payment id")
+		}
+		return corebilling.PaymentEvent{Payment: paymentFrom(p)}, nil
+	case eventRefundSucceeded:
+		var rf refundPayload
+		if err := decodeData(d.RawPayload, &rf); err != nil {
+			return corebilling.PaymentEvent{}, err
+		}
+		// Absent is not false: a refund read as full would mark a partial one refunded.
+		if rf.PaymentID == "" || rf.RefundID == "" || rf.IsPartial == nil {
+			return corebilling.PaymentEvent{}, errors.New("dodo: refund payload carries no payment id, refund id or is_partial")
+		}
+		return corebilling.PaymentEvent{
+			Payment:       corebilling.Payment{PaymentID: rf.PaymentID},
+			PartialRefund: *rf.IsPartial,
+			RefundCents:   rf.Amount,
+			RefundID:      rf.RefundID,
+		}, nil
+	}
+	return corebilling.PaymentEvent{}, nil
+}
+
+func decodeData(raw []byte, into any) error {
+	env, err := decodeEnvelope(raw)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(env.Data, into); err != nil {
+		return fmt.Errorf("dodo: decode %s payload: %w", env.Type, err)
+	}
+	return nil
+}
+
+func paymentFrom(p paymentPayload) corebilling.Payment {
+	return corebilling.Payment{
+		CreatedAt:     p.CreatedAt,
+		Currency:      strings.ToUpper(strings.TrimSpace(p.Currency)),
+		ErrorCode:     p.ErrorCode,
+		ErrorMessage:  p.ErrorMessage,
+		InvoiceID:     p.Metadata[metadataInvoiceID],
+		InvoiceURL:    p.InvoiceURL,
+		PaymentID:     p.PaymentID,
+		ProviderSubID: p.SubscriptionID,
+		Status:        paymentStatus(p.Status),
+		TaxCents:      p.Tax,
+		TotalCents:    p.TotalAmount,
+	}
+}
+
+// paymentStatus narrows Dodo's intent states to an outcome. Anything not succeeded
+// and not terminal is still in flight, so an unknown word delays and never invents one.
+func paymentStatus(status string) corebilling.PaymentStatus {
+	switch {
+	case strings.EqualFold(strings.TrimSpace(status), "succeeded"):
+		return corebilling.PaymentSucceeded
+	case terminalIntent(status):
+		return corebilling.PaymentFailed
+	}
+	return corebilling.PaymentProcessing
 }
 
 func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.SubscriptionEvent {

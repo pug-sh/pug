@@ -551,7 +551,7 @@ open ──charge──▶ charging ──payment_id──▶ charged ──webh
   ▲                 │                          │                      ▲
   │   (ambiguous)   │ settle by listing (8.4)  └──▶ failed ──soft──▶ waits for next_attempt_at
   └─────────────────┘                                └──hard, or 4th──▶ uncollectible ──new card, invoice retry──▶ open
-charging ──▶ failed          (the charge was refused outright)
+charging ──▶ failed          (refused outright, or a read found only a failed payment)
 open, charging, failed ──mandate gone──▶ uncollectible   (7.3; from charging only once a read agrees)
 open, failed ──▶ charging    (a retry goes straight back; there is no open hop)
 failed ──new card──▶ open    (next_attempt_at = now)
@@ -631,8 +631,10 @@ The pass therefore:
    skew. The list has no promised order and a retry after a decline shares the
    invoice id with the attempt that failed, so the match is the **newest
    payment that has not failed** — succeeded or still processing — not the
-   first one seen. Found → adopt the payment id (`charged`), and polling
-   settles it; not found → `open`, and the next tick charges again. More than
+   first one seen. Found → it is read whole and settles the invoice, `paid`, or
+   `charged` while it processes, for polling to settle; a failed payment and no
+   other is the charge's decline (`failed`); nothing → `open`, and the next tick
+   charges again. More than
    one such payment for one invoice is reported as `duplicate` (§11). **The
    reopen counts an attempt**, so that cycle is bounded by `MaxChargeAttempts`
    (§13) and ends in `uncollectible` rather than re-charging every hour
@@ -657,6 +659,10 @@ The id alone names an invoice rather than proving one: static payment links
 accept `metadata_*` parameters (payments.md §8), so without the check a cheap
 link purchase could mark a large invoice paid. A payment that fails the check
 is stored, marked processed and not applied, like any unattributable delivery.
+`payment.failed` moves only a `charged` invoice holding that payment: an earlier
+attempt's failure can arrive after the retry that followed it. `refund.succeeded`
+finds its invoice by the payment refunded, and a full refund of one not yet
+`paid` is stored, marked processed and not applied.
 As with `ConfirmCheckout`, the webhook is not the only route: the pass also
 polls `Payments.Get` for `charged` rows older than an hour, so a deployment
 with no reachable webhook URL still learns whether it was paid.
@@ -1078,7 +1084,8 @@ and the authz tests — each container package keeping `TestMain` and no
   `charging` committed before the charge, and a second claim on one invoice
   calling no provider; the ambiguous outcome: a fake that creates the payment
   and then errors, settled by listing and never charged twice; a `processing`
-  payment adopted, and two payments that have not failed reported; a fake that
+  payment adopted, a lone failed one taken as the decline, and two payments
+  that have not failed reported; a fake that
   errors without creating one, re-opened and charged once; a non-402 4xx
   reopened without counting an attempt; a `404` acted on only when the
   subscription reads back ended and the invoice is not a deal's, and a second
@@ -1089,7 +1096,9 @@ and the authz tests — each container package keeping `TestMain` and no
   and the retry dates; a new payment method re-opening `uncollectible`.
 - **Webhooks** — `payment.succeeded`/`.failed` settle by `metadata.invoice_id`,
   ignore a payment carrying none, and refuse one whose `subscription_id` is not
-  the invoice's mandate; a partial refund leaves the invoice `paid`; a
+  the invoice's mandate; an earlier attempt's `payment.failed` moves nothing;
+  a partial refund leaves the invoice `paid`, and a full refund of an unpaid one
+  is not applied; a
   non-on-demand or tax-inclusive subscription is rejected by the webhook and
   by `ConfirmCheckout`; `past_due` maps live.
 - **The Dodo adapter** (`internal/deps/dodo`, against an httptest server) — the

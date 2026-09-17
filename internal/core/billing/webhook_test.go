@@ -33,6 +33,14 @@ type fakeProvider struct {
 	// charges is every charge asked for; onCharge answers each, and nil succeeds.
 	charges  []corebilling.ChargeInput
 	onCharge func(corebilling.ChargeInput) (string, error)
+	// payment is what a payment or refund delivery normalizes to.
+	payment corebilling.PaymentEvent
+	// payments is what the provider holds. The listing ignores since, so the settle's
+	// own window is what a test holds it to, and carries no amounts; fetched records
+	// every whole read.
+	payments []corebilling.Payment
+	listErr  error
+	fetched  []string
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -72,6 +80,36 @@ func (f *fakeProvider) Charge(_ context.Context, in corebilling.ChargeInput) (st
 		return f.onCharge(in)
 	}
 	return "pay_" + in.InvoiceID, nil
+}
+
+func (f *fakeProvider) NormalizePayment(corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	return f.payment, nil
+}
+
+func (f *fakeProvider) ListPayments(_ context.Context, subID string, _ time.Time) ([]corebilling.Payment, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	var out []corebilling.Payment
+	for _, p := range f.payments {
+		if p.ProviderSubID == subID {
+			out = append(out, corebilling.Payment{
+				CreatedAt: p.CreatedAt, InvoiceID: p.InvoiceID, PaymentID: p.PaymentID,
+				ProviderSubID: p.ProviderSubID, Status: p.Status,
+			})
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeProvider) FetchPayment(_ context.Context, id string) (corebilling.Payment, error) {
+	f.fetched = append(f.fetched, id)
+	for _, p := range f.payments {
+		if p.PaymentID == id {
+			return p, nil
+		}
+	}
+	return corebilling.Payment{}, errors.New("fake: no such payment")
 }
 
 const (

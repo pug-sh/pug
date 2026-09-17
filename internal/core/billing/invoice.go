@@ -29,6 +29,8 @@ const (
 	InvoiceDeferred      InvoiceStatus = "deferred"
 	InvoiceCharging      InvoiceStatus = "charging"
 	InvoiceCharged       InvoiceStatus = "charged"
+	InvoicePaid          InvoiceStatus = "paid"
+	InvoiceRefunded      InvoiceStatus = "refunded"
 	InvoiceFailed        InvoiceStatus = "failed"
 	InvoiceUncollectible InvoiceStatus = "uncollectible"
 )
@@ -353,7 +355,7 @@ func (s *Service) closeSegment(
 		telemetry.RecordError(ctx, err)
 		return false, err
 	}
-	if err := appendInvoiceEvent(ctx, w, orgID, row.ID, "", d.status, detail); err != nil {
+	if err := appendInvoiceEvent(ctx, w, orgID, row.ID, ActorInvoicePass, "", d.status, detail); err != nil {
 		return false, err
 	}
 	switch {
@@ -380,7 +382,7 @@ func (s *Service) closeSegment(
 			return false, err
 		}
 		for _, id := range ids {
-			if err := appendInvoiceEvent(ctx, w, orgID, id, InvoiceDeferred, InvoiceWaived, "swept by "+row.ID); err != nil {
+			if err := appendInvoiceEvent(ctx, w, orgID, id, ActorInvoicePass, InvoiceDeferred, InvoiceWaived, "swept by "+row.ID); err != nil {
 				return false, err
 			}
 		}
@@ -443,10 +445,10 @@ func periodsSpanned(first, last time.Time) int {
 }
 
 func appendInvoiceEvent(
-	ctx context.Context, w *dbwrite.Queries, orgID, invoiceID string, from, to InvoiceStatus, detail string,
+	ctx context.Context, w *dbwrite.Queries, orgID, invoiceID, actor string, from, to InvoiceStatus, detail string,
 ) error {
 	if err := w.InsertBillingInvoiceEvent(ctx, dbwrite.InsertBillingInvoiceEventParams{
-		Actor: ActorInvoicePass, Detail: detail, FromStatus: string(from), ID: xid.New().String(),
+		Actor: actor, Detail: detail, FromStatus: string(from), ID: xid.New().String(),
 		InvoiceID: invoiceID, ToStatus: string(to),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to record an invoice event", slogx.Error(err),

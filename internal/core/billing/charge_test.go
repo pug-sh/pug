@@ -372,6 +372,30 @@ func TestChargeFailsOnAPaymentItCannotRecord(t *testing.T) {
 	}
 }
 
+// A payment's webhook can settle the invoice before the charge that made it answers,
+// and that answer is then already recorded.
+func TestChargeAcceptsAPaymentItsWebhookSettledFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	subID := seedMandate(t, f, periodStart, time.Time{})
+	id := seedDue(t, f, periodStart, 10_000, closeNow)
+	provider.onCharge = func(in corebilling.ChargeInput) (string, error) {
+		deliverPayment(t, f, provider, "evt_1", corebilling.PaymentEvent{
+			Payment: paymentOf("pay_1", in.InvoiceID, in.ProviderSubID, corebilling.PaymentSucceeded, closeNow),
+		})
+		return "pay_1", nil
+	}
+
+	if r, err := f.svc.ChargeDue(t.Context(), closeNow); err != nil || r != (corebilling.ChargeReport{Charged: 1}) {
+		t.Errorf("report = %+v, err = %v, want one charged", r, err)
+	}
+	if got, want := transitions(t, f, id), []string{"open>charging mandate " + subID, "charging>paid payment pay_1"}; !slices.Equal(got, want) {
+		t.Errorf("events = %q, want %q", got, want)
+	}
+}
+
 // A charge refused as not chargeable writes the invoice off only when the mandate
 // also reads back ended and the invoice is not a deal's; anything else holds it.
 func TestChargeActsOnANotChargeableRefusalOnlyWhenTheMandateReadsBackEnded(t *testing.T) {

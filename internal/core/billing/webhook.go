@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -43,19 +44,111 @@ func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, 
 
 	event, err := provider.Normalize(d)
 	if err != nil {
-		// Retried, not rejected: a payload shape changed under us, and a redeploy inside
-		// the retry window fixes it. Marking it processed would lose the replay too.
-		slog.ErrorContext(ctx, "failed to normalize a billing webhook delivery", slogx.Error(err),
-			slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID),
-			slog.String("event_type", d.EventType))
+		return undecodable(ctx, provider, d, err)
+	}
+	if !event.IsZero() {
+		return s.applySubscriptionEvent(ctx, provider, d, event)
+	}
+	payment, err := provider.NormalizePayment(d)
+	if err != nil {
+		return undecodable(ctx, provider, d, err)
+	}
+	// Disputes and every type added after this was written.
+	if payment.IsZero() {
+		return s.finishDelivery(ctx, provider, d, "")
+	}
+	return s.applyPaymentEvent(ctx, provider, d, payment)
+}
+
+// undecodable is retried, not rejected: a payload shape changed under us, and a
+// redeploy inside the retry window fixes it. Marking it processed would lose the replay too.
+func undecodable(ctx context.Context, provider PaymentProvider, d Delivery, err error) error {
+	slog.ErrorContext(ctx, "failed to normalize a billing webhook delivery", slogx.Error(err),
+		slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID),
+		slog.String("event_type", d.EventType))
+	telemetry.RecordError(ctx, err)
+	return err
+}
+
+// applyPaymentEvent settles the invoice a charge was made for. metadata.invoice_id
+// names an invoice rather than proving one — a payment link lets the buyer set
+// metadata — so the payment must also come from the mandate pug charged.
+func (s *Service) applyPaymentEvent(ctx context.Context, provider PaymentProvider, d Delivery, event PaymentEvent) error {
+	if event.RefundID != "" {
+		return s.applyRefund(ctx, provider, d, event)
+	}
+	p := event.Payment
+	// Not a charge pug made, such as the mandate's own authorization.
+	if p.InvoiceID == "" {
+		return s.finishDelivery(ctx, provider, d, "")
+	}
+	inv, err := s.write().GetBillingInvoiceForPayment(ctx, p.InvoiceID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.rejectDelivery(ctx, provider, d, "invoice",
+			fmt.Errorf("payment %s names invoice %s, which pug does not have", p.PaymentID, p.InvoiceID))
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to read the invoice a payment names", slogx.Error(err),
+			slog.String("invoice_id", p.InvoiceID), slog.String("payment_id", p.PaymentID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	// Payments, refunds, disputes and every type added after this was written.
-	if event.IsZero() {
+	if inv.Provider.String != provider.Name() || inv.ProviderSubID.String != p.ProviderSubID {
+		return s.rejectDelivery(ctx, provider, d, "subscription",
+			fmt.Errorf("payment %s is not from the mandate invoice %s was charged on", p.PaymentID, inv.ID))
+	}
+	actor := "webhook " + d.WebhookID
+	var r SettleReport
+	switch p.Status {
+	case PaymentSucceeded:
+		err = s.settlePaid(ctx, inv.OrgID, inv.ID, p, d.DeliveredAt, actor, &r)
+	case PaymentFailed:
+		err = s.settleFailed(ctx, inv.OrgID, inv.ID, InvoiceCharged, p, d.DeliveredAt, actor, &r)
+	case PaymentProcessing:
+	}
+	if err != nil {
+		return err
+	}
+	return s.finishDelivery(ctx, provider, d, "")
+}
+
+// applyRefund records money returned on a payment an invoice holds. Only a full
+// refund moves the invoice, and only a paid one.
+func (s *Service) applyRefund(ctx context.Context, provider PaymentProvider, d Delivery, event PaymentEvent) error {
+	inv, err := s.write().GetBillingInvoiceByPayment(ctx, dbwrite.GetBillingInvoiceByPaymentParams{
+		Provider:          postgres.NewOptionalText(provider.Name()),
+		ProviderPaymentID: postgres.NewOptionalText(event.Payment.PaymentID),
+	})
+	// A payment no invoice holds, such as a duplicate refunded by hand.
+	if errors.Is(err, pgx.ErrNoRows) {
 		return s.finishDelivery(ctx, provider, d, "")
 	}
-	return s.applySubscriptionEvent(ctx, provider, d, event)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to read the invoice a refund returns money on", slogx.Error(err),
+			slog.String("payment_id", event.Payment.PaymentID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	actor := "webhook " + d.WebhookID
+	status := InvoiceStatus(inv.Status)
+	switch {
+	case event.PartialRefund:
+		if err := appendInvoiceEvent(ctx, s.write(), inv.OrgID, inv.ID, actor, status, status,
+			fmt.Sprintf("partial refund %s of %s", event.RefundID, usd(event.RefundCents))); err != nil {
+			return err
+		}
+	case status == InvoicePaid:
+		if _, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, actor, "refund "+event.RefundID,
+			func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
+				return w.MarkBillingInvoiceRefunded(ctx, inv.ID)
+			}); err != nil {
+			return err
+		}
+	case status != InvoiceRefunded:
+		return s.rejectDelivery(ctx, provider, d, "refund",
+			fmt.Errorf("refund %s is for invoice %s, which is %s, not paid", event.RefundID, inv.ID, status))
+	}
+	return s.finishDelivery(ctx, provider, d, "")
 }
 
 func (s *Service) applySubscriptionEvent(

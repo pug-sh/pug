@@ -87,6 +87,18 @@ func (stubProvider) Charge(context.Context, corebilling.ChargeInput) (string, er
 	return "", errors.New("unused")
 }
 
+func (stubProvider) NormalizePayment(corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	return corebilling.PaymentEvent{}, nil
+}
+
+func (stubProvider) ListPayments(context.Context, string, time.Time) ([]corebilling.Payment, error) {
+	return nil, errors.New("unused")
+}
+
+func (stubProvider) FetchPayment(context.Context, string) (corebilling.Payment, error) {
+	return corebilling.Payment{}, errors.New("unused")
+}
+
 // seedCustomer stands in for a completed checkout: the portal needs a customer.
 func seedCustomer(t *testing.T, pg *testutil.TestPostgres, orgID string) {
 	t.Helper()
