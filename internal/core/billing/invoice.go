@@ -134,7 +134,7 @@ func (s *Service) closeOrg(ctx context.Context, orgID string, orgCreate, now tim
 	if err != nil {
 		return err
 	}
-	subs, err := s.subscriptionsOf(ctx, orgID)
+	subs, _, err := s.subscriptionsOf(ctx, orgID)
 	if err != nil {
 		return err
 	}
@@ -458,21 +458,27 @@ func appendInvoiceEvent(
 }
 
 // subscriptionsOf is every mandate the org ever held, live or not: a close bills
-// the days each one covered. One with an unrecognized status covered none.
-func (s *Service) subscriptionsOf(ctx context.Context, orgID string) ([]Subscription, error) {
+// the days each one covered. One with an unrecognized status covered none, and the
+// on-demand ones are counted, since a charge cannot tell whether they are live.
+func (s *Service) subscriptionsOf(ctx context.Context, orgID string) ([]Subscription, int, error) {
 	rows, err := dbread.New(s.pgW).ListBillingSubscriptionsByOrg(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list the org's subscriptions", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return nil, err
+		return nil, 0, err
 	}
 	out := make([]Subscription, 0, len(rows))
+	unnamed := 0
 	for _, row := range rows {
-		if sub, ok := subscriptionFromRow(row); ok {
+		sub, ok := subscriptionFromRow(row)
+		switch {
+		case ok:
 			out = append(out, sub)
+		case row.OnDemand:
+			unnamed++
 		}
 	}
-	return out, nil
+	return out, unnamed, nil
 }
 
 // endedAt is when a mandate stopped, zero while live. Every write stamps an ended

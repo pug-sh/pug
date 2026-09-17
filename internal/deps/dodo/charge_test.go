@@ -114,4 +114,27 @@ func TestCharge(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("a dropped connection leaves the outcome unknown and is never sent again", func(t *testing.T) {
+		var posts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			posts.Add(1)
+			conn, _, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				t.Errorf("hijack: %v", err)
+				return
+			}
+			_ = conn.Close()
+		}))
+		t.Cleanup(srv.Close)
+		c := &Client{api: dodopayments.NewClient(option.WithBaseURL(srv.URL+"/"), option.WithBearerToken("sk_test"))}
+		_, err := c.Charge(context.Background(), in)
+		var refused *corebilling.ChargeError
+		if err == nil || errors.As(err, &refused) {
+			t.Fatalf("err = %v, want an unknown outcome", err)
+		}
+		if n := posts.Load(); n != 1 {
+			t.Errorf("POSTed %d times, want 1", n)
+		}
+	})
 }

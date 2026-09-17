@@ -580,7 +580,7 @@ type MarkBillingInvoiceChargingParams struct {
 }
 
 // The intent, committed before the provider is called. Each attempt stamps the
-// mandate it charges and clears what the previous attempt left.
+// mandate it charges and clears the last attempt's payment id and error.
 func (q *Queries) MarkBillingInvoiceCharging(ctx context.Context, arg MarkBillingInvoiceChargingParams) (BillingInvoice, error) {
 	row := q.db.QueryRow(ctx, markBillingInvoiceCharging, arg.Provider, arg.ProviderSubID, arg.ID)
 	var i BillingInvoice
@@ -681,7 +681,7 @@ const markBillingInvoiceUncollectible = `-- name: MarkBillingInvoiceUncollectibl
 update billing_invoices
 set status = 'uncollectible', failed_at = $1, next_attempt_at = null,
     last_error_code = $2, last_error_message = $3
-where id = $4 and status in ('open', 'charging', 'failed')
+where id = $4 and status = $5 and status in ('open', 'charging', 'failed')
 returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
 `
 
@@ -690,14 +690,18 @@ type MarkBillingInvoiceUncollectibleParams struct {
 	LastErrorCode    string
 	LastErrorMessage string
 	ID               string
+	FromStatus       string
 }
 
+// Guarded on the status the caller saw: only a corroborating read writes off a
+// charge in flight.
 func (q *Queries) MarkBillingInvoiceUncollectible(ctx context.Context, arg MarkBillingInvoiceUncollectibleParams) (BillingInvoice, error) {
 	row := q.db.QueryRow(ctx, markBillingInvoiceUncollectible,
 		arg.FailedAt,
 		arg.LastErrorCode,
 		arg.LastErrorMessage,
 		arg.ID,
+		arg.FromStatus,
 	)
 	var i BillingInvoice
 	err := row.Scan(

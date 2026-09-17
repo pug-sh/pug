@@ -493,7 +493,7 @@ it is safe to price, and prices it:
   `next_attempt_at`, so the invoice can be seen — and voided (§12) — before the
   card is charged; the billing email that announces it is a later PR. Two cases
   charge at once: a close forced by a mandate that is going (§7.3), and a
-  deal's backlog when its first card arrives, whose notice ran while it waited
+  deal's backlog when a card arrives, whose notice ran while it waited
   (§19.15).
 
 ### 8.2 Storage (migration 021)
@@ -617,8 +617,9 @@ The pass therefore:
    ambiguous — a non-402 4xx (its status kept in `last_error_code`), timeout,
    5xx, connection reset — **leaves the row in `charging`**. A `404` claims the
    mandate is not chargeable; it is acted on only when `FetchSubscription`
-   **corroborates** it by reading the subscription back in a status pug knows is
-   not live; a word it has no name for corroborates nothing.
+   **corroborates** it by reading the subscription back cancelled, expired or
+   failed; a paused mandate can resume, and a word pug has no name for
+   corroborates nothing. A deal's invoice is never written off this way (§19.15).
    A second `404` corroborates nothing — a flipped environment answers both
    calls the same way — so it counts as `Unreadable` (§11): acted on, it would
    write off every open invoice in the deployment, one anniversary at a time.
@@ -671,7 +672,9 @@ and follows Dodo's own recommendation:
 | hard decline — the enumerated list, and only it: the six Dodo's on-demand guide says never to retry, `STOLEN_CARD`, `LOST_CARD`, `PICKUP_CARD`, `DO_NOT_HONOR`, `FRAUDULENT`, `AUTHENTICATION_FAILURE` | `uncollectible` immediately; retrying damages authorization rates |
 | the charge exceeds the mandate's ceiling (§8.7; an Indian-card e-mandate registers a maximum) | `uncollectible` at once, under its own reason — the same amount fails again until the customer re-authorizes, so the banner says "re-authorize", not "declined". Until §18.2 learns the error Dodo returns, it rides the ambiguous path and lands there after the fourth attempt |
 | a new payment method (`subscription.update_payment_method`) | every `failed`/`uncollectible` invoice → `open`, `next_attempt_at = now`; `attempts` is not reset, so the new card gets one attempt before a failure is final again |
-| mandate cancelled / expired | open invoices → `uncollectible`; a finding |
+| mandate cancelled, expired or failed | open invoices → `uncollectible`; a finding. A deal's invoices wait for a card instead (§19.15) |
+| mandate paused | open invoices held until it resumes; a finding on every pass |
+| mandate in a status pug has no word for | open invoices held; the pass fails as `Unreadable` (§11) |
 
 `last_error_message` is merchant-facing and never crosses the wire; the
 dashboard gets a reason — `DECLINED`, or `REAUTHORIZE` for the mandate ceiling —
@@ -856,7 +859,8 @@ order:
    (`uncollectible`) and the subset whose mandate is gone (`mandate_gone`), a
    due period that reached the end of the catch-up window unbilled (`dropped`),
    closes deferred and balances swept or waived (§8.7), deals waiting on a card
-   (§19.15), payments that took the wrong amount (`amount_mismatch`) or landed
+   (§19.15), invoices held on a paused mandate (§8.5), payments that took the
+   wrong amount (`amount_mismatch`) or landed
    with no bill behind them (`duplicate`, §8.3), and unbilled usage (§10) —
    counted and logged, exported as `billing.invoice_pass_total{outcome}` and
    `billing.invoices_total{status}`. A webhook that meets an `amount_mismatch`
@@ -886,6 +890,9 @@ means the pass itself is broken, not that a customer's card is. A stored invoice
 this build cannot read (`Undecodable`) is the same kind of thing: the row is
 skipped wherever it is met — so it is never charged and never settled — and the
 ledger read refuses rather than returning a customer's history one row short.
+So is a mandate stored in a status this build has no word for, whose invoices
+are held as `Unreadable`, and an invoice due with no provider configured to
+charge it.
 
 ## 12. Operator CLI
 
@@ -1054,7 +1061,8 @@ and the authz tests — each container package keeping `TestMain` and no
   past the catch-up window is written off once as `waived` with a `dropped`
   event; a natural close not
   charged before `ChargeNoticeDays` have passed, while a close forced by a
-  going mandate, `RemovePaymentMethod` and a deal's first card charge at once;
+  going mandate, `RemovePaymentMethod` and a card arriving for a deal charge at
+  once;
   a cancellation landing inside the window pulling the charge forward; `void`
   inside the window stopping the charge with no provider call; every row of §8.7's
   table: nothing to bill waived, under $5 deferred, a balance that tips the
@@ -1073,7 +1081,9 @@ and the authz tests — each container package keeping `TestMain` and no
   payment adopted, and two payments that have not failed reported; a fake that
   errors without creating one, re-opened and charged once; a non-402 4xx
   reopened without counting an attempt; a `404` acted on only when the
-  subscription reads back non-live, and a second `404` held; the attempt cap;
+  subscription reads back ended and the invoice is not a deal's, and a second
+  `404` held; a deal's invoice, a paused mandate's and one pug cannot name held,
+  never written off; the attempt cap;
   the amount check on `total_amount − tax`, with `tax` stored as `tax_cents`;
   each of the six hard-decline codes as a string literal, an unknown code soft,
   and the retry dates; a new payment method re-opening `uncollectible`.
@@ -1227,8 +1237,9 @@ Each has a recommendation; the plan above assumes it.
     break-even table is what to move them against, and they move again if
     Dodo's fee does.
 15. **A deal recorded before its customer adds a card** keeps its invoices
-    `open` until the first mandate arrives, then charges them oldest first,
-    and the invoicing pass reports the deal as waiting on a card. Recommend
+    `open` while no mandate is live — before the first, or after one ends —
+    then charges them oldest first once one is, and the invoicing pass reports
+    the deal as waiting on a card. Recommend
     yes. The block-model build instead writes each one off as `mandate_gone`
     the moment it closes, which loses the money and counts toward the pass's
     ten-write-offs alarm. Alternative: clip a deal's billable window to its
@@ -1268,7 +1279,7 @@ Against the block model built on `feat/usage-billing` (revised 2026-09-15):
 | `rate_card{block_events, free_blocks, tiers{up_to_block, cents_per_block}}`, `custom_terms.block_rate_cents`, `lines{blocks, cents_per_block}` on the wire | per-event names throughout, `+ usage_cents`, `+ carried_cents`, `+ defer_under_cents`, `+ past_due_reason`, `INVOICE_STATUS_DEFERRED` (§9). None of the block fields reached `main`, so they are replaced, not reserved |
 | `unique (org_id, period_start)`; a payment settled on `metadata.invoice_id` alone; a `404` from `FetchSubscription` taken as corroboration | `unique (org_id, billed_from)`, each close starting at the last `billed_to` (§8.1); the payment's `subscription_id` checked; only a subscription read back non-live corroborates (§8.4) |
 | the payment's tax used only to check the amount | prices stated excluding tax (§3.2), a tax-inclusive mandate refused (§7.2), `tax_cents` on the invoice (§8.2) |
-| an `open` invoice's first attempt dated at its close, so the pass that closes it charges it | `ChargeNoticeDays` after the close, and at once only for a going mandate or a deal's first card (§8.1) |
+| an `open` invoice's first attempt dated at its close, so the pass that closes it charges it | `ChargeNoticeDays` after the close, and at once only for a going mandate or a card arriving for a deal (§8.1) |
 
 ## 21. What goes
 
@@ -1390,8 +1401,8 @@ constraints break.
    constants.
 8. **Charge** (§8.4, steps 1–3). The charge call with SDK retries off, the row
    committed before it, the 402-only decline, ambiguity left in `charging`, a
-   404 acted on only when `FetchSubscription` reads the mandate back non-live,
-   and an org that never had a mandate held rather than written off.
+   404 acted on only when `FetchSubscription` reads the mandate back ended, and
+   a deal's invoice or a paused mandate's held rather than written off.
 9. **Settle** (§8.4, steps 4–5). Listing to settle `charging` on the newest
    payment that has not failed, a non-402 4xx reopening without an attempt,
    polling `charged`, the `payment.succeeded`, `payment.failed` and

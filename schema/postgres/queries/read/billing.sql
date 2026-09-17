@@ -106,10 +106,11 @@ select max(billed_to)::date from billing_invoices
 where org_id = @org_id;
 
 -- name: ListDueBillingInvoices :many
--- Oldest first, so a deal's backlog is charged in order once its first card arrives.
+-- Oldest first, so a deal's backlog is charged in order once a card arrives.
 select i.amount_cents, i.billed_from, i.billed_to, i.carried_cents, i.currency, i.event_count,
-       i.id, i.org_id, i.period_start,
-       (select count(*) from billing_invoices c where c.covered_by = i.id) as carried_periods
+       i.id, i.org_id, i.period_start, i.plan_slug, i.status,
+       (select count(distinct c.period_start) from billing_invoices c where c.covered_by = i.id)
+         as carried_periods
 from billing_invoices i
 where i.status in ('open', 'failed') and i.next_attempt_at <= @now
 order by i.next_attempt_at, i.billed_from;

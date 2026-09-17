@@ -347,8 +347,9 @@ func (q *Queries) ListBillingSubscriptionsByProvider(ctx context.Context, arg Li
 
 const listDueBillingInvoices = `-- name: ListDueBillingInvoices :many
 select i.amount_cents, i.billed_from, i.billed_to, i.carried_cents, i.currency, i.event_count,
-       i.id, i.org_id, i.period_start,
-       (select count(*) from billing_invoices c where c.covered_by = i.id) as carried_periods
+       i.id, i.org_id, i.period_start, i.plan_slug, i.status,
+       (select count(distinct c.period_start) from billing_invoices c where c.covered_by = i.id)
+         as carried_periods
 from billing_invoices i
 where i.status in ('open', 'failed') and i.next_attempt_at <= $1
 order by i.next_attempt_at, i.billed_from
@@ -364,10 +365,12 @@ type ListDueBillingInvoicesRow struct {
 	ID             string
 	OrgID          string
 	PeriodStart    pgtype.Timestamptz
+	PlanSlug       string
+	Status         string
 	CarriedPeriods int64
 }
 
-// Oldest first, so a deal's backlog is charged in order once its first card arrives.
+// Oldest first, so a deal's backlog is charged in order once a card arrives.
 func (q *Queries) ListDueBillingInvoices(ctx context.Context, now pgtype.Timestamptz) ([]ListDueBillingInvoicesRow, error) {
 	rows, err := q.db.Query(ctx, listDueBillingInvoices, now)
 	if err != nil {
@@ -387,6 +390,8 @@ func (q *Queries) ListDueBillingInvoices(ctx context.Context, now pgtype.Timesta
 			&i.ID,
 			&i.OrgID,
 			&i.PeriodStart,
+			&i.PlanSlug,
+			&i.Status,
 			&i.CarriedPeriods,
 		); err != nil {
 			return nil, err

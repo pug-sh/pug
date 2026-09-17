@@ -74,7 +74,7 @@ type ChargeError struct {
 	// Code is the refusal as last_error_code keeps it.
 	Code    string
 	Message string
-	// Declined is the card's answer. Any other refusal is pug's own problem.
+	// Declined is the card's answer. A refusal with neither flag is pug's own problem.
 	Declined bool
 	// NotChargeable claims the mandate has ended; pug acts on it only once a read agrees.
 	NotChargeable bool

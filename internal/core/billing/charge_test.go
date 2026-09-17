@@ -1,6 +1,7 @@
 package billing_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -25,6 +26,29 @@ func seedDue(t *testing.T, f *fixture, from time.Time, cents int64, due time.Tim
 		t.Fatalf("seed due invoice: %v", err)
 	}
 	return id
+}
+
+// updateInvoice moves an invoice by hand, as another writer would.
+func updateInvoice(t *testing.T, f *fixture, id, set string) {
+	t.Helper()
+	if _, err := f.pg.PgW.Exec(t.Context(), `update billing_invoices set `+set+` where id = $1`, id); err != nil {
+		t.Fatalf("update invoice: %v", err)
+	}
+}
+
+// seedMandateIn stores an on-demand mandate added at created and left in status.
+func seedMandateIn(t *testing.T, f *fixture, created time.Time, status string) string {
+	t.Helper()
+	subID := "sub_" + xid.New().String()
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_subscriptions (
+		   create_time, currency, ended_at, id, on_demand, org_id, plan_slug, provider,
+		   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
+		 values ($1, 'USD', $1, $2, true, $3, $4, 'fake', 'cus_1', $5, $6, $1, $5)`,
+		created, xid.New().String(), f.orgID, currentCard().Slug, status, subID); err != nil {
+		t.Fatalf("seed mandate: %v", err)
+	}
+	return subID
 }
 
 func chargeDue(t *testing.T, svc *corebilling.Service, now time.Time) corebilling.ChargeReport {
@@ -181,6 +205,40 @@ func TestChargeSkipsAnInvoiceAnotherWriterMoved(t *testing.T) {
 	}
 }
 
+// A failed invoice dated for a retry is claimed again: the retry stamps the live
+// mandate, clears the last attempt's payment and error, and keeps counting attempts.
+func TestChargeRetriesAFailedInvoice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	subID := seedMandate(t, f, periodStart, time.Time{})
+	id := seedDue(t, f, periodStart, 10_000, closeNow)
+	updateInvoice(t, f, id, `status = 'failed', attempts = 1, failed_at = now(), last_error_code = 'HTTP_402',
+		last_error_message = 'card declined', provider = 'fake', provider_sub_id = 'sub_old',
+		provider_payment_id = 'pay_old'`)
+	var claimed chargeState
+	provider.onCharge = func(in corebilling.ChargeInput) (string, error) {
+		claimed = chargeStateOf(t, f, in.InvoiceID)
+		return "pay_new", nil
+	}
+
+	if r := chargeDue(t, f.svc, closeNow); r != (corebilling.ChargeReport{Charged: 1}) {
+		t.Errorf("report = %+v, want one charged", r)
+	}
+	if claimed.status != string(corebilling.InvoiceCharging) || claimed.providerSubID != subID ||
+		claimed.paymentID != "" || claimed.code != "" || claimed.message != "" {
+		t.Errorf("claimed invoice = %+v, want charging on the live mandate with the last attempt cleared", claimed)
+	}
+	if state := chargeStateOf(t, f, id); state.status != string(corebilling.InvoiceCharged) ||
+		state.paymentID != "pay_new" || state.attempts != 2 {
+		t.Errorf("invoice = %+v, want charged with a second attempt", state)
+	}
+	if got, want := transitions(t, f, id), []string{"failed>charging mandate " + subID, "charging>charged payment pay_new"}; !slices.Equal(got, want) {
+		t.Errorf("events = %q, want %q", got, want)
+	}
+}
+
 // A decline is the card's answer: the invoice fails, and nothing charges it again
 // until it is dated for a retry.
 func TestChargeRecordsADecline(t *testing.T) {
@@ -223,6 +281,7 @@ func TestChargeLeavesAnUnknownOutcomeCharging(t *testing.T) {
 	}{
 		"no answer":                   {errors.New("dodo: charge subscription: context deadline exceeded"), ""},
 		"a refusal that is pug's own": {&corebilling.ChargeError{Code: "HTTP_429", Message: "slow down"}, "HTTP_429"},
+		"a success with no payment":   {nil, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, provider := newPaidFixture(t)
@@ -245,14 +304,83 @@ func TestChargeLeavesAnUnknownOutcomeCharging(t *testing.T) {
 	}
 }
 
+// The provider's answer is recorded even when the pass's deadline passes during the
+// call: the money may have moved.
+func TestChargeRecordsTheAnswerPastThePassDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for name, tc := range map[string]struct {
+		paymentID  string
+		err        error
+		want       corebilling.ChargeReport
+		wantStatus corebilling.InvoiceStatus
+		wantCode   string
+	}{
+		"a payment": {
+			paymentID: "pay_1", want: corebilling.ChargeReport{Charged: 1}, wantStatus: corebilling.InvoiceCharged,
+		},
+		"a decline": {
+			err:  &corebilling.ChargeError{Code: "HTTP_402", Message: "card declined", Declined: true},
+			want: corebilling.ChargeReport{Declined: 1}, wantStatus: corebilling.InvoiceFailed, wantCode: "HTTP_402",
+		},
+		"a refusal that is pug's own": {
+			err:  &corebilling.ChargeError{Code: "HTTP_429", Message: "slow down"},
+			want: corebilling.ChargeReport{Ambiguous: 1}, wantStatus: corebilling.InvoiceCharging, wantCode: "HTTP_429",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			seedMandate(t, f, periodStart, time.Time{})
+			id := seedDue(t, f, periodStart, 10_000, closeNow)
+			ctx, cancel := context.WithCancel(t.Context())
+			provider.onCharge = func(corebilling.ChargeInput) (string, error) {
+				cancel()
+				return tc.paymentID, tc.err
+			}
+
+			if r, err := f.svc.ChargeDue(ctx, closeNow); err != nil || r != tc.want {
+				t.Errorf("report = %+v, err = %v, want %+v", r, err, tc.want)
+			}
+			if state := chargeStateOf(t, f, id); state.status != string(tc.wantStatus) ||
+				state.paymentID != tc.paymentID || state.code != tc.wantCode {
+				t.Errorf("invoice = %+v, want %s with payment %q and code %q", state, tc.wantStatus, tc.paymentID, tc.wantCode)
+			}
+		})
+	}
+}
+
+// A payment taken for an invoice another writer moved meanwhile is an error, never a
+// quiet count.
+func TestChargeFailsOnAPaymentItCannotRecord(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	subID := seedMandate(t, f, periodStart, time.Time{})
+	id := seedDue(t, f, periodStart, 10_000, closeNow)
+	provider.onCharge = func(in corebilling.ChargeInput) (string, error) {
+		updateInvoice(t, f, in.InvoiceID, "status = 'paid'")
+		return "pay_1", nil
+	}
+
+	if r, err := f.svc.ChargeDue(t.Context(), closeNow); err == nil || r != (corebilling.ChargeReport{}) {
+		t.Errorf("report = %+v, err = %v, want an error and nothing counted", r, err)
+	}
+	if got, want := transitions(t, f, id), []string{"open>charging mandate " + subID}; !slices.Equal(got, want) {
+		t.Errorf("events = %q, want %q", got, want)
+	}
+}
+
 // A charge refused as not chargeable writes the invoice off only when the mandate
-// also reads back ended; anything else holds it.
+// also reads back ended and the invoice is not a deal's; anything else holds it.
 func TestChargeActsOnANotChargeableRefusalOnlyWhenTheMandateReadsBackEnded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	for name, tc := range map[string]struct {
 		status     corebilling.SubStatus
+		deal       bool
 		readErr    error
 		wantStatus corebilling.InvoiceStatus
 		want       corebilling.ChargeReport
@@ -261,8 +389,24 @@ func TestChargeActsOnANotChargeableRefusalOnlyWhenTheMandateReadsBackEnded(t *te
 			status: corebilling.SubStatusCancelled, wantStatus: corebilling.InvoiceUncollectible,
 			want: corebilling.ChargeReport{MandateGone: 1},
 		},
+		"reads back expired": {
+			status: corebilling.SubStatusExpired, wantStatus: corebilling.InvoiceUncollectible,
+			want: corebilling.ChargeReport{MandateGone: 1},
+		},
 		"reads back live": {
 			status: corebilling.SubStatusActive, wantStatus: corebilling.InvoiceCharging,
+			want: corebilling.ChargeReport{Ambiguous: 1},
+		},
+		"reads back past due": {
+			status: corebilling.SubStatusPastDue, wantStatus: corebilling.InvoiceCharging,
+			want: corebilling.ChargeReport{Ambiguous: 1},
+		},
+		"reads back paused": {
+			status: corebilling.SubStatusPaused, wantStatus: corebilling.InvoiceCharging,
+			want: corebilling.ChargeReport{Ambiguous: 1},
+		},
+		"a deal's invoice reads back cancelled": {
+			status: corebilling.SubStatusCancelled, deal: true, wantStatus: corebilling.InvoiceCharging,
 			want: corebilling.ChargeReport{Ambiguous: 1},
 		},
 		"reads back a status pug has no word for": {
@@ -285,6 +429,9 @@ func TestChargeActsOnANotChargeableRefusalOnlyWhenTheMandateReadsBackEnded(t *te
 			f, _ := newPaidFixture(t)
 			subID := seedMandate(t, f, periodStart, time.Time{})
 			id := seedDue(t, f, periodStart, 10_000, closeNow)
+			if tc.deal {
+				updateInvoice(t, f, id, "plan_slug = 'custom'")
+			}
 			provider := &fetchProvider{
 				fakeProvider: fakeProvider{name: fakeProviderName},
 				remote:       map[string]corebilling.SubscriptionEvent{},
@@ -312,15 +459,15 @@ func TestChargeActsOnANotChargeableRefusalOnlyWhenTheMandateReadsBackEnded(t *te
 	}
 }
 
-// A deal recorded before its first card keeps its invoices open, and they are charged
-// oldest first once a card arrives (§19.15).
+// An org with no mandate keeps its invoices open, and they are charged oldest first
+// once a card arrives (§19.15).
 func TestChargeHoldsInvoicesUntilTheFirstCard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	older := seedDue(t, f, day(time.June, 10), 10_000, closeNow)
 	newer := seedDue(t, f, day(time.July, 10), 10_000, closeNow)
+	older := seedDue(t, f, day(time.June, 10), 10_000, closeNow)
 
 	if r := chargeDue(t, f.svc, closeNow); r != (corebilling.ChargeReport{AwaitingCard: 2}) || len(provider.charges) != 0 {
 		t.Fatalf("report = %+v, charges = %d, want both held", r, len(provider.charges))
@@ -340,25 +487,132 @@ func TestChargeHoldsInvoicesUntilTheFirstCard(t *testing.T) {
 	}
 }
 
+// Without a live mandate an invoice is written off only once its mandate has ended: a
+// deal's waits for a card, a paused mandate can resume, and a status pug has no word
+// for proves nothing.
+func TestChargeHoldsAnInvoiceWhoseMandateMayComeBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for name, tc := range map[string]struct {
+		mandates []string
+		deal     bool
+		want     corebilling.ChargeReport
+	}{
+		"a paused mandate": {
+			mandates: []string{"paused"}, want: corebilling.ChargeReport{MandatePaused: 1},
+		},
+		"a paused mandate beside an ended one": {
+			mandates: []string{"cancelled", "paused"}, want: corebilling.ChargeReport{MandatePaused: 1},
+		},
+		"a mandate in a status pug has no word for": {
+			mandates: []string{"pending"}, want: corebilling.ChargeReport{Unreadable: 1},
+		},
+		"that beside an ended one": {
+			mandates: []string{"cancelled", "pending"}, want: corebilling.ChargeReport{Unreadable: 1},
+		},
+		"a deal's invoice whose card ended": {
+			mandates: []string{"cancelled"}, deal: true, want: corebilling.ChargeReport{AwaitingCard: 1},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			for i, status := range tc.mandates {
+				seedMandateIn(t, f, day(time.June, 1+i), status)
+			}
+			id := seedDue(t, f, periodStart, 10_000, closeNow)
+			if tc.deal {
+				updateInvoice(t, f, id, "plan_slug = 'custom'")
+			}
+
+			if r := chargeDue(t, f.svc, closeNow); r != tc.want || len(provider.charges) != 0 {
+				t.Errorf("report = %+v, charges = %d, want %+v and no charge", r, len(provider.charges), tc.want)
+			}
+			if state := chargeStateOf(t, f, id); state.status != string(corebilling.InvoiceOpen) || len(transitions(t, f, id)) != 0 {
+				t.Errorf("invoice = %+v, want held open with nothing recorded", state)
+			}
+		})
+	}
+}
+
+// A deal's invoice the close reported as awaiting a card is held by the charge too,
+// though the org's earlier card ended (§19.15).
+func TestChargeHoldsADealsInvoiceAsItsCloseReported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	seedMandate(t, f, day(time.June, 15), day(time.July, 1))
+	setDealTerms(t, f, periodStart, time.Time{})
+	seedDaily(t, f, seedProjectFor(t, f), periodStart, periodEnd, 100_000)
+	stampMeter(t, f, closeNow)
+	if r := closePeriods(t, f, closeNow); r.AwaitingCard != 1 {
+		t.Fatalf("close report = %+v, want the deal's invoice awaiting a card", r)
+	}
+
+	due := closeNow.AddDate(0, 0, corebilling.ChargeNoticeDays)
+	if r := chargeDue(t, f.svc, due); r != (corebilling.ChargeReport{AwaitingCard: 1}) || len(provider.charges) != 0 {
+		t.Errorf("report = %+v, charges = %d, want the deal's invoice held", r, len(provider.charges))
+	}
+	invs := invoices(t, f)
+	deal := slices.IndexFunc(invs, func(inv invoiceRow) bool { return inv.planSlug == corebilling.SlugCustom })
+	if deal < 0 || invs[deal].status != string(corebilling.InvoiceOpen) {
+		t.Errorf("invoices = %+v, want the deal's held open", invs)
+	}
+}
+
 // An org whose only mandate has ended has nothing to charge.
 func TestChargeWritesOffAnInvoiceWhoseMandateEnded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	f, provider := newPaidFixture(t)
-	seedMandate(t, f, periodStart, day(time.August, 25))
-	id := seedDue(t, f, periodStart, 10_000, closeNow)
+	for _, from := range []corebilling.InvoiceStatus{corebilling.InvoiceOpen, corebilling.InvoiceFailed} {
+		t.Run(string(from), func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			seedMandate(t, f, periodStart, day(time.August, 25))
+			id := seedDue(t, f, periodStart, 10_000, closeNow)
+			updateInvoice(t, f, id, "status = '"+string(from)+"'")
 
-	if r := chargeDue(t, f.svc, closeNow); r != (corebilling.ChargeReport{MandateGone: 1}) || len(provider.charges) != 0 {
-		t.Errorf("report = %+v, charges = %d, want written off uncharged", r, len(provider.charges))
+			if r := chargeDue(t, f.svc, closeNow); r != (corebilling.ChargeReport{MandateGone: 1}) || len(provider.charges) != 0 {
+				t.Errorf("report = %+v, charges = %d, want written off uncharged", r, len(provider.charges))
+			}
+			state := chargeStateOf(t, f, id)
+			if state.status != string(corebilling.InvoiceUncollectible) || state.code != "mandate_gone" ||
+				state.nextAttemptAt != nil || state.failedAt == nil {
+				t.Errorf("invoice = %+v, want uncollectible as mandate_gone", state)
+			}
+			if got, want := transitions(t, f, id), []string{string(from) + ">uncollectible mandate_gone"}; !slices.Equal(got, want) {
+				t.Errorf("events = %q, want %q", got, want)
+			}
+		})
 	}
-	state := chargeStateOf(t, f, id)
-	if state.status != string(corebilling.InvoiceUncollectible) || state.code != "mandate_gone" ||
-		state.nextAttemptAt != nil || state.failedAt == nil {
-		t.Errorf("invoice = %+v, want uncollectible as mandate_gone", state)
+}
+
+// A write-off no read corroborated never takes an invoice another charge has claimed.
+func TestChargeNeverWritesOffAChargeInFlightUnread(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
 	}
-	if got, want := transitions(t, f, id), []string{"open>uncollectible mandate_gone"}; !slices.Equal(got, want) {
-		t.Errorf("events = %q, want %q", got, want)
+	f, provider := newPaidFixture(t)
+	subID := seedMandate(t, f, day(time.June, 1), time.Time{})
+	seedDue(t, f, day(time.June, 10), 10_000, closeNow.Add(-time.Hour))
+	second := seedDue(t, f, day(time.July, 10), 10_000, closeNow)
+	provider.onCharge = func(corebilling.ChargeInput) (string, error) {
+		// Another charger claims the second invoice, and the mandate ends meanwhile.
+		updateInvoice(t, f, second, "status = 'charging'")
+		if _, err := f.pg.PgW.Exec(t.Context(),
+			`update billing_subscriptions set status = 'cancelled', ended_at = now() where provider_sub_id = $1`,
+			subID); err != nil {
+			t.Fatalf("cancel the mandate: %v", err)
+		}
+		return "pay_1", nil
+	}
+
+	if r := chargeDue(t, f.svc, closeNow); r != (corebilling.ChargeReport{Charged: 1}) {
+		t.Errorf("report = %+v, want only the first charged", r)
+	}
+	if state := chargeStateOf(t, f, second); state.status != string(corebilling.InvoiceCharging) || len(transitions(t, f, second)) != 0 {
+		t.Errorf("second invoice = %+v, want left charging with nothing recorded", state)
 	}
 }
 
@@ -367,31 +621,104 @@ func TestChargeDescribesACarriedBalance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	f, provider := newPaidFixture(t)
-	reports := closeMonths(t, f, 150_000, 150_000, 150_000)
-	if reports[2].Closed != 1 {
-		t.Fatalf("reports = %+v, want the third close to carry the first two", reports)
-	}
-	lastClose := time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC).Add(grace).Add(6 * time.Hour)
-	chargeDue(t, f.svc, lastClose.AddDate(0, 0, corebilling.ChargeNoticeDays))
+	for name, tc := range map[string]struct {
+		events []int64
+		want   string
+		cents  int64
+	}{
+		"two periods": {
+			events: []int64{150_000, 150_000, 150_000},
+			want:   "Pug: 150,000 events, 10 Nov to 9 Dec 2025, and $4.00 carried from 2 earlier periods",
+			cents:  600,
+		},
+		"one period": {
+			events: []int64{150_000, 250_000},
+			want:   "Pug: 250,000 events, 10 Oct to 9 Nov 2025, and $2.00 carried from 1 earlier period",
+			cents:  800,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			reports := closeMonths(t, f, tc.events...)
+			if reports[len(reports)-1].Closed != 1 {
+				t.Fatalf("reports = %+v, want the last close to carry the others", reports)
+			}
+			lastClose := time.Date(2025, 9, 10, 0, 0, 0, 0, time.UTC).AddDate(0, len(tc.events), 0).Add(grace).Add(6 * time.Hour)
+			chargeDue(t, f.svc, lastClose.AddDate(0, 0, corebilling.ChargeNoticeDays))
 
-	want := "Pug: 150,000 events, 10 Nov to 9 Dec 2025, and $4.00 carried from 2 earlier periods"
-	if len(provider.charges) != 1 || provider.charges[0].Description != want || provider.charges[0].AmountCents != 600 {
-		t.Errorf("charges = %+v, want $6.00 described as %q", provider.charges, want)
+			if len(provider.charges) != 1 || provider.charges[0].Description != tc.want || provider.charges[0].AmountCents != tc.cents {
+				t.Errorf("charges = %+v, want %d cents described as %q", provider.charges, tc.cents, tc.want)
+			}
+		})
 	}
 }
 
-// With no provider there is nothing to charge through.
-func TestChargeWithoutAProviderIsANoop(t *testing.T) {
+// Two carried invoices from one period are one period on the receipt.
+func TestChargeCountsCarriedPeriodsNotInvoices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	seedMandate(t, f, day(time.June, 1), time.Time{})
+	carrier := seedDue(t, f, periodStart, 10_000, closeNow)
+	july := day(time.July, 10)
+	for _, from := range []time.Time{july, july.AddDate(0, 0, 10)} {
+		if _, err := f.pg.PgW.Exec(t.Context(),
+			`insert into billing_invoices (
+			   amount_cents, billed_from, billed_to, covered_by, currency, event_count, id, lines, org_id,
+			   period_end, period_start, plan_slug, pricing, status, usage_cents, usage_computed_at)
+			 values (100, $1, $2, $3, 'USD', 0, $4, '[]', $5, $6, $7, 'x', '{}', 'deferred', 100, now())`,
+			from, from.AddDate(0, 0, 10), carrier, xid.New().String(), f.orgID, periodStart, july); err != nil {
+			t.Fatalf("seed a carried invoice: %v", err)
+		}
+	}
+	updateInvoice(t, f, carrier, "carried_cents = 200, amount_cents = usage_cents + 200")
+
+	chargeDue(t, f.svc, closeNow)
+	want := "Pug: 1,000,000 events, 10 Aug to 9 Sep 2026, and $2.00 carried from 1 earlier period"
+	if len(provider.charges) != 1 || provider.charges[0].Description != want {
+		t.Errorf("charges = %+v, want described as %q", provider.charges, want)
+	}
+}
+
+// Invoices due with no provider to charge them fail the step; nothing due is nothing
+// to report.
+func TestChargeWithoutAProviderFailsOnceAnInvoiceIsDue(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f := newFixture(t)
-	seedMandate(t, f, periodStart, time.Time{})
 	id := seedDue(t, f, periodStart, 10_000, closeNow)
 
-	if r := chargeDue(t, f.svc, closeNow); r != (corebilling.ChargeReport{}) {
-		t.Errorf("report = %+v, want nothing", r)
+	if r := chargeDue(t, f.svc, closeNow.Add(-time.Minute)); r != (corebilling.ChargeReport{}) {
+		t.Errorf("before it is due: report = %+v, want nothing", r)
+	}
+	if r, err := f.svc.ChargeDue(t.Context(), closeNow); !errors.Is(err, corebilling.ErrNoProvider) || r != (corebilling.ChargeReport{}) {
+		t.Errorf("report = %+v, err = %v, want ErrNoProvider", r, err)
+	}
+	if state := chargeStateOf(t, f, id); state.status != string(corebilling.InvoiceOpen) {
+		t.Errorf("invoice = %+v, want untouched", state)
+	}
+}
+
+// With billing off nothing is charged, whatever provider is configured.
+func TestChargeWithBillingOffChargesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	seedMandate(t, f, periodStart, time.Time{})
+	id := seedDue(t, f, periodStart, 10_000, closeNow)
+	svc, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, false, &corebilling.Payments{
+		MandateProduct: mandateProduct,
+		Provider:       provider,
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if r := chargeDue(t, svc, closeNow); r != (corebilling.ChargeReport{}) || len(provider.charges) != 0 {
+		t.Errorf("report = %+v, charges = %d, want nothing", r, len(provider.charges))
 	}
 	if state := chargeStateOf(t, f, id); state.status != string(corebilling.InvoiceOpen) {
 		t.Errorf("invoice = %+v, want untouched", state)

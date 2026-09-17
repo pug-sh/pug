@@ -183,7 +183,7 @@ select status from billing_invoices where id = @id for update;
 
 -- name: MarkBillingInvoiceCharging :one
 -- The intent, committed before the provider is called. Each attempt stamps the
--- mandate it charges and clears what the previous attempt left.
+-- mandate it charges and clears the last attempt's payment id and error.
 update billing_invoices
 set status = 'charging', provider = @provider, provider_sub_id = @provider_sub_id,
     provider_payment_id = null, last_error_code = '', last_error_message = ''
@@ -204,10 +204,12 @@ where id = @id and status = 'charging'
 returning *;
 
 -- name: MarkBillingInvoiceUncollectible :one
+-- Guarded on the status the caller saw: only a corroborating read writes off a
+-- charge in flight.
 update billing_invoices
 set status = 'uncollectible', failed_at = @failed_at, next_attempt_at = null,
     last_error_code = @last_error_code, last_error_message = @last_error_message
-where id = @id and status in ('open', 'charging', 'failed')
+where id = @id and status = @from_status and status in ('open', 'charging', 'failed')
 returning *;
 
 -- name: RecordBillingInvoiceChargeError :execrows
