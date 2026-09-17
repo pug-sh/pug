@@ -17,7 +17,7 @@ var errNATSNotConnected = errors.New("nats connection not established")
 
 // readinessTimeout bounds the total time spent pinging dependencies so a hung
 // dependency can't make the probe itself hang. Keep it ≤ the readiness probe's
-// timeoutSeconds in the Deployment manifest (pug-sh/gitops) so the two deadlines
+// timeoutSeconds in the Deployment manifest so the two deadlines
 // don't drift apart.
 const readinessTimeout = 2 * time.Second
 

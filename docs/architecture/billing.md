@@ -508,8 +508,7 @@ Against a database without 019 every `GetUsage` returns `Internal` for every org
 and every metering pass exits non-zero — billing being switched off does not
 help, because the join is in SQL, below the flag. The same applies in reverse to
 a 019 down-migration, which would take metering down rather than just billing.
-Deploy ordering lives in the `pug-sh/gitops` repo; nothing in this repo enforces
-it.
+Nothing in this repo enforces that deploy ordering.
 
 ## 7. RPC surface & authorization
 

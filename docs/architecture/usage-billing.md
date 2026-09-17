@@ -916,8 +916,8 @@ order:
 
 A separate binary rather than a stage of `billing-reconcile`: reconcile is
 "nothing auto-fixed" and read-mostly, this one moves money, and the two want
-different cadences and different alerts. The cost is another CronJob in
-gitops. Decision §19.9.
+different cadences and different alerts. The cost is another CronJob to
+deploy. Decision §19.9.
 
 **Every failure that is a person's to fix is a finding, not an exit code**
 (a declined card, a cancelled mandate, a period the meter has not reached).
@@ -1037,7 +1037,7 @@ production has neither.
 
 No data migration and no backfill: production has billing off and every
 billing table empty. The three tier product keys go from any deployment that
-set them (gitops sets none today); the Dodo products behind them are retired
+set them (production sets none today); the Dodo products behind them are retired
 in Dodo's dashboard by hand.
 
 ## 15. Alternatives considered
@@ -1268,8 +1268,8 @@ and the authz tests — each container package keeping `TestMain` and no
    actual end unbilled; run a mandate → close → charge → `payment.succeeded` → portal
    cancel cycle end to end, and a $1.00 charge to read the fee Dodo actually
    takes off a small one.
-3. gitops: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the
-   invoice pass, the invoice one hourly. It sets no tier keys today.
+3. Deployment: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the
+   invoice pass, the invoice one hourly. Production sets no tier keys today.
 4. Flip `PUG_BILLING_ENABLED` when the dashboard side (`../app`: rate card,
    estimate, invoices, "Add payment method" replacing "Upgrade") has landed.
 5. `CLAUDE.md` pointers and the fold-in of this document into the three docs
@@ -1511,5 +1511,5 @@ constraints break.
 
 Pull requests follow the seams: 2–5 for pricing and mandates, 6–11 for the
 ledger, 12–15 for the pass, the surface and the docs, and 16 on its own.
-Outside this repo: gitops (§18.3), the dashboard in `../app` (§18.4), and the
+Outside this repo: the deployment (§18.3), the dashboard in `../app` (§18.4), and the
 Dodo test-mode run (§18.2), which gates turning billing on, not merging.

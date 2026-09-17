@@ -205,7 +205,7 @@ not a smaller global one.
 
 1. ✅ Migration 012: `bot` and `bot_reason` on `events`, `bot` key column on
    both rollups. Lands via PreSync before anything writes them — bump the
-   migrate image digest in the same gitops commit as the server and worker
+   migrate image digest in the same deploy as the server and worker
    images, or the new INSERT fails `NO_SUCH_COLUMN` and every batch goes to
    the DLQ while SDKs still see 200 (see web-analytics.md's deploy runbook).
 2. ✅ Server: the dependency, `datacenterASNs`, `enrichBot`, the two
