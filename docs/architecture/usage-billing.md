@@ -672,7 +672,10 @@ The payment settle reads whole must come from the invoice's mandate too.
 `refund.succeeded` finds its invoice by the payment refunded. A full refund of a
 `charged` one is retried until its success lands, since only a success can be
 refunded; of any other not yet `paid`, it is stored, marked processed and not
-applied.
+applied. An unanswered charge holds no payment id, so a payment no invoice holds
+is read back, and its refund is retried too while the invoice it names, on its
+mandate, can still be paid. A partial refund commits with its delivery's
+completion, or a retry would record it twice.
 As with `ConfirmCheckout`, the webhook is not the only route: the pass also
 polls `Payments.Get` for `charged` rows older than an hour, so a deployment
 with no reachable webhook URL still learns whether it was paid. A payment with no
@@ -1122,8 +1125,9 @@ and the authz tests — each container package keeping `TestMain` and no
   ignore a payment carrying none, and refuse one whose `subscription_id` is not
   the invoice's mandate; an earlier attempt's `payment.failed` moves nothing;
   a body whose status disagrees with its type retried; a partial refund leaves
-  the invoice `paid`, a full refund of a `charged` one is retried until its
-  success lands, and one of any other unpaid invoice is not applied; a
+  the invoice `paid` and is recorded once, a full refund of a `charged` one or
+  any refund of an unanswered charge's payment is retried until its success
+  lands, and one of any other unpaid invoice is not applied; a
   non-on-demand or tax-inclusive subscription is rejected by the webhook and
   by `ConfirmCheckout`; `past_due` maps live.
 - **The Dodo adapter** (`internal/deps/dodo`, against an httptest server) — the

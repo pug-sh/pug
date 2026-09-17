@@ -656,6 +656,7 @@ func TestRefundDeliveryRecordsMoneyReturned(t *testing.T) {
 		status     corebilling.InvoiceStatus
 		paymentID  string
 		partial    bool
+		mangle     func(p *corebilling.Payment)
 		wantStatus corebilling.InvoiceStatus
 		wantEvents []string
 		rejected   bool
@@ -677,12 +678,21 @@ func TestRefundDeliveryRecordsMoneyReturned(t *testing.T) {
 		"a refund of a payment no invoice holds": {
 			status: corebilling.InvoicePaid, paymentID: "pay_0", wantStatus: corebilling.InvoicePaid,
 		},
+		"a refund of another mandate's payment naming an unanswered charge": {
+			status: corebilling.InvoiceCharging, wantStatus: corebilling.InvoiceCharging,
+			mangle: func(p *corebilling.Payment) { p.ProviderSubID = "sub_link" },
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, provider := newPaidFixture(t)
 			subID := seedMandate(t, f, periodStart, time.Time{})
 			id := seedCharge(t, f, periodStart, subID, corebilling.InvoiceCharged, tc.paymentID, closeNow)
 			updateInvoice(t, f, id, "status = '"+string(tc.status)+"'")
+			refunded := paymentOf("pay_1", id, subID, corebilling.PaymentSucceeded, closeNow)
+			if tc.mangle != nil {
+				tc.mangle(&refunded)
+			}
+			provider.payments = []corebilling.Payment{refunded}
 
 			deliverPayment(t, f, provider, "evt_1", corebilling.PaymentEvent{
 				Payment: corebilling.Payment{PaymentID: "pay_1"}, PartialRefund: tc.partial, RefundCents: 250, RefundID: "rf_1",
@@ -702,29 +712,75 @@ func TestRefundDeliveryRecordsMoneyReturned(t *testing.T) {
 }
 
 // A refund can reach pug before the success it returns money on, and waits for it:
-// rejected, the success would then mark paid an invoice whose money went back.
+// rejected, the success would then mark paid an invoice whose money went back. An
+// unanswered charge holds no payment id yet, so the payment is read back for its invoice.
 func TestARefundBeforeItsSuccessIsRetried(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for name, status := range map[string]corebilling.InvoiceStatus{
+		"a charge holding the payment": corebilling.InvoiceCharged,
+		"an unanswered charge":         corebilling.InvoiceCharging,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			subID := seedMandate(t, f, periodStart, time.Time{})
+			id := seedCharge(t, f, periodStart, subID, status, "pay_1", closeNow)
+			paid := paymentOf("pay_1", id, subID, corebilling.PaymentSucceeded, settleNow)
+			provider.payments = []corebilling.Payment{paid}
+			refund := corebilling.PaymentEvent{Payment: corebilling.Payment{PaymentID: "pay_1"}, RefundID: "rf_1"}
+
+			provider.payment = refund
+			if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_refund", settleNow)); err == nil {
+				t.Fatal("a refund of a payment not yet settled was accepted")
+			}
+			if d := storedDelivery(t, f, "evt_refund"); d.ProcessedAt.Valid {
+				t.Error("the early refund was marked processed, so no retry would apply it")
+			}
+			deliverPayment(t, f, provider, "evt_paid", corebilling.PaymentEvent{Payment: paid})
+			deliverPayment(t, f, provider, "evt_refund", refund)
+			if state := chargeStateOf(t, f, id); state.status != string(corebilling.InvoiceRefunded) {
+				t.Errorf("invoice = %+v, want refunded once its success landed", state)
+			}
+		})
+	}
+}
+
+// failCompletionProvider fails the delivery's completion by removing its row mid-apply.
+type failCompletionProvider struct {
+	*fakeProvider
+	t *testing.T
+	f *fixture
+}
+
+func (p failCompletionProvider) NormalizePayment(d corebilling.Delivery) (corebilling.PaymentEvent, error) {
+	if _, err := p.f.pg.PgW.Exec(p.t.Context(),
+		`delete from billing_webhook_deliveries where webhook_id = $1`, d.WebhookID); err != nil {
+		p.t.Fatalf("delete delivery: %v", err)
+	}
+	return p.fakeProvider.NormalizePayment(d)
+}
+
+// A partial refund commits with its delivery's completion, so the retry of a delivery
+// that could not complete records it once.
+func TestAPartialRefundIsRecordedOnce(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
 	subID := seedMandate(t, f, periodStart, time.Time{})
 	id := seedCharge(t, f, periodStart, subID, corebilling.InvoiceCharged, "pay_1", closeNow)
-	refund := corebilling.PaymentEvent{Payment: corebilling.Payment{PaymentID: "pay_1"}, RefundID: "rf_1"}
+	updateInvoice(t, f, id, "status = 'paid'")
+	provider.payment = corebilling.PaymentEvent{
+		Payment: corebilling.Payment{PaymentID: "pay_1"}, PartialRefund: true, RefundCents: 250, RefundID: "rf_1",
+	}
 
-	provider.payment = refund
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_refund", settleNow)); err == nil {
-		t.Fatal("a refund of a payment not yet settled was accepted")
+	if err := f.svc.HandleDelivery(t.Context(), failCompletionProvider{provider, t, f}, delivery("evt_1", settleNow)); err == nil {
+		t.Fatal("a delivery whose completion failed was accepted")
 	}
-	if d := storedDelivery(t, f, "evt_refund"); d.ProcessedAt.Valid {
-		t.Error("the early refund was marked processed, so no retry would apply it")
-	}
-	deliverPayment(t, f, provider, "evt_paid", corebilling.PaymentEvent{
-		Payment: paymentOf("pay_1", id, subID, corebilling.PaymentSucceeded, settleNow),
-	})
-	deliverPayment(t, f, provider, "evt_refund", refund)
-	if state := chargeStateOf(t, f, id); state.status != string(corebilling.InvoiceRefunded) {
-		t.Errorf("invoice = %+v, want refunded once its success landed", state)
+	deliverPayment(t, f, provider, "evt_1", provider.payment)
+	if got, want := transitions(t, f, id)[2:], []string{"paid>paid partial refund rf_1 of $2.50"}; !slices.Equal(got, want) {
+		t.Errorf("events = %q, want %q", got, want)
 	}
 }
 

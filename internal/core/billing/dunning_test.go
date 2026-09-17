@@ -352,7 +352,9 @@ func TestANewMandateReopensWhatItHasNotTried(t *testing.T) {
 	}
 	gone := seed(f, day(time.March, 10), "status = 'uncollectible', next_attempt_at = null, provider_sub_id = 'sub_old'")
 	neverTried := seed(f, day(time.April, 10), "status = 'uncollectible', next_attempt_at = null")
-	own := seed(f, day(time.May, 10), "status = 'failed', attempts = 1, provider_sub_id = 'sub_new'")
+	retry := closeNow.Add(72 * time.Hour)
+	own := seed(f, day(time.May, 10),
+		"status = 'failed', attempts = 1, provider_sub_id = 'sub_new', next_attempt_at = next_attempt_at + interval '72 hours'")
 	elsewhere := seed(&other, day(time.March, 10), "status = 'uncollectible', next_attempt_at = null")
 
 	provider.event = subEvent(f.orgID, "sub_new", mandateProduct, corebilling.SubStatusActive)
@@ -361,12 +363,20 @@ func TestANewMandateReopensWhatItHasNotTried(t *testing.T) {
 			t.Fatalf("HandleDelivery %s: %v", id, err)
 		}
 	}
-	for id, want := range map[string]corebilling.InvoiceStatus{
-		gone: corebilling.InvoiceOpen, neverTried: corebilling.InvoiceOpen,
-		own: corebilling.InvoiceFailed, elsewhere: corebilling.InvoiceUncollectible,
+	for id, want := range map[string]struct {
+		status corebilling.InvoiceStatus
+		due    time.Time
+	}{
+		gone: {corebilling.InvoiceOpen, closeNow}, neverTried: {corebilling.InvoiceOpen, closeNow},
+		own: {corebilling.InvoiceFailed, retry}, elsewhere: {corebilling.InvoiceUncollectible, time.Time{}},
 	} {
-		if state := chargeStateOf(t, f, id); state.status != string(want) {
-			t.Errorf("invoice %s = %+v, want %s", id, state, want)
+		state := chargeStateOf(t, f, id)
+		var due time.Time
+		if state.nextAttemptAt != nil {
+			due = *state.nextAttemptAt
+		}
+		if state.status != string(want.status) || !due.Equal(want.due) {
+			t.Errorf("invoice %s = %+v, want %s due at %v", id, state, want.status, want.due)
 		}
 	}
 	if got, want := transitions(t, f, gone), []string{"uncollectible>open new mandate sub_new"}; !slices.Equal(got, want) {
