@@ -180,6 +180,9 @@ type SubscriptionEvent struct {
 	CancelAtPeriodEnd bool
 	// EndedAt is when a cancelled or expired mandate stopped, when the provider says.
 	EndedAt time.Time
+	// PaymentMethodUpdated is a new card on the mandate, which reopens the org's
+	// failed and uncollectible invoices.
+	PaymentMethodUpdated bool
 }
 
 // IsZero reports the "nothing to apply" disposition.

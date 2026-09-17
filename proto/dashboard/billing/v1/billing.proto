@@ -61,8 +61,8 @@ message CustomTerms {
   google.protobuf.Int64Value included_events = 3;
 }
 
-// BillingStatus is derived from the clock on every read, never stored. The
-// states a provider reports live on SubscriptionStatus instead.
+// BillingStatus is derived from the clock and the invoice ledger on every read,
+// never stored. The states a provider reports live on SubscriptionStatus instead.
 enum BillingStatus {
   BILLING_STATUS_UNSPECIFIED = 0;
   // Inside the trial window, which runs from org creation unless extended.
@@ -71,6 +71,18 @@ enum BillingStatus {
   BILLING_STATUS_ACTIVE = 2;
   // The floor: never trialed, trial expired, or a contract that has ended.
   BILLING_STATUS_FREE = 3;
+  // A charge failed or was written off, whatever the plan. It clears the moment a
+  // retry succeeds. Worth a banner, never a block: events are still accepted.
+  BILLING_STATUS_PAST_DUE = 4;
+}
+
+// PastDueReason is what a past-due org has to do about it.
+enum PastDueReason {
+  PAST_DUE_REASON_UNSPECIFIED = 0;
+  // The card was declined: update it in the portal.
+  PAST_DUE_REASON_DECLINED = 1;
+  // The charge is over the card's authorized ceiling: authorize it again.
+  PAST_DUE_REASON_REAUTHORIZE = 2;
 }
 
 // SubscriptionStatus is the provider subscription behind the entitlement, in pug's
@@ -141,6 +153,8 @@ message GetBillingStatusResponse {
   // A live payment method pug can charge. False is an org that owes nothing
   // because nothing can be collected from it, not an org with no usage.
   bool chargeable = 16;
+  // Set exactly when status is PAST_DUE.
+  PastDueReason past_due_reason = 17;
 }
 
 message CreateCheckoutSessionRequest {

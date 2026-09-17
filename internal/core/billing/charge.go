@@ -24,8 +24,10 @@ const (
 // ChargeReport is what one charge step did and found.
 type ChargeReport struct {
 	Charged int
-	// Declined is a charge the card refused, left failed.
+	// Declined is a charge the card refused, left failed with its retry dated.
 	Declined int
+	// Uncollectible is a refusal that is final: a hard decline, or the last attempt.
+	Uncollectible int
 	// Ambiguous is a charge left charging, to be settled by reading.
 	Ambiguous int
 	// MandateGone is an invoice written off because the org's mandate has ended.
@@ -151,16 +153,13 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 			slog.String("invoice_id", inv.ID), slog.String("code", refused.Code))
 		ctx, cancel := recording(ctx)
 		defer cancel()
-		moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "declined "+refused.Code,
-			func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
-				return w.MarkBillingInvoiceFailed(ctx, dbwrite.MarkBillingInvoiceFailedParams{
-					FailedAt:         postgres.NewTimestamptz(now),
-					ID:               inv.ID,
-					LastErrorCode:    refused.Code,
-					LastErrorMessage: refused.Message,
-				})
-			})
-		if moved {
+		moved, final, err := s.decline(ctx, inv.OrgID, inv.ID, InvoiceCharging,
+			Payment{ErrorCode: refused.Code, ErrorMessage: refused.Message}, now, ActorInvoicePass)
+		switch {
+		case !moved:
+		case final:
+			r.Uncollectible++
+		default:
 			r.Declined++
 		}
 		return err

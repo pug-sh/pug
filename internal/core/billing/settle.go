@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,9 +30,12 @@ const (
 type SettleReport struct {
 	Paid int
 	// Adopted is a charge whose payment a read found still in flight, now charged.
-	Adopted  int
-	Failed   int
-	Reopened int
+	Adopted int
+	// Failed is a payment the provider failed, left failed with its retry dated.
+	Failed int
+	// Uncollectible is a failure that is final: a hard decline, or the last attempt.
+	Uncollectible int
+	Reopened      int
 	// Pending is a charged payment still in flight, asked about again next pass.
 	Pending int
 	// Duplicate is a payment that took money with no bill behind it: a refund by hand.
@@ -130,16 +132,7 @@ func (s *Service) settleCharging(ctx context.Context, inv dbread.ListBillingInvo
 	case len(failed) > 0:
 		pick = failed[0]
 	default:
-		moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "no payment found",
-			func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
-				return w.ReopenBillingInvoiceCharge(ctx, dbwrite.ReopenBillingInvoiceChargeParams{
-					ID: inv.ID, NextAttemptAt: postgres.NewTimestamptz(now),
-				})
-			})
-		if moved {
-			r.Reopened++
-		}
-		return err
+		return s.reopenCharge(ctx, inv, now, r)
 	}
 	payment, ok := s.fetchPayment(ctx, inv, pick.PaymentID, r)
 	if !ok {
@@ -171,6 +164,43 @@ func (s *Service) settleCharging(ctx context.Context, inv dbread.ListBillingInvo
 		})
 	if moved {
 		r.Adopted++
+	}
+	return err
+}
+
+// reopenCharge charges again an invoice a read found no payment for. Each lap may
+// really take money, so the attempts bound it; a charge the provider answered took
+// nothing and spends none.
+func (s *Service) reopenCharge(ctx context.Context, inv dbread.ListBillingInvoicesToSettleRow, now time.Time, r *SettleReport) error {
+	var to InvoiceStatus
+	moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "no payment found",
+		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
+			cur, err := w.GetBillingInvoiceAttempts(ctx, inv.ID)
+			if err != nil {
+				return dbwrite.BillingInvoice{}, err
+			}
+			if cur.LastErrorCode == "" && int(cur.Attempts)+1 >= MaxChargeAttempts {
+				to = InvoiceUncollectible
+				return w.DeclineBillingInvoice(ctx, dbwrite.DeclineBillingInvoiceParams{
+					FailedAt:         postgres.NewTimestamptz(now),
+					FromStatus:       string(InvoiceCharging),
+					ID:               inv.ID,
+					LastErrorCode:    codeUnsettled,
+					LastErrorMessage: "no payment found for the last charge attempt",
+					Status:           string(InvoiceUncollectible),
+				})
+			}
+			to = InvoiceOpen
+			return w.ReopenBillingInvoiceCharge(ctx, dbwrite.ReopenBillingInvoiceChargeParams{
+				ID: inv.ID, NextAttemptAt: postgres.NewTimestamptz(now),
+			})
+		})
+	switch {
+	case !moved:
+	case to == InvoiceUncollectible:
+		r.Uncollectible++
+	default:
+		r.Reopened++
 	}
 	return err
 }
@@ -214,18 +244,12 @@ func (s *Service) settleFailed(
 	ctx context.Context, orgID, invoiceID string, from InvoiceStatus, p Payment, now time.Time, actor string,
 	r *SettleReport,
 ) error {
-	moved, err := s.moveInvoice(ctx, orgID, invoiceID, actor, strings.TrimSpace("declined "+p.ErrorCode),
-		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
-			return w.MarkBillingInvoicePaymentFailed(ctx, dbwrite.MarkBillingInvoicePaymentFailedParams{
-				FailedAt:          postgres.NewTimestamptz(now),
-				FromStatus:        string(from),
-				ID:                invoiceID,
-				LastErrorCode:     p.ErrorCode,
-				LastErrorMessage:  p.ErrorMessage,
-				ProviderPaymentID: postgres.NewOptionalText(p.PaymentID),
-			})
-		})
-	if moved {
+	moved, final, err := s.decline(ctx, orgID, invoiceID, from, p, now, actor)
+	switch {
+	case !moved:
+	case final:
+		r.Uncollectible++
+	default:
 		r.Failed++
 	}
 	return err

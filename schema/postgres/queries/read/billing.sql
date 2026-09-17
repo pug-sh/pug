@@ -126,3 +126,10 @@ select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.s
 from billing_invoices i
 where i.status in ('charging', 'charged')
 order by entered_at;
+
+-- name: HasDunningBillingInvoice :one
+-- What makes an org PAST_DUE. Never a deferred row: nothing was asked of the customer.
+select exists (
+  select 1 from billing_invoices
+  where org_id = @org_id and status in ('failed', 'uncollectible')
+);

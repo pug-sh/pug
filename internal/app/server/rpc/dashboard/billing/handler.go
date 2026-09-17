@@ -72,6 +72,7 @@ func (s *Server) GetBillingStatus(
 	resp.RateCard = rateCardToRPC(ent.Card)
 	resp.CustomTerms = customTermsToRPC(ent.Terms)
 	resp.Chargeable = proto.Bool(ent.Chargeable)
+	resp.PastDueReason = pastDueReasonToRPC(ent.PastDueReason).Enum()
 	if !ent.TrialEndsAt.IsZero() {
 		resp.TrialEndsAt = timestamppb.New(ent.TrialEndsAt)
 	}
@@ -316,8 +317,20 @@ func statusToRPC(s corebilling.Status) billingv1.BillingStatus {
 		return billingv1.BillingStatus_BILLING_STATUS_ACTIVE
 	case corebilling.StatusFree:
 		return billingv1.BillingStatus_BILLING_STATUS_FREE
+	case corebilling.StatusPastDue:
+		return billingv1.BillingStatus_BILLING_STATUS_PAST_DUE
 	}
 	return billingv1.BillingStatus_BILLING_STATUS_UNSPECIFIED
+}
+
+func pastDueReasonToRPC(r corebilling.PastDueReason) billingv1.PastDueReason {
+	switch r {
+	case corebilling.PastDueDeclined:
+		return billingv1.PastDueReason_PAST_DUE_REASON_DECLINED
+	case corebilling.PastDueReauthorize:
+		return billingv1.PastDueReason_PAST_DUE_REASON_REAUTHORIZE
+	}
+	return billingv1.PastDueReason_PAST_DUE_REASON_UNSPECIFIED
 }
 
 // subStatusToRPC maps pug's subscription vocabulary. A stored word outside it

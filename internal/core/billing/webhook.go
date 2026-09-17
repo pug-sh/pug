@@ -209,6 +209,12 @@ func (s *Service) applySubscriptionEvent(
 		slog.InfoContext(ctx, "skipped a stale subscription delivery",
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 	}
+	// Even from a stale delivery: the card changed whatever newer state landed first.
+	if event.PaymentMethodUpdated {
+		if err := s.reopenDunning(ctx, orgID, "webhook "+d.WebhookID, d.DeliveredAt); err != nil {
+			return err
+		}
+	}
 	return s.finishDelivery(ctx, provider, d, "")
 }
 

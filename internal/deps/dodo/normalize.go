@@ -27,9 +27,10 @@ const (
 const subscriptionPrefix = "subscription."
 
 const (
-	eventPaymentSucceeded = "payment.succeeded"
-	eventPaymentFailed    = "payment.failed"
-	eventRefundSucceeded  = "refund.succeeded"
+	eventPaymentMethodUpdated = "subscription.update_payment_method"
+	eventPaymentSucceeded     = "payment.succeeded"
+	eventPaymentFailed        = "payment.failed"
+	eventRefundSucceeded      = "refund.succeeded"
 )
 
 // envelope decodes only what pug consumes. The schema is the provider's and
@@ -143,6 +144,7 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 		return corebilling.SubscriptionEvent{}, errors.New(
 			"dodo: subscription payload carries no on_demand or tax_inclusive")
 	}
+	event.PaymentMethodUpdated = d.EventType == eventPaymentMethodUpdated
 	return event, nil
 }
 

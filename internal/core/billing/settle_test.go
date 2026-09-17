@@ -209,8 +209,9 @@ func TestSettleReadsAnUnansweredChargeOffItsMandatesPayments(t *testing.T) {
 					t.Errorf("next_attempt_at = %v, want %s", state.nextAttemptAt, settleNow)
 				}
 			case corebilling.InvoiceFailed:
-				if state.code != "INSUFFICIENT_FUNDS" || state.message != "insufficient funds" || state.nextAttemptAt != nil {
-					t.Errorf("invoice = %+v, want the payment's decline with no retry dated", state)
+				if state.code != "INSUFFICIENT_FUNDS" || state.message != "insufficient funds" ||
+					state.nextAttemptAt == nil || !state.nextAttemptAt.Equal(settleNow.AddDate(0, 0, 3)) {
+					t.Errorf("invoice = %+v, want the payment's decline retried in three days", state)
 				}
 			case corebilling.InvoicePaid:
 				// The list carries no amounts, so the tax could only come from a whole read.

@@ -159,6 +159,21 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 	return i, err
 }
 
+const hasDunningBillingInvoice = `-- name: HasDunningBillingInvoice :one
+select exists (
+  select 1 from billing_invoices
+  where org_id = $1 and status in ('failed', 'uncollectible')
+)
+`
+
+// What makes an org PAST_DUE. Never a deferred row: nothing was asked of the customer.
+func (q *Queries) HasDunningBillingInvoice(ctx context.Context, orgID string) (bool, error) {
+	row := q.db.QueryRow(ctx, hasDunningBillingInvoice, orgID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
 select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million, terms_effective_at, deleted from billing_entitlement_history
 where org_id = $1
