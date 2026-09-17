@@ -31,13 +31,10 @@ const passTimeout = 30 * time.Minute
 // before the burst is taken for pug's own fault, not its customers'.
 const maxMandatesGone = 10
 
-type config struct {
-	Provider   string `env:"PUG_BILLING_PROVIDER"`
-	RescanDays int    `env:"PUG_USAGE_RESCAN_DAYS"`
-}
+const grace = coreusage.RescanDays * 24 * time.Hour
 
-func (c config) grace() time.Duration {
-	return time.Duration(coreusage.RescanDays(c.RescanDays)) * 24 * time.Hour
+type config struct {
+	Provider string `env:"PUG_BILLING_PROVIDER"`
 }
 
 const (
@@ -124,9 +121,7 @@ func Run(ctx context.Context) error {
 		return setupFailed(ctx, "billing service", err)
 	}
 
-	// Logged: the meter's CronJob reads PUG_USAGE_RESCAN_DAYS from its own env.
-	grace := cfg.grace()
-	slog.InfoContext(ctx, "Running a billing invoice pass", slog.Int("grace_days", int(grace/(24*time.Hour))))
+	slog.InfoContext(ctx, "Running a billing invoice pass")
 	outcome = outcomeFailed
 	err = cron.WithLock(ctx, pgW, cron.JobBillingInvoice, func(ctx context.Context) error {
 		return pass(ctx, svc, time.Now(), grace)

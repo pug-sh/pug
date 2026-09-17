@@ -458,7 +458,7 @@ The invoicing pass (`cmd/cron/billing-invoice`, §11) closes each org's period o
 it is safe to price, and prices it:
 
 - **When:** `period_end + grace` has passed, where `grace =
-  PUG_USAGE_RESCAN_DAYS` (2 days, the meter's own trailing window). After that
+  coreusage.RescanDays` (2 days, the meter's own trailing window). After that
   instant the trailing rescan no longer re-reads the period's last day, so the
   count is as final as the meter makes it. The pass additionally requires the
   org's most recent `usage_computed_at` to be **at or after** `period_end +
@@ -912,10 +912,6 @@ order:
    or a `duplicate` records it on the invoice's events and logs it as an error.
    The counters are emitted even when the pass returns an error, since the work
    already done is what says where it stopped.
-   The pass logs the **effective grace** it ran with: the meter and the invoicer
-   are separate CronJobs reading separate env blocks, and nothing makes
-   `PUG_USAGE_RESCAN_DAYS` agree across the two; §17.1 says what a mismatch
-   costs.
 
 A separate binary rather than a stage of `billing-reconcile`: reconcile is
 "nothing auto-fixed" and read-mostly, this one moves money, and the two want
@@ -998,7 +994,7 @@ two money columns; invoice writes append to `billing_invoice_events`.
 | `PUG_BILLING_PROVIDER` | `""` | unchanged |
 | `PUG_DODO_API_KEY`, `PUG_DODO_ENVIRONMENT`, `PUG_DODO_WEBHOOK_SECRET` | | unchanged |
 | `PUG_DODO_MANDATE_PRODUCT` | — | the one on-demand product every org authorizes against. **Replaces** `PUG_DODO_PRODUCT_STARTER/GROWTH/SCALE`. Absent ⇒ not purchasable, as a missing tier key is today |
-| `PUG_USAGE_RESCAN_DAYS` | `2` | now also the invoicing grace (§8.1). The invoice pass resolves it through the meter's own clamp, `coreusage.RescanDays` (unset, 0 or negative → 2), never a raw read, but nothing makes the two CronJobs see the same value, so the pass logs the grace it ran with (§11) |
+| `coreusage.RescanDays` | 2 | a Go const: the meter's trailing window and the invoicing grace (§8.1). **Replaces** `PUG_USAGE_RESCAN_DAYS`, which each deployment read from its own env, so the meter and the invoicer could disagree |
 | `DeferUnderCents` | 500 | a Go const, placeholder: under it a close is `deferred` and carried forward (§8.7) |
 | `WaiveUnderCents` | 100 | a Go const, placeholder: under it a sweep writes the balance off instead of charging at a loss (§8.7); must stay at or above Dodo's 50¢ card minimum, which also clears the ~42¢ break-even |
 | `MaxDeferPeriods` | 12 | a Go const, placeholder: how many periods a balance may span before a close becomes a sweep (§8.7) |
@@ -1196,10 +1192,6 @@ and the authz tests — each container package keeping `TestMain` and no
 1. **Events arriving more than `grace` days after their `occur_time` are never
    billed.** They land in `usage_daily` (the dashboard sees them) but the
    invoice has closed. Errs in the customer's favour, at most their rate each.
-   If the meter and the pass run with different `PUG_USAGE_RESCAN_DAYS` (§11),
-   only events within the smaller value are sure to be billed: a shorter grace
-   closes while the meter still re-reads the period, and a shorter meter window
-   stops re-reading it before the close.
 2. **An erasure after invoicing credits nothing.** The invoice froze its count
    (§8.1). A credit note is a refund in Dodo's dashboard ($1 a time, §8.7) and
    `invoice void` — or a negative carry once §19.13 lands.
@@ -1273,10 +1265,7 @@ and the authz tests — each container package keeping `TestMain` and no
    cancel cycle end to end, and a $1.00 charge to read the fee Dodo actually
    takes off a small one.
 3. Deployment: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the
-   invoice pass, the invoice one hourly. Production sets no tier keys today. One
-   explicit `PUG_USAGE_RESCAN_DAYS` goes on `cron-usage`, the invoice CronJob
-   and the server, whose `RemovePaymentMethod` closes by the same grace:
-   nothing else keeps them equal (§17.1).
+   invoice pass, the invoice one hourly. Production sets no tier keys today.
 4. Flip `PUG_BILLING_ENABLED` when the dashboard side (`../app`: rate card,
    estimate, invoices, "Add payment method" replacing "Upgrade") has landed.
 5. `CLAUDE.md` pointers and the fold-in of this document into the three docs

@@ -1,6 +1,6 @@
 # Event Usage Metering
 
-> **A design depends on this file.** [`usage-billing.md`](usage-billing.md) bills from the meter's counts: `PUG_USAGE_RESCAN_DAYS` becomes its invoicing grace, and after an outage the meter re-reads from its last successful pass's own window (its §8.1; built, in `meterFrom`, and stamped as `cron_state` task `meter`). Read it before changing the rescan window.
+> **A design depends on this file.** [`usage-billing.md`](usage-billing.md) bills from the meter's counts: `coreusage.RescanDays` is also its invoicing grace, and after an outage the meter re-reads from its last successful pass's own window (its §8.1; built, in `meterFrom`, and stamped as `cron_state` task `meter`). Read it before changing the rescan window.
 
 Detailed reference for event usage metering (`internal/core/usage`,
 `internal/app/cron`, `proto/dashboard/usage`). Linked from the root
@@ -169,7 +169,7 @@ bounded by something pug ships.
 
 Under that lock the pass runs two jobs:
 
-- **meter** — re-counts a trailing window (`PUG_USAGE_RESCAN_DAYS`, default 2)
+- **meter** — re-counts a trailing window (`coreusage.RescanDays`, 2 days)
   to absorb late arrivals, upserts the day cells, drops any cell in the window
   ClickHouse no longer returns, then re-sums every org's current period. Once
   every 24h it widens the window (`meterFrom`), catching late arrivals that fell
@@ -342,12 +342,10 @@ deleted org, since no RPC deletes one.
 
 ## 6. Configuration
 
-| Var | Default | Meaning |
-|---|---|---|
-| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2 — the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. |
-
-That is the whole surface. There is no enable flag: scheduling `pug cron usage` is
-the switch, and the RPC serves whatever it stored.
+The meter reads no variable of its own. Its trailing window is the constant
+`coreusage.RescanDays` because the invoicing grace must equal it. There is no
+enable flag: scheduling `pug cron usage` is the switch, and the RPC serves
+whatever it stored.
 
 Nothing runs the meter implicitly — not `pug server`, not `pug dev`. A deployment
 (or a developer) that wants numbers schedules the job; until then `GetUsage`
@@ -399,7 +397,7 @@ Three layers that do work, in order of usefulness:
   events between periods.
 - **A closed period is never revisited.** At its widest (the 24h full recompute)
   the metered window's floor is the earliest of three: month-to-date, the earliest
-  current-period start across all orgs, and `now - PUG_USAGE_RESCAN_DAYS`. An
+  current-period start across all orgs, and `now - RescanDays`. An
   import carrying older `occur_time` values therefore lands in **neither** the
   daily series nor any headline total: `MeterWindow` never sees those days, so no
   day cell is written and no closed period is re-summed. Deletions inside that
@@ -408,8 +406,8 @@ Three layers that do work, in order of usefulness:
   a closed period shrinks the daily series and leaves that period's stored total
   standing. Anniversary anchors make that routine rather than rare — the floor now
   reaches back up to a full period on every full pass, where month-to-date crossed
-  the boundary only on the first `PUG_USAGE_RESCAN_DAYS` of a month. Raising
-  `PUG_USAGE_RESCAN_DAYS` widens the same gap.
+  the boundary only on the first `RescanDays` of a month. Raising
+  `RescanDays` widens the same gap.
 - **`uniqExact(event_id)` per day is looser than the storage dedup key** (which
   also carries minute and kind): an `event_id` counts once per `(project, day)`
   however many kinds it arrived under, and once again in each other day it

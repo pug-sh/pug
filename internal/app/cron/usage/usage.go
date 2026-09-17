@@ -26,29 +26,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-type Config struct {
-	// Trailing window the meter recomputes each run, absorbing late arrivals.
-	// No envconfig default: an unset var and an explicit 0 both resolve through
-	// rescanDays, so coreusage.DefaultRescanDays stays the single source for the number.
-	RescanDays int `env:"PUG_USAGE_RESCAN_DAYS"`
-}
-
-// rescanDays clamps a configured window to something the meter can act on. A
-// negative value would put `from` in the future, so every read comes back empty
-// and the pass meters nothing -- forever, and quietly.
-func rescanDays(ctx context.Context, configured int) int {
-	using := coreusage.RescanDays(configured)
-	switch {
-	case configured > using:
-		slog.WarnContext(ctx, "clamping PUG_USAGE_RESCAN_DAYS to the retention window",
-			slog.Int("configured", configured), slog.Int("using", using))
-	case configured < 0:
-		slog.WarnContext(ctx, "ignoring a negative PUG_USAGE_RESCAN_DAYS",
-			slog.Int("configured", configured), slog.Int("using", using))
-	}
-	return using
-}
-
 // Sub-tasks whose last run is kept in cron_state.
 const (
 	taskFullRecompute cron.Task = "full_recompute"
@@ -163,11 +140,6 @@ func Run(ctx context.Context) error {
 		passDuration.Record(ctx, time.Since(start).Seconds(), attrs)
 	}()
 
-	var cfg Config
-	if err := envconfig.Process(ctx, &cfg); err != nil {
-		return setupFailed(ctx, "usage config", err)
-	}
-
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
 		return setupFailed(ctx, "postgres config", err)
@@ -202,7 +174,7 @@ func Run(ctx context.Context) error {
 		service:    coreusage.NewService(pgRO, pgW).WithClickHouse(ch),
 		state:      cron.NewState(pgRO, pgW, cron.JobUsage),
 		pgW:        pgW,
-		rescanDays: rescanDays(ctx, cfg.RescanDays),
+		rescanDays: coreusage.RescanDays,
 	}
 
 	slog.InfoContext(ctx, "Running a usage metering pass", slog.Int("rescan_days", j.rescanDays))

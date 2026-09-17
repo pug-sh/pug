@@ -12,7 +12,6 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
-	"github.com/sethvargo/go-envconfig"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -100,32 +99,6 @@ func TestFailureIsThePassNotACustomer(t *testing.T) {
 				t.Errorf("failure() = %v, want an error: %v", err, tc.wantErr)
 			}
 		})
-	}
-}
-
-// The grace is the meter's window, resolved by the meter's own clamp.
-func TestGraceReadsTheMetersEnvVar(t *testing.T) {
-	for _, tc := range []struct {
-		env  string
-		want time.Duration
-	}{
-		{"", 48 * time.Hour},
-		{"5", 120 * time.Hour},
-		{"-1", 48 * time.Hour},
-	} {
-		env := map[string]string{}
-		if tc.env != "" {
-			env["PUG_USAGE_RESCAN_DAYS"] = tc.env
-		}
-		var cfg config
-		if err := envconfig.ProcessWith(t.Context(), &envconfig.Config{
-			Target: &cfg, Lookuper: envconfig.MapLookuper(env),
-		}); err != nil {
-			t.Fatalf("ProcessWith: %v", err)
-		}
-		if got := cfg.grace(); got != tc.want {
-			t.Errorf("PUG_USAGE_RESCAN_DAYS=%q: grace = %s, want %s", tc.env, got, tc.want)
-		}
 	}
 }
 
