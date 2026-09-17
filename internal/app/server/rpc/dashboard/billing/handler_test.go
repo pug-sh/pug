@@ -190,7 +190,8 @@ func TestPastDueReasonToRPC(t *testing.T) {
 	}
 }
 
-// A failed invoice reaches the wire as PAST_DUE with the reason the banner shows.
+// A failed invoice reaches the wire as PAST_DUE with the reason the banner shows, and
+// the reason is absent while nothing is owed.
 func TestGetBillingStatusReportsPastDue(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -199,9 +200,9 @@ func TestGetBillingStatusReportsPastDue(t *testing.T) {
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 	srv := newServer(t, pg, true)
 	if got := getStatus(t, srv, orgID); got.GetStatus() == billingv1.BillingStatus_BILLING_STATUS_PAST_DUE ||
-		got.GetPastDueReason() != billingv1.PastDueReason_PAST_DUE_REASON_UNSPECIFIED {
-		t.Errorf("status = (%s, %s) with nothing owed, want neither past due nor a reason",
-			got.GetStatus(), got.GetPastDueReason())
+		got.PastDueReason != nil {
+		t.Errorf("status = (%s, %v) with nothing owed, want neither past due nor a reason",
+			got.GetStatus(), got.PastDueReason)
 	}
 
 	if _, err := pg.PgW.Exec(t.Context(),
@@ -213,8 +214,8 @@ func TestGetBillingStatusReportsPastDue(t *testing.T) {
 		t.Fatalf("seed a failed invoice: %v", err)
 	}
 	if got := getStatus(t, srv, orgID); got.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_PAST_DUE ||
-		got.GetPastDueReason() != billingv1.PastDueReason_PAST_DUE_REASON_DECLINED {
-		t.Errorf("status = (%s, %s), want PAST_DUE for a declined card", got.GetStatus(), got.GetPastDueReason())
+		got.GetPastDueReason() != billingv1.PastDueReason_PAST_DUE_REASON_REAUTHORIZE {
+		t.Errorf("status = (%s, %s), want PAST_DUE with no mandate to charge", got.GetStatus(), got.GetPastDueReason())
 	}
 }
 

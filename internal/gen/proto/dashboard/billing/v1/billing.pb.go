@@ -36,8 +36,8 @@ const (
 	BillingStatus_BILLING_STATUS_ACTIVE BillingStatus = 2
 	// The floor: never trialed, trial expired, or a contract that has ended.
 	BillingStatus_BILLING_STATUS_FREE BillingStatus = 3
-	// A charge failed or was written off, whatever the plan. It clears the moment a
-	// retry succeeds. Worth a banner, never a block: events are still accepted.
+	// An invoice failed and is not yet paid, whatever the plan: a retry in flight keeps
+	// it, a payment clears it. Worth a banner, never a block: events are still accepted.
 	BillingStatus_BILLING_STATUS_PAST_DUE BillingStatus = 4
 )
 
@@ -91,9 +91,9 @@ type PastDueReason int32
 
 const (
 	PastDueReason_PAST_DUE_REASON_UNSPECIFIED PastDueReason = 0
-	// The card was declined: update it in the portal.
+	// A charge failed on the live payment method: update it in the portal.
 	PastDueReason_PAST_DUE_REASON_DECLINED PastDueReason = 1
-	// The charge is over the card's authorized ceiling: authorize it again.
+	// No live payment method to charge: add one at checkout.
 	PastDueReason_PAST_DUE_REASON_REAUTHORIZE PastDueReason = 2
 )
 
@@ -147,8 +147,8 @@ const (
 	// No live subscription: trialing, free, comped, or no provider configured.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED SubscriptionStatus = 0
 	SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE      SubscriptionStatus = 1
-	// The card failed and the provider is retrying. The entitlement is UNCHANGED:
-	// worth a banner, never a block.
+	// The provider holds the mandate past due, and pug still charges it. The
+	// entitlement is UNCHANGED: worth a banner, never a block.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE  SubscriptionStatus = 2
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAUSED    SubscriptionStatus = 3
 	SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELLED SubscriptionStatus = 4

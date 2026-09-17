@@ -436,7 +436,8 @@ invoice that finds one is `uncollectible` (§8.5) and reported by the invoicing
 pass as `mandate_gone` (§11), not a retry loop.
 
 `subscription.update_payment_method` (a new card via the portal) re-opens the
-org's `failed` and `uncollectible` invoices for another attempt (§8.5).
+org's `failed` and `uncollectible` invoices for another attempt, and a mandate
+newly live re-opens those no attempt was made on it (§8.5).
 
 ## 8. Invoices
 
@@ -549,12 +550,13 @@ Invoices are never pruned — they are the ledger billing.md §11.4 promised.
 ```
 open ──charge──▶ charging ──payment_id──▶ charged ──webhook/poll──▶ paid
   ▲                 │                          │                      ▲
-  │   (ambiguous)   │ settle by listing (8.4)  └──▶ failed ──soft──▶ waits for next_attempt_at
-  └─────────────────┘                                └──hard, or 4th──▶ uncollectible ──new card, invoice retry──▶ open
-charging ──▶ failed          (refused outright, or a read found only a failed payment)
+  │   (ambiguous)   │ settle by listing (8.4)  ├──soft──▶ failed ──▶ waits for next_attempt_at
+  └─────────────────┘                          └──hard, or 4th──▶ uncollectible ──new card or mandate, invoice retry──▶ open
+charging ──▶ failed, or uncollectible when hard or the 4th   (refused outright, or a read found only a failed payment)
+charging ──no payment found, 4th──▶ uncollectible   (8.4; code unsettled)
 open, charging, failed ──mandate gone──▶ uncollectible   (7.3; from charging only once a read agrees)
 open, failed ──▶ charging    (a retry goes straight back; there is no open hop)
-failed ──new card──▶ open    (next_attempt_at = now)
+failed, uncollectible ──new card or mandate──▶ open    (next_attempt_at = now)
 close, nothing to bill ──▶ waived
 close, past the catch-up window ──▶ waived             (8.1; detail: dropped)
 close, total < DeferUnderCents ──▶ deferred            (8.7; carried by a later close)
@@ -565,9 +567,10 @@ open, failed, uncollectible, uncovered deferred ──operator──▶ void
 paid ──refund.succeeded, full──▶ refunded          (a partial refund is recorded and leaves it paid)
 ```
 
-`paid` lands from **every** state but `paid`, `refunded`, `waived` and `void`,
-not only from `charged`: a late webhook for a charge that settle already
-reopened has to land, or the next pass charges the customer twice. That edge is
+`paid` lands from **every** state but `paid`, `refunded`, `waived`, `void` and
+`deferred` (paid only through its carrier), not only from `charged`: a late
+webhook for a charge that settle already reopened has to land, or the next pass
+charges the customer twice. That edge is
 load-bearing. A success that cannot land — on a `void` invoice, or a second
 payment on one already `paid` — is money taken with no bill behind it: it is
 appended to `billing_invoice_events` and reported as `duplicate` (§11) for a
@@ -610,7 +613,8 @@ The pass therefore:
    inherits the subscription's metadata only when none is passed, and pug needs
    the invoice id on every payment webhook.
 3. On a response: `charged` + `provider_payment_id`. A decline is an
-   **allow-list of one**: `402 Payment Required`. Every other 4xx is pug's
+   **allow-list of one**: `402 Payment Required`, coded by the body's `code` when
+   it names one, since that decides hard or soft (§8.5). Every other 4xx is pug's
    problem, not the card's, and is treated as ambiguous — a rotated key, a rate
    limit, or a route or content type a dependency bump changed would otherwise
    dun every customer at once, over 17 days, behind a green pass. On anything
@@ -630,12 +634,13 @@ The pass therefore:
    shares the invoice id and would settle this one; the minute absorbs clock
    skew. The list has no promised order and a retry after a decline shares the
    invoice id with the attempt that failed, so the match is the **newest
-   payment that has not failed** — succeeded or still processing — not the
-   first one seen. Found → it is read whole and settles the invoice, `paid`, or
-   `charged` while it processes, for polling to settle; a failed payment and no
-   other is the charge's decline (`failed`); nothing → `open`, and the next tick
-   charges again. More than
-   one such payment for one invoice is reported as `duplicate` (§11). **The
+   payment that succeeded, else the newest still processing** — not the first
+   one seen, and not a newer payment that may yet fail beside a success. Found →
+   it is read whole and settles the invoice, `paid`, or `charged` while it
+   processes, for polling to settle; a failed payment and no other is the
+   charge's decline (`failed`); nothing → `open`, and the next tick charges
+   again. More than one such payment for one invoice is reported as `duplicate`
+   (§11). **The
    reopen counts an attempt**, so that cycle is bounded by `MaxChargeAttempts`
    (§13) and ends in `uncollectible` rather than re-charging every hour
    forever — each lap POSTs a charge that may really take money. A charge
@@ -652,20 +657,27 @@ The pass therefore:
    payment it settles on is read whole first, or the check would never run on
    this path. The payment's `tax` is stored as `tax_cents` at the same time.
 
-`payment.succeeded` / `payment.failed` deliveries — stored and ignored today —
-now settle invoices by `metadata.invoice_id`, through the existing inbox, but
-only when the payment's `subscription_id` is the invoice's `provider_sub_id`.
+`payment.succeeded` / `payment.failed` deliveries settle invoices by
+`metadata.invoice_id`, through the existing inbox, but only when the payment's
+`subscription_id` is the invoice's `provider_sub_id`.
 The id alone names an invoice rather than proving one: static payment links
 accept `metadata_*` parameters (payments.md §8), so without the check a cheap
 link purchase could mark a large invoice paid. A payment that fails the check
 is stored, marked processed and not applied, like any unattributable delivery.
 `payment.failed` moves only a `charged` invoice holding that payment: an earlier
-attempt's failure can arrive after the retry that followed it. `refund.succeeded`
-finds its invoice by the payment refunded, and a full refund of one not yet
-`paid` is stored, marked processed and not applied.
+attempt's failure can arrive after the retry that followed it. A body whose
+status disagrees with its type is retried like any body pug cannot decode:
+consumed as still processing, a late success on a reopened invoice would be lost.
+The payment settle reads whole must come from the invoice's mandate too.
+`refund.succeeded` finds its invoice by the payment refunded. A full refund of a
+`charged` one is retried until its success lands, since only a success can be
+refunded; of any other not yet `paid`, it is stored, marked processed and not
+applied.
 As with `ConfirmCheckout`, the webhook is not the only route: the pass also
 polls `Payments.Get` for `charged` rows older than an hour, so a deployment
-with no reachable webhook URL still learns whether it was paid.
+with no reachable webhook URL still learns whether it was paid. A payment with no
+outcome three days on is `Unreadable` (§11): a charge made with no customer
+present can wait on one for good.
 
 ### 8.5 Retries and dunning are pug's
 
@@ -677,15 +689,18 @@ and follows Dodo's own recommendation:
 | soft decline — **any code not in the hard list**, an unknown code included | `failed`; retry at +3d, +7d, +7d after the first attempt (4 attempts over 17 days), then `uncollectible` |
 | hard decline — the enumerated list, and only it: the six Dodo's on-demand guide says never to retry, `STOLEN_CARD`, `LOST_CARD`, `PICKUP_CARD`, `DO_NOT_HONOR`, `FRAUDULENT`, `AUTHENTICATION_FAILURE` | `uncollectible` immediately; retrying damages authorization rates |
 | the charge exceeds the mandate's ceiling (§8.7; an Indian-card e-mandate registers a maximum) | `uncollectible` at once, under its own reason — the same amount fails again until the customer re-authorizes, so the banner says "re-authorize", not "declined". Until §18.2 learns the error Dodo returns, it rides the ambiguous path and lands there after the fourth attempt |
-| a new payment method (`subscription.update_payment_method`) | every `failed`/`uncollectible` invoice → `open`, `next_attempt_at = now`; `attempts` is not reset, so the new card gets one attempt before a failure is final again |
+| a new payment method (`subscription.update_payment_method`) | every `failed`/`uncollectible` invoice → `open`, `next_attempt_at = now`; `attempts` is not reset, so it gets the attempts left, and at least one, before a failure is final again |
+| a mandate newly live (a checkout, by webhook, confirm or reconcile) | the same, for every invoice not last tried on that mandate: its own declines keep their dates, so its renewals never cut a retry schedule short |
 | mandate cancelled, expired or failed | open invoices → `uncollectible`; a finding. A deal's invoices wait for a card instead (§19.15) |
 | mandate paused | open invoices held until it resumes; a finding on every pass |
 | mandate in a status pug has no word for | open invoices held; the pass fails as `Unreadable` (§11) |
 
 `last_error_message` is merchant-facing and never crosses the wire; the
-dashboard gets a reason — `DECLINED`, or `REAUTHORIZE` for the mandate ceiling —
-and a link to the portal (§9). The operator reads the code and the message in
-`pug billing show --invoices` (§12).
+dashboard gets a reason — `DECLINED` while a mandate is live, since a card update
+reopens the invoices, or `REAUTHORIZE` with none, since only a checkout does (and
+the mandate ceiling, once §18.2 learns its error) — and a link to the portal
+(§9). The operator reads the code and the message in `pug billing show
+--invoices` (§12).
 
 **Nothing is enforced.** A `PAST_DUE` org keeps sending events and keeps
 being invoiced; the cost of dunning is a banner and an email, never a degraded
@@ -695,9 +710,11 @@ no — a cancelled mandate is one that can never be retried.
 
 ### 8.6 What the ledger derives
 
-- `BillingStatus` gains `PAST_DUE` (additive enum value): any `failed` or
-  `uncollectible` invoice, never a `deferred` one. Derived at read time from
-  the ledger, so it clears the instant a retry succeeds, with no sweep.
+- `BillingStatus` gains `PAST_DUE` (additive enum value): any invoice that failed
+  and is not yet paid — `failed`, `uncollectible`, or retried and still `open`,
+  `charging` or `charged` with `failed_at` set — never a `deferred` one. Derived
+  at read time from the ledger, so a retry in flight keeps it and it clears the
+  instant a retry succeeds, with no sweep.
 - `NextChargeAt` = the next scheduled charge: the earliest `next_attempt_at`
   among the org's `open` and `failed` invoices, otherwise the current
   `period_end + grace + ChargeNoticeDays`. The dashboard shows it as "next
@@ -861,8 +878,9 @@ order:
    and a live mandate (§8.4).
 3. **Settle** `charging` rows by listing, `charged` rows by polling (§8.4).
 4. **Pin** `next_billing_date` on mandates whose next charge moved (§7.3).
-5. **Report**: periods held back by a stale meter (`held`), write-offs
-   (`uncollectible`) and the subset whose mandate is gone (`mandate_gone`), a
+5. **Report**: periods held back by a stale meter (`held`), write-offs counted
+   apart — a decline or unsettled charge made final (`uncollectible`), and a
+   mandate gone (`mandate_gone`) — a
    due period that reached the end of the catch-up window unbilled (`dropped`),
    closes deferred and balances swept or waived (§8.7), deals waiting on a card
    (§19.15), invoices held on a paused mandate (§8.5), payments that took the
@@ -887,7 +905,8 @@ gitops. Decision §19.9.
 (a declined card, a cancelled mandate, a period the meter has not reached).
 The pass exits non-zero when it could not read or write — Postgres, or **any**
 provider call (`Unreadable`, matching the reconcile pass: one org charging
-successfully says nothing about the ones that did not) — or when it left a
+successfully says nothing about the ones that did not; a payment with no outcome
+for three days counts too) — or when it left a
 charge unresolved (`Ambiguous`), since that is money in an unknown state, or
 dropped a period (`dropped`), which no later pass will bill. It also exits
 non-zero when more than ten mandates were written off as gone in one
@@ -957,7 +976,7 @@ two money columns; invoice writes append to `billing_invoice_events`.
 | `DeferUnderCents` | 500 | a Go const, placeholder: under it a close is `deferred` and carried forward (§8.7) |
 | `WaiveUnderCents` | 100 | a Go const, placeholder: under it a sweep writes the balance off instead of charging at a loss (§8.7); must stay at or above Dodo's 50¢ card minimum, which also clears the ~42¢ break-even |
 | `MaxDeferPeriods` | 12 | a Go const, placeholder: how many periods a balance may span before a close becomes a sweep (§8.7) |
-| `MaxChargeAttempts` | 4 | a Go const: charge attempts before a soft decline is final (§8.5); a new card or `invoice retry` buys one more |
+| `MaxChargeAttempts` | 4 | a Go const: charge attempts before a soft decline is final (§8.5); a new card or mandate, or `invoice retry`, reopens with the attempts left, and at least one |
 | `ChargeNoticeDays` | 3 | a Go const, placeholder: days between a natural close and its first charge, the notice a billing email will announce (§8.1); a close forced by a going mandate charges at once |
 
 ## 14. Migrations 021 and 022
@@ -1084,8 +1103,10 @@ and the authz tests — each container package keeping `TestMain` and no
   `charging` committed before the charge, and a second claim on one invoice
   calling no provider; the ambiguous outcome: a fake that creates the payment
   and then errors, settled by listing and never charged twice; a `processing`
-  payment adopted, a lone failed one taken as the decline, and two payments
-  that have not failed reported; a fake that
+  payment adopted, a lone failed one taken as the decline, a success preferred
+  over a newer payment still processing, which is reported; a retry dated from
+  its own claim; a payment read from another mandate, or with no outcome for
+  days, counted `Unreadable`; a fake that
   errors without creating one, re-opened and charged once; a non-402 4xx
   reopened without counting an attempt; a `404` acted on only when the
   subscription reads back ended and the invoice is not a deal's, and a second
@@ -1093,18 +1114,22 @@ and the authz tests — each container package keeping `TestMain` and no
   never written off; the attempt cap;
   the amount check on `total_amount − tax`, with `tax` stored as `tax_cents`;
   each of the six hard-decline codes as a string literal, an unknown code soft,
-  and the retry dates; a new payment method re-opening `uncollectible`.
+  and the retry dates on both a refused and an accepted charge; a new payment
+  method re-opening `uncollectible`, and a new mandate re-opening only what it
+  has not tried; `PAST_DUE` held through a retry, its reason by whether a
+  mandate is live, and scoped to its org.
 - **Webhooks** — `payment.succeeded`/`.failed` settle by `metadata.invoice_id`,
   ignore a payment carrying none, and refuse one whose `subscription_id` is not
   the invoice's mandate; an earlier attempt's `payment.failed` moves nothing;
-  a partial refund leaves the invoice `paid`, and a full refund of an unpaid one
-  is not applied; a
+  a body whose status disagrees with its type retried; a partial refund leaves
+  the invoice `paid`, a full refund of a `charged` one is retried until its
+  success lands, and one of any other unpaid invoice is not applied; a
   non-on-demand or tax-inclusive subscription is rejected by the webhook and
   by `ConfirmCheckout`; `past_due` maps live.
 - **The Dodo adapter** (`internal/deps/dodo`, against an httptest server) — the
   charge POSTs exactly once against a 502 and a 429, sends whole cents and
-  `metadata.invoice_id`, and maps only a 402 to a decline. The provider fake
-  cannot see the SDK's own retries.
+  `metadata.invoice_id`, and maps only a 402 to a decline, keeping the code its
+  body names. The provider fake cannot see the SDK's own retries.
 - **Cancellation** (§7.3) — `next_billing_date` pinned on activation and after
   every invoice; the early close only when the mandate ends first;
   `RemovePaymentMethod` refusing on any `open`, `charging`, `charged` or
@@ -1179,7 +1204,10 @@ and the authz tests — each container package keeping `TestMain` and no
     sweeps, so when the org's last one ran with a mandate or deal still in force
     — a cancellation read after it, or a deal cleared with no card — nothing
     carries the balance.
-14. The meter's own imprecisions (`usage.md` §8) are inherited unchanged.
+14. **A full refund of a carrier leaves the rows it covered `paid`.** The
+    refund shows on the carrier alone, since a covered row is only ever
+    `deferred` or `paid`.
+15. The meter's own imprecisions (`usage.md` §8) are inherited unchanged.
 
 ## 18. Rollout
 
@@ -1193,10 +1221,11 @@ and the authz tests — each container package keeping `TestMain` and no
    of a $0 authorization, tax added on top of a charge and what a tax ID
    changes, and §8.7's unknowns — the 0.5% on an on-demand
    charge, a fee on a decline, the fee's tax base, the mandate ceiling on a USD
-   mandate), and what `cancelled_at` holds once a scheduled cancellation takes
-   effect: it is set when the cancellation is requested, and a close stops
-   billing at it, so a request date kept there leaves the days to the actual end
-   unbilled; run a mandate → close → charge → `payment.succeeded` → portal
+   mandate), whether a decline answers the charge with a 402 at all and names its
+   card code under `code`, and what `cancelled_at` holds once a scheduled
+   cancellation takes effect: it is set when the cancellation is requested, and a
+   close stops billing at it, so a request date kept there leaves the days to the
+   actual end unbilled; run a mandate → close → charge → `payment.succeeded` → portal
    cancel cycle end to end, and a $1.00 charge to read the fee Dodo actually
    takes off a small one.
 3. gitops: `PUG_DODO_MANDATE_PRODUCT`, and CronJobs for reconcile and the
@@ -1413,14 +1442,15 @@ constraints break.
    404 acted on only when `FetchSubscription` reads the mandate back ended, and
    a deal's invoice or a paused mandate's held rather than written off.
 9. **Settle** (§8.4, steps 4–5). Listing to settle `charging` on the newest
-   payment that has not failed, a non-402 4xx reopening without an attempt,
+   success, else the newest payment still processing, a non-402 4xx reopening
+   without an attempt,
    polling `charged`, the `payment.succeeded`, `payment.failed` and
    `refund.succeeded` webhooks with the `subscription_id` check and full
    refunds only, `duplicate`, the amount check on `total_amount − tax` with
    `tax_cents` stored, and deferred rows following their carrier.
 10. **Dunning** (§8.5–§8.6). Soft and hard declines, the retry schedule,
-    `uncollectible`, reopening on a new payment method, a mandate gone, and
-    `PAST_DUE` with its `past_due_reason` read off the ledger.
+    `uncollectible`, reopening on a new payment method or mandate, a mandate
+    gone, and `PAST_DUE` with its `past_due_reason` read off the ledger.
 11. **Cancellation** (§7.3). Pinning `next_billing_date`, the early close, the
     final close as a sweep, and `RemovePaymentMethod`'s charge-then-cancel
     order, refusing while any invoice is unsettled or the previous period is

@@ -139,7 +139,7 @@ update billing_invoices
 set status = $1::text, failed_at = $2, next_attempt_at = $3,
     attempts = attempts + case when status = 'charging' then 1 else 0 end,
     last_error_code = $4, last_error_message = $5,
-    provider_payment_id = coalesce($6, provider_payment_id)
+    provider_payment_id = $6
 where id = $7 and status = $8 and $1::text in ('failed', 'uncollectible')
   and (status = 'charging' or (status = 'charged' and provider_payment_id = $6))
 returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
@@ -156,9 +156,10 @@ type DeclineBillingInvoiceParams struct {
 	FromStatus        string
 }
 
-// A refusal by the card: failed with its retry dated, or uncollectible once final.
-// From charged only for the payment the invoice holds, so an earlier attempt's
-// failure never fails a later one. Leaving charging counts the attempt.
+// A charge that ends failed with its retry dated, or uncollectible once final: a
+// refusal, or a last attempt no read found a payment for. From charged only for the
+// payment the invoice holds, so an earlier attempt's failure never fails a later
+// one. Leaving charging counts the attempt.
 func (q *Queries) DeclineBillingInvoice(ctx context.Context, arg DeclineBillingInvoiceParams) (BillingInvoice, error) {
 	row := q.db.QueryRow(ctx, declineBillingInvoice,
 		arg.Status,
@@ -270,20 +271,45 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 	return i, err
 }
 
-const getBillingInvoiceAttempts = `-- name: GetBillingInvoiceAttempts :one
-select attempts, last_error_code from billing_invoices where id = $1
+const getBillingInvoice = `-- name: GetBillingInvoice :one
+select amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at from billing_invoices where id = $1
 `
 
-type GetBillingInvoiceAttemptsRow struct {
-	Attempts      int32
-	LastErrorCode string
-}
-
-// Read under the lock a transition already holds, to decide how it ends.
-func (q *Queries) GetBillingInvoiceAttempts(ctx context.Context, id string) (GetBillingInvoiceAttemptsRow, error) {
-	row := q.db.QueryRow(ctx, getBillingInvoiceAttempts, id)
-	var i GetBillingInvoiceAttemptsRow
-	err := row.Scan(&i.Attempts, &i.LastErrorCode)
+func (q *Queries) GetBillingInvoice(ctx context.Context, id string) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, getBillingInvoice, id)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
+	)
 	return i, err
 }
 
@@ -310,68 +336,46 @@ func (q *Queries) GetBillingInvoiceByPayment(ctx context.Context, arg GetBilling
 	return i, err
 }
 
-const getBillingInvoiceForPayment = `-- name: GetBillingInvoiceForPayment :one
-select id, org_id, provider, provider_payment_id, provider_sub_id, status
-from billing_invoices where id = $1
+const getBillingInvoiceForUpdate = `-- name: GetBillingInvoiceForUpdate :one
+select amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at from billing_invoices where id = $1 for update
 `
 
-type GetBillingInvoiceForPaymentRow struct {
-	ID                string
-	OrgID             string
-	Provider          pgtype.Text
-	ProviderPaymentID pgtype.Text
-	ProviderSubID     pgtype.Text
-	Status            string
-}
-
-// What a payment delivery is checked against: the mandate the invoice was charged on.
-func (q *Queries) GetBillingInvoiceForPayment(ctx context.Context, id string) (GetBillingInvoiceForPaymentRow, error) {
-	row := q.db.QueryRow(ctx, getBillingInvoiceForPayment, id)
-	var i GetBillingInvoiceForPaymentRow
+func (q *Queries) GetBillingInvoiceForUpdate(ctx context.Context, id string) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, getBillingInvoiceForUpdate, id)
+	var i BillingInvoice
 	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
 		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
 		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
 		&i.Provider,
+		&i.ProviderInvoiceUrl,
 		&i.ProviderPaymentID,
 		&i.ProviderSubID,
 		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
 	)
 	return i, err
-}
-
-const getBillingInvoicePaymentForUpdate = `-- name: GetBillingInvoicePaymentForUpdate :one
-select amount_cents, currency, provider_payment_id, status
-from billing_invoices where id = $1 for update
-`
-
-type GetBillingInvoicePaymentForUpdateRow struct {
-	AmountCents       int64
-	Currency          string
-	ProviderPaymentID pgtype.Text
-	Status            string
-}
-
-func (q *Queries) GetBillingInvoicePaymentForUpdate(ctx context.Context, id string) (GetBillingInvoicePaymentForUpdateRow, error) {
-	row := q.db.QueryRow(ctx, getBillingInvoicePaymentForUpdate, id)
-	var i GetBillingInvoicePaymentForUpdateRow
-	err := row.Scan(
-		&i.AmountCents,
-		&i.Currency,
-		&i.ProviderPaymentID,
-		&i.Status,
-	)
-	return i, err
-}
-
-const getBillingInvoiceStatusForUpdate = `-- name: GetBillingInvoiceStatusForUpdate :one
-select status from billing_invoices where id = $1 for update
-`
-
-func (q *Queries) GetBillingInvoiceStatusForUpdate(ctx context.Context, id string) (string, error) {
-	row := q.db.QueryRow(ctx, getBillingInvoiceStatusForUpdate, id)
-	var status string
-	err := row.Scan(&status)
-	return status, err
 }
 
 const getBillingSubscriptionPlanSlug = `-- name: GetBillingSubscriptionPlanSlug :one
@@ -637,11 +641,18 @@ func (q *Queries) ListBillingSubscriptionOrgsByProviderCustomerID(ctx context.Co
 const listDunningBillingInvoices = `-- name: ListDunningBillingInvoices :many
 select id from billing_invoices
 where org_id = $1 and status in ('failed', 'uncollectible')
+  and ($2::text = '' or provider_sub_id is distinct from $2::text)
 order by billed_from
 `
 
-func (q *Queries) ListDunningBillingInvoices(ctx context.Context, orgID string) ([]string, error) {
-	rows, err := q.db.Query(ctx, listDunningBillingInvoices, orgID)
+type ListDunningBillingInvoicesParams struct {
+	OrgID               string
+	ExceptProviderSubID string
+}
+
+// Every one, or with a mandate id only those not last tried on it.
+func (q *Queries) ListDunningBillingInvoices(ctx context.Context, arg ListDunningBillingInvoicesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDunningBillingInvoices, arg.OrgID, arg.ExceptProviderSubID)
 	if err != nil {
 		return nil, err
 	}
@@ -1150,8 +1161,8 @@ type ReopenDunningBillingInvoiceParams struct {
 	ID            string
 }
 
-// A new payment method. attempts is kept, so the new card gets one attempt before a
-// failure is final again.
+// A new payment method. attempts is kept, so it gets the attempts left, and at least
+// one, before a failure is final again.
 func (q *Queries) ReopenDunningBillingInvoice(ctx context.Context, arg ReopenDunningBillingInvoiceParams) (BillingInvoice, error) {
 	row := q.db.QueryRow(ctx, reopenDunningBillingInvoice, arg.NextAttemptAt, arg.ID)
 	var i BillingInvoice

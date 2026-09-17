@@ -34,13 +34,15 @@ type fakeProvider struct {
 	charges  []corebilling.ChargeInput
 	onCharge func(corebilling.ChargeInput) (string, error)
 	// payment is what a payment or refund delivery normalizes to.
-	payment corebilling.PaymentEvent
+	payment    corebilling.PaymentEvent
+	paymentErr error
 	// payments is what the provider holds. The listing ignores since, so the settle's
-	// own window is what a test holds it to, and carries no amounts; fetched records
-	// every whole read.
-	payments []corebilling.Payment
-	listErr  error
-	fetched  []string
+	// own window is what a test holds it to, carries no amounts, and records the since
+	// it was asked for; fetched records every whole read.
+	payments    []corebilling.Payment
+	listErr     error
+	listedSince time.Time
+	fetched     []string
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -83,10 +85,11 @@ func (f *fakeProvider) Charge(_ context.Context, in corebilling.ChargeInput) (st
 }
 
 func (f *fakeProvider) NormalizePayment(corebilling.Delivery) (corebilling.PaymentEvent, error) {
-	return f.payment, nil
+	return f.payment, f.paymentErr
 }
 
-func (f *fakeProvider) ListPayments(_ context.Context, subID string, _ time.Time) ([]corebilling.Payment, error) {
+func (f *fakeProvider) ListPayments(_ context.Context, subID string, since time.Time) ([]corebilling.Payment, error) {
+	f.listedSince = since
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -507,6 +510,15 @@ func TestAnUndecodablePayloadIsRetried(t *testing.T) {
 	}
 	if d := storedDelivery(t, f, "evt_garbled"); d.ProcessedAt.Valid {
 		t.Error("an undecodable delivery was marked processed, consuming it permanently")
+	}
+
+	// A refund has no poll behind it, so one consumed here is lost for good.
+	provider.err, provider.paymentErr = nil, errors.New("dodo: decode refund.succeeded payload: json: cannot unmarshal")
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_refund", time.Now().UTC())); err == nil {
+		t.Fatal("a payment payload pug could not decode was accepted")
+	}
+	if d := storedDelivery(t, f, "evt_refund"); d.ProcessedAt.Valid {
+		t.Error("an undecodable payment delivery was marked processed")
 	}
 }
 

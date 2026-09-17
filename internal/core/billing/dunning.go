@@ -14,7 +14,7 @@ import (
 )
 
 // MaxChargeAttempts is the charges an invoice gets before a soft decline is final. A
-// new payment method buys one more.
+// new payment method reopens it with the attempts left, and at least one.
 const MaxChargeAttempts = 4
 
 // codeUnsettled is a charge no read could find a payment for on its last attempt.
@@ -46,7 +46,7 @@ func (s *Service) decline(
 ) (moved, final bool, err error) {
 	moved, err = s.moveInvoice(ctx, orgID, invoiceID, actor, strings.TrimSpace("declined "+p.ErrorCode),
 		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
-			cur, err := w.GetBillingInvoiceAttempts(ctx, invoiceID)
+			cur, err := w.GetBillingInvoice(ctx, invoiceID)
 			if err != nil {
 				return dbwrite.BillingInvoice{}, err
 			}
@@ -73,17 +73,21 @@ func (s *Service) decline(
 	return moved, final, err
 }
 
-// reopenDunning gives every failed and uncollectible invoice another charge now:
-// the org has a new payment method.
-func (s *Service) reopenDunning(ctx context.Context, orgID, actor string, now time.Time) error {
-	ids, err := s.write().ListDunningBillingInvoices(ctx, orgID)
+// reopenDunning gives the org's failed and uncollectible invoices another charge now.
+// A new card reopens every one; a mandate that went live passes its id, and reopens
+// only those it has not tried, so its own renewals never cut short its retries.
+func (s *Service) reopenDunning(ctx context.Context, orgID, exceptSubID, actor, detail string, now time.Time) error {
+	ids, err := s.write().ListDunningBillingInvoices(ctx, dbwrite.ListDunningBillingInvoicesParams{
+		ExceptProviderSubID: exceptSubID, OrgID: orgID,
+	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list the invoices a new card reopens", slogx.Error(err), slog.String("org_id", orgID))
+		slog.ErrorContext(ctx, "failed to list the invoices a new payment method reopens", slogx.Error(err),
+			slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
 	for _, id := range ids {
-		if _, err := s.moveInvoice(ctx, orgID, id, actor, "payment method updated",
+		if _, err := s.moveInvoice(ctx, orgID, id, actor, detail,
 			func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
 				return w.ReopenDunningBillingInvoice(ctx, dbwrite.ReopenDunningBillingInvoiceParams{
 					ID: id, NextAttemptAt: postgres.NewTimestamptz(now),

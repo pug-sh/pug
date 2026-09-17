@@ -38,9 +38,10 @@ type PaymentProvider interface {
 	CanVerify() bool
 
 	// Normalize maps one verified delivery onto pug's vocabulary. A zero
-	// SubscriptionEvent means "store, mark processed, ignore".
+	// SubscriptionEvent passes the delivery on to NormalizePayment.
 	Normalize(Delivery) (SubscriptionEvent, error)
-	// NormalizePayment maps a payment or refund delivery the same way.
+	// NormalizePayment maps a payment or refund delivery the same way. Both zero means
+	// "store, mark processed, ignore".
 	NormalizePayment(Delivery) (PaymentEvent, error)
 
 	// CreateCheckoutSession opens a mandate-only checkout: it authorizes a payment
@@ -58,8 +59,8 @@ type PaymentProvider interface {
 	// Charge takes an amount pug computed against a mandate and returns the payment id.
 	// A *ChargeError took nothing; any other error leaves the outcome unknown.
 	Charge(ctx context.Context, in ChargeInput) (paymentID string, err error)
-	// ListPayments is a mandate's payments created at or after since. The list carries
-	// no amounts; FetchPayment reads one whole.
+	// ListPayments is a mandate's payments created at or after since. A listed payment
+	// need not carry amounts; FetchPayment reads one whole.
 	ListPayments(ctx context.Context, providerSubID string, since time.Time) ([]Payment, error)
 	FetchPayment(ctx context.Context, paymentID string) (Payment, error)
 }
@@ -79,8 +80,8 @@ const (
 type Payment struct {
 	PaymentID     string
 	ProviderSubID string
-	// InvoiceID is the metadata every charge pug makes carries, so it is empty on a
-	// payment pug did not make.
+	// InvoiceID is the metadata every charge pug makes carries. A payment link lets a
+	// buyer set it too, so it names an invoice and proves nothing.
 	InvoiceID string
 	Status    PaymentStatus
 	// TotalCents includes TaxCents, the tax the provider added on top of pug's amount.

@@ -22,8 +22,8 @@ const (
 	StatusTrialing Status = "TRIALING"
 	StatusActive   Status = "ACTIVE"
 	StatusFree     Status = "FREE"
-	// StatusPastDue is a failed or uncollectible invoice on the ledger, layered over
-	// whatever Resolve returned. It clears the moment a retry succeeds.
+	// StatusPastDue is an invoice that failed and is not yet paid, layered over whatever
+	// Resolve returned. A retry in flight keeps it; a payment clears it.
 	StatusPastDue Status = "PAST_DUE"
 )
 
@@ -36,9 +36,11 @@ func AllStatuses() []Status { return []Status{StatusTrialing, StatusActive, Stat
 type PastDueReason string
 
 const (
+	// PastDueDeclined is a charge that failed on a live mandate: a card update reopens it.
 	PastDueDeclined PastDueReason = "DECLINED"
-	// PastDueReauthorize is a charge over the mandate's ceiling. No decline code maps
-	// to it until the provider's error for one is known.
+	// PastDueReauthorize is an org with no live mandate, which only a new checkout
+	// reopens. A charge over a mandate's ceiling belongs here too, once the provider's
+	// error for one is known.
 	PastDueReauthorize PastDueReason = "REAUTHORIZE"
 )
 

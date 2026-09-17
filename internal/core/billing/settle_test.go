@@ -170,16 +170,16 @@ func TestSettleReadsAnUnansweredChargeOffItsMandatesPayments(t *testing.T) {
 			want: corebilling.SettleReport{Adopted: 1}, wantStatus: corebilling.InvoiceCharged, wantPay: "pay_1",
 			attempts: 1, events: []string{"charging>charged payment pay_1"},
 		},
-		"two payments that have not failed are reported": {
+		"a success wins over a newer payment still processing, which is reported": {
 			payments: func(invoiceID, subID string) []corebilling.Payment {
 				return []corebilling.Payment{
 					paymentOf("pay_1", invoiceID, subID, corebilling.PaymentSucceeded, closeNow.Add(time.Second)),
 					paymentOf("pay_2", invoiceID, subID, corebilling.PaymentProcessing, closeNow.Add(2*time.Second)),
 				}
 			},
-			want: corebilling.SettleReport{Adopted: 1, Duplicate: 1}, wantStatus: corebilling.InvoiceCharged,
-			wantPay: "pay_2", attempts: 1,
-			events: []string{"charging>charging duplicate payment pay_1", "charging>charged payment pay_2"},
+			want: corebilling.SettleReport{Paid: 1, Duplicate: 1}, wantStatus: corebilling.InvoicePaid,
+			wantPay: "pay_1", attempts: 1,
+			events: []string{"charging>charging duplicate payment pay_2", "charging>paid payment pay_1"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -195,6 +195,9 @@ func TestSettleReadsAnUnansweredChargeOffItsMandatesPayments(t *testing.T) {
 
 			if r := settleCharges(t, f.svc, settleNow); r != tc.want {
 				t.Errorf("report = %+v, want %+v", r, tc.want)
+			}
+			if want := closeNow.Add(-time.Minute); !provider.listedSince.Equal(want) {
+				t.Errorf("listed since %s, want %s", provider.listedSince, want)
 			}
 			state := chargeStateOf(t, f, id)
 			if state.status != string(tc.wantStatus) || state.paymentID != tc.wantPay || state.attempts != tc.attempts {
@@ -327,6 +330,29 @@ func TestSettleWaitsBeforeReading(t *testing.T) {
 	}
 }
 
+// A retry is dated from its own claim, not the first attempt's: from the first, the
+// wait would be over at once and that attempt's failed payment would decline the retry.
+func TestSettleDatesARetryFromItsOwnClaim(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	subID := seedMandate(t, f, periodStart, time.Time{})
+	first := closeNow.AddDate(0, 0, -3)
+	id := seedCharge(t, f, periodStart, subID, corebilling.InvoiceCharging, "", first)
+	recordEvent(t, f, id, corebilling.InvoiceCharging, corebilling.InvoiceFailed, "declined INSUFFICIENT_FUNDS", first)
+	recordEvent(t, f, id, corebilling.InvoiceFailed, corebilling.InvoiceCharging, "mandate "+subID, closeNow)
+	updateInvoice(t, f, id, "attempts = 1")
+	provider.payments = []corebilling.Payment{paymentOf("pay_1", id, subID, corebilling.PaymentFailed, first)}
+
+	if r := settleCharges(t, f.svc, closeNow.Add(4*time.Minute)); r != (corebilling.SettleReport{}) {
+		t.Errorf("four minutes after the retry: report = %+v, want nothing read", r)
+	}
+	if r := settleCharges(t, f.svc, closeNow.Add(10*time.Minute)); r != (corebilling.SettleReport{Reopened: 1}) {
+		t.Errorf("report = %+v, want the retry reopened rather than declined by the first attempt", r)
+	}
+}
+
 // A charge the provider accepted is settled off its own payment. Its attempt was
 // counted when it was charged, so nothing counts it again.
 func TestSettlePollsAnAcceptedCharge(t *testing.T) {
@@ -337,11 +363,17 @@ func TestSettlePollsAnAcceptedCharge(t *testing.T) {
 		status     corebilling.PaymentStatus
 		want       corebilling.SettleReport
 		wantStatus corebilling.InvoiceStatus
+		now        time.Time
 	}{
-		"succeeded":        {corebilling.PaymentSucceeded, corebilling.SettleReport{Paid: 1}, corebilling.InvoicePaid},
-		"failed":           {corebilling.PaymentFailed, corebilling.SettleReport{Failed: 1}, corebilling.InvoiceFailed},
-		"still processing": {corebilling.PaymentProcessing, corebilling.SettleReport{Pending: 1}, corebilling.InvoiceCharged},
-		"unknown":          {"", corebilling.SettleReport{Unreadable: 1}, corebilling.InvoiceCharged},
+		"succeeded":        {corebilling.PaymentSucceeded, corebilling.SettleReport{Paid: 1}, corebilling.InvoicePaid, settleNow},
+		"failed":           {corebilling.PaymentFailed, corebilling.SettleReport{Failed: 1}, corebilling.InvoiceFailed, settleNow},
+		"still processing": {corebilling.PaymentProcessing, corebilling.SettleReport{Pending: 1}, corebilling.InvoiceCharged, settleNow},
+		"unknown":          {"", corebilling.SettleReport{Unreadable: 1}, corebilling.InvoiceCharged, settleNow},
+		// A charge made with no customer present can wait on one for good.
+		"still processing days later": {
+			corebilling.PaymentProcessing, corebilling.SettleReport{Unreadable: 1}, corebilling.InvoiceCharged,
+			closeNow.AddDate(0, 0, 4),
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, provider := newPaidFixture(t)
@@ -351,7 +383,7 @@ func TestSettlePollsAnAcceptedCharge(t *testing.T) {
 				provider.payments = []corebilling.Payment{paymentOf("pay_1", id, subID, tc.status, closeNow)}
 			}
 
-			if r := settleCharges(t, f.svc, settleNow); r != tc.want {
+			if r := settleCharges(t, f.svc, tc.now); r != tc.want {
 				t.Errorf("report = %+v, want %+v", r, tc.want)
 			}
 			if state := chargeStateOf(t, f, id); state.status != string(tc.wantStatus) || state.attempts != 1 ||
@@ -494,6 +526,9 @@ func TestPaymentDeliverySettlesTheInvoiceItNames(t *testing.T) {
 		"a success on a charge settle reopened": {
 			setup: movedTo(corebilling.InvoiceOpen), status: corebilling.PaymentSucceeded, wantStatus: corebilling.InvoicePaid,
 		},
+		"a success on a failed invoice": {
+			setup: movedTo(corebilling.InvoiceFailed), status: corebilling.PaymentSucceeded, wantStatus: corebilling.InvoicePaid,
+		},
 		"a success on an uncollectible invoice": {
 			setup: movedTo(corebilling.InvoiceUncollectible), status: corebilling.PaymentSucceeded,
 			wantStatus: corebilling.InvoicePaid,
@@ -633,8 +668,8 @@ func TestRefundDeliveryRecordsMoneyReturned(t *testing.T) {
 			status: corebilling.InvoicePaid, paymentID: "pay_1", partial: true, wantStatus: corebilling.InvoicePaid,
 			wantEvents: []string{"paid>paid partial refund rf_1 of $2.50"},
 		},
-		"a refund of an invoice not yet paid": {
-			status: corebilling.InvoiceCharged, paymentID: "pay_1", wantStatus: corebilling.InvoiceCharged, rejected: true,
+		"a refund of a failed invoice": {
+			status: corebilling.InvoiceFailed, paymentID: "pay_1", wantStatus: corebilling.InvoiceFailed, rejected: true,
 		},
 		"a refund an invoice already took": {
 			status: corebilling.InvoiceRefunded, paymentID: "pay_1", wantStatus: corebilling.InvoiceRefunded,
@@ -666,11 +701,48 @@ func TestRefundDeliveryRecordsMoneyReturned(t *testing.T) {
 	}
 }
 
+// A refund can reach pug before the success it returns money on, and waits for it:
+// rejected, the success would then mark paid an invoice whose money went back.
+func TestARefundBeforeItsSuccessIsRetried(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	subID := seedMandate(t, f, periodStart, time.Time{})
+	id := seedCharge(t, f, periodStart, subID, corebilling.InvoiceCharged, "pay_1", closeNow)
+	refund := corebilling.PaymentEvent{Payment: corebilling.Payment{PaymentID: "pay_1"}, RefundID: "rf_1"}
+
+	provider.payment = refund
+	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_refund", settleNow)); err == nil {
+		t.Fatal("a refund of a payment not yet settled was accepted")
+	}
+	if d := storedDelivery(t, f, "evt_refund"); d.ProcessedAt.Valid {
+		t.Error("the early refund was marked processed, so no retry would apply it")
+	}
+	deliverPayment(t, f, provider, "evt_paid", corebilling.PaymentEvent{
+		Payment: paymentOf("pay_1", id, subID, corebilling.PaymentSucceeded, settleNow),
+	})
+	deliverPayment(t, f, provider, "evt_refund", refund)
+	if state := chargeStateOf(t, f, id); state.status != string(corebilling.InvoiceRefunded) {
+		t.Errorf("invoice = %+v, want refunded once its success landed", state)
+	}
+}
+
 // fetchAsProvider reads every payment back as another, as a changed response shape would.
 type fetchAsProvider struct{ *fakeProvider }
 
 func (fetchAsProvider) FetchPayment(context.Context, string) (corebilling.Payment, error) {
 	return corebilling.Payment{PaymentID: "pay_other", Status: corebilling.PaymentSucceeded}, nil
+}
+
+// fetchFromAnotherMandate reads every payment back from another mandate, as a listing
+// that ignored its subscription filter would let through.
+type fetchFromAnotherMandate struct{ *fakeProvider }
+
+func (p fetchFromAnotherMandate) FetchPayment(ctx context.Context, id string) (corebilling.Payment, error) {
+	payment, err := p.fakeProvider.FetchPayment(ctx, id)
+	payment.ProviderSubID = "sub_link"
+	return payment, err
 }
 
 // A read that fails, or that cannot be trusted, settles nothing and is counted.
@@ -685,6 +757,9 @@ func TestSettleCountsWhatItCannotRead(t *testing.T) {
 		},
 		"a payment that reads back as another": func(f *fixture, provider *fakeProvider, _ string) *corebilling.Service {
 			return f.svcWithProvider(t, fetchAsProvider{provider})
+		},
+		"a payment from another mandate": func(f *fixture, provider *fakeProvider, _ string) *corebilling.Service {
+			return f.svcWithProvider(t, fetchFromAnotherMandate{provider})
 		},
 		"a charge another provider made": func(f *fixture, _ *fakeProvider, id string) *corebilling.Service {
 			updateInvoice(t, f, id, "provider = 'other'")

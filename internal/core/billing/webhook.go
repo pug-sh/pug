@@ -53,7 +53,8 @@ func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, 
 	if err != nil {
 		return undecodable(ctx, provider, d, err)
 	}
-	// Disputes and every type added after this was written.
+	// Every type neither maps: disputes, a payment processing or cancelled, a failed
+	// refund, and every type added after this was written.
 	if payment.IsZero() {
 		return s.finishDelivery(ctx, provider, d, "")
 	}
@@ -82,7 +83,7 @@ func (s *Service) applyPaymentEvent(ctx context.Context, provider PaymentProvide
 	if p.InvoiceID == "" {
 		return s.finishDelivery(ctx, provider, d, "")
 	}
-	inv, err := s.write().GetBillingInvoiceForPayment(ctx, p.InvoiceID)
+	inv, err := s.write().GetBillingInvoice(ctx, p.InvoiceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s.rejectDelivery(ctx, provider, d, "invoice",
 			fmt.Errorf("payment %s names invoice %s, which pug does not have", p.PaymentID, p.InvoiceID))
@@ -113,7 +114,8 @@ func (s *Service) applyPaymentEvent(ctx context.Context, provider PaymentProvide
 }
 
 // applyRefund records money returned on a payment an invoice holds. Only a full
-// refund moves the invoice, and only a paid one.
+// refund moves the invoice, and only a paid one; one still charged waits for its
+// success.
 func (s *Service) applyRefund(ctx context.Context, provider PaymentProvider, d Delivery, event PaymentEvent) error {
 	inv, err := s.write().GetBillingInvoiceByPayment(ctx, dbwrite.GetBillingInvoiceByPaymentParams{
 		Provider:          postgres.NewOptionalText(provider.Name()),
@@ -121,6 +123,9 @@ func (s *Service) applyRefund(ctx context.Context, provider PaymentProvider, d D
 	})
 	// A payment no invoice holds, such as a duplicate refunded by hand.
 	if errors.Is(err, pgx.ErrNoRows) {
+		slog.InfoContext(ctx, "a refund returned money on a payment no invoice holds",
+			slog.String("webhook_id", d.WebhookID), slog.String("payment_id", event.Payment.PaymentID),
+			slog.String("refund_id", event.RefundID))
 		return s.finishDelivery(ctx, provider, d, "")
 	}
 	if err != nil {
@@ -144,6 +149,14 @@ func (s *Service) applyRefund(ctx context.Context, provider PaymentProvider, d D
 			}); err != nil {
 			return err
 		}
+	case status == InvoiceCharged:
+		// Only a payment that succeeded can be refunded, so its success has not landed
+		// yet, and the provider's retry finds the invoice paid.
+		err := fmt.Errorf("billing: refund %s is for invoice %s, whose payment has not settled", event.RefundID, inv.ID)
+		slog.ErrorContext(ctx, "a refund arrived before its payment settled", slogx.Error(err),
+			slog.String("org_id", inv.OrgID), slog.String("webhook_id", d.WebhookID))
+		telemetry.RecordError(ctx, err)
+		return err
 	case status != InvoiceRefunded:
 		return s.rejectDelivery(ctx, provider, d, "refund",
 			fmt.Errorf("refund %s is for invoice %s, which is %s, not paid", event.RefundID, inv.ID, status))
@@ -196,7 +209,8 @@ func (s *Service) applySubscriptionEvent(
 		return s.rejectDelivery(ctx, provider, d, "attribution", err)
 	}
 
-	applied, err := s.applySubscription(ctx, provider, orgID, event, d.DeliveredAt)
+	actor := "webhook " + d.WebhookID
+	applied, err := s.applySubscription(ctx, provider, orgID, event, d.DeliveredAt, actor)
 	if err != nil {
 		// Everything is retried, ErrTwoLiveSubscriptions included: that one is a
 		// cutover whose old cancellation has not landed, and the retry then succeeds.
@@ -211,7 +225,7 @@ func (s *Service) applySubscriptionEvent(
 	}
 	// Even from a stale delivery: the card changed whatever newer state landed first.
 	if event.PaymentMethodUpdated {
-		if err := s.reopenDunning(ctx, orgID, "webhook "+d.WebhookID, d.DeliveredAt); err != nil {
+		if err := s.reopenDunning(ctx, orgID, "", actor, "payment method updated", d.DeliveredAt); err != nil {
 			return err
 		}
 	}
@@ -365,7 +379,7 @@ var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be ap
 // read and the write one step; a concurrent `billing clear` has nothing to
 // strand, since the mandate resolves nothing from the org's row.
 func (s *Service) applySubscription(
-	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time,
+	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time, actor string,
 ) (int64, error) {
 	// The first three mirror column checks; the mandate ones have no column behind
 	// them. Logged here because the confirm path reaches it with a buyer charged.
@@ -431,6 +445,13 @@ func (s *Service) applySubscription(
 	}
 	if err := s.commit(ctx, tx, orgID); err != nil {
 		return 0, err
+	}
+	// A checkout is a new payment method too, and it arrives as a live mandate rather
+	// than a card update.
+	if applied > 0 && event.Status.Live() {
+		if err := s.reopenDunning(ctx, orgID, event.ProviderSubID, actor, "new mandate "+event.ProviderSubID, at); err != nil {
+			return applied, err
+		}
 	}
 	return applied, nil
 }

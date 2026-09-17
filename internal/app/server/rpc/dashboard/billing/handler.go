@@ -72,7 +72,9 @@ func (s *Server) GetBillingStatus(
 	resp.RateCard = rateCardToRPC(ent.Card)
 	resp.CustomTerms = customTermsToRPC(ent.Terms)
 	resp.Chargeable = proto.Bool(ent.Chargeable)
-	resp.PastDueReason = pastDueReasonToRPC(ent.PastDueReason).Enum()
+	if ent.PastDueReason != "" {
+		resp.PastDueReason = pastDueReasonToRPC(ent.PastDueReason).Enum()
+	}
 	if !ent.TrialEndsAt.IsZero() {
 		resp.TrialEndsAt = timestamppb.New(ent.TrialEndsAt)
 	}

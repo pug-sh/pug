@@ -178,8 +178,11 @@ where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;
 update billing_invoices set status = 'waived'
 where id = any(@ids::text[]) and status = 'deferred' and covered_by is null;
 
--- name: GetBillingInvoiceStatusForUpdate :one
-select status from billing_invoices where id = @id for update;
+-- name: GetBillingInvoice :one
+select * from billing_invoices where id = @id;
+
+-- name: GetBillingInvoiceForUpdate :one
+select * from billing_invoices where id = @id for update;
 
 -- name: MarkBillingInvoiceCharging :one
 -- The intent, committed before the provider is called. Each attempt stamps the
@@ -221,18 +224,9 @@ set status = 'open', next_attempt_at = @next_attempt_at,
 where id = @id and status = 'charging'
 returning *;
 
--- name: GetBillingInvoiceForPayment :one
--- What a payment delivery is checked against: the mandate the invoice was charged on.
-select id, org_id, provider, provider_payment_id, provider_sub_id, status
-from billing_invoices where id = @id;
-
 -- name: GetBillingInvoiceByPayment :one
 select id, org_id, status from billing_invoices
 where provider = @provider and provider_payment_id = @provider_payment_id;
-
--- name: GetBillingInvoicePaymentForUpdate :one
-select amount_cents, currency, provider_payment_id, status
-from billing_invoices where id = @id for update;
 
 -- name: MarkBillingInvoicePaid :one
 -- From any state still owed, not only charged: a late success for a charge settle
@@ -251,31 +245,30 @@ update billing_invoices set status = 'paid', paid_at = @paid_at
 where covered_by = @covered_by and status = 'deferred'
 returning id;
 
--- name: GetBillingInvoiceAttempts :one
--- Read under the lock a transition already holds, to decide how it ends.
-select attempts, last_error_code from billing_invoices where id = @id;
-
 -- name: DeclineBillingInvoice :one
--- A refusal by the card: failed with its retry dated, or uncollectible once final.
--- From charged only for the payment the invoice holds, so an earlier attempt's
--- failure never fails a later one. Leaving charging counts the attempt.
+-- A charge that ends failed with its retry dated, or uncollectible once final: a
+-- refusal, or a last attempt no read found a payment for. From charged only for the
+-- payment the invoice holds, so an earlier attempt's failure never fails a later
+-- one. Leaving charging counts the attempt.
 update billing_invoices
 set status = @status::text, failed_at = @failed_at, next_attempt_at = @next_attempt_at,
     attempts = attempts + case when status = 'charging' then 1 else 0 end,
     last_error_code = @last_error_code, last_error_message = @last_error_message,
-    provider_payment_id = coalesce(@provider_payment_id, provider_payment_id)
+    provider_payment_id = @provider_payment_id
 where id = @id and status = @from_status and @status::text in ('failed', 'uncollectible')
   and (status = 'charging' or (status = 'charged' and provider_payment_id = @provider_payment_id))
 returning *;
 
 -- name: ListDunningBillingInvoices :many
+-- Every one, or with a mandate id only those not last tried on it.
 select id from billing_invoices
 where org_id = @org_id and status in ('failed', 'uncollectible')
+  and (@except_provider_sub_id::text = '' or provider_sub_id is distinct from @except_provider_sub_id::text)
 order by billed_from;
 
 -- name: ReopenDunningBillingInvoice :one
--- A new payment method. attempts is kept, so the new card gets one attempt before a
--- failure is final again.
+-- A new payment method. attempts is kept, so it gets the attempts left, and at least
+-- one, before a failure is final again.
 update billing_invoices set status = 'open', next_attempt_at = @next_attempt_at
 where id = @id and status in ('failed', 'uncollectible')
 returning *;

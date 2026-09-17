@@ -162,11 +162,13 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 const hasDunningBillingInvoice = `-- name: HasDunningBillingInvoice :one
 select exists (
   select 1 from billing_invoices
-  where org_id = $1 and status in ('failed', 'uncollectible')
+  where org_id = $1 and (status in ('failed', 'uncollectible')
+    or (status in ('open', 'charging', 'charged') and failed_at is not null))
 )
 `
 
-// What makes an org PAST_DUE. Never a deferred row: nothing was asked of the customer.
+// What makes an org PAST_DUE: an invoice that failed and is not yet paid, so a retry
+// in flight keeps it. Never a deferred row: nothing was asked of the customer.
 func (q *Queries) HasDunningBillingInvoice(ctx context.Context, orgID string) (bool, error) {
 	row := q.db.QueryRow(ctx, hasDunningBillingInvoice, orgID)
 	var exists bool
@@ -282,8 +284,8 @@ type ListBillingInvoicesToSettleRow struct {
 	EnteredAt         pgtype.Timestamptz
 }
 
-// Charges only a read can settle, dated from when each entered its status:
-// update_time also moves when a charge error is recorded.
+// Charges a read settles, dated from when each entered its status: update_time
+// also moves when a charge error is recorded.
 func (q *Queries) ListBillingInvoicesToSettle(ctx context.Context) ([]ListBillingInvoicesToSettleRow, error) {
 	rows, err := q.db.Query(ctx, listBillingInvoicesToSettle)
 	if err != nil {

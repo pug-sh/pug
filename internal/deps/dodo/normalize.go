@@ -117,20 +117,16 @@ func envelopeType(raw []byte) (string, error) {
 	return env.Type, err
 }
 
-// Normalize maps one verified delivery onto pug's vocabulary. A zero event means
-// "store, mark processed, ignore" — a type pug does not handle must never 500.
+// Normalize maps one verified delivery onto pug's vocabulary. A zero event is not a
+// subscription's, and goes on to NormalizePayment: a type neither handles must never 500.
 func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
 	if !strings.HasPrefix(d.EventType, subscriptionPrefix) {
 		return corebilling.SubscriptionEvent{}, nil
 	}
 
-	env, err := decodeEnvelope(d.RawPayload)
-	if err != nil {
-		return corebilling.SubscriptionEvent{}, err
-	}
 	var payload subscriptionPayload
-	if err := json.Unmarshal(env.Data, &payload); err != nil {
-		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: decode subscription payload: %w", err)
+	if err := decodeData(d.RawPayload, &payload); err != nil {
+		return corebilling.SubscriptionEvent{}, err
 	}
 	event := c.eventFromSubscription(payload)
 	// A subscription event that yields nothing is a payload shape pug no longer
@@ -149,7 +145,8 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 }
 
 // NormalizePayment maps the payment and refund deliveries that settle an invoice.
-// Every other type, a payment still processing included, is a zero event.
+// Every other type is a zero event, payment.cancelled included: the poll reads a
+// cancelled charge as failed.
 func (c *Client) NormalizePayment(d corebilling.Delivery) (corebilling.PaymentEvent, error) {
 	switch d.EventType {
 	case eventPaymentSucceeded, eventPaymentFailed:
@@ -160,7 +157,17 @@ func (c *Client) NormalizePayment(d corebilling.Delivery) (corebilling.PaymentEv
 		if p.PaymentID == "" {
 			return corebilling.PaymentEvent{}, errors.New("dodo: payment payload carries no payment id")
 		}
-		return corebilling.PaymentEvent{Payment: paymentFrom(p)}, nil
+		payment := paymentFrom(p)
+		// A body that disagrees with its type would otherwise be consumed as still
+		// processing, and nothing reads a reopened invoice's late success again.
+		want := corebilling.PaymentSucceeded
+		if d.EventType == eventPaymentFailed {
+			want = corebilling.PaymentFailed
+		}
+		if payment.Status != want {
+			return corebilling.PaymentEvent{}, fmt.Errorf("dodo: %s payload carries status %q", d.EventType, p.Status)
+		}
+		return corebilling.PaymentEvent{Payment: payment}, nil
 	case eventRefundSucceeded:
 		var rf refundPayload
 		if err := decodeData(d.RawPayload, &rf); err != nil {
@@ -207,8 +214,8 @@ func paymentFrom(p paymentPayload) corebilling.Payment {
 	}
 }
 
-// paymentStatus narrows Dodo's intent states to an outcome. Anything not succeeded
-// and not terminal is still in flight, so an unknown word delays and never invents one.
+// paymentStatus narrows Dodo's intent states to an outcome. Anything else, requires_*
+// included, is not one yet: it delays a settle, possibly for good, and never invents one.
 func paymentStatus(status string) corebilling.PaymentStatus {
 	switch {
 	case strings.EqualFold(strings.TrimSpace(status), "succeeded"):

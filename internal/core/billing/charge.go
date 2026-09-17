@@ -126,7 +126,7 @@ func (s *Service) chargeOne(ctx context.Context, inv dbread.ListDueBillingInvoic
 			})
 		if err == nil && !moved {
 			// The payment's own webhook can settle the invoice before this answer arrives.
-			cur, readErr := s.write().GetBillingInvoiceForPayment(ctx, inv.ID)
+			cur, readErr := s.write().GetBillingInvoice(ctx, inv.ID)
 			switch {
 			case readErr != nil:
 				err = readErr
@@ -307,7 +307,7 @@ func (s *Service) moveInvoice(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	w := dbwrite.New(tx)
-	from, err := w.GetBillingInvoiceStatusForUpdate(ctx, invoiceID)
+	cur, err := w.GetBillingInvoiceForUpdate(ctx, invoiceID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to lock an invoice", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("invoice_id", invoiceID))
@@ -316,8 +316,8 @@ func (s *Service) moveInvoice(
 	}
 	row, err := update(w)
 	if errors.Is(err, pgx.ErrNoRows) {
-		slog.WarnContext(ctx, "an invoice moved before this write landed", slog.String("org_id", orgID),
-			slog.String("invoice_id", invoiceID), slog.String("status", from))
+		slog.WarnContext(ctx, "an invoice was not in a state this write moves", slog.String("org_id", orgID),
+			slog.String("invoice_id", invoiceID), slog.String("status", cur.Status), slog.String("detail", detail))
 		return false, nil
 	}
 	if err != nil {
@@ -326,7 +326,7 @@ func (s *Service) moveInvoice(
 		telemetry.RecordError(ctx, err)
 		return false, err
 	}
-	if err := appendInvoiceEvent(ctx, w, orgID, invoiceID, actor, InvoiceStatus(from), InvoiceStatus(row.Status), detail); err != nil {
+	if err := appendInvoiceEvent(ctx, w, orgID, invoiceID, actor, InvoiceStatus(cur.Status), InvoiceStatus(row.Status), detail); err != nil {
 		return false, err
 	}
 	if err := s.commit(ctx, tx, orgID); err != nil {
@@ -346,6 +346,5 @@ func chargeDescription(inv dbread.ListDueBillingInvoicesRow) string {
 	if inv.CarriedPeriods == 1 {
 		periods = "period"
 	}
-	return desc + fmt.Sprintf(", and $%d.%02d carried from %d earlier %s",
-		inv.CarriedCents/100, inv.CarriedCents%100, inv.CarriedPeriods, periods)
+	return desc + fmt.Sprintf(", and %s carried from %d earlier %s", usd(inv.CarriedCents), inv.CarriedPeriods, periods)
 }

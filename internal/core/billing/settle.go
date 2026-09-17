@@ -24,6 +24,9 @@ const (
 	pollChargedAfter = time.Hour
 	// providerClockSkew widens a listing back from the charging instant, which is pug's clock.
 	providerClockSkew = time.Minute
+	// staleChargeAfter is how long a payment may go without an outcome before a person
+	// has to look: a charge made with no customer present can wait on one for good.
+	staleChargeAfter = 3 * 24 * time.Hour
 )
 
 // SettleReport is what one settle step did and found.
@@ -33,15 +36,18 @@ type SettleReport struct {
 	Adopted int
 	// Failed is a payment the provider failed, left failed with its retry dated.
 	Failed int
-	// Uncollectible is a failure that is final: a hard decline, or the last attempt.
+	// Uncollectible is a charge that ends final: a hard decline, the last attempt, or a
+	// last attempt no read found a payment for.
 	Uncollectible int
 	Reopened      int
 	// Pending is a charged payment still in flight, asked about again next pass.
 	Pending int
-	// Duplicate is a payment that took money with no bill behind it: a refund by hand.
+	// Duplicate is a second payment for one invoice, succeeded or still processing, to
+	// check and refund by hand.
 	Duplicate      int
 	AmountMismatch int
-	// Unreadable is a payment pug could not read, or a charge another provider made.
+	// Unreadable is a payment pug could not read, one from another mandate, a charge
+	// another provider made, or a payment with no outcome past staleChargeAfter.
 	Unreadable int
 }
 
@@ -120,11 +126,14 @@ func (s *Service) settleCharging(ctx context.Context, inv dbread.ListBillingInvo
 			live = append(live, p)
 		}
 	}
-	// The list promises no order, and a retry shares the invoice id with the attempt
-	// that failed before it.
+	// The list promises no order.
 	newestFirst := func(a, b Payment) int { return b.CreatedAt.Compare(a.CreatedAt) }
 	slices.SortStableFunc(live, newestFirst)
 	slices.SortStableFunc(failed, newestFirst)
+	// A success outranks a newer payment still processing, which may yet fail.
+	if i := slices.IndexFunc(live, func(p Payment) bool { return p.Status == PaymentSucceeded }); i > 0 {
+		live[0], live[i] = live[i], live[0]
+	}
 	var pick Payment
 	switch {
 	case len(live) > 0:
@@ -168,14 +177,14 @@ func (s *Service) settleCharging(ctx context.Context, inv dbread.ListBillingInvo
 	return err
 }
 
-// reopenCharge charges again an invoice a read found no payment for. Each lap may
-// really take money, so the attempts bound it; a charge the provider answered took
-// nothing and spends none.
+// reopenCharge charges again an invoice a read found no payment for, and writes it off
+// on its last attempt. Each lap may really take money, so the attempts bound it; a
+// charge the provider answered took nothing and spends none.
 func (s *Service) reopenCharge(ctx context.Context, inv dbread.ListBillingInvoicesToSettleRow, now time.Time, r *SettleReport) error {
 	var to InvoiceStatus
 	moved, err := s.moveInvoice(ctx, inv.OrgID, inv.ID, ActorInvoicePass, "no payment found",
 		func(w *dbwrite.Queries) (dbwrite.BillingInvoice, error) {
-			cur, err := w.GetBillingInvoiceAttempts(ctx, inv.ID)
+			cur, err := w.GetBillingInvoice(ctx, inv.ID)
 			if err != nil {
 				return dbwrite.BillingInvoice{}, err
 			}
@@ -219,6 +228,15 @@ func (s *Service) pollCharged(ctx context.Context, inv dbread.ListBillingInvoice
 		return s.settleFailed(ctx, inv.OrgID, inv.ID, InvoiceCharged, payment, now, ActorInvoicePass, r)
 	case PaymentProcessing:
 	}
+	if inv.EnteredAt.Time.Before(now.Add(-staleChargeAfter)) {
+		r.Unreadable++
+		err := fmt.Errorf("billing: payment %s has had no outcome since %s", payment.PaymentID,
+			inv.EnteredAt.Time.Format(time.RFC3339))
+		slog.ErrorContext(ctx, "a charge has had no outcome for days", slogx.Error(err),
+			slog.String("org_id", inv.OrgID), slog.String("invoice_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return nil
+	}
 	r.Pending++
 	return nil
 }
@@ -227,8 +245,13 @@ func (s *Service) fetchPayment(
 	ctx context.Context, inv dbread.ListBillingInvoicesToSettleRow, paymentID string, r *SettleReport,
 ) (Payment, bool) {
 	payment, err := s.payments.Provider.FetchPayment(ctx, paymentID)
-	if err == nil && payment.PaymentID != paymentID {
+	switch {
+	case err != nil:
+	case payment.PaymentID != paymentID:
 		err = fmt.Errorf("billing: payment %s reads back as %q", paymentID, payment.PaymentID)
+	// As the webhook checks: the invoice id is metadata a payment link lets a buyer set.
+	case payment.ProviderSubID != inv.ProviderSubID.String:
+		err = fmt.Errorf("billing: payment %s is not from the mandate invoice %s was charged on", paymentID, inv.ID)
 	}
 	if err != nil {
 		r.Unreadable++
@@ -266,7 +289,7 @@ func (s *Service) settlePaid(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	w := dbwrite.New(tx)
-	cur, err := w.GetBillingInvoicePaymentForUpdate(ctx, invoiceID)
+	cur, err := w.GetBillingInvoiceForUpdate(ctx, invoiceID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to lock an invoice", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("invoice_id", invoiceID))
@@ -320,12 +343,12 @@ func (s *Service) settlePaid(
 		}
 	}
 	// total_amount includes the tax added on top, and pug billed the pre-tax figure.
-	took := p.TotalCents - p.TaxCents
-	mismatch := took != cur.AmountCents || normalizeCurrency(p.Currency) != cur.Currency
-	if mismatch {
-		detail := fmt.Sprintf("amount_mismatch: payment %s took %s %s before tax, billed %s %s",
-			p.PaymentID, usd(took), normalizeCurrency(p.Currency), usd(cur.AmountCents), cur.Currency)
-		if err := appendInvoiceEvent(ctx, w, orgID, invoiceID, actor, InvoicePaid, InvoicePaid, detail); err != nil {
+	took, currency := p.TotalCents-p.TaxCents, normalizeCurrency(p.Currency)
+	var mismatch string
+	if took != cur.AmountCents || currency != cur.Currency {
+		mismatch = fmt.Sprintf("amount_mismatch: payment %s took %s %s before tax, billed %s %s",
+			p.PaymentID, usd(took), currency, usd(cur.AmountCents), cur.Currency)
+		if err := appendInvoiceEvent(ctx, w, orgID, invoiceID, actor, InvoicePaid, InvoicePaid, mismatch); err != nil {
 			return err
 		}
 	}
@@ -333,10 +356,9 @@ func (s *Service) settlePaid(
 		return err
 	}
 	r.Paid++
-	if mismatch {
+	if mismatch != "" {
 		r.AmountMismatch++
-		err := fmt.Errorf("billing: invoice %s billed %d %s, and payment %s took %d %s before tax",
-			invoiceID, cur.AmountCents, cur.Currency, p.PaymentID, took, normalizeCurrency(p.Currency))
+		err := fmt.Errorf("billing: invoice %s: %s", invoiceID, mismatch)
 		slog.ErrorContext(ctx, "a payment took a different amount from the one billed", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("invoice_id", invoiceID))
 		telemetry.RecordError(ctx, err)

@@ -120,7 +120,11 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 		return Entitlement{}, err
 	}
 	if dunning {
+		// A card update reopens a live mandate's invoices; with none live only a checkout can.
 		ent.Status, ent.PastDueReason = StatusPastDue, PastDueDeclined
+		if !ent.Chargeable {
+			ent.PastDueReason = PastDueReauthorize
+		}
 	}
 	return ent, nil
 }

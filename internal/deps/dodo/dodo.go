@@ -4,6 +4,7 @@ package dodo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -280,8 +281,17 @@ func (c *Client) Charge(ctx context.Context, in corebilling.ChargeInput) (string
 		if !errors.As(err, &apiErr) || apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 {
 			return "", fmt.Errorf("dodo: charge subscription: %w", err)
 		}
+		code := fmt.Sprintf("HTTP_%d", apiErr.StatusCode)
+		// A decline's own code is what tells a hard one from a soft one.
+		var body struct {
+			Code string `json:"code"`
+		}
+		if apiErr.StatusCode == http.StatusPaymentRequired &&
+			json.Unmarshal([]byte(apiErr.JSON.RawJSON()), &body) == nil && body.Code != "" {
+			code = body.Code
+		}
 		return "", &corebilling.ChargeError{
-			Code:    fmt.Sprintf("HTTP_%d", apiErr.StatusCode),
+			Code:    code,
 			Message: apiErr.Error(),
 			// Only a 402: dunning any other 4xx would dun every customer over a rotated key.
 			Declined:      apiErr.StatusCode == http.StatusPaymentRequired,
@@ -353,7 +363,9 @@ func (c *Client) findSubscription(ctx context.Context, customerID, ref string, s
 		// A minute back: the subscription is created from the same checkout, and the
 		// two clocks are not pug's to reconcile.
 		CreatedAtGte: dodopayments.F(since.UTC().Add(-time.Minute)),
-		PageSize:     dodopayments.F(int64(100)),
+		// The auto-pager reads an absent page number as 1 and asks for page 2 next.
+		PageNumber: dodopayments.F(int64(0)),
+		PageSize:   dodopayments.F(int64(100)),
 	})
 	for iter.Next() {
 		sub := iter.Current()

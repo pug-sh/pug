@@ -57,6 +57,14 @@ func TestFetchPaymentMatchesADelivery(t *testing.T) {
 		t.Errorf("normalized %+v\nwant       %+v", event.Payment, wantPayment)
 	}
 
+	// Settle reads a decline this way, and its code is what makes it hard or soft.
+	declined := apiClient(t, jsonHandler(t, http.StatusOK,
+		`{"payment_id":"pay_1","subscription_id":"sub_1","status":"failed","error_code":"STOLEN_CARD","error_message":"stolen"}`, nil))
+	if p, err := declined.FetchPayment(context.Background(), "pay_1"); err != nil || p.Status != corebilling.PaymentFailed ||
+		p.ErrorCode != "STOLEN_CARD" || p.ErrorMessage != "stolen" {
+		t.Errorf("fetched (%+v, %v), want the decline with its code", p, err)
+	}
+
 	failing := apiClient(t, jsonHandler(t, http.StatusInternalServerError, `{"message":"boom"}`, nil))
 	if _, err := failing.FetchPayment(context.Background(), "pay_1"); err == nil {
 		t.Error("a 500 from the provider was read as a payment")
@@ -112,7 +120,11 @@ func TestNormalizePayment(t *testing.T) {
 		for name, tc := range map[string][2]string{
 			"no payment id":         {"payment.succeeded", `{"status":"succeeded"}`},
 			"data that is not JSON": {"payment.failed", `"garbled"`},
-			"a refund with no id":   {"refund.succeeded", `{"payment_id":"pay_1","is_partial":false}`},
+			// Consumed as still processing, a late success on a reopened invoice is lost.
+			"a success still processing": {"payment.succeeded", `{"payment_id":"pay_1","status":"processing"}`},
+			"a success with no status":   {"payment.succeeded", `{"payment_id":"pay_1","status":null}`},
+			"a failure that succeeded":   {"payment.failed", `{"payment_id":"pay_1","status":"succeeded"}`},
+			"a refund with no id":        {"refund.succeeded", `{"payment_id":"pay_1","is_partial":false}`},
 			// Read as full, a partial refund would mark the invoice refunded.
 			"a refund that does not say if it is partial": {"refund.succeeded", `{"refund_id":"rf_1","payment_id":"pay_1"}`},
 		} {
@@ -123,8 +135,8 @@ func TestNormalizePayment(t *testing.T) {
 	})
 }
 
-// Anything not succeeded and not terminal is still in flight: an unknown word may
-// delay a settle but never invents an outcome.
+// Anything else, requires_* included, is not an outcome yet: an unknown word may delay
+// a settle but never invents one.
 func TestPaymentStatusMapping(t *testing.T) {
 	for in, want := range map[string]corebilling.PaymentStatus{
 		"succeeded":                         corebilling.PaymentSucceeded,

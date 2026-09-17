@@ -36,7 +36,8 @@ const (
 )
 
 const (
-	ActorInvoicePass = "invoice-pass"
+	ActorInvoicePass   = "invoice-pass"
+	ActorReconcilePass = "reconcile-pass"
 
 	// ChargeNoticeDays is a placeholder: the days an open invoice can be seen
 	// before its first charge.
