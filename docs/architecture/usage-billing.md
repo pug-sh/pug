@@ -863,9 +863,11 @@ becomes the evaluation window. Not built in this slice; the design keeps
 `Chargeable` on the resolved entitlement so the gate is one check when it
 comes.
 
-Until then the invoicing pass's last stage reports **unbilled usage**: a closed period over
-the current card's free allowance for an org with no mandate. That is the
-number that says how much the free tier is costing.
+Until then the invoicing pass's last stage reports **unbilled usage**: each org
+the close leaves out (§8.1) whose latest closed period went over the current
+card's free allowance, counted again on every pass and logged priced on that
+card. An org whose mandate ended is not among them, since the close still
+considers it. That is the number that says how much the free tier is costing.
 
 ## 11. The invoicing pass
 
@@ -915,15 +917,16 @@ successfully says nothing about the ones that did not; a payment with no outcome
 for three days counts too) — or when it left a
 charge unresolved (`Ambiguous`), since that is money in an unknown state, or
 dropped a period (`dropped`), which no later pass will bill. It also exits
-non-zero when more than ten mandates were written off as gone in one
-pass: at that scale it is pug's own fault, not ten customers'. So a red CronJob
-means the pass itself is broken, not that a customer's card is. A stored invoice
-this build cannot read (`Undecodable`) is the same kind of thing: the row is
-skipped wherever it is met — so it is never charged and never settled — and the
-ledger read refuses rather than returning a customer's history one row short.
-So is a mandate stored in a status this build has no word for, whose invoices
-are held as `Unreadable`, and an invoice due with no provider configured to
-charge it.
+non-zero when more than ten invoices were written off in one pass because their
+mandate was gone: at that scale it is pug's own fault, not ten customers'. So a
+red CronJob means the pass itself is broken, not that a customer's card is. A
+mandate stored in a status this build has no word for, whose invoices are held
+as `Unreadable`, is the same kind of thing, and so is an invoice due with no
+provider configured to charge it. The pass never decodes a stored invoice: it
+lists rows by status and reads their columns, so a status this build has no
+word for is never met. Only the ledger read (§9) decodes one, and a row it
+cannot read (`Undecodable`) makes it refuse rather than return a customer's
+history one row short.
 
 ## 12. Operator CLI
 
@@ -978,7 +981,7 @@ two money columns; invoice writes append to `billing_invoice_events`.
 | `PUG_BILLING_PROVIDER` | `""` | unchanged |
 | `PUG_DODO_API_KEY`, `PUG_DODO_ENVIRONMENT`, `PUG_DODO_WEBHOOK_SECRET` | | unchanged |
 | `PUG_DODO_MANDATE_PRODUCT` | — | the one on-demand product every org authorizes against. **Replaces** `PUG_DODO_PRODUCT_STARTER/GROWTH/SCALE`. Absent ⇒ not purchasable, as a missing tier key is today |
-| `PUG_USAGE_RESCAN_DAYS` | `2` | now also the invoicing grace (§8.1). The invoice pass resolves it through the meter's own function (unset, 0 or negative → 2), never a raw read, but nothing makes the two CronJobs see the same value, so the pass logs the grace it ran with (§11) |
+| `PUG_USAGE_RESCAN_DAYS` | `2` | now also the invoicing grace (§8.1). The invoice pass resolves it through the meter's own clamp, `coreusage.RescanDays` (unset, 0 or negative → 2), never a raw read, but nothing makes the two CronJobs see the same value, so the pass logs the grace it ran with (§11) |
 | `DeferUnderCents` | 500 | a Go const, placeholder: under it a close is `deferred` and carried forward (§8.7) |
 | `WaiveUnderCents` | 100 | a Go const, placeholder: under it a sweep writes the balance off instead of charging at a loss (§8.7); must stay at or above Dodo's 50¢ card minimum, which also clears the ~42¢ break-even |
 | `MaxDeferPeriods` | 12 | a Go const, placeholder: how many periods a balance may span before a close becomes a sweep (§8.7) |
@@ -1148,16 +1151,18 @@ and the authz tests — each container package keeping `TestMain` and no
   inside its grace through the finalized days, never touching another org's
   invoices, and counting a final invoice the sweep waived as settled.
 - **The invoicing pass** (§11) — `Unreadable`, `Ambiguous`, `dropped` and more
-  than ten gone mandates exit non-zero; ten gone mandates, lock contention and
-  billing off exit 0; a failing pass still emits its counters; an
-  `Undecodable` row is counted and never charged.
+  than ten invoices written off for a gone mandate exit non-zero; ten of them,
+  lock contention and billing off exit 0; a failing pass still emits its
+  counters; unbilled usage counts only an org the close leaves out, on its
+  latest closed period.
 - **Operator CLI** (§12) — the money flags keep when omitted and clear on `0`;
   a card pin or `--plan ''` force-clears them; `void` refuses `charging`,
   `charged`, `paid` and a covered row; `retry` works only from `uncollectible`.
 - **Migrations** (§14) — a raw zero-price custom insert is refused by
   `custom_needs_price`; `provider_product_id` still exists after 021.
 - **RPC freshness** — `GetUpcomingInvoice` carries the three usage states
-  through and never renders an unknown count as $0.
+  through and never renders an unknown count as $0; `ListInvoices` refuses a
+  row it cannot decode.
 - **Authz** — the registry and policy tests fail until `ResourceInvoice` and
   the three new procedures are entered, and `ListInvoices` and
   `RemovePaymentMethod` join `TestRoleGatedAdminOnlyRPCs`' admin-only list, the
@@ -1469,8 +1474,9 @@ constraints break.
     charge-then-cancel order, refusing while any invoice is unsettled, and an
     invoice in its notice window charged by a day before the mandate ends.
 12. **The invoicing pass** (§11). `cmd/cron/billing-invoice`,
-    `LockBillingInvoice`, exit codes and counters, depguard, `make build`, the
-    `cron-billing-invoice` image in the release matrix, and `.env.example`.
+    `LockBillingInvoice`, exit codes and counters, the unbilled-usage report,
+    depguard, `make build`, the `cron-billing-invoice` image in the release
+    matrix, and `.env.example`.
 13. **RPCs** (§9). `GetUpcomingInvoice`, `ListInvoices` and
     `RemovePaymentMethod`: proto, handlers, authz registry entries,
     `ResourceInvoice` and reasons.

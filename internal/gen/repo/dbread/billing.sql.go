@@ -658,3 +658,44 @@ func (q *Queries) ListStrandedBillingWebhookDeliveries(ctx context.Context, stal
 	}
 	return items, nil
 }
+
+const listUnbilledUsage = `-- name: ListUnbilledUsage :many
+select p.event_count
+from (
+  select distinct on (org_id) org_id, event_count
+  from usage_periods
+  where period_end <= $1
+  order by org_id, period_start desc
+) p
+left join billing_entitlements e on e.org_id = p.org_id
+where p.event_count > $2::bigint
+  and e.plan_slug is distinct from 'custom'
+  and not exists (select 1 from billing_subscriptions s where s.org_id = p.org_id)
+`
+
+type ListUnbilledUsageParams struct {
+	ClosedBefore pgtype.Timestamptz
+	FreeEvents   int64
+}
+
+// What the free tier costs: every org the close leaves out, with its latest closed
+// period's count when that is over the allowance.
+func (q *Queries) ListUnbilledUsage(ctx context.Context, arg ListUnbilledUsageParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listUnbilledUsage, arg.ClosedBefore, arg.FreeEvents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var event_count int64
+		if err := rows.Scan(&event_count); err != nil {
+			return nil, err
+		}
+		items = append(items, event_count)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

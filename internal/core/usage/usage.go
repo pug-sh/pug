@@ -241,3 +241,28 @@ func CeilDayUTC(t time.Time) time.Time {
 	}
 	return day.AddDate(0, 0, 1)
 }
+
+const (
+	// Retention is a year of day cells plus 25 days of slack.
+	Retention = 390 * 24 * time.Hour
+
+	DefaultRescanDays = 2
+
+	// Past the retention window a wider rescan re-inserts day cells that the same
+	// pass's prune then deletes, every pass, forever — and the ClickHouse scan stops
+	// pruning partitions long before that. Expressed from Retention so the two
+	// cannot drift.
+	MaxRescanDays = int(Retention / (24 * time.Hour))
+)
+
+// RescanDays resolves PUG_USAGE_RESCAN_DAYS, which is also the invoicing grace:
+// unset, 0 and negative fall back to the default, and past retention it clamps.
+func RescanDays(configured int) int {
+	switch {
+	case configured > MaxRescanDays:
+		return MaxRescanDays
+	case configured > 0:
+		return configured
+	}
+	return DefaultRescanDays
+}

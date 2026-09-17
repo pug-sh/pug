@@ -98,6 +98,21 @@ where e.plan_slug = 'custom'
    or exists (select 1 from billing_subscriptions s where s.org_id = o.id)
 order by o.id;
 
+-- name: ListUnbilledUsage :many
+-- What the free tier costs: every org the close leaves out, with its latest closed
+-- period's count when that is over the allowance.
+select p.event_count
+from (
+  select distinct on (org_id) org_id, event_count
+  from usage_periods
+  where period_end <= @closed_before
+  order by org_id, period_start desc
+) p
+left join billing_entitlements e on e.org_id = p.org_id
+where p.event_count > @free_events::bigint
+  and e.plan_slug is distinct from 'custom'
+  and not exists (select 1 from billing_subscriptions s where s.org_id = p.org_id);
+
 -- name: GetBillingInvoiceBilledTo :one
 -- Where the org's billing has reached: each close starts here, so no day is
 -- billed twice however the period moves. Any status: a day on a waived or void row
