@@ -48,6 +48,15 @@ const (
 	// BillingServiceListPlansProcedure is the fully-qualified name of the BillingService's ListPlans
 	// RPC.
 	BillingServiceListPlansProcedure = "/dashboard.billing.v1.BillingService/ListPlans"
+	// BillingServiceGetUpcomingInvoiceProcedure is the fully-qualified name of the BillingService's
+	// GetUpcomingInvoice RPC.
+	BillingServiceGetUpcomingInvoiceProcedure = "/dashboard.billing.v1.BillingService/GetUpcomingInvoice"
+	// BillingServiceListInvoicesProcedure is the fully-qualified name of the BillingService's
+	// ListInvoices RPC.
+	BillingServiceListInvoicesProcedure = "/dashboard.billing.v1.BillingService/ListInvoices"
+	// BillingServiceRemovePaymentMethodProcedure is the fully-qualified name of the BillingService's
+	// RemovePaymentMethod RPC.
+	BillingServiceRemovePaymentMethodProcedure = "/dashboard.billing.v1.BillingService/RemovePaymentMethod"
 )
 
 // BillingServiceClient is a client for the dashboard.billing.v1.BillingService service.
@@ -66,14 +75,29 @@ type BillingServiceClient interface {
 	// URL. Admin-only, like the checkout it settles. session_id is a claim -- the
 	// subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
-	// Opens the provider's customer portal, where plan changes, card updates,
-	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+	// Opens the provider's customer portal, where card updates, receipts and
+	// cancellation live.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
 	// The current rate card, plus custom for an org whose row records a deal. On
 	// the viewer floor: the person reading the quota banner wants to know what
 	// usage costs, they just cannot buy it. Never returns a product id.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
+	// The current period priced so far, band by band, plus the balance carried from
+	// earlier periods. Counts only the days the invoice will bill, so a trial's days
+	// and days before the payment method are excluded. On the viewer floor.
+	// Amounts exclude tax, which is added when the payment method is charged.
+	// Unavailable with billing switched off.
+	GetUpcomingInvoice(context.Context, *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error)
+	// Every closed period, newest first. Admin-only: a receipt carries the company's
+	// billing details. Unavailable with billing switched off.
+	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
+	// Charges every day the meter has finalized, then cancels the payment method.
+	// Admin-only. FailedPrecondition leaves it on file: BILLING_NO_MANDATE when there
+	// is none, BILLING_FINAL_PERIOD_UNSETTLED while a period is unbilled or a charge
+	// unsettled, and BILLING_REMOVE_INCOMPLETE when the charge was taken but the
+	// removal did not finish. Unavailable with billing switched off.
+	RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error)
 }
 
 // NewBillingServiceClient constructs a client for the dashboard.billing.v1.BillingService service.
@@ -117,6 +141,24 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("ListPlans")),
 			connect.WithClientOptions(opts...),
 		),
+		getUpcomingInvoice: connect.NewClient[v1.GetUpcomingInvoiceRequest, v1.GetUpcomingInvoiceResponse](
+			httpClient,
+			baseURL+BillingServiceGetUpcomingInvoiceProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("GetUpcomingInvoice")),
+			connect.WithClientOptions(opts...),
+		),
+		listInvoices: connect.NewClient[v1.ListInvoicesRequest, v1.ListInvoicesResponse](
+			httpClient,
+			baseURL+BillingServiceListInvoicesProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+			connect.WithClientOptions(opts...),
+		),
+		removePaymentMethod: connect.NewClient[v1.RemovePaymentMethodRequest, v1.RemovePaymentMethodResponse](
+			httpClient,
+			baseURL+BillingServiceRemovePaymentMethodProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("RemovePaymentMethod")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -127,6 +169,9 @@ type billingServiceClient struct {
 	confirmCheckout       *connect.Client[v1.ConfirmCheckoutRequest, v1.ConfirmCheckoutResponse]
 	createPortalSession   *connect.Client[v1.CreatePortalSessionRequest, v1.CreatePortalSessionResponse]
 	listPlans             *connect.Client[v1.ListPlansRequest, v1.ListPlansResponse]
+	getUpcomingInvoice    *connect.Client[v1.GetUpcomingInvoiceRequest, v1.GetUpcomingInvoiceResponse]
+	listInvoices          *connect.Client[v1.ListInvoicesRequest, v1.ListInvoicesResponse]
+	removePaymentMethod   *connect.Client[v1.RemovePaymentMethodRequest, v1.RemovePaymentMethodResponse]
 }
 
 // GetBillingStatus calls dashboard.billing.v1.BillingService.GetBillingStatus.
@@ -154,6 +199,21 @@ func (c *billingServiceClient) ListPlans(ctx context.Context, req *connect.Reque
 	return c.listPlans.CallUnary(ctx, req)
 }
 
+// GetUpcomingInvoice calls dashboard.billing.v1.BillingService.GetUpcomingInvoice.
+func (c *billingServiceClient) GetUpcomingInvoice(ctx context.Context, req *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error) {
+	return c.getUpcomingInvoice.CallUnary(ctx, req)
+}
+
+// ListInvoices calls dashboard.billing.v1.BillingService.ListInvoices.
+func (c *billingServiceClient) ListInvoices(ctx context.Context, req *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error) {
+	return c.listInvoices.CallUnary(ctx, req)
+}
+
+// RemovePaymentMethod calls dashboard.billing.v1.BillingService.RemovePaymentMethod.
+func (c *billingServiceClient) RemovePaymentMethod(ctx context.Context, req *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error) {
+	return c.removePaymentMethod.CallUnary(ctx, req)
+}
+
 // BillingServiceHandler is an implementation of the dashboard.billing.v1.BillingService service.
 type BillingServiceHandler interface {
 	// What the org may send this period: plan, quota, and the window both are
@@ -170,14 +230,29 @@ type BillingServiceHandler interface {
 	// URL. Admin-only, like the checkout it settles. session_id is a claim -- the
 	// subscription must carry this org.
 	ConfirmCheckout(context.Context, *connect.Request[v1.ConfirmCheckoutRequest]) (*connect.Response[v1.ConfirmCheckoutResponse], error)
-	// Opens the provider's customer portal, where plan changes, card updates,
-	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+	// Opens the provider's customer portal, where card updates, receipts and
+	// cancellation live.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
 	// The current rate card, plus custom for an org whose row records a deal. On
 	// the viewer floor: the person reading the quota banner wants to know what
 	// usage costs, they just cannot buy it. Never returns a product id.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
+	// The current period priced so far, band by band, plus the balance carried from
+	// earlier periods. Counts only the days the invoice will bill, so a trial's days
+	// and days before the payment method are excluded. On the viewer floor.
+	// Amounts exclude tax, which is added when the payment method is charged.
+	// Unavailable with billing switched off.
+	GetUpcomingInvoice(context.Context, *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error)
+	// Every closed period, newest first. Admin-only: a receipt carries the company's
+	// billing details. Unavailable with billing switched off.
+	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
+	// Charges every day the meter has finalized, then cancels the payment method.
+	// Admin-only. FailedPrecondition leaves it on file: BILLING_NO_MANDATE when there
+	// is none, BILLING_FINAL_PERIOD_UNSETTLED while a period is unbilled or a charge
+	// unsettled, and BILLING_REMOVE_INCOMPLETE when the charge was taken but the
+	// removal did not finish. Unavailable with billing switched off.
+	RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -217,6 +292,24 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("ListPlans")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceGetUpcomingInvoiceHandler := connect.NewUnaryHandler(
+		BillingServiceGetUpcomingInvoiceProcedure,
+		svc.GetUpcomingInvoice,
+		connect.WithSchema(billingServiceMethods.ByName("GetUpcomingInvoice")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceListInvoicesHandler := connect.NewUnaryHandler(
+		BillingServiceListInvoicesProcedure,
+		svc.ListInvoices,
+		connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceRemovePaymentMethodHandler := connect.NewUnaryHandler(
+		BillingServiceRemovePaymentMethodProcedure,
+		svc.RemovePaymentMethod,
+		connect.WithSchema(billingServiceMethods.ByName("RemovePaymentMethod")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.billing.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServiceGetBillingStatusProcedure:
@@ -229,6 +322,12 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 			billingServiceCreatePortalSessionHandler.ServeHTTP(w, r)
 		case BillingServiceListPlansProcedure:
 			billingServiceListPlansHandler.ServeHTTP(w, r)
+		case BillingServiceGetUpcomingInvoiceProcedure:
+			billingServiceGetUpcomingInvoiceHandler.ServeHTTP(w, r)
+		case BillingServiceListInvoicesProcedure:
+			billingServiceListInvoicesHandler.ServeHTTP(w, r)
+		case BillingServiceRemovePaymentMethodProcedure:
+			billingServiceRemovePaymentMethodHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -256,4 +355,16 @@ func (UnimplementedBillingServiceHandler) CreatePortalSession(context.Context, *
 
 func (UnimplementedBillingServiceHandler) ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.ListPlans is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) GetUpcomingInvoice(context.Context, *connect.Request[v1.GetUpcomingInvoiceRequest]) (*connect.Response[v1.GetUpcomingInvoiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.GetUpcomingInvoice is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.ListInvoices is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) RemovePaymentMethod(context.Context, *connect.Request[v1.RemovePaymentMethodRequest]) (*connect.Response[v1.RemovePaymentMethodResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.billing.v1.BillingService.RemovePaymentMethod is not implemented"))
 }

@@ -223,7 +223,8 @@ func TestSettleReadsAnUnansweredChargeOffItsMandatesPayments(t *testing.T) {
 					t.Errorf("paid = %+v, want the tax, the settle time and the receipt", paid)
 				}
 			case corebilling.InvoiceWaived, corebilling.InvoiceDeferred, corebilling.InvoiceCharging,
-				corebilling.InvoiceCharged, corebilling.InvoiceRefunded, corebilling.InvoiceUncollectible:
+				corebilling.InvoiceCharged, corebilling.InvoiceRefunded, corebilling.InvoiceUncollectible,
+				corebilling.InvoiceVoid:
 			}
 		})
 	}

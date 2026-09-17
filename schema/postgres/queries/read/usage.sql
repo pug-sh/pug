@@ -58,7 +58,7 @@ where o.id = @org_id;
 select count(*) from projects where id = any(@project_ids::text[]);
 
 -- name: SumUsageDaily :one
--- An invoice's own count over one of its windows, at the day grain the meter
--- stores; usage_periods stays the dashboard's live number.
+-- A billable window's count, at the day grain the meter stores. Used by the close and
+-- by the estimate that predicts it; usage_periods stays the raw period total.
 select coalesce(sum(event_count), 0)::bigint from usage_daily
 where org_id = @org_id and day >= @from_day and day < @to_day;

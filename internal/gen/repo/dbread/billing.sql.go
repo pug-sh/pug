@@ -98,6 +98,19 @@ func (q *Queries) GetLiveBillingSubscription(ctx context.Context, orgID string) 
 	return i, err
 }
 
+const getNextBillingInvoiceAttempt = `-- name: GetNextBillingInvoiceAttempt :one
+select min(next_attempt_at)::timestamptz from billing_invoices
+where org_id = $1 and status in ('open', 'failed')
+`
+
+// The next charge already dated: an open invoice's first, or a failed one's retry.
+func (q *Queries) GetNextBillingInvoiceAttempt(ctx context.Context, orgID string) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getNextBillingInvoiceAttempt, orgID)
+	var column_1 pgtype.Timestamptz
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getOrgEntitlement = `-- name: GetOrgEntitlement :one
 select
   o.create_time as org_create_time,
@@ -272,6 +285,78 @@ func (q *Queries) ListBillingInvoiceOrgs(ctx context.Context) ([]ListBillingInvo
 	for rows.Next() {
 		var i ListBillingInvoiceOrgsRow
 		if err := rows.Scan(&i.ID, &i.CreateTime); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingInvoicesByOrg = `-- name: ListBillingInvoicesByOrg :many
+select amount_cents, billed_from, billed_to, carried_cents, covered_by, create_time, currency,
+       event_count, id, lines, next_attempt_at, paid_at, period_end, period_start,
+       provider_invoice_url, status, tax_cents, usage_cents
+from billing_invoices
+where org_id = $1
+order by billed_from desc
+limit 500
+`
+
+type ListBillingInvoicesByOrgRow struct {
+	AmountCents        int64
+	BilledFrom         pgtype.Date
+	BilledTo           pgtype.Date
+	CarriedCents       int64
+	CoveredBy          pgtype.Text
+	CreateTime         pgtype.Timestamptz
+	Currency           string
+	EventCount         int64
+	ID                 string
+	Lines              []byte
+	NextAttemptAt      pgtype.Timestamptz
+	PaidAt             pgtype.Timestamptz
+	PeriodEnd          pgtype.Timestamptz
+	PeriodStart        pgtype.Timestamptz
+	ProviderInvoiceUrl pgtype.Text
+	Status             string
+	TaxCents           pgtype.Int8
+	UsageCents         int64
+}
+
+// The org's ledger, newest first. Never last_error_message, which is merchant-facing.
+// Capped because the ledger is never pruned; a decade of closes fits well inside it.
+func (q *Queries) ListBillingInvoicesByOrg(ctx context.Context, orgID string) ([]ListBillingInvoicesByOrgRow, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoicesByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBillingInvoicesByOrgRow
+	for rows.Next() {
+		var i ListBillingInvoicesByOrgRow
+		if err := rows.Scan(
+			&i.AmountCents,
+			&i.BilledFrom,
+			&i.BilledTo,
+			&i.CarriedCents,
+			&i.CoveredBy,
+			&i.CreateTime,
+			&i.Currency,
+			&i.EventCount,
+			&i.ID,
+			&i.Lines,
+			&i.NextAttemptAt,
+			&i.PaidAt,
+			&i.PeriodEnd,
+			&i.PeriodStart,
+			&i.ProviderInvoiceUrl,
+			&i.Status,
+			&i.TaxCents,
+			&i.UsageCents,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -706,4 +791,17 @@ func (q *Queries) ListUnbilledUsage(ctx context.Context, arg ListUnbilledUsagePa
 		return nil, err
 	}
 	return items, nil
+}
+
+const sumUncoveredDeferredBillingInvoices = `-- name: SumUncoveredDeferredBillingInvoices :one
+select coalesce(sum(usage_cents), 0)::bigint from billing_invoices
+where org_id = $1 and status = 'deferred' and covered_by is null
+`
+
+// The balance the next close carries: what earlier closes deferred and none has covered.
+func (q *Queries) SumUncoveredDeferredBillingInvoices(ctx context.Context, orgID string) (int64, error) {
+	row := q.db.QueryRow(ctx, sumUncoveredDeferredBillingInvoices, orgID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }

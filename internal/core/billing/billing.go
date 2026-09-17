@@ -1,6 +1,6 @@
 // Package billing answers what an org is entitled to send and what it is priced
-// at. It counts nothing: consumption is internal/core/usage's job, and the two
-// meet only in a client rendering "X of Y".
+// at. It counts nothing of its own: internal/core/usage's meter stores the
+// counts, and this package prices them.
 //
 // A quota drives a banner and never a rejected event, so a wrong row costs a
 // wrong number on a page. Nothing on the ingestion path imports this package,
@@ -125,6 +125,10 @@ type Entitlement struct {
 	Chargeable bool
 	// PastDueReason is set exactly when Status is PAST_DUE.
 	PastDueReason PastDueReason
+	// NextChargeAt is when the payment method is next charged, zero while nothing can
+	// be, and deferred anyway if the balance is small. Filled by GetEntitlement only;
+	// Resolve leaves it zero.
+	NextChargeAt time.Time
 }
 
 // Resolve is the whole rule set, as a pure function. Expiry is lazy: a trial that
