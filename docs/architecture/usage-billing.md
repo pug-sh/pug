@@ -731,14 +731,18 @@ no — a cancelled mandate is one that can never be retried.
   at read time from the ledger, so a retry in flight keeps it and it clears the
   instant a retry succeeds, with no sweep.
 - `NextChargeAt` = the next scheduled charge: the earliest `next_attempt_at`
-  among the org's `open` and `failed` invoices, otherwise the current
-  `period_end + grace + ChargeNoticeDays`. The dashboard shows it as "next
-  charge".
-- The running estimate (§9) is `Price(card, current period usage)`, or
+  among the org's `open` and `failed` invoices, otherwise the charge of the next
+  period to close — the previous period's, `period_start + grace +
+  ChargeNoticeDays`, while it has days no invoice has billed yet (the close's own
+  clipping decides), else the current `period_end + grace + ChargeNoticeDays`.
+  Zero with no live mandate, when nothing can be charged. The dashboard shows it
+  as "next charge".
+- The running estimate (§9) is `Price(card, billable events so far)`, or
   `PriceCustom(terms, …)` for a deal, picked from the resolved entitlement as
-  the invoice's is (invariant 4) — over the live `usage_periods` number, with
-  its three-state freshness carried through — plus the uncovered deferred
-  balance (§8.7), read off the ledger.
+  the invoice's is (invariant 4) — over the same clipped `usage_daily` windows
+  the close bills (§22 lesson 4), so a trial's days and the days before the card
+  are excluded, with `usage_periods`' three-state freshness carried through —
+  plus the uncovered deferred balance (§8.7), read off the ledger.
 
 ### 8.7 Small invoices and the provider's fee
 
@@ -838,10 +842,10 @@ Additive on the wire, apart from the tier fields §21 reserves (the app is live;
 | RPC | Spec | Change |
 |---|---|---|
 | `GetBillingStatus` | viewer floor, unchanged | `+ rate_card` (free_events, tiers of `{up_to_events, cents_per_million}`), `+ custom_terms` (flat_fee_cents, rate_cents_per_million, included_events), `+ chargeable`, `+ next_charge_at`; `status` may be `PAST_DUE`, with `+ past_due_reason` (`DECLINED` or `REAUTHORIZE`, §8.5); `plan.price_cents` and `current_period_end` reserved |
-| `GetUpcomingInvoice` | **new**, `OrgGated(ResourceBilling, ActionRead)` | the current period priced so far, broken down by band: `event_count`, `lines` of `{description, events, cents_per_million, amount_cents}` (the free band included, at 0), `usage_cents`, `carried_cents` (§8.7's uncovered balance), `amount_cents`, `defer_under_cents`, `usage_computed_at`, `counted` — the same three-state freshness as `GetUsage`, so "unknown" never renders as $0; every amount pre-tax, since the tax is known only when Dodo charges |
-| `ListInvoices` | **new**, admin-only via `ResourceInvoice` + `ActionRead` granted to admin | closed periods newest-first: `usage_cents`, `carried_cents`, `amount_cents`, `tax_cents`, status (`DEFERRED` included, with `covered_by`), `provider_invoice_url` (Dodo's receipt), dates, and `next_attempt_at` — when an open invoice will be charged or a failed one retried. Never `last_error_message` |
+| `GetUpcomingInvoice` | **new**, `OrgGated(ResourceBilling, ActionRead)` | the current period priced so far, broken down by band: `event_count` (the billable days only), `lines` of `{description, events, cents_per_million, amount_cents}` (the free band included, at 0; each line rounded half up so the lines sum to `usage_cents`), `usage_cents`, `carried_cents` (§8.7's uncovered balance), `amount_cents`, `defer_under_cents`, `currency`, `usage_computed_at`, `counted` — the same three-state freshness as `GetUsage`, so "unknown" never renders as $0 (every field the count decides is absent until `counted`; `carried_cents` is the ledger's and always set); every amount pre-tax, since the tax is known only when Dodo charges. `Unavailable` (`BILLING_UNAVAILABLE`) with billing off, `FailedPrecondition` (`BILLING_PLAN_UNPRICEABLE`) for an org whose pinned slug no card answers to |
+| `ListInvoices` | **new**, admin-only via `ResourceInvoice` + `ActionRead` granted to admin | closed periods newest-first, capped at 500 rows: `event_count`, `lines`, `usage_cents`, `carried_cents`, `amount_cents`, `tax_cents` (absent until paid), `currency`, status (`DEFERRED` included, with `covered_by`), `provider_invoice_url` (Dodo's receipt), `period_start`/`period_end`, `billed_from`/`billed_to`, `create_time`, `paid_at`, and `next_attempt_at` — when an open invoice will be charged or a failed one retried, absent on any other status. Never `last_error_message` |
 | `CreateCheckoutSession` | unchanged shape | opens a mandate-only checkout; `plan_slug` must be the current card or `custom` |
-| `RemovePaymentMethod` | **new**, admin (`ActionCreate` alongside checkout) | §7.3 layer 3 |
+| `RemovePaymentMethod` | **new**, admin (`ActionCreate` alongside checkout) | §7.3 layer 3; `FailedPrecondition` with `BILLING_NO_MANDATE` for an org with no live mandate, `BILLING_FINAL_PERIOD_UNSETTLED` while a period is unbilled or a charge unsettled (the meter, a pending retry and an unpriceable plan all reach it), or `BILLING_REMOVE_INCOMPLETE` when it failed after it began charging — the card is still on file and may have been charged, and it must not answer as though no money had moved. Attributed to the signed-in customer's id on the invoice events |
 | `ListPlans` | unchanged spec | `PlanOption + rate_card`, or `+ custom_terms` for a deal; `price_cents`, `included_events` and `retention_days` reserved |
 | `ConfirmCheckout`, `CreatePortalSession` | unchanged | |
 
@@ -1195,9 +1199,10 @@ and the authz tests — each container package keeping `TestMain` and no
 2. **An erasure after invoicing credits nothing.** The invoice froze its count
    (§8.1). A credit note is a refund in Dodo's dashboard ($1 a time, §8.7) and
    `invoice void` — or a negative carry once §19.13 lands.
-3. **The estimate and the invoice can differ** — the estimate prices the live
-   `usage_periods` number, the invoice sums the clipped window at close. Same
-   function, different inputs, documented on the page ("estimate").
+3. **The estimate and the invoice agree on the window** — both sum the clipped
+   `usage_daily` days, through the same function. They still differ on events,
+   because the estimate is the period so far and the invoice is it whole; the
+   page says "estimate" for that reason alone.
 4. **Each line rounds to whole cents on its own** (§3.3): at most half a cent
    per line either way, and an org sitting a few events past the free 100k
    rounds to $0.00 every month and is never billed.
@@ -1208,7 +1213,9 @@ and the authz tests — each container package keeping `TestMain` and no
 6. **The invoice is not dated on the anniversary, and the charge is later
    still.** The period is anniversary-aligned; the invoice follows it by the
    grace, the charge follows the invoice by `ChargeNoticeDays` (§8.1), and
-   `next_charge_at` says when the money moves.
+   `next_charge_at` says when the money moves. It does not foresee an early
+   close (§7.3): a scheduled cancellation whose pin did not take shows the
+   period's own charge date until that close is written.
 7. **`RemovePaymentMethod` can refuse.** A soft decline, an ambiguous charge, a
    meter that has not reached the period (in the minutes after UTC midnight too,
    until the meter's first pass of the day), a pending retry or a balance deferred

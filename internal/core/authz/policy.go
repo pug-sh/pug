@@ -127,9 +127,12 @@ func buildPolicyRules() [][]string {
 	// manage(): there is no update action to confer, and read is already the floor.
 	rules = append(rules, grant(roleAdmin, ResourceAPIKey, ActionCreate, ActionDelete)...)
 
-	// admin — starting a checkout or opening the payments portal. Create rather than
-	// a new verb: both mint a provider session. The READ half stays on the floor.
+	// admin — checkout, the payments portal, and removing the payment method. Create
+	// rather than a verb each: all three act on the provider. READ stays on the floor.
 	rules = append(rules, grant(roleAdmin, ResourceBilling, ActionCreate)...)
+
+	// admin — reading the invoice ledger. No write: invoices are the pass's to write.
+	rules = append(rules, grant(roleAdmin, ResourceInvoice, ActionRead)...)
 
 	return rules
 }

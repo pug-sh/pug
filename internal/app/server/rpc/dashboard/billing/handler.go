@@ -81,6 +81,9 @@ func (s *Server) GetBillingStatus(
 	if !ent.ContractEndsAt.IsZero() {
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
 	}
+	if !ent.NextChargeAt.IsZero() {
+		resp.NextChargeAt = timestamppb.New(ent.NextChargeAt)
+	}
 	return connect.NewResponse(resp), nil
 }
 
@@ -231,8 +234,8 @@ func confirmErr(err error, orgID string) error {
 	return checkoutErr(err, orgID, "")
 }
 
-// CreatePortalSession opens the provider's customer portal, which is where plan
-// changes, card updates, invoices and cancellation live.
+// CreatePortalSession opens the provider's customer portal, which is where card
+// updates and cancellation live. Receipts are ListInvoices'.
 func (s *Server) CreatePortalSession(
 	ctx context.Context,
 	req *connect.Request[billingv1.CreatePortalSessionRequest],

@@ -38,6 +38,7 @@ func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec
 	row(w, "  usage period", fmt.Sprintf("%s → %s", instant(ent.PeriodStart), instant(ent.PeriodEnd)))
 	row(w, "  trial ends", instant(ent.TrialEndsAt))
 	row(w, "  contract ends", contractEnd(ent.ContractEndsAt))
+	row(w, "  next charge", instant(ent.NextChargeAt))
 	row(w, "  subscription", subscription(ent))
 
 	if !rec.Present {

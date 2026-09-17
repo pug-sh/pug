@@ -26,8 +26,8 @@ service BillingService {
   // subscription must carry this org.
   rpc ConfirmCheckout(ConfirmCheckoutRequest) returns (ConfirmCheckoutResponse) {}
 
-  // Opens the provider's customer portal, where plan changes, card updates,
-  // invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
+  // Opens the provider's customer portal, where card updates, receipts and
+  // cancellation live.
   // FailedPrecondition for an org that has never checked out.
   rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
 
@@ -35,6 +35,24 @@ service BillingService {
   // the viewer floor: the person reading the quota banner wants to know what
   // usage costs, they just cannot buy it. Never returns a product id.
   rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {}
+
+  // The current period priced so far, band by band, plus the balance carried from
+  // earlier periods. Counts only the days the invoice will bill, so a trial's days
+  // and days before the payment method are excluded. On the viewer floor.
+  // Amounts exclude tax, which is added when the payment method is charged.
+  // Unavailable with billing switched off.
+  rpc GetUpcomingInvoice(GetUpcomingInvoiceRequest) returns (GetUpcomingInvoiceResponse) {}
+
+  // Every closed period, newest first. Admin-only: a receipt carries the company's
+  // billing details. Unavailable with billing switched off.
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse) {}
+
+  // Charges every day the meter has finalized, then cancels the payment method.
+  // Admin-only. FailedPrecondition leaves it on file: BILLING_NO_MANDATE when there
+  // is none, BILLING_FINAL_PERIOD_UNSETTLED while a period is unbilled or a charge
+  // unsettled, and BILLING_REMOVE_INCOMPLETE when the charge was taken but the
+  // removal did not finish. Unavailable with billing switched off.
+  rpc RemovePaymentMethod(RemovePaymentMethodRequest) returns (RemovePaymentMethodResponse) {}
 }
 
 // RateCard prices usage in graduated tiers over cumulative events: each tier
@@ -155,6 +173,10 @@ message GetBillingStatusResponse {
   bool chargeable = 16;
   // Set exactly when status is PAST_DUE.
   PastDueReason past_due_reason = 17;
+  // When the payment method is next charged: an invoice's charge or retry, or the
+  // charge that follows the next period to close. ABSENT while nothing can be charged.
+  // A balance under GetUpcomingInvoice's defer_under_cents is carried forward instead.
+  google.protobuf.Timestamp next_charge_at = 18;
 }
 
 message CreateCheckoutSessionRequest {
@@ -234,3 +256,115 @@ message PlanOption {
 message ListPlansResponse {
   repeated PlanOption plans = 1;
 }
+
+message GetUpcomingInvoiceRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// InvoiceLine is one band of a priced period: the free allowance at 0, then each
+// tier the events reached, or a deal's fee and rate.
+message InvoiceLine {
+  string description = 1;
+  int64 events = 2;
+  int64 cents_per_million = 3;
+  // Rounded half up per line, so the lines sum exactly to usage_cents. Do not
+  // recompute it from events and the rate.
+  int64 amount_cents = 4;
+}
+
+message GetUpcomingInvoiceResponse {
+  // Events this period over the days the invoice will bill, which can be fewer than
+  // the days the meter counted. MEANINGLESS unless counted, as are lines, usage_cents
+  // and amount_cents: an edition-2023 singular scalar reaches a TypeScript client as 0
+  // when absent, so never render them on their own.
+  int64 event_count = 1;
+  repeated InvoiceLine lines = 2;
+  // This period's events priced.
+  int64 usage_cents = 3;
+  // Earlier periods too small to charge on their own, carried onto the next charge.
+  // Read off the invoices, so it is real whether or not counted.
+  int64 carried_cents = 4;
+  // usage_cents + carried_cents: the next charge as it stands. Under defer_under_cents
+  // the close carries it forward instead.
+  int64 amount_cents = 5;
+  // Below this, a closed period is carried forward rather than charged.
+  int64 defer_under_cents = 6;
+  // When the meter last ran for this org, in any period. ABSENT means it never has.
+  google.protobuf.Timestamp usage_computed_at = 7;
+  // Whether the meter has counted this period, with usage_computed_at the same three
+  // states as UsageService.GetUsage: no stamp is "unknown", a stamp that is not counted
+  // is "computing", and counted is a real amount, where a 0 is a real 0.
+  bool counted = 8;
+  // ISO 4217.
+  string currency = 9;
+}
+
+message ListInvoicesRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  // Closed and not yet charged: waiting out its notice, or for a payment method.
+  INVOICE_STATUS_OPEN = 1;
+  // A charge is in flight.
+  INVOICE_STATUS_CHARGING = 2;
+  // The charge was accepted and its payment has not settled.
+  INVOICE_STATUS_CHARGED = 3;
+  INVOICE_STATUS_PAID = 4;
+  // The charge failed and is retried at next_attempt_at.
+  INVOICE_STATUS_FAILED = 5;
+  // No further charge is attempted until a new payment method is added.
+  INVOICE_STATUS_UNCOLLECTIBLE = 6;
+  // Not charged: no usage to bill, a balance too small to collect, or a period
+  // written off.
+  INVOICE_STATUS_WAIVED = 7;
+  // Too small to charge on its own, so a later invoice carries it; covered_by names
+  // that invoice once one does.
+  INVOICE_STATUS_DEFERRED = 8;
+  // Cancelled before it was charged.
+  INVOICE_STATUS_VOID = 9;
+  INVOICE_STATUS_REFUNDED = 10;
+}
+
+// Invoice is one closed period. Every amount excludes tax, except tax_cents.
+message Invoice {
+  string id = 1;
+  InvoiceStatus status = 2;
+  // ISO 4217.
+  string currency = 3;
+  int64 event_count = 4;
+  repeated InvoiceLine lines = 5;
+  int64 usage_cents = 6;
+  int64 carried_cents = 7;
+  // usage_cents + carried_cents.
+  int64 amount_cents = 8;
+  // The tax added when the payment settled. ABSENT until then, never a 0.
+  google.protobuf.Int64Value tax_cents = 9;
+  // The billing period the invoice falls in.
+  google.protobuf.Timestamp period_start = 10;
+  google.protobuf.Timestamp period_end = 11;
+  // The days billed, which can be fewer than the period's: billed_to is exclusive.
+  // DATES carried as UTC midnights, so format them in UTC.
+  google.protobuf.Timestamp billed_from = 12;
+  google.protobuf.Timestamp billed_to = 13;
+  // When the period was closed.
+  google.protobuf.Timestamp create_time = 14;
+  google.protobuf.Timestamp paid_at = 15;
+  // When an open invoice is charged or a failed one retried; absent otherwise.
+  google.protobuf.Timestamp next_attempt_at = 16;
+  // On a deferred or paid row, the invoice that carried its amount.
+  string covered_by = 17;
+  // The provider's receipt, once paid.
+  string provider_invoice_url = 18;
+}
+
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+}
+
+message RemovePaymentMethodRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemovePaymentMethodResponse {}

@@ -33,7 +33,24 @@ const (
 	InvoiceRefunded      InvoiceStatus = "refunded"
 	InvoiceFailed        InvoiceStatus = "failed"
 	InvoiceUncollectible InvoiceStatus = "uncollectible"
+	InvoiceVoid          InvoiceStatus = "void"
 )
+
+var invoiceStatuses = []InvoiceStatus{
+	InvoiceOpen, InvoiceWaived, InvoiceDeferred, InvoiceCharging, InvoiceCharged,
+	InvoicePaid, InvoiceRefunded, InvoiceFailed, InvoiceUncollectible, InvoiceVoid,
+}
+
+// AllInvoiceStatuses is every status this build knows, to assert against the column's
+// own check constraint and the enum it maps to.
+func AllInvoiceStatuses() []InvoiceStatus { return slices.Clone(invoiceStatuses) }
+
+// ParseInvoiceStatus narrows a stored word back to the vocabulary. A newer migration's
+// status can reach an older binary mid-deploy; false is that row.
+func ParseInvoiceStatus(v string) (InvoiceStatus, bool) {
+	s := InvoiceStatus(v)
+	return s, slices.Contains(invoiceStatuses, s)
+}
 
 const (
 	ActorInvoicePass   = "invoice-pass"
@@ -42,6 +59,10 @@ const (
 	// ChargeNoticeDays is a placeholder: the days an open invoice can be seen
 	// before its first charge.
 	ChargeNoticeDays = 3
+
+	// Grace is the meter's trailing window as a duration. Derived once so the date a
+	// dashboard predicts and the date the pass charges on cannot drift apart.
+	Grace = coreusage.RescanDays * 24 * time.Hour
 
 	// Placeholders pinned to the provider's fixed 40¢ fee (§8.7).
 	DeferUnderCents = 500
@@ -53,6 +74,12 @@ const (
 	// unbilled is written off.
 	maxClosePeriods = 3
 )
+
+// chargeAfter is when a period ending at end is charged: the meter's grace, then the
+// invoice's notice window.
+func chargeAfter(end time.Time, grace time.Duration) time.Time {
+	return end.Add(grace).AddDate(0, 0, ChargeNoticeDays)
+}
 
 // Pricing is the snapshot an invoice was priced on, so a later catalog edit
 // cannot change what it says it charged. Exactly one field is set.

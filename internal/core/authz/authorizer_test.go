@@ -57,6 +57,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"member email_provider read", roleMember, ResourceEmailProvider, ActionRead, false},
 		{"member project create", roleMember, ResourceProject, ActionCreate, false},
 		{"member project delete", roleMember, ResourceProject, ActionDelete, false},
+		{"member invoice read", roleMember, ResourceInvoice, ActionRead, false},
 
 		// admin — org administration.
 		{"admin org update", roleAdmin, ResourceOrg, ActionUpdate, true},
@@ -72,6 +73,8 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"admin email_provider delete", roleAdmin, ResourceEmailProvider, ActionDelete, true},
 		{"admin project create", roleAdmin, ResourceProject, ActionCreate, true},
 		{"admin project delete", roleAdmin, ResourceProject, ActionDelete, true},
+		{"admin invoice read", roleAdmin, ResourceInvoice, ActionRead, true},
+		{"admin invoice update", roleAdmin, ResourceInvoice, ActionUpdate, false},
 
 		// admin — inherits member's project-scoped CRUD via the role hierarchy.
 		{"admin dashboard read", roleAdmin, ResourceDashboard, ActionRead, true},
@@ -102,6 +105,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"viewer email_provider read", roleViewer, ResourceEmailProvider, ActionRead, false},
 		{"viewer api_key create", roleViewer, ResourceAPIKey, ActionCreate, false},
 		{"viewer usage update", roleViewer, ResourceUsage, ActionUpdate, false},
+		{"viewer invoice read", roleViewer, ResourceInvoice, ActionRead, false},
 
 		// unknown role gets nothing.
 		{"unknown role dashboard read", "ORG_ROLE_BOGUS", ResourceDashboard, ActionRead, false},

@@ -17,7 +17,7 @@ import (
 
 // The fixture org was created on 2025-03-10, so its periods run from the 10th.
 var (
-	grace       = 48 * time.Hour
+	grace       = corebilling.Grace
 	closeNow    = time.Date(2026, 9, 12, 6, 0, 0, 0, time.UTC)
 	periodStart = time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
 	periodEnd   = time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)

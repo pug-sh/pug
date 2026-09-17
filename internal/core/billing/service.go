@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -65,6 +66,8 @@ type Service struct {
 	// payments is nil on a deployment with no provider credentials, which is a
 	// supported mode: only the buy button is missing.
 	payments *Payments
+	// usage reads the meter's stored counts, which the running estimate prices.
+	usage *coreusage.Service
 }
 
 // NewService checks the rate cards at wiring time, so a malformed catalog fails
@@ -78,38 +81,16 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool, paym
 		pgW:            pgW,
 		billingEnabled: billingEnabled,
 		payments:       payments,
+		usage:          coreusage.NewService(pgRO, pgW),
 	}, nil
 }
 
-// GetEntitlement resolves what the org may send right now.
+// GetEntitlement resolves what the org may send right now, and when it is next charged.
 func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Time) (Entitlement, error) {
-	row, err := s.read.GetOrgEntitlement(ctx, orgID)
+	ent, row, err := s.resolve(ctx, orgID, now)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Entitlement{}, ErrOrgNotFound
-		}
-		slog.ErrorContext(ctx, "failed to read the org entitlement", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
 		return Entitlement{}, err
 	}
-	rec := recordFromRow(row)
-	// Here rather than in Resolve, which is pure and has no ctx. A warning, not an
-	// error: only an operator can clear it, and every load would record one.
-	if rec.Present && isCardSlug(rec.PlanSlug) {
-		if _, known := CardBySlug(rec.PlanSlug); !known {
-			slog.WarnContext(ctx, "entitlement names a rate card the catalog does not know",
-				slog.String("org_id", orgID), slog.String("plan_slug", rec.PlanSlug))
-		}
-	}
-	// Only when billing is on: with it off every org resolves to the free floor
-	// regardless, so the read is a query per dashboard load that cannot change it.
-	var sub *Subscription
-	if s.billingEnabled {
-		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
-			return Entitlement{}, err
-		}
-	}
-	ent := Resolve(row.OrgCreateTime.Time, rec, sub, now, s.billingEnabled)
 	if !s.billingEnabled {
 		return ent, nil
 	}
@@ -126,7 +107,44 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 			ent.PastDueReason = PastDueReauthorize
 		}
 	}
+	if ent.Chargeable {
+		if ent.NextChargeAt, err = s.nextChargeAt(ctx, orgID, row, ent, Grace); err != nil {
+			return Entitlement{}, err
+		}
+	}
 	return ent, nil
+}
+
+// resolve is the half a price needs, without what GetEntitlement layers on from the
+// ledger.
+func (s *Service) resolve(ctx context.Context, orgID string, now time.Time) (Entitlement, dbread.GetOrgEntitlementRow, error) {
+	row, err := s.read.GetOrgEntitlement(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Entitlement{}, row, ErrOrgNotFound
+		}
+		slog.ErrorContext(ctx, "failed to read the org entitlement", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return Entitlement{}, row, err
+	}
+	rec := recordFromRow(row)
+	// Here rather than in Resolve, which is pure and has no ctx. A warning, not an
+	// error: only an operator can clear it, and every load would record one.
+	if rec.Present && isCardSlug(rec.PlanSlug) {
+		if _, known := CardBySlug(rec.PlanSlug); !known {
+			slog.WarnContext(ctx, "entitlement names a rate card the catalog does not know",
+				slog.String("org_id", orgID), slog.String("plan_slug", rec.PlanSlug))
+		}
+	}
+	// Only when billing is on: with it off every org resolves to the free floor
+	// regardless, so the read is a query per dashboard load that cannot change it.
+	var sub *Subscription
+	if s.billingEnabled {
+		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
+			return Entitlement{}, row, err
+		}
+	}
+	return Resolve(row.OrgCreateTime.Time, rec, sub, now, s.billingEnabled), row, nil
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the

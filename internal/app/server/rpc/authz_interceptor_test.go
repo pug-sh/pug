@@ -351,6 +351,9 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/dashboard.billing.v1.BillingService/CreateCheckoutSession":        true,
 		"/dashboard.billing.v1.BillingService/CreatePortalSession":          true,
 		"/dashboard.billing.v1.BillingService/ListPlans":                    true,
+		"/dashboard.billing.v1.BillingService/GetUpcomingInvoice":           true,
+		"/dashboard.billing.v1.BillingService/ListInvoices":                 true,
+		"/dashboard.billing.v1.BillingService/RemovePaymentMethod":          true,
 		"/shared.insights.v1.InsightsService/Query":                         true,
 		"/shared.insights.v1.InsightsService/SegmentUsers":                  true,
 		"/shared.insights.v1.InsightsService/GetFilterSchema":               true,
@@ -410,11 +413,13 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":      true,
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   true,
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": true,
-		// The quota banner stays on the viewer floor; starting a checkout is
-		// spending money, and the portal reaches invoices.
+		// The quota banner and the estimate stay on the viewer floor; starting a
+		// checkout is spending money, and the portal and the ledger reach receipts.
 		"/dashboard.billing.v1.BillingService/ConfirmCheckout":       true,
 		"/dashboard.billing.v1.BillingService/CreateCheckoutSession": true,
 		"/dashboard.billing.v1.BillingService/CreatePortalSession":   true,
+		"/dashboard.billing.v1.BillingService/ListInvoices":          true,
+		"/dashboard.billing.v1.BillingService/RemovePaymentMethod":   true,
 	}
 
 	for proc, spec := range permissionRegistry {

@@ -13,7 +13,6 @@ import (
 	"github.com/pug-sh/pug/internal/app/cron"
 	"github.com/pug-sh/pug/internal/app/payments"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
-	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -31,7 +30,7 @@ const passTimeout = 30 * time.Minute
 // before the burst is taken for pug's own fault, not its customers'.
 const maxMandatesGone = 10
 
-const grace = coreusage.RescanDays * 24 * time.Hour
+const grace = corebilling.Grace
 
 type config struct {
 	Provider string `env:"PUG_BILLING_PROVIDER"`

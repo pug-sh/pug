@@ -181,3 +181,24 @@ select exists (
     and (status in ('failed', 'uncollectible')
       or (status in ('open', 'charging', 'charged') and failed_at is not null))
 );
+
+-- name: ListBillingInvoicesByOrg :many
+-- The org's ledger, newest first. Never last_error_message, which is merchant-facing.
+-- Capped because the ledger is never pruned; a decade of closes fits well inside it.
+select amount_cents, billed_from, billed_to, carried_cents, covered_by, create_time, currency,
+       event_count, id, lines, next_attempt_at, paid_at, period_end, period_start,
+       provider_invoice_url, status, tax_cents, usage_cents
+from billing_invoices
+where org_id = @org_id
+order by billed_from desc
+limit 500;
+
+-- name: GetNextBillingInvoiceAttempt :one
+-- The next charge already dated: an open invoice's first, or a failed one's retry.
+select min(next_attempt_at)::timestamptz from billing_invoices
+where org_id = @org_id and status in ('open', 'failed');
+
+-- name: SumUncoveredDeferredBillingInvoices :one
+-- The balance the next close carries: what earlier closes deferred and none has covered.
+select coalesce(sum(usage_cents), 0)::bigint from billing_invoices
+where org_id = @org_id and status = 'deferred' and covered_by is null;

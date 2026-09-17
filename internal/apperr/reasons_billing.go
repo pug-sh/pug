@@ -14,4 +14,12 @@ var (
 	ReasonBillingTwoLiveSubscriptions     = codes.add("BILLING_TWO_LIVE_SUBSCRIPTIONS")
 	ReasonBillingCheckoutFailed           = codes.add("BILLING_CHECKOUT_FAILED")
 	ReasonBillingSubscriptionUnapplicable = codes.add("BILLING_SUBSCRIPTION_UNAPPLICABLE")
+
+	// Removal reasons: each leaves the payment method in place.
+	ReasonBillingNoMandate            = codes.add("BILLING_NO_MANDATE")
+	ReasonBillingFinalPeriodUnsettled = codes.add("BILLING_FINAL_PERIOD_UNSETTLED")
+	// ReasonBillingRemoveIncomplete is the one that may have taken money first.
+	ReasonBillingRemoveIncomplete = codes.add("BILLING_REMOVE_INCOMPLETE")
+
+	ReasonBillingPlanUnpriceable = codes.add("BILLING_PLAN_UNPRICEABLE")
 )

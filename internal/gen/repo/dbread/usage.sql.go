@@ -208,8 +208,8 @@ type SumUsageDailyParams struct {
 	ToDay   pgtype.Date
 }
 
-// An invoice's own count over one of its windows, at the day grain the meter
-// stores; usage_periods stays the dashboard's live number.
+// A billable window's count, at the day grain the meter stores. Used by the close and
+// by the estimate that predicts it; usage_periods stays the raw period total.
 func (q *Queries) SumUsageDaily(ctx context.Context, arg SumUsageDailyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, sumUsageDaily, arg.OrgID, arg.FromDay, arg.ToDay)
 	var column_1 int64

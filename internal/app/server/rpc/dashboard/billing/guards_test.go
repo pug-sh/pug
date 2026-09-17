@@ -62,6 +62,19 @@ func TestEveryRPCRefusesACancelledContext(t *testing.T) {
 			_, err := srv.ListPlans(ctx, connect.NewRequest(&billingv1.ListPlansRequest{OrgId: &orgID}))
 			return err
 		},
+		"GetUpcomingInvoice": func() error {
+			_, err := srv.GetUpcomingInvoice(ctx, connect.NewRequest(&billingv1.GetUpcomingInvoiceRequest{OrgId: &orgID}))
+			return err
+		},
+		"ListInvoices": func() error {
+			_, err := srv.ListInvoices(ctx, connect.NewRequest(&billingv1.ListInvoicesRequest{OrgId: &orgID}))
+			return err
+		},
+		"RemovePaymentMethod": func() error {
+			_, err := srv.RemovePaymentMethod(ctx, connect.NewRequest(
+				&billingv1.RemovePaymentMethodRequest{OrgId: &orgID}))
+			return err
+		},
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {

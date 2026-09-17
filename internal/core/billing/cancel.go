@@ -25,6 +25,9 @@ var (
 	// ErrFinalPeriodUnsettled leaves the mandate live: cancelling first would turn a
 	// retryable decline into a write-off.
 	ErrFinalPeriodUnsettled = errors.New("billing: a charge has not settled; the payment method is unchanged")
+	// ErrRemoveIncomplete is a removal that failed after it began charging. The caller
+	// must not be answered as though no money had moved.
+	ErrRemoveIncomplete = errors.New("billing: the payment method was not removed")
 )
 
 // RemovePaymentMethod is pug's own cancellation, in the order the portal cannot promise:
@@ -63,9 +66,17 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 		return err
 	}
 	var charged ChargeReport
-	for _, inv := range due {
-		if err := s.chargeOne(ctx, inv, now, actor, &charged); err != nil {
+	// Once a charge has gone through, every failure below it has money behind it.
+	incomplete := func(err error) error {
+		if charged.Charged == 0 {
 			return err
+		}
+		return fmt.Errorf("%w: %w", ErrRemoveIncomplete, err)
+	}
+	for _, inv := range due {
+		// Unconditional: chargeOne's own last step is taking the money.
+		if err := s.chargeOne(ctx, inv, now, actor, &charged); err != nil {
+			return fmt.Errorf("%w: %w", ErrRemoveIncomplete, err)
 		}
 	}
 	// Polled now rather than left to the pass: an accepted charge is not yet money.
@@ -73,7 +84,7 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list the charges a removal waits on", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return err
+		return incomplete(err)
 	}
 	var settled SettleReport
 	for _, inv := range charges {
@@ -81,7 +92,7 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 			continue
 		}
 		if err := s.pollCharged(ctx, inv, now, actor, &settled); err != nil {
-			return err
+			return incomplete(err)
 		}
 	}
 	// The ledger rather than the reports: a retry of this call may close and charge nothing.
@@ -89,7 +100,7 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to read the invoices a removal waits on", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return err
+		return incomplete(err)
 	}
 	if unsettled || closed.Held > 0 || closed.Unpriceable > 0 {
 		slog.WarnContext(ctx, "not removing a payment method before its charges settle",
@@ -106,14 +117,16 @@ func (s *Service) RemovePaymentMethod(ctx context.Context, orgID, actor string, 
 		slog.ErrorContext(ctx, "failed to cancel a mandate", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", mandate.ProviderSubID))
 		telemetry.RecordError(ctx, err)
-		return err
+		return fmt.Errorf("%w: %w", ErrRemoveIncomplete, err)
 	}
 	// The cancellation stands either way; the webhook and reconcile mirror it too.
 	ctx, cancel := recording(ctx)
 	defer cancel()
 	if applied, err := s.applySubscription(ctx, provider, orgID, event, now, actor); err != nil || applied == 0 {
+		// Until it is mirrored the org still reads chargeable, with a next charge date.
 		slog.WarnContext(ctx, "a removed payment method is not mirrored yet", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", mandate.ProviderSubID))
+		telemetry.RecordError(ctx, err)
 	}
 	return nil
 }
@@ -145,7 +158,7 @@ func (s *Service) PinNextCharges(ctx context.Context, now time.Time, grace time.
 			return r, err
 		}
 		_, end := coreusage.PeriodFor(now, coreusage.AnchorDay(row.OrgCreateTime.Time, postgres.Int2ToInt(row.AnchorDay)))
-		want := end.Add(grace).AddDate(0, 0, ChargeNoticeDays).Add(cancelMargin)
+		want := chargeAfter(end, grace).Add(cancelMargin)
 		// At day grain: the provider may keep a time of day of its own.
 		wantDay := coreusage.FloorDayUTC(want)
 		if coreusage.FloorDayUTC(row.CurrentPeriodEnd.Time).Equal(wantDay) {
