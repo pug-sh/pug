@@ -83,6 +83,10 @@ func (stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.S
 	return corebilling.SubscriptionEvent{}, nil
 }
 
+func (stubProvider) Charge(context.Context, corebilling.ChargeInput) (string, error) {
+	return "", errors.New("unused")
+}
+
 // seedCustomer stands in for a completed checkout: the portal needs a customer.
 func seedCustomer(t *testing.T, pg *testutil.TestPostgres, orgID string) {
 	t.Helper()

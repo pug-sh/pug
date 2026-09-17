@@ -124,6 +124,10 @@ func (unreachableProvider) FetchCheckoutOutcome(context.Context, string) (corebi
 	return corebilling.SubscriptionEvent{}, errors.New("unused")
 }
 
+func (unreachableProvider) Charge(context.Context, corebilling.ChargeInput) (string, error) {
+	return "", errors.New("unused")
+}
+
 // seedLiveSubscription gives the pass something to re-read, so a failing
 // provider produces an unreadable report rather than an empty one.
 func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {

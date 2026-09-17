@@ -17,6 +17,11 @@ const metadataOrgID = "org_id"
 // metadataCheckoutRef is the one a buyer cannot forge, so attribution prefers it.
 const metadataCheckoutRef = "checkout_ref"
 
+const (
+	metadataInvoiceID   = "invoice_id"
+	metadataPeriodStart = "period_start"
+)
+
 // Every subscription.* delivery runs one apply path and takes its state from the
 // payload's status, not the event name, so pausing needs no branch of its own.
 const subscriptionPrefix = "subscription."

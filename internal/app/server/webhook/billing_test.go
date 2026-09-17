@@ -63,6 +63,9 @@ func (p stubProvider) FetchSubscription(context.Context, string) (corebilling.Su
 func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling.SubscriptionEvent, error) {
 	return corebilling.SubscriptionEvent{}, errors.New("unused")
 }
+func (p stubProvider) Charge(context.Context, corebilling.ChargeInput) (string, error) {
+	return "", errors.New("unused")
+}
 
 func newService(t *testing.T) (*corebilling.Service, *testutil.TestPostgres) {
 	t.Helper()

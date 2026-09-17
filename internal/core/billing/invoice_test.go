@@ -97,8 +97,9 @@ func stampMeter(t *testing.T, f *fixture, at time.Time) {
 	}
 }
 
-// seedMandate stores a mandate added at created, ended at ended when non-zero.
-func seedMandate(t *testing.T, f *fixture, created, ended time.Time) {
+// seedMandate stores a mandate added at created, ended at ended when non-zero, and
+// returns its provider id.
+func seedMandate(t *testing.T, f *fixture, created, ended time.Time) string {
 	t.Helper()
 	status, endedAt := "active", any(nil)
 	if !ended.IsZero() {
@@ -113,6 +114,7 @@ func seedMandate(t *testing.T, f *fixture, created, ended time.Time) {
 		created, endedAt, xid.New().String(), f.orgID, currentCard().Slug, status, subID); err != nil {
 		t.Fatalf("seed mandate: %v", err)
 	}
+	return subID
 }
 
 // insertInvoice stores a row as an earlier close left it.

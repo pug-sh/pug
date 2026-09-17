@@ -53,7 +53,34 @@ type PaymentProvider interface {
 	// shape. A zero SubscriptionEvent means "not settled yet" and is not an error; a
 	// checkout the provider gave up on must return ErrCheckoutFailed instead.
 	FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
+	// Charge takes an amount pug computed against a mandate and returns the payment id.
+	// A *ChargeError took nothing; any other error leaves the outcome unknown.
+	Charge(ctx context.Context, in ChargeInput) (paymentID string, err error)
 }
+
+// ChargeInput is one charge against a mandate, in whole cents.
+type ChargeInput struct {
+	ProviderSubID string
+	AmountCents   int64
+	Currency      string
+	Description   string
+	InvoiceID     string
+	OrgID         string
+	PeriodStart   time.Time
+}
+
+// ChargeError is a charge the provider answered with a refusal, so nothing was taken.
+type ChargeError struct {
+	// Code is the refusal as last_error_code keeps it.
+	Code    string
+	Message string
+	// Declined is the card's answer. A refusal with neither flag is pug's own problem.
+	Declined bool
+	// NotChargeable claims the mandate has ended; pug acts on it only once a read agrees.
+	NotChargeable bool
+}
+
+func (e *ChargeError) Error() string { return "billing: charge refused: " + e.Code + ": " + e.Message }
 
 // Delivery is one verified webhook, still in the provider's own vocabulary.
 type Delivery struct {

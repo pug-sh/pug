@@ -198,6 +198,17 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 	return i, err
 }
 
+const getBillingInvoiceStatusForUpdate = `-- name: GetBillingInvoiceStatusForUpdate :one
+select status from billing_invoices where id = $1 for update
+`
+
+func (q *Queries) GetBillingInvoiceStatusForUpdate(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getBillingInvoiceStatusForUpdate, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
 const getBillingSubscriptionPlanSlug = `-- name: GetBillingSubscriptionPlanSlug :one
 select plan_slug from billing_subscriptions
 where provider = $1 and provider_sub_id = $2
@@ -504,6 +515,230 @@ func (q *Queries) LockUncoveredDeferredBillingInvoices(ctx context.Context, orgI
 	return items, nil
 }
 
+const markBillingInvoiceCharged = `-- name: MarkBillingInvoiceCharged :one
+update billing_invoices
+set status = 'charged', attempts = attempts + 1, provider_payment_id = $1
+where id = $2 and status = 'charging'
+returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
+`
+
+type MarkBillingInvoiceChargedParams struct {
+	ProviderPaymentID pgtype.Text
+	ID                string
+}
+
+func (q *Queries) MarkBillingInvoiceCharged(ctx context.Context, arg MarkBillingInvoiceChargedParams) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, markBillingInvoiceCharged, arg.ProviderPaymentID, arg.ID)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
+const markBillingInvoiceCharging = `-- name: MarkBillingInvoiceCharging :one
+update billing_invoices
+set status = 'charging', provider = $1, provider_sub_id = $2,
+    provider_payment_id = null, last_error_code = '', last_error_message = ''
+where id = $3 and status in ('open', 'failed')
+returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
+`
+
+type MarkBillingInvoiceChargingParams struct {
+	Provider      pgtype.Text
+	ProviderSubID pgtype.Text
+	ID            string
+}
+
+// The intent, committed before the provider is called. Each attempt stamps the
+// mandate it charges and clears the last attempt's payment id and error.
+func (q *Queries) MarkBillingInvoiceCharging(ctx context.Context, arg MarkBillingInvoiceChargingParams) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, markBillingInvoiceCharging, arg.Provider, arg.ProviderSubID, arg.ID)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
+const markBillingInvoiceFailed = `-- name: MarkBillingInvoiceFailed :one
+update billing_invoices
+set status = 'failed', attempts = attempts + 1, failed_at = $1, next_attempt_at = null,
+    last_error_code = $2, last_error_message = $3
+where id = $4 and status = 'charging'
+returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
+`
+
+type MarkBillingInvoiceFailedParams struct {
+	FailedAt         pgtype.Timestamptz
+	LastErrorCode    string
+	LastErrorMessage string
+	ID               string
+}
+
+func (q *Queries) MarkBillingInvoiceFailed(ctx context.Context, arg MarkBillingInvoiceFailedParams) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, markBillingInvoiceFailed,
+		arg.FailedAt,
+		arg.LastErrorCode,
+		arg.LastErrorMessage,
+		arg.ID,
+	)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
+const markBillingInvoiceUncollectible = `-- name: MarkBillingInvoiceUncollectible :one
+update billing_invoices
+set status = 'uncollectible', failed_at = $1, next_attempt_at = null,
+    last_error_code = $2, last_error_message = $3
+where id = $4 and status = $5 and status in ('open', 'charging', 'failed')
+returning amount_cents, attempts, billed_from, billed_to, carried_cents, covered_by, create_time, currency, event_count, failed_at, id, last_error_code, last_error_message, lines, next_attempt_at, org_id, paid_at, period_end, period_start, plan_slug, pricing, provider, provider_invoice_url, provider_payment_id, provider_sub_id, status, tax_cents, update_time, usage_cents, usage_computed_at
+`
+
+type MarkBillingInvoiceUncollectibleParams struct {
+	FailedAt         pgtype.Timestamptz
+	LastErrorCode    string
+	LastErrorMessage string
+	ID               string
+	FromStatus       string
+}
+
+// Guarded on the status the caller saw: only a corroborating read writes off a
+// charge in flight.
+func (q *Queries) MarkBillingInvoiceUncollectible(ctx context.Context, arg MarkBillingInvoiceUncollectibleParams) (BillingInvoice, error) {
+	row := q.db.QueryRow(ctx, markBillingInvoiceUncollectible,
+		arg.FailedAt,
+		arg.LastErrorCode,
+		arg.LastErrorMessage,
+		arg.ID,
+		arg.FromStatus,
+	)
+	var i BillingInvoice
+	err := row.Scan(
+		&i.AmountCents,
+		&i.Attempts,
+		&i.BilledFrom,
+		&i.BilledTo,
+		&i.CarriedCents,
+		&i.CoveredBy,
+		&i.CreateTime,
+		&i.Currency,
+		&i.EventCount,
+		&i.FailedAt,
+		&i.ID,
+		&i.LastErrorCode,
+		&i.LastErrorMessage,
+		&i.Lines,
+		&i.NextAttemptAt,
+		&i.OrgID,
+		&i.PaidAt,
+		&i.PeriodEnd,
+		&i.PeriodStart,
+		&i.PlanSlug,
+		&i.Pricing,
+		&i.Provider,
+		&i.ProviderInvoiceUrl,
+		&i.ProviderPaymentID,
+		&i.ProviderSubID,
+		&i.Status,
+		&i.TaxCents,
+		&i.UpdateTime,
+		&i.UsageCents,
+		&i.UsageComputedAt,
+	)
+	return i, err
+}
+
 const markBillingWebhookDeliveryProcessed = `-- name: MarkBillingWebhookDeliveryProcessed :execrows
 update billing_webhook_deliveries
 set processed_at = now(), error = $1
@@ -550,6 +785,28 @@ where coalesce(processed_at, received_at) < $1
 // undecodable body would otherwise keep its payload for good.
 func (q *Queries) PruneBillingWebhookDeliveries(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, pruneBillingWebhookDeliveries, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const recordBillingInvoiceChargeError = `-- name: RecordBillingInvoiceChargeError :execrows
+update billing_invoices
+set last_error_code = $1, last_error_message = $2
+where id = $3 and status = 'charging'
+`
+
+type RecordBillingInvoiceChargeErrorParams struct {
+	LastErrorCode    string
+	LastErrorMessage string
+	ID               string
+}
+
+// A code on a charging row is a refusal that took nothing; an unknown outcome
+// keeps only its message.
+func (q *Queries) RecordBillingInvoiceChargeError(ctx context.Context, arg RecordBillingInvoiceChargeErrorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordBillingInvoiceChargeError, arg.LastErrorCode, arg.LastErrorMessage, arg.ID)
 	if err != nil {
 		return 0, err
 	}
