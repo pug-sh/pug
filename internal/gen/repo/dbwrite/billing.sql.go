@@ -92,6 +92,26 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 	return result.RowsAffected(), nil
 }
 
+const chargeBillingInvoicesBy = `-- name: ChargeBillingInvoicesBy :execrows
+update billing_invoices set next_attempt_at = $1
+where org_id = $2 and status = 'open' and next_attempt_at > $1
+`
+
+type ChargeBillingInvoicesByParams struct {
+	ChargeBy pgtype.Timestamptz
+	OrgID    string
+}
+
+// A mandate that is going: an open invoice dated past the last instant it can be
+// charged is charged by then instead.
+func (q *Queries) ChargeBillingInvoicesBy(ctx context.Context, arg ChargeBillingInvoicesByParams) (int64, error) {
+	result, err := q.db.Exec(ctx, chargeBillingInvoicesBy, arg.ChargeBy, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const coverBillingInvoices = `-- name: CoverBillingInvoices :execrows
 update billing_invoices set covered_by = $1
 where id = any($2::text[]) and status = 'deferred' and covered_by is null

@@ -106,18 +106,20 @@ select max(billed_to)::date from billing_invoices
 where org_id = @org_id;
 
 -- name: ListDueBillingInvoices :many
--- Oldest first, so a deal's backlog is charged in order once a card arrives.
+-- Oldest first, so a deal's backlog is charged in order once a card arrives. An
+-- empty org_id lists every org's.
 select i.amount_cents, i.billed_from, i.billed_to, i.carried_cents, i.currency, i.event_count,
        i.id, i.org_id, i.period_start, i.plan_slug, i.status,
        (select count(distinct c.period_start) from billing_invoices c where c.covered_by = i.id)
          as carried_periods
 from billing_invoices i
 where i.status in ('open', 'failed') and i.next_attempt_at <= @now
+  and (@org_id::text = '' or i.org_id = @org_id::text)
 order by i.next_attempt_at, i.billed_from;
 
 -- name: ListBillingInvoicesToSettle :many
 -- Charges a read settles, dated from when each entered its status: update_time
--- also moves when a charge error is recorded.
+-- also moves when a charge error is recorded. An empty org_id lists every org's.
 select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.status,
        coalesce((
          select max(e.at) from billing_invoice_events e
@@ -125,7 +127,28 @@ select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.s
        ), i.update_time)::timestamptz as entered_at
 from billing_invoices i
 where i.status in ('charging', 'charged')
+  and (@org_id::text = '' or i.org_id = @org_id::text)
 order by entered_at;
+
+-- name: HasUnsettledBillingInvoice :one
+-- What keeps a mandate from being removed: a charge the provider has not answered
+-- for, or one still owed.
+select exists (
+  select 1 from billing_invoices
+  where org_id = @org_id and status in ('open', 'charging', 'charged', 'failed')
+);
+
+-- name: ListPinnableBillingMandates :many
+-- Live mandates a pin may move, with what anchors the org's period. A scheduled
+-- cancellation is left where it is, or it would never arrive.
+select s.org_id, s.provider_sub_id, s.current_period_end,
+       o.create_time as org_create_time, e.anchor_day
+from billing_subscriptions s
+join orgs o on o.id = s.org_id
+left join billing_entitlements e on e.org_id = s.org_id
+where s.provider = @provider and s.on_demand and not s.cancel_at_period_end
+  and s.status in ('active', 'past_due')
+order by s.id;
 
 -- name: HasDunningBillingInvoice :one
 -- What makes an org PAST_DUE: an invoice that failed and is not yet paid, so a retry

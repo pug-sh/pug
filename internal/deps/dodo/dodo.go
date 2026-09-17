@@ -184,6 +184,34 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 		}
 		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: get subscription: %w", err)
 	}
+	return c.eventFromSDK(sub), nil
+}
+
+// SetNextBillingDate is only a PATCH, so the SDK's retry is safe here.
+func (c *Client) SetNextBillingDate(
+	ctx context.Context, providerSubID string, at time.Time,
+) (corebilling.SubscriptionEvent, error) {
+	sub, err := c.api.Subscriptions.Update(ctx, providerSubID, dodopayments.SubscriptionUpdateParams{
+		NextBillingDate: dodopayments.F(at.UTC()),
+	})
+	if err != nil {
+		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: set next billing date: %w", err)
+	}
+	return c.eventFromSDK(sub), nil
+}
+
+func (c *Client) CancelSubscription(ctx context.Context, providerSubID string) (corebilling.SubscriptionEvent, error) {
+	sub, err := c.api.Subscriptions.Update(ctx, providerSubID, dodopayments.SubscriptionUpdateParams{
+		CancelReason: dodopayments.F(dodopayments.SubscriptionUpdateParamsCancelReasonCancelledByCustomer),
+		Status:       dodopayments.F(dodopayments.SubscriptionStatusCancelled),
+	})
+	if err != nil {
+		return corebilling.SubscriptionEvent{}, fmt.Errorf("dodo: cancel subscription: %w", err)
+	}
+	return c.eventFromSDK(sub), nil
+}
+
+func (c *Client) eventFromSDK(sub *dodopayments.Subscription) corebilling.SubscriptionEvent {
 	return c.eventFromSubscription(subscriptionPayload{
 		CancelAtNextBillingDate: sub.CancelAtNextBillingDate,
 		CancelledAt:             optionalTime(sub.CancelledAt),
@@ -198,7 +226,7 @@ func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (c
 		Status:                  string(sub.Status),
 		SubscriptionID:          sub.SubscriptionID,
 		TaxInclusive:            &sub.TaxInclusive,
-	}), nil
+	})
 }
 
 // FetchCheckoutOutcome walks one checkout to the subscription it produced:

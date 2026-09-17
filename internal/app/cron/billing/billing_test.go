@@ -140,6 +140,14 @@ func (unreachableProvider) FetchPayment(context.Context, string) (corebilling.Pa
 	return corebilling.Payment{}, errors.New("unused")
 }
 
+func (unreachableProvider) SetNextBillingDate(context.Context, string, time.Time) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
+
+func (unreachableProvider) CancelSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
+
 // seedLiveSubscription gives the pass something to re-read, so a failing
 // provider produces an unreadable report rather than an empty one.
 func seedLiveSubscription(t *testing.T, pg *pgxpool.Pool) {

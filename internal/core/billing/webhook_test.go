@@ -43,6 +43,11 @@ type fakeProvider struct {
 	listErr     error
 	listedSince time.Time
 	fetched     []string
+	// pins and cancels are every write to a mandate, each left on event as the provider
+	// would hold it; pinErr refuses a pin.
+	pins    []time.Time
+	pinErr  error
+	cancels []string
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -113,6 +118,21 @@ func (f *fakeProvider) FetchPayment(_ context.Context, id string) (corebilling.P
 		}
 	}
 	return corebilling.Payment{}, errors.New("fake: no such payment")
+}
+
+func (f *fakeProvider) SetNextBillingDate(_ context.Context, _ string, at time.Time) (corebilling.SubscriptionEvent, error) {
+	if f.pinErr != nil {
+		return corebilling.SubscriptionEvent{}, f.pinErr
+	}
+	f.pins = append(f.pins, at)
+	f.event.CurrentPeriodEnd = at
+	return f.event, nil
+}
+
+func (f *fakeProvider) CancelSubscription(_ context.Context, id string) (corebilling.SubscriptionEvent, error) {
+	f.cancels = append(f.cancels, id)
+	f.event.Status, f.event.ProviderStatus = corebilling.SubStatusCancelled, string(corebilling.SubStatusCancelled)
+	return f.event, nil
 }
 
 const (

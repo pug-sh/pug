@@ -75,6 +75,12 @@ func (p stubProvider) ListPayments(context.Context, string, time.Time) ([]corebi
 func (p stubProvider) FetchPayment(context.Context, string) (corebilling.Payment, error) {
 	return corebilling.Payment{}, errors.New("unused")
 }
+func (p stubProvider) SetNextBillingDate(context.Context, string, time.Time) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
+func (p stubProvider) CancelSubscription(context.Context, string) (corebilling.SubscriptionEvent, error) {
+	return corebilling.SubscriptionEvent{}, errors.New("unused")
+}
 
 func newService(t *testing.T) (*corebilling.Service, *testutil.TestPostgres) {
 	t.Helper()

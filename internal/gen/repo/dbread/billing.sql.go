@@ -176,6 +176,22 @@ func (q *Queries) HasDunningBillingInvoice(ctx context.Context, orgID string) (b
 	return exists, err
 }
 
+const hasUnsettledBillingInvoice = `-- name: HasUnsettledBillingInvoice :one
+select exists (
+  select 1 from billing_invoices
+  where org_id = $1 and status in ('open', 'charging', 'charged', 'failed')
+)
+`
+
+// What keeps a mandate from being removed: a charge the provider has not answered
+// for, or one still owed.
+func (q *Queries) HasUnsettledBillingInvoice(ctx context.Context, orgID string) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUnsettledBillingInvoice, orgID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
 select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million, terms_effective_at, deleted from billing_entitlement_history
 where org_id = $1
@@ -271,6 +287,7 @@ select i.id, i.org_id, i.provider, i.provider_payment_id, i.provider_sub_id, i.s
        ), i.update_time)::timestamptz as entered_at
 from billing_invoices i
 where i.status in ('charging', 'charged')
+  and ($1::text = '' or i.org_id = $1::text)
 order by entered_at
 `
 
@@ -285,9 +302,9 @@ type ListBillingInvoicesToSettleRow struct {
 }
 
 // Charges a read settles, dated from when each entered its status: update_time
-// also moves when a charge error is recorded.
-func (q *Queries) ListBillingInvoicesToSettle(ctx context.Context) ([]ListBillingInvoicesToSettleRow, error) {
-	rows, err := q.db.Query(ctx, listBillingInvoicesToSettle)
+// also moves when a charge error is recorded. An empty org_id lists every org's.
+func (q *Queries) ListBillingInvoicesToSettle(ctx context.Context, orgID string) ([]ListBillingInvoicesToSettleRow, error) {
+	rows, err := q.db.Query(ctx, listBillingInvoicesToSettle, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -420,8 +437,14 @@ select i.amount_cents, i.billed_from, i.billed_to, i.carried_cents, i.currency, 
          as carried_periods
 from billing_invoices i
 where i.status in ('open', 'failed') and i.next_attempt_at <= $1
+  and ($2::text = '' or i.org_id = $2::text)
 order by i.next_attempt_at, i.billed_from
 `
+
+type ListDueBillingInvoicesParams struct {
+	Now   pgtype.Timestamptz
+	OrgID string
+}
 
 type ListDueBillingInvoicesRow struct {
 	AmountCents    int64
@@ -438,9 +461,10 @@ type ListDueBillingInvoicesRow struct {
 	CarriedPeriods int64
 }
 
-// Oldest first, so a deal's backlog is charged in order once a card arrives.
-func (q *Queries) ListDueBillingInvoices(ctx context.Context, now pgtype.Timestamptz) ([]ListDueBillingInvoicesRow, error) {
-	rows, err := q.db.Query(ctx, listDueBillingInvoices, now)
+// Oldest first, so a deal's backlog is charged in order once a card arrives. An
+// empty org_id lists every org's.
+func (q *Queries) ListDueBillingInvoices(ctx context.Context, arg ListDueBillingInvoicesParams) ([]ListDueBillingInvoicesRow, error) {
+	rows, err := q.db.Query(ctx, listDueBillingInvoices, arg.Now, arg.OrgID)
 	if err != nil {
 		return nil, err
 	}
@@ -501,6 +525,53 @@ func (q *Queries) ListPaidEntitlementsWithoutLiveSubscription(ctx context.Contex
 	for rows.Next() {
 		var i ListPaidEntitlementsWithoutLiveSubscriptionRow
 		if err := rows.Scan(&i.OrgID, &i.PlanSlug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPinnableBillingMandates = `-- name: ListPinnableBillingMandates :many
+select s.org_id, s.provider_sub_id, s.current_period_end,
+       o.create_time as org_create_time, e.anchor_day
+from billing_subscriptions s
+join orgs o on o.id = s.org_id
+left join billing_entitlements e on e.org_id = s.org_id
+where s.provider = $1 and s.on_demand and not s.cancel_at_period_end
+  and s.status in ('active', 'past_due')
+order by s.id
+`
+
+type ListPinnableBillingMandatesRow struct {
+	OrgID            string
+	ProviderSubID    string
+	CurrentPeriodEnd pgtype.Timestamptz
+	OrgCreateTime    pgtype.Timestamptz
+	AnchorDay        pgtype.Int2
+}
+
+// Live mandates a pin may move, with what anchors the org's period. A scheduled
+// cancellation is left where it is, or it would never arrive.
+func (q *Queries) ListPinnableBillingMandates(ctx context.Context, provider string) ([]ListPinnableBillingMandatesRow, error) {
+	rows, err := q.db.Query(ctx, listPinnableBillingMandates, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPinnableBillingMandatesRow
+	for rows.Next() {
+		var i ListPinnableBillingMandatesRow
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.ProviderSubID,
+			&i.CurrentPeriodEnd,
+			&i.OrgCreateTime,
+			&i.AnchorDay,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
