@@ -18,6 +18,9 @@ var (
 	// ErrSubscriptionNotFound is a subscription the provider no longer knows: a
 	// finding for the reconcile pass, not a read failure worth retrying every run.
 	ErrSubscriptionNotFound = errors.New("billing: the provider does not know this subscription")
+	// ErrNoProvider is billing running with no payments credentials: the
+	// self-hosted mode, where only the buy button is missing.
+	ErrNoProvider = errors.New("billing: no payments provider is configured")
 )
 
 // PaymentProvider is the whole seam between pug and a merchant of record: nothing
@@ -191,3 +194,21 @@ type Subscription struct {
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
 }
+
+// Currency is the one pug sells in, enforced at the webhook boundary so
+// multi-currency changes here — and renames price_cents with it.
+const Currency = "USD"
+
+// Payments is the provider wiring. Nil means no provider, which is legal.
+type Payments struct {
+	Provider PaymentProvider
+	// ProductBySlug is the only product mapping. The webhook needs the inverse and
+	// scans for it: a stored second map could disagree, and a slug that maps one way
+	// takes money and then rejects the delivery.
+	ProductBySlug map[string]string
+	// ReturnURL is where the provider sends a buyer after checkout: the dashboard's
+	// own billing page, never a provider page.
+	ReturnURL string
+}
+
+func (p *Payments) configured() bool { return p != nil && p.Provider != nil }

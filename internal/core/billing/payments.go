@@ -27,9 +27,6 @@ func newCheckoutRef() (string, error) {
 }
 
 var (
-	// ErrNoProvider is billing running with no payments credentials: the
-	// self-hosted mode, where only the buy button is missing.
-	ErrNoProvider = errors.New("billing: no payments provider is configured")
 	// ErrNotPurchasable is a plan with no product to check out against — an
 	// unconfigured catalog tier, or a deal whose product id nobody pasted on yet.
 	ErrNotPurchasable = errors.New("billing: this plan has no product to check out against")
@@ -43,24 +40,6 @@ var (
 	// client-supplied session id safe to act on.
 	ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
 )
-
-// Currency is the one pug sells in, enforced at the webhook boundary so
-// multi-currency changes here — and renames price_cents with it.
-const Currency = "USD"
-
-// Payments is the provider wiring. Nil means no provider, which is legal.
-type Payments struct {
-	Provider PaymentProvider
-	// ProductBySlug is the only product mapping. The webhook needs the inverse and
-	// scans for it: a stored second map could disagree, and a slug that maps one way
-	// takes money and then rejects the delivery.
-	ProductBySlug map[string]string
-	// ReturnURL is where the provider sends a buyer after checkout: the dashboard's
-	// own billing page, never a provider page.
-	ReturnURL string
-}
-
-func (p *Payments) configured() bool { return p != nil && p.Provider != nil }
 
 // Purchasable reports whether this deployment sells anything to this org at all.
 // Per tier it is PlanOption.Purchasable, which shares checkoutProduct with it.
