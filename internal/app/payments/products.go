@@ -20,41 +20,33 @@ const productEnvPrefix = "PUG_DODO_PRODUCT_"
 // process environment.
 type EnvLookup func(string) (string, bool)
 
-// ProductIDs resolves slug -> product id for every catalog tier that has one. A
-// tier with no key is simply not purchasable.
-func ProductIDs(lookup EnvLookup) (map[string]string, error) {
+// ProductIDs resolves slug -> product id for every card that has one. A card with
+// no key is simply not purchasable. The cards are a parameter rather than read
+// from the catalog so the duplicate-product guard below stays exercisable while
+// the real catalog holds only one card.
+func ProductIDs(lookup EnvLookup, cards []entitlement.RateCard) (map[string]string, error) {
 	if lookup == nil {
 		lookup = os.LookupEnv
 	}
 	out := map[string]string{}
 	byProduct := map[string]string{}
-	for _, plan := range entitlement.Plans() {
-		if !mappedSlug(plan) {
-			continue
-		}
-		key := productEnvPrefix + strings.ToUpper(strings.ReplaceAll(plan.Slug, "-", "_"))
+	// Every card, retired ones included: a retired card stays mapped or the webhook
+	// rejects its holders' renewals. Free, trial and custom are states rather than
+	// catalog entries, so excluding them is structural and needs no predicate.
+	for _, card := range cards {
+		key := productEnvPrefix + strings.ToUpper(strings.ReplaceAll(card.Slug, "-", "_"))
 		id, ok := lookup(key)
 		id = strings.TrimSpace(id)
 		if !ok || id == "" {
 			continue
 		}
-		// One product cannot back two tiers: the webhook resolves a plan by product id,
+		// One product cannot back two cards: the webhook resolves a card by product id,
 		// so a duplicate would silently pick one.
 		if other, dup := byProduct[id]; dup {
-			return nil, fmt.Errorf("dodo: %s and %s are configured with the same product id", other, plan.Slug)
+			return nil, fmt.Errorf("dodo: %s and %s are configured with the same product id", other, card.Slug)
 		}
-		byProduct[id] = plan.Slug
-		out[plan.Slug] = id
+		byProduct[id] = card.Slug
+		out[card.Slug] = id
 	}
 	return out, nil
-}
-
-// mappedSlug is every tier but the floors and custom. Retired tiers stay mapped,
-// or the webhook rejects their holders' renewals; core keeps them unsellable.
-func mappedSlug(plan entitlement.Plan) bool {
-	switch plan.Slug {
-	case entitlement.SlugFree, entitlement.SlugTrial, entitlement.SlugCustom:
-		return false
-	}
-	return true
 }

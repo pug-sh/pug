@@ -105,13 +105,15 @@ func (s *Service) CreateCheckoutSession(
 	if !s.billingEnabled || !s.payments.Configured() {
 		return "", "", billing.ErrNoProvider
 	}
-	plan, ok := entitlement.PlanBySlug(planSlug)
+	card, ok := entitlement.CardBySlug(planSlug)
 	if !ok {
 		return "", "", entitlement.ErrPlanNotFound
 	}
-	// The provider's product map already excludes both, but that is a PROVIDER's
-	// rule; core must not assume the next one builds its map the same way.
-	if plan.IsFloor() || plan.Retired {
+	// Free and trial are states rather than catalog entries, so there is no floor
+	// left to refuse: a retired card is the only unsellable thing the catalog holds.
+	// The provider's product map excludes it too, but that is a PROVIDER's rule and
+	// core must not assume the next one builds its map the same way.
+	if card.Retired {
 		return "", "", ErrNotPurchasable
 	}
 
@@ -227,26 +229,26 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 		return nil, err
 	}
 
-	plans := entitlement.Plans()
-	out := make([]PlanOption, 0, len(plans))
-	for _, plan := range plans {
-		if plan.IsFloor() || plan.Retired {
+	cards := entitlement.Cards()
+	out := make([]PlanOption, 0, len(cards))
+	for _, card := range cards {
+		if card.Retired {
 			continue
 		}
-		if plan.Slug == entitlement.SlugCustom && rec.ProviderProductID == "" {
-			continue
-		}
-		// Per tier, not per org: a deployment can configure a product for some tiers
-		// and not others, and a button that cannot work is worse than no button.
-		_, err := s.checkoutProduct(rec, plan.Slug)
+		// Per card, not per org: a deployment can configure a product for some and
+		// not others, and a button that cannot work is worse than no button.
+		_, err := s.checkoutProduct(rec, card.Slug)
 		out = append(out, PlanOption{
-			Currency:       plan.Currency,
-			DisplayName:    plan.DisplayName,
-			IncludedEvents: plan.IncludedEvents,
-			PriceCents:     plan.PriceCents,
-			Purchasable:    s.billingEnabled && err == nil,
-			RetentionDays:  plan.RetentionDays,
-			Slug:           plan.Slug,
+			Currency:    card.Currency,
+			DisplayName: card.DisplayName,
+			// The card's free allowance, not a quota: what is included before charges
+			// begin.
+			IncludedEvents: &card.FreeEvents,
+			// nil: a graduated card has no single list price to show.
+			PriceCents:    nil,
+			Purchasable:   s.billingEnabled && err == nil,
+			RetentionDays: &card.RetentionDays,
+			Slug:          card.Slug,
 		})
 	}
 	return out, nil

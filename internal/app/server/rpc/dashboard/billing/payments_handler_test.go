@@ -123,7 +123,7 @@ func newFailingServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 		t.Fatalf("new entitlement service: %v", err)
 	}
 	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		ProductBySlug: map[string]string{entitlement.CurrentCard().Slug: "prod_card", "growth": "prod_growth"},
 		Provider:      failingProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
 	}, ent)
@@ -141,7 +141,7 @@ func TestProviderFailuresAreInternalAndSayNothing(t *testing.T) {
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 	seedCustomer(t, pg, orgID)
 
-	slug := "growth"
+	slug := entitlement.CurrentCard().Slug
 	sessionID := checkoutSessionID
 	calls := map[string]func() error{
 		"CreateCheckoutSession": func() error {
@@ -198,7 +198,7 @@ func newPayingServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled boo
 		t.Fatalf("new entitlement service: %v", err)
 	}
 	svc := mandate.NewService(pg.PgRO, pg.PgW, billingEnabled, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		ProductBySlug: map[string]string{entitlement.CurrentCard().Slug: "prod_card", "growth": "prod_growth"},
 		Provider:      stubProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
 	}, ent)
@@ -216,12 +216,12 @@ func TestCheckoutPrefillsTheBuyer(t *testing.T) {
 		t.Fatalf("new entitlement service: %v", err)
 	}
 	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		ProductBySlug: map[string]string{entitlement.CurrentCard().Slug: "prod_card", "growth": "prod_growth"},
 		Provider:      stubProvider{in: &in},
 		ReturnURL:     "https://app.example/settings/billing",
 	}, ent)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
-	if _, err := checkout(t, NewServer(ent, svc), orgID, "growth"); err != nil {
+	if _, err := checkout(t, NewServer(ent, svc), orgID, entitlement.CurrentCard().Slug); err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)
 	}
 	// Both halves are strings, so a transposed pair compiles and reaches the provider.
@@ -276,7 +276,7 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 				t.Errorf("purchasable = %v, want %v", got, tc.want)
 			}
 
-			_, err := checkout(t, srv, orgID, "growth")
+			_, err := checkout(t, srv, orgID, entitlement.CurrentCard().Slug)
 			if tc.want && err != nil {
 				t.Errorf("purchasable is true but checkout failed: %v", err)
 			}
@@ -294,7 +294,7 @@ func TestCheckoutReturnsAURL(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 
-	orgIDCopy, slug := orgID, "growth"
+	orgIDCopy, slug := orgID, entitlement.CurrentCard().Slug
 	resp, err := newPayingServer(t, pg, true).CreateCheckoutSession(buyerCtx(t),
 		connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{OrgId: &orgIDCopy, PlanSlug: &slug}))
 	if err != nil {
@@ -322,14 +322,12 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 		slug string
 		code connect.Code
 	}{
-		// A floor is never sold, even though the catalog knows it.
-		"free floor":  {entitlement.SlugFree, connect.CodeFailedPrecondition},
-		"trial floor": {entitlement.SlugTrial, connect.CodeFailedPrecondition},
-		// Configured in the catalog but with no product id in this deployment.
-		"unconfigured tier": {"scale", connect.CodeFailedPrecondition},
-		// A negotiated deal with no product id recorded on the org.
-		"custom with no product": {entitlement.SlugCustom, connect.CodeFailedPrecondition},
-		"no such plan":           {"platinum", connect.CodeNotFound},
+		// Free, trial and custom are states rather than catalog entries, so asking to
+		// buy one is "no such card", not "a card that cannot be sold".
+		"free is not a card":   {entitlement.SlugFree, connect.CodeNotFound},
+		"trial is not a card":  {entitlement.SlugTrial, connect.CodeNotFound},
+		"custom is not a card": {entitlement.SlugCustom, connect.CodeNotFound},
+		"no such card":         {"platinum", connect.CodeNotFound},
 	}
 
 	for name, tc := range cases {
@@ -354,7 +352,7 @@ func TestCheckoutIsUnavailableWithoutAProvider(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 
-	_, err := checkout(t, newServer(t, pg, true), orgID, "growth")
+	_, err := checkout(t, newServer(t, pg, true), orgID, entitlement.CurrentCard().Slug)
 	if err == nil {
 		t.Fatal("checkout succeeded with no provider configured")
 	}
@@ -502,80 +500,36 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 		bySlug[plan.GetSlug()] = plan
 	}
 
-	for _, floor := range []string{entitlement.SlugFree, entitlement.SlugTrial} {
-		if _, ok := bySlug[floor]; ok {
-			t.Errorf("%q is offered for sale; nobody buys a floor", floor)
+	for _, state := range []string{entitlement.SlugFree, entitlement.SlugTrial, entitlement.SlugCustom} {
+		if _, ok := bySlug[state]; ok {
+			t.Errorf("%q is offered for sale; it is a state, not a card", state)
 		}
 	}
-	// No product id on this org's row, so there is no custom deal to buy.
-	if _, ok := bySlug[entitlement.SlugCustom]; ok {
-		t.Error("custom is offered to an org with no recorded product")
-	}
 
-	// Per tier, not per org: this deployment configured growth and not scale.
-	if got := bySlug["growth"]; got == nil || !got.GetPurchasable() {
-		t.Errorf("growth purchasable = %v, want true", got.GetPurchasable())
+	card := entitlement.CurrentCard()
+	got := bySlug[card.Slug]
+	if got == nil {
+		t.Fatalf("the current card %q is not offered", card.Slug)
 	}
-	if got := bySlug["scale"]; got == nil || got.GetPurchasable() {
-		t.Error("scale is purchasable with no product configured for it")
+	if !got.GetPurchasable() {
+		t.Error("the current card is not purchasable with a product configured for it")
 	}
-
-	// The list price, not the org's negotiated anything.
-	if got := bySlug["growth"].GetPriceCents(); got == nil || got.GetValue() != 2_000 {
-		t.Errorf("growth price = %v, want 2000", got)
+	// A graduated card has no single list price, so the wrapper is absent rather
+	// than zero: a pricing table rendering "$0.00" would be a lie.
+	if p := got.GetPriceCents(); p != nil {
+		t.Errorf("card price = %v, want absent: a graduated card has no one price", p)
 	}
-	if got := bySlug["growth"].GetIncludedEvents(); got == nil || got.GetValue() != 500_000 {
-		t.Errorf("growth quota = %v, want 500000", got)
+	// The free allowance, not a quota.
+	if q := got.GetIncludedEvents(); q == nil || q.GetValue() != card.FreeEvents {
+		t.Errorf("card allowance = %v, want %d", q, card.FreeEvents)
 	}
-	// A wrapper for the same reason the quota is one: a pricing table rendering
-	// "0 days of history" beside a tier is worse than rendering nothing.
-	if got := bySlug["growth"].GetRetentionDays(); got == nil || got.GetValue() != 3*entitlement.RetentionYearDays {
-		t.Errorf("growth retention = %v, want 3 years of days", got)
+	// A wrapper for the same reason the allowance is one: rendering "0 days of
+	// history" beside a card is worse than rendering nothing.
+	if r := got.GetRetentionDays(); r == nil || r.GetValue() != card.RetentionDays {
+		t.Errorf("card retention = %v, want %d", r, card.RetentionDays)
 	}
 }
 
-// A negotiated deal is buyable from the dashboard by the org whose row records its
-// product and by nobody else — one pasted id instead of an emailed payment link.
-func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	pg := testutil.SetupPostgres(t)
-	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
-	srv := newPayingServer(t, pg, true)
-
-	quota := int64(5_000_000)
-	productID := "prod_acme"
-	if _, err := pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (included_events_override, org_id, plan_slug, provider_product_id)
-		 values ($1, $2, 'custom', $3)`, quota, orgID, productID); err != nil {
-		t.Fatalf("seed entitlement: %v", err)
-	}
-
-	var custom *billingv1.PlanOption
-	for _, plan := range listPlans(t, srv, orgID) {
-		if plan.GetSlug() == entitlement.SlugCustom {
-			custom = plan
-		}
-	}
-	if custom == nil {
-		t.Fatal("custom is not offered to the org whose row records its product")
-	}
-	if !custom.GetPurchasable() {
-		t.Error("custom is not purchasable for the org that has its product id")
-	}
-	// The catalog price and quota, not this org's negotiated ones — those belong
-	// to the entitlement, which GetBillingStatus reports.
-	if custom.GetPriceCents() != nil {
-		t.Errorf("custom price = %v, want absent — a deal's price lives in the provider", custom.GetPriceCents())
-	}
-	if custom.GetIncludedEvents() != nil {
-		t.Errorf("custom quota = %v, want absent on the catalog entry", custom.GetIncludedEvents())
-	}
-	if custom.GetRetentionDays() != nil {
-		t.Errorf("custom retention = %v, want absent — a deal's term is on its own row", custom.GetRetentionDays())
-	}
-}
 
 // confirmStub answers FetchCheckoutOutcome with whatever a test needs, so the
 // translations below run through the real handler rather than the sentinels.
@@ -596,7 +550,7 @@ func newConfirmingServer(t *testing.T, pg *testutil.TestPostgres, provider coreb
 		t.Fatalf("new entitlement service: %v", err)
 	}
 	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		ProductBySlug: map[string]string{entitlement.CurrentCard().Slug: "prod_card", "growth": "prod_growth"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
 	}, ent)

@@ -196,15 +196,17 @@ func flagIfSet[T any](cmd *cobra.Command, name string, get func(string) (T, erro
 	return &v
 }
 
-// What --plan accepts for a NEW grant. Trial is extend-trial's alone; a retired
-// tier is kept for its holders and stays settable for an org already on it.
+// What --plan accepts for a NEW grant. A retired card is kept for its holders and
+// stays settable for an org already on it. Trial needs no exclusion any more: it
+// is a state, not a card, so it was never in the catalog to offer.
 func grantableSlugs() []string {
-	out := make([]string, 0, len(entitlement.Plans()))
-	for _, p := range entitlement.Plans() {
-		if p.Slug == entitlement.SlugTrial || p.Retired {
+	cards := entitlement.Cards()
+	out := make([]string, 0, len(cards))
+	for _, c := range cards {
+		if c.Retired {
 			continue
 		}
-		out = append(out, p.Slug)
+		out = append(out, c.Slug)
 	}
 	return out
 }

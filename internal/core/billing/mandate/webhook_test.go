@@ -82,7 +82,14 @@ func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
 		t.Fatalf("new entitlement service: %v", err)
 	}
 	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
+		ProductBySlug: map[string]string{
+			// The card is what a checkout can be started against; growth and scale stay
+			// mapped because deliveries in these tests carry their products, and the
+			// webhook resolves a delivery's product back to the slug it stored.
+			entitlement.CurrentCard().Slug: "prod_card",
+			"growth":                       "prod_growth",
+			"scale":                        "prod_scale",
+		},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
 	}, ent)
@@ -730,7 +737,14 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *mandate.Service {
 	t.Helper()
 	return mandate.NewService(f.pg.PgRO, f.pg.PgW, true, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
+		ProductBySlug: map[string]string{
+			// The card is what a checkout can be started against; growth and scale stay
+			// mapped because deliveries in these tests carry their products, and the
+			// webhook resolves a delivery's product back to the slug it stored.
+			entitlement.CurrentCard().Slug: "prod_card",
+			"growth":                       "prod_growth",
+			"scale":                        "prod_scale",
+		},
 		Provider:      provider,
 	}, f.ent)
 }
@@ -1026,7 +1040,7 @@ func TestCheckoutStoresTheRefItSendsToTheProvider(t *testing.T) {
 	f, provider := newPaidFixture(t)
 
 	if _, _, err := f.svc.CreateCheckoutSession(t.Context(), mandate.Checkout{
-		OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
+		OrgID: f.orgID, PlanSlug: entitlement.CurrentCard().Slug, Email: "buyer@example.com", Name: "Ada Buyer",
 	}); err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)
 	}

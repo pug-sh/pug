@@ -37,7 +37,7 @@ func TestEveryRPCRefusesACancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(buyerCtx(t))
 	cancel()
 
-	slug := "growth"
+	slug := entitlement.CurrentCard().Slug
 	sessionID := checkoutSessionID
 	calls := map[string]func() error{
 		"GetBillingStatus": func() error {

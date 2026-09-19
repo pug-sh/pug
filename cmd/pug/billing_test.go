@@ -124,18 +124,23 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 	}
 }
 
-// The trial slug has one writer, and it is not `set`.
-func TestGrantableSlugsExcludeTrialAndRetired(t *testing.T) {
+// Trial needs no exclusion any more: it is a state, not a card, so it was never
+// in the catalog to offer. A retired card stays out of a NEW grant.
+func TestGrantableSlugsExcludeRetiredCards(t *testing.T) {
 	got := grantableSlugs()
 	if slices.Contains(got, entitlement.SlugTrial) {
 		t.Fatalf("slugs = %v, want no %q", got, entitlement.SlugTrial)
 	}
-	for _, p := range entitlement.Plans() {
-		if p.Retired && slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want no retired tier %q", got, p.Slug)
+	if slices.Contains(got, entitlement.SlugFree) {
+		t.Fatalf("slugs = %v, want no %q: free is what the card's allowance gives, not a grant",
+			got, entitlement.SlugFree)
+	}
+	for _, c := range entitlement.Cards() {
+		if c.Retired && slices.Contains(got, c.Slug) {
+			t.Fatalf("slugs = %v, want no retired card %q", got, c.Slug)
 		}
-		if !p.Retired && p.Slug != entitlement.SlugTrial && !slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want it to offer %q", got, p.Slug)
+		if !c.Retired && !slices.Contains(got, c.Slug) {
+			t.Fatalf("slugs = %v, want it to offer %q", got, c.Slug)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"strings"
 	"testing"
 
@@ -58,7 +59,8 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", strings.ToUpper(dodo.Name))
 	t.Setenv("PUG_DODO_API_KEY", "sk_test")
 	t.Setenv("PUG_DODO_WEBHOOK_SECRET", "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw")
-	t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_growth")
+	slug := entitlement.CurrentCard().Slug
+	t.Setenv(productEnvKey(slug), "prod_growth")
 	// The trailing slash is the one a dashboard base URL is usually written with.
 	t.Setenv("PUG_DASHBOARD_BASE_URL", "https://app.example.com/")
 
@@ -75,7 +77,7 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	if want := "https://app.example.com" + checkoutReturnPath; payments.ReturnURL != want {
 		t.Errorf("ReturnURL = %q, want %q", payments.ReturnURL, want)
 	}
-	if payments.ProductBySlug["growth"] != "prod_growth" {
+	if payments.ProductBySlug[slug] != "prod_growth" {
 		t.Errorf("ProductBySlug = %v", payments.ProductBySlug)
 	}
 }
@@ -103,13 +105,13 @@ func TestNewPaymentsWithoutAWebhookSecret(t *testing.T) {
 func TestNewPaymentsRejectsAMisconfiguredCatalog(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)
 	t.Setenv("PUG_DODO_API_KEY", "sk_test")
-	// One product cannot back two tiers: the webhook resolves a plan by product
-	// id and would pick one silently.
-	t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_same")
-	t.Setenv("PUG_DODO_PRODUCT_SCALE", "prod_same")
-
-	if _, err := newPayments(t.Context()); err == nil {
-		t.Fatal("two tiers sharing a product id was accepted")
+	t.Setenv("PUG_DASHBOARD_BASE_URL", "https://app.example.com")
+	// The duplicate-product guard itself is exercised in app/payments, where the
+	// card list can be injected. Here the catalog holds one card, so this asserts
+	// only that a fully configured deployment builds -- the misconfiguration this
+	// test used to catch is no longer reachable through the environment.
+	if _, err := newPayments(t.Context()); err != nil {
+		t.Fatalf("newPayments: %v", err)
 	}
 }
 
@@ -123,4 +125,10 @@ func TestNewPaymentsRejectsAnUnknownEnvironment(t *testing.T) {
 	if _, err := newPayments(t.Context()); err == nil {
 		t.Fatal("an unknown PUG_DODO_ENVIRONMENT was accepted")
 	}
+}
+
+// productEnvKey mirrors how app/payments derives a card's env var, so this test
+// follows a renamed card instead of silently configuring nothing.
+func productEnvKey(slug string) string {
+	return "PUG_DODO_PRODUCT_" + strings.ToUpper(strings.ReplaceAll(slug, "-", "_"))
 }

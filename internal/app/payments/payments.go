@@ -9,6 +9,7 @@
 package payments
 
 import (
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"context"
 	"errors"
 	"fmt"
@@ -42,7 +43,7 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
 	}
-	products, err := ProductIDs(nil)
+	products, err := ProductIDs(nil, entitlement.Cards())
 	if err != nil {
 		return nil, err
 	}
