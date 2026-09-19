@@ -69,6 +69,12 @@ linters:
           deny:
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: infrastructure must not reach up into the app layer
+            # The adapter implements the port and may see the vocabulary around it.
+            # The packages below the root are pug's side of the seam, not the
+            # adapter's; importing one would put business rules in a vendor client.
+            # The trailing slash is what leaves the root itself importable.
+            - pkg: github.com/pug-sh/pug/internal/core/billing/
+              desc: the payment adapter sees the port and vocabulary only, never the logic packages
         rpc-dashboard-boundary:
           files: ["**/internal/app/server/rpc/dashboard/**", "!$test"]
           deny:
