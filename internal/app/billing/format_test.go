@@ -68,8 +68,10 @@ func isSectionHeader(line string) bool {
 	return false
 }
 
-// Absent means NO quota and NO list price. Rendering either as 0 states a
-// billing figure the deployment never claimed.
+// Absent means NO allowance and NO retention bound. Rendering either as 0 states
+// a billing figure the deployment never claimed. There is no list price line any
+// more: a graduated card is a table, and an org with neither card nor terms is
+// one nothing prices.
 func TestReportNeverRendersAbsentAsZero(t *testing.T) {
 	out := render(t, entitlement.Entitlement{
 		Slug: "custom", DisplayName: "Custom", Currency: "USD", Status: entitlement.StatusActive,
@@ -78,9 +80,6 @@ func TestReportNeverRendersAbsentAsZero(t *testing.T) {
 
 	if got := line(t, out, "RESOLVED", "included events"); got != none {
 		t.Fatalf("included events = %q, want %q", got, none)
-	}
-	if got := line(t, out, "RESOLVED", "list price"); got != none {
-		t.Fatalf("list price = %q, want %q", got, none)
 	}
 	if got := line(t, out, "RESOLVED", "retention"); got != none {
 		t.Fatalf("retention = %q, want %q", got, none)
@@ -105,17 +104,18 @@ func TestReportRetentionNamesTheYears(t *testing.T) {
 	}
 }
 
-// Zero is a real price — the two floors — and must not read as absence.
-func TestReportRendersZeroPrice(t *testing.T) {
-	zero := int64(0)
+// A zero fee on a deal is a real term -- a rate-only arrangement charges from the
+// first event -- and must not read as absence.
+func TestReportRendersAZeroFee(t *testing.T) {
+	terms := entitlement.CustomTerms{FlatFeeCents: 0, RateCentsPerMillion: 3_000}
 	free := int64(10_000)
 	out := render(t, entitlement.Entitlement{
-		Slug: "free", DisplayName: "Free", Currency: "USD", Status: entitlement.StatusFree,
-		PriceCents: &zero, IncludedEvents: &free, BillingEnabled: true,
+		Slug: "custom", DisplayName: "Custom", Currency: "USD", Status: entitlement.StatusActive,
+		IncludedEvents: &free, BillingEnabled: true, Terms: &terms,
 	}, entitlement.Record{}, nil)
 
-	if got := line(t, out, "RESOLVED", "list price"); got != "$0.00 USD" {
-		t.Fatalf("list price = %q, want $0.00 USD", got)
+	if got := line(t, out, "RESOLVED", "flat fee"); got != "$0.00 USD" {
+		t.Fatalf("flat fee = %q, want $0.00 USD", got)
 	}
 	if got := line(t, out, "RESOLVED", "included events"); got != "10,000" {
 		t.Fatalf("included events = %q, want 10,000", got)
@@ -285,5 +285,45 @@ func TestHistorySectionSeparatesUnaskedFromEmpty(t *testing.T) {
 	}
 	if out := render(t, ent, entitlement.Record{}, nil); strings.Contains(out, "HISTORY") {
 		t.Errorf("a history nobody asked for was printed anyway:\n%s", out)
+	}
+}
+
+// A card is printed as the table it is. Printing only its allowance would hide
+// what the org is actually charged past it.
+func TestReportRendersTheRateCardsTiers(t *testing.T) {
+	c := entitlement.CurrentCard()
+	out := render(t, entitlement.Entitlement{
+		Slug: c.Slug, DisplayName: c.DisplayName, Currency: c.Currency,
+		Status: entitlement.StatusFree, BillingEnabled: true, Card: &c,
+	}, entitlement.Record{}, nil)
+
+	got := line(t, out, "RESOLVED", "rate card")
+	if !strings.Contains(got, "free") {
+		t.Errorf("rate card = %q, want the free allowance named", got)
+	}
+	if !strings.Contains(got, "/M") {
+		t.Errorf("rate card = %q, want a per-million rate", got)
+	}
+}
+
+// A deal's money prints in BOTH halves: once it lapses the resolved answer hides
+// it, and it still carries onto the next set.
+func TestReportPrintsDealMoneyInBothHalves(t *testing.T) {
+	terms := entitlement.CustomTerms{FlatFeeCents: 40_000, RateCentsPerMillion: 3_000}
+	out := render(t, entitlement.Entitlement{
+		Slug: "custom", DisplayName: "Custom", Currency: "USD",
+		Status: entitlement.StatusActive, BillingEnabled: true, Terms: &terms,
+	}, entitlement.Record{
+		Present: true, PlanSlug: "custom",
+		FlatFeeCents: 40_000, RateCentsPerMillion: 3_000,
+	}, nil)
+
+	for _, section := range []string{"RESOLVED", "STORED"} {
+		if got := line(t, out, section, "flat fee"); got == none || got == "" {
+			t.Errorf("%s flat fee = %q, want the deal's fee", section, got)
+		}
+		if got := line(t, out, section, "rate per million"); got == none || got == "" {
+			t.Errorf("%s rate per million = %q, want the deal's rate", section, got)
+		}
 	}
 }

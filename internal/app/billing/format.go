@@ -35,7 +35,12 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	row(w, "  status", string(ent.Status))
 	row(w, "  included events", quota(ent.IncludedEvents))
 	row(w, "  retention", retention(ent.RetentionDays))
-	row(w, "  list price", price(ent.PriceCents, ent.Currency))
+	if t := ent.Terms; t != nil {
+		row(w, "  flat fee", price(&t.FlatFeeCents, ent.Currency))
+		row(w, "  rate per million", price(&t.RateCentsPerMillion, ent.Currency))
+	} else if c := ent.Card; c != nil {
+		row(w, "  rate card", card(*c, ent.Currency))
+	}
 	row(w, "  usage period", fmt.Sprintf("%s → %s", instant(ent.PeriodStart), instant(ent.PeriodEnd)))
 	row(w, "  trial ends", instant(ent.TrialEndsAt))
 	row(w, "  contract ends", contractEnd(ent.ContractEndsAt))
@@ -47,6 +52,8 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 		section(w, "STORED", "")
 		row(w, "  plan slug", rec.PlanSlug)
 		row(w, "  included events", override(rec.IncludedEventsOverride))
+		row(w, "  flat fee", override(rec.FlatFeeCents))
+		row(w, "  rate per million", override(rec.RateCentsPerMillion))
 		row(w, "  retention days", override(rec.RetentionDaysOverride))
 		row(w, "  display name", text(rec.DisplayNameOverride))
 		row(w, "  anchor day", override(int64(rec.AnchorDay)))
@@ -107,6 +114,12 @@ func historyLine(rec entitlement.Record) string {
 	parts := []string{rec.PlanSlug}
 	if rec.IncludedEventsOverride > 0 {
 		parts = append(parts, "events="+comma(rec.IncludedEventsOverride))
+	}
+	if rec.FlatFeeCents > 0 {
+		parts = append(parts, "fee="+comma(rec.FlatFeeCents)+"c")
+	}
+	if rec.RateCentsPerMillion > 0 {
+		parts = append(parts, "rate="+comma(rec.RateCentsPerMillion)+"c/M")
 	}
 	if rec.RetentionDaysOverride > 0 {
 		parts = append(parts, "retention="+comma(rec.RetentionDaysOverride)+"d")
@@ -226,4 +239,19 @@ func comma(v int64) string {
 		b.WriteByte(s[i])
 	}
 	return sign + b.String()
+}
+
+// card renders a graduated card as the table it is: there is no single number to
+// print, and printing only the allowance would hide what the org is charged.
+func card(c entitlement.RateCard, currency string) string {
+	parts := make([]string, 0, len(c.Tiers)+1)
+	parts = append(parts, comma(c.FreeEvents)+" free")
+	for _, t := range c.Tiers {
+		upTo := "beyond"
+		if t.UpToEvents > 0 {
+			upTo = "≤" + comma(t.UpToEvents)
+		}
+		parts = append(parts, fmt.Sprintf("%s @ %s/M", upTo, price(&t.CentsPerMillion, currency)))
+	}
+	return strings.Join(parts, ", ")
 }

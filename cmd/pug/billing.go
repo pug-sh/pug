@@ -87,6 +87,8 @@ func newBillingSetCmd() *cobra.Command {
 	}
 	cmd.Flags().String("plan", "", "catalog slug to grant")
 	cmd.Flags().Int64("events", 0, "negotiated monthly event quota; 0 clears the override")
+	cmd.Flags().Int64("flat-fee", 0, "negotiated fee charged every period in cents; 0 clears it")
+	cmd.Flags().Int64("rate-per-million", 0, "negotiated cents per million events past the allowance; 0 clears it")
 	cmd.Flags().Int64("retention-days", 0, "negotiated days of event history kept; 0 clears the override")
 	cmd.Flags().String("name", "", "display name shown to the org; empty clears the override")
 	cmd.Flags().Int("anchor-day", 0, "day of month the usage period turns over (1-31); 0 clears the override")
@@ -138,13 +140,15 @@ func billingChange(cmd *cobra.Command) (entitlement.Change, error) {
 	flags := cmd.Flags()
 	planSlug, _ := flags.GetString("plan")
 	change := entitlement.Change{
-		PlanSlug:          planSlug,
-		IncludedEvents:    flagIfSet(cmd, "events", flags.GetInt64),
-		RetentionDays:     flagIfSet(cmd, "retention-days", flags.GetInt64),
-		DisplayName:       flagIfSet(cmd, "name", flags.GetString),
-		AnchorDay:         flagIfSet(cmd, "anchor-day", flags.GetInt),
-		Note:              flagIfSet(cmd, "note", flags.GetString),
-		ProviderProductID: flagIfSet(cmd, "provider-product", flags.GetString),
+		PlanSlug:            planSlug,
+		IncludedEvents:      flagIfSet(cmd, "events", flags.GetInt64),
+		FlatFeeCents:        flagIfSet(cmd, "flat-fee", flags.GetInt64),
+		RateCentsPerMillion: flagIfSet(cmd, "rate-per-million", flags.GetInt64),
+		RetentionDays:       flagIfSet(cmd, "retention-days", flags.GetInt64),
+		DisplayName:         flagIfSet(cmd, "name", flags.GetString),
+		AnchorDay:           flagIfSet(cmd, "anchor-day", flags.GetInt),
+		Note:                flagIfSet(cmd, "note", flags.GetString),
+		ProviderProductID:   flagIfSet(cmd, "provider-product", flags.GetString),
 	}
 	if err := checkOverrides(change); err != nil {
 		return entitlement.Change{}, err
@@ -163,6 +167,10 @@ func checkOverrides(change entitlement.Change) error {
 		return errors.New("--events cannot be negative; pass 0 to clear the override")
 	case change.RetentionDays != nil && *change.RetentionDays < 0:
 		return errors.New("--retention-days cannot be negative; pass 0 to clear the override")
+	case change.FlatFeeCents != nil && *change.FlatFeeCents < 0:
+		return errors.New("--flat-fee cannot be negative; pass 0 to clear it")
+	case change.RateCentsPerMillion != nil && *change.RateCentsPerMillion < 0:
+		return errors.New("--rate-per-million cannot be negative; pass 0 to clear it")
 	case change.AnchorDay != nil && (*change.AnchorDay < 0 || *change.AnchorDay > 31):
 		return errors.New("--anchor-day must be between 1 and 31, or 0 to clear it")
 	}

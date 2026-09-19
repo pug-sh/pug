@@ -161,3 +161,53 @@ func TestBillingWritesRequireAnActor(t *testing.T) {
 		}
 	}
 }
+
+func TestBillingChangeCarriesDealMoney(t *testing.T) {
+	change, err := billingChange(billingSetCmd(t,
+		"--plan", "custom", "--flat-fee", "40000", "--rate-per-million", "3000"))
+	if err != nil {
+		t.Fatalf("billingChange: %v", err)
+	}
+	if change.FlatFeeCents == nil || *change.FlatFeeCents != 40_000 {
+		t.Errorf("flat fee = %v, want 40000", change.FlatFeeCents)
+	}
+	if change.RateCentsPerMillion == nil || *change.RateCentsPerMillion != 3_000 {
+		t.Errorf("rate = %v, want 3000", change.RateCentsPerMillion)
+	}
+}
+
+// The most expensive bug this CLI could have, for money as for quota: a renewal
+// that quietly reverts a customer's negotiated price.
+func TestBillingChangeOmittedMoneyKeepsStoredValues(t *testing.T) {
+	change, err := billingChange(billingSetCmd(t, "--plan", "custom"))
+	if err != nil {
+		t.Fatalf("billingChange: %v", err)
+	}
+	if change.FlatFeeCents != nil || change.RateCentsPerMillion != nil {
+		t.Errorf("money = %v/%v, want nil (keep stored)",
+			change.FlatFeeCents, change.RateCentsPerMillion)
+	}
+}
+
+func TestBillingChangeZeroMoneyClears(t *testing.T) {
+	change, err := billingChange(billingSetCmd(t,
+		"--plan", "custom", "--flat-fee", "0", "--rate-per-million", "0"))
+	if err != nil {
+		t.Fatalf("billingChange: %v", err)
+	}
+	if change.FlatFeeCents == nil || *change.FlatFeeCents != 0 {
+		t.Errorf("flat fee = %v, want an explicit 0", change.FlatFeeCents)
+	}
+	if change.RateCentsPerMillion == nil || *change.RateCentsPerMillion != 0 {
+		t.Errorf("rate = %v, want an explicit 0", change.RateCentsPerMillion)
+	}
+}
+
+func TestBillingChangeRejectsNegativeMoney(t *testing.T) {
+	if _, err := billingChange(billingSetCmd(t, "--plan", "custom", "--flat-fee", "-1")); err == nil {
+		t.Error("a negative flat fee was accepted")
+	}
+	if _, err := billingChange(billingSetCmd(t, "--plan", "custom", "--rate-per-million", "-1")); err == nil {
+		t.Error("a negative rate was accepted")
+	}
+}
