@@ -24,7 +24,7 @@ func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	// plausible day and report success.
 	for _, day := range []int{32, 65537, -1} {
 		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-			PlanSlug:  "growth",
+			PlanSlug:  entitlement.CurrentCard().Slug,
 			AnchorDay: new(day),
 		})
 		if !errors.Is(err, entitlement.ErrAnchorDayRange) {
@@ -40,7 +40,7 @@ func TestExtendTrialIsRefusedOnAGrantedPlan(t *testing.T) {
 
 	f := newFixture(t)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug: "growth",
+		PlanSlug: entitlement.CurrentCard().Slug,
 	}); err != nil {
 		t.Fatalf("set growth: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
 	f := newFixture(t)
 	until := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:       "growth",
+		PlanSlug:       entitlement.CurrentCard().Slug,
 		ContractEndsAt: new(until),
 	}); err != nil {
 		t.Fatalf("set growth: %v", err)
@@ -158,7 +158,7 @@ func TestStoredRecordShowsAnOverrideThatIsNotInForce(t *testing.T) {
 	f := newFixture(t)
 	lapsed := time.Now().Add(-time.Hour)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:       "scale",
+		PlanSlug:       entitlement.CurrentCard().Slug,
 		IncludedEvents: new(int64(5_000_000)),
 		ContractEndsAt: new(lapsed),
 		Note:           new("annual wire, INV-123"),
@@ -170,8 +170,8 @@ func TestStoredRecordShowsAnOverrideThatIsNotInForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if got := ent.IncludedEvents; got == nil || *got != 10_000 {
-		t.Errorf("resolved quota = %v, want the free floor after the contract lapsed", got)
+	if got, want := ent.IncludedEvents, entitlement.CurrentCard().FreeEvents; got == nil || *got != want {
+		t.Errorf("resolved allowance = %v, want the card's %d after the contract lapsed", got, want)
 	}
 
 	// The override the resolved answer hides is the one that carries onto the next
@@ -198,7 +198,7 @@ func TestAFailedHistoryAppendRollsBackTheChange(t *testing.T) {
 
 	f := newFixture(t)
 	_, err := f.svc.SetPlan(t.Context(), f.orgID, strings.Repeat("x", 200), entitlement.Change{
-		PlanSlug: "growth",
+		PlanSlug: entitlement.CurrentCard().Slug,
 	})
 	if err == nil {
 		t.Fatal("SetPlan with an over-long actor: err = nil, want the history insert to fail")
@@ -227,7 +227,7 @@ func TestConvertingATrialToAPaidPlanClearsTheTrialDate(t *testing.T) {
 		t.Fatalf("extend trial: %v", err)
 	}
 
-	converted, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"})
+	converted, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug})
 	if err != nil {
 		t.Fatalf("convert to growth: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}); err != nil {
 		t.Fatalf("set growth: %v", err)
 	}
 
@@ -305,7 +305,7 @@ func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	until := time.Now().AddDate(0, 1, 0)
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
-		PlanSlug:          "growth",
+		PlanSlug:          entitlement.CurrentCard().Slug,
 		IncludedEvents:    new(int64(5_000_000)),
 		RetentionDays:     new(int64(3650)),
 		DisplayName:       new("Acme Enterprise"),
@@ -371,7 +371,7 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 	until := now.AddDate(0, 1, 0)
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
-		PlanSlug:          "growth",
+		PlanSlug:          entitlement.CurrentCard().Slug,
 		IncludedEvents:    new(int64(5_000_000)),
 		DisplayName:       new("Acme Enterprise"),
 		ContractEndsAt:    new(until),
@@ -393,11 +393,11 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if got := ent.IncludedEvents; got == nil || *got != 10_000 {
-		t.Errorf("quota five years after the downgrade = %v, want the free floor's 10000", got)
+	if got, want := ent.IncludedEvents, entitlement.CurrentCard().FreeEvents; got == nil || *got != want {
+		t.Errorf("allowance five years after the downgrade = %v, want the card's %d", got, want)
 	}
-	if ent.DisplayName != "Free" {
-		t.Errorf("display name = %q, want the free floor's, not the deal's", ent.DisplayName)
+	if ent.DisplayName != entitlement.CurrentCard().DisplayName {
+		t.Errorf("display name = %q, want the card's, not the deal's", ent.DisplayName)
 	}
 
 	// A comped grant on the floor names its own terms, and those survive.
@@ -447,7 +447,7 @@ func TestOverLongDisplayNameIsRefused(t *testing.T) {
 
 	f := newFixture(t)
 	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:    "growth",
+		PlanSlug:    entitlement.CurrentCard().Slug,
 		DisplayName: new(strings.Repeat("x", entitlement.MaxDisplayNameLen+1)),
 	})
 	if !errors.Is(err, entitlement.ErrDisplayNameLong) {
@@ -456,7 +456,7 @@ func TestOverLongDisplayNameIsRefused(t *testing.T) {
 
 	// varchar(150) bounds characters, so a multi-byte name at the limit fits.
 	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:    "growth",
+		PlanSlug:    entitlement.CurrentCard().Slug,
 		DisplayName: new(strings.Repeat("\u00e9", entitlement.MaxDisplayNameLen)),
 	})
 	if err != nil {
@@ -487,7 +487,7 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"})
+		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug})
 		done <- err
 	}()
 
@@ -528,7 +528,7 @@ func TestSetPlanGuardTakesNoSecondConnection(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	if _, err := svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}); err != nil {
 		t.Fatalf("SetPlan on a one-connection pool: %v", err)
 	}
 }
@@ -544,13 +544,13 @@ func TestNegativeOverridesAreRefused(t *testing.T) {
 	negative := int64(-1)
 
 	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug: "growth", IncludedEvents: &negative,
+		PlanSlug: entitlement.CurrentCard().Slug, IncludedEvents: &negative,
 	})
 	if !errors.Is(err, entitlement.ErrQuotaNegative) {
 		t.Errorf("err = %v, want ErrQuotaNegative", err)
 	}
 	_, err = f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug: "growth", RetentionDays: &negative,
+		PlanSlug: entitlement.CurrentCard().Slug, RetentionDays: &negative,
 	})
 	if !errors.Is(err, entitlement.ErrRetentionNegative) {
 		t.Errorf("err = %v, want ErrRetentionNegative", err)
@@ -565,7 +565,7 @@ func TestAnEntitlementNamingAnUnknownPlanStillReads(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	// Straight to the column: no writer would store this.

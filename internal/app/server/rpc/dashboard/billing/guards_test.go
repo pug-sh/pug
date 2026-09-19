@@ -139,7 +139,7 @@ func TestGetBillingStatusCarriesTheContractEnd(t *testing.T) {
 	}
 	ends := time.Now().AddDate(1, 0, 0).UTC().Truncate(time.Second)
 	if _, err := ent.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
-		PlanSlug:       "growth",
+		PlanSlug:       entitlement.CurrentCard().Slug,
 		ContractEndsAt: &ends,
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)

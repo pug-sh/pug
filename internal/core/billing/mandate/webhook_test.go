@@ -90,8 +90,8 @@ func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
 			"growth":                       "prod_growth",
 			"scale":                        "prod_scale",
 		},
-		Provider:      provider,
-		ReturnURL:     "https://app.example/settings/billing",
+		Provider:  provider,
+		ReturnURL: "https://app.example/settings/billing",
 	}, ent)
 	f := &fixture{svc: svc, ent: ent, pg: pg, orgID: org}
 	seedCheckoutRef(t, f, org)
@@ -214,8 +214,8 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — a stale delivery revived a cancelled subscription", ent.Slug)
+	if ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("slug = %q, want the current card — a stale delivery revived a cancelled subscription", ent.Slug)
 	}
 	// Accepted, not retried: the provider is not at fault for delivering in any
 	// order it likes.
@@ -333,8 +333,8 @@ func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — a same-second delivery revived a cancelled subscription", ent.Slug)
+	if ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("slug = %q, want the current card — a same-second delivery revived a cancelled subscription", ent.Slug)
 	}
 }
 
@@ -361,8 +361,8 @@ func TestASameSecondCancellationEndsAnActiveSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — a same-second cancellation was dropped", ent.Slug)
+	if ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("slug = %q, want the current card — a same-second cancellation was dropped", ent.Slug)
 	}
 	// Applied, not skipped: a reason here would file it as a lost payment.
 	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {
@@ -415,7 +415,7 @@ func TestRetryOfAnUnprocessedDeliveryReapplies(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — the retry did not re-apply", ent.Slug)
+		t.Errorf("slug = %q, want growth (a dropped card keeps its own slug) — the retry did not re-apply", ent.Slug)
 	}
 }
 
@@ -443,7 +443,7 @@ func TestRetryOfAProcessedDeliveryIsANoop(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — a processed delivery was applied twice", ent.Slug)
+		t.Errorf("slug = %q, want growth (a dropped card keeps its own slug) — a processed delivery was applied twice", ent.Slug)
 	}
 }
 
@@ -544,8 +544,8 @@ func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetEntitlement: %v", err)
 			}
-			if ent.Slug != entitlement.SlugFree {
-				t.Errorf("slug = %q, want free — an unapplicable delivery changed the entitlement", ent.Slug)
+			if ent.Slug != entitlement.CurrentCard().Slug {
+				t.Errorf("slug = %q, want the current card — an unapplicable delivery changed the entitlement", ent.Slug)
 			}
 		})
 	}
@@ -581,7 +581,7 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 		t.Errorf("sub_status = %q, want past_due — the fallback did not attribute the renewal", ent.SubStatus)
 	}
 	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — past_due must keep the plan", ent.Slug)
+		t.Errorf("slug = %q, want growth (a dropped card keeps its own slug) — past_due must keep the plan", ent.Slug)
 	}
 }
 
@@ -745,7 +745,7 @@ func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProv
 			"growth":                       "prod_growth",
 			"scale":                        "prod_scale",
 		},
-		Provider:      provider,
+		Provider: provider,
 	}, f.ent)
 }
 
@@ -914,8 +914,8 @@ func TestCancellationLandsWhenTheProductIsUnmapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — an unmapped product kept a cancelled plan alive", ent.Slug)
+	if ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("slug = %q, want the current card — an unmapped product kept a cancelled plan alive", ent.Slug)
 	}
 	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {
 		t.Errorf("cancellation processed=%v error=%q, want processed with no error", d.ProcessedAt.Valid, d.Error)
@@ -942,8 +942,8 @@ func TestPayloadOrgIDDoesNotAttributeADelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — metadata.org_id attributed a subscription", ent.Slug)
+	if ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("slug = %q, want the current card — metadata.org_id attributed a subscription", ent.Slug)
 	}
 	if d := storedDelivery(t, f, "evt_forged"); !strings.HasPrefix(d.Error, "attribution") {
 		t.Errorf("error = %q, want it to start with %q", d.Error, "attribution")
@@ -1111,7 +1111,7 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != "growth" {
-		t.Errorf("the ref's org resolved %q, want growth — attribution did not prefer the ref", ent.Slug)
+		t.Errorf("the ref's org resolved %q, want growth (a dropped card keeps its own slug) — attribution did not prefer the ref", ent.Slug)
 	}
 }
 

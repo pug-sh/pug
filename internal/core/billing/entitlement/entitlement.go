@@ -3,7 +3,6 @@ package entitlement
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -71,10 +70,8 @@ type Service struct {
 // NewService checks the floors at wiring time: mustPlan would otherwise panic
 // inside Resolve on a request, once per dashboard load.
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Service, error) {
-	for _, slug := range []string{SlugFree, SlugTrial} {
-		if _, ok := PlanBySlug(slug); !ok {
-			return nil, fmt.Errorf("billing: catalog is missing the floor plan %q", slug)
-		}
+	if err := checkRateCards(); err != nil {
+		return nil, err
 	}
 	return &Service{
 		read:           dbread.New(pgRO),
@@ -98,9 +95,9 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 	rec := recordFromRow(row)
 	// Here rather than in Resolve, which is pure and has no ctx. A warning, not an
 	// error: only an operator can clear it, and every load would record one.
-	if rec.Present {
-		if _, known := PlanBySlug(rec.PlanSlug); !known {
-			slog.WarnContext(ctx, "entitlement names a plan the catalog does not know",
+	if rec.Present && isCardSlug(rec.PlanSlug) {
+		if _, known := CardBySlug(rec.PlanSlug); !known {
+			slog.WarnContext(ctx, "entitlement names a rate card the catalog does not know",
 				slog.String("org_id", orgID), slog.String("plan_slug", rec.PlanSlug))
 		}
 	}
@@ -186,11 +183,20 @@ func orKeep[T any](v *T, current T) T {
 // SetPlan grants a plan, merging the change over whatever is stored. Returns the
 // row as it now stands.
 func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Change) (Record, error) {
-	plan, ok := PlanBySlug(change.PlanSlug)
-	if !ok {
-		return Record{}, ErrPlanNotFound
+	// A card is settable, and so are custom and free: free is the downgrade, stored
+	// as a slug that no card answers to and therefore resolving to the current
+	// card's own allowance. Trial keeps its own error rather than degrading to "not
+	// found", because extend-trial is its only writer.
+	var card RateCard
+	switch change.PlanSlug {
+	case SlugCustom, SlugFree, SlugTrial, "":
+	default:
+		var ok bool
+		if card, ok = CardBySlug(change.PlanSlug); !ok {
+			return Record{}, ErrPlanNotFound
+		}
 	}
-	if plan.Slug == SlugTrial {
+	if change.PlanSlug == SlugTrial {
 		return Record{}, ErrTrialNotSettable
 	}
 	if strings.TrimSpace(actor) == "" {
@@ -204,9 +210,9 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	next := applyChange(cur, change)
-	// A retired tier keeps its existing holders but is never handed to somebody
+	// A retired card keeps its existing holders but is never handed to somebody
 	// new, so this is checked against what the org held BEFORE the change.
-	if plan.Retired && cur.PlanSlug != plan.Slug {
+	if card.Retired && cur.PlanSlug != card.Slug {
 		return Record{}, ErrPlanRetired
 	}
 	// The product id resolves a checkout to the custom tier, so it needs the same
@@ -268,7 +274,9 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 	// A granted plan resolves ahead of any trial date, so the write would change
 	// nothing and still print as a success. An unknown slug counts as granted.
 	if cur.Present {
-		if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.IsFloor() {
+		// IsFloor meant "they are on a paid tier". With free and trial no longer
+		// plans, a pin of any kind means that.
+		if isCardSlug(cur.PlanSlug) || cur.PlanSlug == SlugCustom {
 			return Record{}, ErrTrialOnGrantedPlan
 		}
 		// A lapsed contract expires the trial branch too, so the date would be just
@@ -487,22 +495,23 @@ func applyChange(cur Record, c Change) Record {
 	next.Note = orKeep(c.Note, cur.Note)
 	next.ProviderProductID = orKeep(c.ProviderProductID, cur.ProviderProductID)
 
-	if plan, ok := PlanBySlug(next.PlanSlug); ok {
-		if !plan.IsFloor() {
-			// Converting to a paid tier ends the trial, or the state depends on which
-			// of two dates the resolver consults first.
-			next.TrialEndsAt = time.Time{}
-		} else if c.ContractEndsAt == nil || c.ContractEndsAt.IsZero() {
-			// The contract belongs to the granted plan, so a floor tier ends it and the
-			// overrides it gated. A real date here is a comped grant and keeps them.
-			next.ContractEndsAt = time.Time{}
-			next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
-			next.RetentionDaysOverride = orKeep(c.RetentionDays, 0)
-			next.DisplayNameOverride = orKeep(c.DisplayName, "")
-			// Dropped with them: a product id left behind would keep offering a buy
-			// button for the deal that just ended.
-			next.ProviderProductID = orKeep(c.ProviderProductID, "")
-		}
+	switch {
+	case isCardSlug(next.PlanSlug) || next.PlanSlug == SlugCustom:
+		// Converting to a paid tier ends the trial, or the state depends on which of
+		// two dates the resolver consults first. A pin of any kind is that tier now:
+		// free and trial are no longer settable plans.
+		next.TrialEndsAt = time.Time{}
+	case c.ContractEndsAt == nil || c.ContractEndsAt.IsZero():
+		// No pin left. The contract belonged to the grant, so removing the grant ends
+		// it and the overrides it gated. A real date here is a comped grant and keeps
+		// them.
+		next.ContractEndsAt = time.Time{}
+		next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
+		next.RetentionDaysOverride = orKeep(c.RetentionDays, 0)
+		next.DisplayNameOverride = orKeep(c.DisplayName, "")
+		// Dropped with them: a product id left behind would keep offering a buy
+		// button for the deal that just ended.
+		next.ProviderProductID = orKeep(c.ProviderProductID, "")
 	}
 	return next
 }

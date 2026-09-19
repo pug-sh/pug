@@ -3,8 +3,8 @@ package payments
 import (
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 
-	"strings"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/pug-sh/pug/internal/deps/dodo"

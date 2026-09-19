@@ -84,14 +84,13 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 		t.Error("billing_enabled is false with the switch on")
 	}
 	if on.GetIncludedEvents() == nil {
-		t.Fatal("included_events is absent with billing on; the free floor has a quota")
+		t.Fatal("included_events is absent with billing on; the card has an allowance")
 	}
-	if on.GetIncludedEvents().GetValue() != 10_000 {
-		t.Errorf("included_events = %d, want the free floor's 10000", on.GetIncludedEvents().GetValue())
+	if got, want := on.GetIncludedEvents().GetValue(), entitlement.CurrentCard().FreeEvents; got != want {
+		t.Errorf("included_events = %d, want the card's %d", got, want)
 	}
-	if on.GetRetentionDays().GetValue() != entitlement.RetentionYearDays {
-		t.Errorf("retention_days = %d, want the free floor's %d",
-			on.GetRetentionDays().GetValue(), entitlement.RetentionYearDays)
+	if got, want := on.GetRetentionDays().GetValue(), entitlement.CurrentCard().RetentionDays; got != want {
+		t.Errorf("retention_days = %d, want the card's %d", got, want)
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {
 		t.Errorf("status = %s, want FREE for an org past its trial", on.GetStatus())
@@ -113,16 +112,16 @@ func TestGetBillingStatusReportsATrial(t *testing.T) {
 	if msg.GetTrialEndsAt() == nil {
 		t.Error("trial_ends_at is absent while trialing")
 	}
-	if msg.GetPlan().GetSlug() != entitlement.SlugTrial {
-		t.Errorf("plan = %q, want the trial tier", msg.GetPlan().GetSlug())
+	// Trialing is a STATUS; the plan is still the current card, whose allowance is
+	// what the org gets.
+	if msg.GetPlan().GetSlug() != entitlement.CurrentCard().Slug {
+		t.Errorf("plan = %q, want the current card", msg.GetPlan().GetSlug())
 	}
-	// A price of zero is a real price and must survive as one rather than
-	// collapsing into "no price recorded".
-	if msg.GetPlan().GetPriceCents() == nil {
-		t.Fatal("price_cents is absent on the trial tier; free is a price, not the lack of one")
-	}
-	if msg.GetPlan().GetPriceCents().GetValue() != 0 {
-		t.Errorf("price_cents = %d, want 0", msg.GetPlan().GetPriceCents().GetValue())
+	// A graduated card has no single list price, so the wrapper is absent rather
+	// than zero -- "$0.00" beside a usage plan would be a lie.
+	if msg.GetPlan().GetPriceCents() != nil {
+		t.Errorf("price_cents = %d, want absent on a usage card",
+			msg.GetPlan().GetPriceCents().GetValue())
 	}
 	if msg.GetPlan().GetCurrency() == "" {
 		t.Error("currency is empty; an amount without its unit cannot be formatted")

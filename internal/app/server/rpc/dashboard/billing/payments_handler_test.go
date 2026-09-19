@@ -413,8 +413,8 @@ func TestCancelledOrgIsStillManageable(t *testing.T) {
 		t.Errorf("subscription_status = %s, want UNSPECIFIED — a dead subscription supplies nothing",
 			status.GetSubscriptionStatus())
 	}
-	if status.GetPlan().GetSlug() != entitlement.SlugFree {
-		t.Errorf("plan = %q, want free", status.GetPlan().GetSlug())
+	if status.GetPlan().GetSlug() != entitlement.CurrentCard().Slug {
+		t.Errorf("plan = %q, want the current card", status.GetPlan().GetSlug())
 	}
 	if !status.GetManageable() {
 		t.Error("manageable is false for a cancelled org that still has a customer at the provider")
@@ -529,7 +529,6 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 		t.Errorf("card retention = %v, want %d", r, card.RetentionDays)
 	}
 }
-
 
 // confirmStub answers FetchCheckoutOutcome with whatever a test needs, so the
 // translations below run through the real handler rather than the sentinels.

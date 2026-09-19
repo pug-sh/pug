@@ -58,8 +58,10 @@ func TestOrgWithNoRowResolvesFromItsAgeAndWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Status != entitlement.StatusFree || ent.Slug != entitlement.SlugFree {
-		t.Errorf("status/slug = %s/%s, want FREE/free for an org past its trial", ent.Status, ent.Slug)
+	// Free is a STATUS, not a slug: an org past its trial with no pin is on the
+	// current card, whose allowance is what free means.
+	if ent.Status != entitlement.StatusFree || ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("status/slug = %s/%s, want FREE on the current card", ent.Status, ent.Slug)
 	}
 
 	// A read must not materialize a row: "no row" is the normal state, and one
@@ -96,7 +98,7 @@ func TestQuotaWindowMatchesTheMeters(t *testing.T) {
 		{"an anchor that clamps in short months", 31},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			change := entitlement.Change{PlanSlug: "growth"}
+			change := entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}
 			if tc.anchor > 0 {
 				change.AnchorDay = new(tc.anchor)
 			}
@@ -148,7 +150,7 @@ func TestSetPlanRoundTrips(t *testing.T) {
 	until := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
-		PlanSlug:       "growth",
+		PlanSlug:       entitlement.CurrentCard().Slug,
 		ContractEndsAt: new(until),
 		Note:           new("annual wire, INV-123"),
 	}); err != nil {
@@ -159,11 +161,11 @@ func TestSetPlanRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Status != entitlement.StatusActive || ent.Slug != "growth" {
-		t.Errorf("status/slug = %s/%s, want ACTIVE/growth", ent.Status, ent.Slug)
+	if ent.Status != entitlement.StatusActive || ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("status/slug = %s/%s, want ACTIVE on the current card", ent.Status, ent.Slug)
 	}
-	if ent.IncludedEvents == nil || *ent.IncludedEvents != 500_000 {
-		t.Errorf("quota = %v, want the catalog's 500000", ent.IncludedEvents)
+	if got, want := ent.IncludedEvents, entitlement.CurrentCard().FreeEvents; got == nil || *got != want {
+		t.Errorf("allowance = %v, want the card's %d", got, want)
 	}
 	if !ent.ContractEndsAt.Equal(until) {
 		t.Errorf("contract_ends_at = %s, want %s", ent.ContractEndsAt, until)
@@ -240,7 +242,7 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 
 	// And an explicit clear really clears.
 	cleared, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
-		PlanSlug:       "growth",
+		PlanSlug:       entitlement.CurrentCard().Slug,
 		IncludedEvents: new(int64),
 		RetentionDays:  new(int64),
 		DisplayName:    new(string),
@@ -286,7 +288,7 @@ func TestEveryCatalogSlugIsStorable(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	for _, plan := range entitlement.Plans() {
+	for _, plan := range entitlement.Cards() {
 		if plan.Slug == entitlement.SlugTrial {
 			continue // not settable by design; ExtendTrial owns it
 		}
@@ -414,12 +416,12 @@ func TestHistoryRecordsEveryChange(t *testing.T) {
 	ctx := t.Context()
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
-		PlanSlug: "starter", Note: new("first"),
+		PlanSlug: entitlement.CurrentCard().Slug, Note: new("first"),
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	if _, err := f.svc.SetPlan(ctx, f.orgID, "someone@else", entitlement.Change{
-		PlanSlug: "scale", Note: new("upgrade"),
+		PlanSlug: entitlement.CurrentCard().Slug, Note: new("upgrade"),
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
@@ -438,12 +440,12 @@ func TestHistoryRecordsEveryChange(t *testing.T) {
 	if entries[0].Record.Present {
 		t.Errorf("the newest entry has values; a clear must record an empty snapshot")
 	}
-	if entries[1].Record.PlanSlug != "scale" || entries[1].Actor != "someone@else" {
+	if entries[1].Record.PlanSlug != entitlement.CurrentCard().Slug || entries[1].Actor != "someone@else" {
 		t.Errorf("entry 1 = %s by %s, want scale by someone@else",
 			entries[1].Record.PlanSlug, entries[1].Actor)
 	}
-	if entries[2].Record.PlanSlug != "starter" || entries[2].Record.Note != "first" {
-		t.Errorf("entry 2 = %s/%q, want starter/first", entries[2].Record.PlanSlug, entries[2].Record.Note)
+	if entries[2].Record.PlanSlug != entitlement.CurrentCard().Slug || entries[2].Record.Note != "first" {
+		t.Errorf("entry 2 = %s/%q, want the current card/first", entries[2].Record.PlanSlug, entries[2].Record.Note)
 	}
 }
 
@@ -479,7 +481,7 @@ func TestBlankActorIsRefused(t *testing.T) {
 	f := newFixture(t)
 	for _, blank := range []string{"", " ", "\t\n"} {
 		if _, err := f.svc.SetPlan(t.Context(), f.orgID, blank,
-			entitlement.Change{PlanSlug: "growth"}); !errors.Is(err, entitlement.ErrActorRequired) {
+			entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}); !errors.Is(err, entitlement.ErrActorRequired) {
 			t.Errorf("SetPlan(%q) = %v, want ErrActorRequired", blank, err)
 		}
 		if _, err := f.svc.ExtendTrial(t.Context(), f.orgID, blank, 30, time.Now()); !errors.Is(err, entitlement.ErrActorRequired) {
@@ -500,7 +502,7 @@ func TestHistorySurvivesTheOrgBeingDeleted(t *testing.T) {
 
 	f := newFixture(t)
 	ctx := t.Context()
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{PlanSlug: "scale"}); err != nil {
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	if _, err := f.pg.PgW.Exec(ctx, "delete from orgs where id = $1", f.orgID); err != nil {
@@ -522,7 +524,7 @@ func TestHistorySurvivesTheOrgBeingDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
-	if len(entries) != 1 || entries[0].Record.PlanSlug != "scale" {
+	if len(entries) != 1 || entries[0].Record.PlanSlug != entitlement.CurrentCard().Slug {
 		t.Errorf("history after deletion = %+v, want the scale grant preserved", entries)
 	}
 }
@@ -533,7 +535,7 @@ func TestSetPlanReportsAnUnknownOrg(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	_, err := f.svc.SetPlan(t.Context(), xid.New().String(), actor, entitlement.Change{PlanSlug: "growth"})
+	_, err := f.svc.SetPlan(t.Context(), xid.New().String(), actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug})
 	if !errors.Is(err, entitlement.ErrOrgNotFound) {
 		t.Errorf("err = %v, want ErrOrgNotFound", err)
 	}

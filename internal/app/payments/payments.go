@@ -9,11 +9,12 @@
 package payments
 
 import (
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/deps/dodo"

@@ -79,8 +79,8 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — the missed cancellation was not applied", ent.Slug)
+	if ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("slug = %q, want the current card — the missed cancellation was not applied", ent.Slug)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
@@ -109,8 +109,8 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — reconcile must not revoke a grant", ent.Slug)
+	if ent.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("slug = %q, want the current card — reconcile must not revoke a grant", ent.Slug)
 	}
 }
 
@@ -122,7 +122,7 @@ func TestPastDueCountsAsBilled(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.CurrentCard().Slug}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_growth", corebilling.SubStatusPastDue)

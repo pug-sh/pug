@@ -1,9 +1,10 @@
 package server
 
 import (
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"strings"
 	"testing"
+
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 
 	"github.com/pug-sh/pug/internal/deps/dodo"
 )

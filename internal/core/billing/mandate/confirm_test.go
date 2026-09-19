@@ -45,7 +45,7 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != "growth" {
-		t.Errorf("slug = %q, want growth — the confirmed checkout did not reach the entitlement", ent.Slug)
+		t.Errorf("slug = %q, want growth (a dropped card keeps its own slug) — the confirmed checkout did not reach the entitlement", ent.Slug)
 	}
 	if ent.SubStatus != corebilling.SubStatusActive {
 		t.Errorf("sub status = %q, want active", ent.SubStatus)
