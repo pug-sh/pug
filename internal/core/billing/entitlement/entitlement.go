@@ -148,6 +148,12 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 	if row.IncludedEventsOverride.Valid {
 		rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
 	}
+	if row.FlatFeeCents.Valid {
+		rec.FlatFeeCents = row.FlatFeeCents.Int64
+	}
+	if row.RateCentsPerMillion.Valid {
+		rec.RateCentsPerMillion = row.RateCentsPerMillion.Int64
+	}
 	if row.RetentionDaysOverride.Valid {
 		rec.RetentionDaysOverride = row.RetentionDaysOverride.Int64
 	}
@@ -164,6 +170,8 @@ const MaxDisplayNameLen = 150
 type Change struct {
 	PlanSlug          string
 	IncludedEvents    *int64
+	FlatFeeCents        *int64
+	RateCentsPerMillion *int64
 	RetentionDays     *int64
 	DisplayName       *string
 	AnchorDay         *int
@@ -477,6 +485,12 @@ func recordFromWriteRow(row dbwrite.BillingEntitlement) Record {
 	if row.IncludedEventsOverride.Valid {
 		rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
 	}
+	if row.FlatFeeCents.Valid {
+		rec.FlatFeeCents = row.FlatFeeCents.Int64
+	}
+	if row.RateCentsPerMillion.Valid {
+		rec.RateCentsPerMillion = row.RateCentsPerMillion.Int64
+	}
 	if row.RetentionDaysOverride.Valid {
 		rec.RetentionDaysOverride = row.RetentionDaysOverride.Int64
 	}
@@ -488,6 +502,8 @@ func applyChange(cur Record, c Change) Record {
 	next.Present = true
 	next.PlanSlug = c.PlanSlug
 	next.IncludedEventsOverride = orKeep(c.IncludedEvents, cur.IncludedEventsOverride)
+	next.FlatFeeCents = orKeep(c.FlatFeeCents, cur.FlatFeeCents)
+	next.RateCentsPerMillion = orKeep(c.RateCentsPerMillion, cur.RateCentsPerMillion)
 	next.RetentionDaysOverride = orKeep(c.RetentionDays, cur.RetentionDaysOverride)
 	next.DisplayNameOverride = orKeep(c.DisplayName, cur.DisplayNameOverride)
 	next.AnchorDay = orKeep(c.AnchorDay, cur.AnchorDay)
@@ -507,6 +523,9 @@ func applyChange(cur Record, c Change) Record {
 		// them.
 		next.ContractEndsAt = time.Time{}
 		next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
+		// A deal's money goes with the grant it belonged to.
+		next.FlatFeeCents = orKeep(c.FlatFeeCents, 0)
+		next.RateCentsPerMillion = orKeep(c.RateCentsPerMillion, 0)
 		next.RetentionDaysOverride = orKeep(c.RetentionDays, 0)
 		next.DisplayNameOverride = orKeep(c.DisplayName, "")
 		// Dropped with them: a product id left behind would keep offering a buy
@@ -521,7 +540,9 @@ func upsertParams(orgID string, rec Record) dbwrite.UpsertBillingEntitlementPara
 		AnchorDay:              postgres.NewOptionalInt2(rec.AnchorDay),
 		ContractEndsAt:         postgres.NewOptionalTimestamptz(rec.ContractEndsAt),
 		DisplayNameOverride:    postgres.NewOptionalText(rec.DisplayNameOverride),
+		FlatFeeCents:           postgres.NewOptionalInt8(rec.FlatFeeCents),
 		IncludedEventsOverride: postgres.NewOptionalInt8(rec.IncludedEventsOverride),
+		RateCentsPerMillion:    postgres.NewOptionalInt8(rec.RateCentsPerMillion),
 		Note:                   rec.Note,
 		OrgID:                  orgID,
 		PlanSlug:               rec.PlanSlug,
@@ -538,7 +559,9 @@ func appendHistory(ctx context.Context, w *dbwrite.Queries, orgID, actor string,
 		ContractEndsAt:         postgres.NewOptionalTimestamptz(rec.ContractEndsAt),
 		DisplayNameOverride:    postgres.NewOptionalText(rec.DisplayNameOverride),
 		ID:                     xid.New().String(),
+		FlatFeeCents:           postgres.NewOptionalInt8(rec.FlatFeeCents),
 		IncludedEventsOverride: postgres.NewOptionalInt8(rec.IncludedEventsOverride),
+		RateCentsPerMillion:    postgres.NewOptionalInt8(rec.RateCentsPerMillion),
 		Note:                   rec.Note,
 		OrgID:                  orgID,
 		PlanSlug:               postgres.NewOptionalText(rec.PlanSlug),

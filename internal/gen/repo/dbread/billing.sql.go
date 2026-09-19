@@ -85,10 +85,12 @@ select
   e.anchor_day,
   e.contract_ends_at,
   e.display_name_override,
+  e.flat_fee_cents,
   e.included_events_override,
   e.note,
   e.plan_slug,
   e.provider_product_id,
+  e.rate_cents_per_million,
   e.retention_days_override,
   e.trial_ends_at
 from orgs o
@@ -101,10 +103,12 @@ type GetOrgEntitlementRow struct {
 	AnchorDay              pgtype.Int2
 	ContractEndsAt         pgtype.Timestamptz
 	DisplayNameOverride    pgtype.Text
+	FlatFeeCents           pgtype.Int8
 	IncludedEventsOverride pgtype.Int8
 	Note                   pgtype.Text
 	PlanSlug               pgtype.Text
 	ProviderProductID      pgtype.Text
+	RateCentsPerMillion    pgtype.Int8
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 }
@@ -119,10 +123,12 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 		&i.AnchorDay,
 		&i.ContractEndsAt,
 		&i.DisplayNameOverride,
+		&i.FlatFeeCents,
 		&i.IncludedEventsOverride,
 		&i.Note,
 		&i.PlanSlug,
 		&i.ProviderProductID,
+		&i.RateCentsPerMillion,
 		&i.RetentionDaysOverride,
 		&i.TrialEndsAt,
 	)
@@ -130,7 +136,7 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 }
 
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, flat_fee_cents, rate_cents_per_million from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -164,6 +170,8 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.RetentionDaysOverride,
 			&i.TrialEndsAt,
 			&i.ProviderProductID,
+			&i.FlatFeeCents,
+			&i.RateCentsPerMillion,
 		); err != nil {
 			return nil, err
 		}

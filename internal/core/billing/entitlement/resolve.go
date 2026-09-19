@@ -61,6 +61,10 @@ type Record struct {
 	// 0 means no override: both columns are checked > 0, so zero cannot be a
 	// stored value and neither needs a pointer to stay distinguishable.
 	IncludedEventsOverride int64
+	// A deal's money. Zero means the deal has none -- a flat fee with no rate is a
+	// fixed-price arrangement, and a rate with no fee charges from the first event.
+	FlatFeeCents        int64
+	RateCentsPerMillion int64
 	RetentionDaysOverride  int64
 }
 
@@ -212,10 +216,11 @@ func resolveCard(ent *Entitlement, rec Record, sub *billing.Subscription, lapsed
 
 	if rec.Present && rec.PlanSlug == SlugCustom {
 		ent.Slug, ent.DisplayName, ent.Currency = SlugCustom, "Custom", billing.Currency
-		// The money a deal is charged -- a flat fee and a rate -- arrives with
-		// sub-project 1b, which adds the columns and the operator flags. Until then a
-		// deal carries its allowance and no price, which Quote reports as zero.
-		ent.Terms = &CustomTerms{IncludedEvents: rec.IncludedEventsOverride}
+		ent.Terms = &CustomTerms{
+			FlatFeeCents:        rec.FlatFeeCents,
+			RateCentsPerMillion: rec.RateCentsPerMillion,
+			IncludedEvents:      rec.IncludedEventsOverride,
+		}
 		// Gated on the contract: keeping a negotiated allowance after the deal ended
 		// is the one mistake here that costs money. A lapsed deal falls through to the
 		// backstop below, which puts the org back on the current card.

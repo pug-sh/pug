@@ -6,10 +6,12 @@ select
   e.anchor_day,
   e.contract_ends_at,
   e.display_name_override,
+  e.flat_fee_cents,
   e.included_events_override,
   e.note,
   e.plan_slug,
   e.provider_product_id,
+  e.rate_cents_per_million,
   e.retention_days_override,
   e.trial_ends_at
 from orgs o

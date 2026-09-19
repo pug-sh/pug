@@ -39,6 +39,8 @@ type BillingEntitlement struct {
 	TrialEndsAt            pgtype.Timestamptz
 	UpdateTime             pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
+	FlatFeeCents           pgtype.Int8
+	RateCentsPerMillion    pgtype.Int8
 }
 
 type BillingEntitlementHistory struct {
@@ -55,6 +57,8 @@ type BillingEntitlementHistory struct {
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
+	FlatFeeCents           pgtype.Int8
+	RateCentsPerMillion    pgtype.Int8
 }
 
 type BillingSubscription struct {
