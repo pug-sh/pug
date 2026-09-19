@@ -48,6 +48,10 @@ func newFixture(t *testing.T) *fixture {
 	}
 }
 
+// dealFee is what these fixtures charge: a deal needs a price, and which price
+// is not what any of them are about.
+var dealFee = int64(40_000)
+
 func TestOrgWithNoRowResolvesFromItsAgeAndWritesNothing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -184,6 +188,7 @@ func TestNegotiatedRetentionRoundTrips(t *testing.T) {
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:       entitlement.SlugCustom,
+		FlatFeeCents:   &dealFee,
 		IncludedEvents: new(int64(5_000_000)),
 		RetentionDays:  new(int64(10 * entitlement.RetentionYearDays)),
 	}); err != nil {
@@ -211,6 +216,7 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:       entitlement.SlugCustom,
+		FlatFeeCents:   &dealFee,
 		IncludedEvents: new(int64(5_000_000)),
 		RetentionDays:  new(int64(3_650)),
 		DisplayName:    new("Acme Enterprise"),
@@ -222,6 +228,7 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 	// A renewal: a new end date and nothing else.
 	rec, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:       entitlement.SlugCustom,
+		FlatFeeCents:   &dealFee,
 		ContractEndsAt: new(time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)),
 	})
 	if err != nil {
@@ -257,15 +264,29 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 }
 
 // The database is the guard, not the CLI: the row is what every read trusts.
-func TestCustomPlanRequiresAQuota(t *testing.T) {
+// An allowance is no longer enough -- a deal is a price, and storing only its
+// quota describes a free tier nobody agreed to.
+func TestCustomPlanRequiresAPrice(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	f := newFixture(t)
-	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugCustom})
-	if !errors.Is(err, entitlement.ErrCustomNeedsQuota) {
-		t.Fatalf("err = %v, want ErrCustomNeedsQuota", err)
+	quota := int64(5_000_000)
+	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
+		PlanSlug: entitlement.SlugCustom, IncludedEvents: &quota,
+	})
+	if !errors.Is(err, entitlement.ErrCustomNeedsPrice) {
+		t.Fatalf("err = %v, want ErrCustomNeedsPrice for an allowance with no price", err)
+	}
+
+	// A rate with no allowance charges from the first event, which the old quota
+	// rule forbade and this one allows.
+	rate := int64(3_000)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
+		PlanSlug: entitlement.SlugCustom, RateCentsPerMillion: &rate,
+	}); err != nil {
+		t.Errorf("a rate-only deal was refused: %v", err)
 	}
 
 	// Straight past the service, to prove the constraint itself holds.
@@ -273,9 +294,9 @@ func TestCustomPlanRequiresAQuota(t *testing.T) {
 		"insert into billing_entitlements (org_id, plan_slug) values ($1, 'custom')", f.orgID)
 	var pgErr *pgconn.PgError
 	if err == nil {
-		t.Error("the database accepted a custom entitlement with no quota")
-	} else if !errors.As(err, &pgErr) || pgErr.ConstraintName != "billing_entitlements_custom_needs_quota" {
-		t.Errorf("err = %v, want the custom_needs_quota constraint", err)
+		t.Error("the database accepted a custom entitlement with no price")
+	} else if !errors.As(err, &pgErr) || pgErr.ConstraintName != "billing_entitlements_custom_needs_price" {
+		t.Errorf("err = %v, want the custom_needs_price constraint", err)
 	}
 }
 
@@ -317,6 +338,7 @@ func TestCustomPlanIsGrantableToAnyOrg(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
 		PlanSlug:       entitlement.SlugCustom,
+		FlatFeeCents:   &dealFee,
 		IncludedEvents: new(int64(5_000_000)),
 	}); err != nil {
 		t.Fatalf("granting a custom deal: %v", err)
@@ -380,6 +402,7 @@ func TestHistoryRoundTripsEveryOverride(t *testing.T) {
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
+		FlatFeeCents:   &dealFee,
 		IncludedEvents:    new(int64(5_000_000)),
 		RetentionDays:     new(int64(2555)),
 		DisplayName:       new("Acme Enterprise"),

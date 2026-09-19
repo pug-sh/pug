@@ -356,6 +356,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 	productID := "prod_acme"
 	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
+		FlatFeeCents:      new(int64(40_000)),
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: &productID,
 	}); err != nil {

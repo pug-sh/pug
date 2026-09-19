@@ -13,6 +13,10 @@ import (
 	"github.com/rs/xid"
 )
 
+// dealFee is what these fixtures charge: a deal needs a price, and which price
+// is not what any of them are about.
+var dealFee = int64(40_000)
+
 func TestMain(m *testing.M) { testutil.Main(m) }
 
 const actor = "praveen/INV-1"
@@ -75,6 +79,7 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 	var set strings.Builder
 	if err := cli.Set(t.Context(), &set, orgID, actor, entitlement.Change{
 		PlanSlug:       entitlement.SlugCustom,
+		FlatFeeCents:   &dealFee,
 		IncludedEvents: &events,
 		DisplayName:    &name,
 		Note:           &note,
@@ -129,7 +134,7 @@ func TestClearReturnsToTheFloor(t *testing.T) {
 	cli, orgID := newBilling(t)
 	events := int64(1_000_000)
 	if err := cli.Set(t.Context(), &strings.Builder{}, orgID, actor,
-		entitlement.Change{PlanSlug: entitlement.SlugCustom, IncludedEvents: &events}); err != nil {
+		entitlement.Change{PlanSlug: entitlement.SlugCustom, IncludedEvents: &events, FlatFeeCents: &dealFee}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 

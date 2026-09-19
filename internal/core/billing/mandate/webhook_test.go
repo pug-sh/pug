@@ -288,6 +288,7 @@ func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 
 	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
+		FlatFeeCents:      new(int64(40_000)),
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: new("prod_acme"),
 	}); err != nil {
@@ -644,6 +645,7 @@ func TestCustomProductResolvesFromTheOrgRow(t *testing.T) {
 	productID := "prod_acme"
 	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
+		FlatFeeCents:      new(int64(40_000)),
 		IncludedEvents:    &quota,
 		ProviderProductID: &productID,
 	}); err != nil {
@@ -813,6 +815,7 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 	productID := "prod_acme"
 	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
+		FlatFeeCents:      new(int64(40_000)),
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: &productID,
 	}); err != nil {
@@ -979,8 +982,8 @@ func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
 	}
 	f, provider := newPaidFixture(t)
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override)
-		 values ($1, 'custom', $2, 5000000)`,
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override, flat_fee_cents)
+		 values ($1, 'custom', $2, 5000000, 40000)`,
 		f.orgID, "prod_deal"); err != nil {
 		t.Fatalf("stage the deal: %v", err)
 	}
@@ -1012,8 +1015,8 @@ func TestAnUnstagedProductDoesNotAttributeAPaymentLink(t *testing.T) {
 	}
 	f, provider := newPaidFixture(t)
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override)
-		 values ($1, 'custom', $2, 5000000)`,
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override, flat_fee_cents)
+		 values ($1, 'custom', $2, 5000000, 40000)`,
 		f.orgID, "prod_deal"); err != nil {
 		t.Fatalf("stage the deal: %v", err)
 	}
@@ -1145,6 +1148,7 @@ func TestSetPlanIsRefusedWhenItWouldStrandALiveSubscription(t *testing.T) {
 
 	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
+		FlatFeeCents:      new(int64(40_000)),
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: new("prod_acme"),
 	}); err != nil {

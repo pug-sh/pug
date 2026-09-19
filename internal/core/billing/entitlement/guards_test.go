@@ -311,6 +311,8 @@ func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 		DisplayName:       new("Acme Enterprise"),
 		ContractEndsAt:    new(until),
 		ProviderProductID: new("prod_acme"),
+		// A deal is a price; without one the row is a free tier nobody agreed to.
+		FlatFeeCents: new(int64(40_000)),
 	}); err != nil {
 		t.Fatalf("set the deal: %v", err)
 	}
@@ -376,6 +378,8 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 		DisplayName:       new("Acme Enterprise"),
 		ContractEndsAt:    new(until),
 		ProviderProductID: new("prod_acme"),
+		// A deal is a price; without one the row is a free tier nobody agreed to.
+		FlatFeeCents: new(int64(40_000)),
 	}); err != nil {
 		t.Fatalf("set the deal: %v", err)
 	}

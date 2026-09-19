@@ -26,7 +26,7 @@ var (
 	ErrPlanRetired = errors.New("billing: plan is retired and cannot be newly assigned")
 	// ErrTrialNotSettable guards the one slug that means nothing without a date.
 	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
-	ErrCustomNeedsQuota = errors.New("billing: a custom plan or a provider product requires an events override")
+	ErrCustomNeedsPrice = errors.New("billing: a custom plan or a provider product requires a flat fee or a rate")
 	// ErrClearWouldStrandSubscription refuses to drop the quota a live custom
 	// subscription resolves from — by clearing the row or by falling back to a floor.
 	ErrClearWouldStrandSubscription = errors.New("billing: this org has a live custom subscription; cancel it with the provider first")
@@ -223,10 +223,13 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	if card.Retired && cur.PlanSlug != card.Slug {
 		return Record{}, ErrPlanRetired
 	}
-	// The product id resolves a checkout to the custom tier, so it needs the same
-	// quota the custom slug does — or the org buys the deal and resolves free.
-	if (next.PlanSlug == SlugCustom || next.ProviderProductID != "") && next.IncludedEventsOverride <= 0 {
-		return Record{}, ErrCustomNeedsQuota
+	// The product id resolves a checkout to the custom tier, so it needs whatever
+	// the custom slug needs. An allowance is no longer among that: a deal with a
+	// rate and no included events charges from the first event, which is real.
+	if next.PlanSlug == SlugCustom || next.ProviderProductID != "" {
+		if next.FlatFeeCents <= 0 && next.RateCentsPerMillion <= 0 {
+			return Record{}, ErrCustomNeedsPrice
+		}
 	}
 	// The stranding Clear refuses, reached by a floor plan instead. Through the tx,
 	// as Clear reads it: off the pool this waits on a connection it is holding.
