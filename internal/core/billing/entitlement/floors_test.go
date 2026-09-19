@@ -1,4 +1,4 @@
-package billing
+package entitlement
 
 import (
 	"testing"
@@ -24,7 +24,7 @@ func TestNewServiceRefusesACatalogMissingAFloor(t *testing.T) {
 			catalog = trimmed
 
 			// Construction never touches the pools, so nil reaches the check.
-			if _, err := NewService(nil, nil, true, nil); err == nil {
+			if _, err := NewService(nil, nil, true); err == nil {
 				t.Fatalf("NewService accepted a catalog with no %q tier", missing)
 			}
 		})
@@ -65,7 +65,7 @@ func TestTheFloorSlugsAgreeBetweenGoAndSQL(t *testing.T) {
 		walked[row.OrgID] = true
 	}
 	for _, p := range Plans() {
-		if got, want := walked[orgs[p.Slug]], !p.isFloor(); got != want {
+		if got, want := walked[orgs[p.Slug]], !p.IsFloor(); got != want {
 			t.Errorf("%s: walked as a paid plan with no subscription = %v, want %v", p.Slug, got, want)
 		}
 	}

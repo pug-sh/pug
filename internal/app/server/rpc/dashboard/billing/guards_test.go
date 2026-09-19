@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/apperr"
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -18,10 +19,10 @@ import (
 func TestNewServerRejectsANilService(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Fatal("NewServer(nil) returned a server; every RPC on it would panic")
+			t.Fatal("NewServer(nil, nil) returned a server; every RPC on it would panic")
 		}
 	}()
-	NewServer(nil)
+	NewServer(nil, nil)
 }
 
 // A caller that has gone away must not start a provider or database call.
@@ -132,12 +133,12 @@ func TestGetBillingStatusCarriesTheContractEnd(t *testing.T) {
 		t.Errorf("contract_ends_at = %s with no deal stored, want absent", before.GetContractEndsAt().AsTime())
 	}
 
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, nil)
+	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
-		t.Fatalf("new service: %v", err)
+		t.Fatalf("new entitlement service: %v", err)
 	}
 	ends := time.Now().AddDate(1, 0, 0).UTC().Truncate(time.Second)
-	if _, err := svc.SetPlan(t.Context(), orgID, "tester@localhost", corebilling.Change{
+	if _, err := ent.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
 		PlanSlug:       "growth",
 		ContractEndsAt: &ends,
 	}); err != nil {

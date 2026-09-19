@@ -1,3 +1,10 @@
+// Package billing is the seam between pug and a merchant of record: the
+// PaymentProvider port, the vocabulary a delivery is normalized into, and the
+// wiring that names a provider. It holds no business logic and does no I/O, which
+// is what lets the payment adapter in internal/deps import it and nothing else.
+//
+// What an org is entitled to send lives in ./entitlement; the mandate lifecycle
+// that buys it lives in ./mandate.
 package billing
 
 import (
@@ -211,4 +218,4 @@ type Payments struct {
 	ReturnURL string
 }
 
-func (p *Payments) configured() bool { return p != nil && p.Provider != nil }
+func (p *Payments) Configured() bool { return p != nil && p.Provider != nil }

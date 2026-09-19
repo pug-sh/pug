@@ -1,9 +1,12 @@
-package billing_test
+package mandate_test
 
 import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
@@ -37,7 +40,7 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 		t.Fatal("confirmed = false, want true for a settled checkout")
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -59,7 +62,7 @@ func TestConfirmCheckoutRefusesASessionForAnotherOrg(t *testing.T) {
 	provider.checkout = subEvent("some-other-org", "sub00000000000000021", "prod_growth", corebilling.SubStatusActive)
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
-	if !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+	if !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if confirmed {
@@ -83,7 +86,7 @@ func TestConfirmCheckoutRefusesACheckoutCarryingNoOrg(t *testing.T) {
 	event.OrgID = ""
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -127,7 +130,7 @@ func TestConfirmCheckoutDoesNotConfirmAPendingSubscription(t *testing.T) {
 	if n := storedSubscriptions(t, f); n != 1 {
 		t.Errorf("stored %d subscription rows, want the pending one written", n)
 	}
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -147,7 +150,7 @@ func TestConfirmCheckoutRefusesAForeignCurrency(t *testing.T) {
 	event.Currency = "EUR"
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCurrencyNotSupported) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCurrencyNotSupported) {
 		t.Fatalf("err = %v, want ErrCurrencyNotSupported", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -164,7 +167,7 @@ func TestConfirmCheckoutRefusesAnUnmappableProduct(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	provider.checkout = subEvent(f.orgID, "sub00000000000000025", "prod_unknown", corebilling.SubStatusActive)
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrNotPurchasable) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrNotPurchasable) {
 		t.Fatalf("err = %v, want ErrNotPurchasable", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -216,13 +219,13 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	provider.checkout = subEvent(f.orgID, "sub00000000000000028", "prod_scale", corebilling.SubStatusActive)
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
-	if !errors.Is(err, corebilling.ErrTwoLiveSubscriptions) {
+	if !errors.Is(err, mandate.ErrTwoLiveSubscriptions) {
 		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions", err)
 	}
 	if confirmed {
 		t.Error("confirmed = true for a subscription that was never written")
 	}
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -286,7 +289,7 @@ func TestConfirmCheckoutRefusesARefPugNeverMinted(t *testing.T) {
 	event.CheckoutRef = "ref_forged"
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -305,7 +308,7 @@ func TestConfirmCheckoutRefusesACheckoutCarryingNoRef(t *testing.T) {
 	event.CheckoutRef = ""
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -330,7 +333,7 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 	event.CheckoutRef = checkoutRef(other)
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, corebilling.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -351,8 +354,8 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 	ctx := t.Context()
 
 	productID := "prod_acme"
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          corebilling.SlugCustom,
+	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: &productID,
 	}); err != nil {
@@ -387,7 +390,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 	}
 	<-done
 
-	if !errors.Is(confirmErr, corebilling.ErrNotPurchasable) {
+	if !errors.Is(confirmErr, mandate.ErrNotPurchasable) {
 		t.Errorf("err = %v, want ErrNotPurchasable", confirmErr)
 	}
 	if confirmed {

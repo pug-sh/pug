@@ -9,6 +9,7 @@ import (
 	"time"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -16,7 +17,7 @@ import (
 // bound on history and no list price — "0 days of history" worst of all.
 const none = "(none)"
 
-func writeReport(out io.Writer, org dbread.Org, ent corebilling.Entitlement, rec corebilling.Record, subs []dbread.BillingSubscription, history []corebilling.HistoryEntry) error {
+func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec entitlement.Record, subs []dbread.BillingSubscription, history []entitlement.HistoryEntry) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	row(w, "org", fmt.Sprintf("%s  %q", org.ID, org.DisplayName))
@@ -99,7 +100,7 @@ func section(w io.Writer, name, note string) {
 
 // historyLine is one recorded snapshot on a single line, carrying only the fields
 // that have a value, so a renewal reads as the two things that changed.
-func historyLine(rec corebilling.Record) string {
+func historyLine(rec entitlement.Record) string {
 	if !rec.Present {
 		return "cleared"
 	}
@@ -131,7 +132,7 @@ func historyLine(rec corebilling.Record) string {
 	return strings.Join(parts, "  ")
 }
 
-func subscription(ent corebilling.Entitlement) string {
+func subscription(ent entitlement.Entitlement) string {
 	if ent.SubStatus == "" {
 		return none
 	}
@@ -183,7 +184,7 @@ func retention(v *int64) string {
 		return none
 	}
 	out := comma(*v) + " days"
-	if years := *v / corebilling.RetentionYearDays; years > 0 && *v%corebilling.RetentionYearDays == 0 {
+	if years := *v / entitlement.RetentionYearDays; years > 0 && *v%entitlement.RetentionYearDays == 0 {
 		if years == 1 {
 			return out + "  (1 year)"
 		}

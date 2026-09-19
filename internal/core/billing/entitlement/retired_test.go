@@ -1,4 +1,4 @@
-package billing
+package entitlement
 
 import (
 	"errors"
@@ -32,7 +32,7 @@ func TestRetiredPlanCannotBeGrantedToANewOrg(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	svc, err := NewService(pg.PgRO, pg.PgW, true, nil)
+	svc, err := NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestRetiredPlanIsStillRenewableByItsHolder(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	svc, err := NewService(pg.PgRO, pg.PgW, true, nil)
+	svc, err := NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

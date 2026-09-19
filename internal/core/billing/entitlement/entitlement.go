@@ -1,4 +1,4 @@
-package billing
+package entitlement
 
 import (
 	"context"
@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/subs"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -21,14 +24,7 @@ import (
 )
 
 var (
-	ErrOrgNotFound = errors.New("billing: org not found")
-	// ErrCustomerNotUnique is one provider customer holding subscriptions for two
-	// orgs: the delivery names a buyer, and a buyer is not an org.
-	ErrCustomerNotUnique = errors.New("billing: the provider customer maps to more than one org")
-	// ErrPlanNotFound is a slug the catalog does not have. Distinct from
-	// ErrPlanRetired, which is a slug it has but will not hand to a new org.
-	ErrPlanNotFound = errors.New("billing: plan not found")
-	ErrPlanRetired  = errors.New("billing: plan is retired and cannot be newly assigned")
+	ErrPlanRetired = errors.New("billing: plan is retired and cannot be newly assigned")
 	// ErrTrialNotSettable guards the one slug that means nothing without a date.
 	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
 	ErrCustomNeedsQuota = errors.New("billing: a custom plan or a provider product requires an events override")
@@ -65,14 +61,16 @@ type Service struct {
 	// billingEnabled mirrors PUG_BILLING_ENABLED. Off is a self-hosted install,
 	// where every org resolves with no quota at all.
 	billingEnabled bool
-	// payments is nil on a deployment with no provider credentials, which is a
-	// supported mode: only the buy button is missing.
-	payments *Payments
+	// subs reads the live subscription that resolution needs; the mandate package
+	// owns every write to it. Built here rather than injected: the package exists to
+	// break an import cycle, not a construction one, and a nil Reader would only
+	// give every caller a way to get it wrong.
+	subs *subs.Reader
 }
 
 // NewService checks the floors at wiring time: mustPlan would otherwise panic
 // inside Resolve on a request, once per dashboard load.
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool, payments *Payments) (*Service, error) {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Service, error) {
 	for _, slug := range []string{SlugFree, SlugTrial} {
 		if _, ok := PlanBySlug(slug); !ok {
 			return nil, fmt.Errorf("billing: catalog is missing the floor plan %q", slug)
@@ -82,7 +80,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool, paym
 		read:           dbread.New(pgRO),
 		pgW:            pgW,
 		billingEnabled: billingEnabled,
-		payments:       payments,
+		subs:           subs.NewReader(pgW),
 	}, nil
 }
 
@@ -108,9 +106,9 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 	}
 	// Only when billing is on: with it off every org resolves to the free floor
 	// regardless, so the read is a query per dashboard load that cannot change it.
-	var sub *Subscription
+	var sub *billing.Subscription
 	if s.billingEnabled {
-		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
+		if sub, err = s.subs.Live(ctx, orgID); err != nil {
 			return Entitlement{}, err
 		}
 	}
@@ -219,7 +217,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	// The stranding Clear refuses, reached by a floor plan instead. Through the tx,
 	// as Clear reads it: off the pool this waits on a connection it is holding.
 	if next.IncludedEventsOverride <= 0 {
-		sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
+		sub, err := subs.ReadLive(ctx, dbread.New(tx), orgID)
 		if err != nil {
 			return Record{}, err
 		}
@@ -270,7 +268,7 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 	// A granted plan resolves ahead of any trial date, so the write would change
 	// nothing and still print as a success. An unknown slug counts as granted.
 	if cur.Present {
-		if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.isFloor() {
+		if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.IsFloor() {
 			return Record{}, ErrTrialOnGrantedPlan
 		}
 		// A lapsed contract expires the trial branch too, so the date would be just
@@ -316,7 +314,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	// A live custom subscription resolves its quota from the row this deletes, so
 	// clearing it drops an org that is still being charged to the free floor. Under
 	// the lock, which a subscription writer takes before it maps its product.
-	sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
+	sub, err := subs.ReadLive(ctx, dbread.New(tx), orgID)
 	if err != nil {
 		return err
 	}
@@ -362,7 +360,7 @@ func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwri
 		_ = tx.Rollback(ctx)
 		return nil, nil, Record{}, err
 	}
-	cur, err := currentRecord(ctx, w, orgID)
+	cur, err := CurrentRecord(ctx, w, orgID)
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, nil, Record{}, err
@@ -408,8 +406,6 @@ func (s *Service) storeRecord(
 
 // write is the pool-backed writer, for the single-statement paths with no
 // history row to commit alongside them.
-func (s *Service) write() *dbwrite.Queries { return dbwrite.New(s.pgW) }
-
 func (s *Service) begin(ctx context.Context) (pgx.Tx, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -444,7 +440,7 @@ func orgCreateTime(ctx context.Context, w *dbwrite.Queries, orgID string) (time.
 	return org.CreateTime.Time, nil
 }
 
-func currentRecord(ctx context.Context, w *dbwrite.Queries, orgID string) (Record, error) {
+func CurrentRecord(ctx context.Context, w *dbwrite.Queries, orgID string) (Record, error) {
 	row, err := w.GetBillingEntitlementForUpdate(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -492,7 +488,7 @@ func applyChange(cur Record, c Change) Record {
 	next.ProviderProductID = orKeep(c.ProviderProductID, cur.ProviderProductID)
 
 	if plan, ok := PlanBySlug(next.PlanSlug); ok {
-		if !plan.isFloor() {
+		if !plan.IsFloor() {
 			// Converting to a paid tier ends the trial, or the state depends on which
 			// of two dates the resolver consults first.
 			next.TrialEndsAt = time.Time{}

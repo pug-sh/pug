@@ -42,7 +42,7 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
 	}
-	products, err := dodo.ProductIDs(nil)
+	products, err := ProductIDs(nil)
 	if err != nil {
 		return nil, err
 	}

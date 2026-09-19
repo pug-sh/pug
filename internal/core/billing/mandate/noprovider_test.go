@@ -1,31 +1,27 @@
-package billing_test
+package mandate_test
 
 import (
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
+
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
 // The two shapes with no way to take money: no provider credentials, and the
 // billing switch off. Both must refuse identically.
-func noProviderCases(t *testing.T) (*fixture, map[string]*corebilling.Service) {
+func noProviderCases(t *testing.T) (*fixture, map[string]*mandate.Service) {
 	t.Helper()
 	f, provider := newPaidFixture(t)
 
-	unconfigured, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, true, nil)
-	if err != nil {
-		t.Fatalf("new service with no payments: %v", err)
-	}
-	switchedOff, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, false, &corebilling.Payments{
+	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, true, nil, f.ent)
+	switchedOff := mandate.NewService(f.pg.PgRO, f.pg.PgW, false, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
-	})
-	if err != nil {
-		t.Fatalf("new service with billing off: %v", err)
-	}
-	return f, map[string]*corebilling.Service{
+	}, f.ent)
+	return f, map[string]*mandate.Service{
 		"no provider credentials": unconfigured,
 		"billing switched off":    switchedOff,
 	}
@@ -39,7 +35,7 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 
 	for name, svc := range services {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := svc.CreateCheckoutSession(t.Context(), corebilling.Checkout{
+			if _, _, err := svc.CreateCheckoutSession(t.Context(), mandate.Checkout{
 				OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
 			}); !errors.Is(err, corebilling.ErrNoProvider) {
 				t.Errorf("CreateCheckoutSession err = %v, want ErrNoProvider", err)

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -19,13 +21,13 @@ func testOrg() dbread.Org {
 	}
 }
 
-func render(t *testing.T, ent corebilling.Entitlement, rec corebilling.Record, history []corebilling.HistoryEntry) string {
+func render(t *testing.T, ent entitlement.Entitlement, rec entitlement.Record, history []entitlement.HistoryEntry) string {
 	t.Helper()
 	return renderWithSubs(t, ent, rec, nil, history)
 }
 
-func renderWithSubs(t *testing.T, ent corebilling.Entitlement, rec corebilling.Record,
-	subs []dbread.BillingSubscription, history []corebilling.HistoryEntry,
+func renderWithSubs(t *testing.T, ent entitlement.Entitlement, rec entitlement.Record,
+	subs []dbread.BillingSubscription, history []entitlement.HistoryEntry,
 ) string {
 	t.Helper()
 	var buf bytes.Buffer
@@ -69,10 +71,10 @@ func isSectionHeader(line string) bool {
 // Absent means NO quota and NO list price. Rendering either as 0 states a
 // billing figure the deployment never claimed.
 func TestReportNeverRendersAbsentAsZero(t *testing.T) {
-	out := render(t, corebilling.Entitlement{
-		Slug: "custom", DisplayName: "Custom", Currency: "USD", Status: corebilling.StatusActive,
+	out := render(t, entitlement.Entitlement{
+		Slug: "custom", DisplayName: "Custom", Currency: "USD", Status: entitlement.StatusActive,
 		BillingEnabled: true,
-	}, corebilling.Record{}, nil)
+	}, entitlement.Record{}, nil)
 
 	if got := line(t, out, "RESOLVED", "included events"); got != none {
 		t.Fatalf("included events = %q, want %q", got, none)
@@ -93,10 +95,10 @@ func TestReportRetentionNamesTheYears(t *testing.T) {
 		2_555: "2,555 days  (7 years)",
 		400:   "400 days",
 	} {
-		out := render(t, corebilling.Entitlement{
-			Slug: "scale", DisplayName: "Scale", Currency: "USD", Status: corebilling.StatusActive,
+		out := render(t, entitlement.Entitlement{
+			Slug: "scale", DisplayName: "Scale", Currency: "USD", Status: entitlement.StatusActive,
 			RetentionDays: &days, BillingEnabled: true,
-		}, corebilling.Record{}, nil)
+		}, entitlement.Record{}, nil)
 		if got := line(t, out, "RESOLVED", "retention"); got != want {
 			t.Errorf("retention for %d days = %q, want %q", days, got, want)
 		}
@@ -107,10 +109,10 @@ func TestReportRetentionNamesTheYears(t *testing.T) {
 func TestReportRendersZeroPrice(t *testing.T) {
 	zero := int64(0)
 	free := int64(10_000)
-	out := render(t, corebilling.Entitlement{
-		Slug: "free", DisplayName: "Free", Currency: "USD", Status: corebilling.StatusFree,
+	out := render(t, entitlement.Entitlement{
+		Slug: "free", DisplayName: "Free", Currency: "USD", Status: entitlement.StatusFree,
 		PriceCents: &zero, IncludedEvents: &free, BillingEnabled: true,
-	}, corebilling.Record{}, nil)
+	}, entitlement.Record{}, nil)
 
 	if got := line(t, out, "RESOLVED", "list price"); got != "$0.00 USD" {
 		t.Fatalf("list price = %q, want $0.00 USD", got)
@@ -123,10 +125,10 @@ func TestReportRendersZeroPrice(t *testing.T) {
 // The stored instant is the day after the one an operator typed. Printing the
 // pair is what stops that reading as an off-by-one.
 func TestReportContractEndNamesTheLastDayCovered(t *testing.T) {
-	ends := corebilling.ContractEndExclusive(time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC))
-	out := render(t, corebilling.Entitlement{
+	ends := entitlement.ContractEndExclusive(time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC))
+	out := render(t, entitlement.Entitlement{
 		Slug: "custom", DisplayName: "Custom", Currency: "USD", ContractEndsAt: ends, BillingEnabled: true,
-	}, corebilling.Record{Present: true, PlanSlug: "custom", ContractEndsAt: ends}, nil)
+	}, entitlement.Record{Present: true, PlanSlug: "custom", ContractEndsAt: ends}, nil)
 
 	got := line(t, out, "STORED", "contract ends")
 	if !strings.Contains(got, "2027-01-01T00:00:00Z") {
@@ -139,8 +141,8 @@ func TestReportContractEndNamesTheLastDayCovered(t *testing.T) {
 
 // With the switch off every field beneath is the disabled answer, not this org's.
 func TestReportSaysWhenBillingIsDisabled(t *testing.T) {
-	out := render(t, corebilling.Entitlement{Slug: "free", DisplayName: "Free", Currency: "USD"},
-		corebilling.Record{Present: true, PlanSlug: "custom", IncludedEventsOverride: 5_000_000}, nil)
+	out := render(t, entitlement.Entitlement{Slug: "free", DisplayName: "Free", Currency: "USD"},
+		entitlement.Record{Present: true, PlanSlug: "custom", IncludedEventsOverride: 5_000_000}, nil)
 
 	if got := line(t, out, "", "billing"); !strings.Contains(got, "PUG_BILLING_ENABLED") {
 		t.Fatalf("billing = %q, want it to name the switch", got)
@@ -157,10 +159,10 @@ func TestReportSaysWhenBillingIsDisabled(t *testing.T) {
 }
 
 func TestReportAbsentRowIsNotAnError(t *testing.T) {
-	out := render(t, corebilling.Entitlement{
-		Slug: "trial", DisplayName: "Trial", Currency: "USD", Status: corebilling.StatusTrialing,
+	out := render(t, entitlement.Entitlement{
+		Slug: "trial", DisplayName: "Trial", Currency: "USD", Status: entitlement.StatusTrialing,
 		BillingEnabled: true,
-	}, corebilling.Record{}, nil)
+	}, entitlement.Record{}, nil)
 
 	if !strings.Contains(out, "no row") {
 		t.Fatalf("want the absent row said plainly, got:\n%s", out)
@@ -171,12 +173,12 @@ func TestReportAbsentRowIsNotAnError(t *testing.T) {
 }
 
 func TestHistoryLine(t *testing.T) {
-	cleared := historyLine(corebilling.Record{})
+	cleared := historyLine(entitlement.Record{})
 	if cleared != "cleared" {
 		t.Fatalf("cleared = %q", cleared)
 	}
 
-	got := historyLine(corebilling.Record{
+	got := historyLine(entitlement.Record{
 		Present: true, PlanSlug: "custom", IncludedEventsOverride: 5_000_000,
 		RetentionDaysOverride: 3_650,
 		DisplayNameOverride:   "Acme Enterprise", AnchorDay: 17,
@@ -195,7 +197,7 @@ func TestHistoryLine(t *testing.T) {
 	}
 
 	// A renewal reads as the fields that carry a value, not as eight (none)s.
-	renewal := historyLine(corebilling.Record{Present: true, PlanSlug: "growth"})
+	renewal := historyLine(entitlement.Record{Present: true, PlanSlug: "growth"})
 	if strings.Contains(renewal, none) {
 		t.Fatalf("renewal line = %q, want no absent fields spelled out", renewal)
 	}
@@ -227,16 +229,16 @@ func TestPriceOnlyScalesTheCurrencyPugSells(t *testing.T) {
 // The subscription line is what tells an operator whether a resolved plan is
 // backed by money, so each part appears only once it has a value.
 func TestSubscriptionLine(t *testing.T) {
-	if got := subscription(corebilling.Entitlement{}); got != none {
+	if got := subscription(entitlement.Entitlement{}); got != none {
 		t.Errorf("no subscription = %q, want %q", got, none)
 	}
 
-	bare := subscription(corebilling.Entitlement{SubStatus: corebilling.SubStatusPastDue})
+	bare := subscription(entitlement.Entitlement{SubStatus: corebilling.SubStatusPastDue})
 	if bare != string(corebilling.SubStatusPastDue) {
 		t.Errorf("status-only line = %q", bare)
 	}
 
-	full := subscription(corebilling.Entitlement{
+	full := subscription(entitlement.Entitlement{
 		SubStatus:          corebilling.SubStatusActive,
 		SubPeriodEnd:       time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 		ProviderCustomerID: "cus_1",
@@ -251,7 +253,7 @@ func TestSubscriptionLine(t *testing.T) {
 // The resolved entitlement nils a non-live subscription and resolves nothing while
 // billing is off. The section reads the rows directly, so both stay visible.
 func TestReportShowsStoredSubscriptionsTheResolvedAnswerHides(t *testing.T) {
-	ent := corebilling.Entitlement{Slug: "free", DisplayName: "Free", Status: corebilling.StatusFree}
+	ent := entitlement.Entitlement{Slug: "free", DisplayName: "Free", Status: entitlement.StatusFree}
 	subs := []dbread.BillingSubscription{{
 		Currency:      "USD",
 		OrgID:         "o_2f9k",
@@ -262,12 +264,12 @@ func TestReportShowsStoredSubscriptionsTheResolvedAnswerHides(t *testing.T) {
 		Status:        "cancelled",
 	}}
 
-	out := renderWithSubs(t, ent, corebilling.Record{}, subs, nil)
+	out := renderWithSubs(t, ent, entitlement.Record{}, subs, nil)
 	if !strings.Contains(out, "sub_1") || !strings.Contains(out, "cancelled") {
 		t.Errorf("SUBSCRIPTIONS section did not name the stored row:\n%s", out)
 	}
 
-	if empty := renderWithSubs(t, ent, corebilling.Record{}, nil, nil); !strings.Contains(empty, "(none stored)") {
+	if empty := renderWithSubs(t, ent, entitlement.Record{}, nil, nil); !strings.Contains(empty, "(none stored)") {
 		t.Errorf("an org with no rows should say so:\n%s", empty)
 	}
 }
@@ -276,12 +278,12 @@ func TestReportShowsStoredSubscriptionsTheResolvedAnswerHides(t *testing.T) {
 // history when one is asked for: a clean history and no history are different
 // answers, and only the nil says the operator did not ask.
 func TestHistorySectionSeparatesUnaskedFromEmpty(t *testing.T) {
-	ent := corebilling.Entitlement{Slug: corebilling.SlugFree, DisplayName: "Free"}
+	ent := entitlement.Entitlement{Slug: entitlement.SlugFree, DisplayName: "Free"}
 
-	if out := render(t, ent, corebilling.Record{}, []corebilling.HistoryEntry{}); !strings.Contains(out, "(no recorded changes)") {
+	if out := render(t, ent, entitlement.Record{}, []entitlement.HistoryEntry{}); !strings.Contains(out, "(no recorded changes)") {
 		t.Errorf("an empty history did not report itself:\n%s", out)
 	}
-	if out := render(t, ent, corebilling.Record{}, nil); strings.Contains(out, "HISTORY") {
+	if out := render(t, ent, entitlement.Record{}, nil); strings.Contains(out, "HISTORY") {
 		t.Errorf("a history nobody asked for was printed anyway:\n%s", out)
 	}
 }

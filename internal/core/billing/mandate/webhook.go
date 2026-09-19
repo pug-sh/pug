@@ -1,4 +1,4 @@
-package billing
+package mandate
 
 import (
 	"bytes"
@@ -8,6 +8,9 @@ import (
 	"errors"
 	"log/slog"
 	"time"
+
+	"github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -22,7 +25,7 @@ import (
 // HandleDelivery stores one verified delivery and applies it, returning only once
 // the row is durable. Everything unapplicable is stored, marked processed and NOT
 // retried — the provider retries and fixes none of it. A body it cannot DECODE is retried.
-func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, d Delivery) error {
+func (s *Service) HandleDelivery(ctx context.Context, provider billing.PaymentProvider, d billing.Delivery) error {
 	stored, err := s.write().InsertBillingWebhookDelivery(ctx, dbwrite.InsertBillingWebhookDeliveryParams{
 		EventType: d.EventType,
 		Payload:   storablePayload(d.RawPayload),
@@ -59,13 +62,13 @@ func (s *Service) HandleDelivery(ctx context.Context, provider PaymentProvider, 
 }
 
 func (s *Service) applySubscriptionEvent(
-	ctx context.Context, provider PaymentProvider, d Delivery, event SubscriptionEvent,
+	ctx context.Context, provider billing.PaymentProvider, d billing.Delivery, event billing.SubscriptionEvent,
 ) error {
 	// Not constraint mirroring like the two below: the insert writes the Currency
 	// constant, so an unguarded foreign-currency event would be STORED as USD.
-	if cur := normalizeCurrency(event.Currency); cur != Currency {
+	if cur := normalizeCurrency(event.Currency); cur != billing.Currency {
 		return s.rejectDelivery(ctx, provider, d, "currency",
-			errors.New("subscription is billed in "+cur+", not "+Currency))
+			errors.New("subscription is billed in "+cur+", not "+billing.Currency))
 	}
 	if event.Status == "" {
 		return s.rejectDelivery(ctx, provider, d, "status",
@@ -86,7 +89,7 @@ func (s *Service) applySubscriptionEvent(
 	if err != nil {
 		// A read that failed is retryable; accepting it would lose the delivery for
 		// good, because the provider only retries on a non-2xx.
-		if !errors.Is(err, ErrOrgNotFound) && !errors.Is(err, ErrCustomerNotUnique) {
+		if !errors.Is(err, entitlement.ErrOrgNotFound) && !errors.Is(err, ErrCustomerNotUnique) {
 			slog.ErrorContext(ctx, "failed to attribute a subscription delivery", slogx.Error(err),
 				slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)
@@ -124,7 +127,7 @@ func (s *Service) applySubscriptionEvent(
 // metadata.org_id is never enough on its own. Static payment links let the buyer
 // set metadata_* from the URL, so an org id in a payload names an org rather than
 // proving one — it counts only alongside a product an operator staged.
-func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvider, event SubscriptionEvent) (string, error) {
+func (s *Service) attributeDelivery(ctx context.Context, provider billing.PaymentProvider, event billing.SubscriptionEvent) (string, error) {
 	// Every read here goes through the WRITE pool: a lagging replica would report "no
 	// such org" for an org that just checked out, rejecting the delivery permanently.
 	w := s.write()
@@ -169,12 +172,12 @@ func (s *Service) attributeDelivery(ctx context.Context, provider PaymentProvide
 			return "", ErrCustomerNotUnique
 		}
 	}
-	return "", ErrOrgNotFound
+	return "", entitlement.ErrOrgNotFound
 }
 
 // finishDelivery marks the row processed — for an applied delivery and every
 // unapplicable one, so no row is left looking like an attempt that died.
-func (s *Service) finishDelivery(ctx context.Context, provider PaymentProvider, d Delivery, reason string) error {
+func (s *Service) finishDelivery(ctx context.Context, provider billing.PaymentProvider, d billing.Delivery, reason string) error {
 	n, err := s.write().MarkBillingWebhookDeliveryProcessed(ctx, dbwrite.MarkBillingWebhookDeliveryProcessedParams{
 		Error:     reason,
 		Provider:  provider.Name(),
@@ -201,7 +204,7 @@ func (s *Service) finishDelivery(ctx context.Context, provider PaymentProvider, 
 // rejectDelivery records why a delivery was not applied and accepts it anyway.
 // The row keeps the payload, so a fixed mapping can replay it.
 func (s *Service) rejectDelivery(
-	ctx context.Context, provider PaymentProvider, d Delivery, reason string, cause error,
+	ctx context.Context, provider billing.PaymentProvider, d billing.Delivery, reason string, cause error,
 ) error {
 	slog.ErrorContext(ctx, "not applying a billing webhook delivery", slogx.Error(cause),
 		slog.String("provider", provider.Name()), slog.String("webhook_id", d.WebhookID),
@@ -276,11 +279,11 @@ var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be ap
 // live custom subscription on the free floor, which is what Clear's own guard
 // exists to prevent. 0 applied is the CAS refusing an older read.
 func (s *Service) applySubscription(
-	ctx context.Context, provider PaymentProvider, orgID string, event SubscriptionEvent, at time.Time,
+	ctx context.Context, provider billing.PaymentProvider, orgID string, event billing.SubscriptionEvent, at time.Time,
 ) (int64, error) {
 	// Mirrors the column checks: unguarded they fail the insert. Logged here because
 	// the confirm path reaches it with a buyer already charged.
-	if normalizeCurrency(event.Currency) != Currency || event.Status == "" ||
+	if normalizeCurrency(event.Currency) != billing.Currency || event.Status == "" ||
 		event.ProviderCustomerID == "" || event.PriceCents < 0 {
 		slog.ErrorContext(ctx, "subscription cannot be applied", slogx.Error(ErrSubscriptionUnapplicable),
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
@@ -304,7 +307,7 @@ func (s *Service) applySubscription(
 	}
 	// The org's own row, for the negotiated-deal product, read under the lock so
 	// the mapping and the write see the same row.
-	rec, err := currentRecord(ctx, w, orgID)
+	rec, err := entitlement.CurrentRecord(ctx, w, orgID)
 	if err != nil {
 		return 0, err
 	}
@@ -332,7 +335,7 @@ func (s *Service) applySubscription(
 		planSlug = stored
 	}
 	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
-		Currency:           Currency,
+		Currency:           billing.Currency,
 		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
 		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
 		ID:                 xid.New().String(),

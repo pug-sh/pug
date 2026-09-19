@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
 )
@@ -32,7 +33,7 @@ const billingHandlerTimeout = 10 * time.Second
 
 // MountBilling skips a provider that cannot verify a signature: 404 is the
 // fail-closed direction.
-func MountBilling(mux *http.ServeMux, service *corebilling.Service, provider corebilling.PaymentProvider) bool {
+func MountBilling(mux *http.ServeMux, service *mandate.Service, provider corebilling.PaymentProvider) bool {
 	if service == nil || provider == nil || !provider.CanVerify() {
 		return false
 	}
@@ -47,7 +48,7 @@ func MountBilling(mux *http.ServeMux, service *corebilling.Service, provider cor
 
 type billingHandler struct {
 	provider corebilling.PaymentProvider
-	service  *corebilling.Service
+	service  *mandate.Service
 }
 
 func (h *billingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

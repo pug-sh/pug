@@ -13,6 +13,8 @@ import (
 	"github.com/pug-sh/pug/internal/app/cron"
 	"github.com/pug-sh/pug/internal/app/payments"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -83,10 +85,11 @@ func Run(ctx context.Context) error {
 	}
 	defer pgW.Close()
 
-	svc, err := corebilling.NewService(pgRO, pgW, billingCfg.Enabled, pay)
+	entSvc, err := entitlement.NewService(pgRO, pgW, billingCfg.Enabled)
 	if err != nil {
-		return setupFailed(ctx, "billing service", err)
+		return setupFailed(ctx, "entitlement service", err)
 	}
+	svc := mandate.NewService(pgRO, pgW, billingCfg.Enabled, pay, entSvc)
 
 	if billingCfg.Enabled {
 		slog.InfoContext(ctx, "Running a billing reconcile pass")
@@ -110,14 +113,14 @@ func Run(ctx context.Context) error {
 	return nil
 }
 
-func pass(ctx context.Context, svc *corebilling.Service, now time.Time) error {
+func pass(ctx context.Context, svc *mandate.Service, now time.Time) error {
 	report, err := svc.Reconcile(ctx, now)
 	if err != nil {
 		return err
 	}
 	// Ahead of the failure below: a provider outage is no reason to keep processed
 	// payloads past their retention, and the prune touches rows reconcile ignores.
-	pruned, err := svc.PruneDeliveries(ctx, now.Add(-corebilling.DeliveryRetention))
+	pruned, err := svc.PruneDeliveries(ctx, now.Add(-mandate.DeliveryRetention))
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package billing_test
+package mandate_test
 
 import (
 	"context"
@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
@@ -72,11 +75,11 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 		t.Errorf("report = %+v, want 1 checked and 1 applied", report)
 	}
 
-	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
+	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — the missed cancellation was not applied", ent.Slug)
 	}
 }
@@ -88,7 +91,7 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
@@ -102,7 +105,7 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 	}
 
 	// Still granted: the report is a report, not a repair.
-	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -119,7 +122,7 @@ func TestPastDueCountsAsBilled(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_growth", corebilling.SubStatusPastDue)
@@ -209,7 +212,7 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	past := time.Now().Add(-corebilling.DeliveryRetention - 24*time.Hour)
+	past := time.Now().Add(-mandate.DeliveryRetention - 24*time.Hour)
 
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		`insert into billing_webhook_deliveries
@@ -227,7 +230,7 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Fatalf("seed checkout session: %v", err)
 	}
 
-	pruned, err := f.svc.PruneDeliveries(t.Context(), time.Now().Add(-corebilling.DeliveryRetention))
+	pruned, err := f.svc.PruneDeliveries(t.Context(), time.Now().Add(-mandate.DeliveryRetention))
 	if err != nil {
 		t.Fatalf("PruneDeliveries: %v", err)
 	}
@@ -453,7 +456,7 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 	}
 
 	// The org stays on the plan it is actually charged for.
-	ent, err := svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}

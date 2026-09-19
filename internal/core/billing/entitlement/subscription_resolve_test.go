@@ -1,8 +1,10 @@
-package billing_test
+package entitlement_test
 
 import (
 	"testing"
 	"time"
+
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
@@ -18,8 +20,8 @@ func liveSub(slug string) *corebilling.Subscription {
 
 // Somebody is paying for this, so it outranks everything beneath it.
 func TestSubscriptionSuppliesThePlan(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("growth"), later, true)
-	if ent.Status != corebilling.StatusActive {
+	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub("growth"), later, true)
+	if ent.Status != entitlement.StatusActive {
 		t.Errorf("status = %s, want ACTIVE", ent.Status)
 	}
 	if ent.Slug != "growth" {
@@ -39,8 +41,8 @@ func TestSubscriptionSuppliesThePlan(t *testing.T) {
 // The subscription beats an operator grant naming a different tier: the grant is
 // rule 2 and only applies when nothing is being charged.
 func TestSubscriptionOutranksAnOperatorGrant(t *testing.T) {
-	rec := corebilling.Record{Present: true, PlanSlug: "starter"}
-	ent := corebilling.Resolve(created, rec, liveSub("scale"), later, true)
+	rec := entitlement.Record{Present: true, PlanSlug: "starter"}
+	ent := entitlement.Resolve(created, rec, liveSub("scale"), later, true)
 	if ent.Slug != "scale" {
 		t.Errorf("slug = %q, want scale (the subscription's, not the grant's)", ent.Slug)
 	}
@@ -50,7 +52,7 @@ func TestSubscriptionOutranksAnOperatorGrant(t *testing.T) {
 func TestPastDueKeepsTheQuota(t *testing.T) {
 	sub := liveSub("growth")
 	sub.Status = corebilling.SubStatusPastDue
-	ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
 	if ent.Slug != "growth" {
 		t.Errorf("slug = %q, want growth — a failed card must not degrade the plan", ent.Slug)
 	}
@@ -67,7 +69,7 @@ func TestNotLiveSubscriptionSuppliesNothing(t *testing.T) {
 		}
 		sub := liveSub("scale")
 		sub.Status = status
-		ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
+		ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
 		if ent.Slug != "free" {
 			t.Errorf("%s subscription resolved to %q, want free", status, ent.Slug)
 		}
@@ -81,8 +83,8 @@ func TestNotLiveSubscriptionSuppliesNothing(t *testing.T) {
 func TestCancelledSubscriptionFallsBackToTheGrant(t *testing.T) {
 	sub := liveSub("starter")
 	sub.Status = corebilling.SubStatusCancelled
-	rec := corebilling.Record{Present: true, PlanSlug: "growth"}
-	ent := corebilling.Resolve(created, rec, sub, later, true)
+	rec := entitlement.Record{Present: true, PlanSlug: "growth"}
+	ent := entitlement.Resolve(created, rec, sub, later, true)
 	if ent.Slug != "growth" {
 		t.Errorf("slug = %q, want growth (the grant beneath a dead subscription)", ent.Slug)
 	}
@@ -91,13 +93,13 @@ func TestCancelledSubscriptionFallsBackToTheGrant(t *testing.T) {
 // Rule 3: the deal's quota is pug's, and the subscription is what makes the
 // custom tier mean anything.
 func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
-	rec := corebilling.Record{
+	rec := entitlement.Record{
 		Present: true, PlanSlug: "custom",
 		IncludedEventsOverride: 5_000_000,
 		DisplayNameOverride:    "Acme Enterprise",
 		ProviderProductID:      "prod_acme",
 	}
-	ent := corebilling.Resolve(created, rec, liveSub("custom"), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub("custom"), later, true)
 	if got := quota(t, ent); got != 5_000_000 {
 		t.Errorf("quota = %d, want 5000000", got)
 	}
@@ -112,11 +114,11 @@ func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
 // A paid custom subscription with no quota row behind it. The free floor is the
 // honest answer, and reconcile reports it; silently unlimited is the hazard.
 func TestCustomSubscriptionWithNoQuotaFallsToFree(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("custom"), later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub("custom"), later, true)
 	if ent.Slug != "free" {
 		t.Errorf("slug = %q, want free", ent.Slug)
 	}
-	if ent.Status != corebilling.StatusFree {
+	if ent.Status != entitlement.StatusFree {
 		t.Errorf("status = %s, want FREE", ent.Status)
 	}
 	if got := quota(t, ent); got != 10_000 {
@@ -127,18 +129,18 @@ func TestCustomSubscriptionWithNoQuotaFallsToFree(t *testing.T) {
 // A contract bounds an operator's grant. It cannot expire a subscription the
 // provider still says is live, or a live custom deal loses its quota mid-term.
 func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
-	rec := corebilling.Record{
+	rec := entitlement.Record{
 		Present: true, PlanSlug: "custom",
 		IncludedEventsOverride: 5_000_000,
 		ContractEndsAt:         later.AddDate(0, 0, -1),
 	}
-	ent := corebilling.Resolve(created, rec, liveSub("custom"), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub("custom"), later, true)
 	if got := quota(t, ent); got != 5_000_000 {
 		t.Errorf("quota = %d, want 5000000 — the customer is still being charged", got)
 	}
 
 	// With nothing being charged, the lapsed contract does expire the deal.
-	lapsed := corebilling.Resolve(created, rec, nil, later, true)
+	lapsed := entitlement.Resolve(created, rec, nil, later, true)
 	if lapsed.Slug != "free" {
 		t.Errorf("slug with no subscription = %q, want free", lapsed.Slug)
 	}
@@ -147,13 +149,13 @@ func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 // A catalog tier is a different purchase, so a lapsed grant's quota and name must
 // not ride along on it — the customer would pay Starter for the pilot's quota.
 func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
-	rec := corebilling.Record{
+	rec := entitlement.Record{
 		Present: true, PlanSlug: "custom",
 		IncludedEventsOverride: 5_000_000,
 		DisplayNameOverride:    "Acme Pilot",
 		ContractEndsAt:         later.AddDate(0, 0, -1),
 	}
-	ent := corebilling.Resolve(created, rec, liveSub("starter"), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub("starter"), later, true)
 	if got := quota(t, ent); got != 100_000 {
 		t.Errorf("quota = %d, want 100000 — the pilot's grant lapsed", got)
 	}
@@ -165,11 +167,11 @@ func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
 // A slug the catalog no longer knows keeps its own name and no quota. Resolving
 // it to "free, 10,000" would tell a paying customer they are over their limit.
 func TestSubscriptionOnAnUnknownSlugKeepsItsName(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("growth-v0"), later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub("growth-v0"), later, true)
 	if ent.Slug != "growth-v0" {
 		t.Errorf("slug = %q, want growth-v0", ent.Slug)
 	}
-	if ent.Status != corebilling.StatusActive {
+	if ent.Status != entitlement.StatusActive {
 		t.Errorf("status = %s, want ACTIVE", ent.Status)
 	}
 	if ent.IncludedEvents != nil {
@@ -179,7 +181,7 @@ func TestSubscriptionOnAnUnknownSlugKeepsItsName(t *testing.T) {
 
 // Billing off is the self-hosted shape: no quota, and no subscription consulted.
 func TestSubscriptionIgnoredWhenBillingIsOff(t *testing.T) {
-	ent := corebilling.Resolve(created, corebilling.Record{}, liveSub("scale"), later, false)
+	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub("scale"), later, false)
 	if ent.Slug != "free" || ent.IncludedEvents != nil {
 		t.Errorf("slug = %q quota = %v, want free with no quota", ent.Slug, ent.IncludedEvents)
 	}
@@ -193,7 +195,7 @@ func TestSubscriptionIgnoredWhenBillingIsOff(t *testing.T) {
 func TestSubscriptionPeriodIsNotTheQuotaWindow(t *testing.T) {
 	sub := liveSub("growth")
 	sub.CurrentPeriodEnd = time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
-	ent := corebilling.Resolve(created, corebilling.Record{}, sub, later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
 	if ent.PeriodEnd.Equal(ent.SubPeriodEnd) {
 		t.Fatal("quota window end equals the billing date; they are different questions")
 	}

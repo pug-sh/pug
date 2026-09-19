@@ -12,7 +12,7 @@ import (
 	"time"
 
 	appbilling "github.com/pug-sh/pug/internal/app/billing"
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/dotenv"
 	"github.com/spf13/cobra"
 )
@@ -79,7 +79,7 @@ func newBillingSetCmd() *cobra.Command {
 			actor, _ := cmd.Flags().GetString("actor")
 			err = cli.Set(ctx, cmd.OutOrStdout(), orgID, actor, change)
 			// The service owns which slugs exist; naming them is a help message.
-			if errors.Is(err, corebilling.ErrPlanNotFound) {
+			if errors.Is(err, entitlement.ErrPlanNotFound) {
 				return fmt.Errorf("%w %q (want %s)", err, change.PlanSlug, strings.Join(grantableSlugs(), ", "))
 			}
 			return err
@@ -112,7 +112,7 @@ func newBillingExtendTrialCmd() *cobra.Command {
 			return cli.ExtendTrial(ctx, cmd.OutOrStdout(), orgID, actor, days)
 		}),
 	}
-	cmd.Flags().Int("days", 0, fmt.Sprintf("days from now the trial should end (1-%d)", corebilling.MaxTrialDays))
+	cmd.Flags().Int("days", 0, fmt.Sprintf("days from now the trial should end (1-%d)", entitlement.MaxTrialDays))
 	mustMarkRequired(cmd, "days")
 	requireActor(cmd)
 	return cmd
@@ -134,10 +134,10 @@ func newBillingClearCmd() *cobra.Command {
 
 // A flag left off is nil, which keeps the stored value; a flag given its empty
 // value is a clear.
-func billingChange(cmd *cobra.Command) (corebilling.Change, error) {
+func billingChange(cmd *cobra.Command) (entitlement.Change, error) {
 	flags := cmd.Flags()
 	planSlug, _ := flags.GetString("plan")
-	change := corebilling.Change{
+	change := entitlement.Change{
 		PlanSlug:          planSlug,
 		IncludedEvents:    flagIfSet(cmd, "events", flags.GetInt64),
 		RetentionDays:     flagIfSet(cmd, "retention-days", flags.GetInt64),
@@ -147,17 +147,17 @@ func billingChange(cmd *cobra.Command) (corebilling.Change, error) {
 		ProviderProductID: flagIfSet(cmd, "provider-product", flags.GetString),
 	}
 	if err := checkOverrides(change); err != nil {
-		return corebilling.Change{}, err
+		return entitlement.Change{}, err
 	}
 	endsAt, err := contractEnd(cmd)
 	if err != nil {
-		return corebilling.Change{}, err
+		return entitlement.Change{}, err
 	}
 	change.ContractEndsAt = endsAt
 	return change, nil
 }
 
-func checkOverrides(change corebilling.Change) error {
+func checkOverrides(change entitlement.Change) error {
 	switch {
 	case change.IncludedEvents != nil && *change.IncludedEvents < 0:
 		return errors.New("--events cannot be negative; pass 0 to clear the override")
@@ -182,7 +182,7 @@ func contractEnd(cmd *cobra.Command) (*time.Time, error) {
 		if err != nil {
 			return nil, fmt.Errorf("--until must be a YYYY-MM-DD date, got %q", *raw)
 		}
-		endsAt = corebilling.ContractEndExclusive(day)
+		endsAt = entitlement.ContractEndExclusive(day)
 	}
 	return &endsAt, nil
 }
@@ -199,9 +199,9 @@ func flagIfSet[T any](cmd *cobra.Command, name string, get func(string) (T, erro
 // What --plan accepts for a NEW grant. Trial is extend-trial's alone; a retired
 // tier is kept for its holders and stays settable for an org already on it.
 func grantableSlugs() []string {
-	out := make([]string, 0, len(corebilling.Plans()))
-	for _, p := range corebilling.Plans() {
-		if p.Slug == corebilling.SlugTrial || p.Retired {
+	out := make([]string, 0, len(entitlement.Plans()))
+	for _, p := range entitlement.Plans() {
+		if p.Slug == entitlement.SlugTrial || p.Retired {
 			continue
 		}
 		out = append(out, p.Slug)

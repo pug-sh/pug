@@ -1,4 +1,4 @@
-package billing
+package mandate
 
 import (
 	"context"
@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -65,7 +68,7 @@ type ReconcileReport struct {
 // that never arrived. It re-reads every subscription and applies the same CAS.
 func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport, error) {
 	var report ReconcileReport
-	if !s.payments.configured() {
+	if !s.payments.Configured() {
 		// Not an error: a deployment with no provider has nothing to reconcile
 		// against, which is the self-hosted shape.
 		slog.InfoContext(ctx, "no payments provider configured; nothing to reconcile")
@@ -162,7 +165,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 // reconcileOne re-reads one subscription and applies it. Errors are counted and
 // logged, not returned: one unreadable row must not abandon the pass.
 func (s *Service) reconcileOne(
-	ctx context.Context, provider PaymentProvider, row dbread.BillingSubscription,
+	ctx context.Context, provider billing.PaymentProvider, row dbread.BillingSubscription,
 	now time.Time, report *ReconcileReport,
 ) {
 	report.Checked++
@@ -171,7 +174,7 @@ func (s *Service) reconcileOne(
 	if err != nil {
 		// A subscription the provider does not know is a finding, not an outage:
 		// counting it unreadable would hold the CronJob red on every later run.
-		if errors.Is(err, ErrSubscriptionNotFound) {
+		if errors.Is(err, billing.ErrSubscriptionNotFound) {
 			report.Untracked++
 			slog.ErrorContext(ctx, "the provider does not know a stored subscription", slogx.Error(err),
 				slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID))
@@ -196,11 +199,11 @@ func (s *Service) reconcileOne(
 
 	// Only to tell an org that has vanished from an ordinary read failure: the
 	// writer re-reads the row itself, under the lock it applies in.
-	if _, err := s.StoredRecord(ctx, row.OrgID); err != nil {
+	if _, err := s.ent.StoredRecord(ctx, row.OrgID); err != nil {
 		report.Unreadable++
 		// StoredRecord logs a real read failure; an org that has vanished from under
 		// a live subscription is the one it returns silently.
-		if errors.Is(err, ErrOrgNotFound) {
+		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			slog.ErrorContext(ctx, "live subscription names an org that is gone",
 				slog.String("org_id", row.OrgID), slog.String("provider_sub_id", row.ProviderSubID))
 		}
