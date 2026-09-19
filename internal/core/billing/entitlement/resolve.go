@@ -73,16 +73,22 @@ type Entitlement struct {
 	Currency    string
 	Status      Status
 
-	// nil means NO LIST PRICE: the custom tier, whose price lives in the payments
-	// provider, or a row naming a plan the catalog no longer knows. Zero is a real
-	// price — the two floors.
+	// Always nil under usage pricing: a graduated card has no single list price to
+	// show. Kept so the proto, handler and operator CLI render "no price" rather
+	// than a wrong one; sub-project 1b removes the field and its wire equivalent.
 	PriceCents *int64
-	// nil means NO QUOTA: billing is switched off, or the row names a plan the
-	// catalog no longer knows. Never render it as zero.
+	// IncludedEvents is events this period before charges begin — a card's free
+	// allowance or a deal's. nil means NO ALLOWANCE: billing off, or a slug no card
+	// answers to. Never render it as zero.
 	IncludedEvents *int64
 	// How far back this org's history stays queryable. nil means NO BOUND — billing
 	// off, an unresolvable plan, or a deal that named none. Never render it as zero.
 	RetentionDays *int64
+
+	// Exactly one of Card and Terms is set while billing is on and the slug
+	// resolves; whichever it is, is what prices the period.
+	Card  *RateCard
+	Terms *CustomTerms
 
 	TrialEndsAt    time.Time
 	ContractEndsAt time.Time
@@ -247,4 +253,17 @@ func applyOverrides(ent *Entitlement, rec Record, sub *billing.Subscription, now
 	if rec.DisplayNameOverride != "" {
 		ent.DisplayName = rec.DisplayNameOverride
 	}
+}
+
+// Quote prices events on whatever this entitlement resolves to. The single place
+// the card-or-terms choice is made, so no caller can pick the wrong one. False is
+// an entitlement nothing prices: billing off, or a slug no card answers to.
+func (e Entitlement) Quote(events int64) (Quote, bool) {
+	switch {
+	case e.Terms != nil:
+		return PriceCustom(*e.Terms, events), true
+	case e.Card != nil:
+		return Price(*e.Card, events), true
+	}
+	return Quote{}, false
 }
