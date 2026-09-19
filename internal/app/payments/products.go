@@ -1,11 +1,15 @@
-package dodo
+// Product ids are catalog-to-env wiring, not adapter logic: one
+// PUG_DODO_PRODUCT_<SLUG> per purchasable tier. They live here rather than in
+// internal/deps/dodo because a deps package may see core only to implement one of
+// its ports, and this implements none.
+package payments
 
 import (
 	"fmt"
 	"os"
 	"strings"
 
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 )
 
 // One key per purchasable tier, so the key set follows the catalog rather than a
@@ -24,7 +28,7 @@ func ProductIDs(lookup EnvLookup) (map[string]string, error) {
 	}
 	out := map[string]string{}
 	byProduct := map[string]string{}
-	for _, plan := range corebilling.Plans() {
+	for _, plan := range entitlement.Plans() {
 		if !mappedSlug(plan) {
 			continue
 		}
@@ -47,9 +51,9 @@ func ProductIDs(lookup EnvLookup) (map[string]string, error) {
 
 // mappedSlug is every tier but the floors and custom. Retired tiers stay mapped,
 // or the webhook rejects their holders' renewals; core keeps them unsellable.
-func mappedSlug(plan corebilling.Plan) bool {
+func mappedSlug(plan entitlement.Plan) bool {
 	switch plan.Slug {
-	case corebilling.SlugFree, corebilling.SlugTrial, corebilling.SlugCustom:
+	case entitlement.SlugFree, entitlement.SlugTrial, entitlement.SlugCustom:
 		return false
 	}
 	return true

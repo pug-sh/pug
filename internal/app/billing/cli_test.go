@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -72,8 +73,8 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 	note := "$400/mo, INV-123"
 
 	var set strings.Builder
-	if err := cli.Set(t.Context(), &set, orgID, actor, corebilling.Change{
-		PlanSlug:       corebilling.SlugCustom,
+	if err := cli.Set(t.Context(), &set, orgID, actor, entitlement.Change{
+		PlanSlug:       entitlement.SlugCustom,
 		IncludedEvents: &events,
 		DisplayName:    &name,
 		Note:           &note,
@@ -89,7 +90,7 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 		t.Fatalf("Show: %v", err)
 	}
 	got := show.String()
-	for _, want := range []string{corebilling.SlugCustom, "5,000,000", note, actor} {
+	for _, want := range []string{entitlement.SlugCustom, "5,000,000", note, actor} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Show output is missing %q:\n%s", want, got)
 		}
@@ -128,7 +129,7 @@ func TestClearReturnsToTheFloor(t *testing.T) {
 	cli, orgID := newBilling(t)
 	events := int64(1_000_000)
 	if err := cli.Set(t.Context(), &strings.Builder{}, orgID, actor,
-		corebilling.Change{PlanSlug: corebilling.SlugCustom, IncludedEvents: &events}); err != nil {
+		entitlement.Change{PlanSlug: entitlement.SlugCustom, IncludedEvents: &events}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -150,7 +151,7 @@ func TestUnknownOrgIsReported(t *testing.T) {
 
 	cli, _ := newBilling(t)
 	err := cli.Show(t.Context(), &strings.Builder{}, "o_nope", false)
-	if !errors.Is(err, corebilling.ErrOrgNotFound) {
+	if !errors.Is(err, entitlement.ErrOrgNotFound) {
 		t.Fatalf("Show on an unknown org = %v, want ErrOrgNotFound", err)
 	}
 }
@@ -165,13 +166,13 @@ func TestRefusedMutationsReportTheirReason(t *testing.T) {
 	cli, orgID := newBilling(t)
 	var out strings.Builder
 
-	if err := cli.Set(t.Context(), &out, orgID, actor, corebilling.Change{PlanSlug: "no-such-tier"}); !errors.Is(err, corebilling.ErrPlanNotFound) {
+	if err := cli.Set(t.Context(), &out, orgID, actor, entitlement.Change{PlanSlug: "no-such-tier"}); !errors.Is(err, entitlement.ErrPlanNotFound) {
 		t.Errorf("Set on an unknown slug = %v, want ErrPlanNotFound", err)
 	}
-	if err := cli.ExtendTrial(t.Context(), &out, orgID, actor, 0); !errors.Is(err, corebilling.ErrTrialDaysRange) {
+	if err := cli.ExtendTrial(t.Context(), &out, orgID, actor, 0); !errors.Is(err, entitlement.ErrTrialDaysRange) {
 		t.Errorf("ExtendTrial with no days = %v, want ErrTrialDaysRange", err)
 	}
-	if err := cli.Clear(t.Context(), &out, orgID, actor); !errors.Is(err, corebilling.ErrNoEntitlement) {
+	if err := cli.Clear(t.Context(), &out, orgID, actor); !errors.Is(err, entitlement.ErrNoEntitlement) {
 		t.Errorf("Clear on an org with no row = %v, want ErrNoEntitlement", err)
 	}
 	if out.Len() != 0 {

@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+
 	"github.com/spf13/cobra"
 )
 
@@ -126,14 +127,14 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 // The trial slug has one writer, and it is not `set`.
 func TestGrantableSlugsExcludeTrialAndRetired(t *testing.T) {
 	got := grantableSlugs()
-	if slices.Contains(got, corebilling.SlugTrial) {
-		t.Fatalf("slugs = %v, want no %q", got, corebilling.SlugTrial)
+	if slices.Contains(got, entitlement.SlugTrial) {
+		t.Fatalf("slugs = %v, want no %q", got, entitlement.SlugTrial)
 	}
-	for _, p := range corebilling.Plans() {
+	for _, p := range entitlement.Plans() {
 		if p.Retired && slices.Contains(got, p.Slug) {
 			t.Fatalf("slugs = %v, want no retired tier %q", got, p.Slug)
 		}
-		if !p.Retired && p.Slug != corebilling.SlugTrial && !slices.Contains(got, p.Slug) {
+		if !p.Retired && p.Slug != entitlement.SlugTrial && !slices.Contains(got, p.Slug) {
 			t.Fatalf("slugs = %v, want it to offer %q", got, p.Slug)
 		}
 	}

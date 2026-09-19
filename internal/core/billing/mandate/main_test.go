@@ -1,4 +1,4 @@
-package billing_test
+package mandate_test
 
 import (
 	"testing"

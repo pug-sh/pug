@@ -1,4 +1,4 @@
-package billing
+package entitlement
 
 // Plan is a catalog tier. The catalog is Go rather than rows so a change to what
 // a tier costs or includes goes through review and deploy.
@@ -107,7 +107,7 @@ func copyPlan(p Plan) Plan {
 	return p
 }
 
-func (p Plan) isFloor() bool {
+func (p Plan) IsFloor() bool {
 	return p.Slug == SlugFree || p.Slug == SlugTrial
 }
 

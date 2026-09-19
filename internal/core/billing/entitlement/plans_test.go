@@ -1,9 +1,9 @@
-package billing_test
+package entitlement_test
 
 import (
 	"testing"
 
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 )
 
 // A tier's money and quota are fixed once any org holds it: editing them
@@ -41,7 +41,7 @@ func TestCatalogIsPinned(t *testing.T) {
 		"custom": {currency: "USD"},
 	}
 
-	plans := corebilling.Plans()
+	plans := entitlement.Plans()
 	// PlanBySlug returns the first match, so a duplicate would silently shadow.
 	seen := make(map[string]bool, len(plans))
 	for _, p := range plans {
@@ -84,7 +84,7 @@ func TestCatalogIsPinned(t *testing.T) {
 // The custom tier is unresolvable without an org-level override, which the
 // database enforces. Nothing may quietly give it a default.
 func TestCustomPlanCarriesNoNumbersOfItsOwn(t *testing.T) {
-	plan, ok := corebilling.PlanBySlug(corebilling.SlugCustom)
+	plan, ok := entitlement.PlanBySlug(entitlement.SlugCustom)
 	if !ok {
 		t.Fatal("the custom slug is missing from the catalog")
 	}
@@ -103,7 +103,7 @@ func TestCustomPlanCarriesNoNumbersOfItsOwn(t *testing.T) {
 }
 
 func TestPlanBySlugReportsAnUnknownSlug(t *testing.T) {
-	if _, ok := corebilling.PlanBySlug("growth-v9"); ok {
+	if _, ok := entitlement.PlanBySlug("growth-v9"); ok {
 		t.Error("PlanBySlug resolved a slug the catalog does not have")
 	}
 }
@@ -126,7 +126,7 @@ func str(v *int64) any {
 // a tier for the whole process — a mutation TestCatalogIsPinned cannot see,
 // because it is not a source edit.
 func TestCatalogPointersAreNotShared(t *testing.T) {
-	got, ok := corebilling.PlanBySlug("growth")
+	got, ok := entitlement.PlanBySlug("growth")
 	if !ok {
 		t.Fatal("growth is missing from the catalog")
 	}
@@ -136,14 +136,14 @@ func TestCatalogPointersAreNotShared(t *testing.T) {
 	*got.PriceCents = 1
 	*got.RetentionDays = 1
 
-	again, _ := corebilling.PlanBySlug("growth")
+	again, _ := entitlement.PlanBySlug("growth")
 	if *again.IncludedEvents != want {
 		t.Errorf("quota = %d after mutating a returned copy, want %d", *again.IncludedEvents, want)
 	}
 	if *again.RetentionDays != wantRetention {
 		t.Errorf("retention = %d after mutating a returned copy, want %d", *again.RetentionDays, wantRetention)
 	}
-	for _, p := range corebilling.Plans() {
+	for _, p := range entitlement.Plans() {
 		if p.Slug == "growth" && *p.IncludedEvents != want {
 			t.Errorf("Plans() quota = %d, want %d", *p.IncludedEvents, want)
 		}

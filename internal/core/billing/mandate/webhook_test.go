@@ -1,4 +1,4 @@
-package billing_test
+package mandate_test
 
 import (
 	"context"
@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -74,15 +77,16 @@ func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
 		t.Fatalf("create org: %v", err)
 	}
 	provider := &fakeProvider{name: fakeProviderName}
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	if err != nil {
+		t.Fatalf("new entitlement service: %v", err)
+	}
+	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
-	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	f := &fixture{svc: svc, pg: pg, orgID: org}
+	}, ent)
+	f := &fixture{svc: svc, ent: ent, pg: pg, orgID: org}
 	seedCheckoutRef(t, f, org)
 	return f, provider
 }
@@ -163,11 +167,11 @@ func TestDeliveryAppliesASubscription(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != "growth" || ent.Status != corebilling.StatusActive {
+	if ent.Slug != "growth" || ent.Status != entitlement.StatusActive {
 		t.Errorf("entitlement = (%s, %s), want (growth, ACTIVE)", ent.Slug, ent.Status)
 	}
 	if ent.SubStatus != corebilling.SubStatusActive {
@@ -199,11 +203,11 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 		t.Fatalf("HandleDelivery(older): %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
+	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — a stale delivery revived a cancelled subscription", ent.Slug)
 	}
 	// Accepted, not retried: the provider is not at fault for delivering in any
@@ -234,7 +238,7 @@ func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 				t.Fatalf("HandleDelivery: %v", err)
 			}
 
-			ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+			ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 			if err != nil {
 				t.Fatalf("GetEntitlement: %v", err)
 			}
@@ -261,7 +265,7 @@ func TestPastDueHoldsTheOneLiveSlot(t *testing.T) {
 
 	provider.event = subEvent(f.orgID, "sub00000000000000061", "prod_scale", corebilling.SubStatusActive)
 	err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_past_due", time.Now()))
-	if !errors.Is(err, corebilling.ErrTwoLiveSubscriptions) {
+	if !errors.Is(err, mandate.ErrTwoLiveSubscriptions) {
 		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions — past_due did not hold the slot", err)
 	}
 }
@@ -275,8 +279,8 @@ func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	ctx := t.Context()
 
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          corebilling.SlugCustom,
+	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: new("prod_acme"),
 	}); err != nil {
@@ -287,10 +291,10 @@ func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
-	if err := f.svc.Clear(ctx, f.orgID, actor); !errors.Is(err, corebilling.ErrClearWouldStrandSubscription) {
+	if err := f.ent.Clear(ctx, f.orgID, actor); !errors.Is(err, entitlement.ErrClearWouldStrandSubscription) {
 		t.Fatalf("Clear under a live custom subscription: err = %v, want ErrClearWouldStrandSubscription", err)
 	}
-	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(ctx, f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -318,11 +322,11 @@ func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
 		t.Fatalf("HandleDelivery(active): %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
+	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — a same-second delivery revived a cancelled subscription", ent.Slug)
 	}
 }
@@ -346,11 +350,11 @@ func TestASameSecondCancellationEndsAnActiveSubscription(t *testing.T) {
 		t.Fatalf("HandleDelivery(cancelled): %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
+	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — a same-second cancellation was dropped", ent.Slug)
 	}
 	// Applied, not skipped: a reason here would file it as a lost payment.
@@ -399,7 +403,7 @@ func TestRetryOfAnUnprocessedDeliveryReapplies(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -427,7 +431,7 @@ func TestRetryOfAProcessedDeliveryIsANoop(t *testing.T) {
 		t.Fatalf("HandleDelivery(retry): %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -529,11 +533,11 @@ func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 				t.Errorf("error = %q, want it to start with %q", got, tc.reason)
 			}
 
-			ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+			ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 			if err != nil {
 				t.Fatalf("GetEntitlement: %v", err)
 			}
-			if ent.Slug != corebilling.SlugFree {
+			if ent.Slug != entitlement.SlugFree {
 				t.Errorf("slug = %q, want free — an unapplicable delivery changed the entitlement", ent.Slug)
 			}
 		})
@@ -562,7 +566,7 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 		t.Fatalf("HandleDelivery(renewal): %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -631,8 +635,8 @@ func TestCustomProductResolvesFromTheOrgRow(t *testing.T) {
 
 	quota := int64(5_000_000)
 	productID := "prod_acme"
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, corebilling.Change{
-		PlanSlug:          corebilling.SlugCustom,
+	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
+		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    &quota,
 		ProviderProductID: &productID,
 	}); err != nil {
@@ -644,11 +648,11 @@ func TestCustomProductResolvesFromTheOrgRow(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugCustom {
+	if ent.Slug != entitlement.SlugCustom {
 		t.Errorf("slug = %q, want custom", ent.Slug)
 	}
 	if ent.IncludedEvents == nil || *ent.IncludedEvents != quota {
@@ -723,16 +727,12 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 
 // svcWithProvider rebuilds the service against a different provider, sharing the
 // fixture's pools so the seeded rows are the ones reconciled.
-func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *corebilling.Service {
+func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *mandate.Service {
 	t.Helper()
-	svc, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, true, &corebilling.Payments{
+	return mandate.NewService(f.pg.PgRO, f.pg.PgW, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
-	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	return svc
+	}, f.ent)
 }
 
 // A cutover whose new subscription is delivered before the old one's cancellation.
@@ -775,7 +775,7 @@ func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
 	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_new", time.Now())); err != nil {
 		t.Fatalf("the retry after the cancellation failed: %v", err)
 	}
-	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(ctx, f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -797,8 +797,8 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 	ctx := t.Context()
 
 	productID := "prod_acme"
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          corebilling.SlugCustom,
+	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: &productID,
 	}); err != nil {
@@ -896,11 +896,11 @@ func TestCancellationLandsWhenTheProductIsUnmapped(t *testing.T) {
 		t.Fatalf("HandleDelivery(cancel): %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
+	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — an unmapped product kept a cancelled plan alive", ent.Slug)
 	}
 	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {
@@ -924,11 +924,11 @@ func TestPayloadOrgIDDoesNotAttributeADelivery(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.Slug != corebilling.SlugFree {
+	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — metadata.org_id attributed a subscription", ent.Slug)
 	}
 	if d := storedDelivery(t, f, "evt_forged"); !strings.HasPrefix(d.Error, "attribution") {
@@ -981,7 +981,7 @@ func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
 	if d := storedDelivery(t, f, "evt_deal"); !d.ProcessedAt.Valid || d.Error != "" {
 		t.Fatalf("delivery processed=%v error=%q, want processed with no error", d.ProcessedAt.Valid, d.Error)
 	}
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -1025,7 +1025,7 @@ func TestCheckoutStoresTheRefItSendsToTheProvider(t *testing.T) {
 	}
 	f, provider := newPaidFixture(t)
 
-	if _, _, err := f.svc.CreateCheckoutSession(t.Context(), corebilling.Checkout{
+	if _, _, err := f.svc.CreateCheckoutSession(t.Context(), mandate.Checkout{
 		OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
 	}); err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)
@@ -1054,7 +1054,7 @@ func TestCheckoutStoresTheRefItSendsToTheProvider(t *testing.T) {
 	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -1092,7 +1092,7 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -1129,8 +1129,8 @@ func TestSetPlanIsRefusedWhenItWouldStrandALiveSubscription(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	ctx := t.Context()
 
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug:          corebilling.SlugCustom,
+	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: new("prod_acme"),
 	}); err != nil {
@@ -1141,12 +1141,12 @@ func TestSetPlanIsRefusedWhenItWouldStrandALiveSubscription(t *testing.T) {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
-	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, corebilling.Change{
-		PlanSlug: corebilling.SlugFree,
-	}); !errors.Is(err, corebilling.ErrClearWouldStrandSubscription) {
+	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug: entitlement.SlugFree,
+	}); !errors.Is(err, entitlement.ErrClearWouldStrandSubscription) {
 		t.Fatalf("SetPlan to a floor under a live custom subscription: err = %v, want a refusal", err)
 	}
-	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	ent, err := f.ent.GetEntitlement(ctx, f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}

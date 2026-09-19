@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
+
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -64,13 +67,14 @@ func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling
 	return corebilling.SubscriptionEvent{}, errors.New("unused")
 }
 
-func newService(t *testing.T) (*corebilling.Service, *testutil.TestPostgres) {
+func newService(t *testing.T) (*mandate.Service, *testutil.TestPostgres) {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, nil)
+	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
-		t.Fatalf("new service: %v", err)
+		t.Fatalf("new entitlement service: %v", err)
 	}
+	svc := mandate.NewService(pg.PgRO, pg.PgW, true, nil, ent)
 	return svc, pg
 }
 
@@ -107,7 +111,7 @@ func TestMountRequiresAVerifiableProvider(t *testing.T) {
 
 	svc, _ := newService(t)
 	for name, tc := range map[string]struct {
-		service  *corebilling.Service
+		service  *mandate.Service
 		provider corebilling.PaymentProvider
 	}{
 		"no service":  {nil, stubProvider{name: "dodo"}},

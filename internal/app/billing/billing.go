@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/sethvargo/go-envconfig"
@@ -20,7 +21,7 @@ import (
 
 // CLI is the billing commands and the pools they run against.
 type CLI struct {
-	svc  *corebilling.Service
+	svc  *entitlement.Service
 	pgRO *pgxpool.Pool
 	pgW  *pgxpool.Pool
 }
@@ -50,7 +51,7 @@ func New(ctx context.Context) (*CLI, error) {
 
 	// No payments: this CLI never talks to a provider, and a nil Payments is the
 	// same supported shape a deployment without credentials runs in.
-	svc, err := corebilling.NewService(pgRO, pgW, billingCfg.Enabled, nil)
+	svc, err := entitlement.NewService(pgRO, pgW, billingCfg.Enabled)
 	if err != nil {
 		pgRO.Close()
 		pgW.Close()
@@ -71,7 +72,7 @@ func (c *CLI) Show(ctx context.Context, out io.Writer, orgID string, history boo
 	if err != nil {
 		return err
 	}
-	var entries []corebilling.HistoryEntry
+	var entries []entitlement.HistoryEntry
 	if history {
 		if entries, err = c.svc.History(ctx, orgID); err != nil {
 			return err
@@ -81,7 +82,7 @@ func (c *CLI) Show(ctx context.Context, out io.Writer, orgID string, history boo
 }
 
 // Set grants a plan, merging change over whatever is stored.
-func (c *CLI) Set(ctx context.Context, out io.Writer, orgID, actor string, change corebilling.Change) error {
+func (c *CLI) Set(ctx context.Context, out io.Writer, orgID, actor string, change entitlement.Change) error {
 	rec, err := c.svc.SetPlan(ctx, orgID, actor, change)
 	if err != nil {
 		return err
@@ -105,19 +106,19 @@ func (c *CLI) Clear(ctx context.Context, out io.Writer, orgID, actor string) err
 	}
 	// The empty record rather than a re-read: the delete is what just committed,
 	// so this is the authoritative answer even where the reader is a replica.
-	return c.report(ctx, out, orgID, corebilling.Record{}, nil)
+	return c.report(ctx, out, orgID, entitlement.Record{}, nil)
 }
 
 // report renders one org's state. rec is passed in rather than re-read so a
 // mutation reports the row its own transaction wrote.
-func (c *CLI) report(ctx context.Context, out io.Writer, orgID string, rec corebilling.Record, history []corebilling.HistoryEntry) error {
+func (c *CLI) report(ctx context.Context, out io.Writer, orgID string, rec entitlement.Record, history []entitlement.HistoryEntry) error {
 	// The display name is what tells an operator they have the right org; the
 	// service resolves entitlement and knows nothing about it.
 	read := dbread.New(c.pgRO)
 	org, err := read.GetOrgByID(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return corebilling.ErrOrgNotFound
+			return entitlement.ErrOrgNotFound
 		}
 		return err
 	}
