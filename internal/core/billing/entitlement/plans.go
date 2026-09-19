@@ -22,24 +22,6 @@ type Plan struct {
 	Retired bool
 }
 
-const (
-	SlugFree   = "free"
-	SlugTrial  = "trial"
-	SlugCustom = "custom"
-)
-
-// RetentionYearDays is a flat 365 days, so a leap year cannot shorten a term
-// somebody bought.
-const RetentionYearDays = 365
-
-// TrialDays is measured from orgs.create_time — the trial is the org's age, not
-// stored state, so nothing is written at signup.
-const TrialDays = 14
-
-// MaxTrialDays caps one extend-trial. Past this the operator wants a comped plan,
-// which has a price and a record.
-const MaxTrialDays = 365
-
 // catalog is every tier pug has ever sold, newest last.
 //
 // A tier's Currency, PriceCents, IncludedEvents and RetentionDays are fixed once
@@ -111,4 +93,3 @@ func (p Plan) IsFloor() bool {
 	return p.Slug == SlugFree || p.Slug == SlugTrial
 }
 
-func i64(v int64) *int64 { return &v }
