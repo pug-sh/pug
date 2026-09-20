@@ -65,155 +65,190 @@ Four properties everything below preserves.
 | Decision | Choice | Why |
 |---|---|---|
 | Billing tenant | **Org** | Orgs already own projects, members and the admin boundary, and `usage_periods` already sums per org. One entitlement per org, quota spanning all its projects. |
-| Plan catalog | **Go, not rows** | A tier is (slug, name, price, quota, retention) — static product config with revenue consequences, so it belongs in review and deploy, not in a table an operator edits at 2am. It also means no seed step and no catalog row a signup could depend on. Provider product ids have since arrived and it stayed Go: they map to slugs in per-deployment config ([`payments.md`](payments.md) §16). |
-| Repricing a tier | **Never in place — mint a new slug** (§4.2) | A Go catalog has no plan versions, so editing a sold tier's numbers changes what every existing customer on it gets, retroactively, on deploy. A commercial change disguised as a one-line edit is the most dangerous thing this design could allow. |
-| Money amounts | **No structured amount per org** ([`payments.md`](payments.md) §4) | The only amounts here are the catalog's list prices. What a *deal* is charged belongs to the payments provider, which is the only thing that can charge it; a copy on the org's row is a second authority that goes stale the first time a deal is repriced. An operator may still write the agreed amount into `note`, which is prose no query reads as a number. Catalog amounts stay (integer minor units + ISO 4217 code), because a price without its unit is only unambiguous while there is exactly one. |
+| Rate card catalog | **Go, not rows** | A card is (slug, name, free allowance, tiers, retention) — static product config with revenue consequences, so it belongs in review and deploy, not in a table an operator edits at 2am. It also means no seed step and no catalog row a signup could depend on. Provider product ids have since arrived and it stayed Go: they map to slugs in per-deployment config ([`payments.md`](payments.md) §16). |
+| Repricing a card | **Never in place — mint a new slug** (§4.2) | A Go catalog has no plan versions, so editing a sold card's numbers changes what every existing customer on it gets, retroactively, on deploy. A commercial change disguised as a one-line edit is the most dangerous thing this design could allow. |
+| Money amounts | **The terms a period is priced *on* live here; what was *charged* lives at the provider** (§4.1) | Reversed from the original "no structured amount per org" — see §14. Pug computes the amount: a graduated card is a table only pug holds, so `Quote` is pug's arithmetic either way. A deal's fee and rate are therefore not a copy of the provider's number but the **input** that number is derived from, and without them a custom deal is an org nothing can price. What the provider actually took stays a separate, observed fact on `billing_subscriptions.price_cents`. Integer minor units + ISO 4217 throughout, because an amount without its unit is only unambiguous while there is exactly one currency. |
 | Entitlement changes | **Append-only history** (§5.1) | Invariant 4. |
-| Negotiated deals | **Quota overrides on the org's own row** (§4.1) | A bespoke deal is a name, a quota and a term for exactly one org. Nullable columns layered over a catalog plan hold that, where a private-plan catalog or a discount percentage recombined with a base price would both need a table and a join to say the same thing. The deal's price is not here (§4.1). |
+| Negotiated deals | **Terms and overrides on the org's own row** (§4.1) | A bespoke deal is a name, a price, an allowance and a term for exactly one org. Nullable columns on that org's row hold it, where a private-plan catalog or a discount percentage recombined with a base price would both need a table and a join to say the same thing. |
 | Entitlement state | **Derived, never stored** | A `status` column is a second source of truth that can disagree with the timestamps beside it, and keeping it honest costs a worker. Every state this slice has is a comparison against `now`. |
 | Quota window | **Billing anniversary**, anchored to `orgs.create_time` | An org's month runs from the day it signed up, which is the date its trial already runs from. The alternative — a calendar month — is one line of code cheaper but resets everyone on the 1st regardless of when they bought, which is a support conversation the day a card is charged. §6.1. |
 | Anchor representation | **Day-of-month integer, UTC midnight** | The meter's period sum is exact only for midnight-aligned windows. An anchor stored as an instant would silently drop a partial day from the total while leaving it in the daily series. §6.1. |
-| Retention | **A day count on the tier, plus a per-org override** (§4) | How long history is kept is a term of the agreement like the quota, so it sits beside it, is pinned immutable (§4.2) and is negotiable per deal. Days, not months: whatever eventually enforces this will subtract from `now`, and `AddDate` normalises `Feb 31` into March. Nothing subtracts today and nothing deletes — §13. |
+| Retention | **A day count on the card, plus a per-org override** (§4) | How long history is kept is a term of the agreement like the quota, so it sits beside it, is pinned immutable (§4.2) and is negotiable per deal. Days, not months: whatever eventually enforces this will subtract from `now`, and `AddDate` normalises `Feb 31` into March. Nothing subtracts today and nothing deletes — §13. |
 | Unpaid orgs | **14-day trial → free tier** | Trial is the org's age, not stored state: no row, no provider object, no card. |
 | Quota audience | **Every org member** | Reads sit on the viewer floor, exactly like `ResourceUsage`: the person who notices the limit is rarely the admin. |
 | Enforcement | **None** | Invariant 1. |
 | Grant mechanism | **CLI only** | pug has no staff/superadmin concept, and inventing one to put a quota field on a web page is not worth the auth surface. `pug billing` sits at the same trust level as `pug postgres migrate`. |
 
-## 4. The plan catalog
+## 4. The rate card catalog
 
-`internal/core/billing/plans.go` — an ordered slice of `Plan{Slug, DisplayName,
-Currency, PriceCents, IncludedEvents, RetentionDays, Retired}`, with `PlanBySlug`
-for lookup.
+`internal/core/billing/entitlement/catalog.go` — an ordered slice of
+`RateCard{Slug, DisplayName, Currency, FreeEvents, Tiers, RetentionDays,
+Retired}`, with `CardBySlug` for lookup and `CurrentCard` for the newest live
+one. A `Tier` is `{UpToEvents, CentsPerMillion}`.
 
-| slug | name | price | included events / month | retention | retired |
-|---|---|---|---|---|---|
-| `free` | Free | $0 | 10,000 | 365 days | no |
-| `trial` | Trial | $0 | 500,000 | 365 days | no |
-| `starter` | Starter | $10/mo | 100,000 | 365 days | no |
-| `growth` | Growth | $20/mo | 500,000 | 1,095 days (3y) | no |
-| `scale` | Scale | $30/mo | 1,000,000 | 2,555 days (7y) | no |
-| `custom` | Custom | — | *set per org* (§4.1) | *set per org* (§4.1) | no |
+Pug sells **usage**, not seats or feature tiers: one card, priced in graduated
+bands, and the only question is how many events an org sent.
 
-- `free` and `trial` are the **floors**, the answer when nothing else applies.
-  `trial` is never stored at all — `extend-trial` writes a `free` row plus a
-  `trial_ends_at`; `free` may be granted explicitly, which is how a comped
-  free-tier bump is recorded.
+`usage-2026-09-1` — "Usage", USD, 100,000 events free per period, 5 years retention:
+
+| band | cents per million |
+|---|---|
+| first 100,000 | free |
+| to 2,000,000 | $40.00 |
+| to 15,000,000 | $28.00 |
+| to 50,000,000 | $20.00 |
+| to 100,000,000 | $14.00 |
+| to 250,000,000 | $10.00 |
+| beyond | $7.00 |
+
+- **Bands are graduated, not volume.** Each band prices only the events that fall
+  inside it; passing a threshold never reprices what came before. 10M events are
+  100,000 free + 1.9M at $40/M + 8M at $28/M = **$300.00**, not 10M priced wholly
+  at the $28/M band reached. This is the whole reason pug holds the card rather
+  than the provider (§14): a provider that only expresses volume pricing cannot
+  state this table.
+- **`FreeEvents` is an allowance, not a quota.** Going past it costs money; it
+  stops nothing (invariant 1). `free` is not a card — it is the name for what an
+  org that pinned nothing gets, which is this card's allowance.
+- `free`, `trial` and `custom` are **states, not cards** (`SlugFree`, `SlugTrial`,
+  `SlugCustom`). `trial` is never stored — `extend-trial` writes a row with a
+  `trial_ends_at`; `custom` names a deal whose numbers live on the org's row
+  (§4.1).
 - **`Currency` is mandatory and travels with every amount** (ISO 4217, `USD`
-  throughout today). `PriceCents` is minor units of *that* currency, which is not
+  throughout today). Tier rates are minor units of *that* currency, which is not
   always 1/100 — JPY has no minor unit, KWD has three — so nothing may assume
-  cents when formatting. Storing an amount without its code is how a price
-  silently changes meaning the first time a second currency exists.
-- **`RetentionDays` is how long the tier keeps history**, in days, at
-  `RetentionYearDays` (365) flat per year — a bound of this shape is `now - N
-  days`, and a calendar year would move it by a leap day and cut a term somebody
-  bought short. Nothing computes it yet; it is a number pug renders (§13).
-  nil is the `custom` tier, whose retention comes from the org's row, and nil
-  means **no bound at all** — never zero, exactly like an absent quota. Today the
-  number is a *promise*: nothing in pug prunes on it (§13), so every deployment
-  over-delivers by keeping everything.
-- **`Retired`** marks a tier that may no longer be granted to an org not already
-  on it. A retired tier stays in the catalog forever so its existing customers
+  cents when formatting.
+- **`RetentionDays` is how long the card keeps history**, at `CardRetentionDays`
+  (5 × `RetentionYearDays`, so 1825) — 365 flat per year, because a bound of this
+  shape is `now - N days` and a calendar year would move it by a leap day and cut
+  a term somebody bought short. Nothing computes it yet; it is a number pug
+  renders (§13), so every deployment over-delivers by keeping everything. nil
+  means **no bound at all** — never zero, exactly like an absent quota.
+- **`Retired`** marks a card that may no longer be granted to an org not already
+  on it. A retired card stays in the catalog forever so its existing customers
   keep resolving (§4.2), and `SetPlan` refuses it for anybody else
-  (`ErrPlanRetired`). It is deliberately **not** "purchasable": `custom` is
-  operator-assignable and will never appear in a purchase catalog, and that
-  second distinction belongs to checkout, which does not exist yet — so nothing
-  here carries it.
-- `PriceCents` is the tier's **list price** from the Go catalog, and display copy
-  — nothing charges it, and it stays the catalog's number even for an org with a
-  live subscription. What the provider actually charges is mirrored on
-  `billing_subscriptions`, for the operator; no read path copies it here. A
-  *negotiated* amount never becomes a field in pug — only, at most, prose in
-  `note` ([`payments.md`](payments.md) §4).
+  (`ErrPlanRetired`). `NewService` refuses a catalog without exactly one live
+  card, which is what makes `CurrentCard`'s panic unreachable in a wired service.
+- **There is no list price.** A graduated card is a table, so no single number
+  describes it: `Plan.price_cents` is `reserved 3` on the wire and the response
+  carries the card's tiers instead (§7). `Cards()` and `CardBySlug` deep-copy the
+  tier slice, so a caller cannot reprice the catalog by mutating what it was
+  handed.
+- **`Quote` is pug's arithmetic**, in `price.go`: `Price(card, events)` walks the
+  bands, `PriceCustom(terms, events)` applies a deal's fee and rate. Each line
+  rounds half-up on its own, so the lines a customer sees sum to the total rather
+  than to a separately rounded figure. **Nothing invoices from it yet** — no
+  production caller outside `Entitlement.Quote` exists; that arrives with
+  usage-metered billing (§11).
 - **The marketing site's pricing page is a second copy of this table**, hand-
   maintained in a different repo. Nothing enforces that they agree; a price
   change is two PRs, and this one is the one customers are actually held to.
-- **Every catalog plan has a finite quota.** "Unlimited" is not a plan — it is
-  what an *absent* quota means on the wire (§7), which arises from billing being
-  disabled or from an unresolvable row. If a genuinely unlimited tier is ever
-  sold, it gets its own slug and its own decision then.
-- Adding a tier is a Go const and nothing else. `plan_slug` carries **no** check
-  constraint: a list of slugs in the migration would be a second catalog to keep
-  in lockstep, and the reprice workflow above — which mints a new slug — would
-  fail against the stale copy with a raw SQLSTATE. `SetPlan` rejects a slug the
-  catalog does not know, which is the same guard one layer up.
+- Adding a card is a Go const and nothing else. `plan_slug` carries **no** check
+  constraint on the slug set: a list in the migration would be a second catalog to
+  keep in lockstep, and the reprice workflow above — which mints a new slug —
+  would fail against the stale copy with a raw SQLSTATE. `SetPlan` rejects a slug
+  the catalog does not know, which is the same guard one layer up.
 
 ### 4.1 Negotiated deals
 
-A deal we agree with one customer — "Acme, 5M events, $400/mo, annual" — is
-**not** a catalog entry. It is the org's own row, carrying three overrides that
-layer over whichever plan it names:
+A deal we agree with one customer — "Acme, 5M events included, $400/mo plus $3
+per million beyond, annual" — is **not** a catalog entry. It is the org's own
+row, carrying the deal's terms plus overrides that layer over whichever card it
+names:
 
 | Field | Column | NULL means |
 |---|---|---|
-| Quota | `included_events_override` | use the plan's number |
-| Retention | `retention_days_override` | use the plan's number |
-| Display name | `display_name_override` | use the plan's name |
+| Flat fee per period | `flat_fee_cents` | the deal charges no fee |
+| Rate past the allowance | `rate_cents_per_million` | the deal charges no overage |
+| Allowance | `included_events_override` | no allowance — charge from the first event |
+| Retention | `retention_days_override` | use the card's number |
+| Display name | `display_name_override` | use the card's name |
 
-Term is `contract_ends_at`, and the paperwork lives in `note`. Nothing about a
-bespoke deal needs a deploy, a catalog row or a join.
+Term is `contract_ends_at`, and the paperwork reference lives in `note`. Nothing
+about a bespoke deal needs a deploy, a catalog row or a join.
 
-**The deal's price is deliberately absent.** pug stores what the org may *send*;
-what it *pays* lives in the payments provider, which is the only system that can
-charge it — see [`payments.md`](payments.md) §4 for the full argument. Storing
-both would mean two authorities on one number, disagreeing the first time a deal
-is repriced, with the dashboard rendering the stale one as fact. The agreed
-amount goes in `note` if an operator wants it written down, which is honest about
-being a record rather than a source of truth.
+**The deal's price lives here.** This reverses the original design, which kept
+amounts out of pug entirely (§14 records the change). The argument that won:
+pug is what *computes* the amount. A graduated card is a table only pug holds, so
+the arithmetic was always going to be pug's; a deal's fee and rate are not a stale
+copy of the provider's number but the input that number is derived from. Without
+them `Resolve` can say a deal exists and not what it costs, which makes a custom
+org unpriceable — the one shape `Quote` must never return for a paying customer.
+What the provider actually *charged* remains a separate, observed fact on
+`billing_subscriptions.price_cents` ([`payments.md`](payments.md) §4); the two
+are different questions and neither is a copy of the other.
 
-**Retention is negotiable and, unlike the quota, optional.** `custom` requires a
-quota because an absent one on a paid tier resolves as *unlimited sending*, which
-is a customer paying for nothing; an absent retention resolves as *unlimited
-keeping*, which is what every org already gets and costs only storage. A deal
-that names no retention is therefore stored as it is written.
+**A deal must have a price; an allowance is optional.** `plan_slug = 'custom'`
+requires a fee **or** a rate — `ErrCustomNeedsPrice` in `SetPlan`, mirrored by the
+`custom_needs_price` check constraint (migration 021, which replaced the earlier
+`custom_needs_quota`). A deal that charges nothing is not a deal. The allowance
+moved the other way and became optional, because "$400/mo plus $3 per million
+from the first event" is a real arrangement; `PriceCustom` handles a zero
+allowance by simply having no free band.
 
-The `custom` slug exists for a deal that is not a variation on a tier: it has no
-quota of its own, so **`plan_slug = 'custom'` requires
-`included_events_override`**, enforced by a check constraint rather than by the
-CLI remembering to ask. It has no list price either, so the dashboard shows none
-— which is right for a contract nobody buys from a page. `custom` is never
-purchasable and never appears in a future `ListPlans`.
+> A flat fee with **no** rate is a fixed-price arrangement — one line, and no
+> overage however much is sent. That is how a pre-usage plan is expressed now
+> that the catalog sells only usage.
 
-**Where this stops being the right shape:** overrides describe *one* org. Sell
-the same bespoke terms to twenty customers and there are twenty rows to keep in
-step — at which point it has stopped being a deal and become a tier, and belongs
-in the catalog (§4) as a const, or in §11.2's table once one exists.
+**A lapsed deal keeps neither its terms nor its allowance.** Both are gated on
+`contract_ends_at`, and `Resolve`'s backstop then puts the org back on the current
+card at `StatusFree`. The expensive mistake in either direction is symmetrical: a
+lapsed deal that kept its allowance under-charges, and one that kept its fee
+charges a customer who no longer has a contract. The one exception is a *live
+custom subscription*, which its own contract date cannot expire — somebody is
+still paying for it (§6).
+
+**Retention is negotiable and optional.** An absent retention resolves as
+*unlimited keeping*, which is what every org already gets and costs only storage,
+so a deal that names no retention is stored as it is written.
+
+**Where this stops being the right shape:** overrides describe *one* org. Sell the
+same bespoke terms to twenty customers and there are twenty rows to keep in step —
+at which point it has stopped being a deal and become a card, and belongs in the
+catalog (§4) as a const, or in §11.2's table once one exists.
 
 **A plan entitles a quota and nothing else.** There are no plan-gated features in
 pug, so a deal cannot grant one. If features ever become plan-scoped, that is a
 new decision, not an override column.
 
-### 4.2 Repricing, and why tiers are immutable
+### 4.2 Repricing, and why cards are immutable
 
-A Go catalog has no plan versions. Editing `growth` from 500,000 to 300,000
-changes what **every existing growth customer** gets, retroactively, the moment
-the deploy lands — a renegotiation of every live agreement performed by a
-one-line diff, with no record that it happened and nothing to compare against.
-This is the one failure mode that a rows-based catalog handles for free (the
-archived design's `PLAN_STATUS_ARCHIVED` existed for exactly this), so a Go
-catalog has to buy it back with a rule:
+A Go catalog has no plan versions. Editing `usage-2026-09-1`'s first band from
+4,000 to 5,000 cents changes what **every existing customer on that card** pays,
+retroactively, the moment the deploy lands — a renegotiation of every live
+agreement performed by a one-line diff, with no record that it happened and
+nothing to compare against. This is the one failure mode that a rows-based
+catalog handles for free (the archived design's `PLAN_STATUS_ARCHIVED` existed
+for exactly this), so a Go catalog has to buy it back with a rule:
 
-> **A tier's `PriceCents`, `Currency`, `IncludedEvents` and `RetentionDays` are
-> immutable once any org holds it.** Repricing mints a new slug — `growth-v2` — and marks the old
-> one `Retired: true`. Nothing is ever deleted from the catalog.
+> **A card's `Currency`, `FreeEvents`, `Tiers` and `RetentionDays` are immutable
+> once any org holds it.** Repricing mints a new slug — `usage-2026-09-2` — and
+> marks the old one `Retired: true`. Nothing is ever deleted from the catalog.
 
-Retention most of all: cutting a tier's quota withholds something the customer
-has not sent yet, while cutting its retention is a promise to delete what they
-already did.
+The slug carries its own date for this reason: a card is a dated price list, and
+naming it after the month it went on sale makes "which numbers did they buy?" a
+question the slug answers by itself.
+
+Retention most of all: cutting an allowance withholds something the customer has
+not sent yet, while cutting retention is a promise to delete what they already
+did.
 
 Existing customers keep resolving against the slug they hold and are unaffected;
-new ones get the new tier. Grandfathering is then the default rather than
-something an operator has to remember, and moving a customer onto new terms
-becomes what it should be — a deliberate `pug billing set`, recorded in the
-history (§5.1) with a note about who agreed to it.
+new ones get `CurrentCard()`, which is the newest card not retired. Grandfathering
+is then the default rather than something an operator has to remember, and moving
+a customer onto new terms becomes what it should be — a deliberate `pug billing
+set`, recorded in the history (§5.1) with a note about who agreed to it.
 
-What stays editable: `DisplayName`, because renaming "Growth" to "Team" changes
-nothing anyone bought. What this costs: a catalog that only grows, and slugs
-that carry a version suffix. Both are cheap next to a silent quota cut.
+What stays editable: `DisplayName`, because renaming "Usage" to "Standard"
+changes nothing anyone bought. What this costs: a catalog that only grows, and
+slugs that carry a date. Both are cheap next to a silent reprice.
 
 ## 5. Storage
 
 Migration `019_create_billing_entitlements.sql`: the entitlement itself, and the
-history behind it (§5.1). The entitlement is a 1:1 extension of `orgs`, so the
+history behind it (§5.1). Migration `021_add_billing_deal_money.sql` added the
+deal's two money columns to both tables and swapped `custom_needs_quota` for
+`custom_needs_price` (§4.1). The DDL below is the shape after 021. The entitlement is a 1:1 extension of `orgs`, so the
 org id is the primary key rather than a `char(20)` xid of its own — one row per
 org is then structural rather than a constraint somebody has to remember to add.
 
@@ -226,17 +261,24 @@ create table billing_entitlements (
       check (anchor_day is null or anchor_day between 1 and 31),
   contract_ends_at timestamptz,
   create_time timestamptz not null default now(),
-  -- NO price or currency column, deliberately (payments.md section 4): a deal's
-  -- amount belongs to the payments provider, the only thing that can charge it.
   display_name_override varchar(150),
+  -- What the deal charges every period regardless of volume. NULL or 0 means
+  -- none: a deal with only a rate charges purely on usage. No currency column --
+  -- the card catalog is USD throughout and an org cannot hold two (section 4).
+  flat_fee_cents bigint
+    constraint billing_entitlements_flat_fee_check check (flat_fee_cents >= 0),
   included_events_override bigint
     constraint billing_entitlements_override_check
       check (included_events_override is null or included_events_override > 0),
   note text not null default '',
   org_id char(20) primary key references orgs(id) on delete cascade,
-  -- No slug check: the catalog is Go (plans.go) and SetPlan already rejects an
+  -- No slug check: the catalog is Go (catalog.go) and SetPlan already rejects an
   -- unknown slug. A list here would be a second catalog to migrate in lockstep.
   plan_slug varchar(50) not null,
+  -- What the deal charges past included_events_override. NULL or 0 means no
+  -- overage: a flat fee alone is a fixed-price arrangement.
+  rate_cents_per_million bigint
+    constraint billing_entitlements_rate_check check (rate_cents_per_million >= 0),
   -- How far back this org's events stay queryable. NULL means the plan's own
   -- retention. Nothing deletes on it (section 13).
   retention_days_override bigint
@@ -244,11 +286,14 @@ create table billing_entitlements (
       check (retention_days_override is null or retention_days_override > 0),
   trial_ends_at timestamptz,
   update_time timestamptz not null default now(),
-  -- A custom plan has no catalog quota to fall back on, so the deal is
-  -- unrepresentable without this. Enforced here rather than in the CLI: the row
-  -- is what every read trusts.
-  constraint billing_entitlements_custom_needs_quota
-    check (plan_slug <> 'custom' or included_events_override is not null)
+  -- A custom deal has no card to fall back on, so nothing prices it unless the
+  -- row says what it charges. An allowance is NOT required: a deal may charge
+  -- from the first event. Enforced here rather than in the CLI: the row is what
+  -- every read trusts, and `> 0` rather than not-null so a hand-written zero
+  -- cannot pass as a price.
+  constraint billing_entitlements_custom_needs_price
+    check (plan_slug <> 'custom'
+      or coalesce(flat_fee_cents, 0) > 0 or coalesce(rate_cents_per_million, 0) > 0)
 );
 ```
 
@@ -326,44 +371,73 @@ create index billing_entitlement_history_org_idx
 
 ## 6. Resolution
 
-`billing.Resolve(orgCreateTime, row, now, billingEnabled)` is a pure function
-returning the resolved `Entitlement` — slug, display name, currency, status,
-`PriceCents`, `IncludedEvents`, trial/contract dates and the period bounds. No
-I/O, so the whole rule set is unit-testable without a container. `orgCreateTime`
-is an argument rather than something the package looks up because it is
-load-bearing twice: it is the trial clock, and it is the default quota anchor
-(§6.1).
+`entitlement.Resolve(orgCreateTime, rec, sub, now, billingEnabled)` is a pure
+function returning the resolved `Entitlement` — slug, display name, currency,
+status, whichever of `Card`/`Terms` prices the org, `IncludedEvents`,
+`RetentionDays`, trial/contract dates and the period bounds. No I/O, so the whole
+rule set is unit-testable without a container. `orgCreateTime` is an argument
+rather than something the package looks up because it is load-bearing twice: it is
+the trial clock, and it is the default quota anchor (§6.1). `sub` is the org's
+live subscription, or nil ([`payments.md`](payments.md)).
 
-In order:
+The period bounds are computed first and are independent of every branch below: a
+plan changes what an org may send, never when its month turns over.
 
-1. **Billing disabled** (§9) → status `FREE`, plan `free`, `IncludedEvents` nil.
+**Status** (`resolveStatus`) — what state the org is in, independently of what
+prices it:
+
+1. **Billing disabled** (§9) → `FREE`, no card, no terms, `IncludedEvents` nil.
    A self-hosted install has no quota at all, so no banner can fire even if a
-   client forgets to check the flag. The switch fails *open* on the number
-   because the number enforces nothing.
-2. **No row** → trialing until `orgCreateTime + 14d`, free after. Derived, never
-   materialized: a read must not write a row.
-3. **A non-floor `plan_slug`, and `contract_ends_at` is NULL or in the future** →
-   `ACTIVE` on that plan.
-4. **`trial_ends_at` in the future** → `TRIALING` on the `trial` plan, using the
-   stored date.
+   client forgets to check the flag. The switch fails *open* on the number,
+   which is safe precisely because the number enforces nothing.
+2. **A live subscription** → `ACTIVE`. Not gated on the contract: that date bounds
+   an operator's grant, not something somebody is paying for.
+3. **A pin that is present and not lapsed** → `ACTIVE` — `custom`, or a card slug
+   the catalog still **resolves**. A slug that merely looks like a card is not
+   enough: an org pinned to a card the catalog dropped is unpriceable, and calling
+   it active would claim a paid subscription nothing can price.
+4. **`trial_ends_at` (or the org's age) in the future, not lapsed** → `TRIALING`.
 5. **Otherwise** → `FREE`.
 
-**A granted plan outranks a live trial date** (3 before 4), so a customer who
-converted mid-trial can never be demoted by a stale timestamp. `SetPlan` also
-clears `trial_ends_at` when it grants a non-floor tier, so in practice the two
-rarely coexist — the ordering is what makes the resolver's answer independent of
-whether that write happened.
+Since free and trial are no longer plans (§4), "they are on a paid tier" and
+"they pinned something" became the same question — which is why status has one
+function and pricing has another.
 
-Then each present override replaces the corresponding field of the resolved plan
-(§4.1) — quota and display name — patching whatever steps 3–5 produced, so a deal
-survives a catalog reprice untouched.
+**Pricing** (`resolveCard`) — most specific first: a live subscription's card
+outranks a deal on the row, which outranks an operator's grant.
+
+1. **A subscription naming a card** → that card. A live subscription must not be
+   overridden by a lapsed deal or by a slug the catalog dropped.
+2. **A `custom` row** → its `Terms` (§4.1), with the allowance gated on the
+   contract.
+3. **A row pinning a card** → that card; an unknown slug resolves to *nothing*
+   rather than to the current card, because resolving it would price a customer
+   on terms nobody sold them.
+4. **Otherwise** → `CurrentCard()`.
+
+**A granted plan outranks a live trial date** (3 before 4 in status), so a
+customer who converted mid-trial can never be demoted by a stale timestamp.
+`SetPlan` also clears `trial_ends_at` when it grants a non-floor plan, so in
+practice the two rarely coexist — the ordering is what makes the resolver's answer
+independent of whether that write happened.
+
+Then each present override replaces the corresponding field of what resolved
+(§4.1) — allowance, retention and display name — so a deal survives a catalog
+reprice untouched.
+
+Finally a **backstop**: a `custom` row that reached the end entitling the org to
+nothing — no fee, no rate and no allowance — falls to the current card at `FREE`.
+That is a deal against nothing: a lapsed contract (whose terms `applyOverrides`
+has just cleared), or a row predating `custom_needs_price`. Both halves of the
+test are needed, because a deal charging from the first event has no allowance and
+must still stand (§4.1).
 
 The overrides are gated on the **contract**, not on the resolved slug: a lapsed
 `contract_ends_at` drops them, and a row with no contract date keeps them however
 the plan resolves. So a comped free-tier bump is not wiped by the org still being
-in its trial (§10) — and, the same way, an open-ended `growth` deal's quota rides
-onto a `starter` plan the org later self-serve buys. `applyOverrides` does not
-compare `plan_slug` to the tier in force.
+in its trial (§10) — and, the same way, an open-ended deal's allowance rides onto
+a card the org later self-serve buys. `applyOverrides` does not compare
+`plan_slug` to the card in force.
 
 The one exception to the contract gate runs the other way: a live **custom**
 subscription keeps its overrides past `contract_ends_at`, because that date bounds
@@ -525,8 +599,9 @@ The plan fields are the **resolved** ones — overrides already applied (§4.1),
 a client never reconstructs a deal from a base plan plus patches. `note` and the
 history never cross the wire; both are operator data.
 
-`currency` is always present alongside `price_cents`, and a client must format
-from the pair rather than assuming two decimal places (§4).
+`currency` is always present alongside any amount — a card's tier rates, a deal's
+fee and rate — and a client must format from the pair rather than assuming two
+decimal places (§4).
 
 - **No consumption number.** The client makes two calls —
   `UsageService.GetUsage` for X, `GetBillingStatus` for Y. Folding usage into
@@ -539,11 +614,19 @@ from the pair rather than assuming two decimal places (§4).
   NON-optional bigint, so absence would reach the dashboard as `0`. This is the
   one place billing diverges from `GetUsageResponse.used_events`, which is a bare
   `int64` a client can pair with `usage_computed_at` to detect absence — quota has
-  no such companion field. The same applies to `Plan.price_cents` — the tier's
-  list price — where absent is the `custom` tier, which has none, and 0 is the
-  free and trial floors.
-  A client consuming these from `../app` must check presence rather than
-  truthiness — `0` is a real value for both.
+  no such companion field. A client consuming it from `../app` must check presence
+  rather than truthiness: `0` is a real value.
+- **There is no `price_cents`.** `Plan.price_cents` is `reserved 3` on both `Plan`
+  and `PlanOption`: a graduated card is a table, not a number (§4). The response
+  carries `rate_card` (a card's `free_events` + tiers) or `custom_terms` (a deal's
+  fee, rate and allowance) instead — exactly one while billing is on and the slug
+  resolves, and **neither** when nothing prices the org. The number was reserved
+  rather than repurposed because a field number is the only identity a field has:
+  reusing 3 would have let an old client decode a tier table as an `Int64Value`
+  price, silently, since both are length-delimited.
+  `CustomTerms`' three values are `Int64Value` wrappers for the same reason as
+  above — absent means the deal has no such term, and a deal with a rate and no
+  fee charges from the first event.
 - **`retention_days` is absent-able on the same terms**, and is the same
   `Int64Value` wrapper for the same reason — absent is *no bound*, and "0 days of
   history" is the one thing it must never say. It states what the plan promises,
@@ -570,6 +653,7 @@ mounted.
 ```shell
 pug billing show <org-id> [--history]
 pug billing set  <org-id> --plan <slug> --actor <who> [--events N]
+                          [--flat-fee CENTS] [--rate-per-million CENTS]
                           [--retention-days N]
                           [--name "Acme Enterprise"] [--anchor-day 17]
                           [--until 2027-01-01] [--note "$400/mo, INV-123"]
@@ -604,17 +688,26 @@ A negotiated deal (§4.1) is one `set`:
 
 ```shell
 pug billing set o_2f9k --plan custom --events 5000000 --retention-days 2555 \
+                       --flat-fee 40000 --rate-per-million 300 \
                        --name "Acme Enterprise" --actor "praveen/INV-123" \
-                       --until 2027-01-01 --note "$400/mo, INV-123"
+                       --until 2027-01-01 --note "INV-123"
 ```
 
-There is no `--price`: what the deal is charged lives in the payments provider
-(§4.1), and `--note` is where an operator writes it down.
+`--flat-fee` and `--rate-per-million` are what the deal charges — $400 a period
+plus $3 per million past the 5M allowance, above. **`--plan custom` is refused
+without at least one of them** (`ErrCustomNeedsPrice`, §4.1): a deal that charges
+nothing is not a deal. `--events` is optional, so a deal may charge from the first
+event. Both are cents, as integers, because the card catalog is a single currency
+and a decimal here would be a rounding argument nobody wants during a renewal.
+`--note` is for the paperwork reference, not the amount — the amount is now a
+column a query can read.
 
-`--events`, `--retention-days`, `--name` and `--anchor-day` write the override
+`--events`, `--flat-fee`, `--rate-per-million`, `--retention-days`, `--name` and
+`--anchor-day` write the override
 columns; omitting one on a re-`set` leaves the stored value alone, and passing
-the empty value (`--events 0`, `--retention-days 0`, `--name ""`,
-`--anchor-day 0`) clears it back to the plan's. Leaving them alone is the right
+the empty value (`--events 0`, `--flat-fee 0`, `--rate-per-million 0`,
+`--retention-days 0`, `--name ""`, `--anchor-day 0`) clears it back to the
+card's. Leaving them alone is the right
 default because the common re-`set` is a renewal — a new `--until` on terms that
 have not changed — and a flag that silently reverted a customer's negotiated
 quota to a catalog number would be the most expensive bug this CLI could have.
@@ -624,8 +717,9 @@ slug (`extend-trial` is its only writer); a **retired** tier (§4) unless the or
 already holds it, so it cannot be handed to someone new by autocomplete; `custom`
 left with no quota. That last one is checked against the *merged* row, not the
 flags, so a re-`set` on a deal that already carries an override needs no
-`--events`. `--events` refuses a negative rather than reading it
-as a clear, and `--anchor-day` is range-checked in both the CLI and the service.
+`--events`. `--events`, `--flat-fee` and `--rate-per-million` refuse a negative rather than
+reading it as a clear, and `--anchor-day` is range-checked in both the CLI and the
+service.
 `extend-trial` refuses an org holding a granted plan — including a slug the
 catalog no longer knows, which resolves free without ever consulting a trial date
 — since the write would store a date that changes nothing.
@@ -645,9 +739,9 @@ and optionally `HISTORY` — so a write is confirmed by the state it produced
 rather than by an "ok". Three things about that report are load-bearing:
 
 - **An absent value prints `(none)`, never `0`.** Absent `included_events` means
-  NO quota and absent `price_cents` means no list price (§7); a zero would state
-  a billing figure the deployment never claimed. A price of `0` is real — the two
-  floors — and prints as `$0.00 USD`.
+  NO quota (§7); a zero would state a billing figure the deployment never claimed.
+  The same holds for a deal's fee and rate, which print only when the deal has
+  them — a deal charging purely on usage shows no fee line rather than `$0.00`.
 - **A mutation's `STORED` half is the row its own transaction wrote**, not a
   re-read. The reader is a replica in principle, and confirming a write against a
   lagging read is how a successful `set` prints the row it replaced. `RESOLVED`
@@ -718,7 +812,7 @@ table is a plain unit test.
   survives its org being deleted. The last of those is the one a foreign key
   would quietly break, so it is a test rather than a comment.
 - **Catalog immutability** (§4.2) — a golden test pins every tier's
-  `PriceCents`, `Currency`, `IncludedEvents` and `RetentionDays`, so editing a live tier fails CI
+  `Currency`, `FreeEvents`, `Tiers` and `RetentionDays`, so editing a live card fails CI
   and the fix is to mint a new slug. This is the only guard that exists against
   a one-line quota cut, since nothing else in the system can tell an intended
   reprice from a typo.
@@ -890,7 +984,8 @@ here.
   alone and no lookup could fail. Resolving an anchor requires the org row, so a
   missing one is now a real error — same `ORG_NOT_FOUND` reason the orgs service
   uses.
-- **`included_events` and `price_cents` ship as `Int64Value` wrappers**, not the
+- **`included_events` shipped as an `Int64Value` wrapper** (and `price_cents`
+  did too, while it existed), not the
   bare edition-2023 scalars §7 originally specified. protoc-gen-go would have given
   those presence, but protoc-gen-es renders a singular scalar as a non-optional
   bigint, so "no quota" would have reached the dashboard as `0` — the one thing
@@ -916,3 +1011,26 @@ here.
   anchor day and does not for the quota. Both are also checked in the service,
   which is what a second caller would hit; the CLI's copy exists so the message
   names the flag rather than the column.
+
+- **The plan catalog became a graduated rate card catalog** (§4). `free`,
+  `starter`, `growth` and `scale` — fixed monthly prices with fixed quotas — are
+  gone, replaced by one `RateCard` priced in usage bands, with `free`, `trial` and
+  `custom` demoted from plans to *states*. Pug sells usage, so a tier list was
+  describing a product it no longer had. `Plan.price_cents` went `reserved` in the
+  same move (§7).
+- **A deal's money is stored in pug** (§4.1), reversing the "no structured amount
+  per org" decision in §3 and [`payments.md`](payments.md) §4. The original
+  argument was that a copy of the provider's number is a second authority that
+  goes stale; what it missed is that pug is the thing that *computes* the amount.
+  A graduated card is a table only pug holds, so `Quote` was always going to be
+  pug's arithmetic — which makes a deal's `flat_fee_cents` and
+  `rate_cents_per_million` (migration 021) the **inputs** to that computation, not
+  a copy of its result. Without them `Resolve` can say a deal exists and not what
+  it costs. `note` remains where the paperwork reference goes; it is no longer
+  where the amount goes. What the provider actually charged stays on
+  `billing_subscriptions.price_cents`, which is an observed fact and a different
+  question.
+- **`custom_needs_quota` became `custom_needs_price`** (§4.1, migration 021). A
+  deal now requires a fee or a rate and no longer requires an allowance, because
+  "$400/mo plus $3 per million from the first event" is a real arrangement while a
+  deal that charges nothing is not one.
