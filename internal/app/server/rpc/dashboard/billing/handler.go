@@ -64,7 +64,6 @@ func (s *Server) GetBillingStatus(
 			Slug:        proto.String(ent.Slug),
 			DisplayName: proto.String(ent.DisplayName),
 			Currency:    proto.String(ent.Currency),
-			PriceCents:  int64Value(ent.PriceCents),
 		},
 		PeriodEnd:   timestamppb.New(ent.PeriodEnd),
 		PeriodStart: timestamppb.New(ent.PeriodStart),
@@ -76,6 +75,18 @@ func (s *Server) GetBillingStatus(
 	// Absent means no bound, never zero: nothing prunes on this number, so a 0
 	// would promise a deletion that has not happened and cannot.
 	resp.RetentionDays = int64Value(ent.RetentionDays)
+	// Exactly one: a card-priced org, a negotiated deal, or neither when the slug
+	// resolves to nothing that prices it.
+	if c := ent.Card; c != nil {
+		resp.RateCard = rateCardToRPC(*c)
+	}
+	if t := ent.Terms; t != nil {
+		resp.CustomTerms = &billingv1.CustomTerms{
+			FlatFeeCents:        int64Value(&t.FlatFeeCents),
+			RateCentsPerMillion: int64Value(&t.RateCentsPerMillion),
+			IncludedEvents:      int64Value(&t.IncludedEvents),
+		}
+	}
 	resp.SubscriptionStatus = subStatusToRPC(ent.SubStatus).Enum()
 	// Read from the same helpers the two session RPCs refuse on, so a button the
 	// dashboard renders and a call that would fail cannot drift apart.
@@ -255,7 +266,7 @@ func (s *Server) ListPlans(
 			Currency:       proto.String(opt.Currency),
 			DisplayName:    proto.String(opt.DisplayName),
 			IncludedEvents: int64Value(opt.IncludedEvents),
-			PriceCents:     int64Value(opt.PriceCents),
+			RateCard:       rateCardToRPC(opt.Card),
 			Purchasable:    proto.Bool(opt.Purchasable),
 			RetentionDays:  int64Value(opt.RetentionDays),
 			Slug:           proto.String(opt.Slug),
@@ -320,4 +331,17 @@ func subStatusToRPC(s corebilling.SubStatus) billingv1.SubscriptionStatus {
 		return billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_FAILED
 	}
 	return billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED
+}
+
+// rateCardToRPC carries the card as the table it is: the allowance, then each
+// tier's ceiling and rate.
+func rateCardToRPC(c entitlement.RateCard) *billingv1.RateCard {
+	tiers := make([]*billingv1.RateTier, 0, len(c.Tiers))
+	for _, t := range c.Tiers {
+		tiers = append(tiers, &billingv1.RateTier{
+			UpToEvents:      proto.Int64(t.UpToEvents),
+			CentsPerMillion: proto.Int64(t.CentsPerMillion),
+		})
+	}
+	return &billingv1.RateCard{FreeEvents: proto.Int64(c.FreeEvents), Tiers: tiers}
 }

@@ -117,11 +117,18 @@ func TestGetBillingStatusReportsATrial(t *testing.T) {
 	if msg.GetPlan().GetSlug() != entitlement.CurrentCard().Slug {
 		t.Errorf("plan = %q, want the current card", msg.GetPlan().GetSlug())
 	}
-	// A graduated card has no single list price, so the wrapper is absent rather
-	// than zero -- "$0.00" beside a usage plan would be a lie.
-	if msg.GetPlan().GetPriceCents() != nil {
-		t.Errorf("price_cents = %d, want absent on a usage card",
-			msg.GetPlan().GetPriceCents().GetValue())
+	// A graduated card has no single list price, so the response carries the card
+	// itself: a pricing table renders tiers, never one number.
+	want := entitlement.CurrentCard()
+	card := msg.GetRateCard()
+	if card == nil {
+		t.Fatal("rate_card is absent; a usage plan cannot be rendered without its tiers")
+	}
+	if card.GetFreeEvents() != want.FreeEvents {
+		t.Errorf("free_events = %d, want %d", card.GetFreeEvents(), want.FreeEvents)
+	}
+	if len(card.GetTiers()) != len(want.Tiers) {
+		t.Errorf("tiers = %d, want %d", len(card.GetTiers()), len(want.Tiers))
 	}
 	if msg.GetPlan().GetCurrency() == "" {
 		t.Error("currency is empty; an amount without its unit cannot be formatted")

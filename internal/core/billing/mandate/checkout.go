@@ -211,8 +211,9 @@ type PlanOption struct {
 	DisplayName string
 	Currency    string
 
-	// nil means no list price: the custom tier, whose price lives in the provider.
-	PriceCents *int64
+	// What the tier charges: the allowance above, then these tiers. A graduated
+	// card has no single list price, so there is no number to carry instead.
+	Card entitlement.RateCard
 	// nil means no quota of its own: the custom tier, whose quota comes from its row.
 	IncludedEvents *int64
 	// nil is the custom tier again, whose retention its deal recorded — never a zero.
@@ -244,8 +245,7 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 			// The card's free allowance, not a quota: what is included before charges
 			// begin.
 			IncludedEvents: &card.FreeEvents,
-			// nil: a graduated card has no single list price to show.
-			PriceCents:    nil,
+			Card:          card,
 			Purchasable:   s.billingEnabled && err == nil,
 			RetentionDays: &card.RetentionDays,
 			Slug:          card.Slug,

@@ -246,10 +246,6 @@ type Plan struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// The tier's LIST price, in minor units of `currency` -- never what a negotiated
-	// deal is charged. ABSENT is the custom tier, which is not a price of zero. A
-	// wrapper because a bare int64 would reach the dashboard as 0.
-	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
 	// ISO 4217.
 	Currency      *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -300,18 +296,179 @@ func (x *Plan) GetDisplayName() string {
 	return ""
 }
 
-func (x *Plan) GetPriceCents() *wrapperspb.Int64Value {
-	if x != nil {
-		return x.PriceCents
-	}
-	return nil
-}
-
 func (x *Plan) GetCurrency() string {
 	if x != nil && x.Currency != nil {
 		return *x.Currency
 	}
 	return ""
+}
+
+type RateCard struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Events free every period before the first tier applies.
+	FreeEvents    *int64      `protobuf:"varint,1,opt,name=free_events,json=freeEvents" json:"free_events,omitempty"`
+	Tiers         []*RateTier `protobuf:"bytes,2,rep,name=tiers" json:"tiers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RateCard) Reset() {
+	*x = RateCard{}
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RateCard) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RateCard) ProtoMessage() {}
+
+func (x *RateCard) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RateCard.ProtoReflect.Descriptor instead.
+func (*RateCard) Descriptor() ([]byte, []int) {
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RateCard) GetFreeEvents() int64 {
+	if x != nil && x.FreeEvents != nil {
+		return *x.FreeEvents
+	}
+	return 0
+}
+
+func (x *RateCard) GetTiers() []*RateTier {
+	if x != nil {
+		return x.Tiers
+	}
+	return nil
+}
+
+type RateTier struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Inclusive, and 0 is unbounded: the last tier only.
+	UpToEvents      *int64 `protobuf:"varint,1,opt,name=up_to_events,json=upToEvents" json:"up_to_events,omitempty"`
+	CentsPerMillion *int64 `protobuf:"varint,2,opt,name=cents_per_million,json=centsPerMillion" json:"cents_per_million,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RateTier) Reset() {
+	*x = RateTier{}
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RateTier) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RateTier) ProtoMessage() {}
+
+func (x *RateTier) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RateTier.ProtoReflect.Descriptor instead.
+func (*RateTier) Descriptor() ([]byte, []int) {
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *RateTier) GetUpToEvents() int64 {
+	if x != nil && x.UpToEvents != nil {
+		return *x.UpToEvents
+	}
+	return 0
+}
+
+func (x *RateTier) GetCentsPerMillion() int64 {
+	if x != nil && x.CentsPerMillion != nil {
+		return *x.CentsPerMillion
+	}
+	return 0
+}
+
+// Wrappers throughout: ABSENT means the deal has no such term, and must never
+// render as 0. A deal with a rate and no fee charges from the first event.
+type CustomTerms struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	FlatFeeCents        *wrapperspb.Int64Value `protobuf:"bytes,1,opt,name=flat_fee_cents,json=flatFeeCents" json:"flat_fee_cents,omitempty"`
+	RateCentsPerMillion *wrapperspb.Int64Value `protobuf:"bytes,2,opt,name=rate_cents_per_million,json=rateCentsPerMillion" json:"rate_cents_per_million,omitempty"`
+	IncludedEvents      *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CustomTerms) Reset() {
+	*x = CustomTerms{}
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CustomTerms) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CustomTerms) ProtoMessage() {}
+
+func (x *CustomTerms) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CustomTerms.ProtoReflect.Descriptor instead.
+func (*CustomTerms) Descriptor() ([]byte, []int) {
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CustomTerms) GetFlatFeeCents() *wrapperspb.Int64Value {
+	if x != nil {
+		return x.FlatFeeCents
+	}
+	return nil
+}
+
+func (x *CustomTerms) GetRateCentsPerMillion() *wrapperspb.Int64Value {
+	if x != nil {
+		return x.RateCentsPerMillion
+	}
+	return nil
+}
+
+func (x *CustomTerms) GetIncludedEvents() *wrapperspb.Int64Value {
+	if x != nil {
+		return x.IncludedEvents
+	}
+	return nil
 }
 
 type GetBillingStatusResponse struct {
@@ -345,14 +502,19 @@ type GetBillingStatusResponse struct {
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,13,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
 	// Whether a portal session would open: this org has a customer at the provider,
 	// which only a checkout leaves behind. Not implied by subscription_status.
-	Manageable    *bool `protobuf:"varint,12,opt,name=manageable" json:"manageable,omitempty"`
+	Manageable *bool `protobuf:"varint,12,opt,name=manageable" json:"manageable,omitempty"`
+	// Exactly one is set while billing is on and the slug resolves: a card-priced
+	// org carries rate_card, a negotiated deal carries custom_terms, and an org on
+	// a slug the catalog dropped carries neither because nothing prices it.
+	RateCard      *RateCard    `protobuf:"bytes,14,opt,name=rate_card,json=rateCard" json:"rate_card,omitempty"`
+	CustomTerms   *CustomTerms `protobuf:"bytes,15,opt,name=custom_terms,json=customTerms" json:"custom_terms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetBillingStatusResponse) Reset() {
 	*x = GetBillingStatusResponse{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[2]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -364,7 +526,7 @@ func (x *GetBillingStatusResponse) String() string {
 func (*GetBillingStatusResponse) ProtoMessage() {}
 
 func (x *GetBillingStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[2]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +539,7 @@ func (x *GetBillingStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBillingStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetBillingStatusResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{2}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetBillingStatusResponse) GetBillingEnabled() bool {
@@ -471,6 +633,20 @@ func (x *GetBillingStatusResponse) GetManageable() bool {
 	return false
 }
 
+func (x *GetBillingStatusResponse) GetRateCard() *RateCard {
+	if x != nil {
+		return x.RateCard
+	}
+	return nil
+}
+
+func (x *GetBillingStatusResponse) GetCustomTerms() *CustomTerms {
+	if x != nil {
+		return x.CustomTerms
+	}
+	return nil
+}
+
 type CreateCheckoutSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
@@ -487,7 +663,7 @@ type CreateCheckoutSessionRequest struct {
 
 func (x *CreateCheckoutSessionRequest) Reset() {
 	*x = CreateCheckoutSessionRequest{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[3]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -499,7 +675,7 @@ func (x *CreateCheckoutSessionRequest) String() string {
 func (*CreateCheckoutSessionRequest) ProtoMessage() {}
 
 func (x *CreateCheckoutSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[3]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -512,7 +688,7 @@ func (x *CreateCheckoutSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutSessionRequest.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutSessionRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{3}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateCheckoutSessionRequest) GetOrgId() string {
@@ -549,7 +725,7 @@ type CreateCheckoutSessionResponse struct {
 
 func (x *CreateCheckoutSessionResponse) Reset() {
 	*x = CreateCheckoutSessionResponse{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[4]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -561,7 +737,7 @@ func (x *CreateCheckoutSessionResponse) String() string {
 func (*CreateCheckoutSessionResponse) ProtoMessage() {}
 
 func (x *CreateCheckoutSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[4]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -574,7 +750,7 @@ func (x *CreateCheckoutSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCheckoutSessionResponse.ProtoReflect.Descriptor instead.
 func (*CreateCheckoutSessionResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{4}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateCheckoutSessionResponse) GetCheckoutUrl() string {
@@ -603,7 +779,7 @@ type ConfirmCheckoutRequest struct {
 
 func (x *ConfirmCheckoutRequest) Reset() {
 	*x = ConfirmCheckoutRequest{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[5]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -615,7 +791,7 @@ func (x *ConfirmCheckoutRequest) String() string {
 func (*ConfirmCheckoutRequest) ProtoMessage() {}
 
 func (x *ConfirmCheckoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[5]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -628,7 +804,7 @@ func (x *ConfirmCheckoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmCheckoutRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmCheckoutRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{5}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ConfirmCheckoutRequest) GetOrgId() string {
@@ -656,7 +832,7 @@ type ConfirmCheckoutResponse struct {
 
 func (x *ConfirmCheckoutResponse) Reset() {
 	*x = ConfirmCheckoutResponse{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[6]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -668,7 +844,7 @@ func (x *ConfirmCheckoutResponse) String() string {
 func (*ConfirmCheckoutResponse) ProtoMessage() {}
 
 func (x *ConfirmCheckoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[6]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -681,7 +857,7 @@ func (x *ConfirmCheckoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmCheckoutResponse.ProtoReflect.Descriptor instead.
 func (*ConfirmCheckoutResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{6}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ConfirmCheckoutResponse) GetConfirmed() bool {
@@ -700,7 +876,7 @@ type CreatePortalSessionRequest struct {
 
 func (x *CreatePortalSessionRequest) Reset() {
 	*x = CreatePortalSessionRequest{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[7]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -712,7 +888,7 @@ func (x *CreatePortalSessionRequest) String() string {
 func (*CreatePortalSessionRequest) ProtoMessage() {}
 
 func (x *CreatePortalSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[7]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -725,7 +901,7 @@ func (x *CreatePortalSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePortalSessionRequest.ProtoReflect.Descriptor instead.
 func (*CreatePortalSessionRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{7}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CreatePortalSessionRequest) GetOrgId() string {
@@ -744,7 +920,7 @@ type CreatePortalSessionResponse struct {
 
 func (x *CreatePortalSessionResponse) Reset() {
 	*x = CreatePortalSessionResponse{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[8]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +932,7 @@ func (x *CreatePortalSessionResponse) String() string {
 func (*CreatePortalSessionResponse) ProtoMessage() {}
 
 func (x *CreatePortalSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[8]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +945,7 @@ func (x *CreatePortalSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePortalSessionResponse.ProtoReflect.Descriptor instead.
 func (*CreatePortalSessionResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{8}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreatePortalSessionResponse) GetPortalUrl() string {
@@ -790,7 +966,7 @@ type ListPlansRequest struct {
 
 func (x *ListPlansRequest) Reset() {
 	*x = ListPlansRequest{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[9]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +978,7 @@ func (x *ListPlansRequest) String() string {
 func (*ListPlansRequest) ProtoMessage() {}
 
 func (x *ListPlansRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[9]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +991,7 @@ func (x *ListPlansRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlansRequest.ProtoReflect.Descriptor instead.
 func (*ListPlansRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{9}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListPlansRequest) GetOrgId() string {
@@ -831,9 +1007,6 @@ type PlanOption struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// List price, in minor units of `currency`. ABSENT is the custom tier, whose
-	// price lives in the provider -- absence is never zero, here or below.
-	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
 	// ISO 4217.
 	Currency *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
 	// Events the tier includes. ABSENT is the custom tier.
@@ -842,14 +1015,16 @@ type PlanOption struct {
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,7,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
 	// Whether a checkout for THIS tier would open -- the same helper
 	// CreateCheckoutSession refuses on, so a dead button is impossible.
-	Purchasable   *bool `protobuf:"varint,6,opt,name=purchasable" json:"purchasable,omitempty"`
+	Purchasable *bool `protobuf:"varint,6,opt,name=purchasable" json:"purchasable,omitempty"`
+	// What the tier charges: the allowance above, then these tiers.
+	RateCard      *RateCard `protobuf:"bytes,8,opt,name=rate_card,json=rateCard" json:"rate_card,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PlanOption) Reset() {
 	*x = PlanOption{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[10]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -861,7 +1036,7 @@ func (x *PlanOption) String() string {
 func (*PlanOption) ProtoMessage() {}
 
 func (x *PlanOption) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[10]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -874,7 +1049,7 @@ func (x *PlanOption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanOption.ProtoReflect.Descriptor instead.
 func (*PlanOption) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{10}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PlanOption) GetSlug() string {
@@ -889,13 +1064,6 @@ func (x *PlanOption) GetDisplayName() string {
 		return *x.DisplayName
 	}
 	return ""
-}
-
-func (x *PlanOption) GetPriceCents() *wrapperspb.Int64Value {
-	if x != nil {
-		return x.PriceCents
-	}
-	return nil
 }
 
 func (x *PlanOption) GetCurrency() string {
@@ -926,6 +1094,13 @@ func (x *PlanOption) GetPurchasable() bool {
 	return false
 }
 
+func (x *PlanOption) GetRateCard() *RateCard {
+	if x != nil {
+		return x.RateCard
+	}
+	return nil
+}
+
 type ListPlansResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Plans         []*PlanOption          `protobuf:"bytes,1,rep,name=plans" json:"plans,omitempty"`
@@ -935,7 +1110,7 @@ type ListPlansResponse struct {
 
 func (x *ListPlansResponse) Reset() {
 	*x = ListPlansResponse{}
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[11]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -947,7 +1122,7 @@ func (x *ListPlansResponse) String() string {
 func (*ListPlansResponse) ProtoMessage() {}
 
 func (x *ListPlansResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[11]
+	mi := &file_dashboard_billing_v1_billing_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -960,7 +1135,7 @@ func (x *ListPlansResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlansResponse.ProtoReflect.Descriptor instead.
 func (*ListPlansResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{11}
+	return file_dashboard_billing_v1_billing_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListPlansResponse) GetPlans() []*PlanOption {
@@ -976,13 +1151,23 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"\"dashboard/billing/v1/billing.proto\x12\x14dashboard.billing.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"9\n" +
 	"\x17GetBillingStatusRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\x97\x01\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"_\n" +
 	"\x04Plan\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12<\n" +
-	"\vprice_cents\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\n" +
-	"priceCents\x12\x1a\n" +
-	"\bcurrency\x18\x04 \x01(\tR\bcurrency\"\xa1\x06\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1a\n" +
+	"\bcurrency\x18\x04 \x01(\tR\bcurrencyJ\x04\b\x03\x10\x04\"a\n" +
+	"\bRateCard\x12\x1f\n" +
+	"\vfree_events\x18\x01 \x01(\x03R\n" +
+	"freeEvents\x124\n" +
+	"\x05tiers\x18\x02 \x03(\v2\x1e.dashboard.billing.v1.RateTierR\x05tiers\"X\n" +
+	"\bRateTier\x12 \n" +
+	"\fup_to_events\x18\x01 \x01(\x03R\n" +
+	"upToEvents\x12*\n" +
+	"\x11cents_per_million\x18\x02 \x01(\x03R\x0fcentsPerMillion\"\xe8\x01\n" +
+	"\vCustomTerms\x12A\n" +
+	"\x0eflat_fee_cents\x18\x01 \x01(\v2\x1b.google.protobuf.Int64ValueR\fflatFeeCents\x12P\n" +
+	"\x16rate_cents_per_million\x18\x02 \x01(\v2\x1b.google.protobuf.Int64ValueR\x13rateCentsPerMillion\x12D\n" +
+	"\x0fincluded_events\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\"\xa4\a\n" +
 	"\x18GetBillingStatusResponse\x12'\n" +
 	"\x0fbilling_enabled\x18\x01 \x01(\bR\x0ebillingEnabled\x12.\n" +
 	"\x04plan\x18\x02 \x01(\v2\x1a.dashboard.billing.v1.PlanR\x04plan\x12;\n" +
@@ -1000,7 +1185,9 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x0eretention_days\x18\r \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12\x1e\n" +
 	"\n" +
 	"manageable\x18\f \x01(\bR\n" +
-	"manageable\"\xa9\x01\n" +
+	"manageable\x12;\n" +
+	"\trate_card\x18\x0e \x01(\v2\x1e.dashboard.billing.v1.RateCardR\brateCard\x12D\n" +
+	"\fcustom_terms\x18\x0f \x01(\v2!.dashboard.billing.v1.CustomTermsR\vcustomTerms\"\xa9\x01\n" +
 	"\x1cCreateCheckoutSessionRequest\x12\x1e\n" +
 	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\x12$\n" +
 	"\tplan_slug\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bplanSlug\x12C\n" +
@@ -1021,17 +1208,16 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"portal_url\x18\x01 \x01(\tR\tportalUrl\"2\n" +
 	"\x10ListPlansRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\xc9\x02\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\xce\x02\n" +
 	"\n" +
 	"PlanOption\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12<\n" +
-	"\vprice_cents\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\n" +
-	"priceCents\x12\x1a\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1a\n" +
 	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12D\n" +
 	"\x0fincluded_events\x18\x05 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12B\n" +
 	"\x0eretention_days\x18\a \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12 \n" +
-	"\vpurchasable\x18\x06 \x01(\bR\vpurchasable\"K\n" +
+	"\vpurchasable\x18\x06 \x01(\bR\vpurchasable\x12;\n" +
+	"\trate_card\x18\b \x01(\v2\x1e.dashboard.billing.v1.RateCardR\brateCardJ\x04\b\x03\x10\x04\"K\n" +
 	"\x11ListPlansResponse\x126\n" +
 	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x80\x01\n" +
 	"\rBillingStatus\x12\x1e\n" +
@@ -1071,58 +1257,66 @@ func file_dashboard_billing_v1_billing_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_billing_v1_billing_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_dashboard_billing_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_dashboard_billing_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_dashboard_billing_v1_billing_proto_goTypes = []any{
 	(BillingStatus)(0),                    // 0: dashboard.billing.v1.BillingStatus
 	(SubscriptionStatus)(0),               // 1: dashboard.billing.v1.SubscriptionStatus
 	(CheckoutTheme)(0),                    // 2: dashboard.billing.v1.CheckoutTheme
 	(*GetBillingStatusRequest)(nil),       // 3: dashboard.billing.v1.GetBillingStatusRequest
 	(*Plan)(nil),                          // 4: dashboard.billing.v1.Plan
-	(*GetBillingStatusResponse)(nil),      // 5: dashboard.billing.v1.GetBillingStatusResponse
-	(*CreateCheckoutSessionRequest)(nil),  // 6: dashboard.billing.v1.CreateCheckoutSessionRequest
-	(*CreateCheckoutSessionResponse)(nil), // 7: dashboard.billing.v1.CreateCheckoutSessionResponse
-	(*ConfirmCheckoutRequest)(nil),        // 8: dashboard.billing.v1.ConfirmCheckoutRequest
-	(*ConfirmCheckoutResponse)(nil),       // 9: dashboard.billing.v1.ConfirmCheckoutResponse
-	(*CreatePortalSessionRequest)(nil),    // 10: dashboard.billing.v1.CreatePortalSessionRequest
-	(*CreatePortalSessionResponse)(nil),   // 11: dashboard.billing.v1.CreatePortalSessionResponse
-	(*ListPlansRequest)(nil),              // 12: dashboard.billing.v1.ListPlansRequest
-	(*PlanOption)(nil),                    // 13: dashboard.billing.v1.PlanOption
-	(*ListPlansResponse)(nil),             // 14: dashboard.billing.v1.ListPlansResponse
-	(*wrapperspb.Int64Value)(nil),         // 15: google.protobuf.Int64Value
-	(*timestamppb.Timestamp)(nil),         // 16: google.protobuf.Timestamp
+	(*RateCard)(nil),                      // 5: dashboard.billing.v1.RateCard
+	(*RateTier)(nil),                      // 6: dashboard.billing.v1.RateTier
+	(*CustomTerms)(nil),                   // 7: dashboard.billing.v1.CustomTerms
+	(*GetBillingStatusResponse)(nil),      // 8: dashboard.billing.v1.GetBillingStatusResponse
+	(*CreateCheckoutSessionRequest)(nil),  // 9: dashboard.billing.v1.CreateCheckoutSessionRequest
+	(*CreateCheckoutSessionResponse)(nil), // 10: dashboard.billing.v1.CreateCheckoutSessionResponse
+	(*ConfirmCheckoutRequest)(nil),        // 11: dashboard.billing.v1.ConfirmCheckoutRequest
+	(*ConfirmCheckoutResponse)(nil),       // 12: dashboard.billing.v1.ConfirmCheckoutResponse
+	(*CreatePortalSessionRequest)(nil),    // 13: dashboard.billing.v1.CreatePortalSessionRequest
+	(*CreatePortalSessionResponse)(nil),   // 14: dashboard.billing.v1.CreatePortalSessionResponse
+	(*ListPlansRequest)(nil),              // 15: dashboard.billing.v1.ListPlansRequest
+	(*PlanOption)(nil),                    // 16: dashboard.billing.v1.PlanOption
+	(*ListPlansResponse)(nil),             // 17: dashboard.billing.v1.ListPlansResponse
+	(*wrapperspb.Int64Value)(nil),         // 18: google.protobuf.Int64Value
+	(*timestamppb.Timestamp)(nil),         // 19: google.protobuf.Timestamp
 }
 var file_dashboard_billing_v1_billing_proto_depIdxs = []int32{
-	15, // 0: dashboard.billing.v1.Plan.price_cents:type_name -> google.protobuf.Int64Value
-	4,  // 1: dashboard.billing.v1.GetBillingStatusResponse.plan:type_name -> dashboard.billing.v1.Plan
-	0,  // 2: dashboard.billing.v1.GetBillingStatusResponse.status:type_name -> dashboard.billing.v1.BillingStatus
-	15, // 3: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
-	16, // 4: dashboard.billing.v1.GetBillingStatusResponse.trial_ends_at:type_name -> google.protobuf.Timestamp
-	16, // 5: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
-	16, // 6: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
-	16, // 7: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
-	1,  // 8: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
-	16, // 9: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
-	15, // 10: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
-	2,  // 11: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
-	15, // 12: dashboard.billing.v1.PlanOption.price_cents:type_name -> google.protobuf.Int64Value
-	15, // 13: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
-	15, // 14: dashboard.billing.v1.PlanOption.retention_days:type_name -> google.protobuf.Int64Value
-	13, // 15: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
-	3,  // 16: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
-	6,  // 17: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
-	8,  // 18: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
-	10, // 19: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
-	12, // 20: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
-	5,  // 21: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
-	7,  // 22: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
-	9,  // 23: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
-	11, // 24: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
-	14, // 25: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
-	21, // [21:26] is the sub-list for method output_type
-	16, // [16:21] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	6,  // 0: dashboard.billing.v1.RateCard.tiers:type_name -> dashboard.billing.v1.RateTier
+	18, // 1: dashboard.billing.v1.CustomTerms.flat_fee_cents:type_name -> google.protobuf.Int64Value
+	18, // 2: dashboard.billing.v1.CustomTerms.rate_cents_per_million:type_name -> google.protobuf.Int64Value
+	18, // 3: dashboard.billing.v1.CustomTerms.included_events:type_name -> google.protobuf.Int64Value
+	4,  // 4: dashboard.billing.v1.GetBillingStatusResponse.plan:type_name -> dashboard.billing.v1.Plan
+	0,  // 5: dashboard.billing.v1.GetBillingStatusResponse.status:type_name -> dashboard.billing.v1.BillingStatus
+	18, // 6: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
+	19, // 7: dashboard.billing.v1.GetBillingStatusResponse.trial_ends_at:type_name -> google.protobuf.Timestamp
+	19, // 8: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
+	19, // 9: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
+	19, // 10: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
+	1,  // 11: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
+	19, // 12: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
+	18, // 13: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
+	5,  // 14: dashboard.billing.v1.GetBillingStatusResponse.rate_card:type_name -> dashboard.billing.v1.RateCard
+	7,  // 15: dashboard.billing.v1.GetBillingStatusResponse.custom_terms:type_name -> dashboard.billing.v1.CustomTerms
+	2,  // 16: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
+	18, // 17: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
+	18, // 18: dashboard.billing.v1.PlanOption.retention_days:type_name -> google.protobuf.Int64Value
+	5,  // 19: dashboard.billing.v1.PlanOption.rate_card:type_name -> dashboard.billing.v1.RateCard
+	16, // 20: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
+	3,  // 21: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
+	9,  // 22: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
+	11, // 23: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
+	13, // 24: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
+	15, // 25: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
+	8,  // 26: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
+	10, // 27: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
+	12, // 28: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
+	14, // 29: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
+	17, // 30: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
+	26, // [26:31] is the sub-list for method output_type
+	21, // [21:26] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_billing_v1_billing_proto_init() }
@@ -1136,7 +1330,7 @@ func file_dashboard_billing_v1_billing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_billing_v1_billing_proto_rawDesc), len(file_dashboard_billing_v1_billing_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -514,10 +514,20 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 	if !got.GetPurchasable() {
 		t.Error("the current card is not purchasable with a product configured for it")
 	}
-	// A graduated card has no single list price, so the wrapper is absent rather
-	// than zero: a pricing table rendering "$0.00" would be a lie.
-	if p := got.GetPriceCents(); p != nil {
-		t.Errorf("card price = %v, want absent: a graduated card has no one price", p)
+	// A graduated card has no single list price, so the option carries the card
+	// itself: a pricing table renders tiers, never one number.
+	rc := got.GetRateCard()
+	if rc == nil {
+		t.Fatal("rate_card is absent; the option cannot be rendered")
+	}
+	if rc.GetFreeEvents() != card.FreeEvents {
+		t.Errorf("free_events = %d, want %d", rc.GetFreeEvents(), card.FreeEvents)
+	}
+	if len(rc.GetTiers()) != len(card.Tiers) {
+		t.Fatalf("tiers = %d, want %d", len(rc.GetTiers()), len(card.Tiers))
+	}
+	if rate := rc.GetTiers()[0].GetCentsPerMillion(); rate != card.Tiers[0].CentsPerMillion {
+		t.Errorf("first tier rate = %d, want %d", rate, card.Tiers[0].CentsPerMillion)
 	}
 	// The free allowance, not a quota.
 	if q := got.GetIncludedEvents(); q == nil || q.GetValue() != card.FreeEvents {

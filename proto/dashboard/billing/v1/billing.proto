@@ -72,12 +72,32 @@ message GetBillingStatusRequest {
 message Plan {
   string slug = 1;
   string display_name = 2;
-  // The tier's LIST price, in minor units of `currency` -- never what a negotiated
-  // deal is charged. ABSENT is the custom tier, which is not a price of zero. A
-  // wrapper because a bare int64 would reach the dashboard as 0.
-  google.protobuf.Int64Value price_cents = 3;
+  // 3 was price_cents. A graduated rate card is a table, not a number, so there
+  // is no list price to carry; see rate_card on GetBillingStatusResponse. Never
+  // reused: if a single price is ever wanted again it takes a new number.
+  reserved 3;
   // ISO 4217.
   string currency = 4;
+}
+
+message RateCard {
+  // Events free every period before the first tier applies.
+  int64 free_events = 1;
+  repeated RateTier tiers = 2;
+}
+
+message RateTier {
+  // Inclusive, and 0 is unbounded: the last tier only.
+  int64 up_to_events = 1;
+  int64 cents_per_million = 2;
+}
+
+// Wrappers throughout: ABSENT means the deal has no such term, and must never
+// render as 0. A deal with a rate and no fee charges from the first event.
+message CustomTerms {
+  google.protobuf.Int64Value flat_fee_cents = 1;
+  google.protobuf.Int64Value rate_cents_per_million = 2;
+  google.protobuf.Int64Value included_events = 3;
 }
 
 message GetBillingStatusResponse {
@@ -111,6 +131,12 @@ message GetBillingStatusResponse {
   // Whether a portal session would open: this org has a customer at the provider,
   // which only a checkout leaves behind. Not implied by subscription_status.
   bool manageable = 12;
+
+  // Exactly one is set while billing is on and the slug resolves: a card-priced
+  // org carries rate_card, a negotiated deal carries custom_terms, and an org on
+  // a slug the catalog dropped carries neither because nothing prices it.
+  RateCard rate_card = 14;
+  CustomTerms custom_terms = 15;
 }
 
 message CreateCheckoutSessionRequest {
@@ -174,9 +200,8 @@ message ListPlansRequest {
 message PlanOption {
   string slug = 1;
   string display_name = 2;
-  // List price, in minor units of `currency`. ABSENT is the custom tier, whose
-  // price lives in the provider -- absence is never zero, here or below.
-  google.protobuf.Int64Value price_cents = 3;
+  // 3 was price_cents, for the reason given on Plan: a card is priced by tiers.
+  reserved 3;
   // ISO 4217.
   string currency = 4;
   // Events the tier includes. ABSENT is the custom tier.
@@ -186,6 +211,8 @@ message PlanOption {
   // Whether a checkout for THIS tier would open -- the same helper
   // CreateCheckoutSession refuses on, so a dead button is impossible.
   bool purchasable = 6;
+  // What the tier charges: the allowance above, then these tiers.
+  RateCard rate_card = 8;
 }
 
 message ListPlansResponse {
