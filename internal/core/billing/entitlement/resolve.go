@@ -152,10 +152,13 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now
 
 	applyOverrides(&ent, rec, sub, now)
 
-	// A custom row that reached here with no allowance is a deal against nothing.
-	// SetPlan refuses to write one; the current card is the backstop, which is also
-	// what "free" means under usage pricing.
-	if ent.Slug == SlugCustom && ent.IncludedEvents == nil {
+	// A custom row that reached here entitling the org to nothing -- neither a price
+	// nor an allowance -- is a deal against nothing: a lapsed contract, or a row
+	// predating the fee-or-rate CHECK. Both halves are needed since 021 made the
+	// allowance optional: a deal charging from the first event has no allowance and
+	// must still stand. The current card is the backstop, which is also what "free"
+	// means under usage pricing.
+	if ent.Slug == SlugCustom && !ent.Terms.prices() && ent.IncludedEvents == nil {
 		ent.Terms = nil
 		card := CurrentCard()
 		ent.Slug, ent.DisplayName, ent.Currency = card.Slug, card.DisplayName, card.Currency
@@ -298,6 +301,10 @@ func applyOverrides(ent *Entitlement, rec Record, sub *billing.Subscription, now
 	// would lose its quota the day its agreed term passed. Others are a different
 	// purchase, and a lapsed grant's numbers must not ride along on one.
 	if !rec.Present || (contractLapsed(rec, now) && (sub == nil || sub.PlanSlug != SlugCustom)) {
+		// The money dies with the contract for the same reason the quota does: a deal
+		// still charging its negotiated fee after it ended is the expensive direction
+		// of the same mistake. The backstop below then restores the current card.
+		ent.Terms = nil
 		return
 	}
 	if rec.IncludedEventsOverride > 0 {

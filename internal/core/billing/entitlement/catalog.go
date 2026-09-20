@@ -62,6 +62,14 @@ type CustomTerms struct {
 	IncludedEvents      int64
 }
 
+// prices reports whether these terms charge for anything. Terms with neither a
+// fee nor a rate bill nothing however much is sent, so they cannot stand as what
+// prices an org; migration 021's custom_needs_price refuses to store a row like
+// that, and Resolve falls back to the current card if one reaches it anyway.
+func (t *CustomTerms) prices() bool {
+	return t != nil && (t.FlatFeeCents > 0 || t.RateCentsPerMillion > 0)
+}
+
 // rateCards is every card pug has sold, newest last: repricing mints a new slug
 // and retires the old, so a holder keeps the numbers they bought.
 var rateCards = []RateCard{

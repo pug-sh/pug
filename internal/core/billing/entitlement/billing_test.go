@@ -249,6 +249,48 @@ func TestResolveReportsACustomDealsTerms(t *testing.T) {
 	}
 }
 
+// A deal that charges from the first event: a fee and a rate, no allowance.
+// migration 021's custom_needs_price makes this a legal row, so Resolve has to
+// honour it -- dropping it to the current card would undercharge the org and
+// quietly void a signed deal.
+func TestResolveHonoursADealWithNoAllowance(t *testing.T) {
+	ent := entitlement.Resolve(created, entitlement.Record{
+		Present: true, PlanSlug: entitlement.SlugCustom,
+		FlatFeeCents: 40_000, RateCentsPerMillion: 300,
+	}, nil, later, true)
+
+	if ent.Slug != entitlement.SlugCustom {
+		t.Fatalf("slug = %q, want custom: the deal prices this org", ent.Slug)
+	}
+	if ent.Terms == nil || ent.Terms.FlatFeeCents != 40_000 {
+		t.Fatalf("terms = %+v, want the deal's fee and rate", ent.Terms)
+	}
+	// $400 flat + $3/M over 10M, with no allowance to subtract.
+	q, ok := ent.Quote(10_000_000)
+	if !ok || q.TotalCents != 40_000+3_000 {
+		t.Errorf("quote = %d (ok=%v), want %d", q.TotalCents, ok, 40_000+3_000)
+	}
+}
+
+// The money dies with the contract for the same reason the quota does: a lapsed
+// deal that kept charging its negotiated fee is the expensive direction of the
+// same bug.
+func TestResolveDropsALapsedDealsTerms(t *testing.T) {
+	ent := entitlement.Resolve(created, entitlement.Record{
+		Present: true, PlanSlug: entitlement.SlugCustom,
+		FlatFeeCents: 40_000, RateCentsPerMillion: 300,
+		IncludedEventsOverride: 5_000_000,
+		ContractEndsAt:         later.Add(-time.Hour),
+	}, nil, later, true)
+
+	if ent.Terms != nil {
+		t.Errorf("terms = %+v after the contract ended, want none", ent.Terms)
+	}
+	if ent.Slug != entitlement.CurrentCard().Slug || ent.Status != entitlement.StatusFree {
+		t.Errorf("slug/status = %q/%s, want the current card and FREE", ent.Slug, ent.Status)
+	}
+}
+
 // Each override patches only its own field, so a deal that changed the quota
 // alone still shows the catalog's name and price.
 func TestResolveOverridesAreIndependent(t *testing.T) {
