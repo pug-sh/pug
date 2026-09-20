@@ -112,8 +112,13 @@ func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
 	if ent.DisplayName != "Acme Enterprise" {
 		t.Errorf("display_name = %q, want Acme Enterprise", ent.DisplayName)
 	}
-	if ent.PriceCents != nil {
-		t.Errorf("price_cents = %d, want absent — a deal's price lives in the provider", *ent.PriceCents)
+	// The row's terms are what price it, not a card: the provider moves the money,
+	// but the numbers it is charged on are pug's.
+	if ent.Card != nil {
+		t.Errorf("card = %v, want none: a deal is priced by its own terms", ent.Card)
+	}
+	if ent.Terms == nil || ent.Terms.IncludedEvents != 5_000_000 {
+		t.Errorf("terms = %+v, want the row's allowance", ent.Terms)
 	}
 }
 

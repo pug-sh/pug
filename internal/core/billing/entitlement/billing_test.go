@@ -89,10 +89,12 @@ func TestResolveGrantedPlan(t *testing.T) {
 	if got, want := quota(t, ent), entitlement.CurrentCard().FreeEvents; got != want {
 		t.Errorf("allowance = %d, want the card's %d", got, want)
 	}
-	// A graduated card has no single list price, so the wrapper is absent rather
-	// than zero: rendering "$0.00" beside a usage plan would be a lie.
-	if ent.PriceCents != nil || ent.Currency != "USD" {
-		t.Errorf("price = %v %s, want absent USD", ent.PriceCents, ent.Currency)
+	// A card is what prices the org; the currency is what its tiers are quoted in.
+	if ent.Card == nil {
+		t.Error("no card prices an active org")
+	}
+	if ent.Currency != "USD" {
+		t.Errorf("currency = %q, want USD", ent.Currency)
 	}
 }
 
@@ -225,15 +227,25 @@ func TestResolveAppliesNegotiatedOverrides(t *testing.T) {
 	}
 }
 
-// The deal's own price is the payments provider's, so the custom tier reports
-// none rather than a stale copy.
-func TestResolveReportsNoPriceForACustomDeal(t *testing.T) {
+// A deal is priced by its negotiated terms, not by a card: what the operator
+// stored is what resolves, so nothing downstream has to recombine the two.
+func TestResolveReportsACustomDealsTerms(t *testing.T) {
 	ent := entitlement.Resolve(created, entitlement.Record{
 		Present: true, PlanSlug: entitlement.SlugCustom, IncludedEventsOverride: 5_000_000,
+		FlatFeeCents: 40_000, RateCentsPerMillion: 300,
 	}, nil, later, true)
 
-	if ent.PriceCents != nil {
-		t.Errorf("price = %d; a deal's price is not pug's to report", *ent.PriceCents)
+	if ent.Card != nil {
+		t.Error("a deal resolved onto a card; its own terms are what price it")
+	}
+	if ent.Terms == nil {
+		t.Fatal("a deal resolved with no terms; nothing prices it")
+	}
+	want := entitlement.CustomTerms{
+		FlatFeeCents: 40_000, RateCentsPerMillion: 300, IncludedEvents: 5_000_000,
+	}
+	if *ent.Terms != want {
+		t.Errorf("terms = %+v, want %+v", *ent.Terms, want)
 	}
 }
 
@@ -247,21 +259,19 @@ func TestResolveOverridesAreIndependent(t *testing.T) {
 	if got := quota(t, ent); got != 2_000_000 {
 		t.Errorf("quota = %d, want the override", got)
 	}
-	if ent.DisplayName != entitlement.CurrentCard().DisplayName || ent.PriceCents != nil {
-		t.Errorf("name/price = %q/%v, want the card's name and no list price",
-			ent.DisplayName, ent.PriceCents)
+	if ent.DisplayName != entitlement.CurrentCard().DisplayName {
+		t.Errorf("display name = %q, want the card's", ent.DisplayName)
 	}
 }
 
-// Under usage pricing nothing has a list price: a graduated card is a table, not
-// a number, so the wrapper is absent everywhere rather than zero anywhere.
-func TestResolveReportsNoListPrice(t *testing.T) {
+// An org nobody pinned is priced by the current card, which is what makes the
+// catalog the default rather than a thing an operator has to apply.
+func TestResolvePricesAnUnpinnedOrgFromTheCurrentCard(t *testing.T) {
 	ent := entitlement.Resolve(created, entitlement.Record{}, nil, later, true)
 
-	if ent.PriceCents != nil {
-		t.Errorf("price = %d, want absent: a graduated card has no one price", *ent.PriceCents)
+	if ent.Card == nil || ent.Card.Slug != entitlement.CurrentCard().Slug {
+		t.Errorf("card = %v, want the current one", ent.Card)
 	}
-	// The card is what prices it, and that is what Quote reports.
 	if _, ok := ent.Quote(1); !ok {
 		t.Error("an unpinned org cannot be priced; it should be on the current card")
 	}
@@ -292,10 +302,10 @@ func TestResolveWithBillingOffHasNoQuota(t *testing.T) {
 	if ent.PeriodStart.IsZero() || ent.PeriodEnd.IsZero() {
 		t.Error("period bounds are missing with billing off")
 	}
-	// No card either: with the switch off nothing prices the org at all, which is
-	// what Quote must report rather than a total of zero.
-	if ent.PriceCents != nil {
-		t.Errorf("price = %d with billing off, want absent", *ent.PriceCents)
+	// Nothing prices the org with the switch off, which is what Quote must report
+	// rather than a total of zero.
+	if ent.Card != nil || ent.Terms != nil {
+		t.Errorf("card=%v terms=%v with billing off, want neither", ent.Card, ent.Terms)
 	}
 	if _, ok := ent.Quote(1_000_000); ok {
 		t.Error("an org was priced with billing off; nothing should price it")
@@ -534,8 +544,8 @@ func retention(t *testing.T, ent entitlement.Entitlement) int64 {
 }
 
 func flatten(e entitlement.Entitlement) string {
-	return fmt.Sprintf("%s/%s/%s/%s quota=%v price=%v retention=%v trial=%s contract=%s window=[%s,%s) enabled=%v",
-		e.Slug, e.DisplayName, e.Currency, e.Status, str(e.IncludedEvents), str(e.PriceCents),
+	return fmt.Sprintf("%s/%s/%s/%s quota=%v retention=%v trial=%s contract=%s window=[%s,%s) enabled=%v",
+		e.Slug, e.DisplayName, e.Currency, e.Status, str(e.IncludedEvents),
 		str(e.RetentionDays), e.TrialEndsAt, e.ContractEndsAt, e.PeriodStart, e.PeriodEnd, e.BillingEnabled)
 }
 

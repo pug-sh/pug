@@ -77,10 +77,6 @@ type Entitlement struct {
 	Currency    string
 	Status      Status
 
-	// Always nil under usage pricing: a graduated card has no single list price to
-	// show. Kept so the proto, handler and operator CLI render "no price" rather
-	// than a wrong one; sub-project 1b removes the field and its wire equivalent.
-	PriceCents *int64
 	// IncludedEvents is events this period before charges begin — a card's free
 	// allowance or a deal's. nil means NO ALLOWANCE: billing off, or a slug no card
 	// answers to. Never render it as zero.
@@ -135,9 +131,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now
 	// the flag. Safe precisely because the number enforces nothing.
 	if !billingEnabled {
 		ent.Slug, ent.DisplayName, ent.Currency = SlugFree, "Free", billing.Currency
-		// No card, so nothing prices this org and Quote reports so. PriceCents stays
-		// nil like everywhere else under usage pricing: a graduated card has no single
-		// list price, and 1b removes the field.
+		// Card and Terms both stay nil, so Quote reports that nothing prices this org.
 		ent.Status = StatusFree
 		return ent
 	}
