@@ -12,7 +12,6 @@ package mandate
 
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -20,16 +19,14 @@ import (
 )
 
 // Service is the mandate lifecycle. It holds the entitlement service for the
-// billing switch and the stored-row reads it shares with the dashboard; writes to
-// billing_entitlements stay in that package.
+// billing switch, the org lock and the stored-row reads it shares with the
+// dashboard; writes to billing_entitlements stay in that package.
 type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool
 	// payments is nil on a deployment with no provider credentials, which is a
 	// supported mode: only the buy button is missing.
-	payments *billing.Payments
-	// entitlements is also where the billing switch is read from; mandate keeps no
-	// copy.
+	payments     *billing.Payments
 	entitlements *entitlement.Service
 }
 

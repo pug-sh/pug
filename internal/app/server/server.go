@@ -151,8 +151,8 @@ func start(ctx context.Context, d *deps) error {
 	if err != nil {
 		return fmt.Errorf("entitlement service: %w", err)
 	}
-	// The money side, which does talk to the provider. Built over the entitlement
-	// service, whose billing switch it reads rather than taking its own.
+	// The money side, which does talk to the provider, built over the entitlement
+	// service.
 	mandateSvc := mandate.NewService(d.pgRo, d.pgW, d.payments, entitlementSvc)
 	provider := ""
 	if d.payments != nil {
