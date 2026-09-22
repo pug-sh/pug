@@ -7,12 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/app/cron"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 	"github.com/pug-sh/pug/internal/deps/dodo"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"

@@ -8,9 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 

@@ -10,10 +10,9 @@ import (
 	"testing"
 	"time"
 
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/mandate"
-
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/testutil"
 )
 

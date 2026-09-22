@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/pug-sh/pug/internal/core/billing"
-
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 )
 

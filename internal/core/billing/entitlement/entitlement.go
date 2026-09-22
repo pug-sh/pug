@@ -9,11 +9,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pug-sh/pug/internal/core/billing"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"

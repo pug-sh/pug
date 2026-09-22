@@ -6,12 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
-
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
