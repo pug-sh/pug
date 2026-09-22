@@ -91,7 +91,7 @@ type Entitlement struct {
 // Resolve is the whole rule set, as a pure function. Expiry is lazy: a trial that
 // ended an hour ago resolves free on the next request, so there is no sweep job
 // to leave one stale. sub is separate from Record because their writers differ.
-func Resolve(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now time.Time, billingEnabled bool) Entitlement {
+func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time, billingEnabled bool) Entitlement {
 	// An absent row means every field is meaningless, not just the plan: without
 	// this, a caller that forgot Present would still have its anchor day and trial
 	// date honoured while its plan was ignored.
@@ -156,7 +156,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now
 // resolvePlan picks the tier and the state it is held in, in order: a granted
 // plan beats a lingering trial date, so a customer who converted mid-trial can
 // never be demoted by a stale timestamp.
-func resolvePlan(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now time.Time) (Plan, Status) {
+func resolvePlan(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time) (Plan, Status) {
 	free := mustPlan(SlugFree)
 	lapsed := contractLapsed(rec, now)
 	plan, known := PlanBySlug(rec.PlanSlug)
@@ -219,7 +219,7 @@ func trialEnd(orgCreateTime time.Time, rec Record) time.Time {
 
 // applyOverrides patches the negotiated fields over the resolved plan, last, so
 // the deal's numbers win over the catalog's. Each override is independent.
-func applyOverrides(ent *Entitlement, rec Record, sub *billing.Subscription, now time.Time) {
+func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Time) {
 	// The contract cannot expire the custom subscription it covers, or a live deal
 	// would lose its quota the day its agreed term passed. Others are a different
 	// purchase, and a lapsed grant's numbers must not ride along on one.

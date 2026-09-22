@@ -187,20 +187,6 @@ func ParseSubStatus(v string) (SubStatus, bool) {
 	return "", false
 }
 
-// Subscription is the stored mirror row, as resolution consumes it.
-type Subscription struct {
-	PlanSlug   string
-	Status     SubStatus
-	PriceCents int64
-	Currency   string
-
-	ProviderCustomerID string
-	ProviderSubID      string
-
-	CurrentPeriodStart time.Time
-	CurrentPeriodEnd   time.Time
-}
-
 // Currency is the one pug sells in, enforced at the webhook boundary so
 // multi-currency changes here — and renames price_cents with it.
 const Currency = "USD"

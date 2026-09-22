@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -108,7 +107,7 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 	}
 	// Only when billing is on: with it off every org resolves to the free floor
 	// regardless, so the read is a query per dashboard load that cannot change it.
-	var sub *billing.Subscription
+	var sub *Subscription
 	if s.billingEnabled {
 		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
 			return Entitlement{}, err
