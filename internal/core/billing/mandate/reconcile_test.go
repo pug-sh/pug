@@ -126,7 +126,7 @@ func TestPastDueCountsAsBilled(t *testing.T) {
 	}
 	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_growth", corebilling.SubStatusPastDue)
 	provider.event = pastDue
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_past_due_billed", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("wh_past_due_billed", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 

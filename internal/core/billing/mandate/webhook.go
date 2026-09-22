@@ -24,7 +24,19 @@ import (
 // HandleDelivery stores one verified delivery and applies it, returning only once
 // the row is durable. Everything unapplicable is stored, marked processed and NOT
 // retried — the provider retries and fixes none of it. A body it cannot DECODE is retried.
-func (s *Service) HandleDelivery(ctx context.Context, provider billing.PaymentProvider, d billing.Delivery) error {
+//
+// It stores, attributes and maps under this service's own provider, the one
+// MountBilling verified the delivery with; no second one is handed in beside it.
+func (s *Service) HandleDelivery(ctx context.Context, d billing.Delivery) error {
+	provider := s.Provider()
+	if provider == nil {
+		// MountBilling mounts no route without one, so this is wiring gone wrong.
+		// Retried rather than accepted: stored under no provider, it could never map.
+		slog.ErrorContext(ctx, "a billing webhook delivery reached a service with no provider",
+			slogx.Error(billing.ErrNoProvider), slog.String("webhook_id", d.WebhookID))
+		telemetry.RecordError(ctx, billing.ErrNoProvider)
+		return billing.ErrNoProvider
+	}
 	stored, err := s.write().InsertBillingWebhookDelivery(ctx, dbwrite.InsertBillingWebhookDeliveryParams{
 		EventType: d.EventType,
 		Payload:   storablePayload(d.RawPayload),

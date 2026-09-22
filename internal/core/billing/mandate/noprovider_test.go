@@ -56,6 +56,28 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 	}
 }
 
+// A delivery that reaches a service with no provider has nothing to be stored or
+// mapped under. MountBilling mounts no route for one, so this is wiring gone
+// wrong, and it is refused for the provider's retry rather than stored orphaned.
+func TestHandleDeliveryRefusesWithoutAProvider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+
+	err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now().UTC()))
+	if !errors.Is(err, corebilling.ErrNoProvider) {
+		t.Fatalf("HandleDelivery err = %v, want ErrNoProvider", err)
+	}
+	var n int
+	if err := f.pg.PgRO.QueryRow(t.Context(), `select count(*) from billing_webhook_deliveries`).Scan(&n); err != nil {
+		t.Fatalf("count deliveries: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("stored %d deliveries under no provider, want 0", n)
+	}
+}
+
 // Listed but not purchasable, rather than an empty catalog: a price with no
 // button is the honest render for a self-hosted install.
 func TestPlanOptionsAreListedButNotPurchasableWithNoProvider(t *testing.T) {

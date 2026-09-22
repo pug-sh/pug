@@ -51,6 +51,16 @@ func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, entitlement
 // lives there, and two services wired apart would report two switches.
 func (s *Service) Entitlements() *entitlement.Service { return s.entitlements }
 
+// Provider is the provider this lifecycle was built with, nil when there is none.
+// The webhook route mounts it from here, so the route that verifies a delivery and
+// the service that stores and maps it cannot name two providers.
+func (s *Service) Provider() billing.PaymentProvider {
+	if !s.payments.Configured() {
+		return nil
+	}
+	return s.payments.Provider
+}
+
 // write is the pool-backed writer: for single-statement writes, and for reads that
 // must see a write that just committed (attribution, checkout refs).
 func (s *Service) write() *dbwrite.Queries { return dbwrite.New(s.pgW) }
