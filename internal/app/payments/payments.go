@@ -12,11 +12,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/deps/dodo"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -44,7 +44,7 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
 	}
-	products, err := ProductIDs(nil, entitlement.Cards())
+	products, err := productIDs(os.LookupEnv, entitlement.Cards())
 	if err != nil {
 		return nil, err
 	}

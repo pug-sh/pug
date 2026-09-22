@@ -2,14 +2,15 @@ package billing
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -18,11 +19,28 @@ import (
 // Every handler would nil-panic on the first call; failing here names it.
 func TestNewServerRejectsANilService(t *testing.T) {
 	defer func() {
-		if recover() == nil {
-			t.Fatal("NewServer(nil, nil) returned a server; every RPC on it would panic")
+		v := recover()
+		if v == nil {
+			t.Fatal("NewServer returned a server; every RPC on it would panic")
+		}
+		if msg, _ := v.(string); !strings.Contains(msg, "mandate service is nil") {
+			t.Errorf("panic = %v, want it to name the mandate service", v)
 		}
 	}()
-	NewServer(nil, nil)
+	NewServer(nil)
+}
+
+// The status read and the buy button must answer to one billing switch, so the
+// handler's entitlement service is the one the mandate service was built over.
+func TestNewServerReadsEntitlementsOffTheMandateService(t *testing.T) {
+	// Construction never touches the pools, so no database is needed.
+	entitlements, err := entitlement.NewService(nil, nil, true)
+	if err != nil {
+		t.Fatalf("new entitlement service: %v", err)
+	}
+	if got := NewServer(mandate.NewService(nil, nil, nil, entitlements)).entitlements; got != entitlements {
+		t.Error("the handler holds an entitlement service the mandate service was not built over")
+	}
 }
 
 // A caller that has gone away must not start a provider or database call.
@@ -133,12 +151,8 @@ func TestGetBillingStatusCarriesTheContractEnd(t *testing.T) {
 		t.Errorf("contract_ends_at = %s with no deal stored, want absent", before.GetContractEndsAt().AsTime())
 	}
 
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
 	ends := time.Now().AddDate(1, 0, 0).UTC().Truncate(time.Second)
-	if _, err := ent.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
+	if _, err := srv.entitlements.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
 		PlanSlug:       entitlement.CurrentCard().Slug,
 		ContractEndsAt: &ends,
 	}); err != nil {

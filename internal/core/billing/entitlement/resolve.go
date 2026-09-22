@@ -1,7 +1,8 @@
 // Package entitlement answers what an org is entitled to send: the plan catalog,
-// the stored row, and the resolution of the two against the clock. It counts
-// nothing — consumption is internal/core/usage's job, and the two meet only in a
-// client rendering "X of Y".
+// the stored row, the live subscription the mandate package writes, and the
+// resolution of the three against the clock, where a live subscription outranks
+// the row. It counts nothing — consumption is internal/core/usage's job, and the
+// two meet only in a client rendering "X of Y".
 //
 // A quota drives a banner and never a rejected event, so a wrong row costs a wrong
 // number on a page. Nothing on the ingestion path imports this package, and nothing
@@ -9,26 +10,15 @@
 package entitlement
 
 import (
-	"errors"
 	"time"
 
 	"github.com/pug-sh/pug/internal/core/billing"
-
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 )
 
 // Status is the entitlement state, DERIVED at read time from the timestamps and
 // the clock. A stored status would be a second source of truth that can disagree
 // with the dates beside it, and keeping it honest costs a sweep job.
-// Shared across the billing packages and read by the orgs, usage and billing
-// handlers, so they live with the vocabulary rather than with one concern.
-var (
-	ErrOrgNotFound = errors.New("billing: org not found")
-	// ErrPlanNotFound is a slug the catalog does not have. Distinct from
-	// ErrPlanRetired, which is a slug it has but will not hand to a new org.
-	ErrPlanNotFound = errors.New("billing: plan not found")
-)
-
 type Status string
 
 const (
@@ -107,7 +97,7 @@ type Entitlement struct {
 // Resolve is the whole rule set, as a pure function. Expiry is lazy: a trial that
 // ended an hour ago resolves free on the next request, so there is no sweep job
 // to leave one stale. sub is separate from Record because their writers differ.
-func Resolve(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now time.Time, billingEnabled bool) Entitlement {
+func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time, billingEnabled bool) Entitlement {
 	// An absent row means every field is meaningless, not just the plan: without
 	// this, a caller that forgot Present would still have its anchor day and trial
 	// date honoured while its plan was ignored.
@@ -175,7 +165,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now
 // resolveStatus is what the org's billing state is called, independently of what
 // prices it. A pin of any kind is a grant: with free and trial no longer plans,
 // "they are on a paid tier" and "they pinned something" are the same question.
-func resolveStatus(orgCreateTime time.Time, rec Record, sub *billing.Subscription, now time.Time, lapsed bool) Status {
+func resolveStatus(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time, lapsed bool) Status {
 	// Most specific first: somebody is paying for this one. Not gated on the
 	// contract -- that date bounds an operator's grant, not a live subscription.
 	if sub != nil {
@@ -201,7 +191,7 @@ func resolveStatus(orgCreateTime time.Time, rec Record, sub *billing.Subscriptio
 }
 
 // resolveCard sets whichever of Card and Terms prices this org, or neither.
-func resolveCard(ent *Entitlement, rec Record, sub *billing.Subscription, lapsed bool) {
+func resolveCard(ent *Entitlement, rec Record, sub *Subscription, lapsed bool) {
 	// Most specific first: somebody is paying for the subscription, so it outranks
 	// both a deal on the row and an operator's grant. A live subscription naming a
 	// card must not be overridden by a lapsed deal or by a slug the catalog dropped.
@@ -294,7 +284,7 @@ func trialEnd(orgCreateTime time.Time, rec Record) time.Time {
 
 // applyOverrides patches the negotiated fields over the resolved plan, last, so
 // the deal's numbers win over the catalog's. Each override is independent.
-func applyOverrides(ent *Entitlement, rec Record, sub *billing.Subscription, now time.Time) {
+func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Time) {
 	// The contract cannot expire the custom subscription it covers, or a live deal
 	// would lose its quota the day its agreed term passed. Others are a different
 	// purchase, and a lapsed grant's numbers must not ride along on one.

@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"

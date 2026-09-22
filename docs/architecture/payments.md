@@ -12,6 +12,12 @@ the inbox, the reconcile pass or the dashboard — merchant-of-record terms and
 fee schedules move, and being locked to one is a commercial risk, not only a
 technical one. Dodo is the first and, for now, the only implementation.
 
+The code is `internal/core/billing/mandate`, named for the mandate a buyer gives
+the provider to charge them, which pug mirrors as a subscription. It sits beside
+the port in `internal/core/billing`, which is all of core the Dodo adapter may
+import (a depguard rule, not a convention), and beside `entitlement`, which is
+[`billing.md`](billing.md).
+
 > **Status: implemented 2026-09-06.** §17 records where the build departs from
 > this design, and §15's open questions are resolved there. An earlier,
 > reviewed, all-at-once Dodo build exists at `archive/billing-2026-08-15`; §16
@@ -51,13 +57,17 @@ today.
    payments side writes `billing_subscriptions` — the webhook, reconcile and
    `ConfirmCheckout`, all through the one CAS in `applySubscription`, so there is
    no second notion of "newer". Neither side writes the other's table. This is
-   what makes drift structurally impossible rather than a thing to remember (§4).
+   what makes drift structurally impossible rather than a thing to remember (§4),
+   and the build holds it: the `table-has-one-writer` check in `internal/lint`
+   reads which table each write query mutates from its SQL and fails a call to
+   one from outside the owning package.
    The two sides still meet on one org: a custom subscription takes its quota
-   from the entitlement row, so `applySubscription` takes the same
-   `pg_advisory_xact_lock` a `billing clear` does and re-reads that row inside
-   it. Otherwise a clear can commit between the mapping and the write, leaving a
-   live custom subscription against no row — the free floor, and exactly the
-   stranding `Clear`'s own guard refuses to cause.
+   from the entitlement row, so `applySubscription` maps and writes inside the
+   entitlement service's `WithOrgLock`, which takes the same
+   `pg_advisory_xact_lock` a `billing clear` does and hands it that row as read
+   under the lock. Otherwise a clear can commit between the mapping and the
+   write, leaving a live custom subscription against no row — the free floor,
+   and exactly the stranding `Clear`'s own guard refuses to cause.
 3. **Every paid org has a provider subscription**, negotiated deals included.
    There is no manual-payment path, so "entitlement with no live subscription"
    is a reconcilable defect rather than a legitimate state.
@@ -751,7 +761,7 @@ missing. That is the self-hosted configuration.
 
 ## 14. Testing
 
-`internal/core/billing` already has `TestMain` and no `t.Parallel()`
+`internal/core/billing/mandate` has its own `TestMain` and no `t.Parallel()`
 ([`CLAUDE.md`](../../CLAUDE.md) § Testing); the additions follow. The provider is
 an interface (§2.1) with a fake in tests — no container talks to a payments API.
 What must be tested against Postgres: the CAS on out-of-order deliveries, the

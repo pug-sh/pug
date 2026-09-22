@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
-
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 )
 
 // The two shapes with no way to take money: no provider credentials, and the
@@ -16,11 +16,17 @@ func noProviderCases(t *testing.T) (*fixture, map[string]*mandate.Service) {
 	t.Helper()
 	f, provider := newPaidFixture(t)
 
-	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, true, nil, f.ent)
-	switchedOff := mandate.NewService(f.pg.PgRO, f.pg.PgW, false, &corebilling.Payments{
+	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, nil, f.entitlements)
+	// A provider wired and the switch off, which means an entitlement service built
+	// off, as the server builds it.
+	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, false)
+	if err != nil {
+		t.Fatalf("new entitlement service: %v", err)
+	}
+	switchedOff := mandate.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
-	}, f.ent)
+	}, off)
 	return f, map[string]*mandate.Service{
 		"no provider credentials": unconfigured,
 		"billing switched off":    switchedOff,
@@ -47,6 +53,28 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 				t.Errorf("ConfirmCheckout err = %v, want ErrNoProvider", err)
 			}
 		})
+	}
+}
+
+// A delivery that reaches a service with no provider has nothing to be stored or
+// mapped under. MountBilling mounts no route for one, so this is wiring gone
+// wrong, and it is refused for the provider's retry rather than stored orphaned.
+func TestHandleDeliveryRefusesWithoutAProvider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+
+	err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now().UTC()))
+	if !errors.Is(err, corebilling.ErrNoProvider) {
+		t.Fatalf("HandleDelivery err = %v, want ErrNoProvider", err)
+	}
+	var n int
+	if err := f.pg.PgRO.QueryRow(t.Context(), `select count(*) from billing_webhook_deliveries`).Scan(&n); err != nil {
+		t.Fatalf("count deliveries: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("stored %d deliveries under no provider, want 0", n)
 	}
 }
 

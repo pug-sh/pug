@@ -8,9 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
@@ -503,6 +502,141 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("SetPlan after the lock was released: %v", err)
 	}
+}
+
+// The lock must come before the read. `for update` locks nothing while the org has
+// no row, so a read taken first would see an operator's uncommitted first grant as
+// no row at all, and a subscription writer would map a paid deal against that —
+// consuming the delivery and leaving the org on the free floor.
+func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+
+	// An operator's first grant, mid-flight: the lock held and the row written but
+	// not yet committed.
+	grant, err := f.pg.PgW.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = grant.Rollback(ctx) }()
+	if err := dbwrite.New(grant).LockBillingEntitlementOrg(ctx, f.orgID); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	if _, err := grant.Exec(ctx,
+		`insert into billing_entitlements (org_id, plan_slug, included_events_override, provider_product_id)
+		 values ($1, 'custom', 5000000, 'prod_acme')`, f.orgID); err != nil {
+		t.Fatalf("stage the grant: %v", err)
+	}
+
+	var got entitlement.Record
+	var lockErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		lockErr = f.svc.WithOrgLock(ctx, f.orgID, func(_ *dbwrite.Queries, cur entitlement.Record) error {
+			got = cur
+			return nil
+		})
+	}()
+
+	waitForLockWaiter(t, f, done)
+	if err := grant.Commit(ctx); err != nil {
+		t.Fatalf("commit the grant: %v", err)
+	}
+	<-done
+	if lockErr != nil {
+		t.Fatalf("WithOrgLock: %v", lockErr)
+	}
+	if !got.Present || got.ProviderProductID != "prod_acme" {
+		t.Errorf("WithOrgLock handed over %+v, want the committed grant: it read before it held the lock", got)
+	}
+}
+
+// No row is the ordinary state, and an org that does not exist reads the same way:
+// the lock is advisory, so taking it proves nothing about the org.
+func TestWithOrgLockHandsOverNoRowAsTheZeroRecord(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	for name, orgID := range map[string]string{"no row": f.orgID, "no such org": "o_does_not_exist"} {
+		t.Run(name, func(t *testing.T) {
+			called := false
+			err := f.svc.WithOrgLock(t.Context(), orgID, func(_ *dbwrite.Queries, cur entitlement.Record) error {
+				called = true
+				if cur.Present || cur.PlanSlug != "" {
+					t.Errorf("record = %+v, want the zero Record", cur)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("WithOrgLock: %v", err)
+			}
+			if !called {
+				t.Error("WithOrgLock returned without running fn")
+			}
+		})
+	}
+}
+
+// fn's error is the rollback: a caller that refuses halfway must leave nothing
+// behind, or a refused delivery would still have written.
+func TestWithOrgLockCommitsOnlyWhenFnSucceeds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	refused := errors.New("refused after writing")
+	err := f.svc.WithOrgLock(t.Context(), f.orgID, func(w *dbwrite.Queries, _ entitlement.Record) error {
+		if _, err := w.UpsertBillingEntitlement(t.Context(), dbwrite.UpsertBillingEntitlementParams{
+			OrgID:    f.orgID,
+			PlanSlug: "growth",
+		}); err != nil {
+			t.Fatalf("upsert: %v", err)
+		}
+		return refused
+	})
+	if !errors.Is(err, refused) {
+		t.Fatalf("err = %v, want fn's own error back", err)
+	}
+	rec, err := f.svc.StoredRecord(t.Context(), f.orgID)
+	if err != nil {
+		t.Fatalf("StoredRecord: %v", err)
+	}
+	if rec.Present {
+		t.Errorf("stored %+v; the write fn refused was committed anyway", rec)
+	}
+}
+
+// waitForLockWaiter blocks until a session is parked on an advisory lock, so a test
+// never races the commit that releases it. The package runs its tests serially
+// against one container, so any waiter is the one under test. A call that settled
+// without waiting returns too: that is the unlocked read these tests exist to
+// catch, and their assertions name it better than a timeout would.
+func waitForLockWaiter(t *testing.T, f *fixture, done <-chan struct{}) {
+	t.Helper()
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		var n int
+		if err := f.pg.PgRO.QueryRow(t.Context(),
+			`select count(*) from pg_locks where locktype = 'advisory' and not granted`).Scan(&n); err != nil {
+			t.Fatalf("read pg_locks: %v", err)
+		}
+		if n > 0 {
+			return
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	t.Fatal("WithOrgLock never blocked on the org lock")
 }
 
 // The guard runs inside mutate's transaction, which already holds a connection.
