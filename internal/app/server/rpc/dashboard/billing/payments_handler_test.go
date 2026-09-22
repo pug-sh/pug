@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
@@ -118,16 +117,11 @@ func (failingProvider) FetchCheckoutOutcome(context.Context, string) (corebillin
 
 func newFailingServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
+	return newServerWith(t, pg, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      failingProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
-	}, ent)
-	return NewServer(ent, svc)
+	})
 }
 
 // Internal, and silent: the provider's request ids and status text must not reach
@@ -180,29 +174,19 @@ func TestProviderFailuresAreInternalAndSayNothing(t *testing.T) {
 // id — the deploy variable is missing. Nothing is purchasable.
 func newProductlessServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
+	return newServerWith(t, pg, true, &corebilling.Payments{
 		Provider:  stubProvider{},
 		ReturnURL: "https://app.example/settings/billing",
-	}, ent)
-	return NewServer(ent, svc)
+	})
 }
 
 func newPayingServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
 	t.Helper()
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, billingEnabled)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
+	return newServerWith(t, pg, billingEnabled, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
-	}, ent)
-	return NewServer(ent, svc)
+	})
 }
 
 func TestCheckoutPrefillsTheBuyer(t *testing.T) {
@@ -211,17 +195,13 @@ func TestCheckoutPrefillsTheBuyer(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	var in corebilling.CheckoutInput
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
+	srv := newServerWith(t, pg, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{in: &in},
 		ReturnURL:     "https://app.example/settings/billing",
-	}, ent)
+	})
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
-	if _, err := checkout(t, NewServer(ent, svc), orgID, "growth"); err != nil {
+	if _, err := checkout(t, srv, orgID, "growth"); err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)
 	}
 	// Both halves are strings, so a transposed pair compiles and reaches the provider.
@@ -591,16 +571,11 @@ func (c confirmStub) FetchCheckoutOutcome(context.Context, string) (corebilling.
 
 func newConfirmingServer(t *testing.T, pg *testutil.TestPostgres, provider corebilling.PaymentProvider) *Server {
 	t.Helper()
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
+	return newServerWith(t, pg, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
-	}, ent)
-	return NewServer(ent, svc)
+	})
 }
 
 func confirm(t *testing.T, srv *Server, orgID string) (bool, error) {

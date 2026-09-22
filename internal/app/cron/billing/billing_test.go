@@ -21,14 +21,15 @@ import (
 
 func TestMain(m *testing.M) { testutil.Main(m) }
 
-func newSvc(t *testing.T, pg *testutil.TestPostgres) *mandate.Service {
+// newSvc builds the pass's service with billing on. A nil payments is the
+// no-provider shape, where Reconcile is a no-op and only the prune runs.
+func newSvc(t *testing.T, pg *testutil.TestPostgres, payments *corebilling.Payments) *mandate.Service {
 	t.Helper()
 	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, nil, ent)
-	return svc
+	return mandate.NewService(pg.PgRO, pg.PgW, payments, ent)
 }
 
 // seedDelivery stores one processed delivery stamped at `at`.
@@ -87,7 +88,7 @@ func TestPassPrunesOnlyPastRetention(t *testing.T) {
 	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-mandate.DeliveryRetention-time.Hour))
 	seedDelivery(t, pg.PgW, "evt_fresh", now.Add(-mandate.DeliveryRetention+time.Hour))
 
-	if err := pass(t.Context(), newSvc(t, pg), now); err != nil {
+	if err := pass(t.Context(), newSvc(t, pg, nil), now); err != nil {
 		t.Fatalf("pass: %v", err)
 	}
 	got := deliveryIDs(t, pg.PgRO)
@@ -162,14 +163,10 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-mandate.DeliveryRetention-time.Hour))
 	seedLiveSubscription(t, pg.PgW)
 
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
+	svc := newSvc(t, pg, &corebilling.Payments{
 		Provider:      unreachableProvider{},
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
-	}, ent)
+	})
 	if err := pass(t.Context(), svc, now); err == nil {
 		t.Fatal("pass returned nil though the provider could not be read")
 	}
