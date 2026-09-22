@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/mandate"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
@@ -16,11 +17,17 @@ func noProviderCases(t *testing.T) (*fixture, map[string]*mandate.Service) {
 	t.Helper()
 	f, provider := newPaidFixture(t)
 
-	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, true, nil, f.ent)
-	switchedOff := mandate.NewService(f.pg.PgRO, f.pg.PgW, false, &corebilling.Payments{
+	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, nil, f.ent)
+	// A provider wired and the switch off: the switch is the entitlement service's,
+	// so switching it off means building that service off, as the server does.
+	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, false)
+	if err != nil {
+		t.Fatalf("new entitlement service: %v", err)
+	}
+	switchedOff := mandate.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
-	}, f.ent)
+	}, off)
 	return f, map[string]*mandate.Service{
 		"no provider credentials": unconfigured,
 		"billing switched off":    switchedOff,

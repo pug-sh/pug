@@ -27,7 +27,7 @@ func newSvc(t *testing.T, pg *testutil.TestPostgres) *mandate.Service {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, nil, ent)
+	svc := mandate.NewService(pg.PgRO, pg.PgW, nil, ent)
 	return svc
 }
 
@@ -166,7 +166,7 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
 		Provider:      unreachableProvider{},
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 	}, ent)

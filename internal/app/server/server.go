@@ -151,7 +151,7 @@ func start(ctx context.Context, d *deps) error {
 	if err != nil {
 		return fmt.Errorf("entitlement service: %w", err)
 	}
-	mandateSvc := mandate.NewService(d.pgRo, d.pgW, d.billingEnabled, d.payments, entitlementSvc)
+	mandateSvc := mandate.NewService(d.pgRo, d.pgW, d.payments, entitlementSvc)
 	provider := ""
 	if d.payments != nil {
 		provider = d.payments.Provider.Name()

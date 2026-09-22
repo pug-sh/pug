@@ -84,6 +84,11 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Se
 	}, nil
 }
 
+// BillingEnabled is the switch this service resolves under. The mandate package
+// reads it from here rather than holding a copy: two copies can disagree, and one
+// response would then report billing off beside a working buy button.
+func (s *Service) BillingEnabled() bool { return s.billingEnabled }
+
 // GetEntitlement resolves what the org may send right now.
 func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Time) (Entitlement, error) {
 	row, err := s.read.GetOrgEntitlement(ctx, orgID)

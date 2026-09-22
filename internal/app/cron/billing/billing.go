@@ -89,7 +89,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return setupFailed(ctx, "entitlement service", err)
 	}
-	svc := mandate.NewService(pgRO, pgW, billingCfg.Enabled, pay, entSvc)
+	svc := mandate.NewService(pgRO, pgW, pay, entSvc)
 
 	if billingCfg.Enabled {
 		slog.InfoContext(ctx, "Running a billing reconcile pass")

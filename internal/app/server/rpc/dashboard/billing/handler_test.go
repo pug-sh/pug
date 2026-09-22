@@ -37,7 +37,7 @@ func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Se
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, billingEnabled, nil, ent)
+	svc := mandate.NewService(pg.PgRO, pg.PgW, nil, ent)
 	return NewServer(ent, svc)
 }
 
