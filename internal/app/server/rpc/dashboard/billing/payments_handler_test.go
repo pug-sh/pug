@@ -250,7 +250,11 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 			orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 			srv := tc.server()
 
-			got := getStatus(t, srv, orgID).GetPurchasable()
+			status := getStatus(t, srv, orgID)
+			if got := status.GetBillingEnabled(); got != tc.enabled {
+				t.Errorf("billing_enabled = %v, want %v", got, tc.enabled)
+			}
+			got := status.GetPurchasable()
 			if got != tc.want {
 				t.Errorf("purchasable = %v, want %v", got, tc.want)
 			}
@@ -343,6 +347,54 @@ func TestCheckoutIsUnavailableWithoutAProvider(t *testing.T) {
 	}
 	if ae.Reason() != apperr.ReasonBillingUnavailable {
 		t.Errorf("reason = %q, want BILLING_UNAVAILABLE", ae.Reason())
+	}
+}
+
+// manageable is what the dashboard renders the portal button from, and it must
+// agree with CreatePortalSession as purchasable does with checkout. Billing off is
+// the case to watch: the server builds payments whether or not the switch is on,
+// so a provider and a customer can both exist behind a switched-off deployment.
+func TestManageableAgreesWithThePortal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	cases := []struct {
+		name    string
+		server  func(*testutil.TestPostgres) *Server
+		enabled bool
+		want    bool
+	}{
+		{"provider configured", func(pg *testutil.TestPostgres) *Server { return newPayingServer(t, pg, true) }, true, true},
+		{"no provider", func(pg *testutil.TestPostgres) *Server { return newServer(t, pg, true) }, true, false},
+		{"billing off", func(pg *testutil.TestPostgres) *Server { return newPayingServer(t, pg, false) }, false, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// A database each: seedCustomer's subscription ids are fixed.
+			pg := testutil.SetupPostgres(t)
+			orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+			seedCustomer(t, pg, orgID)
+			srv := tc.server(pg)
+
+			status := getStatus(t, srv, orgID)
+			if got := status.GetBillingEnabled(); got != tc.enabled {
+				t.Errorf("billing_enabled = %v, want %v", got, tc.enabled)
+			}
+			if got := status.GetManageable(); got != tc.want {
+				t.Errorf("manageable = %v, want %v", got, tc.want)
+			}
+
+			_, err := srv.CreatePortalSession(buyerCtx(t),
+				connect.NewRequest(&billingv1.CreatePortalSessionRequest{OrgId: &orgID}))
+			if tc.want && err != nil {
+				t.Errorf("manageable is true but the portal refused: %v", err)
+			}
+			if !tc.want && err == nil {
+				t.Error("manageable is false but the portal opened")
+			}
+		})
 	}
 }
 
