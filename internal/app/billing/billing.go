@@ -49,8 +49,8 @@ func New(ctx context.Context) (*CLI, error) {
 		return nil, fmt.Errorf("postgres writer pool: %w", err)
 	}
 
-	// No payments: this CLI never talks to a provider, and a nil Payments is the
-	// same supported shape a deployment without credentials runs in.
+	// Entitlement only: this CLI never talks to a provider, so there is no mandate
+	// service to build.
 	svc, err := entitlement.NewService(pgRO, pgW, billingCfg.Enabled)
 	if err != nil {
 		pgRO.Close()

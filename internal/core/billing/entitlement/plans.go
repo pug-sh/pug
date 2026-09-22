@@ -107,6 +107,9 @@ func copyPlan(p Plan) Plan {
 	return p
 }
 
+// IsFloor reports the two tiers every org falls back to, which are never sold. SQL
+// hard-codes the same pair for the reconcile pass's unbilled walk, and
+// TestTheFloorSlugsAgreeBetweenGoAndSQL pins the two together.
 func (p Plan) IsFloor() bool {
 	return p.Slug == SlugFree || p.Slug == SlugTrial
 }

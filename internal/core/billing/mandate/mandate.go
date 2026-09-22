@@ -1,6 +1,13 @@
-// Package mandate owns the payment mandate lifecycle: checkout, the webhook inbox,
-// reconcile, and every write to billing_subscriptions. It reads the org's
-// entitlement row through the entitlement package, which owns that table.
+// Package mandate is what docs/architecture/payments.md calls the payments side: the
+// lifecycle of a mandate, a buyer's standing authority for the provider to charge
+// them, which pug mirrors as a subscription. It runs checkout, the portal, the
+// webhook inbox and reconcile, and is the only writer of billing_subscriptions, the
+// delivery inbox and the checkout refs.
+//
+// It never writes billing_entitlements, whose one writer is the entitlement
+// package, but it reads that row: under the org lock through
+// entitlement.LockedRecord, through StoredRecord, and directly for attribution and
+// the reconcile walk.
 package mandate
 
 import (
@@ -12,9 +19,9 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
-// Service is the mandate lifecycle. It holds the entitlement service rather than a
-// pool of its own for the org's row: one writer per table, and the entitlement
-// package is that writer.
+// Service is the mandate lifecycle. It holds the entitlement service for the
+// billing switch and the stored-row reads it shares with the dashboard; writes to
+// billing_entitlements stay in that package.
 type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool
@@ -41,4 +48,6 @@ func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, entitlement
 	}
 }
 
+// write is the pool-backed writer: for single-statement writes, and for reads that
+// must see a write that just committed (attribution, checkout refs).
 func (s *Service) write() *dbwrite.Queries { return dbwrite.New(s.pgW) }

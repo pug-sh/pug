@@ -109,8 +109,8 @@ func (s *Service) CreateCheckoutSession(
 	if !ok {
 		return "", "", entitlement.ErrPlanNotFound
 	}
-	// The provider's product map already excludes both, but that is a PROVIDER's
-	// rule; core must not assume the next one builds its map the same way.
+	// The product map already excludes both, but that is the wiring's rule (see
+	// app/payments); core must not assume the next wiring builds it the same way.
 	if plan.IsFloor() || plan.Retired {
 		return "", "", ErrNotPurchasable
 	}
@@ -202,8 +202,8 @@ func (s *Service) planForProduct(productID string, rec entitlement.Record) (stri
 	return "", fmt.Errorf("%w: product %s", ErrNotPurchasable, productID)
 }
 
-// PlanOption is a tier as this deployment sells it, distinct from Entitlement,
-// which is a tier as ONE ORG holds it.
+// PlanOption is a tier as this deployment sells it, distinct from
+// entitlement.Entitlement, which is a tier as ONE ORG holds it.
 type PlanOption struct {
 	Slug        string
 	DisplayName string
@@ -352,8 +352,8 @@ func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string
 	if !s.payments.Configured() {
 		return "", billing.ErrNoProvider
 	}
-	// The write pool, for liveSubscription's reason: a lagging replica would hide
-	// "Manage billing" from a customer who has just paid.
+	// The write pool: a lagging replica would hide "Manage billing" from a customer
+	// who has just paid.
 	row, err := dbread.New(s.pgW).GetLatestBillingSubscription(ctx,
 		dbread.GetLatestBillingSubscriptionParams{
 			OrgID:    orgID,
