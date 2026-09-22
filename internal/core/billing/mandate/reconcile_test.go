@@ -75,7 +75,7 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 		t.Errorf("report = %+v, want 1 checked and 1 applied", report)
 	}
 
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.entitlements.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestReconcileReportsAPaidEntitlementWithNoSubscription(t *testing.T) {
 	}
 
 	// Still granted: the report is a report, not a repair.
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestPastDueCountsAsBilled(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	if _, err := f.ent.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.entitlements.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	pastDue := subEvent(f.orgID, "sub00000000000000070", "prod_growth", corebilling.SubStatusPastDue)
@@ -456,7 +456,7 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 	}
 
 	// The org stays on the plan it is actually charged for.
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}

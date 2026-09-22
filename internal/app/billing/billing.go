@@ -55,7 +55,7 @@ func New(ctx context.Context) (*CLI, error) {
 	if err != nil {
 		pgRO.Close()
 		pgW.Close()
-		return nil, fmt.Errorf("billing service: %w", err)
+		return nil, fmt.Errorf("entitlement service: %w", err)
 	}
 	return &CLI{svc: svc, pgRO: pgRO, pgW: pgW}, nil
 }

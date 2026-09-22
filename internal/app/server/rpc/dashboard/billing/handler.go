@@ -21,15 +21,18 @@ import (
 // Role gating is enforced by rpc.AuthzInterceptor before any handler runs. Not that
 // the org still exists: it can be deleted between the two reads.
 type Server struct {
-	ent     *entitlement.Service
-	mandate *mandate.Service
+	entitlements *entitlement.Service
+	mandates     *mandate.Service
 }
 
-func NewServer(ent *entitlement.Service, mandateSvc *mandate.Service) *Server {
-	if ent == nil || mandateSvc == nil {
-		panic("billing: service is nil")
+func NewServer(entitlements *entitlement.Service, mandates *mandate.Service) *Server {
+	if entitlements == nil {
+		panic("billing: entitlement service is nil")
 	}
-	return &Server{ent: ent, mandate: mandateSvc}
+	if mandates == nil {
+		panic("billing: mandate service is nil")
+	}
+	return &Server{entitlements: entitlements, mandates: mandates}
 }
 
 func (s *Server) GetBillingStatus(
@@ -41,7 +44,7 @@ func (s *Server) GetBillingStatus(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	ent, err := s.ent.GetEntitlement(ctx, orgID, time.Now())
+	ent, err := s.entitlements.GetEntitlement(ctx, orgID, time.Now())
 	if err != nil {
 		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
@@ -50,7 +53,7 @@ func (s *Server) GetBillingStatus(
 	}
 	// The stored row, for purchasable alone: a negotiated deal's product id lives
 	// there and never reaches the wire.
-	rec, err := s.ent.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
@@ -79,8 +82,8 @@ func (s *Server) GetBillingStatus(
 	resp.SubscriptionStatus = subStatusToRPC(ent.SubStatus).Enum()
 	// Read from the same helpers the two session RPCs refuse on, so a button the
 	// dashboard renders and a call that would fail cannot drift apart.
-	resp.Purchasable = proto.Bool(s.mandate.Purchasable(rec))
-	resp.Manageable = proto.Bool(s.mandate.Manageable(ctx, orgID))
+	resp.Purchasable = proto.Bool(s.mandates.Purchasable(rec))
+	resp.Manageable = proto.Bool(s.mandates.Manageable(ctx, orgID))
 	if !ent.SubPeriodEnd.IsZero() {
 		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
 	}
@@ -139,7 +142,7 @@ func (s *Server) CreateCheckoutSession(
 		return nil, err
 	}
 
-	sessionID, url, err := s.mandate.CreateCheckoutSession(ctx, mandate.Checkout{
+	sessionID, url, err := s.mandates.CreateCheckoutSession(ctx, mandate.Checkout{
 		OrgID:    orgID,
 		PlanSlug: req.Msg.GetPlanSlug(),
 		Email:    principal.Customer.Email,
@@ -165,7 +168,7 @@ func (s *Server) ConfirmCheckout(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	confirmed, err := s.mandate.ConfirmCheckout(ctx, orgID, req.Msg.GetSessionId(), time.Now())
+	confirmed, err := s.mandates.ConfirmCheckout(ctx, orgID, req.Msg.GetSessionId(), time.Now())
 	if err != nil {
 		return nil, confirmErr(err, orgID)
 	}
@@ -221,7 +224,7 @@ func (s *Server) CreatePortalSession(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	url, err := s.mandate.CreatePortalSession(ctx, orgID)
+	url, err := s.mandates.CreatePortalSession(ctx, orgID)
 	if err != nil {
 		return nil, checkoutErr(err, orgID, "")
 	}
@@ -241,7 +244,7 @@ func (s *Server) ListPlans(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	options, err := s.mandate.PlanOptions(ctx, orgID)
+	options, err := s.mandates.PlanOptions(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))

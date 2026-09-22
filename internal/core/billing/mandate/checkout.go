@@ -48,7 +48,7 @@ var (
 // Purchasable reports whether this deployment sells anything to this org at all.
 // Per tier it is PlanOption.Purchasable, which shares checkoutProduct with it.
 func (s *Service) Purchasable(rec entitlement.Record) bool {
-	if !s.ent.BillingEnabled() || !s.payments.Configured() {
+	if !s.entitlements.BillingEnabled() || !s.payments.Configured() {
 		return false
 	}
 	// Either a catalog tier is on sale, or this org has a negotiated product.
@@ -58,7 +58,7 @@ func (s *Service) Purchasable(rec entitlement.Record) bool {
 // Manageable reports whether a portal session would open, from the SAME lookup
 // CreatePortalSession refuses on: a cancelled org still wants its invoices.
 func (s *Service) Manageable(ctx context.Context, orgID string) bool {
-	if !s.ent.BillingEnabled() || !s.payments.Configured() {
+	if !s.entitlements.BillingEnabled() || !s.payments.Configured() {
 		return false
 	}
 	customerID, err := s.anyProviderCustomer(ctx, orgID)
@@ -102,7 +102,7 @@ func (s *Service) CreateCheckoutSession(
 	ctx context.Context, in Checkout,
 ) (sessionID, checkoutURL string, err error) {
 	orgID, planSlug := in.OrgID, in.PlanSlug
-	if !s.ent.BillingEnabled() || !s.payments.Configured() {
+	if !s.entitlements.BillingEnabled() || !s.payments.Configured() {
 		return "", "", billing.ErrNoProvider
 	}
 	plan, ok := entitlement.PlanBySlug(planSlug)
@@ -115,7 +115,7 @@ func (s *Service) CreateCheckoutSession(
 		return "", "", ErrNotPurchasable
 	}
 
-	rec, err := s.ent.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		return "", "", err
 	}
@@ -162,7 +162,7 @@ func (s *Service) CreateCheckoutSession(
 // CreatePortalSession opens the provider's customer portal, where plan changes,
 // card updates, invoices and cancellation live. Pug serves none of those.
 func (s *Service) CreatePortalSession(ctx context.Context, orgID string) (string, error) {
-	if !s.ent.BillingEnabled() || !s.payments.Configured() {
+	if !s.entitlements.BillingEnabled() || !s.payments.Configured() {
 		return "", billing.ErrNoProvider
 	}
 	// Any subscription, not only a live one: a customer whose subscription lapsed
@@ -222,7 +222,7 @@ type PlanOption struct {
 // PlanOptions is the sellable catalog for one org: the floors and retired tiers
 // are excluded, and custom appears only for the org whose row records a product.
 func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, error) {
-	rec, err := s.ent.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +244,7 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 			DisplayName:    plan.DisplayName,
 			IncludedEvents: plan.IncludedEvents,
 			PriceCents:     plan.PriceCents,
-			Purchasable:    s.ent.BillingEnabled() && err == nil,
+			Purchasable:    s.entitlements.BillingEnabled() && err == nil,
 			RetentionDays:  plan.RetentionDays,
 			Slug:           plan.Slug,
 		})
@@ -256,7 +256,7 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 // subscription through the same CAS the webhook uses. false, nil means the
 // provider has no subscription yet — the buyer beat their own payment home.
 func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, now time.Time) (bool, error) {
-	if !s.ent.BillingEnabled() || !s.payments.Configured() {
+	if !s.entitlements.BillingEnabled() || !s.payments.Configured() {
 		return false, billing.ErrNoProvider
 	}
 	provider := s.payments.Provider
@@ -323,7 +323,7 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 		telemetry.RecordError(ctx, ErrCurrencyNotSupported)
 		return false, ErrCurrencyNotSupported
 	}
-	rec, err := s.ent.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		return false, err
 	}

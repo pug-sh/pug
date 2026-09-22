@@ -2,10 +2,12 @@ package billing
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/mandate"
 
 	"connectrpc.com/connect"
 
@@ -15,14 +17,39 @@ import (
 	"github.com/rs/xid"
 )
 
-// Every handler would nil-panic on the first call; failing here names it.
+// Every handler would nil-panic on the first call; failing here names it. Each
+// service alone too, or a check that needed both nil would still pass.
 func TestNewServerRejectsANilService(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("NewServer(nil, nil) returned a server; every RPC on it would panic")
-		}
-	}()
-	NewServer(nil, nil)
+	// Construction never touches the pools, so no database is needed.
+	entitlements, err := entitlement.NewService(nil, nil, true)
+	if err != nil {
+		t.Fatalf("new entitlement service: %v", err)
+	}
+	mandates := mandate.NewService(nil, nil, nil, entitlements)
+
+	for _, tc := range []struct {
+		name         string
+		entitlements *entitlement.Service
+		mandates     *mandate.Service
+		want         string
+	}{
+		{"both", nil, nil, "entitlement service is nil"},
+		{"entitlement", nil, mandates, "entitlement service is nil"},
+		{"mandate", entitlements, nil, "mandate service is nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				v := recover()
+				if v == nil {
+					t.Fatal("NewServer returned a server; every RPC on it would panic")
+				}
+				if msg, _ := v.(string); !strings.Contains(msg, tc.want) {
+					t.Errorf("panic = %v, want it to say %q", v, tc.want)
+				}
+			}()
+			NewServer(tc.entitlements, tc.mandates)
+		})
+	}
 }
 
 // A caller that has gone away must not start a provider or database call.
@@ -134,7 +161,7 @@ func TestGetBillingStatusCarriesTheContractEnd(t *testing.T) {
 	}
 
 	ends := time.Now().AddDate(1, 0, 0).UTC().Truncate(time.Second)
-	if _, err := srv.ent.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
+	if _, err := srv.entitlements.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
 		PlanSlug:       "growth",
 		ContractEndsAt: &ends,
 	}); err != nil {

@@ -21,22 +21,23 @@ type Service struct {
 	// payments is nil on a deployment with no provider credentials, which is a
 	// supported mode: only the buy button is missing.
 	payments *billing.Payments
-	// ent is also where the billing switch is read from; mandate keeps no copy.
-	ent *entitlement.Service
+	// entitlements is also where the billing switch is read from; mandate keeps no
+	// copy.
+	entitlements *entitlement.Service
 }
 
-// NewService builds the lifecycle over ent, which must not be nil: the webhook
-// never reads through it, so a nil one would mount, take deliveries, and panic
-// only in a paid confirm or on the first reconciled row. payments may be nil.
-func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, ent *entitlement.Service) *Service {
-	if ent == nil {
+// NewService builds the lifecycle over entitlements, which must not be nil: the
+// webhook never reads through it, so a nil one would mount, take deliveries, and
+// panic only in a paid confirm or on the first reconciled row. payments may be nil.
+func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, entitlements *entitlement.Service) *Service {
+	if entitlements == nil {
 		panic("mandate: entitlement service is nil")
 	}
 	return &Service{
-		read:     dbread.New(pgRO),
-		pgW:      pgW,
-		payments: payments,
-		ent:      ent,
+		read:         dbread.New(pgRO),
+		pgW:          pgW,
+		payments:     payments,
+		entitlements: entitlements,
 	}
 }
 

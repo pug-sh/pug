@@ -35,11 +35,11 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 // wires them. A nil payments is the no-provider shape.
 func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool, payments *corebilling.Payments) *Server {
 	t.Helper()
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, billingEnabled)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, billingEnabled)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	return NewServer(ent, mandate.NewService(pg.PgRO, pg.PgW, payments, ent))
+	return NewServer(entitlements, mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements))
 }
 
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
