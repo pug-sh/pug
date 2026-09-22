@@ -52,12 +52,76 @@ func TestChecksAcrossRepo(t *testing.T) {
 	}
 }
 
+// billingWrites is one write query per owned table, so a fixture that wants no
+// finding does not trip the stale-owner-map rule.
+const billingWrites = `-- name: UpsertBillingEntitlement :one
+insert into billing_entitlements (org_id) values (@org_id)
+on conflict (org_id) do update set plan_slug = excluded.plan_slug
+returning *;
+
+-- name: InsertBillingEntitlementHistory :exec
+insert into billing_entitlement_history (org_id) values (@org_id);
+
+-- name: ApplyBillingSubscription :execrows
+insert into billing_subscriptions (id) values (@id);
+
+-- name: MarkBillingWebhookDeliveryProcessed :execrows
+update billing_webhook_deliveries set processed_at = now();
+
+-- name: PruneBillingCheckoutSessions :execrows
+delete from billing_checkout_sessions where create_time < @cutoff;
+
+-- name: GetBillingEntitlementForUpdate :one
+select * from billing_entitlements where org_id = @org_id for update;
+`
+
 func TestChecksDetectViolations(t *testing.T) {
 	tests := []struct {
 		check string
 		files map[string]string
 		want  string
 	}{
+		{
+			check: "table-has-one-writer",
+			files: map[string]string{
+				"schema/postgres/queries/write/billing.sql": billingWrites,
+				"internal/core/billing/mandate/a.go":        "package mandate\n\nfunc f(w q) { w.UpsertBillingEntitlement(nil) }\n",
+			},
+			want: "calls UpsertBillingEntitlement, which writes billing_entitlements; only internal/core/billing/entitlement may",
+		},
+		{
+			check: "table-has-one-writer",
+			files: map[string]string{
+				// A data-modifying CTE puts the write mid-statement, under a read's name.
+				"schema/postgres/queries/write/billing.sql": billingWrites +
+					"\n-- name: ListAndPrune :many\nwith d as (delete from billing_checkout_sessions returning *) select * from d;\n",
+				"internal/core/billing/entitlement/a.go": "package entitlement\n\nfunc f(w q) { w.ListAndPrune(nil) }\n",
+			},
+			want: "calls ListAndPrune, which writes billing_checkout_sessions",
+		},
+		{
+			check: "table-has-one-writer",
+			files: map[string]string{
+				"schema/postgres/queries/write/billing.sql": billingWrites,
+				"internal/core/billing/entitlement/a.go": "package entitlement\n\n" +
+					"func f(w q) { w.UpsertBillingEntitlement(nil); w.InsertBillingEntitlementHistory(nil) }\n",
+				"internal/core/billing/mandate/a.go": "package mandate\n\nfunc f(w q) { w.ApplyBillingSubscription(nil) }\n",
+				// A row lock is not a write, so any package may take one.
+				"internal/app/x/lock.go": "package x\n\nfunc f(w q) { w.GetBillingEntitlementForUpdate(nil) }\n",
+				// Seeding a row in a test is not a second writer.
+				"internal/app/x/a_test.go": "package x\n\nfunc f(w q) { w.ApplyBillingSubscription(nil) }\n",
+			},
+			want: "",
+		},
+		{
+			check: "table-has-one-writer",
+			files: map[string]string{
+				// A table renamed out from under the owner map must fail, not pass unguarded.
+				"schema/postgres/queries/write/billing.sql": "-- name: UpsertBillingEntitlement :one\n" +
+					"insert into billing_entitlements (org_id) values (@org_id) returning *;\n",
+			},
+			want: "billing_subscriptions has an owner but no write query mutates it",
+		},
 		{
 			check: "sqlc-read-is-read-only",
 			files: map[string]string{
@@ -336,7 +400,7 @@ func TestChecksDetectViolations(t *testing.T) {
 // A query directory that has moved must be an error, not zero findings: a glob
 // that matches nothing is indistinguishable from a clean tree.
 func TestSqlcChecksFailOnMissingQueryDir(t *testing.T) {
-	for _, name := range []string{"sqlc-read-is-read-only", "sqlc-query-naming"} {
+	for _, name := range []string{"sqlc-read-is-read-only", "sqlc-query-naming", "table-has-one-writer"} {
 		t.Run(name, func(t *testing.T) {
 			for _, c := range lint.Checks() {
 				if c.Name != name {

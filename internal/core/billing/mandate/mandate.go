@@ -2,7 +2,8 @@
 // lifecycle of a mandate, a buyer's standing authority for the provider to charge
 // them, which pug mirrors as a subscription. It runs checkout, the portal, the
 // webhook inbox and reconcile, and is the only writer of billing_subscriptions, the
-// delivery inbox and the checkout refs.
+// delivery inbox and the checkout refs, which the table-has-one-writer lint check
+// holds it to.
 //
 // It never writes billing_entitlements, whose one writer is the entitlement
 // package, but it reads that row: under the org lock through the entitlement
