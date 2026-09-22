@@ -401,7 +401,7 @@ func TestHistoryRoundTripsEveryOverride(t *testing.T) {
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
-		FlatFeeCents:   &dealFee,
+		FlatFeeCents:      &dealFee,
 		IncludedEvents:    new(int64(5_000_000)),
 		RetentionDays:     new(int64(2555)),
 		DisplayName:       new("Acme Enterprise"),

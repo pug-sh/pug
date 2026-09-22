@@ -252,10 +252,10 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 			// The card's free allowance, not a quota: what is included before charges
 			// begin.
 			IncludedEvents: &card.FreeEvents,
-			Card:          card,
-			Purchasable:   s.takesMoney() && err == nil,
-			RetentionDays: &card.RetentionDays,
-			Slug:          card.Slug,
+			Card:           card,
+			Purchasable:    s.takesMoney() && err == nil,
+			RetentionDays:  &card.RetentionDays,
+			Slug:           card.Slug,
 		})
 	}
 	return out, nil

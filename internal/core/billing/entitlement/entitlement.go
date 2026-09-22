@@ -172,16 +172,16 @@ const MaxDisplayNameLen = 150
 // leave the stored value alone, or a value to write — the zero value clearing it.
 // Nil keeps, because the common re-set is a renewal on unchanged terms.
 type Change struct {
-	PlanSlug          string
-	IncludedEvents    *int64
+	PlanSlug            string
+	IncludedEvents      *int64
 	FlatFeeCents        *int64
 	RateCentsPerMillion *int64
-	RetentionDays     *int64
-	DisplayName       *string
-	AnchorDay         *int
-	ContractEndsAt    *time.Time
-	Note              *string
-	ProviderProductID *string
+	RetentionDays       *int64
+	DisplayName         *string
+	AnchorDay           *int
+	ContractEndsAt      *time.Time
+	Note                *string
+	ProviderProductID   *string
 }
 
 // orKeep resolves one Change field against the value already stored.

@@ -53,9 +53,9 @@ type Record struct {
 	IncludedEventsOverride int64
 	// A deal's money. Zero means the deal has none -- a flat fee with no rate is a
 	// fixed-price arrangement, and a rate with no fee charges from the first event.
-	FlatFeeCents        int64
-	RateCentsPerMillion int64
-	RetentionDaysOverride  int64
+	FlatFeeCents          int64
+	RateCentsPerMillion   int64
+	RetentionDaysOverride int64
 }
 
 // Entitlement is the resolved answer: the plan as this org actually holds it,
