@@ -1,9 +1,12 @@
 # Billing — entitlement
 
-Design reference for the first billing slice (`internal/core/billing`,
-`proto/dashboard/billing`, `pug billing`). Linked from the root
-[`CLAUDE.md`](../../CLAUDE.md) — read this when working on plans,
-quotas or trials. Event **counting** is not here: see [`usage.md`](usage.md).
+Design reference for the first billing slice
+(`internal/core/billing/entitlement`, `proto/dashboard/billing`, `pug billing`).
+Linked from the root [`CLAUDE.md`](../../CLAUDE.md) — read this when working on
+plans, quotas or trials. Event **counting** is not here: see [`usage.md`](usage.md).
+`internal/core/billing` holds three packages: the root is the payment provider
+port and its vocabulary, `entitlement` is what this document describes, and
+`mandate` is the payments side, [`payments.md`](payments.md).
 
 > **Status: implemented**, except where §14 records a divergence: migration 019,
 > the Go catalog, `Resolve`, the entitlement store, §7's `GetBillingStatus` RPC
@@ -40,9 +43,10 @@ Four properties everything below preserves.
 
 1. **Ingestion never consults billing.** No event is rejected, throttled,
    delayed or dropped because of a quota. No ingestion path imports
-   `internal/core/billing`, and the package reads no ClickHouse at all. A quota
-   drives a banner; that is its entire job. This keeps the subsystem most likely
-   to be misconfigured structurally incapable of losing customer data.
+   `internal/core/billing` or any package under it, and none of them reads
+   ClickHouse at all. A quota drives a banner; that is its entire job. This
+   keeps the subsystem most likely to be misconfigured structurally incapable of
+   losing customer data.
 2. **Signup never writes billing.** An org with no `billing_entitlements` row is
    the *normal* state, not a defect — it resolves from `orgs.create_time`. Org
    creation therefore cannot fail on a billing table, and a database whose
@@ -81,9 +85,9 @@ Four properties everything below preserves.
 
 ## 4. The plan catalog
 
-`internal/core/billing/plans.go` — an ordered slice of `Plan{Slug, DisplayName,
-Currency, PriceCents, IncludedEvents, RetentionDays, Retired}`, with `PlanBySlug`
-for lookup.
+`internal/core/billing/entitlement/plans.go` — an ordered slice of
+`Plan{Slug, DisplayName, Currency, PriceCents, IncludedEvents, RetentionDays,
+Retired}`, with `PlanBySlug` for lookup.
 
 | slug | name | price | included events / month | retention | retired |
 |---|---|---|---|---|---|
@@ -326,13 +330,14 @@ create index billing_entitlement_history_org_idx
 
 ## 6. Resolution
 
-`billing.Resolve(orgCreateTime, row, now, billingEnabled)` is a pure function
-returning the resolved `Entitlement` — slug, display name, currency, status,
-`PriceCents`, `IncludedEvents`, trial/contract dates and the period bounds. No
-I/O, so the whole rule set is unit-testable without a container. `orgCreateTime`
-is an argument rather than something the package looks up because it is
-load-bearing twice: it is the trial clock, and it is the default quota anchor
-(§6.1).
+`entitlement.Resolve(orgCreateTime, rec, sub, now, billingEnabled)` is a pure
+function returning the resolved `Entitlement` — slug, display name, currency,
+status, `PriceCents`, `IncludedEvents`, trial/contract dates and the period
+bounds; `sub` is the live provider subscription, nil for most orgs
+([`payments.md`](payments.md) §7). No I/O, so the whole rule set is
+unit-testable without a container. `orgCreateTime` is an argument rather than
+something the package looks up because it is load-bearing twice: it is the
+trial clock, and it is the default quota anchor (§6.1).
 
 In order:
 
@@ -672,9 +677,10 @@ usable to prepare a deployment before the switch goes on.
 
 ## 10. Testing
 
-`internal/core/billing` needs `func TestMain(m *testing.M) { testutil.Main(m) }`
-and no `t.Parallel()` for the container-backed cases
-([`CLAUDE.md`](../../CLAUDE.md) § Testing). `Resolve` itself is pure, so the rule
+`internal/core/billing/entitlement` and `internal/core/billing/mandate` each
+declare `func TestMain(m *testing.M) { testutil.Main(m) }` and use no
+`t.Parallel()` for the container-backed cases ([`CLAUDE.md`](../../CLAUDE.md)
+§ Testing); the root package has no tests. `Resolve` itself is pure, so the rule
 table is a plain unit test.
 
 - **Resolution** — no row resolves trial-then-free off `orgs.create_time` and
