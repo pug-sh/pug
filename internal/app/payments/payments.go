@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
@@ -42,7 +43,7 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
 	}
-	products, err := ProductIDs(nil)
+	products, err := productIDs(os.LookupEnv)
 	if err != nil {
 		return nil, err
 	}
