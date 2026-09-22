@@ -54,9 +54,10 @@ var (
 	ErrActorRequired = errors.New("billing: an actor is required")
 )
 
-// Service is the entitlement store: GetEntitlement and StoredRecord for the
-// dashboard and the mandate package, the mutations and History for `pug billing`.
-// No RPC mutates an entitlement.
+// Service is the entitlement store. Its reads, GetEntitlement and StoredRecord,
+// serve the dashboard and `pug billing show`; the mandate package reads the stored
+// row too, and takes the billing switch and the org lock from here. The mutations
+// and History are `pug billing`'s alone. No RPC mutates an entitlement.
 type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
