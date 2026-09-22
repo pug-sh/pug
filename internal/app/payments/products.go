@@ -7,14 +7,15 @@ import (
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 )
 
-// One key per purchasable tier, so the key set follows the catalog rather than a
-// list kept here.
+// One key per mapped tier, so the key set follows the catalog rather than a list
+// kept here.
 const productEnvPrefix = "PUG_DODO_PRODUCT_"
 
-// productIDs reads Dodo's product ids, one PUG_DODO_PRODUCT_<SLUG> per
-// purchasable tier, into slug -> product id. A tier with no key is simply not
-// purchasable. It is catalog-to-env wiring rather than adapter logic, so it lives
-// here and not in internal/deps/dodo. lookup is os.LookupEnv outside tests.
+// productIDs reads Dodo's product ids into slug -> product id: one
+// PUG_DODO_PRODUCT_<SLUG> per catalog tier but the floors and custom, retired
+// tiers included (see mappedSlug). A tier with no key is simply not purchasable.
+// It is catalog-to-env wiring rather than adapter logic, so it lives here and not
+// in internal/deps/dodo. lookup is os.LookupEnv outside tests.
 func productIDs(lookup func(string) (string, bool)) (map[string]string, error) {
 	out := map[string]string{}
 	byProduct := map[string]string{}
@@ -40,7 +41,8 @@ func productIDs(lookup func(string) (string, bool)) (map[string]string, error) {
 }
 
 // mappedSlug is every tier but the floors and custom. Retired tiers stay mapped,
-// or the webhook rejects their holders' renewals; core keeps them unsellable.
+// or the webhook rejects their holders' renewals; core keeps them off sale
+// (entitlement's Plan.OnSale).
 func mappedSlug(plan entitlement.Plan) bool {
 	switch plan.Slug {
 	case entitlement.SlugFree, entitlement.SlugTrial, entitlement.SlugCustom:

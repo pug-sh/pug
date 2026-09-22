@@ -188,8 +188,9 @@ func ParseSubStatus(v string) (SubStatus, bool) {
 	return "", false
 }
 
-// Currency is the one pug sells in, enforced at the webhook boundary so
-// multi-currency changes here — and renames price_cents with it.
+// Currency is the one pug sells in. mandate refuses any other at each of its
+// writers — the webhook, ConfirmCheckout and the apply they share — so going
+// multi-currency starts here, and renames price_cents with it.
 const Currency = "USD"
 
 // Payments is the provider wiring. Nil means no provider, which is legal.
