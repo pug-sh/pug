@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"

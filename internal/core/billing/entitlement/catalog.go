@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	// SlugFree and SlugCustom name STATES, not cards: free is what the current
-	// card's allowance gives an org that pinned nothing, and custom is a deal whose
-	// numbers live on the org's row.
+	// SlugFree, SlugTrial and SlugCustom name STATES, not cards: free is what the
+	// current card's allowance gives an org that pinned nothing, trial is an org's
+	// age, and custom is a deal whose numbers live on the org's row.
 	SlugFree   = "free"
 	SlugTrial  = "trial"
 	SlugCustom = "custom"
@@ -123,10 +123,18 @@ func copyCard(c RateCard) RateCard {
 	return c
 }
 
-// isCardSlug reports whether a stored plan_slug names a card rather than a deal
-// or the resolved free state; the slug may still be one the catalog dropped.
+// isCardSlug reports whether a stored plan_slug names a card rather than one of
+// the states; the slug may still be one the catalog dropped.
 func isCardSlug(slug string) bool {
-	return slug != "" && slug != SlugFree && slug != SlugCustom
+	return slug != "" && slug != SlugFree && slug != SlugTrial && slug != SlugCustom
+}
+
+// pinned reports whether a stored plan_slug is a grant of any kind, a card or a
+// deal: with free and trial no longer plans, that is what "on a paid tier" means.
+// The reconcile pass's unbilled walk hardcodes the complement in SQL, and
+// TestTheUnpinnedSlugsAgreeBetweenGoAndSQL pins the two together.
+func pinned(slug string) bool {
+	return isCardSlug(slug) || slug == SlugCustom
 }
 
 // checkRateCards runs at wiring time so a malformed catalog fails startup rather

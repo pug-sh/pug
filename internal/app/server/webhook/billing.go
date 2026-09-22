@@ -31,10 +31,16 @@ const maxBodyBytes = 1 << 20
 // connection.
 const billingHandlerTimeout = 10 * time.Second
 
-// MountBilling skips a provider that cannot verify a signature: 404 is the
+// MountBilling mounts the service's own provider, so the route that verifies a
+// delivery and the service that stores it cannot name two. It skips a service with
+// no provider, and a provider that cannot verify a signature: 404 is the
 // fail-closed direction.
-func MountBilling(mux *http.ServeMux, service *mandate.Service, provider corebilling.PaymentProvider) bool {
-	if service == nil || provider == nil || !provider.CanVerify() {
+func MountBilling(mux *http.ServeMux, service *mandate.Service) bool {
+	if service == nil {
+		return false
+	}
+	provider := service.Provider()
+	if provider == nil || !provider.CanVerify() {
 		return false
 	}
 	h := &billingHandler{provider: provider, service: service}
@@ -119,7 +125,7 @@ func (h *billingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Answered only once the row is durable, since a 5xx is what asks for a retry.
-	if err := h.service.HandleDelivery(ctx, h.provider, delivery); err != nil {
+	if err := h.service.HandleDelivery(ctx, delivery); err != nil {
 		// Disposition only: HandleDelivery already logged and recorded it.
 		slog.WarnContext(ctx, "asking the provider to retry a billing webhook", slogx.Error(err),
 			slog.String("provider", h.provider.Name()), slog.String("webhook_id", delivery.WebhookID))

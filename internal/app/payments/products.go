@@ -1,33 +1,24 @@
-// Product ids are catalog-to-env wiring, not adapter logic: one
-// PUG_DODO_PRODUCT_<SLUG> per purchasable tier. They live here rather than in
-// internal/deps/dodo because a deps package may see core only to implement one of
-// its ports, and this implements none.
 package payments
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 )
 
-// One key per purchasable tier, so the key set follows the catalog rather than a
-// list kept here.
+// One key per card, so the key set follows the catalog rather than a list kept
+// here.
 const productEnvPrefix = "PUG_DODO_PRODUCT_"
 
-// EnvLookup is os.LookupEnv, injected so ProductIDs is testable without setting
-// process environment.
-type EnvLookup func(string) (string, bool)
-
-// ProductIDs resolves slug -> product id for every card that has one. A card with
-// no key is simply not purchasable. The cards are a parameter rather than read
-// from the catalog so the duplicate-product guard below stays exercisable while
-// the real catalog holds only one card.
-func ProductIDs(lookup EnvLookup, cards []entitlement.RateCard) (map[string]string, error) {
-	if lookup == nil {
-		lookup = os.LookupEnv
-	}
+// productIDs reads Dodo's product ids into slug -> product id: one
+// PUG_DODO_PRODUCT_<SLUG> per card, retired cards included. A card with no key is
+// simply not purchasable. The cards are a parameter rather than read from the
+// catalog so the duplicate-product guard below stays exercisable while the real
+// catalog holds only one card. It is catalog-to-env wiring rather than adapter
+// logic, so it lives here and not in internal/deps/dodo. lookup is os.LookupEnv
+// outside tests.
+func productIDs(lookup func(string) (string, bool), cards []entitlement.RateCard) (map[string]string, error) {
 	out := map[string]string{}
 	byProduct := map[string]string{}
 	// Every card, retired ones included: a retired card stays mapped or the webhook

@@ -8,9 +8,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pug-sh/pug/internal/core/billing"
-	"github.com/pug-sh/pug/internal/core/billing/subs"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,7 +20,11 @@ import (
 )
 
 var (
-	ErrPlanRetired = errors.New("billing: plan is retired and cannot be newly assigned")
+	ErrOrgNotFound = errors.New("billing: org not found")
+	// ErrPlanNotFound is a slug the catalog does not have. Distinct from
+	// ErrPlanRetired, which is a slug it has but will not hand to a new org.
+	ErrPlanNotFound = errors.New("billing: plan not found")
+	ErrPlanRetired  = errors.New("billing: plan is retired and cannot be newly assigned")
 	// ErrTrialNotSettable guards the one slug that means nothing without a date.
 	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
 	ErrCustomNeedsPrice = errors.New("billing: a custom plan or a provider product requires a flat fee or a rate")
@@ -52,19 +53,16 @@ var (
 	ErrActorRequired = errors.New("billing: an actor is required")
 )
 
-// Service is the whole package: GetEntitlement for the dashboard, the rest for
-// `pug billing`. No RPC mutates an entitlement.
+// Service is the entitlement store. Its reads, GetEntitlement and StoredRecord,
+// serve the dashboard and `pug billing show`; the mandate package reads the stored
+// row too, and takes the billing switch and the org lock from here. The mutations
+// and History are `pug billing`'s alone. No RPC mutates an entitlement.
 type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
 	// billingEnabled mirrors PUG_BILLING_ENABLED. Off is a self-hosted install,
 	// where every org resolves with no quota at all.
 	billingEnabled bool
-	// subs reads the live subscription that resolution needs; the mandate package
-	// owns every write to it. Built here rather than injected: the package exists to
-	// break an import cycle, not a construction one, and a nil Reader would only
-	// give every caller a way to get it wrong.
-	subs *subs.Reader
 }
 
 // NewService checks the floors at wiring time: mustPlan would otherwise panic
@@ -77,9 +75,13 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Se
 		read:           dbread.New(pgRO),
 		pgW:            pgW,
 		billingEnabled: billingEnabled,
-		subs:           subs.NewReader(pgW),
 	}, nil
 }
+
+// BillingEnabled is the switch this service resolves under. The mandate package
+// reads it from here rather than holding a copy: two copies can disagree, and one
+// response would then report billing off beside a working buy button.
+func (s *Service) BillingEnabled() bool { return s.billingEnabled }
 
 // GetEntitlement resolves what the org may send right now.
 func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Time) (Entitlement, error) {
@@ -103,9 +105,9 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 	}
 	// Only when billing is on: with it off every org resolves to the free floor
 	// regardless, so the read is a query per dashboard load that cannot change it.
-	var sub *billing.Subscription
+	var sub *Subscription
 	if s.billingEnabled {
-		if sub, err = s.subs.Live(ctx, orgID); err != nil {
+		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
 			return Entitlement{}, err
 		}
 	}
@@ -113,10 +115,12 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the
-// resolved entitlement, where a lapsed deal's quota is invisible.
+// resolved entitlement, where a lapsed deal's quota is invisible, and the
+// dashboard and mandate read it as well, chiefly for a deal's product id.
 func (s *Service) StoredRecord(ctx context.Context, orgID string) (Record, error) {
-	// The write pool, as liveSubscription does: on the webhook path a lagging
-	// replica would reject a paid delivery over a just-pasted product id.
+	// The write pool, as liveSubscription reads: ConfirmCheckout maps a paid checkout
+	// through this row, and a lagging replica would refuse it over a just-pasted
+	// product id.
 	row, err := dbread.New(s.pgW).GetOrgEntitlement(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -234,7 +238,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	// The stranding Clear refuses, reached by a floor plan instead. Through the tx,
 	// as Clear reads it: off the pool this waits on a connection it is holding.
 	if next.IncludedEventsOverride <= 0 {
-		sub, err := subs.ReadLive(ctx, dbread.New(tx), orgID)
+		sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
 		if err != nil {
 			return Record{}, err
 		}
@@ -287,7 +291,7 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 	if cur.Present {
 		// IsFloor meant "they are on a paid tier". With free and trial no longer
 		// plans, a pin of any kind means that.
-		if isCardSlug(cur.PlanSlug) || cur.PlanSlug == SlugCustom {
+		if pinned(cur.PlanSlug) {
 			return Record{}, ErrTrialOnGrantedPlan
 		}
 		// A lapsed contract expires the trial branch too, so the date would be just
@@ -333,7 +337,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	// A live custom subscription resolves its quota from the row this deletes, so
 	// clearing it drops an org that is still being charged to the free floor. Under
 	// the lock, which a subscription writer takes before it maps its product.
-	sub, err := subs.ReadLive(ctx, dbread.New(tx), orgID)
+	sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
 	if err != nil {
 		return err
 	}
@@ -367,6 +371,28 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	return s.commit(ctx, tx, orgID)
 }
 
+// WithOrgLock runs fn in a transaction holding the org's billing lock, hands it the
+// row as it stands under that lock, and commits only if fn returns nil. It is how a
+// writer outside this package maps onto the row: the lock is the one every write
+// here takes, held to the commit, so a `billing clear` cannot land between what fn
+// reads and what it writes, and nothing fn decides was decided before the lock.
+//
+// fn gets queries bound to the transaction rather than the transaction itself:
+// ending it early would drop the lock with fn's write half made. No row is
+// Record{}, the ordinary state. The lock is advisory, so an org that does not
+// exist reads the same way.
+func (s *Service) WithOrgLock(ctx context.Context, orgID string, fn func(w *dbwrite.Queries, cur Record) error) error {
+	tx, w, cur, err := s.beginLocked(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(w, cur); err != nil {
+		return err
+	}
+	return s.commit(ctx, tx, orgID)
+}
+
 // beginLocked opens the transaction every mutation runs in and hands back the row
 // as it stands. The caller owns the rollback.
 func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwrite.Queries, Record, error) {
@@ -374,17 +400,33 @@ func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwri
 	if err != nil {
 		return nil, nil, Record{}, err
 	}
-	w := dbwrite.New(tx)
-	if err := lockOrg(ctx, w, orgID); err != nil {
-		_ = tx.Rollback(ctx)
-		return nil, nil, Record{}, err
-	}
-	cur, err := CurrentRecord(ctx, w, orgID)
+	cur, err := lockedRecord(ctx, tx, orgID)
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, nil, Record{}, err
 	}
-	return tx, w, cur, nil
+	return tx, dbwrite.New(tx), cur, nil
+}
+
+// lockedRecord takes the org's billing lock on tx and returns the row as it stands
+// under it, held until tx ends. A pgx.Tx, not a query handle: off a transaction the
+// lock dies with its own statement, and a pool-backed read would hold nothing while
+// looking locked.
+func lockedRecord(ctx context.Context, tx pgx.Tx, orgID string) (Record, error) {
+	w := dbwrite.New(tx)
+	if err := lockOrg(ctx, w, orgID); err != nil {
+		return Record{}, err
+	}
+	row, err := w.GetBillingEntitlementForUpdate(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Record{}, nil
+		}
+		slog.ErrorContext(ctx, "failed to lock the entitlement", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return Record{}, err
+	}
+	return recordFromWriteRow(row), nil
 }
 
 // lockOrg goes before the read: `for update` locks nothing when the row does not
@@ -423,8 +465,6 @@ func (s *Service) storeRecord(
 	return stored, nil
 }
 
-// write is the pool-backed writer, for the single-statement paths with no
-// history row to commit alongside them.
 func (s *Service) begin(ctx context.Context) (pgx.Tx, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -457,19 +497,6 @@ func orgCreateTime(ctx context.Context, w *dbwrite.Queries, orgID string) (time.
 		return time.Time{}, err
 	}
 	return org.CreateTime.Time, nil
-}
-
-func CurrentRecord(ctx context.Context, w *dbwrite.Queries, orgID string) (Record, error) {
-	row, err := w.GetBillingEntitlementForUpdate(ctx, orgID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Record{}, nil
-		}
-		slog.ErrorContext(ctx, "failed to lock the entitlement", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return Record{}, err
-	}
-	return recordFromWriteRow(row), nil
 }
 
 // recordFromWriteRow maps the writer-side row, which GetBillingEntitlementForUpdate
@@ -515,7 +542,7 @@ func applyChange(cur Record, c Change) Record {
 	next.ProviderProductID = orKeep(c.ProviderProductID, cur.ProviderProductID)
 
 	switch {
-	case isCardSlug(next.PlanSlug) || next.PlanSlug == SlugCustom:
+	case pinned(next.PlanSlug):
 		// Converting to a paid tier ends the trial, or the state depends on which of
 		// two dates the resolver consults first. A pin of any kind is that tier now:
 		// free and trial are no longer settable plans.

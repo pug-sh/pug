@@ -5,10 +5,9 @@ import (
 	"testing"
 	"time"
 
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/mandate"
-
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
 // storedSubscriptions counts the rows the confirm path writes, so a refusal can
@@ -40,7 +39,7 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 		t.Fatal("confirmed = false, want true for a settled checkout")
 	}
 
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -130,7 +129,7 @@ func TestConfirmCheckoutDoesNotConfirmAPendingSubscription(t *testing.T) {
 	if n := storedSubscriptions(t, f); n != 1 {
 		t.Errorf("stored %d subscription rows, want the pending one written", n)
 	}
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -186,7 +185,7 @@ func TestConfirmCheckoutConfirmsWhenTheWebhookLandedFirst(t *testing.T) {
 	provider.event = event
 	provider.checkout = event
 
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("wh_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -213,7 +212,7 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	// A live subscription the org already holds — a cancellation that never
 	// arrived, which is the deployment this whole path exists for.
 	provider.event = subEvent(f.orgID, "sub00000000000000027", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_live", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("wh_live", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 	provider.checkout = subEvent(f.orgID, "sub00000000000000028", "prod_scale", corebilling.SubStatusActive)
@@ -225,7 +224,7 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	if confirmed {
 		t.Error("confirmed = true for a subscription that was never written")
 	}
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -354,7 +353,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 	ctx := t.Context()
 
 	productID := "prod_acme"
-	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+	if _, err := f.entitlements.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
 		FlatFeeCents:      new(int64(40_000)),
 		IncludedEvents:    new(int64(5_000_000)),

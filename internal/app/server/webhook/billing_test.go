@@ -10,10 +10,9 @@ import (
 	"testing"
 	"time"
 
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/mandate"
-
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/testutil"
 )
 
@@ -67,15 +66,27 @@ func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling
 	return corebilling.SubscriptionEvent{}, errors.New("unused")
 }
 
-func newService(t *testing.T) (*mandate.Service, *testutil.TestPostgres) {
+// newService builds the lifecycle the route mounts from, with provider as its own:
+// the route takes its provider off the service, so a test chooses it here. A nil
+// provider is the no-provider shape.
+func newService(t *testing.T, provider corebilling.PaymentProvider) (*mandate.Service, *testutil.TestPostgres) {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, nil, ent)
-	return svc, pg
+	var payments *corebilling.Payments
+	if provider != nil {
+		payments = &corebilling.Payments{Provider: provider}
+	}
+	return mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements), pg
+}
+
+// handlerFor is the route's handler as MountBilling builds it, over the service's
+// own provider.
+func handlerFor(svc *mandate.Service) *billingHandler {
+	return &billingHandler{provider: svc.Provider(), service: svc}
 }
 
 func post(t *testing.T, h http.Handler, path, body string) *http.Response {
@@ -109,18 +120,16 @@ func TestMountRequiresAVerifiableProvider(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	svc, _ := newService(t)
-	for name, tc := range map[string]struct {
-		service  *mandate.Service
-		provider corebilling.PaymentProvider
-	}{
-		"no service":  {nil, stubProvider{name: "dodo"}},
-		"no provider": {svc, nil},
-		"no secret":   {svc, stubProvider{name: "dodo", cannotVerify: true}},
+	noProvider, _ := newService(t, nil)
+	noSecret, _ := newService(t, stubProvider{name: "dodo", cannotVerify: true})
+	for name, svc := range map[string]*mandate.Service{
+		"no service":  nil,
+		"no provider": noProvider,
+		"no secret":   noSecret,
 	} {
 		t.Run(name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			if MountBilling(mux, tc.service, tc.provider) {
+			if MountBilling(mux, svc) {
 				t.Fatal("Mount reported a route it must not have registered")
 			}
 			if res := post(t, mux, BillingPath("dodo"), goodBody); res.StatusCode != http.StatusNotFound {
@@ -135,9 +144,9 @@ func TestMountRegistersBothPathForms(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	svc, _ := newService(t)
+	svc, _ := newService(t, stubProvider{name: "dodo"})
 	mux := http.NewServeMux()
-	if !MountBilling(mux, svc, stubProvider{name: "dodo"}) {
+	if !MountBilling(mux, svc) {
 		t.Fatal("Mount did not register the route")
 	}
 	// ServeMux exact-matches the bare pattern and only redirects the other way,
@@ -154,10 +163,10 @@ func TestHandlerStatuses(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	svc, _ := newService(t)
+	svc, _ := newService(t, stubProvider{name: "dodo"})
 
 	t.Run("a verified delivery is 204 once durable", func(t *testing.T) {
-		res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/", goodBody)
+		res := post(t, handlerFor(svc), "/", goodBody)
 		if res.StatusCode != http.StatusNoContent {
 			t.Errorf("status = %d, want 204", res.StatusCode)
 		}
@@ -166,14 +175,14 @@ func TestHandlerStatuses(t *testing.T) {
 	// An auth failure, not a server fault: a 5xx here would ask the provider to
 	// retry a body it can never sign.
 	t.Run("an unsigned body is 401", func(t *testing.T) {
-		res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/", "forged")
+		res := post(t, handlerFor(svc), "/", "forged")
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401", res.StatusCode)
 		}
 	})
 
 	t.Run("a body past the cap is 400", func(t *testing.T) {
-		res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/",
+		res := post(t, handlerFor(svc), "/",
 			strings.Repeat("x", maxBodyBytes+1))
 		if res.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", res.StatusCode)
@@ -181,7 +190,7 @@ func TestHandlerStatuses(t *testing.T) {
 	})
 
 	t.Run("a non-POST is 405 and says so", func(t *testing.T) {
-		srv := httptest.NewServer(&billingHandler{provider: stubProvider{name: "dodo"}, service: svc})
+		srv := httptest.NewServer(handlerFor(svc))
 		t.Cleanup(srv.Close)
 		res, err := http.Get(srv.URL)
 		if err != nil {
@@ -204,10 +213,10 @@ func TestAFailedWriteIs500(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	svc, pg := newService(t)
+	svc, pg := newService(t, stubProvider{name: "dodo"})
 	pg.PgW.Close()
 
-	res := post(t, &billingHandler{provider: stubProvider{name: "dodo"}, service: svc}, "/", goodBody)
+	res := post(t, handlerFor(svc), "/", goodBody)
 	if res.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", res.StatusCode)
 	}
@@ -221,13 +230,13 @@ func TestAnUndecodableBodyIsRetriedNotRejected(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	svc, _ := newService(t)
-	mux := http.NewServeMux()
 	provider := stubProvider{
 		name:      "dodo",
 		verifyErr: fmt.Errorf("%w: unexpected envelope", corebilling.ErrUndecodable),
 	}
-	if !MountBilling(mux, svc, provider) {
+	svc, _ := newService(t, provider)
+	mux := http.NewServeMux()
+	if !MountBilling(mux, svc) {
 		t.Fatal("Mount did not register the route")
 	}
 
@@ -243,9 +252,9 @@ func TestABadSignatureStaysUnauthorized(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	svc, _ := newService(t)
+	svc, _ := newService(t, stubProvider{name: "dodo"})
 	mux := http.NewServeMux()
-	if !MountBilling(mux, svc, stubProvider{name: "dodo"}) {
+	if !MountBilling(mux, svc) {
 		t.Fatal("Mount did not register the route")
 	}
 
@@ -268,10 +277,10 @@ func TestPanicIsContainedAsA500(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	svc, _ := newService(t)
-	mux := http.NewServeMux()
 	provider := panickingProvider{stubProvider{name: "stub"}}
-	if !MountBilling(mux, svc, provider) {
+	svc, _ := newService(t, provider)
+	mux := http.NewServeMux()
+	if !MountBilling(mux, svc) {
 		t.Fatal("Mount refused a verifiable provider")
 	}
 

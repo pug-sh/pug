@@ -22,32 +22,32 @@ func TestProductIDs(t *testing.T) {
 	}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 
-	got, err := ProductIDs(lookup, entitlement.Cards())
+	got, err := productIDs(lookup, entitlement.Cards())
 	if err != nil {
-		t.Fatalf("ProductIDs: %v", err)
+		t.Fatalf("productIDs: %v", err)
 	}
 	want := map[string]string{slug: "prod_c"}
 	if len(got) != len(want) {
-		t.Fatalf("ProductIDs = %v, want %v", got, want)
+		t.Fatalf("productIDs = %v, want %v", got, want)
 	}
 	if got[slug] != "prod_c" {
-		t.Errorf("ProductIDs[%q] = %q, want %q", slug, got[slug], "prod_c")
+		t.Errorf("productIDs[%q] = %q, want %q", slug, got[slug], "prod_c")
 	}
 }
 
 // A card with no product key is simply not purchasable, rather than an error that
 // stops a deployment booting.
 func TestProductIDsSkipsACardWithNoKey(t *testing.T) {
-	got, err := ProductIDs(func(string) (string, bool) { return "", false }, entitlement.Cards())
+	got, err := productIDs(func(string) (string, bool) { return "", false }, entitlement.Cards())
 	if err != nil {
-		t.Fatalf("ProductIDs: %v", err)
+		t.Fatalf("productIDs: %v", err)
 	}
 	if len(got) != 0 {
-		t.Errorf("ProductIDs = %v, want empty", got)
+		t.Errorf("productIDs = %v, want empty", got)
 	}
 }
 
-// Free, trial and custom are states rather than catalog entries, so ProductIDs
+// Free, trial and custom are states rather than catalog entries, so productIDs
 // cannot map them and needs no predicate saying so. A retired card DOES keep its
 // mapping, or the webhook could not place its holders' renewals.
 func TestRetiredCardsStayMapped(t *testing.T) {
@@ -74,7 +74,7 @@ func TestProductIDsRejectsTwoCardsOnOneProduct(t *testing.T) {
 		"PUG_DODO_PRODUCT_USAGE_A": "prod_same",
 		"PUG_DODO_PRODUCT_USAGE_B": "prod_same",
 	}
-	_, err := ProductIDs(func(k string) (string, bool) { v, ok := env[k]; return v, ok }, cards)
+	_, err := productIDs(func(k string) (string, bool) { v, ok := env[k]; return v, ok }, cards)
 	if err == nil {
 		t.Fatal("two cards sharing a product id was accepted")
 	}

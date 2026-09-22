@@ -15,7 +15,7 @@ import (
 // No tier is retired yet, so the guard has nothing in the real catalog to act on
 // — and an unexercised guard is one that stops working without anyone noticing.
 // This test appends a retired tier for its duration, which is why it lives inside
-// the package rather than in billing_test.
+// the package rather than in entitlement_test.
 //
 // What it protects: repricing mints a new slug and retires the old one (see the
 // immutability rule in plans.go). If the retired slug could still be granted,
