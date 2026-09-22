@@ -48,6 +48,11 @@ func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, entitlement
 	}
 }
 
+// Entitlements is the entitlement service this lifecycle was built over. A caller
+// that needs both takes it from here rather than beside it: the billing switch
+// lives there, and two services wired apart would report two switches.
+func (s *Service) Entitlements() *entitlement.Service { return s.entitlements }
+
 // write is the pool-backed writer: for single-statement writes, and for reads that
 // must see a write that just committed (attribution, checkout refs).
 func (s *Service) write() *dbwrite.Queries { return dbwrite.New(s.pgW) }

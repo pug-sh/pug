@@ -30,15 +30,16 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 	return org.ID
 }
 
-// newServerWith builds both services over one entitlement service, as the server
-// wires them. A nil payments is the no-provider shape.
+// newServerWith wires the pair as the server does: the mandate service over an
+// entitlement service, which the handler reads back off it. A nil payments is the
+// no-provider shape.
 func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool, payments *corebilling.Payments) *Server {
 	t.Helper()
 	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, billingEnabled)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	return NewServer(entitlements, mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements))
+	return NewServer(mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements))
 }
 
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
