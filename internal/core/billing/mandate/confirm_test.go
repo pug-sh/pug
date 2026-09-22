@@ -185,7 +185,7 @@ func TestConfirmCheckoutConfirmsWhenTheWebhookLandedFirst(t *testing.T) {
 	provider.event = event
 	provider.checkout = event
 
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("wh_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	// A live subscription the org already holds — a cancellation that never
 	// arrived, which is the deployment this whole path exists for.
 	provider.event = subEvent(f.orgID, "sub00000000000000027", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_live", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("wh_live", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 	provider.checkout = subEvent(f.orgID, "sub00000000000000028", "prod_scale", corebilling.SubStatusActive)

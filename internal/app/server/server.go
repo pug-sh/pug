@@ -250,11 +250,9 @@ func start(ctx context.Context, d *deps) error {
 
 	// Mounted directly for the same reason as /mcp. The route is unauthenticated in
 	// the middleware sense: it authenticates by HMAC over the raw body.
-	if d.payments != nil {
-		if webhook.MountBilling(mux, mandateSvc, d.payments.Provider) {
-			slog.InfoContext(ctx, "mounted the payments webhook",
-				slog.String("path", webhook.BillingPath(d.payments.Provider.Name())))
-		}
+	if webhook.MountBilling(mux, mandateSvc) {
+		slog.InfoContext(ctx, "mounted the payments webhook",
+			slog.String("path", webhook.BillingPath(mandateSvc.Provider().Name())))
 	}
 
 	// WithCorrelationID wraps the whole mux so auth rejections — which happen outside

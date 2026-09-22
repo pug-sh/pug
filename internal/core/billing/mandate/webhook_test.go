@@ -148,7 +148,7 @@ func TestDeliveryAppliesASubscription(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
 
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -178,13 +178,13 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 	older := newer.Add(-time.Hour)
 
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusCancelled)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_new", newer)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_new", newer)); err != nil {
 		t.Fatalf("HandleDelivery(newer): %v", err)
 	}
 	// The active delivery is genuinely older, so it must lose even though it
 	// arrives second.
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_old", older)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_old", older)); err != nil {
 		t.Fatalf("HandleDelivery(older): %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 		t.Run(string(status), func(t *testing.T) {
 			f, provider := newPaidFixture(t)
 			provider.event = subEvent(f.orgID, "sub_1", "prod_growth", status)
-			if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now().UTC())); err != nil {
+			if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now().UTC())); err != nil {
 				t.Fatalf("HandleDelivery: %v", err)
 			}
 
@@ -249,7 +249,7 @@ func TestPastDueHoldsTheOneLiveSlot(t *testing.T) {
 	seedSubscription(t, f, "sub00000000000000060", "growth", "past_due")
 
 	provider.event = subEvent(f.orgID, "sub00000000000000061", "prod_scale", corebilling.SubStatusActive)
-	err := f.svc.HandleDelivery(t.Context(), provider, delivery("wh_past_due", time.Now()))
+	err := f.svc.HandleDelivery(t.Context(), delivery("wh_past_due", time.Now()))
 	if !errors.Is(err, mandate.ErrTwoLiveSubscriptions) {
 		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions — past_due did not hold the slot", err)
 	}
@@ -272,7 +272,7 @@ func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 		t.Fatalf("set the deal: %v", err)
 	}
 	provider.event = subEvent(f.orgID, "sub_1", "prod_acme", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(ctx, provider, delivery("evt_1", time.Now().UTC())); err != nil {
+	if err := f.svc.HandleDelivery(ctx, delivery("evt_1", time.Now().UTC())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -299,11 +299,11 @@ func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Second)
 
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusCancelled)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_cancel", at)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_cancel", at)); err != nil {
 		t.Fatalf("HandleDelivery(cancelled): %v", err)
 	}
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_active", at)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_active", at)); err != nil {
 		t.Fatalf("HandleDelivery(active): %v", err)
 	}
 
@@ -327,11 +327,11 @@ func TestASameSecondCancellationEndsAnActiveSubscription(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Second)
 
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_active", at)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_active", at)); err != nil {
 		t.Fatalf("HandleDelivery(active): %v", err)
 	}
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusCancelled)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_cancel", at)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_cancel", at)); err != nil {
 		t.Fatalf("HandleDelivery(cancelled): %v", err)
 	}
 
@@ -358,7 +358,7 @@ func TestAnUndecodablePayloadIsRetried(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	provider.err = errors.New("dodo: decode subscription payload: json: cannot unmarshal")
 
-	err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_garbled", time.Now().UTC()))
+	err := f.svc.HandleDelivery(t.Context(), delivery("evt_garbled", time.Now().UTC()))
 	if err == nil {
 		t.Fatal("a payload pug could not decode was accepted, so the provider will never retry it")
 	}
@@ -384,7 +384,7 @@ func TestRetryOfAnUnprocessedDeliveryReapplies(t *testing.T) {
 	}
 
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", at)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", at)); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -406,13 +406,13 @@ func TestRetryOfAProcessedDeliveryIsANoop(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Second)
 
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", at)); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", at)); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 	// A different payload under the same webhook id: if the retry re-applied, the
 	// entitlement would move.
 	provider.event = subEvent(f.orgID, "sub_1", "prod_scale", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", at.Add(time.Hour))); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", at.Add(time.Hour))); err != nil {
 		t.Fatalf("HandleDelivery(retry): %v", err)
 	}
 
@@ -504,7 +504,7 @@ func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 			f, provider := newPaidFixture(t)
 			provider.event = tc.event(f.orgID)
 
-			if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+			if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now())); err != nil {
 				t.Fatalf("HandleDelivery returned an error, so the provider will retry: %v", err)
 			}
 			stored := storedDelivery(t, f, "evt_1")
@@ -538,7 +538,7 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 	f, provider := newPaidFixture(t)
 
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -547,7 +547,7 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 	renewal.CheckoutRef = ""
 	renewal.OrgID = ""
 	provider.event = renewal
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_2", time.Now().Add(time.Minute))); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_2", time.Now().Add(time.Minute))); err != nil {
 		t.Fatalf("HandleDelivery(renewal): %v", err)
 	}
 
@@ -580,7 +580,7 @@ func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
 		event := subEvent(orgID, "sub_"+orgID, "prod_growth", corebilling.SubStatusActive)
 		event.ProviderCustomerID = "cus_shared"
 		provider.event = event
-		if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_seed_"+orgID, time.Now())); err != nil {
+		if err := f.svc.HandleDelivery(t.Context(), delivery("evt_seed_"+orgID, time.Now())); err != nil {
 			t.Fatalf("HandleDelivery(seed %d): %v", i, err)
 		}
 	}
@@ -588,7 +588,7 @@ func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
 	unattributed := subEvent("", "sub_new", "prod_scale", corebilling.SubStatusActive)
 	unattributed.ProviderCustomerID = "cus_shared"
 	provider.event = unattributed
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_new", time.Now().Add(time.Minute))); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_new", time.Now().Add(time.Minute))); err != nil {
 		t.Fatalf("HandleDelivery returned an error, so the provider will retry: %v", err)
 	}
 
@@ -629,7 +629,7 @@ func TestCustomProductResolvesFromTheOrgRow(t *testing.T) {
 	}
 
 	provider.event = subEvent(f.orgID, "sub_1", productID, corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -656,7 +656,7 @@ func TestUnparseableBodyIsStillStored(t *testing.T) {
 
 	d := delivery("evt_1", time.Now())
 	d.RawPayload = []byte{0x00, 0x01, 0xff}
-	if err := f.svc.HandleDelivery(t.Context(), provider, d); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), d); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 	stored := storedDelivery(t, f, "evt_1")
@@ -683,7 +683,7 @@ func TestABodyCarryingANulEscapeIsStillStored(t *testing.T) {
 	if !json.Valid(d.RawPayload) {
 		t.Fatal("the fixture body is not valid JSON, so it tests the wrong branch")
 	}
-	if err := f.svc.HandleDelivery(t.Context(), provider, d); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), d); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 	var wrapped map[string]string
@@ -732,12 +732,12 @@ func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
 	ctx := t.Context()
 
 	provider.event = subEvent(f.orgID, "sub00000000000000031", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_old", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(ctx, delivery("wh_old", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
 	provider.event = subEvent(f.orgID, "sub00000000000000032", "prod_scale", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_new", time.Now())); err == nil {
+	if err := f.svc.HandleDelivery(ctx, delivery("wh_new", time.Now())); err == nil {
 		t.Fatal("a second live subscription was accepted; the provider must be asked to retry")
 	}
 
@@ -755,11 +755,11 @@ func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
 
 	// Once the cancellation lands, the retry succeeds.
 	provider.event = subEvent(f.orgID, "sub00000000000000031", "prod_growth", corebilling.SubStatusCancelled)
-	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_cancel", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(ctx, delivery("wh_cancel", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery(cancel): %v", err)
 	}
 	provider.event = subEvent(f.orgID, "sub00000000000000032", "prod_scale", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(ctx, provider, delivery("wh_new", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(ctx, delivery("wh_new", time.Now())); err != nil {
 		t.Fatalf("the retry after the cancellation failed: %v", err)
 	}
 	ent, err := f.entitlements.GetEntitlement(ctx, f.orgID, time.Now())
@@ -812,7 +812,7 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		applyErr = f.svc.HandleDelivery(ctx, provider, delivery("evt_1", time.Now().UTC()))
+		applyErr = f.svc.HandleDelivery(ctx, delivery("evt_1", time.Now().UTC()))
 	}()
 
 	waitForEntitlementLockWaiter(t, f, done)
@@ -873,13 +873,13 @@ func TestCancellationLandsWhenTheProductIsUnmapped(t *testing.T) {
 	f, provider := newPaidFixture(t)
 
 	provider.event = subEvent(f.orgID, "sub_1", "prod_growth", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_active", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_active", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery(active): %v", err)
 	}
 
 	// The same subscription, now cancelled, against a product nothing maps to.
 	provider.event = subEvent(f.orgID, "sub_1", "prod_retired", corebilling.SubStatusCancelled)
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_cancel", time.Now().Add(time.Minute))); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_cancel", time.Now().Add(time.Minute))); err != nil {
 		t.Fatalf("HandleDelivery(cancel): %v", err)
 	}
 
@@ -907,7 +907,7 @@ func TestPayloadOrgIDDoesNotAttributeADelivery(t *testing.T) {
 	forged.CheckoutRef = ""
 	forged.ProviderCustomerID = "cus_someone_else"
 	provider.event = forged
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_forged", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_forged", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -934,7 +934,7 @@ func TestAnUnknownCheckoutRefDoesNotAttribute(t *testing.T) {
 	forged.CheckoutRef = "ref_guessed"
 	forged.ProviderCustomerID = "cus_someone_else"
 	provider.event = forged
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_forged", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_forged", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -961,7 +961,7 @@ func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
 	link := subEvent(f.orgID, "sub_deal", "prod_deal", corebilling.SubStatusActive)
 	link.CheckoutRef = ""
 	provider.event = link
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_deal", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_deal", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -995,7 +995,7 @@ func TestAnUnstagedProductDoesNotAttributeAPaymentLink(t *testing.T) {
 	link.CheckoutRef = ""
 	link.ProviderCustomerID = "cus_someone_else"
 	provider.event = link
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_other", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_other", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -1038,7 +1038,7 @@ func TestCheckoutStoresTheRefItSendsToTheProvider(t *testing.T) {
 	event.OrgID = ""
 	event.ProviderCustomerID = "cus_brand_new"
 	provider.event = event
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
@@ -1066,7 +1066,7 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 	// The customer id names `other`, via a subscription it already holds.
 	first := subEvent(other, "sub_other", "prod_growth", corebilling.SubStatusActive)
 	provider.event = first
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_seed", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_seed", time.Now())); err != nil {
 		t.Fatalf("seed delivery: %v", err)
 	}
 
@@ -1075,7 +1075,7 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 	event.OrgID = other
 	event.ProviderCustomerID = "cus_" + other
 	provider.event = event
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
@@ -1097,7 +1097,7 @@ func TestCancellationWithNoStoredRowKeepsTheProductRefusal(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	provider.event = subEvent(f.orgID, "sub_gone", "prod_retired", corebilling.SubStatusCancelled)
 
-	if err := f.svc.HandleDelivery(t.Context(), provider, delivery("evt_1", time.Now())); err != nil {
+	if err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 	got := storedDelivery(t, f, "evt_1")
@@ -1124,7 +1124,7 @@ func TestSetPlanIsRefusedWhenItWouldStrandALiveSubscription(t *testing.T) {
 		t.Fatalf("set the deal: %v", err)
 	}
 	provider.event = subEvent(f.orgID, "sub_1", "prod_acme", corebilling.SubStatusActive)
-	if err := f.svc.HandleDelivery(ctx, provider, delivery("evt_1", time.Now().UTC())); err != nil {
+	if err := f.svc.HandleDelivery(ctx, delivery("evt_1", time.Now().UTC())); err != nil {
 		t.Fatalf("HandleDelivery: %v", err)
 	}
 
