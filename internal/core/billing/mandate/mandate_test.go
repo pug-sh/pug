@@ -6,9 +6,9 @@ import (
 	"github.com/pug-sh/pug/internal/core/billing/mandate"
 )
 
-// The webhook never reads through the entitlement service, so a nil one would
-// mount, take deliveries, and panic only once a buyer had paid. Failing here
-// moves that to wiring.
+// A nil entitlement service fails nothing at wiring on its own: the webhook would
+// mount and store deliveries, then panic applying one, as would the dashboard's
+// first billing call. Failing here moves that to wiring.
 func TestNewServiceRejectsANilEntitlementService(t *testing.T) {
 	defer func() {
 		if recover() == nil {

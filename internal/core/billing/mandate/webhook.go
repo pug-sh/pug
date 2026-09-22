@@ -277,10 +277,11 @@ var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be ap
 
 // applySubscription is the one writer behind all three paths — webhook,
 // reconcile and confirm — so they cannot disagree about what "newer" means. It
-// runs under the entitlement lock and re-reads the org's row inside it: a
-// `billing clear` between the mapping and the write would otherwise strand a
-// live custom subscription on the free floor, which is what Clear's own guard
-// exists to prevent. 0 applied is the CAS refusing an older read.
+// maps and writes inside the entitlement service's WithOrgLock, against the org's
+// row as read under that lock: a `billing clear` between the mapping and the write
+// would otherwise strand a live custom subscription on the free floor, which is
+// what Clear's own guard exists to prevent. 0 applied is the CAS refusing an
+// older read.
 func (s *Service) applySubscription(
 	ctx context.Context, provider billing.PaymentProvider, orgID string, event billing.SubscriptionEvent, at time.Time,
 ) (int64, error) {
@@ -295,74 +296,62 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
 	}
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin the billing tx", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// The org's own row, for the negotiated-deal product, read under the org lock
-	// so the mapping and the write see the same row.
-	rec, err := entitlement.LockedRecord(ctx, tx, orgID)
-	if err != nil {
-		return 0, err
-	}
-	w := dbwrite.New(tx)
-	planSlug, err := s.planForProduct(event.ProductID, rec)
-	if err != nil {
-		// A product only has to resolve to GRANT a plan. Refusing a cancellation whose
-		// product left the config would strand the org on a tier it stopped paying for.
-		if event.Status.Live() || !errors.Is(err, ErrNotPurchasable) {
-			return 0, err
-		}
-		stored, storedErr := w.GetBillingSubscriptionPlanSlug(ctx, dbwrite.GetBillingSubscriptionPlanSlugParams{
-			Provider:      provider.Name(),
-			ProviderSubID: event.ProviderSubID,
-		})
-		if storedErr != nil {
-			// No row means no grant to end, so the original refusal stands.
-			if errors.Is(storedErr, pgx.ErrNoRows) {
-				return 0, err
+	var applied int64
+	err := s.entitlements.WithOrgLock(ctx, orgID, func(w *dbwrite.Queries, rec entitlement.Record) error {
+		// The org's own row carries the negotiated-deal product.
+		planSlug, err := s.planForProduct(event.ProductID, rec)
+		if err != nil {
+			// A product only has to resolve to GRANT a plan. Refusing a cancellation whose
+			// product left the config would strand the org on a tier it stopped paying for.
+			if event.Status.Live() || !errors.Is(err, ErrNotPurchasable) {
+				return err
 			}
-			slog.ErrorContext(ctx, "failed to read the stored plan slug for a cancellation", slogx.Error(storedErr),
-				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-			telemetry.RecordError(ctx, storedErr)
-			return 0, storedErr
+			stored, storedErr := w.GetBillingSubscriptionPlanSlug(ctx, dbwrite.GetBillingSubscriptionPlanSlugParams{
+				Provider:      provider.Name(),
+				ProviderSubID: event.ProviderSubID,
+			})
+			if storedErr != nil {
+				// No row means no grant to end, so the original refusal stands.
+				if errors.Is(storedErr, pgx.ErrNoRows) {
+					return err
+				}
+				slog.ErrorContext(ctx, "failed to read the stored plan slug for a cancellation", slogx.Error(storedErr),
+					slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+				telemetry.RecordError(ctx, storedErr)
+				return storedErr
+			}
+			planSlug = stored
 		}
-		planSlug = stored
-	}
-	applied, err := w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
-		Currency:           billing.Currency,
-		CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
-		CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
-		ID:                 xid.New().String(),
-		OrgID:              orgID,
-		PlanSlug:           planSlug,
-		PriceCents:         event.PriceCents,
-		Provider:           provider.Name(),
-		ProviderCustomerID: event.ProviderCustomerID,
-		ProviderStatus:     event.ProviderStatus,
-		ProviderSubID:      event.ProviderSubID,
-		ProviderUpdatedAt:  postgres.NewTimestamptz(at),
-		Status:             string(event.Status),
-	})
-	if err != nil {
-		if isTwoLiveViolation(err) {
-			slog.ErrorContext(ctx, "org already holds a live subscription", slogx.Error(err),
+		applied, err = w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
+			Currency:           billing.Currency,
+			CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
+			CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
+			ID:                 xid.New().String(),
+			OrgID:              orgID,
+			PlanSlug:           planSlug,
+			PriceCents:         event.PriceCents,
+			Provider:           provider.Name(),
+			ProviderCustomerID: event.ProviderCustomerID,
+			ProviderStatus:     event.ProviderStatus,
+			ProviderSubID:      event.ProviderSubID,
+			ProviderUpdatedAt:  postgres.NewTimestamptz(at),
+			Status:             string(event.Status),
+		})
+		if err != nil {
+			if isTwoLiveViolation(err) {
+				slog.ErrorContext(ctx, "org already holds a live subscription", slogx.Error(err),
+					slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+				telemetry.RecordError(ctx, err)
+				return ErrTwoLiveSubscriptions
+			}
+			slog.ErrorContext(ctx, "failed to apply a subscription", slogx.Error(err),
 				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)
-			return 0, ErrTwoLiveSubscriptions
+			return err
 		}
-		slog.ErrorContext(ctx, "failed to apply a subscription", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
-		telemetry.RecordError(ctx, err)
-		return 0, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit the billing tx", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
+		return nil
+	})
+	if err != nil {
 		return 0, err
 	}
 	return applied, nil

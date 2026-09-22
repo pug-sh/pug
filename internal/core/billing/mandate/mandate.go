@@ -5,8 +5,8 @@
 // delivery inbox and the checkout refs.
 //
 // It never writes billing_entitlements, whose one writer is the entitlement
-// package, but it reads that row: under the org lock through
-// entitlement.LockedRecord, through StoredRecord, and directly for attribution and
+// package, but it reads that row: under the org lock through the entitlement
+// service's WithOrgLock, through StoredRecord, and directly for attribution and
 // the reconcile walk.
 package mandate
 
@@ -33,9 +33,10 @@ type Service struct {
 	entitlements *entitlement.Service
 }
 
-// NewService builds the lifecycle over entitlements, which must not be nil: the
-// webhook never reads through it, so a nil one would mount, take deliveries, and
-// panic only in a paid confirm or on the first reconciled row. payments may be nil.
+// NewService builds the lifecycle over entitlements, which must not be nil. A nil
+// one fails nothing at wiring otherwise: the webhook would mount and store
+// deliveries, then panic applying the first subscription, and the dashboard's
+// first billing call would panic too. payments may be nil.
 func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, entitlements *entitlement.Service) *Service {
 	if entitlements == nil {
 		panic("mandate: entitlement service is nil")

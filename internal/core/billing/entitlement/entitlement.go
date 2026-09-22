@@ -352,6 +352,28 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	return s.commit(ctx, tx, orgID)
 }
 
+// WithOrgLock runs fn in a transaction holding the org's billing lock, hands it the
+// row as it stands under that lock, and commits only if fn returns nil. It is how a
+// writer outside this package maps onto the row: the lock is the one every write
+// here takes, held to the commit, so a `billing clear` cannot land between what fn
+// reads and what it writes, and nothing fn decides was decided before the lock.
+//
+// fn gets queries bound to the transaction rather than the transaction itself:
+// ending it early would drop the lock with fn's write half made. No row is
+// Record{}, the ordinary state. The lock is advisory, so an org that does not
+// exist reads the same way.
+func (s *Service) WithOrgLock(ctx context.Context, orgID string, fn func(w *dbwrite.Queries, cur Record) error) error {
+	tx, w, cur, err := s.beginLocked(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(w, cur); err != nil {
+		return err
+	}
+	return s.commit(ctx, tx, orgID)
+}
+
 // beginLocked opens the transaction every mutation runs in and hands back the row
 // as it stands. The caller owns the rollback.
 func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwrite.Queries, Record, error) {
@@ -359,7 +381,7 @@ func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwri
 	if err != nil {
 		return nil, nil, Record{}, err
 	}
-	cur, err := LockedRecord(ctx, tx, orgID)
+	cur, err := lockedRecord(ctx, tx, orgID)
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, nil, Record{}, err
@@ -367,14 +389,11 @@ func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwri
 	return tx, dbwrite.New(tx), cur, nil
 }
 
-// LockedRecord takes the org's billing lock on tx and returns the row as it stands
-// under it. It is the lock every write here takes, held until tx ends, so a writer
-// outside this package that maps onto the row cannot interleave with a `billing
-// clear`. No row is Record{} with a nil error, which is the ordinary state.
-//
-// A pgx.Tx, not a query handle: off a transaction the lock dies with its own
-// statement, and a pool-backed read would hold nothing while looking locked.
-func LockedRecord(ctx context.Context, tx pgx.Tx, orgID string) (Record, error) {
+// lockedRecord takes the org's billing lock on tx and returns the row as it stands
+// under it, held until tx ends. A pgx.Tx, not a query handle: off a transaction the
+// lock dies with its own statement, and a pool-backed read would hold nothing while
+// looking locked.
+func lockedRecord(ctx context.Context, tx pgx.Tx, orgID string) (Record, error) {
 	w := dbwrite.New(tx)
 	if err := lockOrg(ctx, w, orgID); err != nil {
 		return Record{}, err
