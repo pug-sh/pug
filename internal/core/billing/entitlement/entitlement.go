@@ -23,7 +23,11 @@ import (
 )
 
 var (
-	ErrPlanRetired = errors.New("billing: plan is retired and cannot be newly assigned")
+	ErrOrgNotFound = errors.New("billing: org not found")
+	// ErrPlanNotFound is a slug the catalog does not have. Distinct from
+	// ErrPlanRetired, which is a slug it has but will not hand to a new org.
+	ErrPlanNotFound = errors.New("billing: plan not found")
+	ErrPlanRetired  = errors.New("billing: plan is retired and cannot be newly assigned")
 	// ErrTrialNotSettable guards the one slug that means nothing without a date.
 	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
 	ErrCustomNeedsQuota = errors.New("billing: a custom plan or a provider product requires an events override")
@@ -52,8 +56,9 @@ var (
 	ErrActorRequired = errors.New("billing: an actor is required")
 )
 
-// Service is the whole package: GetEntitlement for the dashboard, the rest for
-// `pug billing`. No RPC mutates an entitlement.
+// Service is the entitlement store: GetEntitlement and StoredRecord for the
+// dashboard and the mandate package, the mutations and History for `pug billing`.
+// No RPC mutates an entitlement.
 type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
@@ -114,10 +119,12 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the
-// resolved entitlement, where a lapsed deal's quota is invisible.
+// resolved entitlement, where a lapsed deal's quota is invisible, and the
+// dashboard and mandate read it as well, chiefly for a deal's product id.
 func (s *Service) StoredRecord(ctx context.Context, orgID string) (Record, error) {
-	// The write pool, as liveSubscription does: on the webhook path a lagging
-	// replica would reject a paid delivery over a just-pasted product id.
+	// The write pool, as liveSubscription reads: ConfirmCheckout maps a paid checkout
+	// through this row, and a lagging replica would refuse it over a just-pasted
+	// product id.
 	row, err := dbread.New(s.pgW).GetOrgEntitlement(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -421,8 +428,6 @@ func (s *Service) storeRecord(
 	return stored, nil
 }
 
-// write is the pool-backed writer, for the single-statement paths with no
-// history row to commit alongside them.
 func (s *Service) begin(ctx context.Context) (pgx.Tx, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {

@@ -1,7 +1,9 @@
 // Package billing is the seam between pug and a merchant of record: the
 // PaymentProvider port, the vocabulary a delivery is normalized into, and the
-// wiring that names a provider. It holds no business logic and does no I/O, which
-// is what lets the payment adapter in internal/deps import it and nothing else.
+// wiring that names a provider, beside Config, the PUG_BILLING_ENABLED switch
+// every billing binary reads. It does no I/O, and its only rules are the
+// vocabulary's own, such as past_due counting as live; that is what lets the
+// payment adapter in internal/deps import it and nothing else.
 //
 // What an org is entitled to send lives in ./entitlement; the mandate lifecycle
 // that buys it lives in ./mandate.
@@ -25,9 +27,6 @@ var (
 	// ErrSubscriptionNotFound is a subscription the provider no longer knows: a
 	// finding for the reconcile pass, not a read failure worth retrying every run.
 	ErrSubscriptionNotFound = errors.New("billing: the provider does not know this subscription")
-	// ErrNoProvider is billing running with no payments credentials: the
-	// self-hosted mode, where only the buy button is missing.
-	ErrNoProvider = errors.New("billing: no payments provider is configured")
 )
 
 // PaymentProvider is the whole seam between pug and a merchant of record: nothing
@@ -218,4 +217,11 @@ type Payments struct {
 	ReturnURL string
 }
 
+// Configured reports whether a provider is wired. Safe on a nil *Payments, which
+// is the no-provider shape.
 func (p *Payments) Configured() bool { return p != nil && p.Provider != nil }
+
+// ErrNoProvider is a money path refused because this deployment takes no money: no
+// provider credentials, or billing switched off. Returned by mandate, never by an
+// adapter.
+var ErrNoProvider = errors.New("billing: no payments provider is configured")

@@ -1,7 +1,8 @@
 // Package entitlement answers what an org is entitled to send: the plan catalog,
-// the stored row, and the resolution of the two against the clock. It counts
-// nothing — consumption is internal/core/usage's job, and the two meet only in a
-// client rendering "X of Y".
+// the stored row, the live subscription the mandate package writes, and the
+// resolution of the three against the clock, where a live subscription outranks
+// the row. It counts nothing — consumption is internal/core/usage's job, and the
+// two meet only in a client rendering "X of Y".
 //
 // A quota drives a banner and never a rejected event, so a wrong row costs a wrong
 // number on a page. Nothing on the ingestion path imports this package, and nothing
@@ -9,7 +10,6 @@
 package entitlement
 
 import (
-	"errors"
 	"time"
 
 	"github.com/pug-sh/pug/internal/core/billing"
@@ -20,15 +20,6 @@ import (
 // Status is the entitlement state, DERIVED at read time from the timestamps and
 // the clock. A stored status would be a second source of truth that can disagree
 // with the dates beside it, and keeping it honest costs a sweep job.
-// Shared across the billing packages and read by the orgs, usage and billing
-// handlers, so they live with the vocabulary rather than with one concern.
-var (
-	ErrOrgNotFound = errors.New("billing: org not found")
-	// ErrPlanNotFound is a slug the catalog does not have. Distinct from
-	// ErrPlanRetired, which is a slug it has but will not hand to a new org.
-	ErrPlanNotFound = errors.New("billing: plan not found")
-)
-
 type Status string
 
 const (
