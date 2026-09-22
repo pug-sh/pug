@@ -122,7 +122,7 @@ func newFailingServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      failingProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
@@ -184,7 +184,7 @@ func newProductlessServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
 		Provider:  stubProvider{},
 		ReturnURL: "https://app.example/settings/billing",
 	}, ent)
@@ -197,7 +197,7 @@ func newPayingServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled boo
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, billingEnabled, &corebilling.Payments{
+	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
@@ -215,7 +215,7 @@ func TestCheckoutPrefillsTheBuyer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{in: &in},
 		ReturnURL:     "https://app.example/settings/billing",
@@ -595,7 +595,7 @@ func newConfirmingServer(t *testing.T, pg *testutil.TestPostgres, provider coreb
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",

@@ -25,24 +25,25 @@ import (
 type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool
-	// billingEnabled mirrors PUG_BILLING_ENABLED. Off is a self-hosted install,
-	// where nothing is sold.
-	billingEnabled bool
 	// payments is nil on a deployment with no provider credentials, which is a
 	// supported mode: only the buy button is missing.
 	payments *billing.Payments
-	ent      *entitlement.Service
+	// ent is also where the billing switch is read from; mandate keeps no copy.
+	ent *entitlement.Service
 }
 
-func NewService(pgRO, pgW *pgxpool.Pool, billingEnabled bool,
-	payments *billing.Payments, ent *entitlement.Service,
-) *Service {
+// NewService builds the lifecycle over ent, which must not be nil: the webhook
+// never reads through it, so a nil one would mount, take deliveries, and panic
+// only in a paid confirm or on the first reconciled row. payments may be nil.
+func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, ent *entitlement.Service) *Service {
+	if ent == nil {
+		panic("mandate: entitlement service is nil")
+	}
 	return &Service{
-		read:           dbread.New(pgRO),
-		pgW:            pgW,
-		billingEnabled: billingEnabled,
-		payments:       payments,
-		ent:            ent,
+		read:     dbread.New(pgRO),
+		pgW:      pgW,
+		payments: payments,
+		ent:      ent,
 	}
 }
 

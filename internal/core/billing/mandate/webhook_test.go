@@ -81,7 +81,7 @@ func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
@@ -729,7 +729,7 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 // fixture's pools so the seeded rows are the ones reconciled.
 func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *mandate.Service {
 	t.Helper()
-	return mandate.NewService(f.pg.PgRO, f.pg.PgW, true, &corebilling.Payments{
+	return mandate.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
 	}, f.ent)

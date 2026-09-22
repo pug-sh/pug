@@ -40,7 +40,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, true, nil, ent)
+	svc := mandate.NewService(pg.PgRO, pg.PgW, nil, ent)
 	return &fixture{
 		svc:   svc,
 		ent:   ent,
