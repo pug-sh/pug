@@ -8,8 +8,8 @@ import (
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 )
 
-func liveSub(slug string) *corebilling.Subscription {
-	return &corebilling.Subscription{
+func liveSub(slug string) *entitlement.Subscription {
+	return &entitlement.Subscription{
 		PlanSlug: slug, Status: corebilling.SubStatusActive,
 		PriceCents: 2_000, Currency: "USD",
 		ProviderCustomerID: "cus_1", ProviderSubID: "sub_1",
