@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/pug-sh/pug/internal/core/billing"
-	"github.com/pug-sh/pug/internal/core/billing/subs"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -61,11 +60,6 @@ type Service struct {
 	// billingEnabled mirrors PUG_BILLING_ENABLED. Off is a self-hosted install,
 	// where every org resolves with no quota at all.
 	billingEnabled bool
-	// subs reads the live subscription that resolution needs; the mandate package
-	// owns every write to it. Built here rather than injected: the package exists to
-	// break an import cycle, not a construction one, and a nil Reader would only
-	// give every caller a way to get it wrong.
-	subs *subs.Reader
 }
 
 // NewService checks the floors at wiring time: mustPlan would otherwise panic
@@ -80,7 +74,6 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Se
 		read:           dbread.New(pgRO),
 		pgW:            pgW,
 		billingEnabled: billingEnabled,
-		subs:           subs.NewReader(pgW),
 	}, nil
 }
 
@@ -113,7 +106,7 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 	// regardless, so the read is a query per dashboard load that cannot change it.
 	var sub *billing.Subscription
 	if s.billingEnabled {
-		if sub, err = s.subs.Live(ctx, orgID); err != nil {
+		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
 			return Entitlement{}, err
 		}
 	}
@@ -222,7 +215,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	// The stranding Clear refuses, reached by a floor plan instead. Through the tx,
 	// as Clear reads it: off the pool this waits on a connection it is holding.
 	if next.IncludedEventsOverride <= 0 {
-		sub, err := subs.ReadLive(ctx, dbread.New(tx), orgID)
+		sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
 		if err != nil {
 			return Record{}, err
 		}
@@ -319,7 +312,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	// A live custom subscription resolves its quota from the row this deletes, so
 	// clearing it drops an org that is still being charged to the free floor. Under
 	// the lock, which a subscription writer takes before it maps its product.
-	sub, err := subs.ReadLive(ctx, dbread.New(tx), orgID)
+	sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
 	if err != nil {
 		return err
 	}
