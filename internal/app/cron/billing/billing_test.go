@@ -25,11 +25,11 @@ func TestMain(m *testing.M) { testutil.Main(m) }
 // no-provider shape, where Reconcile is a no-op and only the prune runs.
 func newSvc(t *testing.T, pg *testutil.TestPostgres, payments *corebilling.Payments) *mandate.Service {
 	t.Helper()
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	return mandate.NewService(pg.PgRO, pg.PgW, payments, ent)
+	return mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements)
 }
 
 // seedDelivery stores one processed delivery stamped at `at`.

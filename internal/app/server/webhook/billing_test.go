@@ -70,12 +70,11 @@ func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling
 func newService(t *testing.T) (*mandate.Service, *testutil.TestPostgres) {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, nil, ent)
-	return svc, pg
+	return mandate.NewService(pg.PgRO, pg.PgW, nil, entitlements), pg
 }
 
 func post(t *testing.T, h http.Handler, path, body string) *http.Response {

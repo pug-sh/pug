@@ -40,7 +40,7 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 		t.Fatal("confirmed = false, want true for a settled checkout")
 	}
 
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestConfirmCheckoutDoesNotConfirmAPendingSubscription(t *testing.T) {
 	if n := storedSubscriptions(t, f); n != 1 {
 		t.Errorf("stored %d subscription rows, want the pending one written", n)
 	}
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	if confirmed {
 		t.Error("confirmed = true for a subscription that was never written")
 	}
-	ent, err := f.ent.GetEntitlement(t.Context(), f.orgID, time.Now())
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 	ctx := t.Context()
 
 	productID := "prod_acme"
-	if _, err := f.ent.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+	if _, err := f.entitlements.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    new(int64(5_000_000)),
 		ProviderProductID: &productID,

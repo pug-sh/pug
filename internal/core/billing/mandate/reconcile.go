@@ -199,7 +199,7 @@ func (s *Service) reconcileOne(
 
 	// Only to tell an org that has vanished from an ordinary read failure: the
 	// writer re-reads the row itself, under the lock it applies in.
-	if _, err := s.ent.StoredRecord(ctx, row.OrgID); err != nil {
+	if _, err := s.entitlements.StoredRecord(ctx, row.OrgID); err != nil {
 		report.Unreadable++
 		// StoredRecord logs a real read failure; an org that has vanished from under
 		// a live subscription is the one it returns silently.

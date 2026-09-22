@@ -17,7 +17,7 @@ func noProviderCases(t *testing.T) (*fixture, map[string]*mandate.Service) {
 	t.Helper()
 	f, provider := newPaidFixture(t)
 
-	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, nil, f.ent)
+	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, nil, f.entitlements)
 	// A provider wired and the switch off: the switch is the entitlement service's,
 	// so switching it off means building that service off, as the server does.
 	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, false)
