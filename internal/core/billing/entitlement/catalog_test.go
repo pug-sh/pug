@@ -48,9 +48,9 @@ func TestCardBySlugReportsAnUnknownSlug(t *testing.T) {
 }
 
 func TestIsCardSlugRejectsStates(t *testing.T) {
-	for _, s := range []string{"", SlugFree, SlugCustom} {
+	for _, s := range []string{"", SlugFree, SlugTrial, SlugCustom} {
 		if isCardSlug(s) {
-			t.Errorf("isCardSlug(%q) = true; free and custom are states, not cards", s)
+			t.Errorf("isCardSlug(%q) = true; free, trial and custom are states, not cards", s)
 		}
 	}
 	if !isCardSlug("usage-2026-09-1") {

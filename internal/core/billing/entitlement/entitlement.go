@@ -280,7 +280,7 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 	if cur.Present {
 		// IsFloor meant "they are on a paid tier". With free and trial no longer
 		// plans, a pin of any kind means that.
-		if isCardSlug(cur.PlanSlug) || cur.PlanSlug == SlugCustom {
+		if pinned(cur.PlanSlug) {
 			return Record{}, ErrTrialOnGrantedPlan
 		}
 		// A lapsed contract expires the trial branch too, so the date would be just
@@ -523,7 +523,7 @@ func applyChange(cur Record, c Change) Record {
 	next.ProviderProductID = orKeep(c.ProviderProductID, cur.ProviderProductID)
 
 	switch {
-	case isCardSlug(next.PlanSlug) || next.PlanSlug == SlugCustom:
+	case pinned(next.PlanSlug):
 		// Converting to a paid tier ends the trial, or the state depends on which of
 		// two dates the resolver consults first. A pin of any kind is that tier now:
 		// free and trial are no longer settable plans.
