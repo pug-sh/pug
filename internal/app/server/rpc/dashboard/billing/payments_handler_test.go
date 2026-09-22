@@ -8,14 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"

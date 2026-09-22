@@ -9,12 +9,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/pug-sh/pug/internal/core/billing"
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"

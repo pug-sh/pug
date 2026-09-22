@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-
 	"github.com/spf13/cobra"
 )
 
