@@ -3,7 +3,8 @@
 // wiring that names a provider, beside Config, the PUG_BILLING_ENABLED switch
 // every billing binary reads. It does no I/O, and its only rules are the
 // vocabulary's own, such as past_due counting as live; that is what lets the
-// payment adapter in internal/deps import it and nothing else.
+// payment adapter in internal/deps import it and nothing else in core, which
+// depguard holds it to.
 //
 // What an org is entitled to send lives in ./entitlement; the mandate lifecycle
 // that buys it lives in ./mandate.

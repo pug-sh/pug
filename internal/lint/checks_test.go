@@ -222,6 +222,22 @@ func TestChecksDetectViolations(t *testing.T) {
 		{
 			check: "depguard-targets-exist",
 			files: map[string]string{
+				".golangci.yml": "linters:\n  settings:\n    depguard:\n      rules:\n        moved:\n          files: [\"!$test\"]\n          allow:\n            - github.com/pug-sh/pug/internal/gone$\n",
+			},
+			want: "allows no such package",
+		},
+		{
+			check: "depguard-targets-exist",
+			files: map[string]string{
+				// The `$` that makes an entry exact is not part of the path.
+				"internal/core/billing/x.go": "package billing\n",
+				".golangci.yml":              "linters:\n  settings:\n    depguard:\n      rules:\n        ok:\n          list-mode: lax\n          files: [\"!$test\"]\n          allow:\n            - github.com/pug-sh/pug/internal/core/billing$\n          deny:\n            - pkg: github.com/pug-sh/pug/internal/core\n",
+			},
+			want: "",
+		},
+		{
+			check: "depguard-targets-exist",
+			files: map[string]string{
 				// A filename component is not a directory; stat'ing the whole
 				// pattern would condemn a glob that matches.
 				"internal/core/x.go": "package core\n",

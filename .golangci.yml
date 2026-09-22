@@ -59,22 +59,38 @@ linters:
               desc: infrastructure must not reach up into the app layer
         # The port-implementing adapters are the deps packages that may see core, and
         # only the one port each implements. Both stay barred from the app layer.
+        #
+        # Each denies all of core and allows its port back with an exact `$` entry;
+        # lax mode lets the longer allow win. Never nest one deny inside another's
+        # prefix instead: depguard tests only the deny entry nearest an import in
+        # sort order, so `core` beside `core/billing/` silently stops matching
+        # `core/orgs` and everything else sorting after "billing/".
         deps-email-adapters:
+          list-mode: lax
           files: ["**/internal/deps/email/**", "!$test"]
+          # Exact, not prefixes: core/email/ would admit its templates and secret
+          # packages, and a bare core/email prefix would admit core/emailaction.
+          allow:
+            - github.com/pug-sh/pug/internal/core/email$
+            - github.com/pug-sh/pug/internal/core/email/spec$
           deny:
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: infrastructure must not reach up into the app layer
+            - pkg: github.com/pug-sh/pug/internal/core
+              desc: an email adapter sees its port, core/email and its spec, and nothing else in core
         deps-payment-adapters:
+          list-mode: lax
           files: ["**/internal/deps/dodo/**", "!$test"]
+          # The root is the port and the vocabulary around it. The packages below it
+          # are pug's side of the seam, not the adapter's; importing one would put
+          # business rules in a vendor client.
+          allow:
+            - github.com/pug-sh/pug/internal/core/billing$
           deny:
             - pkg: github.com/pug-sh/pug/internal/app/
               desc: infrastructure must not reach up into the app layer
-            # The adapter implements the port and may see the vocabulary around it.
-            # The packages below the root are pug's side of the seam, not the
-            # adapter's; importing one would put business rules in a vendor client.
-            # The trailing slash is what leaves the root itself importable.
-            - pkg: github.com/pug-sh/pug/internal/core/billing/
-              desc: the payment adapter sees the port and vocabulary only, never the logic packages
+            - pkg: github.com/pug-sh/pug/internal/core
+              desc: the payment adapter sees the billing root, its port and vocabulary, and nothing else in core
         rpc-dashboard-boundary:
           files: ["**/internal/app/server/rpc/dashboard/**", "!$test"]
           deny:
