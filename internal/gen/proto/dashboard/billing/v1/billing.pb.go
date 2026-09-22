@@ -1151,11 +1151,11 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"\"dashboard/billing/v1/billing.proto\x12\x14dashboard.billing.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"9\n" +
 	"\x17GetBillingStatusRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"_\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"l\n" +
 	"\x04Plan\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1a\n" +
-	"\bcurrency\x18\x04 \x01(\tR\bcurrencyJ\x04\b\x03\x10\x04\"a\n" +
+	"\bcurrency\x18\x04 \x01(\tR\bcurrencyJ\x04\b\x03\x10\x04R\vprice_cents\"a\n" +
 	"\bRateCard\x12\x1f\n" +
 	"\vfree_events\x18\x01 \x01(\x03R\n" +
 	"freeEvents\x124\n" +
@@ -1208,7 +1208,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"portal_url\x18\x01 \x01(\tR\tportalUrl\"2\n" +
 	"\x10ListPlansRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\xce\x02\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\xdb\x02\n" +
 	"\n" +
 	"PlanOption\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
@@ -1217,7 +1217,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x0fincluded_events\x18\x05 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12B\n" +
 	"\x0eretention_days\x18\a \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12 \n" +
 	"\vpurchasable\x18\x06 \x01(\bR\vpurchasable\x12;\n" +
-	"\trate_card\x18\b \x01(\v2\x1e.dashboard.billing.v1.RateCardR\brateCardJ\x04\b\x03\x10\x04\"K\n" +
+	"\trate_card\x18\b \x01(\v2\x1e.dashboard.billing.v1.RateCardR\brateCardJ\x04\b\x03\x10\x04R\vprice_cents\"K\n" +
 	"\x11ListPlansResponse\x126\n" +
 	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x80\x01\n" +
 	"\rBillingStatus\x12\x1e\n" +

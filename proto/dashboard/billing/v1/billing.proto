@@ -76,6 +76,7 @@ message Plan {
   // is no list price to carry; see rate_card on GetBillingStatusResponse. Never
   // reused: if a single price is ever wanted again it takes a new number.
   reserved 3;
+  reserved price_cents;
   // ISO 4217.
   string currency = 4;
 }
@@ -202,6 +203,7 @@ message PlanOption {
   string display_name = 2;
   // 3 was price_cents, for the reason given on Plan: a card is priced by tiers.
   reserved 3;
+  reserved price_cents;
   // ISO 4217.
   string currency = 4;
   // Events the tier includes. ABSENT is the custom tier.
