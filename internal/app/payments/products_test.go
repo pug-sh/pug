@@ -16,24 +16,24 @@ func TestProductIDs(t *testing.T) {
 	}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 
-	got, err := ProductIDs(lookup)
+	got, err := productIDs(lookup)
 	if err != nil {
-		t.Fatalf("ProductIDs: %v", err)
+		t.Fatalf("productIDs: %v", err)
 	}
 	want := map[string]string{"starter": "prod_s", "growth": "prod_g"}
 	if len(got) != len(want) {
-		t.Fatalf("ProductIDs = %v, want %v", got, want)
+		t.Fatalf("productIDs = %v, want %v", got, want)
 	}
 	for slug, id := range want {
 		if got[slug] != id {
-			t.Errorf("ProductIDs[%q] = %q, want %q", slug, got[slug], id)
+			t.Errorf("productIDs[%q] = %q, want %q", slug, got[slug], id)
 		}
 	}
 
 	// Two tiers on one product makes an incoming subscription's tier ambiguous,
 	// and the webhook would pick one silently.
 	env["PUG_DODO_PRODUCT_SCALE"] = "prod_g"
-	if _, err := ProductIDs(lookup); err == nil {
+	if _, err := productIDs(lookup); err == nil {
 		t.Fatal("two tiers sharing a product id was accepted")
 	}
 }

@@ -1,12 +1,7 @@
-// Product ids are catalog-to-env wiring, not adapter logic: one
-// PUG_DODO_PRODUCT_<SLUG> per purchasable tier. They live here rather than in
-// internal/deps/dodo because a deps package may see core only to implement one of
-// its ports, and this implements none.
 package payments
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
@@ -16,16 +11,11 @@ import (
 // list kept here.
 const productEnvPrefix = "PUG_DODO_PRODUCT_"
 
-// EnvLookup is os.LookupEnv, injected so ProductIDs is testable without setting
-// process environment.
-type EnvLookup func(string) (string, bool)
-
-// ProductIDs resolves slug -> product id for every catalog tier that has one. A
-// tier with no key is simply not purchasable.
-func ProductIDs(lookup EnvLookup) (map[string]string, error) {
-	if lookup == nil {
-		lookup = os.LookupEnv
-	}
+// productIDs reads Dodo's product ids, one PUG_DODO_PRODUCT_<SLUG> per
+// purchasable tier, into slug -> product id. A tier with no key is simply not
+// purchasable. It is catalog-to-env wiring rather than adapter logic, so it lives
+// here and not in internal/deps/dodo. lookup is os.LookupEnv outside tests.
+func productIDs(lookup func(string) (string, bool)) (map[string]string, error) {
 	out := map[string]string{}
 	byProduct := map[string]string{}
 	for _, plan := range entitlement.Plans() {
