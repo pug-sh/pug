@@ -107,11 +107,21 @@ func copyPlan(p Plan) Plan {
 	return p
 }
 
-// IsFloor reports the two tiers every org falls back to, which are never sold. SQL
+// isFloor reports the two tiers every org falls back to, which are never sold. SQL
 // hard-codes the same pair for the reconcile pass's unbilled walk, and
 // TestTheFloorSlugsAgreeBetweenGoAndSQL pins the two together.
-func (p Plan) IsFloor() bool {
+func (p Plan) isFloor() bool {
 	return p.Slug == SlugFree || p.Slug == SlugTrial
+}
+
+// OnSale reports whether checkout may offer the tier at all: never a floor, which
+// every org holds for nothing, and never a retired tier, which stays only for the
+// orgs already on it. Derived rather than stored, because one stored flag for
+// both granting and selling once made every custom deal impossible (§14 of
+// docs/architecture/billing.md). Whether a deployment has a product to sell the
+// tier against is checkout's question, not the catalog's.
+func (p Plan) OnSale() bool {
+	return !p.isFloor() && !p.Retired
 }
 
 func i64(v int64) *int64 { return &v }

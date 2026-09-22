@@ -172,7 +172,7 @@ func resolvePlan(orgCreateTime time.Time, rec Record, sub *billing.Subscription,
 		return Plan{Slug: sub.PlanSlug, DisplayName: sub.PlanSlug, Currency: free.Currency}, StatusActive
 	}
 
-	if rec.Present && known && !plan.IsFloor() && !lapsed {
+	if rec.Present && known && !plan.isFloor() && !lapsed {
 		return plan, StatusActive
 	}
 	// Gated on the contract too: a time-boxed comp is stored as a floor plan, so

@@ -65,7 +65,7 @@ func TestTheFloorSlugsAgreeBetweenGoAndSQL(t *testing.T) {
 		walked[row.OrgID] = true
 	}
 	for _, p := range Plans() {
-		if got, want := walked[orgs[p.Slug]], !p.IsFloor(); got != want {
+		if got, want := walked[orgs[p.Slug]], !p.isFloor(); got != want {
 			t.Errorf("%s: walked as a paid plan with no subscription = %v, want %v", p.Slug, got, want)
 		}
 	}

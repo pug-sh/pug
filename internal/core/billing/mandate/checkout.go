@@ -108,9 +108,11 @@ func (s *Service) CreateCheckoutSession(
 	if !ok {
 		return "", "", entitlement.ErrPlanNotFound
 	}
-	// The product map already excludes both, but that is the wiring's rule (see
-	// app/payments); core must not assume the next wiring builds it the same way.
-	if plan.IsFloor() || plan.Retired {
+	// The product map leaves out the floors but keeps retired tiers mapped, so their
+	// holders' renewals still resolve (see app/payments). This is what keeps a
+	// retired tier off sale, and the map is the wiring's rule besides: core must not
+	// assume the next wiring builds it the same way.
+	if !plan.OnSale() {
 		return "", "", ErrNotPurchasable
 	}
 
@@ -218,8 +220,8 @@ type PlanOption struct {
 	Purchasable bool
 }
 
-// PlanOptions is the sellable catalog for one org: the floors and retired tiers
-// are excluded, and custom appears only for the org whose row records a product.
+// PlanOptions is the catalog on sale to one org (see Plan.OnSale), with custom
+// listed only for the org whose row records a product.
 func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, error) {
 	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
@@ -229,7 +231,7 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 	plans := entitlement.Plans()
 	out := make([]PlanOption, 0, len(plans))
 	for _, plan := range plans {
-		if plan.IsFloor() || plan.Retired {
+		if !plan.OnSale() {
 			continue
 		}
 		if plan.Slug == entitlement.SlugCustom && rec.ProviderProductID == "" {

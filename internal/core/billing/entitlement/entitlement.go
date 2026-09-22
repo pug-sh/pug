@@ -272,7 +272,7 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 	// A granted plan resolves ahead of any trial date, so the write would change
 	// nothing and still print as a success. An unknown slug counts as granted.
 	if cur.Present {
-		if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.IsFloor() {
+		if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.isFloor() {
 			return Record{}, ErrTrialOnGrantedPlan
 		}
 		// A lapsed contract expires the trial branch too, so the date would be just
@@ -496,7 +496,7 @@ func applyChange(cur Record, c Change) Record {
 	next.ProviderProductID = orKeep(c.ProviderProductID, cur.ProviderProductID)
 
 	if plan, ok := PlanBySlug(next.PlanSlug); ok {
-		if !plan.IsFloor() {
+		if !plan.isFloor() {
 			// Converting to a paid tier ends the trial, or the state depends on which
 			// of two dates the resolver consults first.
 			next.TrialEndsAt = time.Time{}

@@ -6,6 +6,35 @@ import (
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 )
 
+// Checkout's half of the catalog. Retired is set by hand because no catalog tier
+// is retired yet, and the product map keeps a retired tier mapped for its holders'
+// renewals, so this is the only thing that keeps one off sale the day one is.
+func TestOnSale(t *testing.T) {
+	floor := func(slug string) entitlement.Plan {
+		p, ok := entitlement.PlanBySlug(slug)
+		if !ok {
+			t.Fatalf("catalog is missing the floor %q", slug)
+		}
+		return p
+	}
+	for name, tc := range map[string]struct {
+		plan entitlement.Plan
+		want bool
+	}{
+		"free floor":   {floor(entitlement.SlugFree), false},
+		"trial floor":  {floor(entitlement.SlugTrial), false},
+		"a sold tier":  {entitlement.Plan{Slug: "growth"}, true},
+		"retired tier": {entitlement.Plan{Slug: "growth-v0", Retired: true}, false},
+		// On sale to the catalog; whether this org has a product for it is checkout's
+		// question, answered from its row.
+		"custom": {entitlement.Plan{Slug: entitlement.SlugCustom}, true},
+	} {
+		if got := tc.plan.OnSale(); got != tc.want {
+			t.Errorf("%s: OnSale() = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
 // A tier's money and quota are fixed once any org holds it: editing them
 // re-negotiates every live agreement on that tier with a one-line diff, applied
 // retroactively on deploy and recorded nowhere. Repricing mints a NEW slug
