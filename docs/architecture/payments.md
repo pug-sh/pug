@@ -58,11 +58,12 @@ today.
    no second notion of "newer". Neither side writes the other's table. This is
    what makes drift structurally impossible rather than a thing to remember (§4).
    The two sides still meet on one org: a custom subscription takes its quota
-   from the entitlement row, so `applySubscription` takes the same
-   `pg_advisory_xact_lock` a `billing clear` does and re-reads that row inside
-   it. Otherwise a clear can commit between the mapping and the write, leaving a
-   live custom subscription against no row — the free floor, and exactly the
-   stranding `Clear`'s own guard refuses to cause.
+   from the entitlement row, so `applySubscription` maps and writes inside the
+   entitlement service's `WithOrgLock`, which takes the same
+   `pg_advisory_xact_lock` a `billing clear` does and hands it that row as read
+   under the lock. Otherwise a clear can commit between the mapping and the
+   write, leaving a live custom subscription against no row — the free floor,
+   and exactly the stranding `Clear`'s own guard refuses to cause.
 3. **Every paid org has a provider subscription**, negotiated deals included.
    There is no manual-payment path, so "entitlement with no live subscription"
    is a reconcilable defect rather than a legitimate state.
