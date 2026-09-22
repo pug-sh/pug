@@ -4,19 +4,12 @@
 package mandate
 
 import (
-	"context"
-	"errors"
-	"log/slog"
-
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
-	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // Service is the mandate lifecycle. It holds the entitlement service rather than a
@@ -48,26 +41,3 @@ func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, ent *entitl
 }
 
 func (s *Service) write() *dbwrite.Queries { return dbwrite.New(s.pgW) }
-
-func (s *Service) begin(ctx context.Context) (pgx.Tx, error) {
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin the billing tx", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return nil, err
-	}
-	return tx, nil
-}
-
-func (s *Service) commit(ctx context.Context, tx pgx.Tx, orgID string) error {
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit the billing tx", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	return nil
-}
-
-// ErrCustomerNotUnique is one provider customer holding subscriptions for two
-// orgs: the delivery names a buyer, and a buyer is not an org.
-var ErrCustomerNotUnique = errors.New("billing: the provider customer maps to more than one org")

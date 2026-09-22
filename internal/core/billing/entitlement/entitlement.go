@@ -360,17 +360,36 @@ func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwri
 	if err != nil {
 		return nil, nil, Record{}, err
 	}
-	w := dbwrite.New(tx)
-	if err := lockOrg(ctx, w, orgID); err != nil {
-		_ = tx.Rollback(ctx)
-		return nil, nil, Record{}, err
-	}
-	cur, err := CurrentRecord(ctx, w, orgID)
+	cur, err := LockedRecord(ctx, tx, orgID)
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, nil, Record{}, err
 	}
-	return tx, w, cur, nil
+	return tx, dbwrite.New(tx), cur, nil
+}
+
+// LockedRecord takes the org's billing lock on tx and returns the row as it stands
+// under it. It is the lock every write here takes, held until tx ends, so a writer
+// outside this package that maps onto the row cannot interleave with a `billing
+// clear`. No row is Record{} with a nil error, which is the ordinary state.
+//
+// A pgx.Tx, not a query handle: off a transaction the lock dies with its own
+// statement, and a pool-backed read would hold nothing while looking locked.
+func LockedRecord(ctx context.Context, tx pgx.Tx, orgID string) (Record, error) {
+	w := dbwrite.New(tx)
+	if err := lockOrg(ctx, w, orgID); err != nil {
+		return Record{}, err
+	}
+	row, err := w.GetBillingEntitlementForUpdate(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Record{}, nil
+		}
+		slog.ErrorContext(ctx, "failed to lock the entitlement", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return Record{}, err
+	}
+	return recordFromWriteRow(row), nil
 }
 
 // lockOrg goes before the read: `for update` locks nothing when the row does not
@@ -443,19 +462,6 @@ func orgCreateTime(ctx context.Context, w *dbwrite.Queries, orgID string) (time.
 		return time.Time{}, err
 	}
 	return org.CreateTime.Time, nil
-}
-
-func CurrentRecord(ctx context.Context, w *dbwrite.Queries, orgID string) (Record, error) {
-	row, err := w.GetBillingEntitlementForUpdate(ctx, orgID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Record{}, nil
-		}
-		slog.ErrorContext(ctx, "failed to lock the entitlement", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return Record{}, err
-	}
-	return recordFromWriteRow(row), nil
 }
 
 // recordFromWriteRow maps the writer-side row, which GetBillingEntitlementForUpdate

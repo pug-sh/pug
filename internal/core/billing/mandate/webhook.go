@@ -262,6 +262,10 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 	return n, nil
 }
 
+// ErrCustomerNotUnique is one provider customer holding subscriptions for two
+// orgs: the delivery names a buyer, and a buyer is not an org.
+var ErrCustomerNotUnique = errors.New("billing: the provider customer maps to more than one org")
+
 // ErrTwoLiveSubscriptions is the partial unique index refusing a second live
 // subscription. Returned, not swallowed: the caller cannot tell it from the CAS's
 // own skip, and on the confirm path that is a buyer who paid and holds nothing.
@@ -292,25 +296,21 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
 	}
-	tx, err := s.begin(ctx)
+	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin the billing tx", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	w := dbwrite.New(tx)
-	if err := w.LockBillingEntitlementOrg(ctx, orgID); err != nil {
-		slog.ErrorContext(ctx, "failed to lock the org for a subscription write", slogx.Error(err),
-			slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return 0, err
-	}
-	// The org's own row, for the negotiated-deal product, read under the lock so
-	// the mapping and the write see the same row.
-	rec, err := entitlement.CurrentRecord(ctx, w, orgID)
+	// The org's own row, for the negotiated-deal product, read under the org lock
+	// so the mapping and the write see the same row.
+	rec, err := entitlement.LockedRecord(ctx, tx, orgID)
 	if err != nil {
 		return 0, err
 	}
+	w := dbwrite.New(tx)
 	planSlug, err := s.planForProduct(event.ProductID, rec)
 	if err != nil {
 		// A product only has to resolve to GRANT a plan. Refusing a cancellation whose
@@ -361,7 +361,9 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, err)
 		return 0, err
 	}
-	if err := s.commit(ctx, tx, orgID); err != nil {
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit the billing tx", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
 		return 0, err
 	}
 	return applied, nil
