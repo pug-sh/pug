@@ -57,7 +57,10 @@ today.
    payments side writes `billing_subscriptions` — the webhook, reconcile and
    `ConfirmCheckout`, all through the one CAS in `applySubscription`, so there is
    no second notion of "newer". Neither side writes the other's table. This is
-   what makes drift structurally impossible rather than a thing to remember (§4).
+   what makes drift structurally impossible rather than a thing to remember (§4),
+   and the build holds it: the `table-has-one-writer` check in `internal/lint`
+   reads which table each write query mutates from its SQL and fails a call to
+   one from outside the owning package.
    The two sides still meet on one org: a custom subscription takes its quota
    from the entitlement row, so `applySubscription` maps and writes inside the
    entitlement service's `WithOrgLock`, which takes the same
