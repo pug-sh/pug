@@ -884,7 +884,9 @@ here.
   second — a negotiated deal is granted to an org that has never held one, so
   a `Sellable: false` guard made every custom deal impossible to create. Splitting
   them now would have shipped a purchasability flag with no consumer, so only the
-  guard's own concept exists: `Retired`. Checkout brings the other half.
+  guard's own concept exists: `Retired`. Checkout brings the other half, as
+  `Plan.OnSale`: derived from the floors and `Retired`, never stored, so the two
+  cannot be conflated again.
 - **A granted plan is resolved before a live trial date** (§6, steps 3 and 4 are
   swapped relative to the first draft). The original order let a stale
   `trial_ends_at` demote a customer who had converted mid-trial.
