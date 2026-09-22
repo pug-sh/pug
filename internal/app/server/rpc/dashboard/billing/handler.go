@@ -25,14 +25,14 @@ type Server struct {
 	mandates     *mandate.Service
 }
 
-func NewServer(entitlements *entitlement.Service, mandates *mandate.Service) *Server {
-	if entitlements == nil {
-		panic("billing: entitlement service is nil")
-	}
+// NewServer reads the entitlement service off mandates rather than taking one
+// beside it. GetBillingStatus reports billing_enabled from one and purchasable from
+// the other, so a pair wired apart would contradict itself in a single response.
+func NewServer(mandates *mandate.Service) *Server {
 	if mandates == nil {
 		panic("billing: mandate service is nil")
 	}
-	return &Server{entitlements: entitlements, mandates: mandates}
+	return &Server{entitlements: mandates.Entitlements(), mandates: mandates}
 }
 
 func (s *Server) GetBillingStatus(

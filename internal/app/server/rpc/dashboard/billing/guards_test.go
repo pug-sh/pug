@@ -16,38 +16,30 @@ import (
 	"github.com/rs/xid"
 )
 
-// Every handler would nil-panic on the first call; failing here names it. Each
-// service alone too, or a check that needed both nil would still pass.
+// Every handler would nil-panic on the first call; failing here names it.
 func TestNewServerRejectsANilService(t *testing.T) {
+	defer func() {
+		v := recover()
+		if v == nil {
+			t.Fatal("NewServer returned a server; every RPC on it would panic")
+		}
+		if msg, _ := v.(string); !strings.Contains(msg, "mandate service is nil") {
+			t.Errorf("panic = %v, want it to name the mandate service", v)
+		}
+	}()
+	NewServer(nil)
+}
+
+// The status read and the buy button must answer to one billing switch, so the
+// handler's entitlement service is the one the mandate service was built over.
+func TestNewServerReadsEntitlementsOffTheMandateService(t *testing.T) {
 	// Construction never touches the pools, so no database is needed.
 	entitlements, err := entitlement.NewService(nil, nil, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	mandates := mandate.NewService(nil, nil, nil, entitlements)
-
-	for _, tc := range []struct {
-		name         string
-		entitlements *entitlement.Service
-		mandates     *mandate.Service
-		want         string
-	}{
-		{"both", nil, nil, "entitlement service is nil"},
-		{"entitlement", nil, mandates, "entitlement service is nil"},
-		{"mandate", entitlements, nil, "mandate service is nil"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				v := recover()
-				if v == nil {
-					t.Fatal("NewServer returned a server; every RPC on it would panic")
-				}
-				if msg, _ := v.(string); !strings.Contains(msg, tc.want) {
-					t.Errorf("panic = %v, want it to say %q", v, tc.want)
-				}
-			}()
-			NewServer(tc.entitlements, tc.mandates)
-		})
+	if got := NewServer(mandate.NewService(nil, nil, nil, entitlements)).entitlements; got != entitlements {
+		t.Error("the handler holds an entitlement service the mandate service was not built over")
 	}
 }
 

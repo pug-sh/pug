@@ -162,7 +162,7 @@ func start(ctx context.Context, d *deps) error {
 	// having no quota, with nothing failing. Same for a missing provider key.
 	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled), slog.String("provider", provider))
 	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
-		billingrpc.NewServer(entitlementSvc, mandateSvc), handlerOpts)
+		billingrpc.NewServer(mandateSvc), handlerOpts)
 
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
