@@ -70,24 +70,10 @@ const fakeProviderName = "fake"
 
 func newPaidFixture(t *testing.T) (*fixture, *fakeProvider) {
 	t.Helper()
-	pg := testutil.SetupPostgres(t)
-
-	org, err := dbwriteOrg(t, pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	f := newFixture(t)
 	provider := &fakeProvider{name: fakeProviderName}
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
-	svc := mandate.NewService(pg.PgRO, pg.PgW, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
-		Provider:      provider,
-		ReturnURL:     "https://app.example/settings/billing",
-	}, ent)
-	f := &fixture{svc: svc, ent: ent, pg: pg, orgID: org}
-	seedCheckoutRef(t, f, org)
+	f.svc = f.svcWithProvider(t, provider)
+	seedCheckoutRef(t, f, f.orgID)
 	return f, provider
 }
 
@@ -725,13 +711,15 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 	return org.ID, nil
 }
 
-// svcWithProvider rebuilds the service against a different provider, sharing the
-// fixture's pools so the seeded rows are the ones reconciled.
+// svcWithProvider builds the paid service against provider, sharing the fixture's
+// pools and entitlement service, so a test that swaps the provider still sees the
+// rows it seeded.
 func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *mandate.Service {
 	t.Helper()
 	return mandate.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
+		ReturnURL:     "https://app.example/settings/billing",
 	}, f.ent)
 }
 

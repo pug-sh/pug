@@ -133,12 +133,8 @@ func TestGetBillingStatusCarriesTheContractEnd(t *testing.T) {
 		t.Errorf("contract_ends_at = %s with no deal stored, want absent", before.GetContractEndsAt().AsTime())
 	}
 
-	ent, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
-	if err != nil {
-		t.Fatalf("new entitlement service: %v", err)
-	}
 	ends := time.Now().AddDate(1, 0, 0).UTC().Truncate(time.Second)
-	if _, err := ent.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
+	if _, err := srv.ent.SetPlan(t.Context(), orgID, "tester@localhost", entitlement.Change{
 		PlanSlug:       "growth",
 		ContractEndsAt: &ends,
 	}); err != nil {
