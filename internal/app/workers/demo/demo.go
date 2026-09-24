@@ -37,9 +37,11 @@ import (
 
 	seed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	clickhousedeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -139,12 +141,22 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
-	projectID, err := ensureSeed(ctx, cfg, chDB.Conn)
+	var pgCfg postgres.Config
+	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		return err
+	}
+	pg, err := postgres.NewWriterPool(ctx, &pgCfg)
+	if err != nil {
+		return err
+	}
+	defer pg.Close()
+	gate := deletion.NewGate(pg)
+	projectID, err := ensureSeedWithGate(ctx, cfg, chDB.Conn, gate)
 	if err != nil {
 		return err
 	}
 
-	return StartWorker(ctx, chDB.Conn, cfg, projectID)
+	return startWorkerWithGate(ctx, chDB.Conn, cfg, projectID, gate)
 }
 
 type seedAction int
@@ -176,7 +188,7 @@ func decideSeedAction(n uint64, seedCount int64) seedAction {
 	}
 }
 
-// ensureSeed derives the demo project from the demo user and backfills it the
+// ensureSeedWithGate derives the demo project from the demo user and backfills it the
 // first time the worker starts against an empty ClickHouse. It ensures the
 // Postgres customer/org/project exists (creating it on a fresh database,
 // resolving it otherwise), backfills a few months of historical events, and
@@ -194,7 +206,7 @@ func decideSeedAction(n uint64, seedCount int64) seedAction {
 // logs a warning and leaves the partial history in place (recovery is to
 // truncate the events table and restart). Returns the demo project id to play
 // live traffic into.
-func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error) {
+func ensureSeedWithGate(ctx context.Context, cfg Config, ch driver.Conn, gate *deletion.Gate) (string, error) {
 	// Postgres is only needed while seeding (account + active-set profiles), so it
 	// is opened and closed here; the caller owns the long-lived ClickHouse conn.
 	var pgCfg postgres.Config
@@ -211,6 +223,17 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("seed postgres account: %w", err)
 	}
+	if gate == nil {
+		return finishSeed(ctx, cfg, ch, pg, project)
+	}
+	err = gate.WithActiveProjectExternal(ctx, project.ID, func(ctx context.Context) error {
+		_, seedErr := finishSeed(ctx, cfg, ch, pg, project)
+		return seedErr
+	})
+	return project.ID, err
+}
+
+func finishSeed(ctx context.Context, cfg Config, ch driver.Conn, pg *pgxpool.Pool, project dbread.Project) (string, error) {
 
 	// Ensure the showcase dashboards on every start (idempotent): they are static
 	// config, independent of the event-backfill state below, so a warm restart
@@ -359,6 +382,7 @@ func healDemoProfiles(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, pro
 
 type worker struct {
 	ch        driver.Conn
+	gate      *deletion.Gate
 	gen       *seed.LiveGenerator
 	projectID string
 	// mu guards ensured, the set of distinct ids whose profile this run has
@@ -379,8 +403,13 @@ type worker struct {
 const liveBotShare = 0.04
 
 func StartWorker(ctx context.Context, ch driver.Conn, cfg Config, projectID string) error {
+	return startWorkerWithGate(ctx, ch, cfg, projectID, nil)
+}
+
+func startWorkerWithGate(ctx context.Context, ch driver.Conn, cfg Config, projectID string, gate *deletion.Gate) error {
 	w := &worker{
 		ch:            ch,
+		gate:          gate,
 		gen:           seed.NewLiveGenerator(),
 		projectID:     projectID,
 		ensured:       make(map[string]struct{}),
@@ -478,13 +507,21 @@ func (w *worker) ensureProfile(ctx context.Context, distinctID string) {
 	du := seed.DemoUserAt(idx)
 	props, externalID := pgseed.DemoProfileProperties(idx)
 
-	if err := w.insertProfile(ctx, w.ch, w.projectID, seed.LiveProfile{
+	profile := seed.LiveProfile{
 		ID:         distinctID,
 		ExternalID: externalID,
 		Properties: props,
 		CreateTime: du.Join,
 		UpdateTime: time.Now(),
-	}); err != nil {
+	}
+	insert := func(ctx context.Context) error { return w.insertProfile(ctx, w.ch, w.projectID, profile) }
+	var err error
+	if w.gate != nil {
+		err = w.gate.WithActiveProjectExternal(ctx, w.projectID, insert)
+	} else {
+		err = insert(ctx)
+	}
+	if err != nil {
 		w.mu.Lock()
 		delete(w.ensured, distinctID) // allow the next session to retry
 		w.mu.Unlock()
@@ -509,7 +546,14 @@ func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 			}
 		}
 
-		if err := seed.InsertLiveEvent(ctx, w.ch, w.projectID, e); err != nil {
+		insert := func(ctx context.Context) error { return seed.InsertLiveEvent(ctx, w.ch, w.projectID, e) }
+		var err error
+		if w.gate != nil {
+			err = w.gate.WithActiveProjectExternal(ctx, w.projectID, insert)
+		} else {
+			err = insert(ctx)
+		}
+		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return // cancellation during shutdown, not a real insert failure
 			}

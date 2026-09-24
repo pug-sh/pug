@@ -2,6 +2,23 @@
 
 Pug supports password and magic-link sign-in without extra configuration. External sign-in providers are configured on the server in a versioned JSON file; the dashboard reads the safe browser settings from Pug's public auth API.
 
+## Managed organization creation and instance administrators
+
+Organization creation is open by default. A first ordinary magic-link or OIDC sign-in creates a personal organization and default project, and authenticated customers may create more organizations.
+
+To provision organizations only through the instance console, set both server environment variables on every replica:
+
+```text
+PUG_ORG_CREATION_MODE=managed
+PUG_INSTANCE_ADMIN_EMAILS=operator@example.com,backup@example.com
+```
+
+`managed` still permits a person to create an account by signing in. They wait on a **No organization yet** screen until invited. Instance administrators use the separate console to create an organization, its default project, and its first admin invitation. The operator is not made a member automatically. Invitation acceptance works in either mode. Returning to `open` only affects new sign-ins and future organization creation; existing accounts with no organization stay that way until invited.
+
+Only a verified, enabled account whose current email is on the case-insensitive allowlist receives instance authority. In managed mode the server refuses to start without at least one valid address. The console can disable or enable accounts and revoke their sessions; it refuses to disable the last effective instance administrator. Changing the allowlist requires a coordinated rollout across every server replica, since replicas with different values can disagree on access. Remove an address before reassigning its mailbox.
+
+To recover from an inaccessible initial administrator mailbox, correct the allowlist in deployment configuration and restart every server replica. The allowlist is never returned to the dashboard; `GetMe` returns only the current customer's effective capabilities.
+
 Set `PUG_CONFIG_FILE` to the file mounted in the server container:
 
 ```yaml

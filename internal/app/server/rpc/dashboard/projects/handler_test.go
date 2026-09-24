@@ -20,6 +20,10 @@ import (
 	"github.com/pug-sh/pug/internal/testutil"
 )
 
+type noopPurgePublisher struct{}
+
+func (noopPurgePublisher) Publish(context.Context, string, []byte) error { return nil }
+
 // ctxWithCustomer returns a context with a JWT principal carrying the given customer.
 func ctxWithCustomer(ctx context.Context, c dbread.Customer) context.Context {
 	return authn.SetInfo(ctx, &rpc.Principal{
@@ -83,7 +87,7 @@ func assertReason(t *testing.T, err error, want apperr.Reason) {
 func newIntegrationServer(t *testing.T) (*server, dbread.Customer, string) {
 	t.Helper()
 	db := testutil.SetupPostgres(t)
-	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
+	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil, noopPurgePublisher{})
 	srv := NewServer(projectsSvc)
 
 	ctx := context.Background()
@@ -529,7 +533,7 @@ func TestHandler_ProjectLifecycle_AdminAllowed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		return dbread.Project{ID: created.Msg.GetProject().GetId(), OrgID: orgID}
+		return dbread.Project{ID: created.Msg.GetProject().GetId(), OrgID: orgID, DisplayName: created.Msg.GetProject().GetDisplayName()}
 	}
 
 	p := newProject()
@@ -539,7 +543,7 @@ func TestHandler_ProjectLifecycle_AdminAllowed(t *testing.T) {
 	if _, err := srv.UpdateFCMServiceJSON(ctxWithCustomerProject(ctx, customer, p), connect.NewRequest(&projectsv1.UpdateFCMServiceJSONRequest{FcmServiceJson: proto.String("{}")})); err != nil {
 		t.Fatalf("admin UpdateFCMServiceJSON: %v", err)
 	}
-	if _, err := srv.Delete(ctxWithCustomerProject(ctx, customer, p), connect.NewRequest(&projectsv1.DeleteRequest{})); err != nil {
+	if _, err := srv.Delete(ctxWithCustomerProject(ctx, customer, p), connect.NewRequest(&projectsv1.DeleteRequest{ConfirmationName: proto.String("renamed")})); err != nil {
 		t.Fatalf("admin Delete: %v", err)
 	}
 }

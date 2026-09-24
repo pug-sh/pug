@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/instance"
 	customersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
@@ -67,4 +68,24 @@ func TestGetMe(t *testing.T) {
 	ctxNilCust := ctxWithCustomer(&rpc.Principal{Customer: nil})
 	_, err = NewServer(nil).GetMe(ctxNilCust, connect.NewRequest(&customersv1.GetMeRequest{}))
 	wantUnauthenticated(t, err)
+}
+
+func TestGetMeReturnsEffectiveInstanceCapabilities(t *testing.T) {
+	policy, err := instance.ParsePolicy("managed", "me@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServerWithPolicy(nil, policy)
+	verified := ctxWithCustomer(&rpc.Principal{Customer: &dbread.Customer{
+		ID: "verified", Email: "ME@example.com", EmailVerifiedAt: pgtype.Timestamptz{Valid: true},
+	}})
+	resp, err := srv.GetMe(verified, connect.NewRequest(&customersv1.GetMeRequest{}))
+	if err != nil || !resp.Msg.GetInstanceAdmin() || resp.Msg.GetCanCreateOrganization() {
+		t.Fatalf("verified allowlisted customer: response=%v err=%v", resp, err)
+	}
+	unverified := ctxWithCustomer(&rpc.Principal{Customer: &dbread.Customer{ID: "unverified", Email: "me@example.com"}})
+	resp, err = srv.GetMe(unverified, connect.NewRequest(&customersv1.GetMeRequest{}))
+	if err != nil || resp.Msg.GetInstanceAdmin() {
+		t.Fatalf("unverified allowlisted customer: response=%v err=%v", resp, err)
+	}
 }

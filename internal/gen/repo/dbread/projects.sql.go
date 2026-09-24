@@ -10,7 +10,7 @@ import (
 )
 
 const getProjectByID = `-- name: GetProjectByID :one
-select create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time from projects where id = $1
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time, p.deletion_state from projects p join orgs o on o.id=p.org_id where p.id = $1 and p.deletion_state='active' and o.deletion_state='active'
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
@@ -24,15 +24,17 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
 
 const getProjectByIDAndOrgMember = `-- name: GetProjectByIDAndOrgMember :one
-select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time, p.deletion_state
 from projects p
 join org_members om on om.org_id = p.org_id
-where p.id = $1 and om.customer_id = $2
+join orgs o on o.id = p.org_id
+where p.id = $1 and om.customer_id = $2 and p.deletion_state='active' and o.deletion_state='active'
 `
 
 type GetProjectByIDAndOrgMemberParams struct {
@@ -51,15 +53,17 @@ func (q *Queries) GetProjectByIDAndOrgMember(ctx context.Context, arg GetProject
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
 
 const getProjectByPrivateApiKey = `-- name: GetProjectByPrivateApiKey :one
-select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time, p.deletion_state
 from projects p
 join api_keys k on k.project_id = p.id
-where k.token = $1 and k.kind = 'private'
+join orgs o on o.id = p.org_id
+where k.token = $1 and k.kind = 'private' and p.deletion_state='active' and o.deletion_state='active'
 `
 
 // @token is the sha256 hex of the presented prv_ key — private keys are stored
@@ -75,15 +79,17 @@ func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, token string) (
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
 
 const getProjectByPublicApiKey = `-- name: GetProjectByPublicApiKey :one
-select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time, p.deletion_state
 from projects p
 join api_keys k on k.project_id = p.id
-where k.token = $1 and k.kind = 'public'
+join orgs o on o.id = p.org_id
+where k.token = $1 and k.kind = 'public' and p.deletion_state='active' and o.deletion_state='active'
 `
 
 // @token is the pub_ key itself — public keys are stored plaintext.
@@ -98,12 +104,13 @@ func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, token string) (P
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
 
 const getProjectsByOrgID = `-- name: GetProjectsByOrgID :many
-select create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time from projects where org_id = $1 order by create_time asc, id asc
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time, p.deletion_state from projects p join orgs o on o.id=p.org_id where p.org_id = $1 and p.deletion_state='active' and o.deletion_state='active' order by p.create_time asc, p.id asc
 `
 
 func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Project, error) {
@@ -123,6 +130,7 @@ func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Proje
 			&i.OrgID,
 			&i.ReportingTimezone,
 			&i.UpdateTime,
+			&i.DeletionState,
 		); err != nil {
 			return nil, err
 		}

@@ -8,8 +8,10 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	"github.com/pug-sh/pug/internal/deps/clickhouse"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/sethvargo/go-envconfig"
@@ -36,6 +38,15 @@ func Run(ctx context.Context) error {
 			slog.WarnContext(ctx, "failed to close ClickHouse connection", slogx.Error(err))
 		}
 	}()
+	var pgCfg postgres.Config
+	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		return err
+	}
+	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
+	if err != nil {
+		return err
+	}
+	defer pgW.Close()
 
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {
@@ -44,16 +55,20 @@ func Run(ctx context.Context) error {
 	defer natsClient.Close()
 
 	slog.InfoContext(ctx, "Starting events worker...")
-	return StartWorker(ctx, chDB.Conn, natsClient)
+	return startWorker(ctx, chDB.Conn, natsClient, deletion.NewGate(pgW))
 }
 
 func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+	return startWorker(ctx, ch, natsClient, nil)
+}
+
+func startWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NATSClient, gate *deletion.Gate) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("events-writer-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get events consumer config: %w", err)
 	}
 
-	processor := NewProcessor(ch)
+	processor := NewProcessorWithGate(ch, gate)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
 		return processor.ProcessMessage(ctx, msg.Data())
@@ -63,7 +78,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 		StreamName:        consumerConfig.StreamName,
 		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
-		Concurrency:       10,
+		Concurrency:       gate.ConcurrencyLimit(10),
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,

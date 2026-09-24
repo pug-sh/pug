@@ -63,8 +63,11 @@ type GetMeResponse struct {
 	CustomerId    *string                `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
 	Email         *string                `protobuf:"bytes,2,opt,name=email" json:"email,omitempty"`
 	EmailVerified *bool                  `protobuf:"varint,3,opt,name=email_verified,json=emailVerified" json:"email_verified,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Effective permissions from the current server configuration, not JWT claims.
+	InstanceAdmin         *bool `protobuf:"varint,4,opt,name=instance_admin,json=instanceAdmin" json:"instance_admin,omitempty"`
+	CanCreateOrganization *bool `protobuf:"varint,5,opt,name=can_create_organization,json=canCreateOrganization" json:"can_create_organization,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *GetMeResponse) Reset() {
@@ -114,6 +117,20 @@ func (x *GetMeResponse) GetEmail() string {
 func (x *GetMeResponse) GetEmailVerified() bool {
 	if x != nil && x.EmailVerified != nil {
 		return *x.EmailVerified
+	}
+	return false
+}
+
+func (x *GetMeResponse) GetInstanceAdmin() bool {
+	if x != nil && x.InstanceAdmin != nil {
+		return *x.InstanceAdmin
+	}
+	return false
+}
+
+func (x *GetMeResponse) GetCanCreateOrganization() bool {
+	if x != nil && x.CanCreateOrganization != nil {
+		return *x.CanCreateOrganization
 	}
 	return false
 }
@@ -207,12 +224,14 @@ var File_dashboard_customers_v1_customers_proto protoreflect.FileDescriptor
 const file_dashboard_customers_v1_customers_proto_rawDesc = "" +
 	"\n" +
 	"&dashboard/customers/v1/customers.proto\x12\x16dashboard.customers.v1\x1a\x1bbuf/validate/validate.proto\"\x0e\n" +
-	"\fGetMeRequest\"m\n" +
+	"\fGetMeRequest\"\xcc\x01\n" +
 	"\rGetMeResponse\x12\x1f\n" +
 	"\vcustomer_id\x18\x01 \x01(\tR\n" +
 	"customerId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12%\n" +
-	"\x0eemail_verified\x18\x03 \x01(\bR\remailVerified\">\n" +
+	"\x0eemail_verified\x18\x03 \x01(\bR\remailVerified\x12%\n" +
+	"\x0einstance_admin\x18\x04 \x01(\bR\rinstanceAdmin\x126\n" +
+	"\x17can_create_organization\x18\x05 \x01(\bR\x15canCreateOrganization\">\n" +
 	"\x12SetPasswordRequest\x12(\n" +
 	"\bpassword\x18\x01 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x10\x06(HR\bpassword\"\x15\n" +
 	"\x13SetPasswordResponse2\xd4\x01\n" +

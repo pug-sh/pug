@@ -96,6 +96,54 @@ func (x *EraseMessage) GetExternalId() string {
 	return ""
 }
 
+// ProjectPurgeMessage schedules the project-bearing data for one durable
+// deletion operation. The worker loads the operation and its project steps from
+// PostgreSQL; the message carries only the stable operation identifier so NATS
+// redelivery cannot replay stale state.
+type ProjectPurgeMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OperationId   *string                `protobuf:"bytes,1,opt,name=operation_id,json=operationId" json:"operation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectPurgeMessage) Reset() {
+	*x = ProjectPurgeMessage{}
+	mi := &file_workers_compliance_v1_compliance_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectPurgeMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectPurgeMessage) ProtoMessage() {}
+
+func (x *ProjectPurgeMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_compliance_v1_compliance_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectPurgeMessage.ProtoReflect.Descriptor instead.
+func (*ProjectPurgeMessage) Descriptor() ([]byte, []int) {
+	return file_workers_compliance_v1_compliance_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ProjectPurgeMessage) GetOperationId() string {
+	if x != nil && x.OperationId != nil {
+		return *x.OperationId
+	}
+	return ""
+}
+
 var File_workers_compliance_v1_compliance_proto protoreflect.FileDescriptor
 
 const file_workers_compliance_v1_compliance_proto_rawDesc = "" +
@@ -111,7 +159,10 @@ const file_workers_compliance_v1_compliance_proto_rawDesc = "" +
 	"\n" +
 	"profile_id\x18\x03 \x01(\tR\tprofileId\x12\x1f\n" +
 	"\vexternal_id\x18\x04 \x01(\tR\n" +
-	"externalIdBSZQgithub.com/pug-sh/pug/internal/gen/proto/workers/compliance/v1;workercompliancev1b\beditionsp\xe8\a"
+	"externalId\"D\n" +
+	"\x13ProjectPurgeMessage\x12-\n" +
+	"\foperation_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\voperationIdBSZQgithub.com/pug-sh/pug/internal/gen/proto/workers/compliance/v1;workercompliancev1b\beditionsp\xe8\a"
 
 var (
 	file_workers_compliance_v1_compliance_proto_rawDescOnce sync.Once
@@ -125,9 +176,10 @@ func file_workers_compliance_v1_compliance_proto_rawDescGZIP() []byte {
 	return file_workers_compliance_v1_compliance_proto_rawDescData
 }
 
-var file_workers_compliance_v1_compliance_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_workers_compliance_v1_compliance_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_workers_compliance_v1_compliance_proto_goTypes = []any{
-	(*EraseMessage)(nil), // 0: workers.compliance.v1.EraseMessage
+	(*EraseMessage)(nil),        // 0: workers.compliance.v1.EraseMessage
+	(*ProjectPurgeMessage)(nil), // 1: workers.compliance.v1.ProjectPurgeMessage
 }
 var file_workers_compliance_v1_compliance_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -148,7 +200,7 @@ func file_workers_compliance_v1_compliance_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workers_compliance_v1_compliance_proto_rawDesc), len(file_workers_compliance_v1_compliance_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

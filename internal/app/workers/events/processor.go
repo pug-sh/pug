@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	"github.com/pug-sh/pug/internal/deps/clickhouse"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -19,11 +21,16 @@ import (
 )
 
 type Processor struct {
-	ch driver.Conn
+	ch   driver.Conn
+	gate *deletion.Gate
 }
 
 func NewProcessor(ch driver.Conn) *Processor {
 	return &Processor{ch: ch}
+}
+
+func NewProcessorWithGate(ch driver.Conn, gate *deletion.Gate) *Processor {
+	return &Processor{ch: ch, gate: gate}
 }
 
 func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
@@ -46,7 +53,20 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		slog.WarnContext(ctx, "received empty event batch", slog.String("project_id", batch.GetProjectId()))
 		return nil
 	}
+	if p.gate != nil {
+		err := p.gate.WithActiveProjectExternal(ctx, batch.GetProjectId(), func(ctx context.Context) error {
+			return p.insertBatch(ctx, batch)
+		})
+		if errors.Is(err, deletion.ErrProjectInactive) {
+			slog.InfoContext(ctx, "discarding delayed event batch for deleted project", slog.String("project_id", batch.GetProjectId()))
+			return nil
+		}
+		return err
+	}
+	return p.insertBatch(ctx, batch)
+}
 
+func (p *Processor) insertBatch(ctx context.Context, batch *eventsv1.EventBatch) error {
 	// insert_time is omitted; ClickHouse fills it via DEFAULT now64(3).
 	//
 	// Deduplication: the events table uses ReplacingMergeTree(insert_time),

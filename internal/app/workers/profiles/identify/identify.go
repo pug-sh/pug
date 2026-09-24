@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/workers/profiles"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -61,9 +62,10 @@ func StartWorker(ctx context.Context, pgW *pgxpool.Pool, natsClient *natsworker.
 	}
 
 	profileWorker := profiles.NewWorker(pgW)
+	gate := deletion.NewGate(pgW)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return handleIdentify(ctx, profileWorker, natsClient, msg.Data())
+		return handleIdentify(ctx, profileWorker, natsClient, msg.Data(), gate)
 	}
 
 	config := natsworker.WorkerConfig{
@@ -71,7 +73,7 @@ func StartWorker(ctx context.Context, pgW *pgxpool.Pool, natsClient *natsworker.
 		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
 		FilterSubject:     consumerConfig.FilterSubject,
-		Concurrency:       100,
+		Concurrency:       gate.ConcurrencyLimit(100),
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
@@ -86,7 +88,7 @@ func StartWorker(ctx context.Context, pgW *pgxpool.Pool, natsClient *natsworker.
 	return worker.Start(ctx)
 }
 
-func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, data []byte) error {
+func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, data []byte, gates ...*deletion.Gate) error {
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
@@ -101,7 +103,19 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-identify")
 	}
+	if len(gates) > 0 && gates[0] != nil {
+		err := gates[0].WithActiveProjectConnection(ctx, msg.GetProjectId(), func(ctx context.Context, conn *pgxpool.Conn) error {
+			return processIdentify(ctx, profiles.NewWorker(conn), natsClient, msg)
+		})
+		if errors.Is(err, deletion.ErrProjectInactive) {
+			return nil
+		}
+		return err
+	}
+	return processIdentify(ctx, w, natsClient, msg)
+}
 
+func processIdentify(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, msg *sdkprofilesv1.ProfileIdentifyMessage) error {
 	projectID := msg.GetProjectId()
 	externalID := msg.GetExternalId()
 	anonymousID := msg.GetAnonymousId()

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	orgs "github.com/pug-sh/pug/internal/core/orgs"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
+	"github.com/rs/xid"
 )
 
 func TestApplyInviteAcceptanceInTx(t *testing.T) {
@@ -55,6 +57,27 @@ func TestApplyInviteAcceptanceInTx(t *testing.T) {
 	// Re-applying the now-ACCEPTED invitation → ErrInviteNotPending.
 	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrInviteNotPending) {
 		t.Fatalf("second apply err = %v, want ErrInviteNotPending", err)
+	}
+}
+
+func TestInviteCannotJoinOrganizationPendingDeletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires Docker Desktop")
+	}
+	f := newInviteFixture(t, "pending-delete-invitee@example.com")
+	ctx := context.Background()
+	invitee, err := f.write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: xid.New().String(), Email: "pending-delete-invitee@example.com", DisplayName: "Invitee", PasswordHash: "", PictureUri: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `update orgs set deletion_state='pending_deletion' where id=$1`, f.org.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := orgs.ApplyInviteAcceptanceInTx(ctx, f.write, f.invite.ID, invitee.ID); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Fatalf("inactive invite acceptance: %v", err)
+	}
+	if _, err := f.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{OrgID: f.org.ID, CustomerID: invitee.ID}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("membership created: %v", err)
 	}
 }
 

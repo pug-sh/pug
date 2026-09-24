@@ -5,6 +5,7 @@ var (
 	ReasonOrgNotFound              = codes.add("ORG_NOT_FOUND")
 	ReasonOrgNotAMember            = codes.add("ORG_NOT_A_MEMBER")
 	ReasonOrgAdminRequired         = codes.add("ORG_ADMIN_REQUIRED")
+	ReasonOrgCreationDisabled      = codes.add("ORG_CREATION_DISABLED")
 	ReasonOrgRoleForbidden         = codes.add("ORG_ROLE_FORBIDDEN")
 	ReasonOrgMemberNotFound        = codes.add("ORG_MEMBER_NOT_FOUND")
 	ReasonOrgMemberAlreadyExists   = codes.add("ORG_MEMBER_ALREADY_EXISTS")

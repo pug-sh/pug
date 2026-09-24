@@ -12,8 +12,8 @@ returning *;
 -- leaves the caller's transaction without a project — so the starter key insert
 -- that follows never runs either.
 with check_admin as (
-  select 1 from org_members
-  where org_id = @org_id and customer_id = @customer_id and role = 'ORG_ROLE_ADMIN'
+  select 1 from org_members m join orgs o on o.id=m.org_id
+  where m.org_id = @org_id and m.customer_id = @customer_id and m.role = 'ORG_ROLE_ADMIN' and o.deletion_state='active'
 )
 insert into projects (display_name, id, org_id, reporting_timezone)
 select @display_name, @id, @org_id, @reporting_timezone

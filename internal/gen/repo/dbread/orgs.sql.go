@@ -12,7 +12,7 @@ import (
 )
 
 const getOrgByID = `-- name: GetOrgByID :one
-select create_time, display_name, id, update_time from orgs where id = $1
+select create_time, display_name, id, update_time, deletion_state from orgs where id = $1 and deletion_state = 'active'
 `
 
 func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
@@ -23,6 +23,7 @@ func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
@@ -31,7 +32,7 @@ const getOrgWithRoleByIDAndCustomerID = `-- name: GetOrgWithRoleByIDAndCustomerI
 select o.id, o.display_name, o.create_time, o.update_time, m.role
 from orgs o
 join org_members m on m.org_id = o.id
-where o.id = $1 and m.customer_id = $2
+where o.id = $1 and m.customer_id = $2 and o.deletion_state = 'active'
 `
 
 type GetOrgWithRoleByIDAndCustomerIDParams struct {
@@ -61,10 +62,10 @@ func (q *Queries) GetOrgWithRoleByIDAndCustomerID(ctx context.Context, arg GetOr
 }
 
 const getOrgsByCustomerID = `-- name: GetOrgsByCustomerID :many
-select o.create_time, o.display_name, o.id, o.update_time
+select o.create_time, o.display_name, o.id, o.update_time, o.deletion_state
 from orgs o
 join org_members om on om.org_id = o.id
-where om.customer_id = $1
+where om.customer_id = $1 and o.deletion_state = 'active'
 order by o.create_time asc, o.id asc
 `
 
@@ -82,6 +83,7 @@ func (q *Queries) GetOrgsByCustomerID(ctx context.Context, customerID string) ([
 			&i.DisplayName,
 			&i.ID,
 			&i.UpdateTime,
+			&i.DeletionState,
 		); err != nil {
 			return nil, err
 		}
@@ -97,7 +99,7 @@ const getOrgsWithRoleByCustomerID = `-- name: GetOrgsWithRoleByCustomerID :many
 select o.id, o.display_name, o.create_time, o.update_time, m.role
 from orgs o
 join org_members m on m.org_id = o.id
-where m.customer_id = $1
+where m.customer_id = $1 and o.deletion_state = 'active'
 order by o.create_time asc, o.id asc
 `
 

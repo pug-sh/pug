@@ -10,7 +10,7 @@ import (
 )
 
 const getCustomerByEmail = `-- name: GetCustomerByEmail :one
-select create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+select create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at, disabled_at, session_version
 from customers
 where lower(email) = lower($1)
 `
@@ -27,12 +27,14 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 		&i.PictureUri,
 		&i.UpdateTime,
 		&i.EmailVerifiedAt,
+		&i.DisabledAt,
+		&i.SessionVersion,
 	)
 	return i, err
 }
 
 const getCustomerByEmailOptional = `-- name: GetCustomerByEmailOptional :one
-select create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+select create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at, disabled_at, session_version
 from customers
 where lower(email) = lower($1)
 `
@@ -49,12 +51,14 @@ func (q *Queries) GetCustomerByEmailOptional(ctx context.Context, email string) 
 		&i.PictureUri,
 		&i.UpdateTime,
 		&i.EmailVerifiedAt,
+		&i.DisabledAt,
+		&i.SessionVersion,
 	)
 	return i, err
 }
 
 const getCustomerByID = `-- name: GetCustomerByID :one
-select create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+select create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at, disabled_at, session_version
 from customers
 where id = $1
 `
@@ -71,6 +75,8 @@ func (q *Queries) GetCustomerByID(ctx context.Context, id string) (Customer, err
 		&i.PictureUri,
 		&i.UpdateTime,
 		&i.EmailVerifiedAt,
+		&i.DisabledAt,
+		&i.SessionVersion,
 	)
 	return i, err
 }

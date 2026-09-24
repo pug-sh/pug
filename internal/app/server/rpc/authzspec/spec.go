@@ -35,6 +35,8 @@ const (
 	// kindSelf: authenticated customer operating on their OWN data / orgs; no
 	// org-role gate (e.g. GetMe, List/Create/Leave orgs).
 	kindSelf
+	// kindInstance requires the verified email to be on the deployment allowlist.
+	kindInstance
 	// kindRoleGated: an org-role gate applies — the interceptor resolves the
 	// caller's role and checks (resource, action). The only enforced kind.
 	kindRoleGated
@@ -104,6 +106,9 @@ func Public(notes ...string) Spec { return Spec{kind: kindPublic, note: firstNot
 // org-role gate.
 func Self(notes ...string) Spec { return Spec{kind: kindSelf, note: firstNote(notes)} }
 
+// Instance builds an instance-admin-only Spec, independent of organization membership.
+func Instance(notes ...string) Spec { return Spec{kind: kindInstance, note: firstNote(notes)} }
+
 // Project builds a project-scoped, no-role-gate Spec: project access is already
 // established at auth time and the RPC merely echoes it (projects.Get).
 func Project(notes ...string) Spec { return Spec{kind: kindProject, note: firstNote(notes)} }
@@ -130,6 +135,15 @@ func (s Spec) Defined() bool { return s.kind != kindUnset }
 // IsRoleGated reports whether AuthzInterceptor must enforce this Spec. It is the
 // only runtime distinction; the non-gated kinds differ only as documentation.
 func (s Spec) IsRoleGated() bool { return s.kind == kindRoleGated }
+
+func (s Spec) IsInstanceGated() bool { return s.kind == kindInstance }
+
+// UsesProject reports whether JWT authentication must resolve x-project-id for
+// this procedure. Organization and instance procedures ignore the global client
+// header so a stale project selection cannot block their control-plane calls.
+func (s Spec) UsesProject() bool {
+	return s.kind == kindProject || (s.kind == kindRoleGated && s.orgSource == OrgFromProject)
+}
 
 // Resource is the enforced resource for a role-gated Spec (empty otherwise).
 func (s Spec) Resource() authz.Resource { return s.resource }

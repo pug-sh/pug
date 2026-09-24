@@ -129,6 +129,8 @@ type Customer struct {
 	PictureUri      string
 	UpdateTime      pgtype.Timestamptz
 	EmailVerifiedAt pgtype.Timestamptz
+	DisabledAt      pgtype.Timestamptz
+	SessionVersion  int64
 }
 
 type CustomerIdentity struct {
@@ -179,6 +181,30 @@ type DashboardTile struct {
 	UpdateTime    pgtype.Timestamptz
 }
 
+type DeletionOperation struct {
+	ID          string
+	TargetType  string
+	TargetID    string
+	TargetName  string
+	OrgID       string
+	ActorID     string
+	Reason      string
+	Status      string
+	RequestedAt pgtype.Timestamptz
+	PurgeAfter  pgtype.Timestamptz
+	StartedAt   pgtype.Timestamptz
+	FinishedAt  pgtype.Timestamptz
+	LastError   string
+}
+
+type DeletionProjectStep struct {
+	OperationID      string
+	ProjectID        string
+	ProjectName      string
+	ClickhouseDoneAt pgtype.Timestamptz
+	PostgresDoneAt   pgtype.Timestamptz
+}
+
 type EmailActionToken struct {
 	ID              string
 	CustomerID      pgtype.Text
@@ -191,11 +217,23 @@ type EmailActionToken struct {
 	CreateTime      pgtype.Timestamptz
 }
 
+type InstanceAudit struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	Reason     string
+	Details    map[string]any
+}
+
 type Org struct {
-	CreateTime  pgtype.Timestamptz
-	DisplayName string
-	ID          string
-	UpdateTime  pgtype.Timestamptz
+	CreateTime    pgtype.Timestamptz
+	DisplayName   string
+	ID            string
+	UpdateTime    pgtype.Timestamptz
+	DeletionState string
 }
 
 type OrgEmailProvider struct {
@@ -257,6 +295,7 @@ type Project struct {
 	OrgID             string
 	ReportingTimezone string
 	UpdateTime        pgtype.Timestamptz
+	DeletionState     string
 }
 
 type RefreshToken struct {

@@ -18,6 +18,7 @@ import (
 	billingrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/billing"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/customers"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
+	instancerpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/instance"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
@@ -34,7 +35,9 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
+	coreinstanceadmin "github.com/pug-sh/pug/internal/core/instanceadmin"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
@@ -42,6 +45,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1/billingv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/instance/v1/instancev1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
@@ -72,9 +76,13 @@ func Run(ctx context.Context) error {
 
 func start(ctx context.Context, d *deps) error {
 	queriesRo := dbread.New(d.pgRo)
+	// Authentication state must come from the writer: replica lag must not keep a
+	// disabled account, revoked session, or deletion-pending API key authorized.
+	queriesAuth := dbread.New(d.pgW)
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
-	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
+	authProjectsRepo := coreprojects.NewRepo(queriesAuth, d.redis.Unwrap())
+	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo, d.nats)
 	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
 	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap())
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
@@ -89,6 +97,7 @@ func start(ctx context.Context, d *deps) error {
 	// WithRecover is required, not cosmetic: on the /mcp loopback the handler runs on
 	// a jsonrpc2 goroutine that no net/http recover reaches, so an escaping panic
 	// would kill the process for every tenant.
+	deletionGate := deletion.NewGate(d.pgW)
 	handlerOpts := connect.WithHandlerOptions(
 		connect.WithInterceptors(
 			pogrpc.CorrelationInterceptor(),
@@ -97,19 +106,21 @@ func start(ctx context.Context, d *deps) error {
 			pogrpc.ErrorInterceptor(),
 			validate.NewInterceptor(validate.WithoutErrorDetails()),
 			pogrpc.PrincipalInterceptor(),
-			pogrpc.AuthzInterceptor(d.authz, orgsSvc),
+			pogrpc.OrganizationGateInterceptor(deletionGate),
+			pogrpc.ProjectGateInterceptor(deletionGate),
+			pogrpc.AuthzInterceptor(d.authz, orgsSvc, d.instancePolicy),
 		),
 		connect.WithRecover(pogrpc.RecoverHandlerPanic),
 		// The decompressed message — WithRequestLimits only sees the gzipped wire bytes.
 		connect.WithReadMaxBytes(pogrpc.MaxRequestBytes),
 	)
 
-	dashboardMW := authn.NewMiddleware(pogrpc.WithJWTAuth(d.jwtKey, queriesRo))
-	sdkMW := authn.NewMiddleware(pogrpc.WithSDKAuth(projectsRepo))
-	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
+	dashboardMW := authn.NewMiddleware(pogrpc.WithJWTAuth(d.jwtKey, queriesAuth))
+	sdkMW := authn.NewMiddleware(pogrpc.WithSDKAuth(authProjectsRepo))
+	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(d.jwtKey, queriesAuth, authProjectsRepo))
 
 	// Public
-	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled)
+	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled, d.instancePolicy)
 	if err != nil {
 		return fmt.Errorf("auth server: %w", err)
 	}
@@ -120,7 +131,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Dashboard
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(
-		orgsrpc.NewServer(orgsSvc), handlerOpts)
+		orgsrpc.NewServerWithPolicy(orgsSvc, d.instancePolicy), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
@@ -137,7 +148,9 @@ func start(ctx context.Context, d *deps) error {
 		handlerOpts)
 
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
-		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
+		customers.NewServerWithPolicy(corecustomers.NewService(d.pgW), d.instancePolicy), handlerOpts)
+	instancePath, instanceHandler := instancev1connect.NewInstanceAdminServiceHandler(
+		instancerpc.NewServer(coreinstanceadmin.NewService(d.pgRo, d.pgW, d.instancePolicy, orgsSvc), deletion.NewServiceWithPublisher(d.pgW, authProjectsRepo, d.nats)), handlerOpts)
 
 	// No ClickHouse: the server only reads what `pug cron usage` stored, and
 	// MeterWindow is the one method that needs it.
@@ -207,6 +220,7 @@ func start(ctx context.Context, d *deps) error {
 	handle(dashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
 	handle(orgEmailProvidersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 	handle(customersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(customersHandler)))
+	handle(instancePath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(instanceHandler)))
 	handle(usagePath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(usageHandler)))
 	handle(billingPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(billingHandler)))
 
@@ -240,7 +254,7 @@ func start(ctx context.Context, d *deps) error {
 	// mux so validation, auth and authz run as they would for an external request.
 	// Mounted directly like reflection: not a Connect service, so the authz-registry
 	// contract does not apply.
-	if err := mcp.Mount(mux, mux, projectsRepo); err != nil {
+	if err := mcp.Mount(mux, mux, authProjectsRepo); err != nil {
 		return fmt.Errorf("mount mcp: %w", err)
 	}
 

@@ -12,7 +12,7 @@ where om.org_id = @org_id
 order by om.create_time asc;
 
 -- name: GetOrgMemberRole :one
-select role from org_members where org_id = @org_id and customer_id = @customer_id;
+select m.role from org_members m join orgs o on o.id=m.org_id where m.org_id = @org_id and m.customer_id = @customer_id and o.deletion_state='active';
 
 -- name: GetOrgMemberByOrgIDAndCustomerID :one
 select

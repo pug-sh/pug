@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -35,12 +36,17 @@ const (
 	// not a contrived one: a key is revoked precisely when it is in active use, so
 	// a lookup in flight at revocation time is near-certain.
 	apiKeyGenCachePrefix = "project:keygen:"
+	apiKeyBlockPrefix    = "project:keyblock:"
 	// apiKeyGenCacheTTL bounds growth of the generation counters (one extra Redis
 	// key per cached token). It only needs to outlive a single lookup's
 	// observe→DB-read→populate window — two indexed reads — so an hour is vast
 	// headroom while still letting the counters for revoked keys expire instead of
 	// leaking forever.
 	apiKeyGenCacheTTL = time.Hour
+	// A deletion block outlives every cached project row. Once it expires, the
+	// authoritative writer has long exposed the inactive project state and a
+	// cache miss remains fail closed.
+	apiKeyBlockTTL = apiKeyCacheTTL + time.Minute
 )
 
 // apiKeyGenCacheKey names a token's generation counter. Keyed by token, like the
@@ -59,6 +65,9 @@ var (
 	// skips the write, so it can never resurrect the revoked key after
 	// invalidation. ARGV[1]=project JSON, ARGV[3]=value TTL in seconds.
 	apiKeyPopulateScript = goredis.NewScript(`
+if redis.call('EXISTS', KEYS[3]) == 1 then
+  return 0
+end
 local cur = redis.call('GET', KEYS[2])
 if cur == false then cur = '' end
 if cur == ARGV[2] then
@@ -66,6 +75,17 @@ if cur == ARGV[2] then
   return 1
 end
 return 0
+`)
+
+	// apiKeyReadScript refuses a cached row while its token is blocked for a
+	// deletion transition. -1 is distinct from both a cache miss (nil) and the
+	// cached JSON string, so callers can reject the credential without consulting
+	// a potentially lagging reader.
+	apiKeyReadScript = goredis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  return -1
+end
+return redis.call('GET', KEYS[2])
 `)
 
 	// apiKeyInvalidateScript bumps one token's generation counter (KEYS[1],
@@ -79,6 +99,21 @@ return 0
 redis.call('INCR', KEYS[1])
 redis.call('PEXPIRE', KEYS[1], ARGV[1])
 redis.call('DEL', KEYS[2], KEYS[3])
+return 1
+`)
+
+	apiKeyBlockScript = goredis.NewScript(`
+redis.call('INCR', KEYS[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[1])
+redis.call('SET', KEYS[2], '1', 'PX', ARGV[2])
+redis.call('DEL', KEYS[3], KEYS[4])
+return 1
+`)
+
+	apiKeyUnblockScript = goredis.NewScript(`
+redis.call('INCR', KEYS[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[1])
+redis.call('DEL', KEYS[2], KEYS[3], KEYS[4])
 return 1
 `)
 )
@@ -99,7 +134,9 @@ func (r *Repo) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey stri
 	token := hashKey(privateApiKey)
 	cacheKey := privateKeyCachePrefix + token
 
-	if project, ok := r.cachedProject(ctx, cacheKey); ok {
+	if project, ok, err := r.cachedProject(ctx, cacheKey, token); err != nil {
+		return dbread.Project{}, err
+	} else if ok {
 		return project, nil
 	}
 
@@ -131,7 +168,9 @@ func (r *Repo) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string
 	token := publicApiKey
 	cacheKey := publicKeyCachePrefix + token
 
-	if project, ok := r.cachedProject(ctx, cacheKey); ok {
+	if project, ok, err := r.cachedProject(ctx, cacheKey, token); err != nil {
+		return dbread.Project{}, err
+	} else if ok {
 		return project, nil
 	}
 
@@ -185,6 +224,41 @@ func (r *Repo) InvalidateProjectKeys(ctx context.Context, projectID string, toke
 	}
 }
 
+// BlockProjectKeys atomically makes cached values for the supplied tokens
+// unusable before a deletion-state transaction commits. Returning the Redis
+// error lets that transaction roll back instead of leaving a cached credential
+// authorized after access should have stopped.
+func (r *Repo) BlockProjectKeys(ctx context.Context, projectID string, tokens ...string) error {
+	for _, token := range tokens {
+		if err := apiKeyBlockScript.Run(ctx, r.cache,
+			[]string{apiKeyGenCacheKey(token), apiKeyBlockPrefix + token, privateKeyCachePrefix + token, publicKeyCachePrefix + token},
+			apiKeyGenCacheTTL.Milliseconds(), apiKeyBlockTTL.Milliseconds(),
+		).Err(); err != nil {
+			slog.ErrorContext(ctx, "failed to block project api key cache", slogx.Error(err), slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+			return err
+		}
+	}
+	return nil
+}
+
+// UnblockProjectKeys restores API-key authentication after an organization
+// deletion is cancelled. It also bumps the generation and clears cached rows so
+// every caller reloads the now-active project from the authoritative writer.
+func (r *Repo) UnblockProjectKeys(ctx context.Context, projectID string, tokens ...string) error {
+	for _, token := range tokens {
+		if err := apiKeyUnblockScript.Run(ctx, r.cache,
+			[]string{apiKeyGenCacheKey(token), apiKeyBlockPrefix + token, privateKeyCachePrefix + token, publicKeyCachePrefix + token},
+			apiKeyGenCacheTTL.Milliseconds(),
+		).Err(); err != nil {
+			slog.ErrorContext(ctx, "failed to unblock project api key cache", slogx.Error(err), slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+			return err
+		}
+	}
+	return nil
+}
+
 // observeKeyGen returns the token's generation counter, captured before the DB read
 // so cacheProject's compare-and-set can detect a revocation that lands during it.
 // The bool reports whether that baseline is trustworthy enough to populate from.
@@ -217,25 +291,32 @@ func (r *Repo) observeKeyGen(ctx context.Context, token string) (string, bool) {
 
 // cachedProject returns the project cached under cacheKey. A corrupt entry is
 // deleted and reported as a miss.
-func (r *Repo) cachedProject(ctx context.Context, cacheKey string) (dbread.Project, bool) {
-	data, err := r.cache.Get(ctx, cacheKey).Bytes()
+func (r *Repo) cachedProject(ctx context.Context, cacheKey, token string) (dbread.Project, bool, error) {
+	result, err := apiKeyReadScript.Run(ctx, r.cache, []string{apiKeyBlockPrefix + token, cacheKey}).Result()
 	if err != nil {
 		if !errors.Is(err, goredis.Nil) {
 			slog.WarnContext(ctx, "failed to get project by api key from cache", slogx.Error(err))
 		}
-		return dbread.Project{}, false
+		return dbread.Project{}, false, nil
+	}
+	if blocked, ok := result.(int64); ok && blocked == -1 {
+		return dbread.Project{}, false, pgx.ErrNoRows
+	}
+	data, ok := result.(string)
+	if !ok {
+		slog.WarnContext(ctx, "unexpected api key cache response", slog.String("response_type", fmt.Sprintf("%T", result)))
+		return dbread.Project{}, false, nil
 	}
 
 	var project dbread.Project
-	if err := json.Unmarshal(data, &project); err != nil {
+	if err := json.Unmarshal([]byte(data), &project); err != nil {
 		slog.WarnContext(ctx, "failed to unmarshal cached project by api key, deleting corrupt entry", slogx.Error(err))
 		if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
 			slog.WarnContext(ctx, "failed to delete corrupt cache entry", slogx.Error(err), slog.String("cache_key", cacheKey))
 		}
-		return dbread.Project{}, false
+		return dbread.Project{}, false, nil
 	}
-
-	return project, true
+	return project, true, nil
 }
 
 // cacheProject stores project under cacheKey, but only if token's generation is
@@ -249,7 +330,7 @@ func (r *Repo) cacheProject(ctx context.Context, cacheKey, token, observedGen st
 		return
 	}
 	if err := apiKeyPopulateScript.Run(ctx, r.cache,
-		[]string{cacheKey, apiKeyGenCacheKey(token)},
+		[]string{cacheKey, apiKeyGenCacheKey(token), apiKeyBlockPrefix + token},
 		data, observedGen, int(apiKeyCacheTTL.Seconds()),
 	).Err(); err != nil {
 		slog.WarnContext(ctx, "failed to cache project by api key", slogx.Error(err))

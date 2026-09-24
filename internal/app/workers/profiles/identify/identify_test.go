@@ -8,9 +8,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/workers/profiles"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	sdkprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1"
@@ -192,6 +194,32 @@ func TestHandleIdentify_UpsertOnly(t *testing.T) {
 	}
 	if upserts[0].GetIsDeleted() {
 		t.Error("upsert.IsDeleted = true, want false")
+	}
+}
+
+func TestHandleIdentify_GateUsesItsLockedConnection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	natsClient, _ := setupNATSClient(t, ctx)
+
+	poolConfig := pg.PgW.Config().Copy()
+	poolConfig.MaxConns = 1
+	singleConnectionPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(singleConnectionPool.Close)
+
+	data := makeIdentifyData(t, projectID, "single-connection@example.com", "", "", nil)
+	deadlineCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := handleIdentify(deadlineCtx, profiles.NewWorker(singleConnectionPool), natsClient, data, deletion.NewGate(singleConnectionPool)); err != nil {
+		t.Fatalf("identify through one-connection deletion gate: %v", err)
 	}
 }
 

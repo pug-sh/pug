@@ -10,6 +10,8 @@ service ProjectsService {
   rpc BatchGet(BatchGetRequest) returns (BatchGetResponse) {}
   rpc Create(CreateRequest) returns (CreateResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+  rpc ListDeletions(ListDeletionsRequest) returns (ListDeletionsResponse) {}
+  rpc RetryDeletion(RetryDeletionRequest) returns (RetryDeletionResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc UpdateMeta(UpdateMetaRequest) returns (UpdateMetaResponse) {}
   rpc UpdateFCMServiceJSON(UpdateFCMServiceJSONRequest) returns (UpdateFCMServiceJSONResponse) {}
@@ -55,9 +57,39 @@ message CreateResponse {
   Project project = 1;
 }
 
-message DeleteRequest {}
+// Delete schedules a permanent purge. Clients that previously sent an empty
+// DeleteRequest must now send the project's exact display name.
+message DeleteRequest { string confirmation_name = 1 [(buf.validate.field).required = true]; }
 
-message DeleteResponse {}
+message DeleteResponse { string deletion_operation_id = 1; }
+
+message DeletionOperation {
+  string id = 1;
+  string project_id = 2;
+  string project_name = 3;
+  string status = 4;
+  string requested_at = 5;
+  string finished_at = 6;
+  string last_error = 7;
+  bool clickhouse_done = 8;
+  bool postgres_done = 9;
+  string actor_id = 10;
+  string actor_email = 11;
+}
+message ListDeletionsRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string page_token = 2;
+  uint32 page_size = 3;
+}
+message ListDeletionsResponse {
+  repeated DeletionOperation operations = 1;
+  string next_page_token = 2;
+}
+message RetryDeletionRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string operation_id = 2 [(buf.validate.field).required = true];
+}
+message RetryDeletionResponse { DeletionOperation operation = 1; }
 
 message GetRequest {}
 

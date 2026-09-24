@@ -53,7 +53,7 @@ func (q *Queries) GetOrgMemberByOrgIDAndCustomerID(ctx context.Context, arg GetO
 }
 
 const getOrgMemberRole = `-- name: GetOrgMemberRole :one
-select role from org_members where org_id = $1 and customer_id = $2
+select m.role from org_members m join orgs o on o.id=m.org_id where m.org_id = $1 and m.customer_id = $2 and o.deletion_state='active'
 `
 
 type GetOrgMemberRoleParams struct {

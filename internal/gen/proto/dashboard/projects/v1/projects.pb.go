@@ -271,10 +271,13 @@ func (x *CreateResponse) GetProject() *Project {
 	return nil
 }
 
+// Delete schedules a permanent purge. Clients that previously sent an empty
+// DeleteRequest must now send the project's exact display name.
 type DeleteRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ConfirmationName *string                `protobuf:"bytes,1,opt,name=confirmation_name,json=confirmationName" json:"confirmation_name,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *DeleteRequest) Reset() {
@@ -307,10 +310,18 @@ func (*DeleteRequest) Descriptor() ([]byte, []int) {
 	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{4}
 }
 
+func (x *DeleteRequest) GetConfirmationName() string {
+	if x != nil && x.ConfirmationName != nil {
+		return *x.ConfirmationName
+	}
+	return ""
+}
+
 type DeleteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	DeletionOperationId *string                `protobuf:"bytes,1,opt,name=deletion_operation_id,json=deletionOperationId" json:"deletion_operation_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *DeleteResponse) Reset() {
@@ -343,6 +354,345 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{5}
 }
 
+func (x *DeleteResponse) GetDeletionOperationId() string {
+	if x != nil && x.DeletionOperationId != nil {
+		return *x.DeletionOperationId
+	}
+	return ""
+}
+
+type DeletionOperation struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	ProjectId      *string                `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ProjectName    *string                `protobuf:"bytes,3,opt,name=project_name,json=projectName" json:"project_name,omitempty"`
+	Status         *string                `protobuf:"bytes,4,opt,name=status" json:"status,omitempty"`
+	RequestedAt    *string                `protobuf:"bytes,5,opt,name=requested_at,json=requestedAt" json:"requested_at,omitempty"`
+	FinishedAt     *string                `protobuf:"bytes,6,opt,name=finished_at,json=finishedAt" json:"finished_at,omitempty"`
+	LastError      *string                `protobuf:"bytes,7,opt,name=last_error,json=lastError" json:"last_error,omitempty"`
+	ClickhouseDone *bool                  `protobuf:"varint,8,opt,name=clickhouse_done,json=clickhouseDone" json:"clickhouse_done,omitempty"`
+	PostgresDone   *bool                  `protobuf:"varint,9,opt,name=postgres_done,json=postgresDone" json:"postgres_done,omitempty"`
+	ActorId        *string                `protobuf:"bytes,10,opt,name=actor_id,json=actorId" json:"actor_id,omitempty"`
+	ActorEmail     *string                `protobuf:"bytes,11,opt,name=actor_email,json=actorEmail" json:"actor_email,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeletionOperation) Reset() {
+	*x = DeletionOperation{}
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeletionOperation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeletionOperation) ProtoMessage() {}
+
+func (x *DeletionOperation) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeletionOperation.ProtoReflect.Descriptor instead.
+func (*DeletionOperation) Descriptor() ([]byte, []int) {
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DeletionOperation) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetProjectId() string {
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetProjectName() string {
+	if x != nil && x.ProjectName != nil {
+		return *x.ProjectName
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetStatus() string {
+	if x != nil && x.Status != nil {
+		return *x.Status
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetRequestedAt() string {
+	if x != nil && x.RequestedAt != nil {
+		return *x.RequestedAt
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetFinishedAt() string {
+	if x != nil && x.FinishedAt != nil {
+		return *x.FinishedAt
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetLastError() string {
+	if x != nil && x.LastError != nil {
+		return *x.LastError
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetClickhouseDone() bool {
+	if x != nil && x.ClickhouseDone != nil {
+		return *x.ClickhouseDone
+	}
+	return false
+}
+
+func (x *DeletionOperation) GetPostgresDone() bool {
+	if x != nil && x.PostgresDone != nil {
+		return *x.PostgresDone
+	}
+	return false
+}
+
+func (x *DeletionOperation) GetActorId() string {
+	if x != nil && x.ActorId != nil {
+		return *x.ActorId
+	}
+	return ""
+}
+
+func (x *DeletionOperation) GetActorEmail() string {
+	if x != nil && x.ActorEmail != nil {
+		return *x.ActorEmail
+	}
+	return ""
+}
+
+type ListDeletionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	PageToken     *string                `protobuf:"bytes,2,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageSize      *uint32                `protobuf:"varint,3,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDeletionsRequest) Reset() {
+	*x = ListDeletionsRequest{}
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDeletionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDeletionsRequest) ProtoMessage() {}
+
+func (x *ListDeletionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDeletionsRequest.ProtoReflect.Descriptor instead.
+func (*ListDeletionsRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListDeletionsRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *ListDeletionsRequest) GetPageToken() string {
+	if x != nil && x.PageToken != nil {
+		return *x.PageToken
+	}
+	return ""
+}
+
+func (x *ListDeletionsRequest) GetPageSize() uint32 {
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
+	}
+	return 0
+}
+
+type ListDeletionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operations    []*DeletionOperation   `protobuf:"bytes,1,rep,name=operations" json:"operations,omitempty"`
+	NextPageToken *string                `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDeletionsResponse) Reset() {
+	*x = ListDeletionsResponse{}
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDeletionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDeletionsResponse) ProtoMessage() {}
+
+func (x *ListDeletionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDeletionsResponse.ProtoReflect.Descriptor instead.
+func (*ListDeletionsResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListDeletionsResponse) GetOperations() []*DeletionOperation {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+func (x *ListDeletionsResponse) GetNextPageToken() string {
+	if x != nil && x.NextPageToken != nil {
+		return *x.NextPageToken
+	}
+	return ""
+}
+
+type RetryDeletionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	OperationId   *string                `protobuf:"bytes,2,opt,name=operation_id,json=operationId" json:"operation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryDeletionRequest) Reset() {
+	*x = RetryDeletionRequest{}
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryDeletionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryDeletionRequest) ProtoMessage() {}
+
+func (x *RetryDeletionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryDeletionRequest.ProtoReflect.Descriptor instead.
+func (*RetryDeletionRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RetryDeletionRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *RetryDeletionRequest) GetOperationId() string {
+	if x != nil && x.OperationId != nil {
+		return *x.OperationId
+	}
+	return ""
+}
+
+type RetryDeletionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     *DeletionOperation     `protobuf:"bytes,1,opt,name=operation" json:"operation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryDeletionResponse) Reset() {
+	*x = RetryDeletionResponse{}
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryDeletionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryDeletionResponse) ProtoMessage() {}
+
+func (x *RetryDeletionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryDeletionResponse.ProtoReflect.Descriptor instead.
+func (*RetryDeletionResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RetryDeletionResponse) GetOperation() *DeletionOperation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -351,7 +701,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[6]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -363,7 +713,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[6]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -376,7 +726,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{6}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{11}
 }
 
 type GetResponse struct {
@@ -388,7 +738,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[7]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +750,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[7]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +763,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{7}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetResponse) GetProject() *Project {
@@ -438,7 +788,7 @@ type Project struct {
 
 func (x *Project) Reset() {
 	*x = Project{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[8]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -450,7 +800,7 @@ func (x *Project) String() string {
 func (*Project) ProtoMessage() {}
 
 func (x *Project) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[8]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -463,7 +813,7 @@ func (x *Project) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Project.ProtoReflect.Descriptor instead.
 func (*Project) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{8}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Project) GetDisplayName() string {
@@ -521,7 +871,7 @@ type ApiKey struct {
 
 func (x *ApiKey) Reset() {
 	*x = ApiKey{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[9]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +883,7 @@ func (x *ApiKey) String() string {
 func (*ApiKey) ProtoMessage() {}
 
 func (x *ApiKey) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[9]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +896,7 @@ func (x *ApiKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApiKey.ProtoReflect.Descriptor instead.
 func (*ApiKey) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{9}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ApiKey) GetCreateTime() *timestamppb.Timestamp {
@@ -599,7 +949,7 @@ type ListApiKeysRequest struct {
 
 func (x *ListApiKeysRequest) Reset() {
 	*x = ListApiKeysRequest{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[10]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +961,7 @@ func (x *ListApiKeysRequest) String() string {
 func (*ListApiKeysRequest) ProtoMessage() {}
 
 func (x *ListApiKeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[10]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -624,7 +974,7 @@ func (x *ListApiKeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListApiKeysRequest.ProtoReflect.Descriptor instead.
 func (*ListApiKeysRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{10}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{15}
 }
 
 type ListApiKeysResponse struct {
@@ -636,7 +986,7 @@ type ListApiKeysResponse struct {
 
 func (x *ListApiKeysResponse) Reset() {
 	*x = ListApiKeysResponse{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[11]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +998,7 @@ func (x *ListApiKeysResponse) String() string {
 func (*ListApiKeysResponse) ProtoMessage() {}
 
 func (x *ListApiKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[11]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +1011,7 @@ func (x *ListApiKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListApiKeysResponse.ProtoReflect.Descriptor instead.
 func (*ListApiKeysResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{11}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListApiKeysResponse) GetApiKeys() []*ApiKey {
@@ -682,7 +1032,7 @@ type CreateApiKeyRequest struct {
 
 func (x *CreateApiKeyRequest) Reset() {
 	*x = CreateApiKeyRequest{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[12]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -694,7 +1044,7 @@ func (x *CreateApiKeyRequest) String() string {
 func (*CreateApiKeyRequest) ProtoMessage() {}
 
 func (x *CreateApiKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[12]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,7 +1057,7 @@ func (x *CreateApiKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateApiKeyRequest.ProtoReflect.Descriptor instead.
 func (*CreateApiKeyRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{12}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateApiKeyRequest) GetKind() ApiKeyKind {
@@ -736,7 +1086,7 @@ type CreateApiKeyResponse struct {
 
 func (x *CreateApiKeyResponse) Reset() {
 	*x = CreateApiKeyResponse{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[13]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -748,7 +1098,7 @@ func (x *CreateApiKeyResponse) String() string {
 func (*CreateApiKeyResponse) ProtoMessage() {}
 
 func (x *CreateApiKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[13]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -761,7 +1111,7 @@ func (x *CreateApiKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateApiKeyResponse.ProtoReflect.Descriptor instead.
 func (*CreateApiKeyResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{13}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CreateApiKeyResponse) GetApiKey() *ApiKey {
@@ -787,7 +1137,7 @@ type DeleteApiKeyRequest struct {
 
 func (x *DeleteApiKeyRequest) Reset() {
 	*x = DeleteApiKeyRequest{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[14]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -799,7 +1149,7 @@ func (x *DeleteApiKeyRequest) String() string {
 func (*DeleteApiKeyRequest) ProtoMessage() {}
 
 func (x *DeleteApiKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[14]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -812,7 +1162,7 @@ func (x *DeleteApiKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteApiKeyRequest.ProtoReflect.Descriptor instead.
 func (*DeleteApiKeyRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{14}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DeleteApiKeyRequest) GetId() string {
@@ -830,7 +1180,7 @@ type DeleteApiKeyResponse struct {
 
 func (x *DeleteApiKeyResponse) Reset() {
 	*x = DeleteApiKeyResponse{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[15]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -842,7 +1192,7 @@ func (x *DeleteApiKeyResponse) String() string {
 func (*DeleteApiKeyResponse) ProtoMessage() {}
 
 func (x *DeleteApiKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[15]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -855,7 +1205,7 @@ func (x *DeleteApiKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteApiKeyResponse.ProtoReflect.Descriptor instead.
 func (*DeleteApiKeyResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{15}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{20}
 }
 
 // UpdateMetaRequest is a partial update of the project's editable metadata: every
@@ -877,7 +1227,7 @@ type UpdateMetaRequest struct {
 
 func (x *UpdateMetaRequest) Reset() {
 	*x = UpdateMetaRequest{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[16]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +1239,7 @@ func (x *UpdateMetaRequest) String() string {
 func (*UpdateMetaRequest) ProtoMessage() {}
 
 func (x *UpdateMetaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[16]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +1252,7 @@ func (x *UpdateMetaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMetaRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMetaRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{16}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *UpdateMetaRequest) GetDisplayName() string {
@@ -928,7 +1278,7 @@ type UpdateMetaResponse struct {
 
 func (x *UpdateMetaResponse) Reset() {
 	*x = UpdateMetaResponse{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[17]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -940,7 +1290,7 @@ func (x *UpdateMetaResponse) String() string {
 func (*UpdateMetaResponse) ProtoMessage() {}
 
 func (x *UpdateMetaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[17]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -953,7 +1303,7 @@ func (x *UpdateMetaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMetaResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMetaResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{17}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UpdateMetaResponse) GetProject() *Project {
@@ -972,7 +1322,7 @@ type UpdateFCMServiceJSONRequest struct {
 
 func (x *UpdateFCMServiceJSONRequest) Reset() {
 	*x = UpdateFCMServiceJSONRequest{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[18]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -984,7 +1334,7 @@ func (x *UpdateFCMServiceJSONRequest) String() string {
 func (*UpdateFCMServiceJSONRequest) ProtoMessage() {}
 
 func (x *UpdateFCMServiceJSONRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[18]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -997,7 +1347,7 @@ func (x *UpdateFCMServiceJSONRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateFCMServiceJSONRequest.ProtoReflect.Descriptor instead.
 func (*UpdateFCMServiceJSONRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{18}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UpdateFCMServiceJSONRequest) GetFcmServiceJson() string {
@@ -1015,7 +1365,7 @@ type UpdateFCMServiceJSONResponse struct {
 
 func (x *UpdateFCMServiceJSONResponse) Reset() {
 	*x = UpdateFCMServiceJSONResponse{}
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[19]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1027,7 +1377,7 @@ func (x *UpdateFCMServiceJSONResponse) String() string {
 func (*UpdateFCMServiceJSONResponse) ProtoMessage() {}
 
 func (x *UpdateFCMServiceJSONResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[19]
+	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1040,7 +1390,7 @@ func (x *UpdateFCMServiceJSONResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateFCMServiceJSONResponse.ProtoReflect.Descriptor instead.
 func (*UpdateFCMServiceJSONResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{19}
+	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{24}
 }
 
 var File_dashboard_projects_v1_projects_proto protoreflect.FileDescriptor
@@ -1057,9 +1407,43 @@ const file_dashboard_projects_v1_projects_proto_rawDesc = "" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12J\n" +
 	"\x12reporting_timezone\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\x11reportingTimezone\"J\n" +
 	"\x0eCreateResponse\x128\n" +
-	"\aproject\x18\x01 \x01(\v2\x1e.dashboard.projects.v1.ProjectR\aproject\"\x0f\n" +
-	"\rDeleteRequest\"\x10\n" +
-	"\x0eDeleteResponse\"\f\n" +
+	"\aproject\x18\x01 \x01(\v2\x1e.dashboard.projects.v1.ProjectR\aproject\"D\n" +
+	"\rDeleteRequest\x123\n" +
+	"\x11confirmation_name\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x10confirmationName\"D\n" +
+	"\x0eDeleteResponse\x122\n" +
+	"\x15deletion_operation_id\x18\x01 \x01(\tR\x13deletionOperationId\"\xea\x02\n" +
+	"\x11DeletionOperation\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12!\n" +
+	"\fproject_name\x18\x03 \x01(\tR\vprojectName\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x12!\n" +
+	"\frequested_at\x18\x05 \x01(\tR\vrequestedAt\x12\x1f\n" +
+	"\vfinished_at\x18\x06 \x01(\tR\n" +
+	"finishedAt\x12\x1d\n" +
+	"\n" +
+	"last_error\x18\a \x01(\tR\tlastError\x12'\n" +
+	"\x0fclickhouse_done\x18\b \x01(\bR\x0eclickhouseDone\x12#\n" +
+	"\rpostgres_done\x18\t \x01(\bR\fpostgresDone\x12\x19\n" +
+	"\bactor_id\x18\n" +
+	" \x01(\tR\aactorId\x12\x1f\n" +
+	"\vactor_email\x18\v \x01(\tR\n" +
+	"actorEmail\"q\n" +
+	"\x14ListDeletionsRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\rR\bpageSize\"\x89\x01\n" +
+	"\x15ListDeletionsResponse\x12H\n" +
+	"\n" +
+	"operations\x18\x01 \x03(\v2(.dashboard.projects.v1.DeletionOperationR\n" +
+	"operations\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"`\n" +
+	"\x14RetryDeletionRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12)\n" +
+	"\foperation_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\voperationId\"_\n" +
+	"\x15RetryDeletionResponse\x12F\n" +
+	"\toperation\x18\x01 \x01(\v2(.dashboard.projects.v1.DeletionOperationR\toperation\"\f\n" +
 	"\n" +
 	"GetRequest\"G\n" +
 	"\vGetResponse\x128\n" +
@@ -1104,11 +1488,13 @@ const file_dashboard_projects_v1_projects_proto_rawDesc = "" +
 	"ApiKeyKind\x12\x1c\n" +
 	"\x18API_KEY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13API_KEY_KIND_PUBLIC\x10\x01\x12\x18\n" +
-	"\x14API_KEY_KIND_PRIVATE\x10\x022\x99\a\n" +
+	"\x14API_KEY_KIND_PRIVATE\x10\x022\xf5\b\n" +
 	"\x0fProjectsService\x12]\n" +
 	"\bBatchGet\x12&.dashboard.projects.v1.BatchGetRequest\x1a'.dashboard.projects.v1.BatchGetResponse\"\x00\x12W\n" +
 	"\x06Create\x12$.dashboard.projects.v1.CreateRequest\x1a%.dashboard.projects.v1.CreateResponse\"\x00\x12W\n" +
-	"\x06Delete\x12$.dashboard.projects.v1.DeleteRequest\x1a%.dashboard.projects.v1.DeleteResponse\"\x00\x12N\n" +
+	"\x06Delete\x12$.dashboard.projects.v1.DeleteRequest\x1a%.dashboard.projects.v1.DeleteResponse\"\x00\x12l\n" +
+	"\rListDeletions\x12+.dashboard.projects.v1.ListDeletionsRequest\x1a,.dashboard.projects.v1.ListDeletionsResponse\"\x00\x12l\n" +
+	"\rRetryDeletion\x12+.dashboard.projects.v1.RetryDeletionRequest\x1a,.dashboard.projects.v1.RetryDeletionResponse\"\x00\x12N\n" +
 	"\x03Get\x12!.dashboard.projects.v1.GetRequest\x1a\".dashboard.projects.v1.GetResponse\"\x00\x12c\n" +
 	"\n" +
 	"UpdateMeta\x12(.dashboard.projects.v1.UpdateMetaRequest\x1a).dashboard.projects.v1.UpdateMetaResponse\"\x00\x12\x81\x01\n" +
@@ -1130,7 +1516,7 @@ func file_dashboard_projects_v1_projects_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_projects_v1_projects_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_dashboard_projects_v1_projects_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_dashboard_projects_v1_projects_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_dashboard_projects_v1_projects_proto_goTypes = []any{
 	(ApiKeyKind)(0),                      // 0: dashboard.projects.v1.ApiKeyKind
 	(*BatchGetRequest)(nil),              // 1: dashboard.projects.v1.BatchGetRequest
@@ -1139,55 +1525,66 @@ var file_dashboard_projects_v1_projects_proto_goTypes = []any{
 	(*CreateResponse)(nil),               // 4: dashboard.projects.v1.CreateResponse
 	(*DeleteRequest)(nil),                // 5: dashboard.projects.v1.DeleteRequest
 	(*DeleteResponse)(nil),               // 6: dashboard.projects.v1.DeleteResponse
-	(*GetRequest)(nil),                   // 7: dashboard.projects.v1.GetRequest
-	(*GetResponse)(nil),                  // 8: dashboard.projects.v1.GetResponse
-	(*Project)(nil),                      // 9: dashboard.projects.v1.Project
-	(*ApiKey)(nil),                       // 10: dashboard.projects.v1.ApiKey
-	(*ListApiKeysRequest)(nil),           // 11: dashboard.projects.v1.ListApiKeysRequest
-	(*ListApiKeysResponse)(nil),          // 12: dashboard.projects.v1.ListApiKeysResponse
-	(*CreateApiKeyRequest)(nil),          // 13: dashboard.projects.v1.CreateApiKeyRequest
-	(*CreateApiKeyResponse)(nil),         // 14: dashboard.projects.v1.CreateApiKeyResponse
-	(*DeleteApiKeyRequest)(nil),          // 15: dashboard.projects.v1.DeleteApiKeyRequest
-	(*DeleteApiKeyResponse)(nil),         // 16: dashboard.projects.v1.DeleteApiKeyResponse
-	(*UpdateMetaRequest)(nil),            // 17: dashboard.projects.v1.UpdateMetaRequest
-	(*UpdateMetaResponse)(nil),           // 18: dashboard.projects.v1.UpdateMetaResponse
-	(*UpdateFCMServiceJSONRequest)(nil),  // 19: dashboard.projects.v1.UpdateFCMServiceJSONRequest
-	(*UpdateFCMServiceJSONResponse)(nil), // 20: dashboard.projects.v1.UpdateFCMServiceJSONResponse
-	(*timestamppb.Timestamp)(nil),        // 21: google.protobuf.Timestamp
+	(*DeletionOperation)(nil),            // 7: dashboard.projects.v1.DeletionOperation
+	(*ListDeletionsRequest)(nil),         // 8: dashboard.projects.v1.ListDeletionsRequest
+	(*ListDeletionsResponse)(nil),        // 9: dashboard.projects.v1.ListDeletionsResponse
+	(*RetryDeletionRequest)(nil),         // 10: dashboard.projects.v1.RetryDeletionRequest
+	(*RetryDeletionResponse)(nil),        // 11: dashboard.projects.v1.RetryDeletionResponse
+	(*GetRequest)(nil),                   // 12: dashboard.projects.v1.GetRequest
+	(*GetResponse)(nil),                  // 13: dashboard.projects.v1.GetResponse
+	(*Project)(nil),                      // 14: dashboard.projects.v1.Project
+	(*ApiKey)(nil),                       // 15: dashboard.projects.v1.ApiKey
+	(*ListApiKeysRequest)(nil),           // 16: dashboard.projects.v1.ListApiKeysRequest
+	(*ListApiKeysResponse)(nil),          // 17: dashboard.projects.v1.ListApiKeysResponse
+	(*CreateApiKeyRequest)(nil),          // 18: dashboard.projects.v1.CreateApiKeyRequest
+	(*CreateApiKeyResponse)(nil),         // 19: dashboard.projects.v1.CreateApiKeyResponse
+	(*DeleteApiKeyRequest)(nil),          // 20: dashboard.projects.v1.DeleteApiKeyRequest
+	(*DeleteApiKeyResponse)(nil),         // 21: dashboard.projects.v1.DeleteApiKeyResponse
+	(*UpdateMetaRequest)(nil),            // 22: dashboard.projects.v1.UpdateMetaRequest
+	(*UpdateMetaResponse)(nil),           // 23: dashboard.projects.v1.UpdateMetaResponse
+	(*UpdateFCMServiceJSONRequest)(nil),  // 24: dashboard.projects.v1.UpdateFCMServiceJSONRequest
+	(*UpdateFCMServiceJSONResponse)(nil), // 25: dashboard.projects.v1.UpdateFCMServiceJSONResponse
+	(*timestamppb.Timestamp)(nil),        // 26: google.protobuf.Timestamp
 }
 var file_dashboard_projects_v1_projects_proto_depIdxs = []int32{
-	9,  // 0: dashboard.projects.v1.BatchGetResponse.projects:type_name -> dashboard.projects.v1.Project
-	9,  // 1: dashboard.projects.v1.CreateResponse.project:type_name -> dashboard.projects.v1.Project
-	9,  // 2: dashboard.projects.v1.GetResponse.project:type_name -> dashboard.projects.v1.Project
-	21, // 3: dashboard.projects.v1.ApiKey.create_time:type_name -> google.protobuf.Timestamp
-	0,  // 4: dashboard.projects.v1.ApiKey.kind:type_name -> dashboard.projects.v1.ApiKeyKind
-	10, // 5: dashboard.projects.v1.ListApiKeysResponse.api_keys:type_name -> dashboard.projects.v1.ApiKey
-	0,  // 6: dashboard.projects.v1.CreateApiKeyRequest.kind:type_name -> dashboard.projects.v1.ApiKeyKind
-	10, // 7: dashboard.projects.v1.CreateApiKeyResponse.api_key:type_name -> dashboard.projects.v1.ApiKey
-	9,  // 8: dashboard.projects.v1.UpdateMetaResponse.project:type_name -> dashboard.projects.v1.Project
-	1,  // 9: dashboard.projects.v1.ProjectsService.BatchGet:input_type -> dashboard.projects.v1.BatchGetRequest
-	3,  // 10: dashboard.projects.v1.ProjectsService.Create:input_type -> dashboard.projects.v1.CreateRequest
-	5,  // 11: dashboard.projects.v1.ProjectsService.Delete:input_type -> dashboard.projects.v1.DeleteRequest
-	7,  // 12: dashboard.projects.v1.ProjectsService.Get:input_type -> dashboard.projects.v1.GetRequest
-	17, // 13: dashboard.projects.v1.ProjectsService.UpdateMeta:input_type -> dashboard.projects.v1.UpdateMetaRequest
-	19, // 14: dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON:input_type -> dashboard.projects.v1.UpdateFCMServiceJSONRequest
-	11, // 15: dashboard.projects.v1.ProjectsService.ListApiKeys:input_type -> dashboard.projects.v1.ListApiKeysRequest
-	13, // 16: dashboard.projects.v1.ProjectsService.CreateApiKey:input_type -> dashboard.projects.v1.CreateApiKeyRequest
-	15, // 17: dashboard.projects.v1.ProjectsService.DeleteApiKey:input_type -> dashboard.projects.v1.DeleteApiKeyRequest
-	2,  // 18: dashboard.projects.v1.ProjectsService.BatchGet:output_type -> dashboard.projects.v1.BatchGetResponse
-	4,  // 19: dashboard.projects.v1.ProjectsService.Create:output_type -> dashboard.projects.v1.CreateResponse
-	6,  // 20: dashboard.projects.v1.ProjectsService.Delete:output_type -> dashboard.projects.v1.DeleteResponse
-	8,  // 21: dashboard.projects.v1.ProjectsService.Get:output_type -> dashboard.projects.v1.GetResponse
-	18, // 22: dashboard.projects.v1.ProjectsService.UpdateMeta:output_type -> dashboard.projects.v1.UpdateMetaResponse
-	20, // 23: dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON:output_type -> dashboard.projects.v1.UpdateFCMServiceJSONResponse
-	12, // 24: dashboard.projects.v1.ProjectsService.ListApiKeys:output_type -> dashboard.projects.v1.ListApiKeysResponse
-	14, // 25: dashboard.projects.v1.ProjectsService.CreateApiKey:output_type -> dashboard.projects.v1.CreateApiKeyResponse
-	16, // 26: dashboard.projects.v1.ProjectsService.DeleteApiKey:output_type -> dashboard.projects.v1.DeleteApiKeyResponse
-	18, // [18:27] is the sub-list for method output_type
-	9,  // [9:18] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	14, // 0: dashboard.projects.v1.BatchGetResponse.projects:type_name -> dashboard.projects.v1.Project
+	14, // 1: dashboard.projects.v1.CreateResponse.project:type_name -> dashboard.projects.v1.Project
+	7,  // 2: dashboard.projects.v1.ListDeletionsResponse.operations:type_name -> dashboard.projects.v1.DeletionOperation
+	7,  // 3: dashboard.projects.v1.RetryDeletionResponse.operation:type_name -> dashboard.projects.v1.DeletionOperation
+	14, // 4: dashboard.projects.v1.GetResponse.project:type_name -> dashboard.projects.v1.Project
+	26, // 5: dashboard.projects.v1.ApiKey.create_time:type_name -> google.protobuf.Timestamp
+	0,  // 6: dashboard.projects.v1.ApiKey.kind:type_name -> dashboard.projects.v1.ApiKeyKind
+	15, // 7: dashboard.projects.v1.ListApiKeysResponse.api_keys:type_name -> dashboard.projects.v1.ApiKey
+	0,  // 8: dashboard.projects.v1.CreateApiKeyRequest.kind:type_name -> dashboard.projects.v1.ApiKeyKind
+	15, // 9: dashboard.projects.v1.CreateApiKeyResponse.api_key:type_name -> dashboard.projects.v1.ApiKey
+	14, // 10: dashboard.projects.v1.UpdateMetaResponse.project:type_name -> dashboard.projects.v1.Project
+	1,  // 11: dashboard.projects.v1.ProjectsService.BatchGet:input_type -> dashboard.projects.v1.BatchGetRequest
+	3,  // 12: dashboard.projects.v1.ProjectsService.Create:input_type -> dashboard.projects.v1.CreateRequest
+	5,  // 13: dashboard.projects.v1.ProjectsService.Delete:input_type -> dashboard.projects.v1.DeleteRequest
+	8,  // 14: dashboard.projects.v1.ProjectsService.ListDeletions:input_type -> dashboard.projects.v1.ListDeletionsRequest
+	10, // 15: dashboard.projects.v1.ProjectsService.RetryDeletion:input_type -> dashboard.projects.v1.RetryDeletionRequest
+	12, // 16: dashboard.projects.v1.ProjectsService.Get:input_type -> dashboard.projects.v1.GetRequest
+	22, // 17: dashboard.projects.v1.ProjectsService.UpdateMeta:input_type -> dashboard.projects.v1.UpdateMetaRequest
+	24, // 18: dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON:input_type -> dashboard.projects.v1.UpdateFCMServiceJSONRequest
+	16, // 19: dashboard.projects.v1.ProjectsService.ListApiKeys:input_type -> dashboard.projects.v1.ListApiKeysRequest
+	18, // 20: dashboard.projects.v1.ProjectsService.CreateApiKey:input_type -> dashboard.projects.v1.CreateApiKeyRequest
+	20, // 21: dashboard.projects.v1.ProjectsService.DeleteApiKey:input_type -> dashboard.projects.v1.DeleteApiKeyRequest
+	2,  // 22: dashboard.projects.v1.ProjectsService.BatchGet:output_type -> dashboard.projects.v1.BatchGetResponse
+	4,  // 23: dashboard.projects.v1.ProjectsService.Create:output_type -> dashboard.projects.v1.CreateResponse
+	6,  // 24: dashboard.projects.v1.ProjectsService.Delete:output_type -> dashboard.projects.v1.DeleteResponse
+	9,  // 25: dashboard.projects.v1.ProjectsService.ListDeletions:output_type -> dashboard.projects.v1.ListDeletionsResponse
+	11, // 26: dashboard.projects.v1.ProjectsService.RetryDeletion:output_type -> dashboard.projects.v1.RetryDeletionResponse
+	13, // 27: dashboard.projects.v1.ProjectsService.Get:output_type -> dashboard.projects.v1.GetResponse
+	23, // 28: dashboard.projects.v1.ProjectsService.UpdateMeta:output_type -> dashboard.projects.v1.UpdateMetaResponse
+	25, // 29: dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON:output_type -> dashboard.projects.v1.UpdateFCMServiceJSONResponse
+	17, // 30: dashboard.projects.v1.ProjectsService.ListApiKeys:output_type -> dashboard.projects.v1.ListApiKeysResponse
+	19, // 31: dashboard.projects.v1.ProjectsService.CreateApiKey:output_type -> dashboard.projects.v1.CreateApiKeyResponse
+	21, // 32: dashboard.projects.v1.ProjectsService.DeleteApiKey:output_type -> dashboard.projects.v1.DeleteApiKeyResponse
+	22, // [22:33] is the sub-list for method output_type
+	11, // [11:22] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_projects_v1_projects_proto_init() }
@@ -1201,7 +1598,7 @@ func file_dashboard_projects_v1_projects_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_projects_v1_projects_proto_rawDesc), len(file_dashboard_projects_v1_projects_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   20,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -42,6 +42,19 @@ consumers:
     max_deliver: 5
     replay_policy: "instant"
 
+  # Project and organization purge. The message identifies a durable deletion
+  # operation; the worker reloads current state before every idempotent attempt.
+  # Reserve one delivery for the organization cancellation delay plus five
+  # execution attempts after the deadline.
+  - name: "compliance-project-purge-processor"
+    stream_name: "compliance"
+    durable_name: "compliance-project-purge-processor-durable"
+    filter_subject: "compliance.project_purge"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 6
+    replay_policy: "instant"
+
   # Consumer for analytics events -> ClickHouse
   - name: "events-writer"
     stream_name: "events"

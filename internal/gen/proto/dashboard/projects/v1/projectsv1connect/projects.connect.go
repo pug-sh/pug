@@ -40,6 +40,12 @@ const (
 	ProjectsServiceCreateProcedure = "/dashboard.projects.v1.ProjectsService/Create"
 	// ProjectsServiceDeleteProcedure is the fully-qualified name of the ProjectsService's Delete RPC.
 	ProjectsServiceDeleteProcedure = "/dashboard.projects.v1.ProjectsService/Delete"
+	// ProjectsServiceListDeletionsProcedure is the fully-qualified name of the ProjectsService's
+	// ListDeletions RPC.
+	ProjectsServiceListDeletionsProcedure = "/dashboard.projects.v1.ProjectsService/ListDeletions"
+	// ProjectsServiceRetryDeletionProcedure is the fully-qualified name of the ProjectsService's
+	// RetryDeletion RPC.
+	ProjectsServiceRetryDeletionProcedure = "/dashboard.projects.v1.ProjectsService/RetryDeletion"
 	// ProjectsServiceGetProcedure is the fully-qualified name of the ProjectsService's Get RPC.
 	ProjectsServiceGetProcedure = "/dashboard.projects.v1.ProjectsService/Get"
 	// ProjectsServiceUpdateMetaProcedure is the fully-qualified name of the ProjectsService's
@@ -64,6 +70,8 @@ type ProjectsServiceClient interface {
 	BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	ListDeletions(context.Context, *connect.Request[v1.ListDeletionsRequest]) (*connect.Response[v1.ListDeletionsResponse], error)
+	RetryDeletion(context.Context, *connect.Request[v1.RetryDeletionRequest]) (*connect.Response[v1.RetryDeletionResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateMeta(context.Context, *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
@@ -99,6 +107,18 @@ func NewProjectsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+ProjectsServiceDeleteProcedure,
 			connect.WithSchema(projectsServiceMethods.ByName("Delete")),
+			connect.WithClientOptions(opts...),
+		),
+		listDeletions: connect.NewClient[v1.ListDeletionsRequest, v1.ListDeletionsResponse](
+			httpClient,
+			baseURL+ProjectsServiceListDeletionsProcedure,
+			connect.WithSchema(projectsServiceMethods.ByName("ListDeletions")),
+			connect.WithClientOptions(opts...),
+		),
+		retryDeletion: connect.NewClient[v1.RetryDeletionRequest, v1.RetryDeletionResponse](
+			httpClient,
+			baseURL+ProjectsServiceRetryDeletionProcedure,
+			connect.WithSchema(projectsServiceMethods.ByName("RetryDeletion")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
@@ -145,6 +165,8 @@ type projectsServiceClient struct {
 	batchGet             *connect.Client[v1.BatchGetRequest, v1.BatchGetResponse]
 	create               *connect.Client[v1.CreateRequest, v1.CreateResponse]
 	delete               *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	listDeletions        *connect.Client[v1.ListDeletionsRequest, v1.ListDeletionsResponse]
+	retryDeletion        *connect.Client[v1.RetryDeletionRequest, v1.RetryDeletionResponse]
 	get                  *connect.Client[v1.GetRequest, v1.GetResponse]
 	updateMeta           *connect.Client[v1.UpdateMetaRequest, v1.UpdateMetaResponse]
 	updateFCMServiceJSON *connect.Client[v1.UpdateFCMServiceJSONRequest, v1.UpdateFCMServiceJSONResponse]
@@ -166,6 +188,16 @@ func (c *projectsServiceClient) Create(ctx context.Context, req *connect.Request
 // Delete calls dashboard.projects.v1.ProjectsService.Delete.
 func (c *projectsServiceClient) Delete(ctx context.Context, req *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return c.delete.CallUnary(ctx, req)
+}
+
+// ListDeletions calls dashboard.projects.v1.ProjectsService.ListDeletions.
+func (c *projectsServiceClient) ListDeletions(ctx context.Context, req *connect.Request[v1.ListDeletionsRequest]) (*connect.Response[v1.ListDeletionsResponse], error) {
+	return c.listDeletions.CallUnary(ctx, req)
+}
+
+// RetryDeletion calls dashboard.projects.v1.ProjectsService.RetryDeletion.
+func (c *projectsServiceClient) RetryDeletion(ctx context.Context, req *connect.Request[v1.RetryDeletionRequest]) (*connect.Response[v1.RetryDeletionResponse], error) {
+	return c.retryDeletion.CallUnary(ctx, req)
 }
 
 // Get calls dashboard.projects.v1.ProjectsService.Get.
@@ -203,6 +235,8 @@ type ProjectsServiceHandler interface {
 	BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	ListDeletions(context.Context, *connect.Request[v1.ListDeletionsRequest]) (*connect.Response[v1.ListDeletionsResponse], error)
+	RetryDeletion(context.Context, *connect.Request[v1.RetryDeletionRequest]) (*connect.Response[v1.RetryDeletionResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateMeta(context.Context, *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
@@ -234,6 +268,18 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 		ProjectsServiceDeleteProcedure,
 		svc.Delete,
 		connect.WithSchema(projectsServiceMethods.ByName("Delete")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectsServiceListDeletionsHandler := connect.NewUnaryHandler(
+		ProjectsServiceListDeletionsProcedure,
+		svc.ListDeletions,
+		connect.WithSchema(projectsServiceMethods.ByName("ListDeletions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectsServiceRetryDeletionHandler := connect.NewUnaryHandler(
+		ProjectsServiceRetryDeletionProcedure,
+		svc.RetryDeletion,
+		connect.WithSchema(projectsServiceMethods.ByName("RetryDeletion")),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectsServiceGetHandler := connect.NewUnaryHandler(
@@ -280,6 +326,10 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 			projectsServiceCreateHandler.ServeHTTP(w, r)
 		case ProjectsServiceDeleteProcedure:
 			projectsServiceDeleteHandler.ServeHTTP(w, r)
+		case ProjectsServiceListDeletionsProcedure:
+			projectsServiceListDeletionsHandler.ServeHTTP(w, r)
+		case ProjectsServiceRetryDeletionProcedure:
+			projectsServiceRetryDeletionHandler.ServeHTTP(w, r)
 		case ProjectsServiceGetProcedure:
 			projectsServiceGetHandler.ServeHTTP(w, r)
 		case ProjectsServiceUpdateMetaProcedure:
@@ -311,6 +361,14 @@ func (UnimplementedProjectsServiceHandler) Create(context.Context, *connect.Requ
 
 func (UnimplementedProjectsServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.Delete is not implemented"))
+}
+
+func (UnimplementedProjectsServiceHandler) ListDeletions(context.Context, *connect.Request[v1.ListDeletionsRequest]) (*connect.Response[v1.ListDeletionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.ListDeletions is not implemented"))
+}
+
+func (UnimplementedProjectsServiceHandler) RetryDeletion(context.Context, *connect.Request[v1.RetryDeletionRequest]) (*connect.Response[v1.RetryDeletionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.RetryDeletion is not implemented"))
 }
 
 func (UnimplementedProjectsServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {

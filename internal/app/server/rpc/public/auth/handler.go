@@ -14,6 +14,7 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
+	"github.com/pug-sh/pug/internal/core/instance"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -38,14 +39,14 @@ type server struct {
 	oauthCfg coreoauth.Config
 }
 
-func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool) (*server, error) {
+func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool, instancePolicy instance.Policy) (*server, error) {
 	oauthCfg, err := coreoauth.LoadConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load oauth config: %w", err)
 	}
 	logExternalProviders(ctx, oauthCfg)
 
-	service, err := coreauth.NewService(ctx, pgRO, pgW, jwtKey, publisher, oauthCfg, demoEnabled)
+	service, err := coreauth.NewService(ctx, pgRO, pgW, jwtKey, publisher, oauthCfg, demoEnabled, instancePolicy)
 	if err != nil {
 		return nil, err
 	}

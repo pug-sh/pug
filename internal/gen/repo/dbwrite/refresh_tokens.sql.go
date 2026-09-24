@@ -114,6 +114,21 @@ func (q *Queries) GetRefreshTokenByHashForUpdate(ctx context.Context, tokenHash 
 	return i, err
 }
 
+const revokeCustomerRefreshTokens = `-- name: RevokeCustomerRefreshTokens :execrows
+update refresh_tokens
+set revoked_at = now()
+where customer_id = $1
+  and revoked_at is null
+`
+
+func (q *Queries) RevokeCustomerRefreshTokens(ctx context.Context, customerID string) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeCustomerRefreshTokens, customerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeRefreshTokenFamily = `-- name: RevokeRefreshTokenFamily :execrows
 update refresh_tokens
 set revoked_at = now()

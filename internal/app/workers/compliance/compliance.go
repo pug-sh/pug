@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	"github.com/pug-sh/pug/internal/deps/clickhouse"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
@@ -23,12 +26,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// The compliance worker hosts the slow, low-volume GDPR/DPDP jobs that share a
-// long-timeout consumer profile, distinct from the millisecond hot-path workers.
-// Erasure (§4.1) is the first tenant; the genuinely-async retention/TTL purge
-// (§4.5) adds a sibling consumer in StartWorker. Data-subject export (§4.2)
-// deliberately does NOT join here — it needs no async job and stays out of the
-// worker. The heavy ClickHouse mutations run here, never inline in an RPC.
+// The compliance worker hosts slow, low-volume jobs that share long processing
+// timeouts. Profile erasure and project purge use separate consumers so each can
+// keep its own delivery policy while sharing the existing compliance stream.
 
 func Run(ctx context.Context) error {
 	closeOtel, err := telemetry.SetupSDK(ctx)
@@ -66,12 +66,25 @@ func Run(ctx context.Context) error {
 		return err
 	}
 	defer natsClient.Close()
+	var purgeReplicas []driver.Conn
+	for raw := range strings.SplitSeq(strings.TrimSpace(os.Getenv("PUG_CLICKHOUSE_PURGE_REPLICA_URLS")), ",") {
+		url := strings.TrimSpace(raw)
+		if url == "" {
+			continue
+		}
+		replicaDB, err := clickhouse.NewFromConfig(ctx, &clickhouse.Config{URL: url})
+		if err != nil {
+			return fmt.Errorf("connect deletion purge replica: %w", err)
+		}
+		defer replicaDB.Close(context.WithoutCancel(ctx))
+		purgeReplicas = append(purgeReplicas, replicaDB.Conn)
+	}
 
 	slog.InfoContext(ctx, "Starting compliance worker...")
-	return StartWorker(ctx, pgW, chDB.Conn, natsClient)
+	return StartWorker(ctx, pgW, chDB.Conn, natsClient, purgeReplicas...)
 }
 
-func StartWorker(ctx context.Context, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+func StartWorker(ctx context.Context, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient, purgeReplicas ...driver.Conn) error {
 	svc := coreprofiles.NewService(pgW, ch, natsClient)
 
 	// One process, one consumer per compliance job. Retention (§4.5) slots in as an
@@ -79,7 +92,55 @@ func StartWorker(ctx context.Context, pgW *pgxpool.Pool, ch driver.Conn, natsCli
 	// 4.2 decision 2 — it needs no async job.
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return runEraseConsumer(ctx, svc, natsClient) })
+	purgeCH := ch
+	if len(purgeReplicas) > 0 {
+		purgeCH = purgeReplicas[0]
+		purgeReplicas = purgeReplicas[1:]
+	}
+	purgeExec := &projectPurgeExecutor{
+		purger: deletion.NewPurger(pgW, purgeCH, purgeReplicas...),
+		ledger: deletion.NewService(pgW),
+	}
+	g.Go(func() error { return runProjectPurgeConsumer(ctx, purgeExec, natsClient) })
 	return g.Wait()
+}
+
+type projectPurgeExecutor struct {
+	purger *deletion.Purger
+	ledger *deletion.Service
+}
+
+func (e *projectPurgeExecutor) ProcessOperation(ctx context.Context, operationID string) error {
+	return e.purger.ProcessOperation(ctx, operationID)
+}
+
+func (e *projectPurgeExecutor) MarkFailed(ctx context.Context, operationID string, cause error) error {
+	return e.ledger.MarkFailed(ctx, operationID, cause)
+}
+
+func runProjectPurgeConsumer(ctx context.Context, exec purgeExecutor, natsClient *natsworker.NATSClient) error {
+	consumerConfig, err := natsClient.GetConsumerConfigByName("compliance-project-purge-processor-durable")
+	if err != nil {
+		return fmt.Errorf("failed to get project purge consumer config: %w", err)
+	}
+	config := natsworker.WorkerConfig{
+		StreamName:        consumerConfig.StreamName,
+		ConsumerName:      consumerConfig.DurableName,
+		DurableName:       consumerConfig.DurableName,
+		FilterSubject:     consumerConfig.FilterSubject,
+		Concurrency:       1,
+		ProcessingTimeout: 30 * time.Minute,
+		MaxDeliver:        consumerConfig.MaxDeliver,
+		AckWait:           30 * time.Minute,
+		DLQSubject:        natsworker.DLQComplianceProjectPurgeSubject,
+	}
+	worker, err := natsworker.NewWorker(config, func(ctx context.Context, msg jetstream.Msg) error {
+		return handleProjectPurge(ctx, exec, msg.Data(), isLastDelivery(ctx, msg, config.MaxDeliver))
+	}, natsClient)
+	if err != nil {
+		return err
+	}
+	return worker.Start(ctx)
 }
 
 func runEraseConsumer(ctx context.Context, svc *coreprofiles.Service, natsClient *natsworker.NATSClient) error {
@@ -106,7 +167,7 @@ func runEraseConsumer(ctx context.Context, svc *coreprofiles.Service, natsClient
 	}
 
 	worker, err := natsworker.NewWorker(config, func(ctx context.Context, msg jetstream.Msg) error {
-		return handleErase(ctx, svc, msg.Data(), isLastEraseDelivery(ctx, msg, config.MaxDeliver))
+		return handleErase(ctx, svc, msg.Data(), isLastDelivery(ctx, msg, config.MaxDeliver))
 	}, natsClient)
 	if err != nil {
 		return err
@@ -115,18 +176,61 @@ func runEraseConsumer(ctx context.Context, svc *coreprofiles.Service, natsClient
 	return worker.Start(ctx)
 }
 
-// isLastEraseDelivery reports whether this is the final delivery before the
-// worker framework dead-letters the message. It mirrors the framework's own
-// last-delivery check so handleErase can record the failure on the ledger row
-// before the message is terminated. Unreadable metadata is treated as the last
-// delivery, matching the framework's conservative DLQ routing.
-func isLastEraseDelivery(ctx context.Context, msg jetstream.Msg, maxDeliver int) bool {
+// isLastDelivery reports whether this is the final delivery before the worker
+// framework dead-letters the message. It mirrors the framework's own check so a
+// handler can record a terminal failure on its ledger before termination.
+func isLastDelivery(ctx context.Context, msg jetstream.Msg, maxDeliver int) bool {
 	meta, err := msg.Metadata()
 	if err != nil {
-		slog.WarnContext(ctx, "failed reading erase message metadata; treating as last delivery", slogx.Error(err))
+		slog.WarnContext(ctx, "failed reading message metadata; treating as last delivery", slogx.Error(err))
 		return true
 	}
 	return int(meta.NumDelivered) >= maxDeliver
+}
+
+type purgeExecutor interface {
+	ProcessOperation(context.Context, string) error
+	MarkFailed(context.Context, string, error) error
+}
+
+func handleProjectPurge(ctx context.Context, exec purgeExecutor, data []byte, lastDelivery bool) error {
+	msg := &workercompliancev1.ProjectPurgeMessage{}
+	if err := proto.Unmarshal(data, msg); err != nil {
+		slog.ErrorContext(ctx, "failed to unmarshal project purge message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return natsworker.NewPermanentError(err).With("worker", "compliance-project-purge")
+	}
+	if err := protovalidate.Validate(msg); err != nil {
+		slog.ErrorContext(ctx, "project purge message failed validation", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return natsworker.NewPermanentError(err).With("worker", "compliance-project-purge")
+	}
+	err := exec.ProcessOperation(ctx, msg.GetOperationId())
+	if err == nil {
+		return nil
+	}
+	if notDue, ok := errors.AsType[*deletion.NotDueError](err); ok {
+		return natsworker.DeferFor(max(notDue.Delay, time.Millisecond))
+	}
+	if errors.Is(err, deletion.ErrNotFound) {
+		slog.ErrorContext(ctx, "project purge operation does not exist",
+			slog.String("operation_id", msg.GetOperationId()), slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return natsworker.NewPermanentError(err).
+			With("worker", "compliance-project-purge").
+			With("operation_id", msg.GetOperationId())
+	}
+	slog.ErrorContext(ctx, "project purge operation failed",
+		slog.String("operation_id", msg.GetOperationId()), slogx.Error(err))
+	telemetry.RecordError(ctx, err)
+	if lastDelivery {
+		if markErr := exec.MarkFailed(ctx, msg.GetOperationId(), err); markErr != nil {
+			slog.ErrorContext(ctx, "could not mark project purge failed before dead-lettering",
+				slog.String("operation_id", msg.GetOperationId()), slogx.Error(markErr))
+			telemetry.RecordError(ctx, markErr)
+		}
+	}
+	return fmt.Errorf("execute project purge: %w", err)
 }
 
 // erasureExecutor is the slice of the profiles service that handleErase drives,

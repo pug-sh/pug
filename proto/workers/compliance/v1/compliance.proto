@@ -27,3 +27,14 @@ message EraseMessage {
   string profile_id = 3;
   string external_id = 4;
 }
+
+// ProjectPurgeMessage schedules the project-bearing data for one durable
+// deletion operation. The worker loads the operation and its project steps from
+// PostgreSQL; the message carries only the stable operation identifier so NATS
+// redelivery cannot replay stale state.
+message ProjectPurgeMessage {
+  string operation_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
+}

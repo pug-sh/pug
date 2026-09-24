@@ -10,6 +10,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc/authzspec"
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/authz"
+	"github.com/pug-sh/pug/internal/core/instance"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 )
 
@@ -30,7 +31,11 @@ import (
 //
 // It runs as a Connect interceptor, i.e. AFTER the authn middleware has populated
 // the Principal in context, so the principal is always available here.
-func AuthzInterceptor(authorizer *authz.Authorizer, lookup memberRoleLookup) connect.UnaryInterceptorFunc {
+func AuthzInterceptor(authorizer *authz.Authorizer, lookup memberRoleLookup, policies ...instance.Policy) connect.UnaryInterceptorFunc {
+	policy := instance.OpenPolicy()
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			spec, ok := permissionRegistry[req.Spec().Procedure]
@@ -48,6 +53,12 @@ func AuthzInterceptor(authorizer *authz.Authorizer, lookup memberRoleLookup) con
 				telemetry.RecordError(ctx, err)
 				return nil, err
 			}
+			if spec.IsInstanceGated() {
+				if err := authorizeInstanceGated(ctx, policy); err != nil {
+					return nil, err
+				}
+				return next(ctx, req)
+			}
 			if !spec.IsRoleGated() {
 				return next(ctx, req)
 			}
@@ -57,6 +68,17 @@ func AuthzInterceptor(authorizer *authz.Authorizer, lookup memberRoleLookup) con
 			return next(ctx, req)
 		}
 	}
+}
+
+func authorizeInstanceGated(ctx context.Context, policy instance.Policy) error {
+	principal, err := MustGetPrincipalWithCustomer(ctx)
+	if err != nil {
+		return err
+	}
+	if !principal.Customer.EmailVerifiedAt.Valid || principal.Customer.DisabledAt.Valid || !policy.AllowsAdmin(principal.Customer.Email) {
+		return apperr.PermissionDenied(apperr.ReasonInstanceAdminRequired, "instance administrator required")
+	}
+	return nil
 }
 
 // authorizeRoleGated enforces one domainRoleGated entry. On the API-key path (no

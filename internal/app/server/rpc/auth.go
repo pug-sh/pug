@@ -200,8 +200,10 @@ func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 }
 
 // WithJWTAuth authenticates via JWT in the Authorization header.
-// Optionally accepts x-project-id header to populate Project; verifies the
-// customer is a member of the project's org via GetProjectByIDAndOrgMember.
+// Project-scoped procedures accept x-project-id to populate Project and verify
+// the customer is a member of its organization. Other procedures ignore the
+// global client header so a deleted or stale project selection cannot block
+// organization and instance administration.
 func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get("Authorization")
@@ -268,6 +270,22 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			}
 			return nil, unauthenticated(ctx, "invalid authorization")
 		}
+		if customer.DisabledAt.Valid {
+			return nil, unauthenticated(ctx, "invalid authorization")
+		}
+		if claims, ok := parsedJWT.Claims.(jwt.MapClaims); ok {
+			version := int64(0) // Tokens issued before this feature carry version zero.
+			if raw, exists := claims["sv"]; exists {
+				parsed, ok := raw.(float64)
+				if !ok || parsed < 0 || parsed != float64(int64(parsed)) {
+					return nil, unauthenticated(ctx, "invalid authorization")
+				}
+				version = int64(parsed)
+			}
+			if version != customer.SessionVersion {
+				return nil, unauthenticated(ctx, "invalid authorization")
+			}
+		}
 
 		principal := &Principal{
 			AuthType: AuthTypeJWT,
@@ -275,8 +293,9 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			JWTID:    jwtID,
 		}
 
-		// Optionally populate Project if x-project-id header is provided
-		if projectID := req.Header.Get(HeaderProjectID); projectID != "" {
+		// Populate Project only for procedures whose authorization scope uses it.
+		spec, procedureKnown := permissionRegistry[req.URL.Path]
+		if projectID := req.Header.Get(HeaderProjectID); projectID != "" && procedureKnown && spec.UsesProject() {
 			project, err := queries.GetProjectByIDAndOrgMember(ctx, dbread.GetProjectByIDAndOrgMemberParams{
 				ID:         projectID,
 				CustomerID: customerID,

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	workercompliancev1 "github.com/pug-sh/pug/internal/gen/proto/workers/compliance/v1"
@@ -181,8 +183,80 @@ func TestHandleErase_Success(t *testing.T) {
 	}
 }
 
+type fakePurgeExecutor struct {
+	processErr   error
+	markErr      error
+	processedID  string
+	markedID     string
+	markedCause  error
+	processCalls int
+	markCalls    int
+}
+
+func (f *fakePurgeExecutor) ProcessOperation(_ context.Context, operationID string) error {
+	f.processCalls++
+	f.processedID = operationID
+	return f.processErr
+}
+
+func (f *fakePurgeExecutor) MarkFailed(_ context.Context, operationID string, cause error) error {
+	f.markCalls++
+	f.markedID = operationID
+	f.markedCause = cause
+	return f.markErr
+}
+
+func mustMarshalPurge(t *testing.T, operationID string) []byte {
+	t.Helper()
+	data, err := proto.Marshal(&workercompliancev1.ProjectPurgeMessage{OperationId: proto.String(operationID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestHandleProjectPurgeDefersUntilCancellationWindowEnds(t *testing.T) {
+	exec := &fakePurgeExecutor{processErr: &deletion.NotDueError{Delay: 23 * time.Hour}}
+	err := handleProjectPurge(context.Background(), exec, mustMarshalPurge(t, "operation-1"), false)
+	deferred, ok := errors.AsType[*natsworker.DeferredError](err)
+	if !ok || deferred.Delay() != 23*time.Hour {
+		t.Fatalf("handleProjectPurge error = %v, want 23h DeferredError", err)
+	}
+	if exec.markCalls != 0 {
+		t.Fatalf("MarkFailed calls = %d, want 0", exec.markCalls)
+	}
+}
+
+func TestHandleProjectPurgeMarksFinalFailure(t *testing.T) {
+	cause := errors.New("clickhouse unavailable")
+	exec := &fakePurgeExecutor{processErr: cause}
+	err := handleProjectPurge(context.Background(), exec, mustMarshalPurge(t, "operation-1"), true)
+	if err == nil || natsworker.IsPermanentError(err) {
+		t.Fatalf("handleProjectPurge error = %v, want retryable failure", err)
+	}
+	if exec.markCalls != 1 || exec.markedID != "operation-1" || !errors.Is(exec.markedCause, cause) {
+		t.Fatalf("failure record = calls:%d id:%q cause:%v", exec.markCalls, exec.markedID, exec.markedCause)
+	}
+}
+
+func TestHandleProjectPurgeMissingOperationIsPermanent(t *testing.T) {
+	exec := &fakePurgeExecutor{processErr: deletion.ErrNotFound}
+	err := handleProjectPurge(context.Background(), exec, mustMarshalPurge(t, "missing"), false)
+	if !natsworker.IsPermanentError(err) || exec.markCalls != 0 {
+		t.Fatalf("missing operation error = %v, mark calls = %d", err, exec.markCalls)
+	}
+}
+
+func TestHandleProjectPurgeRejectsInvalidMessage(t *testing.T) {
+	exec := &fakePurgeExecutor{}
+	err := handleProjectPurge(context.Background(), exec, mustMarshalPurge(t, ""), false)
+	if !natsworker.IsPermanentError(err) || exec.processCalls != 0 {
+		t.Fatalf("invalid message error = %v, process calls = %d", err, exec.processCalls)
+	}
+}
+
 // fakeMsg implements jetstream.Msg via interface embedding; only Metadata is real
-// (the other methods are never called by isLastEraseDelivery and would panic).
+// (the other methods are never called by isLastDelivery and would panic).
 type fakeMsg struct {
 	jetstream.Msg
 	meta    *jetstream.MsgMetadata
@@ -197,7 +271,7 @@ func (m fakeMsg) Metadata() (*jetstream.MsgMetadata, error) { return m.meta, m.m
 // while retries continue) or never (a stalled request stuck at 'processing'
 // forever). Unreadable metadata is conservatively the last delivery, matching the
 // framework's DLQ routing.
-func TestIsLastEraseDelivery(t *testing.T) {
+func TestIsLastDelivery(t *testing.T) {
 	const maxDeliver = 3
 	cases := []struct {
 		name string
@@ -211,8 +285,8 @@ func TestIsLastEraseDelivery(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isLastEraseDelivery(context.Background(), tc.msg, maxDeliver); got != tc.want {
-				t.Errorf("isLastEraseDelivery = %v, want %v", got, tc.want)
+			if got := isLastDelivery(context.Background(), tc.msg, maxDeliver); got != tc.want {
+				t.Errorf("isLastDelivery = %v, want %v", got, tc.want)
 			}
 		})
 	}
