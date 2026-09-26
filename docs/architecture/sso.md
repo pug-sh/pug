@@ -399,7 +399,7 @@ refused session refresh.
 
 - Auto-joined people get a badge: `via acme.com`.
 - For an auto-joined person, the remove dialog adds one line: "While auto-join
-  is on, they rejoin within a day, at their next session refresh or SSO
+  is on, they rejoin at their next session refresh or SSO
   sign-in." (see "Removal doesn't stick yet").
 
 ## Rules
