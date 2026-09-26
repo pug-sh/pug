@@ -121,6 +121,7 @@ func buildPolicyRules() [][]string {
 		ResourceInvitation,
 		ResourceEmailProvider,
 		ResourceProject,
+		ResourceDomain,
 	)...)
 
 	// admin — minting and revoking a project's API keys. Explicit rather than

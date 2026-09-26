@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"time"
 
 	"github.com/jackc/pgerrcode"
@@ -96,18 +97,7 @@ const (
 	maxInviteSendsPerWindow = 10
 	inviteSendWindow        = 24 * time.Hour
 
-	// Postgres constraint / index names used to disambiguate UniqueViolation
-	// errors. Kept narrow on purpose: catching a generic "unique violation"
-	// would mis-translate any future constraint added to these tables.
-	//
-	// These names are load-bearing: if either is renamed in a future migration
-	// without updating this constant, the narrow translation silently falls
-	// through and ErrAlreadyMember / ErrInviteAlreadyPending stop firing.
-	// Sources:
-	//   - org_members_pkey: auto-generated PK in schema/postgres/migrations/003_create_org_members.sql
-	//   - org_invitations_org_email_pending: named partial index in
-	//     schema/postgres/migrations/004_create_org_invitations.sql
-	orgMembersPKey              = "org_members_pkey"
+	// Must match migration 004's index name, or ErrInviteAlreadyPending stops firing.
 	orgInvitationsPendingUnique = "org_invitations_org_email_pending"
 )
 
@@ -121,6 +111,7 @@ type Service struct {
 	// member removal / role change, so a stale entry can never outlive a
 	// privilege change beyond memberRoleCacheTTL. Optional: nil disables caching.
 	roleCache *goredis.Client
+	resolver  TXTResolver
 }
 
 type JobPublisher interface {
@@ -143,6 +134,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher) *
 		write:     dbwrite.New(pgW),
 		pgW:       pgW,
 		publisher: publisher,
+		resolver:  net.DefaultResolver,
 	}
 }
 
@@ -158,10 +150,8 @@ func NewServiceWithRoleCache(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher Jo
 }
 
 // CreateOrgWithDefaultsInTx performs the org + admin member + default project
-// inserts inside an existing transaction. Caller owns the tx lifecycle.
-// Used by auth.CompleteMagicLink (which provisions a default org for a brand-new
-// passwordless account in the same tx that consumes the magic-link token) and by
-// CreateOrgWithDefaults (which owns its own tx).
+// inserts inside an existing transaction. Caller owns the tx lifecycle, and checks
+// OrgCreationAllowedInTx first. Used by auth.FinishSignup and CreateOrgWithDefaults.
 func CreateOrgWithDefaultsInTx(
 	ctx context.Context,
 	w *dbwrite.Queries,
@@ -217,7 +207,23 @@ func (s *Service) CreateOrgWithDefaults(
 		}
 	}()
 
-	org, err := CreateOrgWithDefaultsInTx(ctx, dbwrite.New(tx), customerID, displayName, "")
+	w := dbwrite.New(tx)
+	// An unknown customer has no email to restrict; the member insert's FK rejects it.
+	email, err := w.GetCustomerEmailByID(ctx, customerID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to get customer email for org create", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+	allowed, err := OrgCreationAllowedInTx(ctx, w, customerID, email)
+	if err != nil {
+		return dbwrite.Org{}, err
+	}
+	if !allowed {
+		return dbwrite.Org{}, ErrOrgCreationRestricted
+	}
+
+	org, err := CreateOrgWithDefaultsInTx(ctx, w, customerID, displayName, "")
 	if err != nil {
 		return dbwrite.Org{}, err
 	}
@@ -608,7 +614,7 @@ func (s *Service) InviteMemberWithRole(ctx context.Context, orgID, inviterID, em
 	}()
 
 	w := dbwrite.New(tx)
-	storageToken, err := newInviteToken()
+	storageToken, err := newRandomToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate invite storage token", slogx.Error(err),
 			slog.String("org_id", orgID))
@@ -701,7 +707,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 		return InviteDispatch{}, ErrInviteSendLimit
 	}
 
-	storageToken, err := newInviteToken()
+	storageToken, err := newRandomToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate invite storage token", slogx.Error(err),
 			slog.String("invitation_id", invitationID))
@@ -819,7 +825,7 @@ func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.O
 	return s.read.GetOrgInvitationsByOrgID(ctx, orgID)
 }
 
-func newInviteToken() (string, error) {
+func newRandomToken() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -831,7 +837,7 @@ func newInviteToken() (string, error) {
 // The latter rides the job as its dispatch id: a resend keeps the invitation id,
 // so only a per-send value keeps the provider idempotency key from colliding.
 func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries, inv dbwrite.OrgInvitation) (string, string, error) {
-	rawToken, err := newInviteToken()
+	rawToken, err := newRandomToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate invite token", slogx.Error(err),
 			slog.String("org_id", inv.OrgID), slog.String("invitation_id", inv.ID))

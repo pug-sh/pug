@@ -36,7 +36,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 
 	// --- dashboard.orgs.v1.OrgsService ---
 	"/dashboard.orgs.v1.OrgsService/List":              authzspec.Self("returns only the caller's orgs"),
-	"/dashboard.orgs.v1.OrgsService/Create":            authzspec.Self("any authenticated customer may create an org"),
+	"/dashboard.orgs.v1.OrgsService/Create":            authzspec.Self("any authenticated customer may create an org, unless their email's domain restricts it (enforced in core)"),
 	"/dashboard.orgs.v1.OrgsService/Leave":             authzspec.Self("self-service; last-admin/last-member guards live in the service"),
 	"/dashboard.orgs.v1.OrgsService/Get":               authzspec.OrgGated(authz.ResourceOrg, authz.ActionRead, "non-members are denied identically whether or not the org exists, so existence stays hidden"),
 	"/dashboard.orgs.v1.OrgsService/ListMembers":       authzspec.OrgGated(authz.ResourceMember, authz.ActionRead),
@@ -47,6 +47,12 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.orgs.v1.OrgsService/ListInvitations":   authzspec.OrgGated(authz.ResourceInvitation, authz.ActionRead),
 	"/dashboard.orgs.v1.OrgsService/RemoveMember":      authzspec.OrgGated(authz.ResourceMember, authz.ActionDelete),
 	"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":  authzspec.OrgGated(authz.ResourceMember, authz.ActionUpdate),
+	"/dashboard.orgs.v1.OrgsService/ListDomains":       authzspec.OrgGated(authz.ResourceDomain, authz.ActionRead, "admin-only: a pending domain's TXT value is a live claim token"),
+	"/dashboard.orgs.v1.OrgsService/SetDomainSettings": authzspec.OrgGated(authz.ResourceDomain, authz.ActionUpdate),
+	"/dashboard.orgs.v1.OrgsService/AddDomain":         authzspec.OrgGated(authz.ResourceDomain, authz.ActionCreate),
+	"/dashboard.orgs.v1.OrgsService/VerifyDomain":      authzspec.OrgGated(authz.ResourceDomain, authz.ActionUpdate),
+	"/dashboard.orgs.v1.OrgsService/RemoveDomain":      authzspec.OrgGated(authz.ResourceDomain, authz.ActionDelete),
+	"/dashboard.orgs.v1.OrgsService/UpdateDomain":      authzspec.OrgGated(authz.ResourceDomain, authz.ActionUpdate),
 
 	// --- dashboard.projects.v1.ProjectsService ---
 	"/dashboard.projects.v1.ProjectsService/BatchGet":             authzspec.OrgGated(authz.ResourceProject, authz.ActionRead),

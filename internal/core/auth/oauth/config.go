@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"slices"
 
 	appconfig "github.com/pug-sh/pug/internal/config"
 )
@@ -29,6 +30,24 @@ func (c Config) IsProviderEnabled(name ProviderName) bool {
 		}
 	}
 	return false
+}
+
+// ProvidersFor returns the providers that can prove domain: those whose emailDomains
+// list it or, when none does, Google.
+func (c Config) ProvidersFor(domain string) []ProviderConfig {
+	var listed, google []ProviderConfig
+	for _, p := range c.Providers {
+		switch {
+		case slices.Contains(p.EmailDomains, domain):
+			listed = append(listed, p)
+		case appconfig.IsGoogleIssuer(p.IssuerURL):
+			google = append(google, p)
+		}
+	}
+	if len(listed) > 0 {
+		return listed
+	}
+	return google
 }
 
 // TestConfig builds OAuth config for unit tests.

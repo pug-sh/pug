@@ -390,6 +390,7 @@ func init() {
 	rootCmd.AddCommand(cronCmd)
 
 	rootCmd.AddCommand(billingCmd)
+	rootCmd.AddCommand(domainsCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)

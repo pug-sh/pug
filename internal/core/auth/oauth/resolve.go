@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -211,6 +213,11 @@ func resolveIdentityWithQueries(ctx context.Context, r *dbread.Queries, w *dbwri
 		return resolveResult{}, err
 	}
 
+	// Only email lookups need this: lower() folds some runes into ASCII (the Kelvin sign into k).
+	if strings.ContainsFunc(ident.Email(), func(r rune) bool { return r >= utf8.RuneSelf }) {
+		slog.WarnContext(ctx, "oidc sign-in refused: non-ASCII email", slog.String("provider", string(provider)))
+		return resolveResult{}, ErrNonASCIIEmail
+	}
 	if customer, err := r.GetCustomerByEmail(ctx, ident.Email()); err == nil {
 		if err := createIdentity(ctx, w, customer.ID, provider, ident.Subject()); err != nil {
 			return resolveResult{}, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
 
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
@@ -73,10 +74,8 @@ func toRPCOrgWithRole(ctx context.Context, row dbread.GetOrgWithRoleByIDAndCusto
 	}
 }
 
-// toRPCRole maps a validated coreorgs.Role to its proto enum equivalent. The
-// empty Role (returned by roleFromDBJoinRow on drift) maps to UNSPECIFIED.
-// Inputs are already validated by ParseRole / roleFromProto upstream so no
-// further logging or error path is needed here.
+// toRPCRole maps a coreorgs.Role to its proto enum equivalent. Anything else,
+// such as the empty Role roleFromDBJoinRow returns on drift, maps to UNSPECIFIED.
 func toRPCRole(role coreorgs.Role) orgsv1.OrgRole {
 	switch role {
 	case coreorgs.RoleAdmin:
@@ -129,5 +128,48 @@ func toRPCInvitationRO(ctx context.Context, inv dbread.OrgInvitation) *orgsv1.Or
 		OrgId:     proto.String(inv.OrgID),
 		Status:    toRPCInvitationStatus(ctx, inv.Status).Enum(),
 		Role:      toRPCRole(roleFromDBJoinRow(ctx, inv.Role)).Enum(),
+	}
+}
+
+func optionalString(t pgtype.Text) *string {
+	if !t.Valid {
+		return nil
+	}
+	return proto.String(t.String)
+}
+
+func toRPCDomainSettings(s coreorgs.DomainSettings) *orgsv1.DomainSettings {
+	return &orgsv1.DomainSettings{
+		AutoJoinRole:         toRPCRole(s.AutoJoinRole).Enum(),
+		MembersCanCreateOrgs: proto.Bool(s.MembersCanCreateOrgs),
+	}
+}
+
+func toRPCDomain(d coreorgs.Domain) *orgsv1.OrgDomain {
+	status := orgsv1.DomainStatus_DOMAIN_STATUS_PENDING
+	var verifiedAt string
+	if d.Verified() {
+		status = orgsv1.DomainStatus_DOMAIN_STATUS_VERIFIED
+		verifiedAt = d.VerifiedAt.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	method := orgsv1.DomainVerificationMethod_DOMAIN_VERIFICATION_METHOD_UNSPECIFIED
+	switch d.VerificationMethod {
+	case coreorgs.VerificationMethodDNS:
+		method = orgsv1.DomainVerificationMethod_DOMAIN_VERIFICATION_METHOD_DNS
+	case coreorgs.VerificationMethodOperator:
+		method = orgsv1.DomainVerificationMethod_DOMAIN_VERIFICATION_METHOD_OPERATOR
+	}
+	return &orgsv1.OrgDomain{
+		Id:                             proto.String(d.ID),
+		Domain:                         proto.String(d.Domain),
+		Status:                         status.Enum(),
+		VerificationMethod:             method.Enum(),
+		TxtRecordName:                  proto.String(d.TXTRecordName()),
+		TxtRecordValue:                 proto.String(d.TXTRecordValue()),
+		VerifiedAt:                     proto.String(verifiedAt),
+		OrgCreationRestrictedElsewhere: proto.Bool(d.OrgCreationRestrictedElsewhere),
+		RequireSso:                     proto.Bool(d.RequireSSO),
+		SsoSeen:                        proto.Bool(d.SSOSeen),
+		SsoRequiredElsewhere:           proto.Bool(d.SSORequiredElsewhere),
 	}
 }

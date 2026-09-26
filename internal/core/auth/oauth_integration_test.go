@@ -50,7 +50,7 @@ func TestCompleteOIDCSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	session, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "Asia/Kolkata")
+	session, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "", "Asia/Kolkata")
 	if err != nil {
 		t.Fatalf("CompleteOIDCSignIn: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCompleteOIDCSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, ""); err != nil {
+	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "", ""); err != nil {
 		t.Fatalf("CompleteOIDCSignIn: %v", err)
 	}
 	// Linking a verified OIDC identity must NOT clear the existing password.
@@ -152,7 +152,7 @@ func TestCompleteOIDCSignIn_RejectsUnverifiedEmail(t *testing.T) {
 	registry := coreoauth.NewRegistry(mockOAuthProvider{err: coreoauth.ErrUnverifiedEmail})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	_, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "")
+	_, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "", "")
 	if !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
 		t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
 	}
@@ -176,12 +176,12 @@ func TestCompleteOIDCSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
 	// First sign-in provisions the account with a Kolkata reporting zone.
-	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "Asia/Kolkata"); err != nil {
+	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "", "Asia/Kolkata"); err != nil {
 		t.Fatalf("first CompleteOIDCSignIn: %v", err)
 	}
 	// A returning sign-in carrying a *different* browser zone must neither
 	// re-provision nor reset the existing project's reporting zone.
-	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "America/New_York"); err != nil {
+	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "", "America/New_York"); err != nil {
 		t.Fatalf("second CompleteOIDCSignIn: %v", err)
 	}
 

@@ -17,7 +17,7 @@ set consumed_at = now()
 where id = $1
   and consumed_at is null
   and revoked_at is null
-returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time
+returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain
 `
 
 // Marks the current token rotated. Gated on consumed_at is null so a lost race
@@ -34,6 +34,7 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, id string) (RefreshTo
 		&i.ConsumedAt,
 		&i.RevokedAt,
 		&i.CreateTime,
+		&i.ProvenDomain,
 	)
 	return i, err
 }
@@ -44,24 +45,27 @@ insert into refresh_tokens (
   customer_id,
   family_id,
   token_hash,
-  expires_at
+  expires_at,
+  proven_domain
 )
 values (
   $1,
   $2,
   $3,
   $4,
-  $5
+  $5,
+  $6
 )
-returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time
+returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain
 `
 
 type CreateRefreshTokenParams struct {
-	ID         string
-	CustomerID string
-	FamilyID   string
-	TokenHash  string
-	ExpiresAt  pgtype.Timestamptz
+	ID           string
+	CustomerID   string
+	FamilyID     string
+	TokenHash    string
+	ExpiresAt    pgtype.Timestamptz
+	ProvenDomain pgtype.Text
 }
 
 func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error) {
@@ -71,6 +75,7 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		arg.FamilyID,
 		arg.TokenHash,
 		arg.ExpiresAt,
+		arg.ProvenDomain,
 	)
 	var i RefreshToken
 	err := row.Scan(
@@ -82,12 +87,13 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		&i.ConsumedAt,
 		&i.RevokedAt,
 		&i.CreateTime,
+		&i.ProvenDomain,
 	)
 	return i, err
 }
 
 const getRefreshTokenByHashForUpdate = `-- name: GetRefreshTokenByHashForUpdate :one
-select id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time
+select id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain
 from refresh_tokens
 where token_hash = $1
 for update
@@ -110,6 +116,7 @@ func (q *Queries) GetRefreshTokenByHashForUpdate(ctx context.Context, tokenHash 
 		&i.ConsumedAt,
 		&i.RevokedAt,
 		&i.CreateTime,
+		&i.ProvenDomain,
 	)
 	return i, err
 }

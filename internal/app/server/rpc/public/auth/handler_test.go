@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -18,6 +20,7 @@ import (
 // unit-tested without a database. Only the methods under test return errors.
 type fakeAuthService struct {
 	signInErr       error
+	magicLinkErr    error
 	completeErr     error
 	completeOIDCErr error
 	refreshErr      error
@@ -25,20 +28,25 @@ type fakeAuthService struct {
 	demoSession     coreauth.DemoSession
 	demoErr         error
 	onOIDC          func(coreoauth.ProviderName, coreoauth.AuthorizationCode)
+	oidcInvite      *string
+	session         coreauth.Session
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.signInErr
 }
-func (f fakeAuthService) RequestMagicLink(context.Context, string) error { return nil }
+func (f fakeAuthService) RequestMagicLink(context.Context, string) error { return f.magicLinkErr }
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
-	return coreauth.Session{}, f.completeErr
+	return f.session, f.completeErr
 }
-func (f fakeAuthService) CompleteOIDCSignIn(_ context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, _ string) (coreauth.Session, error) {
+func (f fakeAuthService) CompleteOIDCSignIn(_ context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, inviteToken, _ string) (coreauth.Session, error) {
 	if f.onOIDC != nil {
 		f.onOIDC(provider, code)
 	}
-	return coreauth.Session{}, f.completeOIDCErr
+	if f.oidcInvite != nil {
+		*f.oidcInvite = inviteToken
+	}
+	return f.session, f.completeOIDCErr
 }
 func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.refreshErr
@@ -115,7 +123,10 @@ func TestCompleteOIDCErrorMapping(t *testing.T) {
 		{"invalid credential", coreoauth.ErrInvalidCredential, connect.CodeUnauthenticated, apperr.ReasonOAuthCredentialInvalid},
 		{"provider disabled", coreoauth.ErrOAuthProviderDisabled, connect.CodeInvalidArgument, apperr.ReasonOAuthProviderDisabled},
 		{"unverified email", coreoauth.ErrUnverifiedEmail, connect.CodeInvalidArgument, apperr.ReasonInvalidArgument},
+		{"non-ASCII email", coreoauth.ErrNonASCIIEmail, connect.CodeInvalidArgument, apperr.ReasonInvalidArgument},
 		{"provider unavailable", coreoauth.ErrProviderUnavailable, connect.CodeUnavailable, apperr.ReasonOAuthProviderUnavailable},
+		{"invalid invite", coreauth.ErrInvalidToken, connect.CodeInvalidArgument, apperr.ReasonInvalidToken},
+		{"invite for another email", coreauth.ErrInviteWrongEmail, connect.CodePermissionDenied, apperr.ReasonInvitationWrongEmail},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &server{service: fakeAuthService{completeOIDCErr: tt.err}}
@@ -162,16 +173,107 @@ func validCompleteOIDCRequest() *connect.Request[authv1.CompleteOIDCSignInReques
 func TestCompleteOIDCForwardsAuthorizationCodeValues(t *testing.T) {
 	var gotProvider coreoauth.ProviderName
 	var gotCode coreoauth.AuthorizationCode
+	var gotInvite string
 	s := &server{service: fakeAuthService{onOIDC: func(provider coreoauth.ProviderName, code coreoauth.AuthorizationCode) {
 		gotProvider, gotCode = provider, code
-	}}}
+	}, oidcInvite: &gotInvite}}
 	req := validCompleteOIDCRequest()
+	req.Msg.InviteToken = proto.String("invite-token")
 
 	if _, err := s.CompleteOIDCSignIn(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
 	if gotProvider != "company_sso" || gotCode.Code != "authorization-code" || gotCode.CodeVerifier != "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~" || gotCode.RedirectURI != "https://pug.example.com/oauth/callback" || gotCode.Nonce != "request-nonce" {
 		t.Fatalf("provider = %q, code = %+v", gotProvider, gotCode)
+	}
+	if gotInvite != "invite-token" {
+		t.Fatalf("invite token = %q", gotInvite)
+	}
+}
+
+// Every refused path carries the domain and the providers that can sign it in, so the
+// frontend can offer them. Refresh is Unauthenticated: the frontend ends a session only
+// on that code.
+func TestSSORequiredMapping(t *testing.T) {
+	cfg := coreoauth.Config{Providers: []coreoauth.ProviderConfig{
+		{ID: "google", Type: coreoauth.ProviderTypeOIDC, DisplayName: "Google", ClientID: "g", IssuerURL: "https://accounts.google.com"},
+		{ID: "okta", Type: coreoauth.ProviderTypeOIDC, DisplayName: "Acme SSO", ClientID: "o", IssuerURL: "https://acme.okta.com", EmailDomains: []string{"acme.com"}},
+		{ID: "other", Type: coreoauth.ProviderTypeOIDC, DisplayName: "Other", ClientID: "x", IssuerURL: "https://login.example.com"},
+	}}
+	for _, tt := range []struct {
+		domain    string
+		invite    bool
+		providers []string
+	}{
+		{"acme.com", true, []string{"okta"}},
+		{"globex.com", false, []string{"google"}},
+	} {
+		refused := &coreorgs.SSORequiredError{Domain: tt.domain, Invite: tt.invite}
+		s := &server{oauthCfg: cfg, service: fakeAuthService{
+			signInErr: refused, magicLinkErr: refused, completeErr: refused, completeOIDCErr: refused, refreshErr: refused,
+		}}
+		for name, call := range map[string]func() error{
+			"SignInWithEmail": func() error {
+				_, err := s.SignInWithEmail(context.Background(), connect.NewRequest(&authv1.SignInWithEmailRequest{}))
+				return err
+			},
+			"RequestMagicLink": func() error {
+				_, err := s.RequestMagicLink(context.Background(), connect.NewRequest(&authv1.RequestMagicLinkRequest{}))
+				return err
+			},
+			"CompleteMagicLink": func() error {
+				_, err := s.CompleteMagicLink(context.Background(), connect.NewRequest(&authv1.CompleteMagicLinkRequest{}))
+				return err
+			},
+			"CompleteOIDCSignIn": func() error {
+				_, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
+				return err
+			},
+			"RefreshSession": func() error {
+				_, err := s.RefreshSession(context.Background(), connect.NewRequest(&authv1.RefreshSessionRequest{}))
+				return err
+			},
+		} {
+			want := connect.CodeFailedPrecondition
+			if name == "RefreshSession" {
+				want = connect.CodeUnauthenticated
+			}
+			err := call()
+			ae, ok := errors.AsType[*apperr.Error](err)
+			if !ok || ae.Code() != want || ae.Reason() != apperr.ReasonSSORequired {
+				t.Fatalf("%s(%s): err = %v, want %v / SSO_REQUIRED", name, tt.domain, err, want)
+			}
+			var detail *authv1.SSORequired
+			for _, d := range ae.Details() {
+				if sr, ok := d.(*authv1.SSORequired); ok {
+					detail = sr
+				}
+			}
+			var ids []string
+			for _, p := range detail.GetProviders() {
+				ids = append(ids, p.GetId())
+			}
+			if detail.GetDomain() != tt.domain || detail.GetInvite() != tt.invite || !slices.Equal(ids, tt.providers) {
+				t.Fatalf("%s(%s): detail = %v, want invite %v and providers %v", name, tt.domain, detail, tt.invite, tt.providers)
+			}
+		}
+	}
+}
+
+// A domain no configured provider can sign in is still refused, with none to offer.
+func TestSSORequiredWithNoProviderForTheDomain(t *testing.T) {
+	cfg := coreoauth.Config{Providers: []coreoauth.ProviderConfig{
+		{ID: "okta", Type: coreoauth.ProviderTypeOIDC, DisplayName: "Acme SSO", ClientID: "o", IssuerURL: "https://acme.okta.com", EmailDomains: []string{"acme.com"}},
+	}}
+	s := &server{oauthCfg: cfg, service: fakeAuthService{signInErr: &coreorgs.SSORequiredError{Domain: "globex.com"}}}
+	_, err := s.SignInWithEmail(context.Background(), connect.NewRequest(&authv1.SignInWithEmailRequest{}))
+	ae, ok := errors.AsType[*apperr.Error](err)
+	if !ok || ae.Reason() != apperr.ReasonSSORequired {
+		t.Fatalf("err = %v, want SSO_REQUIRED", err)
+	}
+	detail, ok := ae.Details()[0].(*authv1.SSORequired)
+	if !ok || detail.GetDomain() != "globex.com" || len(detail.GetProviders()) != 0 {
+		t.Fatalf("details = %v, want globex.com with no providers", ae.Details())
 	}
 }
 
@@ -418,5 +520,25 @@ func TestDemoSignInSuccess(t *testing.T) {
 	}
 	if got := resp.Msg.GetProjectId(); got != "proj-demo" {
 		t.Errorf("project id = %q, want %q", got, "proj-demo")
+	}
+}
+
+func TestSignInResponsesCarryJoinedOrgs(t *testing.T) {
+	joined := []string{"org-a", "org-b"}
+	s := &server{service: fakeAuthService{session: coreauth.Session{AccessToken: "a", RefreshToken: "r", JoinedOrgIDs: joined}}}
+
+	oidc, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := oidc.Msg.GetJoinedOrgIds(); strings.Join(got, ",") != "org-a,org-b" {
+		t.Fatalf("oidc joined_org_ids = %v", got)
+	}
+	link, err := s.CompleteMagicLink(context.Background(), connect.NewRequest(&authv1.CompleteMagicLinkRequest{Token: proto.String("t")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := link.Msg.GetJoinedOrgIds(); strings.Join(got, ",") != "org-a,org-b" {
+		t.Fatalf("magic link joined_org_ids = %v", got)
 	}
 }

@@ -141,6 +141,37 @@ func TestWithIdentityTx_LinksExistingEmailPasswordCustomer(t *testing.T) {
 	}
 }
 
+// lower() folds the Kelvin sign into k, so a new identity with a non-ASCII email must
+// neither link nor sign up. One already linked by sub keeps signing in.
+func TestWithIdentityTx_NonASCIIEmail(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-bob", Email: "bob@kpmg.com"}); err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	for _, email := range []string{"bob@\u212apmg.com", "renée@example.com"} {
+		ident := mustVerified(t, coreoauth.Claims{Subject: "sub-" + email, Email: email, EmailVerified: true})
+		if _, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, ident, nil); !errors.Is(err, coreoauth.ErrNonASCIIEmail) {
+			t.Fatalf("%s: err = %v, want ErrNonASCIIEmail", email, err)
+		}
+	}
+
+	if _, err := write.CreateCustomerIdentity(ctx, dbwrite.CreateCustomerIdentityParams{
+		CustomerID: "cust-bob", Provider: string(testProviderName), ProviderSubject: "sub-bob",
+	}); err != nil {
+		t.Fatalf("CreateCustomerIdentity: %v", err)
+	}
+	linked := mustVerified(t, coreoauth.Claims{Subject: "sub-bob", Email: "bób@kpmg.com", EmailVerified: true})
+	if customerID, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, linked, nil); err != nil || strings.TrimSpace(customerID) != "cust-bob" {
+		t.Fatalf("linked identity = %q, %v; want cust-bob", customerID, err)
+	}
+}
+
 func TestWithIdentityTx_CreatesNewCustomer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

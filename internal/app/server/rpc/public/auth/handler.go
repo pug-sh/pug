@@ -14,7 +14,9 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 	"github.com/pug-sh/pug/internal/slogx"
 	"google.golang.org/protobuf/proto"
@@ -27,7 +29,7 @@ type authService interface {
 	SignInWithEmail(ctx context.Context, email, password string) (coreauth.Session, error)
 	RequestMagicLink(ctx context.Context, email string) error
 	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
-	CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, reportingTimezone string) (coreauth.Session, error)
+	CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, inviteToken, reportingTimezone string) (coreauth.Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
 	RevokeSession(ctx context.Context, refreshToken string) error
 	DemoSignIn(ctx context.Context) (coreauth.DemoSession, error)
@@ -84,14 +86,18 @@ func (s *server) GetAuthConfig(
 	context.Context,
 	*connect.Request[authv1.GetAuthConfigRequest],
 ) (*connect.Response[authv1.GetAuthConfigResponse], error) {
-	providers := make([]*authv1.AuthProviderConfig, 0, len(s.oauthCfg.Providers))
-	for _, provider := range s.oauthCfg.Providers {
+	return connect.NewResponse(&authv1.GetAuthConfigResponse{Providers: toRPCProviders(s.oauthCfg.Providers)}), nil
+}
+
+func toRPCProviders(providers []coreoauth.ProviderConfig) []*authv1.AuthProviderConfig {
+	out := make([]*authv1.AuthProviderConfig, 0, len(providers))
+	for _, provider := range providers {
 		providerType, ok := authProviderTypes[provider.Type]
 		// A type the browser has no flow for must not render a sign-in button.
 		if !ok {
 			continue
 		}
-		providers = append(providers, &authv1.AuthProviderConfig{
+		out = append(out, &authv1.AuthProviderConfig{
 			Id:          proto.String(provider.ID),
 			Type:        providerType.Enum(),
 			DisplayName: proto.String(provider.DisplayName),
@@ -100,7 +106,30 @@ func (s *server) GetAuthConfig(
 			Scopes:      provider.Scopes,
 		})
 	}
-	return connect.NewResponse(&authv1.GetAuthConfigResponse{Providers: providers}), nil
+	return out
+}
+
+// ssoRequiredError maps a Require SSO refusal to code, with the providers that can
+// sign the domain in. It returns nil for any other error.
+func (s *server) ssoRequiredError(ctx context.Context, err error, code connect.Code) error {
+	ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err)
+	if !ok {
+		return nil
+	}
+	providers := toRPCProviders(s.oauthCfg.ProvidersFor(ssoErr.Domain))
+	// Nobody on the domain can sign in until the config is fixed or the operator runs
+	// `pug domains unenforce`, and the refusal alone looks routine.
+	if len(providers) == 0 {
+		noProvider := fmt.Errorf("no configured provider can sign in %s, which requires SSO", ssoErr.Domain)
+		slog.ErrorContext(ctx, "domain requires sso but no provider can sign it in", slogx.Error(noProvider), slog.String("domain", ssoErr.Domain))
+		telemetry.RecordError(ctx, noProvider)
+	}
+	return apperr.Err(code, apperr.ReasonSSORequired, ssoErr.Domain+" accounts sign in through SSO",
+		apperr.Detail(&authv1.SSORequired{
+			Domain:    proto.String(ssoErr.Domain),
+			Providers: providers,
+			Invite:    proto.Bool(ssoErr.Invite),
+		}))
 }
 
 func (s *server) SignInWithEmail(
@@ -109,6 +138,9 @@ func (s *server) SignInWithEmail(
 ) (*connect.Response[authv1.SignInWithEmailResponse], error) {
 	session, err := s.service.SignInWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
 	if err != nil {
+		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeFailedPrecondition); ssoErr != nil {
+			return nil, ssoErr
+		}
 		if errors.Is(err, coreauth.ErrInvalidCredentials) {
 			return nil, apperr.Unauthenticated(apperr.ReasonInvalidCredentials, "invalid credentials")
 		}
@@ -125,6 +157,9 @@ func (s *server) RequestMagicLink(
 	req *connect.Request[authv1.RequestMagicLinkRequest],
 ) (*connect.Response[authv1.RequestMagicLinkResponse], error) {
 	if err := s.service.RequestMagicLink(ctx, req.Msg.GetEmail()); err != nil {
+		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeFailedPrecondition); ssoErr != nil {
+			return nil, ssoErr
+		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	return connect.NewResponse(&authv1.RequestMagicLinkResponse{}), nil
@@ -136,6 +171,9 @@ func (s *server) CompleteMagicLink(
 ) (*connect.Response[authv1.CompleteMagicLinkResponse], error) {
 	session, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken(), req.Msg.GetTimezone())
 	if err != nil {
+		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeFailedPrecondition); ssoErr != nil {
+			return nil, ssoErr
+		}
 		if errors.Is(err, coreauth.ErrInvalidToken) {
 			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired link")
 		}
@@ -144,6 +182,7 @@ func (s *server) CompleteMagicLink(
 	return connect.NewResponse(&authv1.CompleteMagicLinkResponse{
 		Token:        &session.AccessToken,
 		RefreshToken: &session.RefreshToken,
+		JoinedOrgIds: session.JoinedOrgIDs,
 	}), nil
 }
 
@@ -164,13 +203,17 @@ func (s *server) CompleteOIDCSignIn(
 		CodeVerifier: req.Msg.GetCodeVerifier(),
 		RedirectURI:  redirectURI,
 		Nonce:        req.Msg.GetNonce(),
-	}, req.Msg.GetTimezone())
+	}, req.Msg.GetInviteToken(), req.Msg.GetTimezone())
 	if err != nil {
+		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeFailedPrecondition); ssoErr != nil {
+			return nil, ssoErr
+		}
 		return nil, mapOAuthHandlerError(err)
 	}
 	return connect.NewResponse(&authv1.CompleteOIDCSignInResponse{
 		Token:        &session.AccessToken,
 		RefreshToken: &session.RefreshToken,
+		JoinedOrgIds: session.JoinedOrgIDs,
 	}), nil
 }
 
@@ -225,6 +268,10 @@ func (s *server) RefreshSession(
 ) (*connect.Response[authv1.RefreshSessionResponse], error) {
 	session, err := s.service.RefreshSession(ctx, req.Msg.GetRefreshToken())
 	if err != nil {
+		// Unauthenticated, because the frontend ends a session only on that code.
+		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeUnauthenticated); ssoErr != nil {
+			return nil, ssoErr
+		}
 		if errors.Is(err, coreauth.ErrInvalidToken) {
 			// Refresh failed → the client must sign in again. Unauthenticated (not
 			// InvalidArgument) so the FE's existing 401 handling clears the session.
@@ -276,8 +323,14 @@ func mapOAuthHandlerError(err error) error {
 		// Generic reason intentional: no distinct client action for an unverified IdP
 		// email (rare edge), so it maps to plain InvalidArgument.
 		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
+	case errors.Is(err, coreoauth.ErrNonASCIIEmail):
+		return apperr.Invalid(apperr.ReasonInvalidArgument, "email addresses with non-ASCII characters are not supported") // apperr:exempt
 	case errors.Is(err, coreoauth.ErrProviderUnavailable):
 		return apperr.Unavailable(apperr.ReasonOAuthProviderUnavailable, "oauth provider is temporarily unavailable")
+	case errors.Is(err, coreauth.ErrInvalidToken):
+		return apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired invite")
+	case errors.Is(err, coreauth.ErrInviteWrongEmail):
+		return apperr.PermissionDenied(apperr.ReasonInvitationWrongEmail, "this invite was sent to another email address")
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
 		// A failed/expired credential is an authentication failure, not a
 		// malformed request — return Unauthenticated so clients prompt re-auth

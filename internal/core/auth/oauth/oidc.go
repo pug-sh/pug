@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	appconfig "github.com/pug-sh/pug/internal/config"
+	"github.com/pug-sh/pug/internal/domainname"
 	"github.com/pug-sh/pug/internal/httpx"
 	"golang.org/x/oauth2"
 )
@@ -135,21 +138,72 @@ func (p *oidcProvider) verifyIDToken(ctx context.Context, credential, expectedNo
 
 	var claims struct {
 		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
-		Name          string `json:"name"`
-		Picture       string `json:"picture"`
+		EmailVerified *bool  `json:"email_verified"`
+		// Entra ID's "email domain owner verified"; it never sends email_verified.
+		EmailDomainOwnerVerified any    `json:"xms_edov"`
+		HostedDomain             string `json:"hd"`
+		Name                     string `json:"name"`
+		Picture                  string `json:"picture"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("oauth: decode claims from %q: %w", p.name, err)
 	}
 
+	// An explicit email_verified wins, then an explicit xms_edov, even when false.
+	// With neither, the provider vouches for its emailDomains.
+	emailVerified := claimTrue(claims.EmailDomainOwnerVerified)
+	switch {
+	case claims.EmailVerified != nil:
+		emailVerified = *claims.EmailVerified
+	case claims.EmailDomainOwnerVerified == nil && p.speaksFor(domainname.Of(claims.Email)):
+		emailVerified = true
+	}
+
 	// sub is unique only within one IdP, so the account is keyed (provider id, sub).
 	// Renaming a provider id in config makes the next sign-in miss its old row.
-	return NewVerifiedIdentity(p.name, Claims{
+	ident, err := NewVerifiedIdentity(p.name, Claims{
 		Subject:       idToken.Subject,
 		Email:         claims.Email,
-		EmailVerified: claims.EmailVerified,
+		EmailVerified: emailVerified,
 		DisplayName:   claims.Name,
 		PictureURI:    claims.Picture,
+		ProvenDomain:  p.provenDomain(claims.Email, claims.HostedDomain),
 	})
+	if errors.Is(err, ErrUnverifiedEmail) {
+		// The rejection log should say which claim refused the sign-in.
+		return nil, fmt.Errorf("%w: email_verified present=%t, xms_edov=%v", err, claims.EmailVerified != nil, claims.EmailDomainOwnerVerified)
+	}
+	return ident, err
+}
+
+// provenDomain checks the configured issuer, not iss, which Google may send without https://.
+func (p *oidcProvider) provenDomain(email, hostedDomain string) string {
+	if appconfig.IsGoogleIssuer(p.cfg.IssuerURL) {
+		d, err := domainname.Normalize(hostedDomain)
+		if err != nil {
+			return ""
+		}
+		return d
+	}
+	if d := domainname.Of(email); p.speaksFor(d) {
+		return d
+	}
+	return ""
+}
+
+// Entra reportedly sends xms_edov in several types. A strict bool would fail those sign-ins.
+func claimTrue(v any) bool {
+	switch v := v.(type) {
+	case bool:
+		return v
+	case string:
+		return v == "true" || v == "1"
+	case float64:
+		return v == 1
+	}
+	return false
+}
+
+func (p *oidcProvider) speaksFor(domain string) bool {
+	return domain != "" && slices.Contains(p.cfg.EmailDomains, domain)
 }

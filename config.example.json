@@ -17,7 +17,8 @@
         "displayName": "Company SSO",
         "issuerUrl": "https://login.example.com/realms/main",
         "clientId": "pug",
-        "scopes": ["openid", "profile", "email"]
+        "scopes": ["openid", "profile", "email"],
+        "emailDomains": ["example.com"]
       }
     ]
   }

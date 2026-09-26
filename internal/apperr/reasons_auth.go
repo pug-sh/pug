@@ -9,4 +9,5 @@ var (
 	ReasonOAuthProviderDisabled    = codes.add("OAUTH_PROVIDER_DISABLED")
 	ReasonOAuthCredentialInvalid   = codes.add("OAUTH_CREDENTIAL_INVALID")
 	ReasonOAuthProviderUnavailable = codes.add("OAUTH_PROVIDER_UNAVAILABLE")
+	ReasonSSORequired              = codes.add("SSO_REQUIRED")
 )
