@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -27,8 +28,18 @@ func NewService(pgW *pgxpool.Pool) *Service {
 
 // SetPassword hashes and stores a password for the given customer (used by the
 // authenticated dashboard SetPassword RPC so magic-link accounts can gain a
-// password). It overwrites any existing hash.
+// password). It overwrites any existing hash. An account whose domain requires SSO
+// gets *coreorgs.SSORequiredError, since sign-in would refuse the password anyway.
 func (s *Service) SetPassword(ctx context.Context, customerID, password string) error {
+	email, err := s.write.GetCustomerEmailByID(ctx, customerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get customer email", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if err := coreorgs.CheckSignInInTx(ctx, s.write, email, ""); err != nil {
+		return err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrPasswordTooLong) {

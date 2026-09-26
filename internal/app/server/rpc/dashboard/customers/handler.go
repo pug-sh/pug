@@ -8,6 +8,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	customersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -42,6 +43,9 @@ func (s *server) SetPassword(
 		return nil, err // already an apperr from the extractor
 	}
 	if err := s.customers.SetPassword(ctx, principal.Customer.ID, req.Msg.GetPassword()); err != nil {
+		if ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err); ok {
+			return nil, apperr.FailedPrecondition(apperr.ReasonSSORequired, ssoErr.Domain+" accounts sign in through SSO, so they can't set a password")
+		}
 		if errors.Is(err, corecustomers.ErrPasswordTooLong) {
 			return nil, apperr.Invalid(apperr.ReasonPasswordTooLong, "password must be 72 bytes or fewer")
 		}

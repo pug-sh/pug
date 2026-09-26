@@ -42,15 +42,15 @@ func (e *Error) Reason() Reason { return e.reason }
 // Message returns the client-facing message.
 func (e *Error) Message() string { return e.message }
 
-// Details returns the google.rpc errdetails payloads to attach to the response.
+// Details returns the detail payloads to attach to the response.
 func (e *Error) Details() []proto.Message { return e.details }
 
 // detailSink is the only mutation surface exposed to Options. It can accumulate
-// google.rpc detail payloads but cannot touch the Error's code/reason/message,
+// detail payloads but cannot touch the Error's code/reason/message,
 // which keeps those invariant-bearing fields construct-only.
 type detailSink struct{ details []proto.Message }
 
-// Option augments an Error with typed google.rpc error details.
+// Option augments an Error with typed error details.
 type Option func(*detailSink)
 
 // Err builds a tagged application error. Pass a registered Reason* value; an

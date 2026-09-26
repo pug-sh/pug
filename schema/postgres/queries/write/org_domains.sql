@@ -32,6 +32,23 @@ delete from org_domains where id = @id and org_id = @org_id;
 -- name: DeleteOrgDomainByOrgIDAndDomain :execrows
 delete from org_domains where org_id = @org_id and domain = @domain;
 
+-- name: UpdateOrgDomainRequireSSO :one
+-- Turning it on needs a verified claim that an SSO sign-in has proven.
+update org_domains
+set require_sso = @require_sso
+where id = @id and org_id = @org_id
+  and (not @require_sso::boolean or (verified_at is not null and sso_seen_at is not null))
+returning *;
+
+-- name: UnenforceOrgDomainRequireSSO :execrows
+update org_domains set require_sso = false where domain = @domain and require_sso;
+
+-- name: IsSSORequired :one
+select exists (
+  select 1 from org_domains
+  where domain = @domain and verified_at is not null and require_sso
+)::boolean as required;
+
 -- name: MarkOrgDomainsSSOSeen :exec
 update org_domains
 set sso_seen_at = now()

@@ -77,6 +77,9 @@ const (
 	// OrgsServiceRemoveDomainProcedure is the fully-qualified name of the OrgsService's RemoveDomain
 	// RPC.
 	OrgsServiceRemoveDomainProcedure = "/dashboard.orgs.v1.OrgsService/RemoveDomain"
+	// OrgsServiceUpdateDomainProcedure is the fully-qualified name of the OrgsService's UpdateDomain
+	// RPC.
+	OrgsServiceUpdateDomainProcedure = "/dashboard.orgs.v1.OrgsService/UpdateDomain"
 )
 
 // OrgsServiceClient is a client for the dashboard.orgs.v1.OrgsService service.
@@ -104,6 +107,9 @@ type OrgsServiceClient interface {
 	VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error)
 	// RemoveDomain drops the org's claim. Members who joined through it stay.
 	RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error)
+	// UpdateDomain turns Require SSO on or off for this org's claim. Turning it on needs a
+	// verified domain that someone signed in to through SSO, and re-checks its DNS record.
+	UpdateDomain(context.Context, *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error)
 }
 
 // NewOrgsServiceClient constructs a client for the dashboard.orgs.v1.OrgsService service. By
@@ -219,6 +225,12 @@ func NewOrgsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(orgsServiceMethods.ByName("RemoveDomain")),
 			connect.WithClientOptions(opts...),
 		),
+		updateDomain: connect.NewClient[v1.UpdateDomainRequest, v1.UpdateDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceUpdateDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("UpdateDomain")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -241,6 +253,7 @@ type orgsServiceClient struct {
 	addDomain         *connect.Client[v1.AddDomainRequest, v1.AddDomainResponse]
 	verifyDomain      *connect.Client[v1.VerifyDomainRequest, v1.VerifyDomainResponse]
 	removeDomain      *connect.Client[v1.RemoveDomainRequest, v1.RemoveDomainResponse]
+	updateDomain      *connect.Client[v1.UpdateDomainRequest, v1.UpdateDomainResponse]
 }
 
 // List calls dashboard.orgs.v1.OrgsService.List.
@@ -328,6 +341,11 @@ func (c *orgsServiceClient) RemoveDomain(ctx context.Context, req *connect.Reque
 	return c.removeDomain.CallUnary(ctx, req)
 }
 
+// UpdateDomain calls dashboard.orgs.v1.OrgsService.UpdateDomain.
+func (c *orgsServiceClient) UpdateDomain(ctx context.Context, req *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error) {
+	return c.updateDomain.CallUnary(ctx, req)
+}
+
 // OrgsServiceHandler is an implementation of the dashboard.orgs.v1.OrgsService service.
 type OrgsServiceHandler interface {
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
@@ -353,6 +371,9 @@ type OrgsServiceHandler interface {
 	VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error)
 	// RemoveDomain drops the org's claim. Members who joined through it stay.
 	RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error)
+	// UpdateDomain turns Require SSO on or off for this org's claim. Turning it on needs a
+	// verified domain that someone signed in to through SSO, and re-checks its DNS record.
+	UpdateDomain(context.Context, *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error)
 }
 
 // NewOrgsServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -464,6 +485,12 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(orgsServiceMethods.ByName("RemoveDomain")),
 		connect.WithHandlerOptions(opts...),
 	)
+	orgsServiceUpdateDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceUpdateDomainProcedure,
+		svc.UpdateDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("UpdateDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.orgs.v1.OrgsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case OrgsServiceListProcedure:
@@ -500,6 +527,8 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 			orgsServiceVerifyDomainHandler.ServeHTTP(w, r)
 		case OrgsServiceRemoveDomainProcedure:
 			orgsServiceRemoveDomainHandler.ServeHTTP(w, r)
+		case OrgsServiceUpdateDomainProcedure:
+			orgsServiceUpdateDomainHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -575,4 +604,8 @@ func (UnimplementedOrgsServiceHandler) VerifyDomain(context.Context, *connect.Re
 
 func (UnimplementedOrgsServiceHandler) RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.RemoveDomain is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) UpdateDomain(context.Context, *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.UpdateDomain is not implemented"))
 }

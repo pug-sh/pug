@@ -168,5 +168,8 @@ func toRPCDomain(d coreorgs.Domain) *orgsv1.OrgDomain {
 		TxtRecordValue:                 proto.String(d.TXTRecordValue()),
 		VerifiedAt:                     proto.String(verifiedAt),
 		OrgCreationRestrictedElsewhere: proto.Bool(d.OrgCreationRestrictedElsewhere),
+		RequireSso:                     proto.Bool(d.RequireSSO),
+		SsoSeen:                        proto.Bool(d.SSOSeen),
+		SsoRequiredElsewhere:           proto.Bool(d.SSORequiredElsewhere),
 	}
 }

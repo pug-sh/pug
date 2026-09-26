@@ -8,11 +8,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/xid"
 
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	"github.com/pug-sh/pug/internal/core/projects"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -79,7 +81,7 @@ func (f *ssoFixture) ssoService(email, sub, provenDomain string) *coreauth.Servi
 
 func (f *ssoFixture) signIn(svc *coreauth.Service) coreauth.Session {
 	f.t.Helper()
-	session, err := svc.CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, "")
+	session, err := svc.CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, "", "")
 	if err != nil {
 		f.t.Fatalf("CompleteOIDCSignIn: %v", err)
 	}
@@ -288,7 +290,7 @@ func TestConcurrentFirstSSOSignInsMakeOneAccount(t *testing.T) {
 	for i := range n {
 		wg.Go(func() {
 			<-start
-			session, err := svc.CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, "")
+			session, err := svc.CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, "", "")
 			errs[i], joined[i] = err, session.JoinedOrgIDs
 		})
 	}
@@ -367,5 +369,216 @@ func TestInviteMagicLinkForAnExistingMemberKeepsTheirRole(t *testing.T) {
 	inv, err := dbwrite.New(f.db.PgW).GetOrgInvitationByIDForUpdate(f.ctx, dispatch.Invitation.ID)
 	if err != nil || inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String() {
 		t.Fatalf("invitation status = %q, %v; want ACCEPTED", inv.Status, err)
+	}
+}
+
+// requireSSO turns Require SSO on or off for orgID's claim, marking the domain proven by SSO first.
+func (f *ssoFixture) requireSSO(orgID, domain string, on bool) {
+	f.t.Helper()
+	if err := coreorgs.MarkSSOSeenInTx(f.ctx, dbwrite.New(f.db.PgW), domain); err != nil {
+		f.t.Fatal(err)
+	}
+	_, domains, err := f.orgs.ListDomains(f.ctx, orgID)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for _, d := range domains {
+		if d.Domain == domain {
+			if _, err := f.orgs.UpdateDomain(f.ctx, orgID, d.ID, on); err != nil {
+				f.t.Fatalf("UpdateDomain: %v", err)
+			}
+			return
+		}
+	}
+	f.t.Fatalf("org %s has no claim on %s", orgID, domain)
+}
+
+func wantSSORequired(t *testing.T, err error, domain string, invite bool) {
+	t.Helper()
+	ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err)
+	if !ok || ssoErr.Domain != domain || ssoErr.Invite != invite {
+		t.Fatalf("err = %v, want SSORequiredError for %s with invite %v", err, domain, invite)
+	}
+}
+
+func TestRequireSSOBlocksPasswordsAndEmailLinks(t *testing.T) {
+	f := newSSOFixture(t)
+	orgID := f.org("acme.com", coreorgs.DomainSettings{MembersCanCreateOrgs: true})
+	pub := &stubPublisher{}
+	svc := mustNewTestAuthService(t, f.db, pub)
+	passwordSession := seedSignedInCustomer(t, svc, dbwrite.New(f.db.PgW), xid.New().String(), "bob@acme.com")
+	if err := svc.RequestMagicLink(f.ctx, "bob@acme.com"); err != nil {
+		t.Fatal(err)
+	}
+	link := lastMagicToken(t, pub)
+	linkSession, err := svc.CompleteMagicLink(f.ctx, link, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rotated, so the first token can be replayed below.
+	rotated, err := svc.RefreshSession(f.ctx, linkSession.RefreshToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RequestMagicLink(f.ctx, "bob@acme.com"); err != nil {
+		t.Fatal(err)
+	}
+	link = lastMagicToken(t, pub)
+	sent := len(pub.jobs)
+
+	f.requireSSO(orgID, "acme.com", true)
+
+	_, err = svc.SignInWithEmail(f.ctx, "bob@acme.com", "password123")
+	wantSSORequired(t, err, "acme.com", false)
+	// Checked before the account lookup, so it can't tell whether an account exists.
+	_, err = svc.SignInWithEmail(f.ctx, "nobody@acme.com", "wrong")
+	wantSSORequired(t, err, "acme.com", false)
+	wantSSORequired(t, svc.RequestMagicLink(f.ctx, "nobody@acme.com"), "acme.com", false)
+	if len(pub.jobs) != sent {
+		t.Fatal("a refused magic-link request sent an email")
+	}
+	_, err = svc.CompleteMagicLink(f.ctx, link, "")
+	wantSSORequired(t, err, "acme.com", false)
+	for _, session := range []coreauth.Session{passwordSession, rotated} {
+		_, err = svc.RefreshSession(f.ctx, session.RefreshToken)
+		wantSSORequired(t, err, "acme.com", false)
+	}
+	// Reuse detection runs before the SSO check.
+	if _, err := svc.RefreshSession(f.ctx, linkSession.RefreshToken); !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("replayed token err = %v, want ErrInvalidToken", err)
+	}
+	if err := svc.RequestMagicLink(f.ctx, "carol@globex.com"); err != nil {
+		t.Fatalf("another domain: %v", err)
+	}
+
+	// The refused link was left unused, so turning it off brings it back.
+	f.requireSSO(orgID, "acme.com", false)
+	if _, err := svc.CompleteMagicLink(f.ctx, link, ""); err != nil {
+		t.Fatalf("the refused link was used up: %v", err)
+	}
+	// The refused session was revoked: the frontend drops it, so only a copy could come back.
+	if _, err := svc.RefreshSession(f.ctx, passwordSession.RefreshToken); !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("refused session err = %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestRequireSSOAtOIDCSignIn(t *testing.T) {
+	f := newSSOFixture(t)
+	orgID := f.org("acme.com", coreorgs.DomainSettings{MembersCanCreateOrgs: true})
+	f.signIn(f.ssoService("bob@acme.com", "sub-bob", "acme.com"))
+	f.requireSSO(orgID, "acme.com", true)
+
+	session := f.signIn(f.ssoService("bob@acme.com", "sub-bob", "acme.com"))
+	if _, err := mustNewTestAuthService(t, f.db, &stubPublisher{}).RefreshSession(f.ctx, session.RefreshToken); err != nil {
+		t.Fatalf("an SSO session was not renewed: %v", err)
+	}
+
+	signIn := func(email, sub string) error {
+		_, err := f.ssoService(email, sub, "").CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, "", "")
+		return err
+	}
+	// A personal account with an address on the domain proves nothing.
+	wantSSORequired(t, signIn("carol@acme.com", "sub-carol"), "acme.com", false)
+	if _, err := f.read.GetCustomerByEmail(f.ctx, "carol@acme.com"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("a refused sign-in created an account: %v", err)
+	}
+	// Sign-in resolves sub first, so a token for another address still reaches bob's account.
+	wantSSORequired(t, signIn("bob@gmail.com", "sub-bob"), "acme.com", false)
+	// And the token's own address counts even when its sub is linked to an account elsewhere.
+	if err := signIn("dave@globex.com", "sub-dave"); err != nil {
+		t.Fatal(err)
+	}
+	wantSSORequired(t, signIn("dave@acme.com", "sub-dave"), "acme.com", false)
+}
+
+func TestRequireSSOExemptsTheDemoViewer(t *testing.T) {
+	f := newSSOFixture(t)
+	orgID := f.org("pug.sh", coreorgs.DomainSettings{MembersCanCreateOrgs: true})
+	w := dbwrite.New(f.db.PgW)
+	viewer, err := w.CreateCustomer(f.ctx, dbwrite.CreateCustomerParams{ID: xid.New().String(), Email: coreauth.DemoViewerEmail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	demoOrg, err := w.CreateOrg(f.ctx, dbwrite.CreateOrgParams{ID: xid.New().String(), DisplayName: "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.CreateOrgMember(f.ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: demoOrg.ID, CustomerID: viewer.ID, Role: coreorgs.RoleViewer.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := projects.CreateProjectInTx(f.ctx, w, demoOrg.ID, "default", ""); err != nil {
+		t.Fatal(err)
+	}
+	f.requireSSO(orgID, "pug.sh", true)
+
+	svc := mustNewTestAuthService(t, f.db, &stubPublisher{})
+	svc.SetDemoEnabledForTest(true)
+	demo, err := svc.DemoSignIn(f.ctx)
+	if err != nil {
+		t.Fatalf("DemoSignIn: %v", err)
+	}
+	if _, err := svc.RefreshSession(f.ctx, demo.Session.RefreshToken); err != nil {
+		t.Fatalf("demo session refresh: %v", err)
+	}
+}
+
+func TestInviteAcceptedThroughSSO(t *testing.T) {
+	f := newSSOFixture(t)
+	orgID := f.org("acme.com", coreorgs.DomainSettings{MembersCanCreateOrgs: true})
+	pub := &stubPublisher{}
+	svc := mustNewTestAuthService(t, f.db, pub)
+	if err := svc.RequestMagicLink(f.ctx, "carol@acme.com"); err != nil {
+		t.Fatal(err)
+	}
+	loginLink := lastMagicToken(t, pub)
+	admins, err := f.read.GetOrgMembersByOrgID(f.ctx, orgID)
+	if err != nil || len(admins) != 1 {
+		t.Fatalf("admins = %v, %v", admins, err)
+	}
+	invite, err := f.orgs.InviteMemberWithRole(f.ctx, orgID, strings.TrimSpace(admins[0].CustomerID), "carol@acme.com", coreorgs.RoleMember)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole: %v", err)
+	}
+	f.requireSSO(orgID, "acme.com", true)
+
+	_, err = svc.CompleteMagicLink(f.ctx, invite.RawToken, "")
+	wantSSORequired(t, err, "acme.com", true)
+
+	signIn := func(email, sub, inviteToken string) (coreauth.Session, error) {
+		return f.ssoService(email, sub, "acme.com").CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, inviteToken, "")
+	}
+	if _, err := signIn("dave@acme.com", "sub-dave", invite.RawToken); !errors.Is(err, coreauth.ErrInviteWrongEmail) {
+		t.Fatalf("another account's err = %v, want ErrInviteWrongEmail", err)
+	}
+	if _, err := f.read.GetCustomerByEmail(f.ctx, "dave@acme.com"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("a refused invite left an account behind: %v", err)
+	}
+	// The invite is matched against the account sub resolves to, not the token's email.
+	if _, err := signIn("dave@acme.com", "sub-dave", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signIn("carol@acme.com", "sub-dave", invite.RawToken); !errors.Is(err, coreauth.ErrInviteWrongEmail) {
+		t.Fatalf("dave's account err = %v, want ErrInviteWrongEmail", err)
+	}
+	for _, token := range []string{"not-a-token", loginLink} {
+		if _, err := signIn("carol@acme.com", "sub-carol", token); !errors.Is(err, coreauth.ErrInvalidToken) {
+			t.Fatalf("invite token %q err = %v, want ErrInvalidToken", token, err)
+		}
+	}
+
+	session, err := signIn("Carol@acme.com", "sub-carol", invite.RawToken)
+	if err != nil {
+		t.Fatalf("CompleteOIDCSignIn: %v", err)
+	}
+	if !slices.Equal(session.JoinedOrgIDs, []string{orgID}) {
+		t.Fatalf("joined = %v, want %s", session.JoinedOrgIDs, orgID)
+	}
+	if got := f.orgsOf("carol@acme.com"); got[orgID] != coreorgs.RoleMember.String() {
+		t.Fatalf("orgs = %v, want %s as member", got, orgID)
+	}
+	if _, err := signIn("carol@acme.com", "sub-carol", invite.RawToken); !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("reused invite err = %v, want ErrInvalidToken", err)
 	}
 }

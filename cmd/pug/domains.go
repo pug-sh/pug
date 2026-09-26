@@ -18,9 +18,10 @@ func newDomainsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "domains",
 		Short: "Verify and inspect the domains orgs have claimed",
-		Long: "Operator commands for org domains. They use only Postgres and never change\n" +
-			"an org's settings. `verify` skips DNS, for a server that can't see public DNS\n" +
-			"or for a support case.",
+		Long: "Operator commands for org domains. They use only Postgres and leave settings\n" +
+			"to org admins, except `unenforce`: it turns Require SSO off, the way back when\n" +
+			"SSO breaks and nobody on the domain can sign in. `verify` skips DNS, for a\n" +
+			"server that can't see public DNS or for a support case.",
 	}
 	for _, c := range []*cobra.Command{
 		{
@@ -45,6 +46,14 @@ func newDomainsCmd() *cobra.Command {
 			Args:  cobra.ExactArgs(2),
 			RunE: domainsRunE(func(ctx context.Context, cli *appdomains.CLI, cmd *cobra.Command, args []string) error {
 				return cli.Release(ctx, cmd.OutOrStdout(), args[0], args[1])
+			}),
+		},
+		{
+			Use:   "unenforce <domain>",
+			Short: "Turn Require SSO off for the domain in every org",
+			Args:  cobra.ExactArgs(1),
+			RunE: domainsRunE(func(ctx context.Context, cli *appdomains.CLI, cmd *cobra.Command, args []string) error {
+				return cli.Unenforce(ctx, cmd.OutOrStdout(), args[0])
 			}),
 		},
 	} {

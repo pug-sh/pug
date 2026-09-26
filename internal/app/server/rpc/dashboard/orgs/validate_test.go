@@ -169,3 +169,15 @@ func TestSetDomainSettingsRequest_MembersCanCreateOrgsRequired(t *testing.T) {
 		t.Error("expected validation error for missing members_can_create_orgs, got nil")
 	}
 }
+
+// An omitted require_sso must not read as false and silently turn Require SSO off.
+func TestUpdateDomainRequest_RequireSSORequired(t *testing.T) {
+	req := &orgsv1.UpdateDomainRequest{OrgId: proto.String("org-1"), DomainId: proto.String("d-1")}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Error("expected validation error for missing require_sso, got nil")
+	}
+	req.RequireSso = proto.Bool(false)
+	if err := protovalidate.Validate(req); err != nil {
+		t.Errorf("explicit false: %v", err)
+	}
+}

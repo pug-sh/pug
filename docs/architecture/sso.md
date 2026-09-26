@@ -1,8 +1,8 @@
 # SSO: Google Workspace and verified domains
 
-> **Status: phase 1 implemented, phases 2 and 3 are design.** Written
-> 2026-09-25; phase 1 built 2026-09-26. The Email Verified test below is still
-> to do, and it decides whether `hd` alone can prove a domain.
+> **Status: phases 1 and 2 implemented, phase 3 is design.** Written
+> 2026-09-25; phases 1 and 2 built 2026-09-26. The Email Verified test below is
+> still to do, and it decides whether `hd` alone can prove a domain.
 
 ## Summary
 
@@ -178,7 +178,9 @@ administrator".
 Running `verify` on a domain the org already verified through DNS switches it to
 operator-verified. A setting change then no longer re-checks its record.
 
-The CLI never changes the org settings; those stay the org admins' choice.
+The CLI never changes the org settings; those stay the org admins' choice. The
+one exception is `unenforce`, the way back when SSO breaks and nobody on the
+domain can sign in to turn Require SSO off.
 
 Org admins cannot skip DNS. On a server with open sign-up, anyone can create an
 org and become its admin.
@@ -239,8 +241,9 @@ Let members create their own orgs                         [ on  ]
   create new orgs, and get no default org when they sign up.
   Admins of this org still can.
 ─────────────────────────────────────────────────────────────────
-acme.com    ● Verified   SSO: required                          ⋯
-acme.io     ○ Pending    [Verify]                               ⋯
+acme.com    ● Verified                                          🗑
+  Require SSO                                             [ on  ]
+acme.io     ○ Pending    [Verify now]                           🗑
 ─────────────────────────────────────────────────────────────────
 [+ Add domain]
 ```
@@ -299,33 +302,34 @@ Verifying a domain changes nothing while the org's settings are at their
 defaults. The settings apply to every domain the org verified. A domain verified
 while a setting is on gets it at once, even through `pug domains verify`.
 
-### Admin: domain menu
+### Admin: Require SSO
 
-The ⋯ menu on a verified domain has **Require SSO** (phase 2) and **Remove**.
+Each verified domain's row has a **Require SSO** switch (phase 2), under its
+record.
 
 ```
-acme.com
-
+acme.com                                          Verified   🗑
   Require SSO                                             [ off ]
-    acme.com accounts must sign in with Google.
+    acme.com accounts must sign in through SSO.
     Passwords and email links stop working for them.
     People signed in another way are signed out within a day.
+    So are SSO sessions started before Require SSO was available.
 ```
 
-The text names the provider that signs the domain in: Google, a company provider
-from `PUG_CONFIG_FILE`, or the domain's SSO connection. If another org that
-verified `acme.com` has turned it on, this shows "Also required by another org
-that verified acme.com."
+The switch says "through SSO" rather than naming a provider. The blocked screen
+people see at sign-in names the providers (see "People signing in"). If another
+org that verified `acme.com` has turned it on, the row shows "Also required by
+another organization that verified acme.com."
 
 The two org settings decide what happens in this org. Require SSO decides how
 everyone with an `acme.com` email signs in to Pug, in any org. That is why it
 sits on the domain.
 
 "Require SSO" stays disabled until at least one person has signed in through SSO
-with an `acme.com` account. The hint says: "Sign in once with an acme.com account
-through SSO to turn this on." This stops an admin from locking out a company
-that does not use that provider. Require SSO has no admin exception, so such a
-lockout would include the admins.
+with an `acme.com` account. The hint says: "Sign in once through SSO with an
+account on acme.com to turn this on." This stops an admin from locking out a
+company that does not use that provider. Require SSO has no admin exception, so
+such a lockout would include the admins.
 
 ### People signing in
 
@@ -375,10 +379,18 @@ The blocked screen:
   Use a different email
 ```
 
-It shows one button per provider that can sign the domain in. The Google button
-sends `login_hint=bob@acme.com` and `hd=acme.com` to Google, so Google's account
+It shows one button per provider that can sign the domain in: the
+`PUG_CONFIG_FILE` providers whose `emailDomains` list it or, when none does,
+Google. The `SSO_REQUIRED` error carries that list, so the screen needs no
+second call. The Google button sends `hd=acme.com` to Google, and
+`login_hint=bob@acme.com` when the person typed their email, so Google's account
 picker shows only Acme accounts. This is only a UI hint. The server still checks
 the `hd` claim in the token.
+
+The screen appears wherever the refusal happens: on the sign-in page, on the
+email link's page, after a provider sign-in that didn't prove the domain ("Use
+your acme.com Google Workspace account."), and on the sign-in page after a
+refused session refresh.
 
 ### Members page
 
@@ -494,9 +506,9 @@ exception. The company owns those addresses.
 |---|---|
 | `SignInWithEmail` (password) | Error `SSO_REQUIRED` |
 | `RequestMagicLink` | `SSO_REQUIRED`. No email is sent. |
-| `CompleteMagicLink` (links sent earlier) | `SSO_REQUIRED`. The token is not used up. |
+| `CompleteMagicLink` (links sent earlier) | `SSO_REQUIRED`. The token is not used up. For an invite link the error says so, and the frontend passes the token on to the SSO sign-in (see "Invites through SSO"). |
 | `CompleteOIDCSignIn` | Allowed only if the sign-in proves D. Checked for the token's email and for the account the sign-in resolves to. |
-| `RefreshSession` | Renews only sessions whose SSO sign-in proved D. Refuses the rest with `Unauthenticated`. |
+| `RefreshSession` | Renews only sessions whose SSO sign-in proved D. Refuses the rest with `Unauthenticated` and revokes their refresh token. |
 | `SetPassword` | `SSO_REQUIRED` |
 | `DemoSignIn` | Not checked, and neither are its sessions at refresh. A refresh token doesn't record how it was issued, so `RefreshSession` spots a demo session by its account's email, `DemoViewerEmail`. The demo viewer (`snoop@pug.sh`) needs no credentials anyway, and requiring SSO for `pug.sh` must not break the public demo. |
 
@@ -519,9 +531,14 @@ is found by its `sub`, not its email. So a personal Google account linked to
 already signed in at the provider.
 
 Nothing is revoked in bulk when the switch turns on. A session that did not
-start through SSO just isn't renewed. Its access token works until it expires,
-at most 24h, and then the person signs in through SSO. SSO sessions, including
-the admin's own, keep working.
+start through SSO ends at its next refresh, which revokes its refresh token. Its
+access token works until it expires, at most 24h, and then the person signs in
+through SSO. The frontend drops a refused token anyway, so revoking it only
+stops a copy held elsewhere from coming back after `unenforce`.
+
+Sessions whose SSO sign-in proved D keep working, the admin's included. A
+refresh token issued before phase 1 has no `proven_domain`, so its session ends
+too, even if it started through SSO.
 
 `RefreshSession` refuses such a session with `Unauthenticated`, not
 `FailedPrecondition`. The frontend ends a session only on `Unauthenticated`, and
@@ -540,6 +557,21 @@ Two things are not touched:
   work again.
 - **API keys.** They belong to projects, not people, so SDKs, the API and `/mcp`
   keep working.
+
+### Invites through SSO
+
+An invite link is an email link, so Require SSO refuses it too. It is not used
+up, and the error says it was an invite. The frontend then offers the domain's
+providers and sends the link's token as `CompleteOIDCSignIn.invite_token`. The
+token rides that one sign-in attempt, so a later sign-in in the same tab never
+carries it.
+
+The server accepts the invite only if it was sent to the email of the account
+the sign-in resolves to. A token for another email fails the sign-in with
+`INVITATION_WRONG_EMAIL`. A token that is not a pending invite (unknown,
+expired, used, revoked, or a plain sign-in link) fails it with `INVALID_TOKEN`.
+Nothing is created or linked in either case: the check runs in the sign-in
+transaction.
 
 ### Several orgs for one company
 
@@ -849,7 +881,7 @@ the same shape as `ApplyInviteAcceptanceInTx`.
 | `AutoJoinInTx(w, customerID, email, provenDomain)` → joined org ids | SSO sign-in and session refresh |
 | `MarkSSOSeenInTx(w, provenDomain)` | SSO sign-in only: a refresh can carry proof from months ago. Marks verified claims only, so a pending claim can't learn that people sign in through SSO. |
 | `OrgCreationAllowedInTx(q, customerID, email)` | `FinishSignup` and `OrgsService.Create`. `OrgsService.List` calls it through `OrgCreationAllowed`. |
-| `CheckSignInInTx(q, email, provenDomain)` → `ErrSSORequired` | Every sign-in path, `RefreshSession` and `SetPassword` (phase 2) |
+| `CheckSignInInTx(q, email, provenDomain)` → `*SSORequiredError` | Every sign-in path but `DemoSignIn`, plus `RefreshSession` and `SetPassword` (phase 2) |
 
 `VerifyDomain` looks up the TXT record, with a 5-second timeout. The name ends in
 a dot, so the resolver never tries the server's search domains first. Setting
@@ -895,8 +927,9 @@ returning org_id;
 | `orgs.ApplyInviteAcceptanceInTx` | The member insert becomes `on conflict do nothing`. Before, an existing member's unique violation aborted the caller's transaction, and accepting failed with Internal. |
 
 Phase 2 adds an optional `invite_token` to `CompleteOIDCSignIn`. The server
-accepts the invite only if its email matches the SSO account's email. This is how
-an invite works when email links are blocked.
+accepts the invite only if its email matches the email of the account the
+sign-in resolves to. This is how an invite works when email links are blocked
+(see "Invites through SSO").
 
 ### RPCs
 
@@ -919,6 +952,8 @@ New fields:
 | `OrgMember` | `joined_via_domain` |
 | `CompleteOIDCSignInResponse`, `CompleteMagicLinkResponse` | `joined_org_ids`. The frontend switches to the first one and shows the toast. |
 | `CompleteOIDCSignInRequest` | `invite_token` (phase 2) |
+| `OrgDomain` | `require_sso`, `sso_seen`, and `sso_required_elsewhere` (phase 2). The last is set only by `ListDomains`, and only on a verified domain. |
+| `public.auth.v1.SSORequired` (new) | Phase 2. The detail on `SSO_REQUIRED`: the domain, the providers that can sign it in (as `AuthProviderConfig`), and `invite` when the refused link was an invite. |
 
 ### Authz
 
@@ -937,7 +972,8 @@ only adds members.
 
 | Reason | Code | When |
 |---|---|---|
-| `SSO_REQUIRED` (phase 2) | FailedPrecondition, or Unauthenticated from `RefreshSession` | Require SSO blocks this sign-in. The details carry the domain and the providers that can sign it in. |
+| `SSO_REQUIRED` (phase 2) | FailedPrecondition, or Unauthenticated from `RefreshSession` | Require SSO blocks this sign-in. An `SSORequired` detail carries the domain and the providers that can sign it in. `SetPassword` sends only the message. |
+| `INVITATION_WRONG_EMAIL` (phase 2) | PermissionDenied | An invite sent through SSO sign-in was for another email. |
 | `ORG_CREATION_RESTRICTED` | PermissionDenied | "Let members create their own orgs" is off for the caller's domain. |
 | `DOMAIN_INVALID` | InvalidArgument | The domain is not an ASCII hostname with at least two labels. |
 | `DOMAIN_NOT_FOUND` | NotFound | The domain id is not one of this org's domains. |
@@ -951,7 +987,7 @@ only adds members.
 
 | File | Change |
 |---|---|
-| `src/auth/oidc.ts` | Phase 2: `startOIDCSignIn` takes an optional `loginHint` and `hd`. |
+| `src/auth/oidc.ts` | Phase 2: `startOIDCSignIn` takes an optional `loginHint`, the domain (sent as `hd` to Google only) and an invite token for that one attempt. |
 | `src/pages/oauth-callback.tsx`, `src/pages/magic-link.tsx` | Use `joined_org_ids`: switch org, show the toast. Show `SSO_REQUIRED` errors. |
 | `src/App.tsx`, `src/pages/select-org.tsx` | Zero orgs is now a normal state, not an error. Today it shows "No organizations available for this account." It becomes the org picker's empty state: "You're not in an org yet. Ask an admin to invite you.", with the create button where org creation is allowed. |
 | `src/pages/select-org.tsx`, `src/pages/routegen/settings/organization/index.page.tsx` | Hide "create organization" when `can_create_org` is false. |
@@ -960,7 +996,7 @@ only adds members.
 | `src/pages/magic-link.tsx` | Phase 2: invite + `SSO_REQUIRED` → keep the invite token, go through SSO. |
 | `src/pages/routegen/settings/sso/` (new), `settings-layout.tsx` | The SSO & domains tab: the two org settings, the domain list and the stricter-elsewhere notes. |
 | `src/pages/routegen/members/index.page.tsx` | The `via acme.com` badge and the remove-dialog line. |
-| `src/pages/routegen/settings/account/` | Phase 2: show `SSO_REQUIRED` on Set password. |
+| `src/pages/routegen/settings/account/` | Phase 2: no change. The existing error toast shows the server's `SSO_REQUIRED` message on Set password. |
 
 ## Phases
 
@@ -1026,9 +1062,12 @@ Integration tests use the repo's `testutil` setup; 11 to 14 are unit tests.
     org.
 18. Phase 2: every blocked path returns `SSO_REQUIRED`. A blocked email link is
     not used up. A session that did not start through SSO is refused at refresh
-    with `Unauthenticated`; an SSO session is renewed. API keys, the demo
-    sign-in and demo sessions at refresh keep working.
-19. Phase 2: an invite accepted through SSO with a different email is refused.
+    with `Unauthenticated` and revoked, and a replayed token still trips reuse
+    detection first; an SSO session is renewed. The demo sign-in and demo
+    sessions at refresh keep working. `pug domains unenforce` turns Require SSO
+    off in every org.
+19. Phase 2: an invite accepted through SSO is refused when the account the
+    sign-in resolves to has a different email.
 20. Phase 2: an identity that resolves by `sub` to an `@D` account gets
     `SSO_REQUIRED`, even when its provider email is no longer on D.
 21. Phase 3: a connection signs in only emails on the domains it lists, and

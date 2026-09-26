@@ -60,6 +60,14 @@ A sign-in through it with an email on a listed domain proves that domain, the sa
 
 An older Pug refuses to start with `emailDomains` in the file, since unknown fields are errors. Add it only after every server runs a version that knows it, and remove it before a rollback.
 
+## Requiring SSO
+
+An org admin can require SSO for a domain the org verified. Accounts on that domain then sign in only through a provider that proves it: Google with `hd`, or a provider whose `emailDomains` lists it. Passwords and email links stop working for them. If that provider breaks, for example when its client secret expires, nobody on the domain can sign in to turn the setting off, admins included. Turn it off in every org with:
+
+```sh
+./bin/pug domains unenforce acme.com
+```
+
 ## Google
 
 Configure Google as an OIDC provider with issuer `https://accounts.google.com`, its client ID, and its client secret, as shown in the example config. Register the same `/oauth/callback` redirect URI in the Google OAuth client. The secret remains server-side; Google otherwise uses the same OIDC flow as every other provider.

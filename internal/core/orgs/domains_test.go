@@ -641,3 +641,140 @@ func TestMarkSSOSeenInTxMarksOnlyVerifiedClaims(t *testing.T) {
 		}
 	}
 }
+
+func (f *domainFixture) ssoSeen(domain string) {
+	f.t.Helper()
+	if err := f.inTx(func(w *dbwrite.Queries) error { return orgs.MarkSSOSeenInTx(f.ctx, w, domain) }); err != nil {
+		f.t.Fatalf("MarkSSOSeenInTx: %v", err)
+	}
+}
+
+func (f *domainFixture) requireSSO(orgID string, d orgs.Domain, on bool) {
+	f.t.Helper()
+	if _, err := f.svc.UpdateDomain(f.ctx, orgID, d.ID, on); err != nil {
+		f.t.Fatalf("UpdateDomain(%s, %v): %v", d.Domain, on, err)
+	}
+}
+
+func wantSSORequired(t *testing.T, err error, domain string) {
+	t.Helper()
+	ssoErr, ok := errors.AsType[*orgs.SSORequiredError](err)
+	if !ok || ssoErr.Domain != domain {
+		t.Fatalf("err = %v, want SSORequiredError for %s", err, domain)
+	}
+}
+
+func TestRequireSSONeedsAVerifiedDomainThatSSOHasProven(t *testing.T) {
+	f := newDomainFixture(t)
+	orgID, _ := f.org("admin@acme.com")
+	d := f.addDomain(orgID, "acme.com")
+	f.dns.publish(d)
+
+	if _, err := f.svc.UpdateDomain(f.ctx, orgID, d.ID, true); !errors.Is(err, orgs.ErrDomainNotVerified) {
+		t.Fatalf("pending domain err = %v, want ErrDomainNotVerified", err)
+	}
+	if _, err := f.svc.VerifyDomain(f.ctx, orgID, d.ID); err != nil {
+		t.Fatalf("VerifyDomain: %v", err)
+	}
+	if _, err := f.svc.UpdateDomain(f.ctx, orgID, d.ID, true); !errors.Is(err, orgs.ErrDomainSSONotSeen) {
+		t.Fatalf("unproven domain err = %v, want ErrDomainSSONotSeen", err)
+	}
+	if _, err := f.svc.UpdateDomain(f.ctx, xid.New().String(), d.ID, true); !errors.Is(err, orgs.ErrDomainNotFound) {
+		t.Fatalf("another org's domain err = %v, want ErrDomainNotFound", err)
+	}
+
+	f.ssoSeen("acme.com")
+	got, err := f.svc.UpdateDomain(f.ctx, orgID, d.ID, true)
+	if err != nil || !got.RequireSSO || !got.SSOSeen {
+		t.Fatalf("UpdateDomain = %+v, %v; want Require SSO on", got, err)
+	}
+	_, domains, err := f.svc.ListDomains(f.ctx, orgID)
+	if err != nil || len(domains) != 1 || !domains[0].RequireSSO || !domains[0].SSOSeen {
+		t.Fatalf("ListDomains = %+v, %v", domains, err)
+	}
+}
+
+func TestRequireSSORechecksTheRecord(t *testing.T) {
+	f := newDomainFixture(t)
+	orgID, _ := f.org("admin@acme.com")
+	d := f.verifiedDomain(orgID, "acme.com")
+	f.ssoSeen("acme.com")
+
+	f.dns.fail = &net.DNSError{Err: "server misbehaving", IsTemporary: true}
+	if _, err := f.svc.UpdateDomain(f.ctx, orgID, d.ID, true); !errors.Is(err, orgs.ErrDNSUnavailable) {
+		t.Fatalf("err = %v, want ErrDNSUnavailable", err)
+	}
+	f.dns.fail = nil
+	f.dns.unpublish(d)
+	_, err := f.svc.UpdateDomain(f.ctx, orgID, d.ID, true)
+	wantVerificationError(t, err, "acme.com")
+	if err := orgs.CheckSignInInTx(f.ctx, f.w, "bob@acme.com", ""); err != nil {
+		t.Fatalf("a refused change must leave Require SSO off, got %v", err)
+	}
+
+	f.dns.publish(d)
+	f.requireSSO(orgID, d, true)
+	// Turning it off needs no record.
+	f.dns.unpublish(d)
+	f.requireSSO(orgID, d, false)
+
+	op, err := f.svc.VerifyDomainByOperator(f.ctx, orgID, "acme.io")
+	if err != nil {
+		t.Fatalf("VerifyDomainByOperator: %v", err)
+	}
+	f.ssoSeen("acme.io")
+	lookups := f.dns.lookups
+	f.requireSSO(orgID, op, true)
+	if f.dns.lookups != lookups {
+		t.Fatal("an operator-verified domain looked up DNS")
+	}
+}
+
+func TestRequireSSOStrictestWins(t *testing.T) {
+	f := newDomainFixture(t)
+	strictOrg, _ := f.org("admin@acme.com")
+	d := f.verifiedDomain(strictOrg, "acme.com")
+	laxOrg, _ := f.org("admin2@acme.com")
+	laxD := f.verifiedDomain(laxOrg, "acme.com")
+	pendingOrg, _ := f.org("admin@globex.com")
+	f.addDomain(pendingOrg, "acme.com")
+	f.ssoSeen("acme.com")
+	f.requireSSO(strictOrg, d, true)
+
+	wantSSORequired(t, orgs.CheckSignInInTx(f.ctx, f.w, "Bob@ACME.com", ""), "acme.com")
+	wantSSORequired(t, orgs.CheckSignInInTx(f.ctx, f.w, "bob@acme.com", "acme.io"), "acme.com")
+	for _, tc := range []struct{ email, proven string }{
+		{"bob@acme.com", "acme.com"},
+		{"bob@globex.com", ""},
+		{"bob@eng.acme.com", ""},
+	} {
+		if err := orgs.CheckSignInInTx(f.ctx, f.w, tc.email, tc.proven); err != nil {
+			t.Fatalf("CheckSignInInTx(%s, %q) = %v, want nil", tc.email, tc.proven, err)
+		}
+	}
+
+	for org, want := range map[string]bool{laxOrg: true, pendingOrg: false, strictOrg: false} {
+		_, domains, err := f.svc.ListDomains(f.ctx, org)
+		if err != nil || len(domains) != 1 {
+			t.Fatalf("ListDomains = %v, %v", domains, err)
+		}
+		if domains[0].SSORequiredElsewhere != want {
+			t.Fatalf("org %s: required elsewhere = %v, want %v", org, domains[0].SSORequiredElsewhere, want)
+		}
+	}
+
+	f.requireSSO(laxOrg, laxD, true)
+	n, err := f.svc.UnenforceDomain(f.ctx, "ACME.com")
+	if err != nil || n != 2 {
+		t.Fatalf("UnenforceDomain = %d, %v; want 2 claims changed", n, err)
+	}
+	if err := orgs.CheckSignInInTx(f.ctx, f.w, "bob@acme.com", ""); err != nil {
+		t.Fatalf("after unenforce: %v", err)
+	}
+	if n, err := f.svc.UnenforceDomain(f.ctx, "acme.com"); err != nil || n != 0 {
+		t.Fatalf("UnenforceDomain again = %d, %v; want 0, nil", n, err)
+	}
+	if _, err := f.svc.UnenforceDomain(f.ctx, "acme.co"); !errors.Is(err, orgs.ErrDomainNotFound) {
+		t.Fatalf("UnenforceDomain(unclaimed) err = %v, want ErrDomainNotFound", err)
+	}
+}

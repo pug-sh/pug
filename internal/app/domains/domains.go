@@ -1,5 +1,6 @@
-// Package domains is the operator CLI behind `pug domains`. It uses only Postgres
-// and never changes an org's settings.
+// Package domains is the operator CLI behind `pug domains`. It uses only Postgres and
+// leaves settings to org admins, except `unenforce`: it turns Require SSO off, the way
+// back when SSO breaks and nobody on the domain can sign in.
 package domains
 
 import (
@@ -70,13 +71,23 @@ func (c *CLI) Release(ctx context.Context, out io.Writer, orgID, domain string) 
 	return c.Show(ctx, out, domain)
 }
 
+// Unenforce turns Require SSO off in every org, then shows the claims.
+func (c *CLI) Unenforce(ctx context.Context, out io.Writer, domain string) error {
+	n, err := c.svc.UnenforceDomain(ctx, domain)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Require SSO turned off in %d org(s).\n", n)
+	return c.Show(ctx, out, domain)
+}
+
 func writeClaims(out io.Writer, domain string, claims []dbread.ListOrgDomainsByDomainRow) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	if len(claims) == 0 {
 		fmt.Fprintf(w, "%s\tno org has added this domain\n", domain)
 		return w.Flush()
 	}
-	fmt.Fprintln(w, "ORG\tNAME\tSTATUS\tAUTO-JOIN\tORG CREATION\tSSO SEEN")
+	fmt.Fprintln(w, "ORG\tNAME\tSTATUS\tAUTO-JOIN\tORG CREATION\tSSO SEEN\tREQUIRE SSO")
 	for _, c := range claims {
 		status := "pending"
 		if c.VerifiedAt.Valid {
@@ -94,7 +105,11 @@ func writeClaims(out io.Writer, domain string, claims []dbread.ListOrgDomainsByD
 		if c.SsoSeenAt.Valid {
 			seen = day(c.SsoSeenAt.Time)
 		}
-		fmt.Fprintf(w, "%s\t%q\t%s\t%s\t%s\t%s\n", c.OrgID, c.OrgDisplayName, status, autoJoin, creation, seen)
+		requireSSO := "off"
+		if c.RequireSso {
+			requireSSO = "on"
+		}
+		fmt.Fprintf(w, "%s\t%q\t%s\t%s\t%s\t%s\t%s\n", c.OrgID, c.OrgDisplayName, status, autoJoin, creation, seen, requireSSO)
 	}
 	return w.Flush()
 }

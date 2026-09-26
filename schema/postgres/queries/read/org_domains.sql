@@ -18,7 +18,14 @@ select
       and d2.org_id <> d.org_id
       and d2.verified_at is not null
       and not o2.members_can_create_orgs
-  ))::boolean as org_creation_restricted_elsewhere
+  ))::boolean as org_creation_restricted_elsewhere,
+  (d.verified_at is not null and exists (
+    select 1 from org_domains d2
+    where d2.domain = d.domain
+      and d2.org_id <> d.org_id
+      and d2.verified_at is not null
+      and d2.require_sso
+  ))::boolean as sso_required_elsewhere
 from org_domains d
 where d.org_id = @org_id
 order by d.create_time asc, d.id asc;

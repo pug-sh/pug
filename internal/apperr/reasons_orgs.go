@@ -28,4 +28,5 @@ var (
 	ReasonDomainNotVerified        = codes.add("DOMAIN_NOT_VERIFIED")
 	ReasonDomainVerificationFailed = codes.add("DOMAIN_VERIFICATION_FAILED")
 	ReasonDomainLookupFailed       = codes.add("DOMAIN_LOOKUP_FAILED")
+	ReasonDomainSSONotSeen         = codes.add("DOMAIN_SSO_NOT_SEEN")
 )

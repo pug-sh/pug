@@ -26,7 +26,19 @@ var (
 	ErrDomainNotVerified     = errors.New("org has no verified domain")
 	ErrOrgCreationRestricted = errors.New("org creation is restricted for this email domain")
 	ErrDNSUnavailable        = errors.New("dns lookup failed")
+	ErrDomainSSONotSeen      = errors.New("no one has signed in to the domain through SSO")
 )
+
+// SSORequiredError refuses a sign-in that didn't prove Domain, which requires SSO.
+type SSORequiredError struct {
+	Domain string
+	// The refused sign-in was an invite link.
+	Invite bool
+}
+
+func (e *SSORequiredError) Error() string {
+	return e.Domain + " requires SSO"
+}
 
 // DomainVerificationError reports the domain with no TXT record holding the org's value.
 type DomainVerificationError struct {
@@ -60,8 +72,11 @@ type Domain struct {
 	VerificationToken  string
 	VerifiedAt         time.Time
 	VerificationMethod string
+	RequireSSO         bool
+	SSOSeen            bool
 	// Set only by ListDomains, and only on a verified domain.
 	OrgCreationRestrictedElsewhere bool
+	SSORequiredElsewhere           bool
 }
 
 func (d Domain) Verified() bool { return !d.VerifiedAt.IsZero() }
@@ -89,6 +104,8 @@ func domainFromRow(r dbwrite.OrgDomain) Domain {
 		VerificationToken:  r.VerificationToken,
 		VerifiedAt:         r.VerifiedAt.Time,
 		VerificationMethod: r.VerificationMethod.String,
+		RequireSSO:         r.RequireSso,
+		SSOSeen:            r.SsoSeenAt.Valid,
 	}
 }
 
@@ -122,7 +139,10 @@ func (s *Service) ListDomains(ctx context.Context, orgID string) (DomainSettings
 			VerificationToken:              row.VerificationToken,
 			VerifiedAt:                     row.VerifiedAt.Time,
 			VerificationMethod:             row.VerificationMethod.String,
+			RequireSSO:                     row.RequireSso,
+			SSOSeen:                        row.SsoSeenAt.Valid,
 			OrgCreationRestrictedElsewhere: row.OrgCreationRestrictedElsewhere,
+			SSORequiredElsewhere:           row.SsoRequiredElsewhere,
 		})
 	}
 	return settingsFromOrg(org.AutoJoinRole.String, org.MembersCanCreateOrgs), domains, nil
@@ -268,6 +288,42 @@ func (s *Service) SetDomainSettings(ctx context.Context, orgID string, want Doma
 	return settingsFromOrg(org.AutoJoinRole.String, org.MembersCanCreateOrgs), nil
 }
 
+// UpdateDomain turns Require SSO on or off for the org's claim. Turning it on needs a
+// verified domain that an SSO sign-in has proven, and re-checks its DNS record.
+func (s *Service) UpdateDomain(ctx context.Context, orgID, domainID string, requireSSO bool) (Domain, error) {
+	d, err := s.getDomain(ctx, orgID, domainID)
+	if err != nil {
+		return Domain{}, err
+	}
+	if requireSSO && !d.RequireSSO {
+		switch {
+		case !d.Verified():
+			return Domain{}, ErrDomainNotVerified
+		case !d.SSOSeen:
+			return Domain{}, ErrDomainSSONotSeen
+		case d.VerificationMethod != VerificationMethodOperator:
+			if err := s.checkTXT(ctx, d); err != nil {
+				return Domain{}, err
+			}
+		}
+	}
+	row, err := s.write.UpdateOrgDomainRequireSSO(ctx, dbwrite.UpdateOrgDomainRequireSSOParams{
+		ID:         domainID,
+		OrgID:      orgID,
+		RequireSso: requireSSO,
+	})
+	if err != nil {
+		// verified_at and sso_seen_at are never unset, so the claim was removed meanwhile.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Domain{}, ErrDomainNotFound
+		}
+		slog.ErrorContext(ctx, "failed to update org domain", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return Domain{}, err
+	}
+	return domainFromRow(row), nil
+}
+
 // recheckDomains needs a verified domain, and a live record for each DNS-verified one.
 func (s *Service) recheckDomains(ctx context.Context, domains []Domain) error {
 	verified := false
@@ -374,6 +430,30 @@ func (s *Service) ReleaseDomain(ctx context.Context, orgID, rawDomain string) er
 	return nil
 }
 
+// UnenforceDomain turns Require SSO off in every org that claimed the domain, for when
+// SSO breaks and nobody on the domain can sign in to do it. It returns how many claims changed.
+func (s *Service) UnenforceDomain(ctx context.Context, rawDomain string) (int64, error) {
+	domain, err := domainname.Normalize(rawDomain)
+	if err != nil {
+		return 0, ErrDomainInvalid
+	}
+	n, err := s.write.UnenforceOrgDomainRequireSSO(ctx, domain)
+	if err != nil {
+		return 0, fmt.Errorf("unenforce domain: %w", err)
+	}
+	// So a mistyped domain doesn't read as "nothing to turn off".
+	if n == 0 {
+		claims, err := s.DomainClaims(ctx, domain)
+		if err != nil {
+			return 0, err
+		}
+		if len(claims) == 0 {
+			return 0, ErrDomainNotFound
+		}
+	}
+	return n, nil
+}
+
 // DomainClaims lists every org that has added the domain, verified ones first.
 func (s *Service) DomainClaims(ctx context.Context, rawDomain string) ([]dbread.ListOrgDomainsByDomainRow, error) {
 	domain, err := domainname.Normalize(rawDomain)
@@ -417,6 +497,25 @@ func MarkSSOSeenInTx(ctx context.Context, w *dbwrite.Queries, provenDomain strin
 		slog.ErrorContext(ctx, "failed to mark domain sso seen", slogx.Error(err), slog.String("domain", provenDomain))
 		telemetry.RecordError(ctx, err)
 		return err
+	}
+	return nil
+}
+
+// CheckSignInInTx refuses a sign-in for an email whose domain requires SSO, unless the
+// sign-in proved that domain. It returns *SSORequiredError.
+func CheckSignInInTx(ctx context.Context, w *dbwrite.Queries, email, provenDomain string) error {
+	domain := domainname.Of(email)
+	if domain == "" || domain == provenDomain {
+		return nil
+	}
+	required, err := w.IsSSORequired(ctx, domain)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to check whether the domain requires sso", slogx.Error(err), slog.String("domain", domain))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if required {
+		return &SSORequiredError{Domain: domain}
 	}
 	return nil
 }

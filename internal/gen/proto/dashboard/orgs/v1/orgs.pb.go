@@ -1564,8 +1564,16 @@ type OrgDomain struct {
 	// True when another org that verified this domain turned org creation off.
 	// Set only by ListDomains, and only on a verified domain.
 	OrgCreationRestrictedElsewhere *bool `protobuf:"varint,8,opt,name=org_creation_restricted_elsewhere,json=orgCreationRestrictedElsewhere" json:"org_creation_restricted_elsewhere,omitempty"`
-	unknownFields                  protoimpl.UnknownFields
-	sizeCache                      protoimpl.SizeCache
+	// Accounts on the domain may sign in only through SSO.
+	RequireSso *bool `protobuf:"varint,9,opt,name=require_sso,json=requireSso" json:"require_sso,omitempty"`
+	// Someone has signed in through SSO with an account on the domain since it was
+	// verified. Require SSO can't be turned on before that.
+	SsoSeen *bool `protobuf:"varint,10,opt,name=sso_seen,json=ssoSeen" json:"sso_seen,omitempty"`
+	// True when another org that verified this domain requires SSO for it.
+	// Set only by ListDomains, and only on a verified domain.
+	SsoRequiredElsewhere *bool `protobuf:"varint,11,opt,name=sso_required_elsewhere,json=ssoRequiredElsewhere" json:"sso_required_elsewhere,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *OrgDomain) Reset() {
@@ -1650,6 +1658,27 @@ func (x *OrgDomain) GetVerifiedAt() string {
 func (x *OrgDomain) GetOrgCreationRestrictedElsewhere() bool {
 	if x != nil && x.OrgCreationRestrictedElsewhere != nil {
 		return *x.OrgCreationRestrictedElsewhere
+	}
+	return false
+}
+
+func (x *OrgDomain) GetRequireSso() bool {
+	if x != nil && x.RequireSso != nil {
+		return *x.RequireSso
+	}
+	return false
+}
+
+func (x *OrgDomain) GetSsoSeen() bool {
+	if x != nil && x.SsoSeen != nil {
+		return *x.SsoSeen
+	}
+	return false
+}
+
+func (x *OrgDomain) GetSsoRequiredElsewhere() bool {
+	if x != nil && x.SsoRequiredElsewhere != nil {
+		return *x.SsoRequiredElsewhere
 	}
 	return false
 }
@@ -2189,6 +2218,111 @@ func (*RemoveDomainResponse) Descriptor() ([]byte, []int) {
 	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{38}
 }
 
+type UpdateDomainRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OrgId    *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	DomainId *string                `protobuf:"bytes,2,opt,name=domain_id,json=domainId" json:"domain_id,omitempty"`
+	// Required so an omitted field can't silently turn Require SSO off.
+	RequireSso    *bool `protobuf:"varint,3,opt,name=require_sso,json=requireSso" json:"require_sso,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDomainRequest) Reset() {
+	*x = UpdateDomainRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDomainRequest) ProtoMessage() {}
+
+func (x *UpdateDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDomainRequest.ProtoReflect.Descriptor instead.
+func (*UpdateDomainRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *UpdateDomainRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *UpdateDomainRequest) GetDomainId() string {
+	if x != nil && x.DomainId != nil {
+		return *x.DomainId
+	}
+	return ""
+}
+
+func (x *UpdateDomainRequest) GetRequireSso() bool {
+	if x != nil && x.RequireSso != nil {
+		return *x.RequireSso
+	}
+	return false
+}
+
+type UpdateDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Domain        *OrgDomain             `protobuf:"bytes,1,opt,name=domain" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDomainResponse) Reset() {
+	*x = UpdateDomainResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDomainResponse) ProtoMessage() {}
+
+func (x *UpdateDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDomainResponse.ProtoReflect.Descriptor instead.
+func (*UpdateDomainResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *UpdateDomainResponse) GetDomain() *OrgDomain {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
 var File_dashboard_orgs_v1_orgs_proto protoreflect.FileDescriptor
 
 const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
@@ -2277,7 +2411,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x04role\"P\n" +
 	"\x18UpdateMemberRoleResponse\x124\n" +
-	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member\"\x88\x03\n" +
+	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member\"\xfa\x03\n" +
 	"\tOrgDomain\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x127\n" +
@@ -2287,7 +2421,12 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x10txt_record_value\x18\x06 \x01(\tR\x0etxtRecordValue\x12\x1f\n" +
 	"\vverified_at\x18\a \x01(\tR\n" +
 	"verifiedAt\x12I\n" +
-	"!org_creation_restricted_elsewhere\x18\b \x01(\bR\x1eorgCreationRestrictedElsewhere\"\x89\x01\n" +
+	"!org_creation_restricted_elsewhere\x18\b \x01(\bR\x1eorgCreationRestrictedElsewhere\x12\x1f\n" +
+	"\vrequire_sso\x18\t \x01(\bR\n" +
+	"requireSso\x12\x19\n" +
+	"\bsso_seen\x18\n" +
+	" \x01(\bR\assoSeen\x124\n" +
+	"\x16sso_required_elsewhere\x18\v \x01(\bR\x14ssoRequiredElsewhere\"\x89\x01\n" +
 	"\x0eDomainSettings\x12@\n" +
 	"\x0eauto_join_role\x18\x01 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\fautoJoinRole\x125\n" +
 	"\x17members_can_create_orgs\x18\x02 \x01(\bR\x14membersCanCreateOrgs\"3\n" +
@@ -2317,7 +2456,14 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x13RemoveDomainRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12#\n" +
 	"\tdomain_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bdomainId\"\x16\n" +
-	"\x14RemoveDomainResponse*a\n" +
+	"\x14RemoveDomainResponse\"\x82\x01\n" +
+	"\x13UpdateDomainRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12#\n" +
+	"\tdomain_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bdomainId\x12'\n" +
+	"\vrequire_sso\x18\x03 \x01(\bB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"requireSso\"L\n" +
+	"\x14UpdateDomainResponse\x124\n" +
+	"\x06domain\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgDomainR\x06domain*a\n" +
 	"\aOrgRole\x12\x18\n" +
 	"\x14ORG_ROLE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eORG_ROLE_ADMIN\x10\x01\x12\x13\n" +
@@ -2334,7 +2480,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x18DomainVerificationMethod\x12*\n" +
 	"&DOMAIN_VERIFICATION_METHOD_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eDOMAIN_VERIFICATION_METHOD_DNS\x10\x01\x12'\n" +
-	"#DOMAIN_VERIFICATION_METHOD_OPERATOR\x10\x022\xea\f\n" +
+	"#DOMAIN_VERIFICATION_METHOD_OPERATOR\x10\x022\xcd\r\n" +
 	"\vOrgsService\x12I\n" +
 	"\x04List\x12\x1e.dashboard.orgs.v1.ListRequest\x1a\x1f.dashboard.orgs.v1.ListResponse\"\x00\x12F\n" +
 	"\x03Get\x12\x1d.dashboard.orgs.v1.GetRequest\x1a\x1e.dashboard.orgs.v1.GetResponse\"\x00\x12p\n" +
@@ -2352,7 +2498,8 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x11SetDomainSettings\x12+.dashboard.orgs.v1.SetDomainSettingsRequest\x1a,.dashboard.orgs.v1.SetDomainSettingsResponse\"\x00\x12X\n" +
 	"\tAddDomain\x12#.dashboard.orgs.v1.AddDomainRequest\x1a$.dashboard.orgs.v1.AddDomainResponse\"\x00\x12a\n" +
 	"\fVerifyDomain\x12&.dashboard.orgs.v1.VerifyDomainRequest\x1a'.dashboard.orgs.v1.VerifyDomainResponse\"\x00\x12a\n" +
-	"\fRemoveDomain\x12&.dashboard.orgs.v1.RemoveDomainRequest\x1a'.dashboard.orgs.v1.RemoveDomainResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
+	"\fRemoveDomain\x12&.dashboard.orgs.v1.RemoveDomainRequest\x1a'.dashboard.orgs.v1.RemoveDomainResponse\"\x00\x12a\n" +
+	"\fUpdateDomain\x12&.dashboard.orgs.v1.UpdateDomainRequest\x1a'.dashboard.orgs.v1.UpdateDomainResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_orgs_v1_orgs_proto_rawDescOnce sync.Once
@@ -2367,7 +2514,7 @@ func file_dashboard_orgs_v1_orgs_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_orgs_v1_orgs_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
 	(OrgRole)(0),                      // 0: dashboard.orgs.v1.OrgRole
 	(InvitationStatus)(0),             // 1: dashboard.orgs.v1.InvitationStatus
@@ -2412,6 +2559,8 @@ var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
 	(*VerifyDomainResponse)(nil),      // 40: dashboard.orgs.v1.VerifyDomainResponse
 	(*RemoveDomainRequest)(nil),       // 41: dashboard.orgs.v1.RemoveDomainRequest
 	(*RemoveDomainResponse)(nil),      // 42: dashboard.orgs.v1.RemoveDomainResponse
+	(*UpdateDomainRequest)(nil),       // 43: dashboard.orgs.v1.UpdateDomainRequest
+	(*UpdateDomainResponse)(nil),      // 44: dashboard.orgs.v1.UpdateDomainResponse
 }
 var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	0,  // 0: dashboard.orgs.v1.Org.role:type_name -> dashboard.orgs.v1.OrgRole
@@ -2438,45 +2587,48 @@ var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	32, // 21: dashboard.orgs.v1.SetDomainSettingsResponse.settings:type_name -> dashboard.orgs.v1.DomainSettings
 	31, // 22: dashboard.orgs.v1.AddDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
 	31, // 23: dashboard.orgs.v1.VerifyDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
-	7,  // 24: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
-	9,  // 25: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
-	11, // 26: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
-	13, // 27: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
-	15, // 28: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
-	17, // 29: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
-	19, // 30: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
-	21, // 31: dashboard.orgs.v1.OrgsService.RevokeInvite:input_type -> dashboard.orgs.v1.RevokeInviteRequest
-	23, // 32: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
-	25, // 33: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
-	27, // 34: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
-	29, // 35: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
-	33, // 36: dashboard.orgs.v1.OrgsService.ListDomains:input_type -> dashboard.orgs.v1.ListDomainsRequest
-	35, // 37: dashboard.orgs.v1.OrgsService.SetDomainSettings:input_type -> dashboard.orgs.v1.SetDomainSettingsRequest
-	37, // 38: dashboard.orgs.v1.OrgsService.AddDomain:input_type -> dashboard.orgs.v1.AddDomainRequest
-	39, // 39: dashboard.orgs.v1.OrgsService.VerifyDomain:input_type -> dashboard.orgs.v1.VerifyDomainRequest
-	41, // 40: dashboard.orgs.v1.OrgsService.RemoveDomain:input_type -> dashboard.orgs.v1.RemoveDomainRequest
-	8,  // 41: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
-	10, // 42: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
-	12, // 43: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
-	14, // 44: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
-	16, // 45: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
-	18, // 46: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
-	20, // 47: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
-	22, // 48: dashboard.orgs.v1.OrgsService.RevokeInvite:output_type -> dashboard.orgs.v1.RevokeInviteResponse
-	24, // 49: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
-	26, // 50: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
-	28, // 51: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
-	30, // 52: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
-	34, // 53: dashboard.orgs.v1.OrgsService.ListDomains:output_type -> dashboard.orgs.v1.ListDomainsResponse
-	36, // 54: dashboard.orgs.v1.OrgsService.SetDomainSettings:output_type -> dashboard.orgs.v1.SetDomainSettingsResponse
-	38, // 55: dashboard.orgs.v1.OrgsService.AddDomain:output_type -> dashboard.orgs.v1.AddDomainResponse
-	40, // 56: dashboard.orgs.v1.OrgsService.VerifyDomain:output_type -> dashboard.orgs.v1.VerifyDomainResponse
-	42, // 57: dashboard.orgs.v1.OrgsService.RemoveDomain:output_type -> dashboard.orgs.v1.RemoveDomainResponse
-	41, // [41:58] is the sub-list for method output_type
-	24, // [24:41] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	31, // 24: dashboard.orgs.v1.UpdateDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
+	7,  // 25: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
+	9,  // 26: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
+	11, // 27: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
+	13, // 28: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
+	15, // 29: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
+	17, // 30: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
+	19, // 31: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
+	21, // 32: dashboard.orgs.v1.OrgsService.RevokeInvite:input_type -> dashboard.orgs.v1.RevokeInviteRequest
+	23, // 33: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
+	25, // 34: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
+	27, // 35: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
+	29, // 36: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
+	33, // 37: dashboard.orgs.v1.OrgsService.ListDomains:input_type -> dashboard.orgs.v1.ListDomainsRequest
+	35, // 38: dashboard.orgs.v1.OrgsService.SetDomainSettings:input_type -> dashboard.orgs.v1.SetDomainSettingsRequest
+	37, // 39: dashboard.orgs.v1.OrgsService.AddDomain:input_type -> dashboard.orgs.v1.AddDomainRequest
+	39, // 40: dashboard.orgs.v1.OrgsService.VerifyDomain:input_type -> dashboard.orgs.v1.VerifyDomainRequest
+	41, // 41: dashboard.orgs.v1.OrgsService.RemoveDomain:input_type -> dashboard.orgs.v1.RemoveDomainRequest
+	43, // 42: dashboard.orgs.v1.OrgsService.UpdateDomain:input_type -> dashboard.orgs.v1.UpdateDomainRequest
+	8,  // 43: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
+	10, // 44: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
+	12, // 45: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
+	14, // 46: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
+	16, // 47: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
+	18, // 48: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
+	20, // 49: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
+	22, // 50: dashboard.orgs.v1.OrgsService.RevokeInvite:output_type -> dashboard.orgs.v1.RevokeInviteResponse
+	24, // 51: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
+	26, // 52: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
+	28, // 53: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
+	30, // 54: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
+	34, // 55: dashboard.orgs.v1.OrgsService.ListDomains:output_type -> dashboard.orgs.v1.ListDomainsResponse
+	36, // 56: dashboard.orgs.v1.OrgsService.SetDomainSettings:output_type -> dashboard.orgs.v1.SetDomainSettingsResponse
+	38, // 57: dashboard.orgs.v1.OrgsService.AddDomain:output_type -> dashboard.orgs.v1.AddDomainResponse
+	40, // 58: dashboard.orgs.v1.OrgsService.VerifyDomain:output_type -> dashboard.orgs.v1.VerifyDomainResponse
+	42, // 59: dashboard.orgs.v1.OrgsService.RemoveDomain:output_type -> dashboard.orgs.v1.RemoveDomainResponse
+	44, // 60: dashboard.orgs.v1.OrgsService.UpdateDomain:output_type -> dashboard.orgs.v1.UpdateDomainResponse
+	43, // [43:61] is the sub-list for method output_type
+	25, // [25:43] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_orgs_v1_orgs_proto_init() }
@@ -2490,7 +2642,7 @@ func file_dashboard_orgs_v1_orgs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_orgs_v1_orgs_proto_rawDesc), len(file_dashboard_orgs_v1_orgs_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   39,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

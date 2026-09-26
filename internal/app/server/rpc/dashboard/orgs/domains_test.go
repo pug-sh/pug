@@ -187,3 +187,60 @@ func TestOrgCreationRestrictionHandlers(t *testing.T) {
 		t.Fatalf("joined_via_domain = %v", via)
 	}
 }
+
+func TestRequireSSOHandlers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	srv := orgshandler.NewServer(h.svc)
+	admin := seedCustomerWithEmail(t, h, "admin@acme.com")
+	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := h.svc.AddDomain(h.ctx, org.ID, "acme.io")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.svc.VerifyDomainByOperator(h.ctx, org.ID, "acme.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := ctxWithCustomer(h.ctx, admin)
+	update := func(domainID string) (*connect.Response[orgsv1.UpdateDomainResponse], error) {
+		return srv.UpdateDomain(ctx, connect.NewRequest(&orgsv1.UpdateDomainRequest{
+			OrgId: proto.String(org.ID), DomainId: proto.String(domainID), RequireSso: proto.Bool(true),
+		}))
+	}
+
+	_, err = update(pending.ID)
+	wantAppErr(t, err, connect.CodeFailedPrecondition, apperr.ReasonDomainNotVerified)
+	_, err = update(d.ID)
+	wantAppErr(t, err, connect.CodeFailedPrecondition, apperr.ReasonDomainSSONotSeen)
+	_, err = update(xid.New().String())
+	wantAppErr(t, err, connect.CodeNotFound, apperr.ReasonDomainNotFound)
+
+	if err := coreorgs.MarkSSOSeenInTx(h.ctx, h.write, "acme.com"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := update(d.ID)
+	if err != nil {
+		t.Fatalf("UpdateDomain: %v", err)
+	}
+	if got := resp.Msg.GetDomain(); !got.GetRequireSso() || !got.GetSsoSeen() {
+		t.Fatalf("updated = %v", got)
+	}
+	list, err := srv.ListDomains(ctx, connect.NewRequest(&orgsv1.ListDomainsRequest{OrgId: proto.String(org.ID)}))
+	if err != nil {
+		t.Fatalf("ListDomains: %v", err)
+	}
+	if len(list.Msg.GetDomains()) != 2 {
+		t.Fatalf("listed %d domains, want 2", len(list.Msg.GetDomains()))
+	}
+	for _, got := range list.Msg.GetDomains() {
+		if got.GetRequireSso() != (got.GetDomain() == "acme.com") {
+			t.Fatalf("listed = %v", got)
+		}
+	}
+}

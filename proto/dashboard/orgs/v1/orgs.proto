@@ -42,6 +42,9 @@ service OrgsService {
   rpc VerifyDomain(VerifyDomainRequest) returns (VerifyDomainResponse) {}
   // RemoveDomain drops the org's claim. Members who joined through it stay.
   rpc RemoveDomain(RemoveDomainRequest) returns (RemoveDomainResponse) {}
+  // UpdateDomain turns Require SSO on or off for this org's claim. Turning it on needs a
+  // verified domain that someone signed in to through SSO, and re-checks its DNS record.
+  rpc UpdateDomain(UpdateDomainRequest) returns (UpdateDomainResponse) {}
 }
 
 enum DomainStatus {
@@ -209,6 +212,14 @@ message OrgDomain {
   // True when another org that verified this domain turned org creation off.
   // Set only by ListDomains, and only on a verified domain.
   bool org_creation_restricted_elsewhere = 8;
+  // Accounts on the domain may sign in only through SSO.
+  bool require_sso = 9;
+  // Someone has signed in through SSO with an account on the domain since it was
+  // verified. Require SSO can't be turned on before that.
+  bool sso_seen = 10;
+  // True when another org that verified this domain requires SSO for it.
+  // Set only by ListDomains, and only on a verified domain.
+  bool sso_required_elsewhere = 11;
 }
 
 message DomainSettings {
@@ -268,3 +279,14 @@ message RemoveDomainRequest {
 }
 
 message RemoveDomainResponse {}
+
+message UpdateDomainRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string domain_id = 2 [(buf.validate.field).required = true];
+  // Required so an omitted field can't silently turn Require SSO off.
+  bool require_sso = 3 [(buf.validate.field).required = true];
+}
+
+message UpdateDomainResponse {
+  OrgDomain domain = 1;
+}

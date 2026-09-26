@@ -112,12 +112,27 @@ message CompleteOIDCSignInRequest {
     max_len: 64
     pattern: "^[A-Za-z0-9_+/-]*$"
   }];
+  // Optional. The token of an invite link that SSO_REQUIRED refused. The invite is
+  // accepted only when it was sent to the email of the account signing in.
+  string invite_token = 7 [(buf.validate.field).string.max_len = 128];
+}
+
+// SSORequired is the error detail of SSO_REQUIRED: accounts on the domain sign in
+// only through SSO.
+message SSORequired {
+  string domain = 1;
+  // The providers that can sign the domain in.
+  repeated AuthProviderConfig providers = 2;
+  // True when the refused link was an invite. Send its token as
+  // CompleteOIDCSignInRequest.invite_token to accept it after signing in.
+  bool invite = 3;
 }
 
 message CompleteOIDCSignInResponse {
   string token = 1;
   string refresh_token = 2;
-  // Orgs this sign-in added the account to, by auto-join on a verified domain.
+  // Orgs this sign-in added the account to, by invite or by auto-join on a
+  // verified domain.
   repeated string joined_org_ids = 3;
 }
 

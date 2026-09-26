@@ -216,6 +216,20 @@ func (q *Queries) IsOrgCreationRestricted(ctx context.Context, arg IsOrgCreation
 	return restricted, err
 }
 
+const isSSORequired = `-- name: IsSSORequired :one
+select exists (
+  select 1 from org_domains
+  where domain = $1 and verified_at is not null and require_sso
+)::boolean as required
+`
+
+func (q *Queries) IsSSORequired(ctx context.Context, domain string) (bool, error) {
+	row := q.db.QueryRow(ctx, isSSORequired, domain)
+	var required bool
+	err := row.Scan(&required)
+	return required, err
+}
+
 const markOrgDomainVerifiedByDNS = `-- name: MarkOrgDomainVerifiedByDNS :one
 update org_domains
 set verified_at = now(), verification_method = 'dns'
@@ -255,6 +269,51 @@ where domain = $1 and verified_at is not null and sso_seen_at is null
 func (q *Queries) MarkOrgDomainsSSOSeen(ctx context.Context, domain string) error {
 	_, err := q.db.Exec(ctx, markOrgDomainsSSOSeen, domain)
 	return err
+}
+
+const unenforceOrgDomainRequireSSO = `-- name: UnenforceOrgDomainRequireSSO :execrows
+update org_domains set require_sso = false where domain = $1 and require_sso
+`
+
+func (q *Queries) UnenforceOrgDomainRequireSSO(ctx context.Context, domain string) (int64, error) {
+	result, err := q.db.Exec(ctx, unenforceOrgDomainRequireSSO, domain)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateOrgDomainRequireSSO = `-- name: UpdateOrgDomainRequireSSO :one
+update org_domains
+set require_sso = $1
+where id = $2 and org_id = $3
+  and (not $1::boolean or (verified_at is not null and sso_seen_at is not null))
+returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at
+`
+
+type UpdateOrgDomainRequireSSOParams struct {
+	RequireSso bool
+	ID         string
+	OrgID      string
+}
+
+// Turning it on needs a verified claim that an SSO sign-in has proven.
+func (q *Queries) UpdateOrgDomainRequireSSO(ctx context.Context, arg UpdateOrgDomainRequireSSOParams) (OrgDomain, error) {
+	row := q.db.QueryRow(ctx, updateOrgDomainRequireSSO, arg.RequireSso, arg.ID, arg.OrgID)
+	var i OrgDomain
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Domain,
+		&i.ID,
+		&i.OrgID,
+		&i.RequireSso,
+		&i.SsoSeenAt,
+		&i.UpdateTime,
+		&i.VerificationMethod,
+		&i.VerificationToken,
+		&i.VerifiedAt,
+	)
+	return i, err
 }
 
 const upsertOrgDomainVerifiedByOperator = `-- name: UpsertOrgDomainVerifiedByOperator :one

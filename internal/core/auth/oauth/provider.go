@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Claims are the fields extracted from an IdP credential, before the
@@ -42,7 +43,7 @@ const (
 )
 
 // NewVerifiedIdentity enforces the security-critical invariant: the email must be
-// non-empty and verified, by the IdP or the provider's emailDomains
+// non-empty, ASCII and verified, by the IdP or the provider's emailDomains
 // (ErrUnverifiedEmail otherwise), and the identity must carry a provider and
 // subject (ErrIdentityResolutionFailed). It clamps display fields to their
 // storage widths.
@@ -52,6 +53,11 @@ func NewVerifiedIdentity(provider ProviderName, c Claims) (*Identity, error) {
 	}
 	if !c.EmailVerified || strings.TrimSpace(c.Email) == "" {
 		return nil, ErrUnverifiedEmail
+	}
+	// Account lookups use lower(email), which folds some non-ASCII runes into ASCII (the
+	// Kelvin sign into k), while domain checks skip a non-ASCII domain.
+	if strings.ContainsFunc(c.Email, func(r rune) bool { return r >= utf8.RuneSelf }) {
+		return nil, fmt.Errorf("%w: non-ASCII email", ErrUnverifiedEmail)
 	}
 	// go-oidc doesn't enforce sub; an empty one resolves every user of that IdP
 	// to whoever signed in first.

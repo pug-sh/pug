@@ -1,6 +1,17 @@
 package apperr
 
-import "google.golang.org/genproto/googleapis/rpc/errdetails"
+import (
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/proto"
+)
+
+// Detail attaches a detail message from the service's own protos, for errors whose
+// client needs more than a google.rpc payload carries.
+func Detail(msg proto.Message) Option {
+	return func(s *detailSink) {
+		s.details = append(s.details, msg)
+	}
+}
 
 // Resource attaches a google.rpc.ResourceInfo (which resource was missing/duplicated).
 // Each call appends a distinct ResourceInfo — it is intentionally not coalesced,

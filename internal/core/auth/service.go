@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -56,6 +57,7 @@ func init() {
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrInvalidToken       = errors.New("invalid or expired token")
+	ErrInviteWrongEmail   = errors.New("invite was sent to another email address")
 )
 
 const (
@@ -137,6 +139,10 @@ func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtK
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (Session, error) {
+	// Before the account lookup, so SSO_REQUIRED says nothing about whether one exists.
+	if err := coreorgs.CheckSignInInTx(ctx, s.write, email, ""); err != nil {
+		return Session{}, err
+	}
 	customer, err := s.read.GetCustomerByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -168,9 +174,12 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 }
 
 // RequestMagicLink issues and emails a single-use magic link for the given
-// email. It always succeeds regardless of whether an account exists (no
+// email. Whether an account exists never changes its result (no
 // account-existence oracle); CompleteMagicLink creates the account on first use.
 func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
+	if err := coreorgs.CheckSignInInTx(ctx, s.write, email, ""); err != nil {
+		return err
+	}
 	customerID := ""
 	tokenEmail := email
 	if customer, err := s.read.GetCustomerByEmailOptional(ctx, email); err == nil {
@@ -260,6 +269,13 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	default:
 		return Session{}, ErrInvalidToken
 	}
+	// A refusal rolls back, so an invite's token stays redeemable through CompleteOIDCSignIn.
+	if err := coreorgs.CheckSignInInTx(ctx, w, emailToken.Email, ""); err != nil {
+		if ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err); ok {
+			ssoErr.Invite = isInvite
+		}
+		return Session{}, err
+	}
 
 	customerID := ""
 	createdNew := false
@@ -320,23 +336,45 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	return session, nil
 }
 
-func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, reportingTimezone string) (Session, error) {
+// CompleteOIDCSignIn signs in through a provider. An inviteToken from an invite link
+// that SSO_REQUIRED refused accepts that invite.
+func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, inviteToken, reportingTimezone string) (Session, error) {
 	ident, err := s.oauth.ExchangeCode(ctx, provider, code)
 	if err != nil {
 		return Session{}, err
 	}
-	return s.completeExternalIdentity(ctx, ident, reportingTimezone)
+	return s.completeExternalIdentity(ctx, ident, inviteToken, reportingTimezone)
 }
 
-func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, reportingTimezone string) (Session, error) {
+func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, inviteToken, reportingTimezone string) (Session, error) {
 	var session Session
 	var joined []string
 	provenDomain := ident.ProvenDomain()
+	// The token's own email; the check in the tx covers the account sub resolves to.
+	if err := coreorgs.CheckSignInInTx(ctx, s.write, ident.Email(), provenDomain); err != nil {
+		return Session{}, err
+	}
 	_, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
-		var err error
+		email, err := w.GetCustomerEmailByID(ctx, customerID)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to get customer email on oidc sign-in", slogx.Error(err), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
+			return err
+		}
+		// Sign-in resolves sub before email, so the account can be on another domain than the token's email.
+		if err := coreorgs.CheckSignInInTx(ctx, w, email, provenDomain); err != nil {
+			return err
+		}
+		invitationID := ""
+		if inviteToken != "" {
+			if invitationID, err = redeemInviteTokenInTx(ctx, w, inviteToken, email); err != nil {
+				return err
+			}
+		}
 		joined, err = FinishSignup(ctx, w, Signup{
 			CustomerID:        customerID,
 			CreatedNew:        createdNew,
+			OrgInvitationID:   invitationID,
 			ProvenDomain:      provenDomain,
 			ReportingTimezone: reportingTimezone,
 		})
@@ -363,6 +401,36 @@ func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth
 	}
 	session.JoinedOrgIDs = joined
 	return session, nil
+}
+
+// redeemInviteTokenInTx consumes an invite link's token for the account signing in, and
+// returns its invitation. A magic link is addressed to the invite's email; an SSO
+// account has to match it.
+func redeemInviteTokenInTx(ctx context.Context, w *dbwrite.Queries, rawToken, accountEmail string) (string, error) {
+	token, err := w.GetValidEmailActionTokenByHashForUpdate(ctx, hashToken(rawToken))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInvalidToken
+		}
+		slog.ErrorContext(ctx, "failed to look up invite token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if emailaction.Purpose(token.Purpose) != emailaction.PurposeOrgInvite {
+		return "", ErrInvalidToken
+	}
+	if !strings.EqualFold(token.Email, accountEmail) {
+		return "", ErrInviteWrongEmail
+	}
+	if _, err := w.ConsumeEmailActionToken(ctx, token.ID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInvalidToken
+		}
+		slog.ErrorContext(ctx, "failed to consume invite token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	return token.OrgInvitationID.String, nil
 }
 
 type issueActionTokenInput struct {
@@ -627,6 +695,24 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Sess
 		return Session{}, ErrInvalidToken
 	}
 
+	if err := checkRefreshInTx(ctx, w, row.CustomerID, row.ProvenDomain.String); err != nil {
+		// Revoked, because the frontend drops a refused token: only a copy held elsewhere
+		// could use it once Require SSO is off.
+		if _, ok := errors.AsType[*coreorgs.SSORequiredError](err); ok {
+			if _, revokeErr := w.RevokeRefreshTokenFamily(ctx, row.FamilyID); revokeErr != nil {
+				slog.ErrorContext(ctx, "failed to revoke sso-refused refresh token family", slogx.Error(revokeErr), slog.String("customer_id", row.CustomerID))
+				telemetry.RecordError(ctx, revokeErr)
+				return Session{}, revokeErr
+			}
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				slog.ErrorContext(ctx, "failed to commit sso-refused refresh token family revocation", slogx.Error(commitErr))
+				telemetry.RecordError(ctx, commitErr)
+				return Session{}, commitErr
+			}
+		}
+		return Session{}, err
+	}
+
 	// Generate the access token before mutating state: a signing failure then
 	// leaves the presented token unconsumed and the client can retry cleanly.
 	accessToken, err := s.generateJWT(row.CustomerID)
@@ -661,6 +747,22 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Sess
 		s.autoJoinOnRefresh(ctx, row.CustomerID, row.ProvenDomain.String)
 	}
 	return Session{AccessToken: accessToken, RefreshToken: newRefresh}, nil
+}
+
+// checkRefreshInTx refuses a session whose sign-in didn't prove its account's domain,
+// when that domain requires SSO. The demo viewer needs no credentials at all, so it is
+// exempt; a refresh token doesn't record how it was issued, so its account tells.
+func checkRefreshInTx(ctx context.Context, w *dbwrite.Queries, customerID, provenDomain string) error {
+	email, err := w.GetCustomerEmailByID(ctx, customerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get customer email on refresh", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if strings.EqualFold(email, DemoViewerEmail) {
+		return nil
+	}
+	return coreorgs.CheckSignInInTx(ctx, w, email, provenDomain)
 }
 
 // autoJoinOnRefresh only logs: a failed refresh leaves the frontend with every request failing.

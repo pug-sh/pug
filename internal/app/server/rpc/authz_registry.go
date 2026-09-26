@@ -52,6 +52,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.orgs.v1.OrgsService/AddDomain":         authzspec.OrgGated(authz.ResourceDomain, authz.ActionCreate),
 	"/dashboard.orgs.v1.OrgsService/VerifyDomain":      authzspec.OrgGated(authz.ResourceDomain, authz.ActionUpdate),
 	"/dashboard.orgs.v1.OrgsService/RemoveDomain":      authzspec.OrgGated(authz.ResourceDomain, authz.ActionDelete),
+	"/dashboard.orgs.v1.OrgsService/UpdateDomain":      authzspec.OrgGated(authz.ResourceDomain, authz.ActionUpdate),
 
 	// --- dashboard.projects.v1.ProjectsService ---
 	"/dashboard.projects.v1.ProjectsService/BatchGet":             authzspec.OrgGated(authz.ResourceProject, authz.ActionRead),

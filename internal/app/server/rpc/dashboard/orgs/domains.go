@@ -104,6 +104,21 @@ func (s *server) RemoveDomain(
 	return connect.NewResponse(&orgsv1.RemoveDomainResponse{}), nil
 }
 
+func (s *server) UpdateDomain(
+	ctx context.Context,
+	req *connect.Request[orgsv1.UpdateDomainRequest],
+) (*connect.Response[orgsv1.UpdateDomainResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	d, err := s.service.UpdateDomain(ctx, req.Msg.GetOrgId(), req.Msg.GetDomainId(), req.Msg.GetRequireSso())
+	if err != nil {
+		return nil, domainError(err, req.Msg.GetOrgId())
+	}
+	return connect.NewResponse(&orgsv1.UpdateDomainResponse{Domain: toRPCDomain(d)}), nil
+}
+
 // domainError maps domain errors to RPC errors. Other errors were recorded at source.
 func domainError(err error, orgID string) error {
 	if verr, ok := errors.AsType[*coreorgs.DomainVerificationError](err); ok {
@@ -122,6 +137,8 @@ func domainError(err error, orgID string) error {
 		return apperr.FailedPrecondition(apperr.ReasonDomainLimitReached, "an org can add at most 10 domains")
 	case errors.Is(err, coreorgs.ErrDomainNotVerified):
 		return apperr.FailedPrecondition(apperr.ReasonDomainNotVerified, "verify a domain before turning this on")
+	case errors.Is(err, coreorgs.ErrDomainSSONotSeen):
+		return apperr.FailedPrecondition(apperr.ReasonDomainSSONotSeen, "sign in once through SSO with an account on this domain before requiring it")
 	case errors.Is(err, coreorgs.ErrDNSUnavailable):
 		return apperr.Unavailable(apperr.ReasonDomainLookupFailed, "we couldn't reach DNS to check the record; try again in a minute")
 	default:
