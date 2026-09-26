@@ -17,6 +17,7 @@ select
   om.create_time,
   om.org_id,
   om.role,
+  om.joined_via_domain,
   c.display_name,
   c.email
 from org_members om
@@ -30,12 +31,13 @@ type GetOrgMemberByOrgIDAndCustomerIDParams struct {
 }
 
 type GetOrgMemberByOrgIDAndCustomerIDRow struct {
-	CustomerID  string
-	CreateTime  pgtype.Timestamptz
-	OrgID       string
-	Role        string
-	DisplayName string
-	Email       string
+	CustomerID      string
+	CreateTime      pgtype.Timestamptz
+	OrgID           string
+	Role            string
+	JoinedViaDomain pgtype.Text
+	DisplayName     string
+	Email           string
 }
 
 func (q *Queries) GetOrgMemberByOrgIDAndCustomerID(ctx context.Context, arg GetOrgMemberByOrgIDAndCustomerIDParams) (GetOrgMemberByOrgIDAndCustomerIDRow, error) {
@@ -46,6 +48,7 @@ func (q *Queries) GetOrgMemberByOrgIDAndCustomerID(ctx context.Context, arg GetO
 		&i.CreateTime,
 		&i.OrgID,
 		&i.Role,
+		&i.JoinedViaDomain,
 		&i.DisplayName,
 		&i.Email,
 	)
@@ -74,6 +77,7 @@ select
   om.create_time,
   om.org_id,
   om.role,
+  om.joined_via_domain,
   c.display_name,
   c.email
 from org_members om
@@ -83,12 +87,13 @@ order by om.create_time asc
 `
 
 type GetOrgMembersByOrgIDRow struct {
-	CustomerID  string
-	CreateTime  pgtype.Timestamptz
-	OrgID       string
-	Role        string
-	DisplayName string
-	Email       string
+	CustomerID      string
+	CreateTime      pgtype.Timestamptz
+	OrgID           string
+	Role            string
+	JoinedViaDomain pgtype.Text
+	DisplayName     string
+	Email           string
 }
 
 func (q *Queries) GetOrgMembersByOrgID(ctx context.Context, orgID string) ([]GetOrgMembersByOrgIDRow, error) {
@@ -105,6 +110,7 @@ func (q *Queries) GetOrgMembersByOrgID(ctx context.Context, orgID string) ([]Get
 			&i.CreateTime,
 			&i.OrgID,
 			&i.Role,
+			&i.JoinedViaDomain,
 			&i.DisplayName,
 			&i.Email,
 		); err != nil {

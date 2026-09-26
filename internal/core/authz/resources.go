@@ -32,6 +32,8 @@ const (
 	ResourceInvitation    Resource = "invitation"
 	ResourceEmailProvider Resource = "email_provider"
 	ResourceProject       Resource = "project"
+	// ResourceDomain is an org's domains and domain settings. Admin-only, reads included.
+	ResourceDomain Resource = "domain"
 
 	// ResourceUsage is an org's metered event counts. Read-only and on the viewer
 	// floor: it spans every project the org owns, and the person who notices a
@@ -72,7 +74,7 @@ const (
 // never matches. Keep these in sync when adding a const.
 var allResources = []Resource{
 	ResourceOrg, ResourceMember, ResourceInvitation, ResourceEmailProvider,
-	ResourceProject, ResourceUsage, ResourceBilling, ResourceAPIKey,
+	ResourceProject, ResourceDomain, ResourceUsage, ResourceBilling, ResourceAPIKey,
 	ResourceDashboard, ResourceInsight, ResourceActivity, ResourceProfile,
 }
 

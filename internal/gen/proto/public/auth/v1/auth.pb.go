@@ -310,9 +310,11 @@ func (x *CompleteMagicLinkRequest) GetTimezone() string {
 }
 
 type CompleteMagicLinkResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`                                   // short-lived access JWT
-	RefreshToken  *string                `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken" json:"refresh_token,omitempty"` // long-lived opaque refresh token
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Token        *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`                                   // short-lived access JWT
+	RefreshToken *string                `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken" json:"refresh_token,omitempty"` // long-lived opaque refresh token
+	// Orgs this sign-in added the account to, by invite.
+	JoinedOrgIds  []string `protobuf:"bytes,3,rep,name=joined_org_ids,json=joinedOrgIds" json:"joined_org_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -359,6 +361,13 @@ func (x *CompleteMagicLinkResponse) GetRefreshToken() string {
 		return *x.RefreshToken
 	}
 	return ""
+}
+
+func (x *CompleteMagicLinkResponse) GetJoinedOrgIds() []string {
+	if x != nil {
+		return x.JoinedOrgIds
+	}
+	return nil
 }
 
 type CompleteOIDCSignInRequest struct {
@@ -447,9 +456,11 @@ func (x *CompleteOIDCSignInRequest) GetTimezone() string {
 }
 
 type CompleteOIDCSignInResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
-	RefreshToken  *string                `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken" json:"refresh_token,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Token        *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	RefreshToken *string                `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken" json:"refresh_token,omitempty"`
+	// Orgs this sign-in added the account to, by auto-join on a verified domain.
+	JoinedOrgIds  []string `protobuf:"bytes,3,rep,name=joined_org_ids,json=joinedOrgIds" json:"joined_org_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -496,6 +507,13 @@ func (x *CompleteOIDCSignInResponse) GetRefreshToken() string {
 		return *x.RefreshToken
 	}
 	return ""
+}
+
+func (x *CompleteOIDCSignInResponse) GetJoinedOrgIds() []string {
+	if x != nil {
+		return x.JoinedOrgIds
+	}
+	return nil
 }
 
 type GetAuthConfigRequest struct {
@@ -957,10 +975,11 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\x18RequestMagicLinkResponse\"q\n" +
 	"\x18CompleteMagicLinkRequest\x12\x1c\n" +
 	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
-	"\btimezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"V\n" +
+	"\btimezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"|\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\xd5\x02\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\x12$\n" +
+	"\x0ejoined_org_ids\x18\x03 \x03(\tR\fjoinedOrgIds\"\xd5\x02\n" +
 	"\x19CompleteOIDCSignInRequest\x12?\n" +
 	"\vprovider_id\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x16\x18?2\x12^[a-z][a-z0-9_-]*$R\n" +
 	"providerId\x12!\n" +
@@ -970,10 +989,11 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\fredirect_uri\x18\x04 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x80\x10R\vredirectUri\x12#\n" +
 	"\x05nonce\x18\x05 \x01(\tB\r\xbaH\n" +
 	"\xc8\x01\x01r\x05\x10\x10\x18\x80\x01R\x05nonce\x127\n" +
-	"\btimezone\x18\x06 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"W\n" +
+	"\btimezone\x18\x06 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"}\n" +
 	"\x1aCompleteOIDCSignInResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\x16\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\x12$\n" +
+	"\x0ejoined_org_ids\x18\x03 \x03(\tR\fjoinedOrgIds\"\x16\n" +
 	"\x14GetAuthConfigRequest\"\xd1\x01\n" +
 	"\x12AuthProviderConfig\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x124\n" +

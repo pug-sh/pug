@@ -192,10 +192,25 @@ type EmailActionToken struct {
 }
 
 type Org struct {
-	CreateTime  pgtype.Timestamptz
-	DisplayName string
-	ID          string
-	UpdateTime  pgtype.Timestamptz
+	CreateTime           pgtype.Timestamptz
+	DisplayName          string
+	ID                   string
+	UpdateTime           pgtype.Timestamptz
+	AutoJoinRole         pgtype.Text
+	MembersCanCreateOrgs bool
+}
+
+type OrgDomain struct {
+	CreateTime         pgtype.Timestamptz
+	Domain             string
+	ID                 string
+	OrgID              string
+	RequireSso         bool
+	SsoSeenAt          pgtype.Timestamptz
+	UpdateTime         pgtype.Timestamptz
+	VerificationMethod pgtype.Text
+	VerificationToken  string
+	VerifiedAt         pgtype.Timestamptz
 }
 
 type OrgEmailProvider struct {
@@ -221,10 +236,11 @@ type OrgInvitation struct {
 }
 
 type OrgMember struct {
-	CreateTime pgtype.Timestamptz
-	CustomerID string
-	OrgID      string
-	Role       string
+	CreateTime      pgtype.Timestamptz
+	CustomerID      string
+	OrgID           string
+	Role            string
+	JoinedViaDomain pgtype.Text
 }
 
 type Profile struct {
@@ -260,14 +276,15 @@ type Project struct {
 }
 
 type RefreshToken struct {
-	ID         string
-	CustomerID string
-	FamilyID   string
-	TokenHash  string
-	ExpiresAt  pgtype.Timestamptz
-	ConsumedAt pgtype.Timestamptz
-	RevokedAt  pgtype.Timestamptz
-	CreateTime pgtype.Timestamptz
+	ID           string
+	CustomerID   string
+	FamilyID     string
+	TokenHash    string
+	ExpiresAt    pgtype.Timestamptz
+	ConsumedAt   pgtype.Timestamptz
+	RevokedAt    pgtype.Timestamptz
+	CreateTime   pgtype.Timestamptz
+	ProvenDomain pgtype.Text
 }
 
 type UsageDaily struct {

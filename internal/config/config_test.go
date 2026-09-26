@@ -79,6 +79,9 @@ func TestLoadRejectsInvalidProviderConfiguration(t *testing.T) {
 		{"scope with whitespace", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","scopes":["openid","bad scope"]}]}}`, "one non-empty scope"},
 		{"missing openid scope", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","scopes":["profile","email"]}]}}`, "must include openid"},
 		{"missing email scope", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","scopes":["openid","profile"]}]}}`, "must include email"},
+		{"email domains on google", `{"version":1,"auth":{"providers":[{"id":"google","type":"oidc","displayName":"Google","clientId":"client","issuerUrl":"https://accounts.google.com","emailDomains":["acme.com"]}]}}`, "not allowed on Google's issuer"},
+		{"email domain not a hostname", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","emailDomains":["localhost"]}]}}`, "must be a hostname"},
+		{"email domain duplicated", `{"version":1,"auth":{"providers":[{"id":"sso","type":"oidc","displayName":"SSO","clientId":"client","issuerUrl":"https://login.example.com","emailDomains":["acme.com","ACME.com."]}]}}`, "is duplicated"},
 	}
 
 	for _, tt := range tests {
@@ -128,5 +131,15 @@ func TestLoadReportsMissingConfigFile(t *testing.T) {
 	_, err := config.Load(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "open") {
 		t.Fatalf("err = %v, want open error", err)
+	}
+}
+
+func TestLoadNormalizesEmailDomains(t *testing.T) {
+	cfg, err := loadFile(t, `{"version":1,"auth":{"providers":[{"id":"okta","type":"oidc","displayName":"Acme SSO","clientId":"client","issuerUrl":"https://acme.okta.com","emailDomains":[" ACME.com. ","acme.io"]}]}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.Auth.Providers[0].EmailDomains, " "); got != "acme.com acme.io" {
+		t.Fatalf("emailDomains = %q", got)
 	}
 }

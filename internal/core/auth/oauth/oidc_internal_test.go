@@ -356,3 +356,103 @@ func containsAll(value string, parts ...string) bool {
 	}
 	return true
 }
+
+func newTestProvider(t *testing.T, cfg ProviderConfig, verifierIssuer string) (*oidcProvider, *rsa.PrivateKey) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ID = "company_sso"
+	cfg.ClientID = testOIDCClientID
+	p := newOIDCProvider(cfg, DefaultHTTPClient())
+	p.discovered = &endpoints{
+		verifier: oidc.NewVerifier(verifierIssuer, &oidc.StaticKeySet{PublicKeys: []crypto.PublicKey{&key.PublicKey}}, &oidc.Config{ClientID: testOIDCClientID}),
+	}
+	return p, key
+}
+
+func TestOIDCProvenDomain(t *testing.T) {
+	const googleIssuer = "https://accounts.google.com"
+	const companyIssuer = "https://login.example.com/realms/main"
+
+	for _, tc := range []struct {
+		name  string
+		cfg   ProviderConfig
+		iss   string
+		hd    string
+		email string
+		want  string
+	}{
+		{name: "google workspace account proves its hd", cfg: ProviderConfig{IssuerURL: googleIssuer}, iss: googleIssuer, hd: "Acme.com", email: "bob@acme.com", want: "acme.com"},
+		{name: "google accepts the scheme-less issuer and still reads hd", cfg: ProviderConfig{IssuerURL: googleIssuer}, iss: "accounts.google.com", hd: "acme.com", email: "bob@acme.com", want: "acme.com"},
+		{name: "a personal google account proves nothing", cfg: ProviderConfig{IssuerURL: googleIssuer}, iss: googleIssuer, email: "bob@acme.com", want: ""},
+		{name: "hd from another issuer is ignored", cfg: ProviderConfig{IssuerURL: companyIssuer}, iss: companyIssuer, hd: "acme.com", email: "bob@acme.com", want: ""},
+		{name: "emailDomains proves a listed domain", cfg: ProviderConfig{IssuerURL: companyIssuer, EmailDomains: []string{"acme.com"}}, iss: companyIssuer, email: "Bob@ACME.com", want: "acme.com"},
+		{name: "emailDomains does not prove an unlisted domain", cfg: ProviderConfig{IssuerURL: companyIssuer, EmailDomains: []string{"acme.com"}}, iss: companyIssuer, email: "bob@globex.com", want: ""},
+		{name: "a provider without emailDomains proves nothing", cfg: ProviderConfig{IssuerURL: companyIssuer}, iss: companyIssuer, email: "bob@acme.com", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, key := newTestProvider(t, tc.cfg, tc.cfg.IssuerURL)
+			claims := validOIDCClaims(tc.iss)
+			claims["email"] = tc.email
+			if tc.hd != "" {
+				claims["hd"] = tc.hd
+			}
+			identity, err := p.verifyIDToken(context.Background(), signToken(t, key, claims), testNonce)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if identity.ProvenDomain() != tc.want {
+				t.Fatalf("proven domain = %q, want %q", identity.ProvenDomain(), tc.want)
+			}
+		})
+	}
+}
+
+func TestOIDCEmailVerifiedFallback(t *testing.T) {
+	const issuer = "https://login.example.com/realms/main"
+	listed := ProviderConfig{IssuerURL: issuer, EmailDomains: []string{"acme.com"}}
+	unlisted := ProviderConfig{IssuerURL: issuer}
+
+	for _, tc := range []struct {
+		name     string
+		cfg      ProviderConfig
+		email    string
+		verified any // nil leaves email_verified out
+		edov     any
+		wantErr  bool
+	}{
+		{name: "absent on a listed domain", cfg: listed, email: "bob@acme.com"},
+		{name: "absent with xms_edov", cfg: unlisted, email: "bob@acme.com", edov: true},
+		{name: "absent with xms_edov as a string", cfg: unlisted, email: "bob@acme.com", edov: "true"},
+		{name: "absent with xms_edov as the string 1", cfg: unlisted, email: "bob@acme.com", edov: "1"},
+		{name: "absent with xms_edov as the number 1", cfg: unlisted, email: "bob@acme.com", edov: 1},
+		{name: "absent with xms_edov false", cfg: unlisted, email: "bob@acme.com", edov: "false", wantErr: true},
+		{name: "absent with neither", cfg: unlisted, email: "bob@acme.com", wantErr: true},
+		{name: "absent on an unlisted domain", cfg: listed, email: "bob@globex.com", wantErr: true},
+		{name: "xms_edov false on a listed domain", cfg: listed, email: "bob@acme.com", edov: false, wantErr: true},
+		{name: "false on a listed domain", cfg: listed, email: "bob@acme.com", verified: false, wantErr: true},
+		{name: "false with xms_edov", cfg: unlisted, email: "bob@acme.com", verified: false, edov: true, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, key := newTestProvider(t, tc.cfg, issuer)
+			claims := validOIDCClaims(issuer)
+			claims["email"] = tc.email
+			delete(claims, "email_verified")
+			if tc.verified != nil {
+				claims["email_verified"] = tc.verified
+			}
+			if tc.edov != nil {
+				claims["xms_edov"] = tc.edov
+			}
+			_, err := p.verifyIDToken(context.Background(), signToken(t, key, claims), testNonce)
+			if tc.wantErr != errors.Is(err, ErrUnverifiedEmail) {
+				t.Fatalf("err = %v, want ErrUnverifiedEmail = %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

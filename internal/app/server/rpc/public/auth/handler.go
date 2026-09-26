@@ -144,6 +144,7 @@ func (s *server) CompleteMagicLink(
 	return connect.NewResponse(&authv1.CompleteMagicLinkResponse{
 		Token:        &session.AccessToken,
 		RefreshToken: &session.RefreshToken,
+		JoinedOrgIds: session.JoinedOrgIDs,
 	}), nil
 }
 
@@ -171,6 +172,7 @@ func (s *server) CompleteOIDCSignIn(
 	return connect.NewResponse(&authv1.CompleteOIDCSignInResponse{
 		Token:        &session.AccessToken,
 		RefreshToken: &session.RefreshToken,
+		JoinedOrgIds: session.JoinedOrgIDs,
 	}), nil
 }
 

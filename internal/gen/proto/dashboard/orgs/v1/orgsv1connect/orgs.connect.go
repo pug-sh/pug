@@ -64,6 +64,19 @@ const (
 	// OrgsServiceUpdateMemberRoleProcedure is the fully-qualified name of the OrgsService's
 	// UpdateMemberRole RPC.
 	OrgsServiceUpdateMemberRoleProcedure = "/dashboard.orgs.v1.OrgsService/UpdateMemberRole"
+	// OrgsServiceListDomainsProcedure is the fully-qualified name of the OrgsService's ListDomains RPC.
+	OrgsServiceListDomainsProcedure = "/dashboard.orgs.v1.OrgsService/ListDomains"
+	// OrgsServiceSetDomainSettingsProcedure is the fully-qualified name of the OrgsService's
+	// SetDomainSettings RPC.
+	OrgsServiceSetDomainSettingsProcedure = "/dashboard.orgs.v1.OrgsService/SetDomainSettings"
+	// OrgsServiceAddDomainProcedure is the fully-qualified name of the OrgsService's AddDomain RPC.
+	OrgsServiceAddDomainProcedure = "/dashboard.orgs.v1.OrgsService/AddDomain"
+	// OrgsServiceVerifyDomainProcedure is the fully-qualified name of the OrgsService's VerifyDomain
+	// RPC.
+	OrgsServiceVerifyDomainProcedure = "/dashboard.orgs.v1.OrgsService/VerifyDomain"
+	// OrgsServiceRemoveDomainProcedure is the fully-qualified name of the OrgsService's RemoveDomain
+	// RPC.
+	OrgsServiceRemoveDomainProcedure = "/dashboard.orgs.v1.OrgsService/RemoveDomain"
 )
 
 // OrgsServiceClient is a client for the dashboard.orgs.v1.OrgsService service.
@@ -80,6 +93,17 @@ type OrgsServiceClient interface {
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
 	UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error)
+	// ListDomains returns the org's domain settings and its domains.
+	ListDomains(context.Context, *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error)
+	// SetDomainSettings replaces both settings. Turning auto-join on or up to Member,
+	// or org creation off, needs a verified domain and re-checks the org's DNS records.
+	SetDomainSettings(context.Context, *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error)
+	// AddDomain adds a pending domain, or returns the org's existing one.
+	AddDomain(context.Context, *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error)
+	// VerifyDomain checks a pending domain's TXT record now. A verified one is returned as is.
+	VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error)
+	// RemoveDomain drops the org's claim. Members who joined through it stay.
+	RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error)
 }
 
 // NewOrgsServiceClient constructs a client for the dashboard.orgs.v1.OrgsService service. By
@@ -165,6 +189,36 @@ func NewOrgsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(orgsServiceMethods.ByName("UpdateMemberRole")),
 			connect.WithClientOptions(opts...),
 		),
+		listDomains: connect.NewClient[v1.ListDomainsRequest, v1.ListDomainsResponse](
+			httpClient,
+			baseURL+OrgsServiceListDomainsProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("ListDomains")),
+			connect.WithClientOptions(opts...),
+		),
+		setDomainSettings: connect.NewClient[v1.SetDomainSettingsRequest, v1.SetDomainSettingsResponse](
+			httpClient,
+			baseURL+OrgsServiceSetDomainSettingsProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("SetDomainSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		addDomain: connect.NewClient[v1.AddDomainRequest, v1.AddDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceAddDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("AddDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		verifyDomain: connect.NewClient[v1.VerifyDomainRequest, v1.VerifyDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceVerifyDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("VerifyDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		removeDomain: connect.NewClient[v1.RemoveDomainRequest, v1.RemoveDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceRemoveDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("RemoveDomain")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -182,6 +236,11 @@ type orgsServiceClient struct {
 	create            *connect.Client[v1.CreateRequest, v1.CreateResponse]
 	leave             *connect.Client[v1.LeaveRequest, v1.LeaveResponse]
 	updateMemberRole  *connect.Client[v1.UpdateMemberRoleRequest, v1.UpdateMemberRoleResponse]
+	listDomains       *connect.Client[v1.ListDomainsRequest, v1.ListDomainsResponse]
+	setDomainSettings *connect.Client[v1.SetDomainSettingsRequest, v1.SetDomainSettingsResponse]
+	addDomain         *connect.Client[v1.AddDomainRequest, v1.AddDomainResponse]
+	verifyDomain      *connect.Client[v1.VerifyDomainRequest, v1.VerifyDomainResponse]
+	removeDomain      *connect.Client[v1.RemoveDomainRequest, v1.RemoveDomainResponse]
 }
 
 // List calls dashboard.orgs.v1.OrgsService.List.
@@ -244,6 +303,31 @@ func (c *orgsServiceClient) UpdateMemberRole(ctx context.Context, req *connect.R
 	return c.updateMemberRole.CallUnary(ctx, req)
 }
 
+// ListDomains calls dashboard.orgs.v1.OrgsService.ListDomains.
+func (c *orgsServiceClient) ListDomains(ctx context.Context, req *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error) {
+	return c.listDomains.CallUnary(ctx, req)
+}
+
+// SetDomainSettings calls dashboard.orgs.v1.OrgsService.SetDomainSettings.
+func (c *orgsServiceClient) SetDomainSettings(ctx context.Context, req *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error) {
+	return c.setDomainSettings.CallUnary(ctx, req)
+}
+
+// AddDomain calls dashboard.orgs.v1.OrgsService.AddDomain.
+func (c *orgsServiceClient) AddDomain(ctx context.Context, req *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error) {
+	return c.addDomain.CallUnary(ctx, req)
+}
+
+// VerifyDomain calls dashboard.orgs.v1.OrgsService.VerifyDomain.
+func (c *orgsServiceClient) VerifyDomain(ctx context.Context, req *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error) {
+	return c.verifyDomain.CallUnary(ctx, req)
+}
+
+// RemoveDomain calls dashboard.orgs.v1.OrgsService.RemoveDomain.
+func (c *orgsServiceClient) RemoveDomain(ctx context.Context, req *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error) {
+	return c.removeDomain.CallUnary(ctx, req)
+}
+
 // OrgsServiceHandler is an implementation of the dashboard.orgs.v1.OrgsService service.
 type OrgsServiceHandler interface {
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
@@ -258,6 +342,17 @@ type OrgsServiceHandler interface {
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
 	UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error)
+	// ListDomains returns the org's domain settings and its domains.
+	ListDomains(context.Context, *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error)
+	// SetDomainSettings replaces both settings. Turning auto-join on or up to Member,
+	// or org creation off, needs a verified domain and re-checks the org's DNS records.
+	SetDomainSettings(context.Context, *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error)
+	// AddDomain adds a pending domain, or returns the org's existing one.
+	AddDomain(context.Context, *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error)
+	// VerifyDomain checks a pending domain's TXT record now. A verified one is returned as is.
+	VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error)
+	// RemoveDomain drops the org's claim. Members who joined through it stay.
+	RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error)
 }
 
 // NewOrgsServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -339,6 +434,36 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(orgsServiceMethods.ByName("UpdateMemberRole")),
 		connect.WithHandlerOptions(opts...),
 	)
+	orgsServiceListDomainsHandler := connect.NewUnaryHandler(
+		OrgsServiceListDomainsProcedure,
+		svc.ListDomains,
+		connect.WithSchema(orgsServiceMethods.ByName("ListDomains")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceSetDomainSettingsHandler := connect.NewUnaryHandler(
+		OrgsServiceSetDomainSettingsProcedure,
+		svc.SetDomainSettings,
+		connect.WithSchema(orgsServiceMethods.ByName("SetDomainSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceAddDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceAddDomainProcedure,
+		svc.AddDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("AddDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceVerifyDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceVerifyDomainProcedure,
+		svc.VerifyDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("VerifyDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceRemoveDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceRemoveDomainProcedure,
+		svc.RemoveDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("RemoveDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.orgs.v1.OrgsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case OrgsServiceListProcedure:
@@ -365,6 +490,16 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 			orgsServiceLeaveHandler.ServeHTTP(w, r)
 		case OrgsServiceUpdateMemberRoleProcedure:
 			orgsServiceUpdateMemberRoleHandler.ServeHTTP(w, r)
+		case OrgsServiceListDomainsProcedure:
+			orgsServiceListDomainsHandler.ServeHTTP(w, r)
+		case OrgsServiceSetDomainSettingsProcedure:
+			orgsServiceSetDomainSettingsHandler.ServeHTTP(w, r)
+		case OrgsServiceAddDomainProcedure:
+			orgsServiceAddDomainHandler.ServeHTTP(w, r)
+		case OrgsServiceVerifyDomainProcedure:
+			orgsServiceVerifyDomainHandler.ServeHTTP(w, r)
+		case OrgsServiceRemoveDomainProcedure:
+			orgsServiceRemoveDomainHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -420,4 +555,24 @@ func (UnimplementedOrgsServiceHandler) Leave(context.Context, *connect.Request[v
 
 func (UnimplementedOrgsServiceHandler) UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.UpdateMemberRole is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) ListDomains(context.Context, *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.ListDomains is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) SetDomainSettings(context.Context, *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.SetDomainSettings is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) AddDomain(context.Context, *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.AddDomain is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.VerifyDomain is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.RemoveDomain is not implemented"))
 }

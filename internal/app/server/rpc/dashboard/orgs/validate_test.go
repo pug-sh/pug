@@ -151,3 +151,21 @@ func TestResendInviteRequest_InvitationIDRequired(t *testing.T) {
 		t.Error("expected validation error for missing invitation_id, got nil")
 	}
 }
+
+func TestSetDomainSettingsRequest_RejectsAdminAutoJoin(t *testing.T) {
+	req := &orgsv1.SetDomainSettingsRequest{
+		OrgId:                proto.String("org-1"),
+		AutoJoinRole:         orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+		MembersCanCreateOrgs: proto.Bool(true),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Error("expected validation error for an admin auto-join role, got nil")
+	}
+}
+
+func TestSetDomainSettingsRequest_MembersCanCreateOrgsRequired(t *testing.T) {
+	req := &orgsv1.SetDomainSettingsRequest{OrgId: proto.String("org-1")}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Error("expected validation error for missing members_can_create_orgs, got nil")
+	}
+}

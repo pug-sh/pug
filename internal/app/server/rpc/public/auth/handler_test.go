@@ -25,6 +25,7 @@ type fakeAuthService struct {
 	demoSession     coreauth.DemoSession
 	demoErr         error
 	onOIDC          func(coreoauth.ProviderName, coreoauth.AuthorizationCode)
+	session         coreauth.Session
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
@@ -32,13 +33,13 @@ func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (corea
 }
 func (f fakeAuthService) RequestMagicLink(context.Context, string) error { return nil }
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
-	return coreauth.Session{}, f.completeErr
+	return f.session, f.completeErr
 }
 func (f fakeAuthService) CompleteOIDCSignIn(_ context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, _ string) (coreauth.Session, error) {
 	if f.onOIDC != nil {
 		f.onOIDC(provider, code)
 	}
-	return coreauth.Session{}, f.completeOIDCErr
+	return f.session, f.completeOIDCErr
 }
 func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.refreshErr
@@ -418,5 +419,25 @@ func TestDemoSignInSuccess(t *testing.T) {
 	}
 	if got := resp.Msg.GetProjectId(); got != "proj-demo" {
 		t.Errorf("project id = %q, want %q", got, "proj-demo")
+	}
+}
+
+func TestSignInResponsesCarryJoinedOrgs(t *testing.T) {
+	joined := []string{"org-a", "org-b"}
+	s := &server{service: fakeAuthService{session: coreauth.Session{AccessToken: "a", RefreshToken: "r", JoinedOrgIDs: joined}}}
+
+	oidc, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := oidc.Msg.GetJoinedOrgIds(); strings.Join(got, ",") != "org-a,org-b" {
+		t.Fatalf("oidc joined_org_ids = %v", got)
+	}
+	link, err := s.CompleteMagicLink(context.Background(), connect.NewRequest(&authv1.CompleteMagicLinkRequest{Token: proto.String("t")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := link.Msg.GetJoinedOrgIds(); strings.Join(got, ",") != "org-a,org-b" {
+		t.Fatalf("magic link joined_org_ids = %v", got)
 	}
 }

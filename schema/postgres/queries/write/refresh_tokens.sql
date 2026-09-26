@@ -4,14 +4,16 @@ insert into refresh_tokens (
   customer_id,
   family_id,
   token_hash,
-  expires_at
+  expires_at,
+  proven_domain
 )
 values (
   @id,
   @customer_id,
   @family_id,
   @token_hash,
-  @expires_at
+  @expires_at,
+  @proven_domain
 )
 returning *;
 

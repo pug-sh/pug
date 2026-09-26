@@ -69,6 +69,8 @@ message CompleteMagicLinkRequest {
 message CompleteMagicLinkResponse {
   string token = 1; // short-lived access JWT
   string refresh_token = 2; // long-lived opaque refresh token
+  // Orgs this sign-in added the account to, by invite.
+  repeated string joined_org_ids = 3;
 }
 
 message CompleteOIDCSignInRequest {
@@ -115,6 +117,8 @@ message CompleteOIDCSignInRequest {
 message CompleteOIDCSignInResponse {
   string token = 1;
   string refresh_token = 2;
+  // Orgs this sign-in added the account to, by auto-join on a verified domain.
+  repeated string joined_org_ids = 3;
 }
 
 message GetAuthConfigRequest {}

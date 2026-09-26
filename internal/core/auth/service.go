@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	"github.com/pug-sh/pug/internal/core/emailaction"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -86,6 +87,8 @@ const (
 	// issues a fresh one, so a user active at least once per window stays signed
 	// in indefinitely; one fully idle for the whole window must sign in again.
 	refreshTokenTTL = 90 * 24 * time.Hour
+
+	refreshAutoJoinTimeout = 5 * time.Second
 )
 
 // Session is the token pair returned by every sign-in path (password, magic link,
@@ -94,6 +97,8 @@ const (
 type Session struct {
 	AccessToken  string
 	RefreshToken string
+	// JoinedOrgIDs are the orgs this sign-in joined. RefreshSession leaves it empty.
+	JoinedOrgIDs []string
 }
 
 type JobPublisher interface {
@@ -208,7 +213,8 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 // When the token carries an org_invitation_id (invite branch), the new or
 // existing account joins the invited org with its role; no default org is
 // created. When org_invitation_id is NULL (plain branch), a newly-created
-// account receives a default org + project.
+// account receives a default org + project, unless its email's domain restricts
+// org creation.
 func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (Session, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -275,24 +281,14 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 		return Session{}, err
 	}
 
+	signup := Signup{CustomerID: customerID, CreatedNew: createdNew, ReportingTimezone: reportingTimezone}
 	if isInvite {
-		invite := &InviteContext{OrgInvitationID: emailToken.OrgInvitationID.String}
-		if err := FinishSignup(ctx, w, customerID, createdNew, invite, reportingTimezone); err != nil {
-			if !errors.Is(err, ErrInvalidToken) {
-				slog.ErrorContext(ctx, "failed to apply org invite on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
-				telemetry.RecordError(ctx, err)
-			}
-			return Session{}, err
-		}
-	} else if createdNew {
-		// Plain passwordless signup: give the new account a default org + project,
-		// seeding the project's reporting timezone from the browser that completed
-		// the link (coerced to UTC if malformed).
-		if err := FinishSignup(ctx, w, customerID, true, nil, reportingTimezone); err != nil {
-			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
-			telemetry.RecordError(ctx, err)
-			return Session{}, err
-		}
+		signup.OrgInvitationID = emailToken.OrgInvitationID.String
+	}
+	// An email link proves no domain, so it never auto-joins.
+	joined, err := FinishSignup(ctx, w, signup)
+	if err != nil {
+		return Session{}, err // recorded at its detect site
 	}
 
 	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil {
@@ -311,7 +307,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	// Issue the refresh token inside the provisioning tx so a brand-new account and
 	// its first session commit atomically: no customer is ever created without a
 	// usable session, and a failed insert rolls the whole sign-up back.
-	session, err := s.issueSessionTx(ctx, w, customerID)
+	session, err := s.issueSessionTx(ctx, w, customerID, "")
 	if err != nil {
 		return Session{}, err
 	}
@@ -320,6 +316,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 		telemetry.RecordError(ctx, err)
 		return Session{}, err
 	}
+	session.JoinedOrgIDs = joined
 	return session, nil
 }
 
@@ -333,13 +330,21 @@ func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.Pro
 
 func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, reportingTimezone string) (Session, error) {
 	var session Session
-	var err error
-	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
-		// On first sign-in this seeds the new default project's reporting timezone
-		// from the browser that completed sign-in (coerced to UTC if malformed); on
-		// a returning sign-in FinishSignup is a no-op and the value is ignored.
-		if err := FinishSignup(ctx, w, customerID, createdNew, nil, reportingTimezone); err != nil {
-			return err // coreorgs records this at its detect site; don't re-record.
+	var joined []string
+	provenDomain := ident.ProvenDomain()
+	_, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
+		var err error
+		joined, err = FinishSignup(ctx, w, Signup{
+			CustomerID:        customerID,
+			CreatedNew:        createdNew,
+			ProvenDomain:      provenDomain,
+			ReportingTimezone: reportingTimezone,
+		})
+		if err != nil {
+			return err // recorded at its detect site
+		}
+		if err := coreorgs.MarkSSOSeenInTx(ctx, w, provenDomain); err != nil {
+			return err
 		}
 		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
 			slog.ErrorContext(ctx, "failed to mark email verified on oidc sign-in", slogx.Error(err), slog.String("customer_id", customerID))
@@ -348,7 +353,7 @@ func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth
 		}
 		// Issue the session inside the identity tx so the refresh token commits
 		// atomically with sign-up/link (same rationale as magic link).
-		session, err = s.issueSessionTx(ctx, w, customerID)
+		session, err = s.issueSessionTx(ctx, w, customerID, provenDomain)
 		return err
 	})
 	if err != nil {
@@ -356,6 +361,7 @@ func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth
 		// records FinalizeVerifiedCustomer / issueSessionTx; this wrapper only translates.
 		return Session{}, err
 	}
+	session.JoinedOrgIDs = joined
 	return session, nil
 }
 
@@ -501,21 +507,21 @@ func (s *Service) generateJWT(id string) (string, error) {
 // outside any provisioning transaction — currently only password sign-in.
 // (Magic link and OAuth issue inside their provisioning tx via issueSessionTx.)
 func (s *Service) issueSession(ctx context.Context, customerID string) (Session, error) {
-	return s.issueSessionTx(ctx, s.write, customerID)
+	return s.issueSessionTx(ctx, s.write, customerID, "")
 }
 
 // issueSessionTx is issueSession parameterized over a *dbwrite.Queries so it can
 // run inside an existing transaction (magic link / OAuth sign-up) and commit the
 // refresh token atomically with account provisioning. Each call starts a NEW
-// rotation family.
-func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, customerID string) (Session, error) {
+// rotation family, which remembers the domain an SSO sign-in proved.
+func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, customerID, provenDomain string) (Session, error) {
 	accessToken, err := s.generateJWT(customerID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate access token", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return Session{}, err
 	}
-	refreshToken, err := s.createRefreshToken(ctx, w, customerID, xid.New().String())
+	refreshToken, err := s.createRefreshToken(ctx, w, customerID, xid.New().String(), provenDomain)
 	if err != nil {
 		return Session{}, err
 	}
@@ -541,7 +547,7 @@ func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, custom
 // Keep a reuse-detection grace (~7d) on consumed/revoked rows so a replayed token
 // still trips RevokeRefreshTokenFamily within that window; past it, a replay just
 // reads as not-found (acceptable). Until this lands, the table only ever grows.
-func (s *Service) createRefreshToken(ctx context.Context, w *dbwrite.Queries, customerID, familyID string) (string, error) {
+func (s *Service) createRefreshToken(ctx context.Context, w *dbwrite.Queries, customerID, familyID, provenDomain string) (string, error) {
 	rawToken, err := newActionToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate refresh token", slogx.Error(err))
@@ -549,11 +555,12 @@ func (s *Service) createRefreshToken(ctx context.Context, w *dbwrite.Queries, cu
 		return "", err
 	}
 	if _, err := w.CreateRefreshToken(ctx, dbwrite.CreateRefreshTokenParams{
-		ID:         xid.New().String(),
-		CustomerID: customerID,
-		FamilyID:   familyID,
-		TokenHash:  hashToken(rawToken),
-		ExpiresAt:  postgres.NewTimestamptz(time.Now().Add(refreshTokenTTL)),
+		ID:           xid.New().String(),
+		CustomerID:   customerID,
+		FamilyID:     familyID,
+		TokenHash:    hashToken(rawToken),
+		ExpiresAt:    postgres.NewTimestamptz(time.Now().Add(refreshTokenTTL)),
+		ProvenDomain: postgres.NewOptionalText(provenDomain),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to create refresh token", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
@@ -639,7 +646,7 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Sess
 		return Session{}, err
 	}
 
-	newRefresh, err := s.createRefreshToken(ctx, w, row.CustomerID, row.FamilyID)
+	newRefresh, err := s.createRefreshToken(ctx, w, row.CustomerID, row.FamilyID, row.ProvenDomain.String)
 	if err != nil {
 		return Session{}, err
 	}
@@ -650,7 +657,22 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Sess
 		return Session{}, err
 	}
 
+	if row.ProvenDomain.Valid {
+		s.autoJoinOnRefresh(ctx, row.CustomerID, row.ProvenDomain.String)
+	}
 	return Session{AccessToken: accessToken, RefreshToken: newRefresh}, nil
+}
+
+// autoJoinOnRefresh only logs: a failed refresh leaves the frontend with every request failing.
+// It doesn't mark sso_seen_at, because the session's proof may be months old.
+func (s *Service) autoJoinOnRefresh(ctx context.Context, customerID, provenDomain string) {
+	// The refresh already committed, so a client hanging up must not cancel this.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshAutoJoinTimeout)
+	defer cancel()
+	if _, err := FinishSignup(ctx, dbwrite.New(s.pgW), Signup{CustomerID: customerID, ProvenDomain: provenDomain}); err != nil {
+		slog.WarnContext(ctx, "auto-join skipped at session refresh", slogx.Error(err),
+			slog.String("customer_id", customerID), slog.String("domain", provenDomain))
+	}
 }
 
 // RevokeSession revokes the rotation family of the presented refresh token —

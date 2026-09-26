@@ -20,4 +20,12 @@ var (
 	ReasonInvitationWrongEmail     = codes.add("INVITATION_WRONG_EMAIL")
 	ReasonInvitationSendLimit      = codes.add("INVITATION_SEND_LIMIT")
 	ReasonProjectNameTaken         = codes.add("PROJECT_NAME_TAKEN")
+
+	ReasonOrgCreationRestricted    = codes.add("ORG_CREATION_RESTRICTED")
+	ReasonDomainInvalid            = codes.add("DOMAIN_INVALID")
+	ReasonDomainNotFound           = codes.add("DOMAIN_NOT_FOUND")
+	ReasonDomainLimitReached       = codes.add("DOMAIN_LIMIT_REACHED")
+	ReasonDomainNotVerified        = codes.add("DOMAIN_NOT_VERIFIED")
+	ReasonDomainVerificationFailed = codes.add("DOMAIN_VERIFICATION_FAILED")
+	ReasonDomainLookupFailed       = codes.add("DOMAIN_LOOKUP_FAILED")
 )
