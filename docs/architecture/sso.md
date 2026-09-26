@@ -433,6 +433,10 @@ D and has auto-join on:
 
 One sign-in can add a person to several orgs.
 
+The account's own email must be on D too. A sign-in finds a returning person by
+`sub`, so their account can be on another domain than the one the sign-in
+proved. Require SSO for D would never cover that account, so auto-join skips it.
+
 This runs inside the sign-in transaction. Account creation, auto-join and the new
 session commit together or not at all. It is also safe when two sign-ins of one
 person race.
@@ -1044,6 +1048,7 @@ Integration tests use the repo's `testutil` setup; 11 to 14 are unit tests.
 9. An SSO session joins a new auto-join org at its next refresh. A password or
    email-link session does not. A failing auto-join does not fail the refresh.
 10. A personal Google account with an `acme.com` email does not auto-join.
+    Neither does an account on another domain whose sign-in proved `acme.com`.
 11. `hd` from a non-Google issuer is ignored. A Google token whose `iss` is
     `accounts.google.com` still proves its `hd`.
 12. A provider with `emailDomains` proves its domain. The same provider without

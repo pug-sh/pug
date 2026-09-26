@@ -469,9 +469,10 @@ func (s *Service) OrgCreationAllowed(ctx context.Context, customerID, email stri
 }
 
 // AutoJoinInTx adds the customer to every org that verified provenDomain with auto-join
-// on, skipping memberships and pending invites. It returns the orgs joined.
+// on, skipping memberships and pending invites. It returns the orgs joined. An account
+// whose email is on another domain joins nothing: Require SSO would never cover it.
 func AutoJoinInTx(ctx context.Context, w *dbwrite.Queries, customerID, email, provenDomain string) ([]string, error) {
-	if provenDomain == "" {
+	if provenDomain == "" || domainname.Of(email) != provenDomain {
 		return nil, nil
 	}
 	joined, err := w.AutoJoinOrgsByDomain(ctx, dbwrite.AutoJoinOrgsByDomainParams{

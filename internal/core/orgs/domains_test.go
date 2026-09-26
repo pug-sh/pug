@@ -405,6 +405,9 @@ func TestAutoJoinAddsToEveryOrgThatVerifiedTheDomain(t *testing.T) {
 	if joined := f.autoJoin(bob, "bob@acme.com", ""); len(joined) != 0 {
 		t.Fatalf("no proven domain joined %v", joined)
 	}
+	if joined := f.autoJoin(f.customer("dan@gmail.com"), "dan@gmail.com", "acme.com"); len(joined) != 0 {
+		t.Fatalf("an account on another domain joined %v", joined)
+	}
 
 	// Turning auto-join off stops new joins and keeps the people who joined.
 	f.settings(viewerOrg, "", true)
