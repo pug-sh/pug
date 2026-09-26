@@ -347,7 +347,7 @@ With auto-join on, and Viewer picked:
 | Existing user, signed in before this shipped or without SSO | Keeps using the app | Joins at their next SSO sign-in. An admin can invite them to skip the wait. |
 | Anyone using an email link or a password | Signs in | No auto-join (see open question 1). A new account gets a default org, as today. |
 | Contractor `jane@gmail.com` | Anything | No change. Needs an invite, as today. |
-| Someone removed from Acme, or who left | Keeps using the app, or signs in again | Added back at their next session refresh or SSO sign-in (see "Removal doesn't stick yet"). |
+| Someone removed from Acme, or who left | Keeps using the app, or signs in again | Added back at their next SSO sign-in or SSO session refresh (see "Removal doesn't stick yet"). |
 
 With auto-join off, nothing changes from today. A new account gets a default
 org, and people join only by invite.
@@ -399,8 +399,8 @@ refused session refresh.
 
 - Auto-joined people get a badge: `via acme.com`.
 - For an auto-joined person, the remove dialog adds one line: "While auto-join
-  is on, they rejoin at their next session refresh or SSO
-  sign-in." (see "Removal doesn't stick yet").
+  is on, they rejoin at their next SSO sign-in or SSO session refresh." (see
+  "Removal doesn't stick yet").
 
 ## Rules
 
@@ -494,8 +494,8 @@ creation is also off. Then they start with no org until someone invites them.
 ### Removal doesn't stick yet
 
 While auto-join is on, a removed member, or one who left, is added back at their
-next session refresh or SSO sign-in. The only way to keep one person out is to
-leave auto-join off.
+next SSO sign-in or SSO session refresh. The only way to keep one person out is
+to leave auto-join off.
 
 This is deferred. The fix is an exclusion row per removed person. `RemoveMember`
 and `Leave` write it in the delete's transaction, auto-join skips excluded
@@ -1124,8 +1124,8 @@ Integration tests use the repo's `testutil` setup; 11 to 14 are unit tests.
    the first org's limits.
 8. Auto-join is off until an admin turns it on, and it never grants Admin.
 9. **Removal doesn't stick yet.** While auto-join is on, a removed member is
-   added back at their next session refresh or SSO sign-in (see "Removal
-   doesn't stick yet").
+   added back at their next SSO sign-in or SSO session refresh (see
+   "Removal doesn't stick yet").
 10. **Offboarding gap.** When Acme suspends Bob's account at its identity
     provider, Bob cannot sign in again. But his current Pug session keeps
     working, because refresh tokens slide for 90 days with use. That session can
