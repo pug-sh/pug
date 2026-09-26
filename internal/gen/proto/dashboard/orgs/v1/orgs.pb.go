@@ -1835,7 +1835,7 @@ func (x *ListDomainsResponse) GetDomains() []*OrgDomain {
 type SetDomainSettingsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor a role added later.
+	// UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor any OrgRole value added later.
 	AutoJoinRole *OrgRole `protobuf:"varint,2,opt,name=auto_join_role,json=autoJoinRole,enum=dashboard.orgs.v1.OrgRole" json:"auto_join_role,omitempty"`
 	// Required so an omitted field can't silently turn org creation off.
 	MembersCanCreateOrgs *bool `protobuf:"varint,3,opt,name=members_can_create_orgs,json=membersCanCreateOrgs" json:"members_can_create_orgs,omitempty"`

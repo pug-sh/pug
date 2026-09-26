@@ -32,7 +32,7 @@ var (
 // SSORequiredError refuses a sign-in that didn't prove Domain, which requires SSO.
 type SSORequiredError struct {
 	Domain string
-	// The refused sign-in was an invite link.
+	// The refused sign-in carried an invite, as a link or an invite_token.
 	Invite bool
 }
 

@@ -239,7 +239,7 @@ message ListDomainsResponse {
 
 message SetDomainSettingsRequest {
   string org_id = 1 [(buf.validate.field).required = true];
-  // UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor a role added later.
+  // UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor any OrgRole value added later.
   OrgRole auto_join_role = 2 [(buf.validate.field).enum = {
     in: [0, 2, 3]
   }];
