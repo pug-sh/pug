@@ -33,6 +33,8 @@ Enable Authorization Code flow and PKCE (`S256`). Configure `clientSecret` only 
 
 Pug also accepts a token with no `email_verified` claim when the email is on one of the provider's `emailDomains` (see below), or when the token carries Entra ID's `xms_edov: true`. Entra ID never sends `email_verified`, so an Entra provider needs one of the two. An explicit `email_verified: false` is always refused.
 
+Pug refuses to create or link an account from an `email` with non-ASCII characters. An account already linked to the provider keeps signing in.
+
 `name` and `picture` are optional. Pug verifies the ID token's signature, issuer, audience, expiry, `nonce`, and verified-email claim on the server. The external identity is stored as the provider `id` plus the token's `sub`; since each provider is one issuer and client, `sub` is unique within it.
 
 The browser must send a `nonce` on the authorization request and pass the same value to `CompleteOIDCSignIn`; Pug rejects the sign-in if it does not match the ID token's `nonce` claim. Pug does not mint or store the nonce, so that check confirms the token belongs to the request that carried it — the binding to the browser that started the flow comes from PKCE and from the `state` value the browser must generate, store, and re-check on the callback.

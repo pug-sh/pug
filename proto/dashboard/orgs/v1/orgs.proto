@@ -239,10 +239,9 @@ message ListDomainsResponse {
 
 message SetDomainSettingsRequest {
   string org_id = 1 [(buf.validate.field).required = true];
-  // UNSPECIFIED turns auto-join off. Auto-join never grants admin.
+  // UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor a role added later.
   OrgRole auto_join_role = 2 [(buf.validate.field).enum = {
-    defined_only: true
-    not_in: [1]
+    in: [0, 2, 3]
   }];
   // Required so an omitted field can't silently turn org creation off.
   bool members_can_create_orgs = 3 [(buf.validate.field).required = true];

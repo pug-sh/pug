@@ -74,6 +74,12 @@ func TestDomainHandlers(t *testing.T) {
 
 	_, err = srv.AddDomain(ctx, connect.NewRequest(&orgsv1.AddDomainRequest{OrgId: orgID, Domain: proto.String("localhost")}))
 	wantAppErr(t, err, connect.CodeInvalidArgument, apperr.ReasonDomainInvalid)
+	_, err = srv.ListDomains(ctx, connect.NewRequest(&orgsv1.ListDomainsRequest{OrgId: proto.String(xid.New().String())}))
+	wantAppErr(t, err, connect.CodeNotFound, apperr.ReasonOrgNotFound)
+	_, err = srv.SetDomainSettings(ctx, connect.NewRequest(&orgsv1.SetDomainSettingsRequest{
+		OrgId: orgID, AutoJoinRole: orgsv1.OrgRole(99).Enum(), MembersCanCreateOrgs: proto.Bool(true),
+	}))
+	wantAppErr(t, err, connect.CodeInvalidArgument, apperr.ReasonOrgUnsupportedRole)
 
 	added, err := srv.AddDomain(ctx, connect.NewRequest(&orgsv1.AddDomainRequest{OrgId: orgID, Domain: proto.String("Acme.com")}))
 	if err != nil {
@@ -136,6 +142,14 @@ func TestDomainHandlers(t *testing.T) {
 	}
 	_, err = srv.RemoveDomain(ctx, connect.NewRequest(&orgsv1.RemoveDomainRequest{OrgId: orgID, DomainId: proto.String(d.GetId())}))
 	wantAppErr(t, err, connect.CodeNotFound, apperr.ReasonDomainNotFound)
+
+	for i := range 10 {
+		if _, err := h.svc.AddDomain(h.ctx, org.ID, "d"+string(rune('a'+i))+".acme.com"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = srv.AddDomain(ctx, connect.NewRequest(&orgsv1.AddDomainRequest{OrgId: orgID, Domain: proto.String("acme.com")}))
+	wantAppErr(t, err, connect.CodeFailedPrecondition, apperr.ReasonDomainLimitReached)
 }
 
 func TestOrgCreationRestrictionHandlers(t *testing.T) {

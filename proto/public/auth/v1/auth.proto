@@ -123,8 +123,8 @@ message SSORequired {
   string domain = 1;
   // The providers that can sign the domain in.
   repeated AuthProviderConfig providers = 2;
-  // True when the refused link was an invite. Send its token as
-  // CompleteOIDCSignInRequest.invite_token to accept it after signing in.
+  // True when the refused sign-in carried an invite, as a link or an invite_token.
+  // Send its token as CompleteOIDCSignInRequest.invite_token to accept it after signing in.
   bool invite = 3;
 }
 

@@ -123,6 +123,7 @@ func TestCompleteOIDCErrorMapping(t *testing.T) {
 		{"invalid credential", coreoauth.ErrInvalidCredential, connect.CodeUnauthenticated, apperr.ReasonOAuthCredentialInvalid},
 		{"provider disabled", coreoauth.ErrOAuthProviderDisabled, connect.CodeInvalidArgument, apperr.ReasonOAuthProviderDisabled},
 		{"unverified email", coreoauth.ErrUnverifiedEmail, connect.CodeInvalidArgument, apperr.ReasonInvalidArgument},
+		{"non-ASCII email", coreoauth.ErrNonASCIIEmail, connect.CodeInvalidArgument, apperr.ReasonInvalidArgument},
 		{"provider unavailable", coreoauth.ErrProviderUnavailable, connect.CodeUnavailable, apperr.ReasonOAuthProviderUnavailable},
 		{"invalid invite", coreauth.ErrInvalidToken, connect.CodeInvalidArgument, apperr.ReasonInvalidToken},
 		{"invite for another email", coreauth.ErrInviteWrongEmail, connect.CodePermissionDenied, apperr.ReasonInvitationWrongEmail},
@@ -256,6 +257,23 @@ func TestSSORequiredMapping(t *testing.T) {
 				t.Fatalf("%s(%s): detail = %v, want invite %v and providers %v", name, tt.domain, detail, tt.invite, tt.providers)
 			}
 		}
+	}
+}
+
+// A domain no configured provider can sign in is still refused, with none to offer.
+func TestSSORequiredWithNoProviderForTheDomain(t *testing.T) {
+	cfg := coreoauth.Config{Providers: []coreoauth.ProviderConfig{
+		{ID: "okta", Type: coreoauth.ProviderTypeOIDC, DisplayName: "Acme SSO", ClientID: "o", IssuerURL: "https://acme.okta.com", EmailDomains: []string{"acme.com"}},
+	}}
+	s := &server{oauthCfg: cfg, service: fakeAuthService{signInErr: &coreorgs.SSORequiredError{Domain: "globex.com"}}}
+	_, err := s.SignInWithEmail(context.Background(), connect.NewRequest(&authv1.SignInWithEmailRequest{}))
+	ae, ok := errors.AsType[*apperr.Error](err)
+	if !ok || ae.Reason() != apperr.ReasonSSORequired {
+		t.Fatalf("err = %v, want SSO_REQUIRED", err)
+	}
+	detail, ok := ae.Details()[0].(*authv1.SSORequired)
+	if !ok || detail.GetDomain() != "globex.com" || len(detail.GetProviders()) != 0 {
+		t.Fatalf("details = %v, want globex.com with no providers", ae.Details())
 	}
 }
 

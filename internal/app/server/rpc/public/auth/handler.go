@@ -323,6 +323,8 @@ func mapOAuthHandlerError(err error) error {
 		// Generic reason intentional: no distinct client action for an unverified IdP
 		// email (rare edge), so it maps to plain InvalidArgument.
 		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
+	case errors.Is(err, coreoauth.ErrNonASCIIEmail):
+		return apperr.Invalid(apperr.ReasonInvalidArgument, "email addresses with non-ASCII characters are not supported") // apperr:exempt
 	case errors.Is(err, coreoauth.ErrProviderUnavailable):
 		return apperr.Unavailable(apperr.ReasonOAuthProviderUnavailable, "oauth provider is temporarily unavailable")
 	case errors.Is(err, coreauth.ErrInvalidToken):

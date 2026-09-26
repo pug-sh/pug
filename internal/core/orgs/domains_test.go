@@ -24,9 +24,14 @@ type fakeResolver struct {
 	records map[string][]string // keyed by rooted name
 	fail    error
 	lookups int
+	// during runs inside each lookup, as a call racing the one that looked up.
+	during func()
 }
 
 func (f *fakeResolver) LookupTXT(_ context.Context, name string) ([]string, error) {
+	if f.during != nil {
+		f.during()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lookups++
@@ -195,6 +200,9 @@ func TestAddDomain(t *testing.T) {
 	if _, err := f.svc.AddDomain(f.ctx, orgID, "localhost"); !errors.Is(err, orgs.ErrDomainInvalid) {
 		t.Fatalf("single-label err = %v, want ErrDomainInvalid", err)
 	}
+	if _, err := f.svc.AddDomain(f.ctx, xid.New().String(), "acme.com"); !errors.Is(err, orgs.ErrOrgNotFound) {
+		t.Fatalf("unknown org err = %v, want ErrOrgNotFound", err)
+	}
 
 	for i := range 9 {
 		f.addDomain(orgID, "d"+string(rune('a'+i))+".acme.com")
@@ -289,6 +297,9 @@ func TestSetDomainSettingsNeedsAVerifiedDomain(t *testing.T) {
 	got, err := f.svc.SetDomainSettings(f.ctx, orgID, orgs.DomainSettings{MembersCanCreateOrgs: true})
 	if err != nil || got != (orgs.DomainSettings{MembersCanCreateOrgs: true}) {
 		t.Fatalf("the defaults = %+v, %v; want them to always apply", got, err)
+	}
+	if _, err := f.svc.SetDomainSettings(f.ctx, xid.New().String(), orgs.DomainSettings{MembersCanCreateOrgs: true}); !errors.Is(err, orgs.ErrOrgNotFound) {
+		t.Fatalf("unknown org err = %v, want ErrOrgNotFound", err)
 	}
 }
 
@@ -621,6 +632,54 @@ func TestOperatorVerifyAndRelease(t *testing.T) {
 	}
 	if err := f.svc.ReleaseDomain(f.ctx, xid.New().String(), "acme.com"); !errors.Is(err, orgs.ErrOrgNotFound) {
 		t.Fatalf("release for an unknown org err = %v, want ErrOrgNotFound", err)
+	}
+
+	for name, call := range map[string]func() error{
+		"VerifyDomainByOperator": func() error { _, err := f.svc.VerifyDomainByOperator(f.ctx, orgID, "localhost"); return err },
+		"ReleaseDomain":          func() error { return f.svc.ReleaseDomain(f.ctx, orgID, "localhost") },
+		"UnenforceDomain":        func() error { _, err := f.svc.UnenforceDomain(f.ctx, "localhost"); return err },
+		"DomainClaims":           func() error { _, err := f.svc.DomainClaims(f.ctx, "localhost"); return err },
+	} {
+		if err := call(); !errors.Is(err, orgs.ErrDomainInvalid) {
+			t.Fatalf("%s err = %v, want ErrDomainInvalid", name, err)
+		}
+	}
+}
+
+// A call landing during the DNS lookup wins, and the check reports what it left.
+func TestDNSCheckRacingAnotherCall(t *testing.T) {
+	f := newDomainFixture(t)
+	orgID, _ := f.org("admin@acme.com")
+	operator := f.addDomain(orgID, "acme.com")
+	f.dns.publish(operator)
+	removed := f.addDomain(orgID, "acme.io")
+	f.dns.publish(removed)
+	requireSSO := f.verifiedDomain(orgID, "acme.org")
+	f.ssoSeen("acme.org")
+
+	f.dns.during = func() {
+		if _, err := f.svc.VerifyDomainByOperator(f.ctx, orgID, "acme.com"); err != nil {
+			t.Errorf("VerifyDomainByOperator: %v", err)
+		}
+	}
+	if got, err := f.svc.VerifyDomain(f.ctx, orgID, operator.ID); err != nil || got.VerificationMethod != orgs.VerificationMethodOperator {
+		t.Fatalf("VerifyDomain = %+v, %v; want the operator's verification", got, err)
+	}
+
+	remove := func(d orgs.Domain) func() {
+		return func() {
+			if err := f.svc.RemoveDomain(f.ctx, orgID, d.ID); err != nil {
+				t.Errorf("RemoveDomain(%s): %v", d.Domain, err)
+			}
+		}
+	}
+	f.dns.during = remove(removed)
+	if _, err := f.svc.VerifyDomain(f.ctx, orgID, removed.ID); !errors.Is(err, orgs.ErrDomainNotFound) {
+		t.Fatalf("VerifyDomain err = %v, want ErrDomainNotFound", err)
+	}
+	f.dns.during = remove(requireSSO)
+	if _, err := f.svc.UpdateDomain(f.ctx, orgID, requireSSO.ID, true); !errors.Is(err, orgs.ErrDomainNotFound) {
+		t.Fatalf("UpdateDomain err = %v, want ErrDomainNotFound", err)
 	}
 }
 

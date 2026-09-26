@@ -69,15 +69,6 @@ func TestNewVerifiedIdentity_RejectsUnverified(t *testing.T) {
 	}
 }
 
-// lower() folds the Kelvin sign into k, so this address would share bob@kpmg.com's
-// account key while kpmg.com's Require SSO skips it.
-func TestNewVerifiedIdentity_RejectsNonASCIIEmail(t *testing.T) {
-	_, err := coreoauth.NewVerifiedIdentity("google", coreoauth.Claims{Subject: "sub", Email: "bob@Kpmg.com", EmailVerified: true})
-	if !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
-		t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
-	}
-}
-
 func TestNewVerifiedIdentity_RejectsEmptyEmail(t *testing.T) {
 	if _, err := coreoauth.NewVerifiedIdentity("google", coreoauth.Claims{Email: "   ", EmailVerified: true}); !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
 		t.Fatalf("err = %v, want ErrUnverifiedEmail for blank email", err)

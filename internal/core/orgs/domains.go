@@ -355,6 +355,7 @@ func (s *Service) checkTXT(ctx context.Context, d Domain) error {
 			return &DomainVerificationError{Domain: d.Domain}
 		}
 		slog.WarnContext(ctx, "domain verification lookup failed", slogx.Error(err), slog.String("domain", d.Domain))
+		telemetry.RecordError(ctx, err)
 		return ErrDNSUnavailable
 	}
 	want := d.TXTRecordValue()

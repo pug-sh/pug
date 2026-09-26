@@ -152,14 +152,19 @@ func TestResendInviteRequest_InvitationIDRequired(t *testing.T) {
 	}
 }
 
-func TestSetDomainSettingsRequest_RejectsAdminAutoJoin(t *testing.T) {
-	req := &orgsv1.SetDomainSettingsRequest{
-		OrgId:                proto.String("org-1"),
-		AutoJoinRole:         orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
-		MembersCanCreateOrgs: proto.Bool(true),
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Error("expected validation error for an admin auto-join role, got nil")
+// An allow-list, so a role added to OrgRole later can't become an auto-join role.
+func TestSetDomainSettingsRequest_AutoJoinRoles(t *testing.T) {
+	for v := range orgsv1.OrgRole_name {
+		role := orgsv1.OrgRole(v)
+		req := &orgsv1.SetDomainSettingsRequest{
+			OrgId:                proto.String("org-1"),
+			AutoJoinRole:         role.Enum(),
+			MembersCanCreateOrgs: proto.Bool(true),
+		}
+		allowed := role == orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED || role == orgsv1.OrgRole_ORG_ROLE_MEMBER || role == orgsv1.OrgRole_ORG_ROLE_VIEWER
+		if err := protovalidate.Validate(req); (err == nil) != allowed {
+			t.Errorf("%s: err = %v, want allowed = %v", role, err, allowed)
+		}
 	}
 }
 

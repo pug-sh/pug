@@ -1835,7 +1835,7 @@ func (x *ListDomainsResponse) GetDomains() []*OrgDomain {
 type SetDomainSettingsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// UNSPECIFIED turns auto-join off. Auto-join never grants admin.
+	// UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor a role added later.
 	AutoJoinRole *OrgRole `protobuf:"varint,2,opt,name=auto_join_role,json=autoJoinRole,enum=dashboard.orgs.v1.OrgRole" json:"auto_join_role,omitempty"`
 	// Required so an omitted field can't silently turn org creation off.
 	MembersCanCreateOrgs *bool `protobuf:"varint,3,opt,name=members_can_create_orgs,json=membersCanCreateOrgs" json:"members_can_create_orgs,omitempty"`
@@ -2434,11 +2434,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"\x8c\x01\n" +
 	"\x13ListDomainsResponse\x12=\n" +
 	"\bsettings\x18\x01 \x01(\v2!.dashboard.orgs.v1.DomainSettingsR\bsettings\x126\n" +
-	"\adomains\x18\x02 \x03(\v2\x1c.dashboard.orgs.v1.OrgDomainR\adomains\"\xc6\x01\n" +
+	"\adomains\x18\x02 \x03(\v2\x1c.dashboard.orgs.v1.OrgDomainR\adomains\"\xc8\x01\n" +
 	"\x18SetDomainSettingsRequest\x12\x1d\n" +
-	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12L\n" +
-	"\x0eauto_join_role\x18\x02 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x01R\fautoJoinRole\x12=\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12N\n" +
+	"\x0eauto_join_role\x18\x02 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\f\xbaH\t\x82\x01\x06\x18\x00\x18\x02\x18\x03R\fautoJoinRole\x12=\n" +
 	"\x17members_can_create_orgs\x18\x03 \x01(\bB\x06\xbaH\x03\xc8\x01\x01R\x14membersCanCreateOrgs\"Z\n" +
 	"\x19SetDomainSettingsResponse\x12=\n" +
 	"\bsettings\x18\x01 \x01(\v2!.dashboard.orgs.v1.DomainSettingsR\bsettings\"U\n" +

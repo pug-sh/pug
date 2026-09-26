@@ -472,8 +472,8 @@ type SSORequired struct {
 	Domain *string                `protobuf:"bytes,1,opt,name=domain" json:"domain,omitempty"`
 	// The providers that can sign the domain in.
 	Providers []*AuthProviderConfig `protobuf:"bytes,2,rep,name=providers" json:"providers,omitempty"`
-	// True when the refused link was an invite. Send its token as
-	// CompleteOIDCSignInRequest.invite_token to accept it after signing in.
+	// True when the refused sign-in carried an invite, as a link or an invite_token.
+	// Send its token as CompleteOIDCSignInRequest.invite_token to accept it after signing in.
 	Invite        *bool `protobuf:"varint,3,opt,name=invite" json:"invite,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -343,7 +343,12 @@ func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.Pro
 	if err != nil {
 		return Session{}, err
 	}
-	return s.completeExternalIdentity(ctx, ident, inviteToken, reportingTimezone)
+	session, err := s.completeExternalIdentity(ctx, ident, inviteToken, reportingTimezone)
+	// The refusal rolls back, so the invite is still good for another provider.
+	if ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err); ok {
+		ssoErr.Invite = inviteToken != ""
+	}
+	return session, err
 }
 
 func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, inviteToken, reportingTimezone string) (Session, error) {
@@ -697,17 +702,16 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Sess
 
 	if err := checkRefreshInTx(ctx, w, row.CustomerID, row.ProvenDomain.String); err != nil {
 		// Revoked, because the frontend drops a refused token: only a copy held elsewhere
-		// could use it once Require SSO is off.
-		if _, ok := errors.AsType[*coreorgs.SSORequiredError](err); ok {
+		// could use it once Require SSO is off. A failed revoke still refuses.
+		if ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err); ok {
+			slog.WarnContext(ctx, "refresh refused: domain requires sso; revoking family",
+				slog.String("customer_id", row.CustomerID), slog.String("family_id", row.FamilyID), slog.String("domain", ssoErr.Domain))
 			if _, revokeErr := w.RevokeRefreshTokenFamily(ctx, row.FamilyID); revokeErr != nil {
 				slog.ErrorContext(ctx, "failed to revoke sso-refused refresh token family", slogx.Error(revokeErr), slog.String("customer_id", row.CustomerID))
 				telemetry.RecordError(ctx, revokeErr)
-				return Session{}, revokeErr
-			}
-			if commitErr := tx.Commit(ctx); commitErr != nil {
+			} else if commitErr := tx.Commit(ctx); commitErr != nil {
 				slog.ErrorContext(ctx, "failed to commit sso-refused refresh token family revocation", slogx.Error(commitErr))
 				telemetry.RecordError(ctx, commitErr)
-				return Session{}, commitErr
 			}
 		}
 		return Session{}, err

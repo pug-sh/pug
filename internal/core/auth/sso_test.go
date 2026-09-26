@@ -171,6 +171,9 @@ func TestPersonalAccountOnTheDomainDoesNotAutoJoin(t *testing.T) {
 	if d := f.provenDomainOf(session.RefreshToken); d != "" {
 		t.Fatalf("session proven domain = %q, want none", d)
 	}
+	if claims, err := f.orgs.DomainClaims(f.ctx, "acme.com"); err != nil || len(claims) != 1 || claims[0].SsoSeenAt.Valid {
+		t.Fatalf("claims = %+v, %v; want sso_seen_at unset by a personal account", claims, err)
+	}
 }
 
 func TestNewAccountGetsNoOrgWhereCreationIsRestricted(t *testing.T) {
@@ -462,10 +465,34 @@ func TestRequireSSOBlocksPasswordsAndEmailLinks(t *testing.T) {
 	}
 }
 
+// The frontend ends a session only on the refusal, so a failed revoke must not replace it.
+func TestRefusedRefreshSurvivesAFailedRevoke(t *testing.T) {
+	f := newSSOFixture(t)
+	orgID := f.org("acme.com", coreorgs.DomainSettings{MembersCanCreateOrgs: true})
+	svc := mustNewTestAuthService(t, f.db, &stubPublisher{})
+	session := seedSignedInCustomer(t, svc, dbwrite.New(f.db.PgW), xid.New().String(), "bob@acme.com")
+	f.requireSSO(orgID, "acme.com", true)
+
+	// Each test has its own database, so the trigger stays in this one.
+	for _, stmt := range []string{
+		"create function refuse_update() returns trigger language plpgsql as $$ begin raise exception 'refused'; end $$",
+		"create trigger refuse_update before update on refresh_tokens for each row execute function refuse_update()",
+	} {
+		if _, err := f.db.PgW.Exec(f.ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := svc.RefreshSession(f.ctx, session.RefreshToken)
+	wantSSORequired(t, err, "acme.com", false)
+}
+
 func TestRequireSSOAtOIDCSignIn(t *testing.T) {
 	f := newSSOFixture(t)
 	orgID := f.org("acme.com", coreorgs.DomainSettings{MembersCanCreateOrgs: true})
 	f.signIn(f.ssoService("bob@acme.com", "sub-bob", "acme.com"))
+	if claims, err := f.orgs.DomainClaims(f.ctx, "acme.com"); err != nil || len(claims) != 1 || !claims[0].SsoSeenAt.Valid {
+		t.Fatalf("claims = %+v, %v; want sso_seen_at set by the SSO sign-in", claims, err)
+	}
 	f.requireSSO(orgID, "acme.com", true)
 
 	session := f.signIn(f.ssoService("bob@acme.com", "sub-bob", "acme.com"))
@@ -545,6 +572,9 @@ func TestInviteAcceptedThroughSSO(t *testing.T) {
 
 	_, err = svc.CompleteMagicLink(f.ctx, invite.RawToken, "")
 	wantSSORequired(t, err, "acme.com", true)
+	// A personal account proves nothing, and its refusal still carries the invite.
+	_, err = f.ssoService("carol@acme.com", "sub-personal", "").CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, invite.RawToken, "")
+	wantSSORequired(t, err, "acme.com", true)
 
 	signIn := func(email, sub, inviteToken string) (coreauth.Session, error) {
 		return f.ssoService(email, sub, "acme.com").CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, inviteToken, "")
@@ -580,5 +610,34 @@ func TestInviteAcceptedThroughSSO(t *testing.T) {
 	}
 	if _, err := signIn("carol@acme.com", "sub-carol", invite.RawToken); !errors.Is(err, coreauth.ErrInvalidToken) {
 		t.Fatalf("reused invite err = %v, want ErrInvalidToken", err)
+	}
+}
+
+// An expired invite is refused on both paths while its link is still valid, and
+// leaves no account behind.
+func TestExpiredInviteIsRefused(t *testing.T) {
+	f := newSSOFixture(t)
+	orgID := f.org("acme.com", coreorgs.DomainSettings{MembersCanCreateOrgs: true})
+	admins, err := f.read.GetOrgMembersByOrgID(f.ctx, orgID)
+	if err != nil || len(admins) != 1 {
+		t.Fatalf("admins = %v, %v", admins, err)
+	}
+	invite, err := f.orgs.InviteMemberWithRole(f.ctx, orgID, strings.TrimSpace(admins[0].CustomerID), "carol@acme.com", coreorgs.RoleMember)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole: %v", err)
+	}
+	if _, err := f.db.PgW.Exec(f.ctx, "update org_invitations set expires_at = now() - interval '1 hour' where id = $1", invite.Invitation.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := mustNewTestAuthService(t, f.db, &stubPublisher{}).CompleteMagicLink(f.ctx, invite.RawToken, ""); !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("magic link err = %v, want ErrInvalidToken", err)
+	}
+	_, err = f.ssoService("carol@acme.com", "sub-carol", "acme.com").CompleteOIDCSignIn(f.ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "code"}, invite.RawToken, "")
+	if !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("sso err = %v, want ErrInvalidToken", err)
+	}
+	if _, err := f.read.GetCustomerByEmail(f.ctx, "carol@acme.com"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("a refused invite left an account behind: %v", err)
 	}
 }

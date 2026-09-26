@@ -38,6 +38,19 @@ func TestVerifyShowRelease(t *testing.T) {
 			t.Errorf("Verify output is missing %q:\n%s", want, verify.String())
 		}
 	}
+	if _, err := cli.svc.SetDomainSettings(t.Context(), org.ID, coreorgs.DomainSettings{AutoJoinRole: coreorgs.RoleMember}); err != nil {
+		t.Fatal(err)
+	}
+	var show strings.Builder
+	if err := cli.Show(t.Context(), &show, "acme.com"); err != nil || !strings.Contains(show.String(), coreorgs.RoleMember.String()) || !strings.Contains(show.String(), "restricted") {
+		t.Errorf("Show = %q, %v; want auto-join as member and org creation restricted", show.String(), err)
+	}
+	if err := cli.Show(t.Context(), &show, "localhost"); !errors.Is(err, coreorgs.ErrDomainInvalid) {
+		t.Errorf("Show(localhost) err = %v, want ErrDomainInvalid", err)
+	}
+	if err := cli.Verify(t.Context(), &verify, xid.New().String(), "acme.com"); !errors.Is(err, coreorgs.ErrOrgNotFound) {
+		t.Errorf("Verify for an unknown org err = %v, want ErrOrgNotFound", err)
+	}
 
 	var release strings.Builder
 	if err := cli.Release(t.Context(), &release, org.ID, "acme.com"); err != nil {
@@ -91,5 +104,8 @@ func TestUnenforce(t *testing.T) {
 	}
 	if err := coreorgs.CheckSignInInTx(t.Context(), w, "bob@acme.com", ""); err != nil {
 		t.Errorf("after unenforce: %v", err)
+	}
+	if err := cli.Unenforce(t.Context(), &out, "acme.io"); !errors.Is(err, coreorgs.ErrDomainNotFound) {
+		t.Errorf("Unenforce(unclaimed) err = %v, want ErrDomainNotFound", err)
 	}
 }

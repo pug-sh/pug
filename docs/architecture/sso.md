@@ -199,6 +199,9 @@ Many self-hosted servers already list their company's identity provider in
 - One fix: an Entra ID provider fails every sign-in today. It starts working
   once it sends `xms_edov` or lists `emailDomains` (see "Providers that don't
   send `email_verified`").
+- One new refusal: a provider email with non-ASCII characters can't create an
+  account or link to one, because account lookups fold some of those characters
+  into ASCII. An account already linked to the provider keeps signing in.
 
 To use the new features:
 
@@ -396,7 +399,8 @@ refused session refresh.
 
 - Auto-joined people get a badge: `via acme.com`.
 - For an auto-joined person, the remove dialog adds one line: "While auto-join
-  is on, they rejoin at their next sign-in." (see "Removal doesn't stick yet").
+  is on, they rejoin within a day, at their next session refresh or SSO
+  sign-in." (see "Removal doesn't stick yet").
 
 ## Rules
 
@@ -568,7 +572,9 @@ An invite link is an email link, so Require SSO refuses it too. It is not used
 up, and the error says it was an invite. The frontend then offers the domain's
 providers and sends the link's token as `CompleteOIDCSignIn.invite_token`. The
 token rides that one sign-in attempt, so a later sign-in in the same tab never
-carries it.
+carries it. If Require SSO refuses that attempt too, for example through a
+personal account, the error again says it was an invite. The frontend can then
+offer the providers once more.
 
 The server accepts the invite only if it was sent to the email of the account
 the sign-in resolves to. A token for another email fails the sign-in with
@@ -957,7 +963,7 @@ New fields:
 | `CompleteOIDCSignInResponse`, `CompleteMagicLinkResponse` | `joined_org_ids`. The frontend switches to the first one and shows the toast. |
 | `CompleteOIDCSignInRequest` | `invite_token` (phase 2) |
 | `OrgDomain` | `require_sso`, `sso_seen`, and `sso_required_elsewhere` (phase 2). The last is set only by `ListDomains`, and only on a verified domain. |
-| `public.auth.v1.SSORequired` (new) | Phase 2. The detail on `SSO_REQUIRED`: the domain, the providers that can sign it in (as `AuthProviderConfig`), and `invite` when the refused link was an invite. |
+| `public.auth.v1.SSORequired` (new) | Phase 2. The detail on `SSO_REQUIRED`: the domain, the providers that can sign it in (as `AuthProviderConfig`), and `invite` when the refused sign-in carried an invite, as a link or an `invite_token`. |
 
 ### Authz
 
