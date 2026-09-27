@@ -59,5 +59,6 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	return &corebilling.Payments{
 		ProductBySlug: products,
 		Provider:      client,
+		Usage:         client,
 	}, nil
 }

@@ -196,6 +196,8 @@ const Currency = "USD"
 // Payments is the provider wiring. Nil means no provider, which is legal.
 type Payments struct {
 	Provider PaymentProvider
+	// Usage is the provider's metering half, nil when it has none.
+	Usage UsageMeter
 	// ProductBySlug is the only product mapping. The webhook needs the inverse and
 	// scans for it: a stored second map could disagree, and a slug that maps one way
 	// takes money and then rejects the delivery.
@@ -213,3 +215,32 @@ func (p *Payments) Configured() bool { return p != nil && p.Provider != nil }
 // provider credentials, or billing switched off. Returned by subscription, never by an
 // adapter.
 var ErrNoProvider = errors.New("billing: no payments provider is configured")
+
+// UsageStatement is one org's per-tier event counts for its current provider
+// period, as the meter pass states them. TierEvents[k] is tier k+1's count.
+type UsageStatement struct {
+	CustomerID string
+	EventID    string
+	At         time.Time
+	TierEvents []int64
+}
+
+// MinFixedFeeCents is the least fixed fee a usage product may carry: the provider
+// refuses a payment under $1.00, so a product without it cannot collect a quiet
+// month. A check, not a price — the fee lives on the product.
+const MinFixedFeeCents = 100
+
+// UsageMeter is the half of a provider that bills usage: pug states counts and the
+// provider holds the rates. Kept apart from PaymentProvider so a provider that
+// cannot meter, and every test fake of one, need not grow it.
+type UsageMeter interface {
+	// IngestUsage states a customer's per-tier counts for the current period. Each
+	// tier's meter aggregates by max, so a repeated statement is inert and a lost
+	// one is superseded by the next.
+	IngestUsage(ctx context.Context, s UsageStatement) error
+	// VerifyMetering checks the provider bills what IngestUsage states: a max meter
+	// per tier, attached to every given product with no free threshold of its own,
+	// on a fixed fee of at least MinFixedFeeCents. Read-only; the error says what is
+	// wrong, for an operator.
+	VerifyMetering(ctx context.Context, tiers int, productIDs []string) error
+}
