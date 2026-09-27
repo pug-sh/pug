@@ -141,8 +141,8 @@ type PropertyValue_StringValue struct {
 	// at the validate interceptor with CodeInvalidArgument (not truncated).
 	//
 	// Empty-string note: the filter expression cannot distinguish a
-	// custom_properties value of "" from an absent key — both project to ''
-	// in propertyExpr (filters.go), so EQUALS '' and IS_NOT_SET match
+	// custom_properties value of "" from an absent key — both project to ”
+	// in propertyExpr (filters.go), so EQUALS ” and IS_NOT_SET match
 	// identically. If the empty case is meaningful, encode it differently
 	// (e.g. a sentinel value) on the producer side.
 	StringValue string `protobuf:"bytes,1,opt,name=string_value,json=stringValue,oneof"`
