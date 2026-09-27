@@ -14,6 +14,7 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/meter"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 )
@@ -23,16 +24,20 @@ import (
 type Server struct {
 	entitlements  *entitlement.Service
 	subscriptions *subscription.Service
+	meters        *meter.Reader
 }
 
 // NewServer reads the entitlement service off subscriptions rather than taking one
 // beside it. GetBillingStatus reports billing_enabled from one and purchasable from
 // the other, so a pair wired apart would contradict itself in a single response.
-func NewServer(subscriptions *subscription.Service) *Server {
+func NewServer(subscriptions *subscription.Service, meters *meter.Reader) *Server {
 	if subscriptions == nil {
 		panic("billing: subscription service is nil")
 	}
-	return &Server{entitlements: subscriptions.Entitlements(), subscriptions: subscriptions}
+	if meters == nil {
+		panic("billing: meter reader is nil")
+	}
+	return &Server{entitlements: subscriptions.Entitlements(), subscriptions: subscriptions, meters: meters}
 }
 
 func (s *Server) GetBillingStatus(
@@ -89,7 +94,34 @@ func (s *Server) GetBillingStatus(
 	if !ent.ContractEndsAt.IsZero() {
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
 	}
+	// What the provider will bill for each tier, as last stated. Quantities only: the
+	// rates live on the provider's product.
+	if ent.SubStatus.Live() && !ent.SubPeriodStart.IsZero() {
+		stated, ok, err := s.meters.Stated(ctx, orgID, ent.SubPeriodStart)
+		if err != nil {
+			return nil, internalErr()
+		}
+		if ok {
+			resp.TierUsage = tierUsage(stated.Tiers, stated.PlanSlug)
+			resp.TierUsageAsOf = timestamppb.New(stated.AsOf)
+		}
+	}
 	return connect.NewResponse(resp), nil
+}
+
+// tierUsage pairs each stated count with its tier's upper bound, 0 for the
+// unbounded last.
+func tierUsage(counts []int64, planSlug string) []*billingv1.TierUsage {
+	bounds, _ := entitlement.TiersFor(planSlug)
+	out := make([]*billingv1.TierUsage, len(counts))
+	for k, n := range counts {
+		var upTo int64
+		if k < len(bounds) {
+			upTo = bounds[k]
+		}
+		out[k] = &billingv1.TierUsage{UpToEvents: proto.Int64(upTo), Events: proto.Int64(n)}
+	}
+	return out
 }
 
 // The service logs and records at source, so the handler only translates.

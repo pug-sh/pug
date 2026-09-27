@@ -76,8 +76,10 @@ type Entitlement struct {
 	BillingEnabled bool
 
 	// The live provider subscription, if any; an empty SubStatus means none. These
-	// describe the MONEY: SubPeriodEnd is when the provider bills, not PeriodEnd.
+	// describe the MONEY: SubPeriodStart and SubPeriodEnd bound the period the
+	// provider bills, not PeriodStart and PeriodEnd.
 	SubStatus          billing.SubStatus
+	SubPeriodStart     time.Time
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
 }
@@ -111,6 +113,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	}
 	if sub != nil {
 		ent.SubStatus = sub.Status
+		ent.SubPeriodStart = sub.CurrentPeriodStart
 		ent.SubPeriodEnd = sub.CurrentPeriodEnd
 		ent.ProviderCustomerID = sub.ProviderCustomerID
 	}
