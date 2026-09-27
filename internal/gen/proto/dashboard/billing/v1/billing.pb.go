@@ -320,7 +320,7 @@ type GetBillingStatusResponse struct {
 	// Absent when there is no live subscription.
 	CurrentPeriodEnd *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=current_period_end,json=currentPeriodEnd" json:"current_period_end,omitempty"`
 	// Whether a checkout would open at all -- billing on, a provider configured, and
-	// a product to check out against. Per tier it is PlanOption.purchasable.
+	// a product to check out against. Per plan it is PlanOption.purchasable.
 	Purchasable *bool `protobuf:"varint,11,opt,name=purchasable" json:"purchasable,omitempty"`
 	// Days of event history the plan promises. ABSENT means NO BOUND and is never
 	// zero. Nothing in pug deletes on this number today.
@@ -757,7 +757,7 @@ func (x *CreatePortalSessionResponse) GetPortalUrl() string {
 type ListPlansRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Scoped to an org because purchasability is: only the org whose row records a
-	// product can buy the custom tier.
+	// product can buy its deal.
 	OrgId         *string `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -807,10 +807,10 @@ type PlanOption struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// The plan's free allowance. ABSENT is the custom tier, whose row decides it --
+	// The plan's free allowance. ABSENT is a deal, whose row decides it --
 	// absence is never zero, here or below.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,5,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
-	// Days of history the plan keeps. ABSENT is the custom tier.
+	// Days of history the plan keeps. ABSENT is a deal.
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,7,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
 	// Whether a checkout for THIS plan would open -- the same helper
 	// CreateCheckoutSession refuses on, so a dead button is impossible.

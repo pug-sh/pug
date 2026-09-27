@@ -9,14 +9,15 @@ import "google/protobuf/wrappers.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1;billingv1";
 
 service BillingService {
-  // What the org may send this period: plan, quota, and the window both are
+  // What is free this period: plan, free allowance, and the window both are
   // measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
   // from both. Plan fields arrive already resolved, overrides applied.
   rpc GetBillingStatus(GetBillingStatusRequest) returns (GetBillingStatusResponse) {}
 
-  // Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-  // the viewer floor, but starting a checkout spends money. The price lives on
-  // the provider's product; this request names a plan slug, never an amount.
+  // Opens a checkout for one catalog plan, or the org's own deal. Admin-only: the
+  // allowance banner is on the viewer floor, but starting a checkout spends money.
+  // The rates live on the provider's product; this request names a plan slug,
+  // never an amount.
   rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse) {}
 
   // Verifies one checkout against the provider and applies its subscription:
@@ -30,9 +31,10 @@ service BillingService {
   // FailedPrecondition for an org that has never checked out.
   rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
 
-  // The tiers this deployment sells, in display order. On the viewer floor: the
-  // person reading the quota banner wants to know what the next tier costs, they
-  // just cannot buy it. Never returns a product id, and never the floors.
+  // The plans this deployment sells, in display order, as quantities: the rates
+  // live on the provider's product. On the viewer floor: the person reading the
+  // allowance banner wants to see what is on sale, they just cannot buy it. Never
+  // returns a product id, and never free, which is a state rather than a plan.
   rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {}
 }
 
@@ -101,7 +103,7 @@ message GetBillingStatusResponse {
   // Absent when there is no live subscription.
   google.protobuf.Timestamp current_period_end = 10;
   // Whether a checkout would open at all -- billing on, a provider configured, and
-  // a product to check out against. Per tier it is PlanOption.purchasable.
+  // a product to check out against. Per plan it is PlanOption.purchasable.
   bool purchasable = 11;
   // Days of event history the plan promises. ABSENT means NO BOUND and is never
   // zero. Nothing in pug deletes on this number today.
@@ -163,7 +165,7 @@ message CreatePortalSessionResponse {
 
 message ListPlansRequest {
   // Scoped to an org because purchasability is: only the org whose row records a
-  // product can buy the custom tier.
+  // product can buy its deal.
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
@@ -175,10 +177,10 @@ message PlanOption {
   string display_name = 2;
   reserved 3, 4;
   reserved price_cents, currency;
-  // The plan's free allowance. ABSENT is the custom tier, whose row decides it --
+  // The plan's free allowance. ABSENT is a deal, whose row decides it --
   // absence is never zero, here or below.
   google.protobuf.Int64Value included_events = 5;
-  // Days of history the plan keeps. ABSENT is the custom tier.
+  // Days of history the plan keeps. ABSENT is a deal.
   google.protobuf.Int64Value retention_days = 7;
   // Whether a checkout for THIS plan would open -- the same helper
   // CreateCheckoutSession refuses on, so a dead button is impossible.
