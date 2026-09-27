@@ -24,22 +24,25 @@ import (a depguard rule, not a convention), and beside `entitlement`, which is
 > reviewed, all-at-once Dodo build exists at `archive/billing-2026-08-15`; §16
 > records where this design deliberately departs from it. Provider-swappability
 > (§2.1) was added to this design on 2026-09-06 and is not reflected in the
-> archive at all.
+> archive at all. **Revised 2026-09-27 for usage billing:** the three fixed-price
+> tiers became one usage plan, sold as a Dodo usage product (§4.1), a deal's
+> product is a usage product too (§5), and the trial is gone. Reporting usage to
+> the product's meters is the next slice.
 
 ---
 
 ## 1. Scope
 
 **In:** a merchant-of-record provider behind an interface (§2.1), implemented
-once for Dodo Payments; self-serve checkout for the three paid tiers; a signed
+once for Dodo Payments; self-serve checkout for the usage plan; a signed
 webhook inbox; the provider-reported states entitlement cannot derive
 (`PAST_DUE`, `CANCELLED`); a reconcile pass; negotiated deals billed through the provider like everything else, bought from
 the pug dashboard rather than from a link we send (§5.2).
 
 **Out:** cheques, wire transfers, and any payment that happens outside the
 provider (§16 — this is the largest departure from the archived build); **a
-second provider implementation** (§2.1); overage charges;
-per-seat pricing; multi-currency (§3); an in-dashboard plan switcher (Dodo's
+second provider implementation** (§2.1); reporting usage to the product's
+meters (the next slice); per-seat pricing; multi-currency (§3); an in-dashboard plan switcher (Dodo's
 customer portal does that); revenue reporting.
 
 **Unchanged:** the quota window, the plan catalog's quotas, and every existing
@@ -51,9 +54,10 @@ today.
 
 ## 2. Structural invariants
 
-1. **Pug owns the quota; the provider owns the money.** `included_events` is
-   pug's number and changing it changes what an org may send. The amount charged
-   is the provider's, and pug cannot alter it by writing to Postgres.
+1. **Pug owns the quantities; the provider owns the money.** The free allowance
+   (`included_events`) and the tier bounds are pug's numbers. Every rate and the
+   monthly fee are the provider's, on its product (§4.1), and pug cannot alter
+   them by writing to Postgres.
 2. **One writer per row.** The operator writes `billing_entitlements`. The
    payments side writes `billing_subscriptions` — the webhook, reconcile and
    `ConfirmCheckout`, all through the one CAS in `applySubscription`, so there is
@@ -62,16 +66,20 @@ today.
    and the build holds it: the `table-has-one-writer` check in `internal/lint`
    reads which table each write query mutates from its SQL and fails a call to
    one from outside the owning package.
-   The two sides still meet on one org: a custom subscription takes its quota
-   from the entitlement row, so `applySubscription` maps and writes inside the
+   The two sides still meet on one org: a custom subscription maps through the
+   entitlement row's product and takes its negotiated terms from that row, so
+   `applySubscription` maps and writes inside the
    entitlement service's `WithOrgLock`, which takes the same
    `pg_advisory_xact_lock` a `billing clear` does and hands it that row as read
    under the lock. Otherwise a clear can commit between the mapping and the
-   write, leaving a live custom subscription against no row — the free floor,
-   and exactly the stranding `Clear`'s own guard refuses to cause.
-3. **Every paid org has a provider subscription**, negotiated deals included.
-   There is no manual-payment path, so "entitlement with no live subscription"
-   is a reconcilable defect rather than a legitimate state.
+   write, leaving a live custom subscription against no row — a deal charged
+   without its terms, and exactly the stranding `Clear`'s own guard refuses to
+   cause.
+3. **Every paid org has a provider subscription**, negotiated deals included —
+   by construction: there is no manual-payment path, and an entitlement row never
+   grants a plan on its own ([`billing.md`](billing.md) §6). A `custom` row with
+   no live subscription is a deal staged and not bought, or one that lapsed, and
+   reconcile reports it (§9).
 4. **The webhook fails closed.** No secret configured ⇒ the route is not
    mounted and the provider gets 404s. Never verify-nothing.
 5. **Enforcement stays out.** Nothing here blocks ingestion. A `PAST_DUE` org
@@ -151,7 +159,7 @@ key that permits two providers at once) while they are free.
 ## 3. Locked decision: USD only
 
 Dodo is a merchant of record and can present local currency to a buyer, but pug
-sells in USD and stores USD, and every plan in the catalog is USD today.
+sells in USD and stores USD, and every product pug sells is priced in USD.
 
 This is enforced rather than assumed, in exactly one place: a subscription whose
 currency is not `USD` is **rejected at the webhook boundary** — stored in the
@@ -182,10 +190,11 @@ comes back every time somebody wants a price on a page.
 
 | Question | Answer | Source |
 |---|---|---|
-| What may this org send? | `included_events` | pug — catalog, or the org's override |
+| How much of what it sends is free? | `included_events` | pug — the catalog's allowance, or the org's override |
+| How is the rest split into tiers? | `TierUpTo` | pug — the catalog; a deal splits over the current plan's |
 | How long is its history kept? | `retention_days` | pug — catalog, or the org's override |
+| What does each tier cost, and the fee? | the rates | Dodo — the product's meters and fixed price (§4.1) |
 | What does this org pay? | the amount | Dodo — the subscription, mirrored read-only |
-| What is the list price of a tier? | `price_cents` | pug — the Go catalog, a marketing number |
 
 Concretely (**done**): `price_cents_override` and `currency_override` are gone
 from migration 019, `--price` / `--currency` are gone from `pug billing set`, and
@@ -194,11 +203,13 @@ them. What a deal was
 agreed at goes in `--note`, which is already there and is honest about being a
 record rather than a source of truth.
 
-`GetBillingStatus`'s `price_cents` field survives unchanged — it is always the
-catalog's list price for the resolved tier, never the subscription's amount. What
-an org is actually charged lives in the provider; `billing_subscriptions.price_cents`
-mirrors it for the operator, and no read path copies that onto the entitlement.
-The RPC surface does not change; only the authorship does.
+Usage billing (2026-09-27) went the rest of the way: the catalog's list prices
+went too, and `price_cents` and `currency` are reserved on the wire. A usage plan
+has no single price to list — what a month costs depends on the month — and a
+copy of the product's rates in pug would go stale the first time one is repriced
+in Dodo's dashboard. What an org is actually charged lives in the provider;
+`billing_subscriptions.price_cents` mirrors the subscription's recurring amount
+for the operator, and no read path copies it onto the entitlement.
 
 What this buys, beyond one fewer thing to keep in sync: the price/currency pair
 constraint, its asymmetry, the CLI's two guards, and the `price_minor_units`
@@ -209,21 +220,44 @@ amount an operator may want stored where a query can reach it. `--note` is
 prose. If that turns out to matter, the column comes back — as a nullable
 mirror written by the webhook, never by a person.
 
+### 4.1 The usage product
+
+Each catalog plan sells as one Dodo **usage-based product**, created by hand in
+Dodo's dashboard like a deal's (§5.1) and mapped to its slug in config (§13).
+Every item below is set by hand, and a mistake in any bills silently wrong:
+
+- **A fixed price of at least $1.00 a month.** Dodo refuses payments under $1.00,
+  so the fee keeps every renewal chargeable however quiet the month.
+- **One meter per tier**, `Plan.Tiers()` of them, each priced at its tier's rate
+  per event, in cents: $11 per million is `0.0011`. The tier bounds are pug's
+  ([`billing.md`](billing.md) §4); the rates exist only here.
+- **A free threshold of 0 on every meter.** The allowance is pug's, and a
+  threshold in Dodo would apply it a second time.
+- **A subscription term of years**, never equal to the payment frequency: equal
+  values expire the subscription after one cycle instead of renewing it.
+
+How usage reaches those meters — the event, its keys, the cadence — belongs to
+the next slice.
+
 ## 5. Custom deals
 
 **A negotiated deal is a Dodo product plus a pug entitlement row.** It cannot
 live only in pug: Dodo charges products, so a deal Dodo has never heard of is a
-deal nobody can pay for. What can live only in pug is the *quota*, and it does.
+deal nobody can pay for. What can live only in pug is the *quantities* — the
+allowance, the retention and the name — and they do.
 
 The split for `custom`:
 
-- **In Dodo:** a product at the negotiated monthly price, and the subscription
-  the customer holds against it. Created **by hand in Dodo's dashboard**, not by
-  pug (§5.1).
-- **In pug:** `plan_slug = 'custom'` with `included_events_override` — the quota
-  Dodo has no concept of — and `retention_days_override` when the deal names a
-  retention, plus that product's id
-  (`provider_product_id`, §5.2), `contract_ends_at` and `--note`.
+- **In Dodo:** a usage product like the plan's (§4.1) — every tier meter
+  attached at the deal's rates, and the deal's monthly fee as its fixed price,
+  never under $1.00 — and the subscription the customer holds against it.
+  Created **by hand in Dodo's dashboard**, not by pug (§5.1).
+- **In pug:** `plan_slug = 'custom'` with that product's id
+  (`provider_product_id`, §5.2) — `custom_needs_product` makes the two
+  inseparable — plus whatever the deal negotiated on top:
+  `included_events_override` for its free allowance (the current plan's without
+  one; `--events 1` for a deal that charges from the first event),
+  `retention_days_override`, a display name, `contract_ends_at` and `--note`.
 - **The join:** the subscription row the webhook writes, attributed by the
   `checkout_ref` pug mints for the checkout session it opens — or, for a payment
   link, by `metadata.org_id` paired with the `provider_product_id` staged above.
@@ -238,15 +272,14 @@ The archived build had `CreateProduct` and a `pug billing checkout create`
 command that minted a bespoke product and a first checkout URL over the API.
 This design drops both for v1.
 
-At $10–$30 list tiers, custom deals will be rare and each one already involves a
-human conversation. Creating the product in Dodo's dashboard takes a minute, is
+Custom deals will be rare, and each one already involves a human conversation. Creating the product in Dodo's dashboard takes a minute, is
 where the operator can see tax categories and the product collection anyway, and
 removes an entire API surface — product creation, repricing, the
 create-then-checkout race, and the "what if the product exists but the
 subscription never activated" state — from pug.
 
-What pug keeps is the part a dashboard cannot do: the quota, and the link back to
-the org. Add `CreateProduct` when the deal rate makes the paste annoying, not
+What pug keeps is the part a dashboard cannot do: the allowance, and the link
+back to the org. Add `CreateProduct` when the deal rate makes the paste annoying, not
 before.
 
 Worth being explicit, because it looks like a contradiction with §4: creating the
@@ -287,12 +320,12 @@ is what keeps a buyer-settable `metadata_org_id` from placing a subscription on
 someone else's org — the worst a forged one can do is buy the org exactly the
 product an operator already staged for it.
 
-**The one ordering hazard:** if the operator never runs `pug billing set`, the
-org holds a `custom` subscription with no quota row, and `custom` has no catalog
-quota to fall back on. Resolution treats that as the free floor and the reconcile
-pass reports it (§9) — a customer paying for nothing is exactly the kind of thing
-that must be loud. Recording the product id first makes this the ordinary path
-rather than a thing to remember, since the quota is written by the same command.
+**The one ordering hazard:** a payment link paid before `pug billing set
+--provider-product` has run names a product no row maps, so the delivery is
+refused (§8) — stored, marked processed, and reported by reconcile (§9) — and the
+org stays free while Dodo charges it. A customer paying for nothing is exactly the
+kind of thing that must be loud. The buy button cannot reach this: it exists only
+once the product is on the row.
 
 ### 5.3 What the customer sees in the pug dashboard
 
@@ -302,7 +335,7 @@ A custom-deal customer does everything from the pug dashboard, like anybody else
 |---|---|---|
 | First payment | **Buy button in the pug dashboard** → Dodo checkout | The org's `provider_product_id` is what the button points at (§5.2) |
 | Card update, invoices, receipts, cancellation | **"Manage billing" in the pug dashboard** → Dodo's customer portal | Checkout leaves a `provider_customer_id`, which is all `CreatePortalSession` needs (§12) |
-| Their quota and usage | The pug dashboard, as today | Never left pug |
+| Their allowance and usage | The pug dashboard, as today | Never left pug |
 
 The only operator step is pasting a product id once per deal, and it happens
 during a conversation that was going to happen anyway. Nothing about a custom
@@ -321,9 +354,11 @@ billing_entitlements
                                      -- written, like every other column here.
 ```
 
-NULL is every org that is not a negotiated deal — the catalog tiers get their
-product ids from config (section 13), not from the row: one key per purchasable
-tier, mapping a catalog slug to a provider product id.
+NULL is every org that is not a negotiated deal — the catalog plans get their
+product ids from config (section 13), not from the row: one key per catalog plan,
+mapping its slug to a provider product id. Since usage billing it is also set
+exactly when the row is `custom` (`custom_needs_product`, [`billing.md`](billing.md)
+§5).
 
 The id belongs to whichever provider is configured, and a provider swap
 invalidates every stored one along with every config key. That is a re-paste per
@@ -420,13 +455,15 @@ would put the operator's type in the provider's write path.
 
 The order, most specific first:
 
-1. A **live subscription** supplies the plan.
-2. An **operator grant** (`billing_entitlements.plan_slug`, non-floor) supplies
-   the plan when there is no live subscription — this is how a comped deal and a
-   pre-paid grant keep working with no money involved.
+1. A **live subscription** supplies the plan — a usage slug, or `custom`.
+2. Otherwise the org is **free**, on the current plan's allowance. An
+   entitlement row never supplies a plan on its own: without a subscription
+   nothing bills, so a comp is a bigger allowance on free rather than a plan.
 3. Overrides from the entitlement row apply on top of either, which is what
-   makes a `custom` subscription's quota come from pug.
-4. Otherwise the derived trial, then free, exactly as today.
+   gives a `custom` subscription its negotiated allowance, retention and name.
+
+The whole rule, with billing switched off and the contract gate, is
+[`billing.md`](billing.md) §6.
 
 "Live" is pug's word, not the provider's. `Normalize` (§2.1) maps on write and
 both columns are stored (§6), so this rule is one comparison against a
@@ -456,13 +493,8 @@ the org to whatever is beneath the subscription and unpausing restores it, with
 no event-name-specific branch. An unrecognized status is not live: a state we
 have never seen must not silently grant a plan.
 
-A not-live subscription supplies nothing and the org falls to whatever is beneath
-it — usually free, because the trial is long past. The row is kept rather than
-deleted: "when did this lapse" is a question support asks.
-
-Every existing rule in [`billing.md`](billing.md) §6 survives unchanged. An org
-with no subscription row resolves exactly as it does today, which is what makes
-this slice revertible.
+A not-live subscription supplies nothing and the org falls to free. The row is
+kept rather than deleted: "when did this lapse" is a question support asks.
 
 ## 8. The webhook
 
@@ -550,7 +582,7 @@ caller: `ErrUndecodable` separates the two so the delivery is retried and record
 rather than filed under the warning a port scanner produces.
 
 **A product pug cannot place is the same case, in the granting direction only.**
-If `product_id` maps to no configured tier (§13) and does not match the attributed
+If `product_id` maps to no configured plan (§13) and does not match the attributed
 org's `provider_product_id`, there is no `plan_slug` to write, so the delivery is
 stored, marked processed, logged as an error, and **not applied** — the same
 disposition as a foreign currency (§3) and an unattributable delivery, for the
@@ -562,7 +594,7 @@ delivery pug did not apply wrote no subscription row at all.
 **A delivery that ENDS a subscription is exempt.** A non-live status keeps the
 `plan_slug` already stored on the row rather than resolving one from the product,
 because refusing a cancellation whose product has left the config would leave the
-row `active` and the org on a tier it stopped paying for — an unmapped product may
+row `active` and the org on a plan it stopped paying for — an unmapped product may
 withhold a plan, never preserve one. Only a delivery with no stored row to end
 falls back to the refusal above. Reconcile (§9) reports it as a third inconsistency —
 a live subscription against a product pug does not know — which is the signal
@@ -587,10 +619,11 @@ API for each. Then the consistency reports, which are the point of invariant 3:
   re-read, or a row left behind by an environment switch. A finding, deliberately
   not a read failure: counting it as one would hold the CronJob red on every
   later run over a row that is never coming back.
-- An entitlement granting a paid or `custom` plan with no live subscription
-  behind it. An org with **no** entitlement row is invisible here, since the query
-  reads `billing_entitlements`; the §5.2 case of a paid custom deal with no quota
-  row surfaces as the unmappable-product finding below instead.
+- A `custom` row with no live subscription behind it — a deal staged and not
+  yet bought, or one that lapsed while its row stayed. An org with **no**
+  entitlement row is invisible here, since the query reads
+  `billing_entitlements`; the §5.2 case of a deal paid before its product was
+  pasted surfaces as the unmappable-product finding below instead.
 - A live subscription against a product no config key and no org row maps to
   (§8), which is a delivery that could not be applied.
 - Two live subscriptions for one org, refused by the partial unique index. The
@@ -626,11 +659,11 @@ delete, and refuse to proceed if the cancel call fails.
 
 ## 11. Dunning
 
-A failed renewal changes nothing about entitlement. `PAST_DUE` keeps the quota;
+A failed renewal changes nothing about entitlement. `PAST_DUE` keeps the plan;
 degrading a paying customer's product over an expired card is worse for both
 sides than a few unbilled days. The provider retries and emails on its own
 schedule, and the delivery that normalizes to `cancelled` is what finally drops
-the org to the floor — by then the customer has had every notice the provider
+the org to free — by then the customer has had every notice the provider
 sends. This policy is pug's and survives a provider change; only the dunning
 schedule behind it moves.
 
@@ -639,13 +672,13 @@ schedule behind it moves.
 Four additions to `dashboard.billing.v1.BillingService`, all JWT. `ListPlans`
 is a read and stays on the viewer floor; the three that spend money are
 **admin-only** through a new `ActionCreate` on `authz.ResourceBilling`, because
-the quota banner stays on the viewer floor but starting a checkout does not:
+the allowance banner stays on the viewer floor but starting a checkout does not:
 
 - `CreateCheckoutSession(plan_slug) → checkout_url`. For `custom` it checks out
   against the org's own `provider_product_id` and returns `FailedPrecondition`
-  when none is recorded; for a catalog tier it uses the configured product id.
+  when none is recorded; for a catalog plan it uses the configured product id.
 - `CreatePortalSession() → portal_url`, `FailedPrecondition` for an org with no
-  `provider_customer_id` — trialing, free and comped orgs have never checked out.
+  `provider_customer_id` — free and comped orgs have never checked out.
 - `ConfirmCheckout(session_id) → confirmed` (§12.1), which is how a returning
   buyer is confirmed without a delivery having arrived.
 
@@ -653,9 +686,9 @@ the quota banner stays on the viewer floor but starting a checkout does not:
 `purchasable` bool — what the FE renders the buy button from, without ever
 seeing a product id. It is true only when the checkout would actually open:
 billing enabled, a Dodo API key configured, and a product to check out against
-(a configured catalog tier, or `custom` once the org has a
+(a configured catalog plan, or `custom` once the org has a
 `provider_product_id`). It gates the buy button as a whole; whether a particular
-tier can be bought is `PlanOption.purchasable`, which does share a helper with
+plan can be bought is `PlanOption.purchasable`, which does share a helper with
 `CreateCheckoutSession`'s refusal — a button that cannot work is worse than no
 button. Tested both
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
@@ -740,13 +773,13 @@ still coming.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PUG_BILLING_ENABLED` | `false` | Unchanged. Off ⇒ no quota, and the checkout RPCs return `Unavailable`. |
+| `PUG_BILLING_ENABLED` | `false` | Unchanged. Off ⇒ no allowance, and the checkout RPCs return `Unavailable`. |
 | `PUG_BILLING_PROVIDER` | `""` | Which provider to construct: `dodo` today. Empty ⇒ no provider at all. An unrecognized value **fails startup** rather than silently disabling checkout, since the two are indistinguishable from the dashboard. |
 | `PUG_DODO_API_KEY` | — | Absent ⇒ no provider. Checkout returns `Unavailable`; everything else works. |
 | `PUG_DASHBOARD_BASE_URL` | — | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
-| `PUG_DODO_PRODUCT_<SLUG>` | — | One per purchasable catalog tier (`..._STARTER`, `..._GROWTH`, `..._SCALE`), mapping the slug to a Dodo product id. Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A tier with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
+| `PUG_DODO_PRODUCT_<SLUG>` | — | One per catalog plan, retired plans included — the slug upper-cased with `-` as `_`, so `PUG_DODO_PRODUCT_USAGE_2026_10` — mapping it to that plan's usage product (§4.1). Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A plan with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
 
 Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's
@@ -757,8 +790,7 @@ so a cutover must keep the outgoing provider configured until its last
 cancellation has arrived.
 
 Billing enabled with no provider credentials is a supported mode, not a broken
-one: quotas, grants and comped deals all work, and only the buy button is
-missing. That is the self-hosted configuration.
+one: allowances and comps work, and only the buy button is missing. That is the self-hosted configuration.
 
 ## 14. Testing
 
@@ -820,10 +852,10 @@ this slice plus the next two. Where this design differs, it is on purpose:
   which gets the customer a buy button without pug touching the product API.
 - **The plan catalog stays in Go.** The archive moved plans to rows because a
   purchasable tier binds to a per-environment product id. This design maps
-  product id → slug in config instead: three tiers, two environments, six
-  strings, which does not justify migrating the catalog out of code. Revisit
+  product id → slug in config instead: a handful of plans, two environments, a
+  handful of strings, which does not justify migrating the catalog out of code. Revisit
   when tiers are edited by someone who cannot deploy.
-- **Custom deals are pug quotas, not `PRIVATE` plan rows.** The archive modelled
+- **Custom deals are pug overrides, not `PRIVATE` plan rows.** The archive modelled
   a deal as a private plan; entitlement overrides already do this, and they
   shipped.
 - **No payment ledger in this slice.** `payment.*` deliveries are stored and
@@ -863,7 +895,7 @@ the drift this is meant to prevent, and a test caught it.
 
 **A lapsed contract no longer gates the overrides when a subscription is live
 (§7).** `applyOverrides` was contract-gated, which collapsed a live custom deal
-to no quota — and then to the free floor — on the day its agreed term passed,
+to no quota — and then to the free tier — on the day its agreed term passed,
 while Dodo went on charging. The contract bounds a grant an operator made; it
 cannot expire a subscription the provider still says is live.
 
@@ -876,7 +908,9 @@ catalog in the frontend, which would put a second authority on what a plan costs
 beside `GetBillingStatus`: a price is a marketing number, and the person reading
 the quota banner is the one who wants to know what the next tier costs. It never
 returns a product id, never the floors, and offers `custom` only to the org whose
-row records its product.
+row records its product. Since usage billing it lists quantities only — the plan's
+free allowance and retention — and never `free`, which is a state rather than a
+plan.
 
 **`ConfirmCheckout` was added, and the redirect stopped being a spinner (§12.1).**
 The design has the dashboard poll after checkout, and the implementation did —
