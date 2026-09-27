@@ -90,16 +90,7 @@ func (c *CLI) Set(ctx context.Context, out io.Writer, orgID, actor string, chang
 	return c.report(ctx, out, orgID, rec, nil)
 }
 
-// ExtendTrial moves the org's trial end to days from now.
-func (c *CLI) ExtendTrial(ctx context.Context, out io.Writer, orgID, actor string, days int) error {
-	rec, err := c.svc.ExtendTrial(ctx, orgID, actor, days, time.Now())
-	if err != nil {
-		return err
-	}
-	return c.report(ctx, out, orgID, rec, nil)
-}
-
-// Clear deletes the row, returning the org to the derived trial-then-free floors.
+// Clear deletes the row, returning the org to the free allowance.
 func (c *CLI) Clear(ctx context.Context, out io.Writer, orgID, actor string) error {
 	if err := c.svc.Clear(ctx, orgID, actor); err != nil {
 		return err

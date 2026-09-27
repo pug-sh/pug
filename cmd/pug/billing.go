@@ -24,7 +24,7 @@ var billingCmd = newBillingCmd()
 func newBillingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "billing",
-		Short: "Grant, extend and inspect org billing entitlements",
+		Short: "Grant and inspect org billing entitlements",
 		Long: "Operator commands for the entitlement store — what an org is allowed to\n" +
 			"send. Postgres only: no payments provider is contacted, and no price is\n" +
 			"ever written here. Every write is attributed to --actor and appended to\n" +
@@ -34,7 +34,6 @@ func newBillingCmd() *cobra.Command {
 	for _, c := range []*cobra.Command{
 		newBillingShowCmd(),
 		newBillingSetCmd(),
-		newBillingExtendTrialCmd(),
 		newBillingClearCmd(),
 	} {
 		// Cobra reads this off the executed command, not its parent: without it a
@@ -62,8 +61,10 @@ func newBillingShowCmd() *cobra.Command {
 func newBillingSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <org-id>",
-		Short: "Grant a plan, merging the flags given over whatever is stored",
-		Long: "Grants a plan. Omitting an override flag leaves the stored value alone —\n" +
+		Short: "Put an org on free or a deal, merging the flags given over whatever is stored",
+		Long: "Sets free (with any comped overrides) or custom (a deal: its provider product\n" +
+			"and negotiated terms). A usage plan is held only through a subscription, so\n" +
+			"it is never set here. Omitting an override flag leaves the stored value alone —\n" +
 			"the common re-set is a renewal on terms that have not changed — and\n" +
 			"passing its empty value (--events 0, --retention-days 0, --name \"\",\n" +
 			"--anchor-day 0, --until \"\") clears it back to the plan's.\n\n" +
@@ -85,8 +86,8 @@ func newBillingSetCmd() *cobra.Command {
 			return err
 		}),
 	}
-	cmd.Flags().String("plan", "", "catalog slug to grant")
-	cmd.Flags().Int64("events", 0, "negotiated monthly event quota; 0 clears the override")
+	cmd.Flags().String("plan", "", "free, or custom for a negotiated deal")
+	cmd.Flags().Int64("events", 0, "negotiated monthly free allowance; 0 clears the override")
 	cmd.Flags().Int64("retention-days", 0, "negotiated days of event history kept; 0 clears the override")
 	cmd.Flags().String("name", "", "display name shown to the org; empty clears the override")
 	cmd.Flags().Int("anchor-day", 0, "day of month the usage period turns over (1-31); 0 clears the override")
@@ -94,26 +95,6 @@ func newBillingSetCmd() *cobra.Command {
 	cmd.Flags().String("note", "", "free text an operator settles a renewal argument from; empty clears it")
 	cmd.Flags().String("provider-product", "", "provider product a negotiated deal is bought against; empty clears it")
 	mustMarkRequired(cmd, "plan")
-	requireActor(cmd)
-	return cmd
-}
-
-func newBillingExtendTrialCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "extend-trial <org-id>",
-		Short: "Move the org's trial end to --days from now",
-		Long: "Sets an absolute now + --days, so it can only ever lengthen a trial: a\n" +
-			"--days that would land before the current end is refused rather than\n" +
-			"silently cutting it short.",
-		Args: cobra.ExactArgs(1),
-		RunE: billingRunE(func(ctx context.Context, cli *appbilling.CLI, cmd *cobra.Command, orgID string) error {
-			days, _ := cmd.Flags().GetInt("days")
-			actor, _ := cmd.Flags().GetString("actor")
-			return cli.ExtendTrial(ctx, cmd.OutOrStdout(), orgID, actor, days)
-		}),
-	}
-	cmd.Flags().Int("days", 0, fmt.Sprintf("days from now the trial should end (1-%d)", entitlement.MaxTrialDays))
-	mustMarkRequired(cmd, "days")
 	requireActor(cmd)
 	return cmd
 }
@@ -196,18 +177,9 @@ func flagIfSet[T any](cmd *cobra.Command, name string, get func(string) (T, erro
 	return &v
 }
 
-// What --plan accepts for a NEW grant. Trial is extend-trial's alone; a retired
-// tier is kept for its holders and stays settable for an org already on it.
-func grantableSlugs() []string {
-	out := make([]string, 0, len(entitlement.Plans()))
-	for _, p := range entitlement.Plans() {
-		if p.Slug == entitlement.SlugTrial || p.Retired {
-			continue
-		}
-		out = append(out, p.Slug)
-	}
-	return out
-}
+// What --plan accepts. A usage plan is held only through a subscription, so set
+// never grants one.
+func grantableSlugs() []string { return []string{entitlement.SlugFree, entitlement.SlugCustom} }
 
 // Logs move to stderr so a command's report is the only thing on stdout. args[0]
 // is the org id: every billing command declares ExactArgs(1).

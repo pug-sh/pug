@@ -130,7 +130,7 @@ func (q *Queries) GetBillingCheckoutSessionOrgID(ctx context.Context, arg GetBil
 }
 
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
-select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id from billing_entitlements where org_id = $1 for update
+select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, update_time, provider_product_id from billing_entitlements where org_id = $1 for update
 `
 
 // Returns no rows for an org that has never been touched, which is normal.
@@ -147,7 +147,6 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.OrgID,
 		&i.PlanSlug,
 		&i.RetentionDaysOverride,
-		&i.TrialEndsAt,
 		&i.UpdateTime,
 		&i.ProviderProductID,
 	)
@@ -191,11 +190,11 @@ const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistor
 insert into billing_entitlement_history (
   actor, anchor_day, contract_ends_at, display_name_override,
   id, included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  retention_days_override
 ) values (
   $1, $2, $3, $4,
   $5, $6, $7, $8, $9, $10,
-  $11, $12
+  $11
 )
 `
 
@@ -211,7 +210,6 @@ type InsertBillingEntitlementHistoryParams struct {
 	PlanSlug               pgtype.Text
 	ProviderProductID      pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
-	TrialEndsAt            pgtype.Timestamptz
 }
 
 func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg InsertBillingEntitlementHistoryParams) error {
@@ -227,7 +225,6 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 		arg.PlanSlug,
 		arg.ProviderProductID,
 		arg.RetentionDaysOverride,
-		arg.TrialEndsAt,
 	)
 	return err
 }
@@ -371,11 +368,11 @@ const upsertBillingEntitlement = `-- name: UpsertBillingEntitlement :one
 insert into billing_entitlements (
   anchor_day, contract_ends_at, display_name_override,
   included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  retention_days_override
 ) values (
   $1, $2, $3,
   $4, $5, $6, $7, $8,
-  $9, $10
+  $9
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
@@ -385,9 +382,8 @@ set anchor_day = excluded.anchor_day,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
     provider_product_id = excluded.provider_product_id,
-    retention_days_override = excluded.retention_days_override,
-    trial_ends_at = excluded.trial_ends_at
-returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, update_time, provider_product_id
+    retention_days_override = excluded.retention_days_override
+returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, update_time, provider_product_id
 `
 
 type UpsertBillingEntitlementParams struct {
@@ -400,7 +396,6 @@ type UpsertBillingEntitlementParams struct {
 	PlanSlug               string
 	ProviderProductID      pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
-	TrialEndsAt            pgtype.Timestamptz
 }
 
 // Full replace, never coalesce: the caller has already merged its change over
@@ -416,7 +411,6 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		arg.PlanSlug,
 		arg.ProviderProductID,
 		arg.RetentionDaysOverride,
-		arg.TrialEndsAt,
 	)
 	var i BillingEntitlement
 	err := row.Scan(
@@ -429,7 +423,6 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.OrgID,
 		&i.PlanSlug,
 		&i.RetentionDaysOverride,
-		&i.TrialEndsAt,
 		&i.UpdateTime,
 		&i.ProviderProductID,
 	)

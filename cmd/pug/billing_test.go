@@ -123,25 +123,23 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 	}
 }
 
-// The trial slug has one writer, and it is not `set`.
-func TestGrantableSlugsExcludeTrialAndRetired(t *testing.T) {
+// A usage plan is held only through a subscription, so `set` offers the two
+// states and never a catalog plan.
+func TestGrantableSlugsAreFreeAndCustom(t *testing.T) {
 	got := grantableSlugs()
-	if slices.Contains(got, entitlement.SlugTrial) {
-		t.Fatalf("slugs = %v, want no %q", got, entitlement.SlugTrial)
+	if !slices.Equal(got, []string{entitlement.SlugFree, entitlement.SlugCustom}) {
+		t.Fatalf("slugs = %v, want exactly free and custom", got)
 	}
 	for _, p := range entitlement.Plans() {
-		if p.Retired && slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want no retired tier %q", got, p.Slug)
-		}
-		if !p.Retired && p.Slug != entitlement.SlugTrial && !slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want it to offer %q", got, p.Slug)
+		if slices.Contains(got, p.Slug) {
+			t.Fatalf("slugs = %v, want no catalog plan such as %q", got, p.Slug)
 		}
 	}
 }
 
 // Every write is attributed, so none of them may run without an actor.
 func TestBillingWritesRequireAnActor(t *testing.T) {
-	for _, name := range []string{"set", "extend-trial", "clear"} {
+	for _, name := range []string{"set", "clear"} {
 		cmd, _, err := newBillingCmd().Find([]string{name})
 		if err != nil {
 			t.Fatalf("find %s: %v", name, err)

@@ -34,10 +34,9 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	row(w, "  plan", fmt.Sprintf("%s (%s)", ent.DisplayName, ent.Slug))
 	row(w, "  status", string(ent.Status))
 	row(w, "  included events", quota(ent.IncludedEvents))
+	row(w, "  tiers", tiers(ent.IncludedEvents, ent.TierUpTo))
 	row(w, "  retention", retention(ent.RetentionDays))
-	row(w, "  list price", price(ent.PriceCents, ent.Currency))
 	row(w, "  usage period", fmt.Sprintf("%s → %s", instant(ent.PeriodStart), instant(ent.PeriodEnd)))
-	row(w, "  trial ends", instant(ent.TrialEndsAt))
 	row(w, "  contract ends", contractEnd(ent.ContractEndsAt))
 	row(w, "  subscription", subscription(ent))
 
@@ -52,7 +51,6 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 		row(w, "  anchor day", override(int64(rec.AnchorDay)))
 		row(w, "  contract ends", contractEnd(rec.ContractEndsAt))
 		row(w, "  provider product", text(rec.ProviderProductID))
-		row(w, "  trial ends", instant(rec.TrialEndsAt))
 		row(w, "  note", text(rec.Note))
 	}
 
@@ -119,9 +117,6 @@ func historyLine(rec entitlement.Record) string {
 	}
 	if !rec.ContractEndsAt.IsZero() {
 		parts = append(parts, "until="+instant(rec.ContractEndsAt))
-	}
-	if !rec.TrialEndsAt.IsZero() {
-		parts = append(parts, "trial-ends="+instant(rec.TrialEndsAt))
 	}
 	if rec.ProviderProductID != "" {
 		parts = append(parts, "product="+rec.ProviderProductID)
@@ -191,6 +186,19 @@ func retention(v *int64) string {
 		return fmt.Sprintf("%s  (%d years)", out, years)
 	}
 	return out
+}
+
+// tiers renders how an org's usage is split: where its allowance ends and each
+// tier's upper bound. Quantities only — the rates live on the provider's product.
+func tiers(allowance *int64, upTo []int64) string {
+	if allowance == nil {
+		return none
+	}
+	parts := []string{comma(*allowance) + " free"}
+	for _, bound := range upTo {
+		parts = append(parts, "≤ "+comma(bound))
+	}
+	return strings.Join(append(parts, "beyond"), " · ")
 }
 
 func quota(v *int64) string {

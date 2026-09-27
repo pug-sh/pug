@@ -67,7 +67,7 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *subscription.Service {
 	t.Helper()
 	return subscription.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
+		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
 	}, f.entitlements)

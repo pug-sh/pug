@@ -89,8 +89,7 @@ select
   e.note,
   e.plan_slug,
   e.provider_product_id,
-  e.retention_days_override,
-  e.trial_ends_at
+  e.retention_days_override
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
 where o.id = $1
@@ -106,7 +105,6 @@ type GetOrgEntitlementRow struct {
 	PlanSlug               pgtype.Text
 	ProviderProductID      pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
-	TrialEndsAt            pgtype.Timestamptz
 }
 
 // Left join rather than two reads: most orgs have no entitlement row, and that
@@ -124,13 +122,12 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 		&i.PlanSlug,
 		&i.ProviderProductID,
 		&i.RetentionDaysOverride,
-		&i.TrialEndsAt,
 	)
 	return i, err
 }
 
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, provider_product_id from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -162,7 +159,6 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.OrgID,
 			&i.PlanSlug,
 			&i.RetentionDaysOverride,
-			&i.TrialEndsAt,
 			&i.ProviderProductID,
 		); err != nil {
 			return nil, err
@@ -275,7 +271,7 @@ select e.org_id, e.plan_slug
 from billing_entitlements e
 left join billing_subscriptions s
   on s.org_id = e.org_id and s.status in ('active', 'past_due')
-where e.plan_slug not in ('free', 'trial')
+where e.plan_slug = 'custom'
   and (e.contract_ends_at is null or e.contract_ends_at > now())
   and s.org_id is null
 order by e.org_id
@@ -286,8 +282,8 @@ type ListPaidEntitlementsWithoutLiveSubscriptionRow struct {
 	PlanSlug string
 }
 
-// Every paid org should have a provider subscription. A row here is an org
-// entitled to something nobody is charged for.
+// A deal with no live subscription behind it: staged and not yet bought, or one
+// whose subscription lapsed while its contract still runs.
 func (q *Queries) ListPaidEntitlementsWithoutLiveSubscription(ctx context.Context) ([]ListPaidEntitlementsWithoutLiveSubscriptionRow, error) {
 	rows, err := q.db.Query(ctx, listPaidEntitlementsWithoutLiveSubscription)
 	if err != nil {

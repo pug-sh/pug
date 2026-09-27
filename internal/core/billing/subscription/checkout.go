@@ -111,16 +111,23 @@ func (s *Service) CreateCheckoutSession(
 	if !s.takesMoney() {
 		return "", "", billing.ErrNoProvider
 	}
-	plan, ok := entitlement.PlanBySlug(planSlug)
-	if !ok {
-		return "", "", entitlement.ErrPlanNotFound
-	}
-	// The product map leaves out the floors but keeps retired tiers mapped, so their
-	// holders' renewals still resolve (see app/payments). This is what keeps a
-	// retired tier off sale, and the map is the wiring's rule besides: core must not
-	// assume the next wiring builds it the same way.
-	if !plan.OnSale() {
+	switch planSlug {
+	case entitlement.SlugCustom:
+		// The org's own product, checked below by checkoutProduct.
+	case entitlement.SlugFree:
 		return "", "", ErrNotPurchasable
+	default:
+		plan, ok := entitlement.PlanBySlug(planSlug)
+		if !ok {
+			return "", "", entitlement.ErrPlanNotFound
+		}
+		// The product map keeps retired plans mapped, so their holders' renewals still
+		// resolve (see app/payments). This is what keeps a retired plan off sale, and
+		// the map is the wiring's rule besides: core must not assume the next wiring
+		// builds it the same way.
+		if !plan.OnSale() {
+			return "", "", ErrNotPurchasable
+		}
 	}
 
 	rec, err := s.entitlements.StoredRecord(ctx, orgID)
@@ -210,55 +217,56 @@ func (s *Service) planForProduct(productID string, rec entitlement.Record) (stri
 	return "", fmt.Errorf("%w: product %s", ErrNotPurchasable, productID)
 }
 
-// PlanOption is a tier as this deployment sells it, distinct from
-// entitlement.Entitlement, which is a tier as ONE ORG holds it.
+// PlanOption is a plan as this deployment sells it, distinct from
+// entitlement.Entitlement, which is a plan as ONE ORG holds it. Quantities only: the
+// rates live on the provider's product.
 type PlanOption struct {
 	Slug        string
 	DisplayName string
-	Currency    string
-
-	// nil means no list price: the custom tier, whose price lives in the provider.
-	PriceCents *int64
-	// nil means no quota of its own: the custom tier, whose quota comes from its row.
+	// The free allowance; nil for custom, whose row decides it.
 	IncludedEvents *int64
-	// nil is the custom tier again, whose retention its deal recorded — never a zero.
+	// nil for custom again, whose retention its deal recorded — never a zero.
 	RetentionDays *int64
 
 	Purchasable bool
 }
 
-// PlanOptions is the catalog on sale to one org (see Plan.OnSale), with custom
-// listed only for the org whose row records a product.
+// PlanOptions is every plan on sale (see Plan.OnSale), and custom for the one org
+// whose row names a product.
 func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, error) {
 	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
 
-	plans := entitlement.Plans()
-	out := make([]PlanOption, 0, len(plans))
-	for _, plan := range plans {
+	var out []PlanOption
+	for _, plan := range entitlement.Plans() {
 		if !plan.OnSale() {
 			continue
 		}
-		if plan.Slug == entitlement.SlugCustom && rec.ProviderProductID == "" {
-			continue
-		}
-		// Per tier, not per org: a deployment can configure a product for some tiers
-		// and not others, and a button that cannot work is worse than no button.
+		// Per plan, not per org: a deployment can configure a product for one plan and
+		// not another, and a button that cannot work is worse than no button.
 		_, err := s.checkoutProduct(rec, plan.Slug)
 		out = append(out, PlanOption{
-			Currency:       plan.Currency,
 			DisplayName:    plan.DisplayName,
-			IncludedEvents: plan.IncludedEvents,
-			PriceCents:     plan.PriceCents,
+			IncludedEvents: i64(plan.FreeEvents),
 			Purchasable:    s.takesMoney() && err == nil,
-			RetentionDays:  plan.RetentionDays,
+			RetentionDays:  i64(plan.RetentionDays),
 			Slug:           plan.Slug,
+		})
+	}
+	if rec.ProviderProductID != "" {
+		_, err := s.checkoutProduct(rec, entitlement.SlugCustom)
+		out = append(out, PlanOption{
+			DisplayName: entitlement.CustomDisplayName,
+			Purchasable: s.takesMoney() && err == nil,
+			Slug:        entitlement.SlugCustom,
 		})
 	}
 	return out, nil
 }
+
+func i64(v int64) *int64 { return &v }
 
 // ConfirmCheckout verifies one checkout against the provider and writes its
 // subscription through the same CAS the webhook uses. false, nil means the

@@ -8,52 +8,43 @@ import (
 
 func TestProductIDs(t *testing.T) {
 	env := map[string]string{
-		"PUG_DODO_PRODUCT_STARTER": "prod_s",
-		"PUG_DODO_PRODUCT_GROWTH":  "prod_g",
-		// No SCALE key: a tier with no product is simply not purchasable.
+		"PUG_DODO_PRODUCT_USAGE_2026_10": "prod_u",
+		// Free and custom are states rather than catalog plans: nothing reads these.
 		"PUG_DODO_PRODUCT_CUSTOM": "prod_never_read",
 		"PUG_DODO_PRODUCT_FREE":   "prod_never_read",
 	}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 
-	got, err := productIDs(lookup)
+	got, err := productIDs(lookup, entitlement.Plans())
 	if err != nil {
 		t.Fatalf("productIDs: %v", err)
 	}
-	want := map[string]string{"starter": "prod_s", "growth": "prod_g"}
-	if len(got) != len(want) {
-		t.Fatalf("productIDs = %v, want %v", got, want)
-	}
-	for slug, id := range want {
-		if got[slug] != id {
-			t.Errorf("productIDs[%q] = %q, want %q", slug, got[slug], id)
-		}
+	if len(got) != 1 || got[entitlement.SlugUsage] != "prod_u" {
+		t.Fatalf("productIDs = %v, want {%s: prod_u}", got, entitlement.SlugUsage)
 	}
 
-	// Two tiers on one product makes an incoming subscription's tier ambiguous,
-	// and the webhook would pick one silently.
-	env["PUG_DODO_PRODUCT_SCALE"] = "prod_g"
-	if _, err := productIDs(lookup); err == nil {
-		t.Fatal("two tiers sharing a product id was accepted")
+	// The real catalog holds one plan, so the rest of this test makes its own.
+	plans := []entitlement.Plan{
+		{Slug: "usage-old", Retired: true},
+		{Slug: "usage-new"},
+		{Slug: "usage-unsold"},
 	}
-}
+	env["PUG_DODO_PRODUCT_USAGE_OLD"] = "prod_old"
+	env["PUG_DODO_PRODUCT_USAGE_NEW"] = "prod_new"
+	got, err = productIDs(lookup, plans)
+	if err != nil {
+		t.Fatalf("productIDs: %v", err)
+	}
+	// A retired plan keeps its mapping, or the webhook could not place its holders'
+	// renewals and cancellations; a plan with no key is simply not purchasable.
+	if got["usage-old"] != "prod_old" || got["usage-new"] != "prod_new" || len(got) != 2 {
+		t.Errorf("productIDs = %v, want the retired and the new plan mapped", got)
+	}
 
-// Only the floors and custom are excluded. A retired tier keeps its mapping, or the
-// webhook could not place its existing holders' renewals and cancellations.
-func TestMappedSlug(t *testing.T) {
-	for _, tc := range []struct {
-		plan entitlement.Plan
-		want bool
-	}{
-		{entitlement.Plan{Slug: "growth"}, true},
-		{entitlement.Plan{Slug: "growth-v0", Retired: true}, true},
-		{entitlement.Plan{Slug: entitlement.SlugFree}, false},
-		{entitlement.Plan{Slug: entitlement.SlugTrial}, false},
-		{entitlement.Plan{Slug: entitlement.SlugCustom}, false},
-	} {
-		if got := mappedSlug(tc.plan); got != tc.want {
-			t.Errorf("mappedSlug(%q, retired=%v) = %v, want %v",
-				tc.plan.Slug, tc.plan.Retired, got, tc.want)
-		}
+	// Two plans on one product makes an incoming subscription's plan ambiguous, and
+	// the webhook would pick one silently.
+	env["PUG_DODO_PRODUCT_USAGE_UNSOLD"] = "prod_new"
+	if _, err := productIDs(lookup, plans); err == nil {
+		t.Fatal("two plans sharing a product id was accepted")
 	}
 }

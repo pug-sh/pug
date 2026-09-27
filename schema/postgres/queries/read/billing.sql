@@ -10,8 +10,7 @@ select
   e.note,
   e.plan_slug,
   e.provider_product_id,
-  e.retention_days_override,
-  e.trial_ends_at
+  e.retention_days_override
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
 where o.id = @org_id;
@@ -37,13 +36,13 @@ order by id
 limit @row_limit offset @row_offset;
 
 -- name: ListPaidEntitlementsWithoutLiveSubscription :many
--- Every paid org should have a provider subscription. A row here is an org
--- entitled to something nobody is charged for.
+-- A deal with no live subscription behind it: staged and not yet bought, or one
+-- whose subscription lapsed while its contract still runs.
 select e.org_id, e.plan_slug
 from billing_entitlements e
 left join billing_subscriptions s
   on s.org_id = e.org_id and s.status in ('active', 'past_due')
-where e.plan_slug not in ('free', 'trial')
+where e.plan_slug = 'custom'
   and (e.contract_ends_at is null or e.contract_ends_at > now())
   and s.org_id is null
 order by e.org_id;

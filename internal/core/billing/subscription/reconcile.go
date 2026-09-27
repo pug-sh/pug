@@ -39,8 +39,9 @@ type ReconcileReport struct {
 	// A subscription pug stores that the provider no longer knows. A finding for a
 	// person: nothing here tells a purged subscription from one never theirs.
 	Untracked int
-	// An entitlement granting a paid or custom plan with no live subscription behind
-	// it. An org with NO entitlement row is invisible here — see UnmappedProduct.
+	// A custom deal with no live subscription behind it: staged and not yet bought,
+	// or lapsed while its contract runs. An org with NO entitlement row is invisible
+	// here — see UnmappedProduct.
 	EntitledUnbilled int
 	// A live subscription against a product nothing maps to: a deploy is missing a
 	// product key, or an operator created a product without pasting its id.
@@ -113,9 +114,8 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	}
 	for _, row := range unbilled {
 		report.EntitledUnbilled++
-		// Warn, not error: an operator's comped grant is indistinguishable from a
-		// billing failure here, and it is the ordinary case.
-		slog.WarnContext(ctx, "org holds a paid entitlement with no live subscription",
+		// Warn, not error: a deal staged ahead of its checkout is ordinary.
+		slog.WarnContext(ctx, "org holds a custom deal with no live subscription",
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 

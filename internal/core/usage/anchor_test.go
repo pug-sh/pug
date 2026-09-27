@@ -149,7 +149,7 @@ func seedOrgWithAnchor(t *testing.T, pg *testutil.TestPostgres, w *dbwrite.Queri
 	}
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	if _, err := pg.PgW.Exec(t.Context(),
-		"insert into billing_entitlements (org_id, plan_slug, anchor_day) values ($1, 'growth', $2)",
+		"insert into billing_entitlements (org_id, plan_slug, anchor_day) values ($1, 'free', $2)",
 		org.ID, anchorDay); err != nil {
 		t.Fatalf("seed entitlement: %v", err)
 	}

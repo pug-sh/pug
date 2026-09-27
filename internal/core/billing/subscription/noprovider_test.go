@@ -24,7 +24,7 @@ func noProviderCases(t *testing.T) (*fixture, map[string]*subscription.Service) 
 		t.Fatalf("new entitlement service: %v", err)
 	}
 	switchedOff := subscription.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth"},
+		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      provider,
 	}, off)
 	return f, map[string]*subscription.Service{
@@ -42,7 +42,7 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 	for name, svc := range services {
 		t.Run(name, func(t *testing.T) {
 			if _, _, err := svc.CreateCheckoutSession(t.Context(), subscription.Checkout{
-				OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
+				OrgID: f.orgID, PlanSlug: entitlement.SlugUsage, Email: "buyer@example.com", Name: "Ada Buyer",
 			}); !errors.Is(err, corebilling.ErrNoProvider) {
 				t.Errorf("CreateCheckoutSession err = %v, want ErrNoProvider", err)
 			}
