@@ -188,6 +188,29 @@ func TestFreezesPastTheNominalRenewal(t *testing.T) {
 	}
 }
 
+// An un-acked statement is re-sent only while its period is open. Past the nominal
+// renewal the provider is processing the new period, and a statement stamped now
+// could land in it — billing the old period's whole count a second time. What this
+// costs is the accepted under-bill: up to one tick's growth.
+func TestAnUnackedStatementIsNotResentPastTheRenewal(t *testing.T) {
+	f := setup(t)
+	start, end := d(10, 3), d(11, 3)
+	f.subscribe(t, entitlement.SlugUsage, "cus_1", start, end)
+	f.usage(t, d(10, 5), 3_000_000)
+	f.meter.fail = errors.New("provider down")
+	if _, err := f.svc.Run(t.Context(), end.Add(-30*time.Minute)); err == nil {
+		t.Fatal("a failed ingest must fail the pass")
+	}
+	f.meter.fail = nil
+	report, err := f.svc.Run(t.Context(), end.Add(30*time.Minute))
+	if err != nil {
+		t.Fatalf("Run past the renewal: %v", err)
+	}
+	if report.Frozen != 1 || report.Resent != 0 || len(f.meter.sent) != 0 {
+		t.Fatalf("report = %+v, sent %d; nothing may be re-sent past current_period_end", report, len(f.meter.sent))
+	}
+}
+
 func TestCarriesTheShortfallAfterARoll(t *testing.T) {
 	f := setup(t)
 	plan := entitlement.CurrentPlan()

@@ -1,7 +1,8 @@
 -- name: WriteAheadBillingMeterPeriod :exec
 -- Before the ingest: the row claims the statement, un-acked, so it can never
 -- understate what the provider holds. window_start is kept from the first write:
--- a period's window starts once.
+-- a period's window starts once. The counts are overwritten, not maxed: the pass's
+-- advisory lock is what makes the max it took against this row still hold.
 insert into billing_meter_periods (
   acked, allowance, carry_events, org_id, own_events, period_start, plan_slug,
   provider_customer_id, stated_at, window_end, window_start

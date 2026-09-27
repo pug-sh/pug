@@ -66,7 +66,8 @@ type WriteAheadBillingMeterPeriodParams struct {
 
 // Before the ingest: the row claims the statement, un-acked, so it can never
 // understate what the provider holds. window_start is kept from the first write:
-// a period's window starts once.
+// a period's window starts once. The counts are overwritten, not maxed: the pass's
+// advisory lock is what makes the max it took against this row still hold.
 func (q *Queries) WriteAheadBillingMeterPeriod(ctx context.Context, arg WriteAheadBillingMeterPeriodParams) error {
 	_, err := q.db.Exec(ctx, writeAheadBillingMeterPeriod,
 		arg.Allowance,

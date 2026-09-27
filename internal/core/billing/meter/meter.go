@@ -135,6 +135,15 @@ func (s *Service) meterOrg(ctx context.Context, sub dbread.BillingSubscription, 
 	if err != nil {
 		return 0, resent, err
 	}
+	// The previous period's last ingest failed and the freeze kept it from being
+	// re-sent, since a statement stamped now could land in this period and bill the
+	// old count twice. It may still have landed, so the carry counts it as sent: up
+	// to one tick's growth goes unbilled, the direction chosen. Said once, when this
+	// period is first stated.
+	if row == nil && prev != nil && !prev.Acked {
+		slog.WarnContext(ctx, "the previous meter period ended with its last statement unacknowledged; up to one tick's growth may be unbilled",
+			slog.String("org_id", orgID), slog.Time("previous_period_start", prev.Start))
+	}
 	var statedWin, prevWin *Window
 	if row != nil {
 		statedWin = &row.Window
