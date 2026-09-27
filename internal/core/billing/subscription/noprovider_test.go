@@ -1,4 +1,4 @@
-package mandate_test
+package subscription_test
 
 import (
 	"errors"
@@ -7,27 +7,27 @@ import (
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 )
 
 // The two shapes with no way to take money: no provider credentials, and the
 // billing switch off. Both must refuse identically.
-func noProviderCases(t *testing.T) (*fixture, map[string]*mandate.Service) {
+func noProviderCases(t *testing.T) (*fixture, map[string]*subscription.Service) {
 	t.Helper()
 	f, provider := newPaidFixture(t)
 
-	unconfigured := mandate.NewService(f.pg.PgRO, f.pg.PgW, nil, f.entitlements)
+	unconfigured := subscription.NewService(f.pg.PgRO, f.pg.PgW, nil, f.entitlements)
 	// A provider wired and the switch off, which means an entitlement service built
 	// off, as the server builds it.
 	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, false)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	switchedOff := mandate.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
+	switchedOff := subscription.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
 	}, off)
-	return f, map[string]*mandate.Service{
+	return f, map[string]*subscription.Service{
 		"no provider credentials": unconfigured,
 		"billing switched off":    switchedOff,
 	}
@@ -41,7 +41,7 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 
 	for name, svc := range services {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := svc.CreateCheckoutSession(t.Context(), mandate.Checkout{
+			if _, _, err := svc.CreateCheckoutSession(t.Context(), subscription.Checkout{
 				OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
 			}); !errors.Is(err, corebilling.ErrNoProvider) {
 				t.Errorf("CreateCheckoutSession err = %v, want ErrNoProvider", err)

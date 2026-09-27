@@ -6,8 +6,8 @@
 // payment adapter in internal/deps import it and nothing else in core, which
 // depguard holds it to.
 //
-// What an org is entitled to send lives in ./entitlement; the mandate lifecycle
-// that buys it lives in ./mandate.
+// What an org is entitled to send lives in ./entitlement; the subscription lifecycle
+// that buys it lives in ./subscription.
 package billing
 
 import (
@@ -188,7 +188,7 @@ func ParseSubStatus(v string) (SubStatus, bool) {
 	return "", false
 }
 
-// Currency is the one pug sells in. mandate refuses any other at each of its
+// Currency is the one pug sells in. subscription refuses any other at each of its
 // writers — the webhook, ConfirmCheckout and the apply they share — so going
 // multi-currency starts here, and renames price_cents with it.
 const Currency = "USD"
@@ -210,6 +210,6 @@ type Payments struct {
 func (p *Payments) Configured() bool { return p != nil && p.Provider != nil }
 
 // ErrNoProvider is a money path refused because this deployment takes no money: no
-// provider credentials, or billing switched off. Returned by mandate, never by an
+// provider credentials, or billing switched off. Returned by subscription, never by an
 // adapter.
 var ErrNoProvider = errors.New("billing: no payments provider is configured")

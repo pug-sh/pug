@@ -12,7 +12,7 @@ import (
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	"github.com/pug-sh/pug/internal/testutil"
 )
 
@@ -69,7 +69,7 @@ func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling
 // newService builds the lifecycle the route mounts from, with provider as its own:
 // the route takes its provider off the service, so a test chooses it here. A nil
 // provider is the no-provider shape.
-func newService(t *testing.T, provider corebilling.PaymentProvider) (*mandate.Service, *testutil.TestPostgres) {
+func newService(t *testing.T, provider corebilling.PaymentProvider) (*subscription.Service, *testutil.TestPostgres) {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
 	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
@@ -80,12 +80,12 @@ func newService(t *testing.T, provider corebilling.PaymentProvider) (*mandate.Se
 	if provider != nil {
 		payments = &corebilling.Payments{Provider: provider}
 	}
-	return mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements), pg
+	return subscription.NewService(pg.PgRO, pg.PgW, payments, entitlements), pg
 }
 
 // handlerFor is the route's handler as MountBilling builds it, over the service's
 // own provider.
-func handlerFor(svc *mandate.Service) *billingHandler {
+func handlerFor(svc *subscription.Service) *billingHandler {
 	return &billingHandler{provider: svc.Provider(), service: svc}
 }
 
@@ -122,7 +122,7 @@ func TestMountRequiresAVerifiableProvider(t *testing.T) {
 
 	noProvider, _ := newService(t, nil)
 	noSecret, _ := newService(t, stubProvider{name: "dodo", cannotVerify: true})
-	for name, svc := range map[string]*mandate.Service{
+	for name, svc := range map[string]*subscription.Service{
 		"no service":  nil,
 		"no provider": noProvider,
 		"no secret":   noSecret,

@@ -55,7 +55,7 @@ var (
 )
 
 // Service is the entitlement store. Its reads, GetEntitlement and StoredRecord,
-// serve the dashboard and `pug billing show`; the mandate package reads the stored
+// serve the dashboard and `pug billing show`; the subscription package reads the stored
 // row too, and takes the billing switch and the org lock from here. The mutations
 // and History are `pug billing`'s alone. No RPC mutates an entitlement.
 type Service struct {
@@ -81,7 +81,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Se
 	}, nil
 }
 
-// BillingEnabled is the switch this service resolves under. The mandate package
+// BillingEnabled is the switch this service resolves under. The subscription package
 // reads it from here rather than holding a copy: two copies can disagree, and one
 // response would then report billing off beside a working buy button.
 func (s *Service) BillingEnabled() bool { return s.billingEnabled }
@@ -119,7 +119,7 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the
 // resolved entitlement, where a lapsed deal's quota is invisible, and the
-// dashboard and mandate read it as well, chiefly for a deal's product id.
+// dashboard and subscription read it as well, chiefly for a deal's product id.
 func (s *Service) StoredRecord(ctx context.Context, orgID string) (Record, error) {
 	// The write pool, as liveSubscription reads: ConfirmCheckout maps a paid checkout
 	// through this row, and a lagging replica would refuse it over a just-pasted

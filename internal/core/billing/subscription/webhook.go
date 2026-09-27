@@ -1,4 +1,4 @@
-package mandate
+package subscription
 
 import (
 	"bytes"

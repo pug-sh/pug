@@ -1,5 +1,5 @@
 // Package entitlement answers what an org is entitled to send: the plan catalog,
-// the stored row, the live subscription the mandate package writes, and the
+// the stored row, the live subscription the subscription package writes, and the
 // resolution of the three against the clock, where a live subscription outranks
 // the row. It counts nothing — consumption is internal/core/usage's job, and the
 // two meet only in a client rendering "X of Y".

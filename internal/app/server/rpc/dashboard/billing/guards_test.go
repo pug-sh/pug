@@ -10,7 +10,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -23,23 +23,23 @@ func TestNewServerRejectsANilService(t *testing.T) {
 		if v == nil {
 			t.Fatal("NewServer returned a server; every RPC on it would panic")
 		}
-		if msg, _ := v.(string); !strings.Contains(msg, "mandate service is nil") {
-			t.Errorf("panic = %v, want it to name the mandate service", v)
+		if msg, _ := v.(string); !strings.Contains(msg, "subscription service is nil") {
+			t.Errorf("panic = %v, want it to name the subscription service", v)
 		}
 	}()
 	NewServer(nil)
 }
 
 // The status read and the buy button must answer to one billing switch, so the
-// handler's entitlement service is the one the mandate service was built over.
-func TestNewServerReadsEntitlementsOffTheMandateService(t *testing.T) {
+// handler's entitlement service is the one the subscription service was built over.
+func TestNewServerReadsEntitlementsOffTheSubscriptionService(t *testing.T) {
 	// Construction never touches the pools, so no database is needed.
 	entitlements, err := entitlement.NewService(nil, nil, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	if got := NewServer(mandate.NewService(nil, nil, nil, entitlements)).entitlements; got != entitlements {
-		t.Error("the handler holds an entitlement service the mandate service was not built over")
+	if got := NewServer(subscription.NewService(nil, nil, nil, entitlements)).entitlements; got != entitlements {
+		t.Error("the handler holds an entitlement service the subscription service was not built over")
 	}
 }
 

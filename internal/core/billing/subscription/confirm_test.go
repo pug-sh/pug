@@ -1,4 +1,4 @@
-package mandate_test
+package subscription_test
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 )
 
 // storedSubscriptions counts the rows the confirm path writes, so a refusal can
@@ -61,7 +61,7 @@ func TestConfirmCheckoutRefusesASessionForAnotherOrg(t *testing.T) {
 	provider.checkout = subEvent("some-other-org", "sub00000000000000021", "prod_growth", corebilling.SubStatusActive)
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
-	if !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
+	if !errors.Is(err, subscription.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if confirmed {
@@ -85,7 +85,7 @@ func TestConfirmCheckoutRefusesACheckoutCarryingNoOrg(t *testing.T) {
 	event.OrgID = ""
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, subscription.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -149,7 +149,7 @@ func TestConfirmCheckoutRefusesAForeignCurrency(t *testing.T) {
 	event.Currency = "EUR"
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCurrencyNotSupported) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, subscription.ErrCurrencyNotSupported) {
 		t.Fatalf("err = %v, want ErrCurrencyNotSupported", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -166,7 +166,7 @@ func TestConfirmCheckoutRefusesAnUnmappableProduct(t *testing.T) {
 	f, provider := newPaidFixture(t)
 	provider.checkout = subEvent(f.orgID, "sub00000000000000025", "prod_unknown", corebilling.SubStatusActive)
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrNotPurchasable) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, subscription.ErrNotPurchasable) {
 		t.Fatalf("err = %v, want ErrNotPurchasable", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -218,7 +218,7 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 	provider.checkout = subEvent(f.orgID, "sub00000000000000028", "prod_scale", corebilling.SubStatusActive)
 
 	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
-	if !errors.Is(err, mandate.ErrTwoLiveSubscriptions) {
+	if !errors.Is(err, subscription.ErrTwoLiveSubscriptions) {
 		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions", err)
 	}
 	if confirmed {
@@ -288,7 +288,7 @@ func TestConfirmCheckoutRefusesARefPugNeverMinted(t *testing.T) {
 	event.CheckoutRef = "ref_forged"
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, subscription.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -307,7 +307,7 @@ func TestConfirmCheckoutRefusesACheckoutCarryingNoRef(t *testing.T) {
 	event.CheckoutRef = ""
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, subscription.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -332,7 +332,7 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 	event.CheckoutRef = checkoutRef(other)
 	provider.checkout = event
 
-	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, mandate.ErrCheckoutNotForOrg) {
+	if _, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now()); !errors.Is(err, subscription.ErrCheckoutNotForOrg) {
 		t.Fatalf("err = %v, want ErrCheckoutNotForOrg", err)
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
@@ -389,7 +389,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 	}
 	<-done
 
-	if !errors.Is(confirmErr, mandate.ErrNotPurchasable) {
+	if !errors.Is(confirmErr, subscription.ErrNotPurchasable) {
 		t.Errorf("err = %v, want ErrNotPurchasable", confirmErr)
 	}
 	if confirmed {

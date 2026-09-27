@@ -6,7 +6,7 @@ Linked from the root [`CLAUDE.md`](../../CLAUDE.md) — read this when working o
 plans, quotas or trials. Event **counting** is not here: see [`usage.md`](usage.md).
 `internal/core/billing` holds three packages: the root is the payment provider
 port and its vocabulary, `entitlement` is what this document describes, and
-`mandate` is the payments side, [`payments.md`](payments.md).
+`subscription` is the payments side, [`payments.md`](payments.md).
 
 > **Status: implemented**, except where §14 records a divergence: migration 019,
 > the Go catalog, `Resolve`, the entitlement store, §7's `GetBillingStatus` RPC
@@ -677,7 +677,7 @@ usable to prepare a deployment before the switch goes on.
 
 ## 10. Testing
 
-`internal/core/billing/entitlement` and `internal/core/billing/mandate` each
+`internal/core/billing/entitlement` and `internal/core/billing/subscription` each
 declare `func TestMain(m *testing.M) { testutil.Main(m) }` and use no
 `t.Parallel()` for the container-backed cases ([`CLAUDE.md`](../../CLAUDE.md)
 § Testing); the root package has no tests. `Resolve` itself is pure, so the rule

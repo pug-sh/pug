@@ -17,9 +17,9 @@ import (
 var tableOwners = map[string]string{
 	"billing_entitlements":        "internal/core/billing/entitlement",
 	"billing_entitlement_history": "internal/core/billing/entitlement",
-	"billing_subscriptions":       "internal/core/billing/mandate",
-	"billing_webhook_deliveries":  "internal/core/billing/mandate",
-	"billing_checkout_sessions":   "internal/core/billing/mandate",
+	"billing_subscriptions":       "internal/core/billing/subscription",
+	"billing_webhook_deliveries":  "internal/core/billing/subscription",
+	"billing_checkout_sessions":   "internal/core/billing/subscription",
 }
 
 // mutatedTable captures the table a mutating statement targets, schema prefix

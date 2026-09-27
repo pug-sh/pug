@@ -1,4 +1,4 @@
-package mandate_test
+package subscription_test
 
 import (
 	"testing"

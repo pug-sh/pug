@@ -85,7 +85,7 @@ func TestChecksDetectViolations(t *testing.T) {
 			check: "table-has-one-writer",
 			files: map[string]string{
 				"schema/postgres/queries/write/billing.sql": billingWrites,
-				"internal/core/billing/mandate/a.go":        "package mandate\n\nfunc f(w q) { w.UpsertBillingEntitlement(nil) }\n",
+				"internal/core/billing/subscription/a.go":   "package subscription\n\nfunc f(w q) { w.UpsertBillingEntitlement(nil) }\n",
 			},
 			want: "calls UpsertBillingEntitlement, which writes billing_entitlements; only internal/core/billing/entitlement may",
 		},
@@ -105,7 +105,7 @@ func TestChecksDetectViolations(t *testing.T) {
 				"schema/postgres/queries/write/billing.sql": billingWrites,
 				"internal/core/billing/entitlement/a.go": "package entitlement\n\n" +
 					"func f(w q) { w.UpsertBillingEntitlement(nil); w.InsertBillingEntitlementHistory(nil) }\n",
-				"internal/core/billing/mandate/a.go": "package mandate\n\nfunc f(w q) { w.ApplyBillingSubscription(nil) }\n",
+				"internal/core/billing/subscription/a.go": "package subscription\n\nfunc f(w q) { w.ApplyBillingSubscription(nil) }\n",
 				// A row lock is not a write, so any package may take one.
 				"internal/app/x/lock.go": "package x\n\nfunc f(w q) { w.GetBillingEntitlementForUpdate(nil) }\n",
 				// Seeding a row in a test is not a second writer.

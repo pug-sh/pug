@@ -1,9 +1,9 @@
-package mandate_test
+package subscription_test
 
 import (
 	"testing"
 
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 )
 
 // A nil entitlement service fails nothing at wiring on its own: the webhook would
@@ -15,5 +15,5 @@ func TestNewServiceRejectsANilEntitlementService(t *testing.T) {
 			t.Fatal("NewService accepted a nil entitlement service")
 		}
 	}()
-	mandate.NewService(nil, nil, nil, nil)
+	subscription.NewService(nil, nil, nil, nil)
 }

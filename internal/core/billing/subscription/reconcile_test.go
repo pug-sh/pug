@@ -1,4 +1,4 @@
-package mandate_test
+package subscription_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 )
 
 // fetchProvider serves reconcile: the subscription the provider reports, keyed
@@ -211,7 +211,7 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, _ := newPaidFixture(t)
-	past := time.Now().Add(-mandate.DeliveryRetention - 24*time.Hour)
+	past := time.Now().Add(-subscription.DeliveryRetention - 24*time.Hour)
 
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		`insert into billing_webhook_deliveries
@@ -229,7 +229,7 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Fatalf("seed checkout session: %v", err)
 	}
 
-	pruned, err := f.svc.PruneDeliveries(t.Context(), time.Now().Add(-mandate.DeliveryRetention))
+	pruned, err := f.svc.PruneDeliveries(t.Context(), time.Now().Add(-subscription.DeliveryRetention))
 	if err != nil {
 		t.Fatalf("PruneDeliveries: %v", err)
 	}

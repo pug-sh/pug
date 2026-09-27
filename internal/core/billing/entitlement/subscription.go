@@ -14,7 +14,7 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// Subscription is the stored mirror row, as resolution consumes it. The mandate
+// Subscription is the stored mirror row, as resolution consumes it. The subscription
 // package writes the row; this package only reads it, so the type lives with its
 // one consumer rather than in the provider vocabulary.
 type Subscription struct {
@@ -31,7 +31,7 @@ type Subscription struct {
 }
 
 // liveSubscription reads the one row that can supply a plan. No row is the
-// ordinary answer, so it returns nil rather than an error. Read-only: mandate is
+// ordinary answer, so it returns nil rather than an error. Read-only: subscription is
 // the one writer of billing_subscriptions.
 func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
 	// The write pool, like every read on the money path: ConfirmCheckout writes the

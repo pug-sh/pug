@@ -11,7 +11,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/cron"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	"github.com/pug-sh/pug/internal/deps/dodo"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -22,13 +22,13 @@ func TestMain(m *testing.M) { testutil.Main(m) }
 
 // newSvc builds the pass's service with billing on. A nil payments is the
 // no-provider shape, where Reconcile is a no-op and only the prune runs.
-func newSvc(t *testing.T, pg *testutil.TestPostgres, payments *corebilling.Payments) *mandate.Service {
+func newSvc(t *testing.T, pg *testutil.TestPostgres, payments *corebilling.Payments) *subscription.Service {
 	t.Helper()
 	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	return mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements)
+	return subscription.NewService(pg.PgRO, pg.PgW, payments, entitlements)
 }
 
 // seedDelivery stores one processed delivery stamped at `at`.
@@ -84,8 +84,8 @@ func TestPassPrunesOnlyPastRetention(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-mandate.DeliveryRetention-time.Hour))
-	seedDelivery(t, pg.PgW, "evt_fresh", now.Add(-mandate.DeliveryRetention+time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-subscription.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_fresh", now.Add(-subscription.DeliveryRetention+time.Hour))
 
 	if err := pass(t.Context(), newSvc(t, pg, nil), now); err != nil {
 		t.Fatalf("pass: %v", err)
@@ -159,7 +159,7 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-mandate.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-subscription.DeliveryRetention-time.Hour))
 	seedLiveSubscription(t, pg.PgW)
 
 	svc := newSvc(t, pg, &corebilling.Payments{
@@ -183,7 +183,7 @@ func TestRunPrunesWhenBillingIsDisabled(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-mandate.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-subscription.DeliveryRetention-time.Hour))
 	seedDelivery(t, pg.PgW, "evt_recent", time.Now())
 	t.Setenv("PUG_BILLING_ENABLED", "false")
 	// Named and unbuildable: a disabled pass must not reach the provider at all.
@@ -239,7 +239,7 @@ func TestRunPrunesWithNoProviderConfigured(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-mandate.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-subscription.DeliveryRetention-time.Hour))
 	t.Setenv("PUG_BILLING_ENABLED", "true")
 	t.Setenv("PUG_BILLING_PROVIDER", "")
 	t.Setenv("DATABASE_URL", pg.PgW.Config().ConnString())
@@ -260,7 +260,7 @@ func TestRunExitsZeroWhenAnotherPassHoldsTheLock(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-mandate.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-subscription.DeliveryRetention-time.Hour))
 	holdLock(t, pg.PgW)
 
 	t.Setenv("PUG_BILLING_ENABLED", "true")

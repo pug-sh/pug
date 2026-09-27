@@ -1,4 +1,4 @@
-package mandate_test
+package subscription_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -16,10 +16,10 @@ import (
 
 const actor = "tester@localhost"
 
-// The mandate tests drive both services: a checkout or a delivery is applied
+// The subscription tests drive both services: a checkout or a delivery is applied
 // against an entitlement the test set up first.
 type fixture struct {
-	svc          *mandate.Service
+	svc          *subscription.Service
 	entitlements *entitlement.Service
 	pg           *testutil.TestPostgres
 	orgID        string
@@ -39,7 +39,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("new entitlement service: %v", err)
 	}
 	return &fixture{
-		svc:          mandate.NewService(pg.PgRO, pg.PgW, nil, entitlements),
+		svc:          subscription.NewService(pg.PgRO, pg.PgW, nil, entitlements),
 		entitlements: entitlements,
 		pg:           pg,
 		orgID:        orgID,
@@ -64,9 +64,9 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 // svcWithProvider builds the paid service against provider, sharing the fixture's
 // pools and entitlement service, so a test that swaps the provider still sees the
 // rows it seeded.
-func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *mandate.Service {
+func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *subscription.Service {
 	t.Helper()
-	return mandate.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
+	return subscription.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",

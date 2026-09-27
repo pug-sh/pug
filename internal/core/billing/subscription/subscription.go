@@ -1,15 +1,14 @@
-// Package mandate is what docs/architecture/payments.md calls the payments side: the
-// lifecycle of a mandate, a buyer's standing authority for the provider to charge
-// them, which pug mirrors as a subscription. It runs checkout, the portal, the
-// webhook inbox and reconcile, and is the only writer of billing_subscriptions, the
-// delivery inbox and the checkout refs, which the table-has-one-writer lint check
-// holds it to.
+// Package subscription is what docs/architecture/payments.md calls the payments
+// side: the lifecycle of the provider subscription an org buys, which pug mirrors
+// as a row. It runs checkout, the portal, the webhook inbox and reconcile, and is
+// the only writer of billing_subscriptions, the delivery inbox and the checkout
+// refs, which the table-has-one-writer lint check holds it to.
 //
 // It never writes billing_entitlements, whose one writer is the entitlement
 // package, but it reads that row: under the org lock through the entitlement
 // service's WithOrgLock, through StoredRecord, and directly for attribution and
 // the reconcile walk.
-package mandate
+package subscription
 
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,7 +18,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
-// Service is the mandate lifecycle. It holds the entitlement service for the
+// Service is the subscription lifecycle. It holds the entitlement service for the
 // billing switch, the org lock and the stored-row reads it shares with the
 // dashboard; writes to billing_entitlements stay in that package.
 type Service struct {
@@ -37,7 +36,7 @@ type Service struct {
 // first billing call would panic too. payments may be nil.
 func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, entitlements *entitlement.Service) *Service {
 	if entitlements == nil {
-		panic("mandate: entitlement service is nil")
+		panic("subscription: entitlement service is nil")
 	}
 	return &Service{
 		read:         dbread.New(pgRO),

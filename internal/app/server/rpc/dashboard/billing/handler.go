@@ -14,25 +14,25 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 )
 
 // Role gating is enforced by rpc.AuthzInterceptor before any handler runs. Not that
 // the org still exists: it can be deleted between the two reads.
 type Server struct {
-	entitlements *entitlement.Service
-	mandates     *mandate.Service
+	entitlements  *entitlement.Service
+	subscriptions *subscription.Service
 }
 
-// NewServer reads the entitlement service off mandates rather than taking one
+// NewServer reads the entitlement service off subscriptions rather than taking one
 // beside it. GetBillingStatus reports billing_enabled from one and purchasable from
 // the other, so a pair wired apart would contradict itself in a single response.
-func NewServer(mandates *mandate.Service) *Server {
-	if mandates == nil {
-		panic("billing: mandate service is nil")
+func NewServer(subscriptions *subscription.Service) *Server {
+	if subscriptions == nil {
+		panic("billing: subscription service is nil")
 	}
-	return &Server{entitlements: mandates.Entitlements(), mandates: mandates}
+	return &Server{entitlements: subscriptions.Entitlements(), subscriptions: subscriptions}
 }
 
 func (s *Server) GetBillingStatus(
@@ -82,8 +82,8 @@ func (s *Server) GetBillingStatus(
 	resp.SubscriptionStatus = subStatusToRPC(ent.SubStatus).Enum()
 	// Read from the same helpers the two session RPCs refuse on, so a button the
 	// dashboard renders and a call that would fail cannot drift apart.
-	resp.Purchasable = proto.Bool(s.mandates.Purchasable(rec))
-	resp.Manageable = proto.Bool(s.mandates.Manageable(ctx, orgID))
+	resp.Purchasable = proto.Bool(s.subscriptions.Purchasable(rec))
+	resp.Manageable = proto.Bool(s.subscriptions.Manageable(ctx, orgID))
 	if !ent.SubPeriodEnd.IsZero() {
 		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
 	}
@@ -142,7 +142,7 @@ func (s *Server) CreateCheckoutSession(
 		return nil, err
 	}
 
-	sessionID, url, err := s.mandates.CreateCheckoutSession(ctx, mandate.Checkout{
+	sessionID, url, err := s.subscriptions.CreateCheckoutSession(ctx, subscription.Checkout{
 		OrgID:    orgID,
 		PlanSlug: req.Msg.GetPlanSlug(),
 		Email:    principal.Customer.Email,
@@ -168,7 +168,7 @@ func (s *Server) ConfirmCheckout(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	confirmed, err := s.mandates.ConfirmCheckout(ctx, orgID, req.Msg.GetSessionId(), time.Now())
+	confirmed, err := s.subscriptions.ConfirmCheckout(ctx, orgID, req.Msg.GetSessionId(), time.Now())
 	if err != nil {
 		return nil, confirmErr(err, orgID)
 	}
@@ -187,19 +187,19 @@ func confirmErr(err error, orgID string) error {
 				"the payment succeeded; it cannot be applied automatically"))
 	}
 	switch {
-	case errors.Is(err, mandate.ErrCheckoutNotForOrg):
+	case errors.Is(err, subscription.ErrCheckoutNotForOrg):
 		return apperr.PermissionDenied(apperr.ReasonBillingCheckoutNotForOrg,
 			"this checkout does not belong to this organization")
-	case errors.Is(err, mandate.ErrCurrencyNotSupported):
+	case errors.Is(err, subscription.ErrCurrencyNotSupported):
 		return paid(apperr.ReasonBillingCurrencyUnsupported,
 			"this subscription is billed in a currency pug does not support")
-	case errors.Is(err, mandate.ErrNotPurchasable):
+	case errors.Is(err, subscription.ErrNotPurchasable):
 		return paid(apperr.ReasonBillingProductUnmapped,
 			"this subscription is for a product pug cannot match to a plan")
-	case errors.Is(err, mandate.ErrTwoLiveSubscriptions):
+	case errors.Is(err, subscription.ErrTwoLiveSubscriptions):
 		return paid(apperr.ReasonBillingTwoLiveSubscriptions,
 			"this organization already has a live subscription")
-	case errors.Is(err, mandate.ErrSubscriptionUnapplicable):
+	case errors.Is(err, subscription.ErrSubscriptionUnapplicable):
 		return paid(apperr.ReasonBillingSubscriptionUnapplicable,
 			"this subscription is in a state pug cannot record")
 	case errors.Is(err, corebilling.ErrCheckoutFailed):
@@ -224,7 +224,7 @@ func (s *Server) CreatePortalSession(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	url, err := s.mandates.CreatePortalSession(ctx, orgID)
+	url, err := s.subscriptions.CreatePortalSession(ctx, orgID)
 	if err != nil {
 		return nil, checkoutErr(err, orgID, "")
 	}
@@ -244,7 +244,7 @@ func (s *Server) ListPlans(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	options, err := s.mandates.PlanOptions(ctx, orgID)
+	options, err := s.subscriptions.PlanOptions(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
@@ -279,12 +279,12 @@ func checkoutErr(err error, orgID, planSlug string) error {
 	case errors.Is(err, entitlement.ErrPlanNotFound):
 		return apperr.NotFound(apperr.ReasonBillingPlanNotFound, "no such plan",
 			apperr.Resource("plan", planSlug))
-	case errors.Is(err, mandate.ErrNotPurchasable):
+	case errors.Is(err, subscription.ErrNotPurchasable):
 		return apperr.FailedPrecondition(apperr.ReasonBillingNotPurchasable,
 			"this plan cannot be purchased",
 			apperr.Precondition(string(apperr.ReasonBillingNotPurchasable), planSlug,
 				"no product is configured for this plan"))
-	case errors.Is(err, mandate.ErrNoCustomer):
+	case errors.Is(err, subscription.ErrNoCustomer):
 		return apperr.FailedPrecondition(apperr.ReasonBillingNoCustomer,
 			"this organization has no billing account yet",
 			apperr.Precondition(string(apperr.ReasonBillingNoCustomer), orgID,

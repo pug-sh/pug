@@ -12,8 +12,9 @@ the inbox, the reconcile pass or the dashboard — merchant-of-record terms and
 fee schedules move, and being locked to one is a commercial risk, not only a
 technical one. Dodo is the first and, for now, the only implementation.
 
-The code is `internal/core/billing/mandate`, named for the mandate a buyer gives
-the provider to charge them, which pug mirrors as a subscription. It sits beside
+The code is `internal/core/billing/subscription`, the lifecycle of the provider
+subscription an org buys. It was named `mandate` until Dodo turned out to refuse
+on-demand mandates for usage-based products. It sits beside
 the port in `internal/core/billing`, which is all of core the Dodo adapter may
 import (a depguard rule, not a convention), and beside `entitlement`, which is
 [`billing.md`](billing.md).
@@ -761,7 +762,7 @@ missing. That is the self-hosted configuration.
 
 ## 14. Testing
 
-`internal/core/billing/mandate` has its own `TestMain` and no `t.Parallel()`
+`internal/core/billing/subscription` has its own `TestMain` and no `t.Parallel()`
 ([`CLAUDE.md`](../../CLAUDE.md) § Testing); the additions follow. The provider is
 an interface (§2.1) with a fake in tests — no container talks to a payments API.
 What must be tested against Postgres: the CAS on out-of-order deliveries, the

@@ -1,4 +1,4 @@
-package mandate_test
+package subscription_test
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/rs/xid"
@@ -170,7 +170,7 @@ func TestPastDueHoldsTheOneLiveSlot(t *testing.T) {
 
 	provider.event = subEvent(f.orgID, "sub00000000000000061", "prod_scale", corebilling.SubStatusActive)
 	err := f.svc.HandleDelivery(t.Context(), delivery("wh_past_due", time.Now()))
-	if !errors.Is(err, mandate.ErrTwoLiveSubscriptions) {
+	if !errors.Is(err, subscription.ErrTwoLiveSubscriptions) {
 		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions — past_due did not hold the slot", err)
 	}
 }
@@ -905,7 +905,7 @@ func TestCheckoutStoresTheRefItSendsToTheProvider(t *testing.T) {
 	}
 	f, provider := newPaidFixture(t)
 
-	if _, _, err := f.svc.CreateCheckoutSession(t.Context(), mandate.Checkout{
+	if _, _, err := f.svc.CreateCheckoutSession(t.Context(), subscription.Checkout{
 		OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
 	}); err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)

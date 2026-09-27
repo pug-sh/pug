@@ -10,7 +10,7 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
-	"github.com/pug-sh/pug/internal/core/billing/mandate"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -30,7 +30,7 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 	return org.ID
 }
 
-// newServerWith wires the pair as the server does: the mandate service over an
+// newServerWith wires the pair as the server does: the subscription service over an
 // entitlement service, which the handler reads back off it. A nil payments is the
 // no-provider shape.
 func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool, payments *corebilling.Payments) *Server {
@@ -39,7 +39,7 @@ func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool,
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	return NewServer(mandate.NewService(pg.PgRO, pg.PgW, payments, entitlements))
+	return NewServer(subscription.NewService(pg.PgRO, pg.PgW, payments, entitlements))
 }
 
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
