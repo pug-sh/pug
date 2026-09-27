@@ -13,8 +13,8 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
-// none is what an absent value prints as. Never a zero: absent means no quota, no
-// bound on history and no list price — "0 days of history" worst of all.
+// none is what an absent value prints as. Never a zero: absent means no allowance
+// and no bound on history — "0 days of history" worst of all.
 const none = "(none)"
 
 func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec entitlement.Record, subs []dbread.BillingSubscription, history []entitlement.HistoryEntry) error {
@@ -41,7 +41,7 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	row(w, "  subscription", subscription(ent))
 
 	if !rec.Present {
-		section(w, "STORED", "(no row — resolving from the org's age)")
+		section(w, "STORED", "(no row — free, unless a subscription says otherwise)")
 	} else {
 		section(w, "STORED", "")
 		row(w, "  plan slug", rec.PlanSlug)

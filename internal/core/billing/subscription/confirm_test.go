@@ -344,7 +344,7 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 // the response: the product check runs on a record read outside the lock, so a
 // clear can commit before applySubscription re-reads it. The re-read under the
 // lock is what stops a live custom subscription being stored against a row that
-// is gone -- which would resolve to the free floor for somebody who just paid.
+// is gone -- a deal somebody just paid for, without its negotiated terms.
 func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -396,6 +396,6 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 		t.Error("confirmed = true for a subscription that was never written")
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
-		t.Errorf("stored %d subscriptions, want 0 — a custom plan with no row behind it resolves free", n)
+		t.Errorf("stored %d subscriptions, want 0 — a custom subscription maps through its row's product", n)
 	}
 }

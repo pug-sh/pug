@@ -46,8 +46,8 @@ func newFixture(t *testing.T) *fixture {
 	}
 }
 
-// dbwriteOrg creates a backdated org, so a test asserting a granted plan is not
-// also fighting a live trial window.
+// dbwriteOrg creates an org backdated to a fixed date, so the anchor and every
+// period derived from it do not depend on the day the suite runs.
 func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
 	t.Helper()
 	org, err := dbwrite.New(pg.PgW).CreateOrg(t.Context(), dbwrite.CreateOrgParams{

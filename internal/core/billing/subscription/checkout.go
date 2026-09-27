@@ -363,7 +363,7 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 }
 
 // anyProviderCustomer resolves the customer the portal is opened for. Checkout
-// is what leaves one behind, so a trialing, free or comped org has none.
+// is what leaves one behind, so a free or comped org has none.
 func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string, error) {
 	if !s.payments.Configured() {
 		return "", billing.ErrNoProvider

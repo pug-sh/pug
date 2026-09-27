@@ -123,8 +123,8 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 }
 
 // SubStatus.Live() is Go; the same set is hardcoded in four SQL sites with nothing
-// linking them, so adding a live status in Go alone would drop a paying org to the
-// floor. This walks the whole vocabulary through the real query.
+// linking them, so adding a live status in Go alone would drop a paying org to
+// free. This walks the whole vocabulary through the real query.
 func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -148,7 +148,7 @@ func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 				t.Fatalf("GetEntitlement: %v", err)
 			}
 			// A live status supplies the subscription's plan; anything else leaves the
-			// org on the derived floor.
+			// org on free.
 			gotPlan := ent.Slug == entitlement.SlugUsage
 			if gotPlan != status.Live() {
 				t.Errorf("status %q: resolved slug %q (supplies a plan = %v), but Live() = %v",
@@ -671,8 +671,9 @@ func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
 // The other half of the Clear guard: a delivery already in flight. The writer
 // takes the entitlement lock before it maps a product, so a clear that commits
 // first is seen by the mapping. Without it the delivery stores a live custom
-// subscription against a row that is gone, which resolves to the free floor --
-// exactly the stranding Clear refuses to cause itself.
+// subscription against a row that is gone -- a deal charged without its terms,
+// with no product to map its renewals through, and exactly the stranding Clear
+// refuses to cause itself.
 func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -727,7 +728,7 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 		t.Fatalf("count subscriptions: %v", err)
 	}
 	if subs != 0 {
-		t.Errorf("stored %d subscriptions, want 0 — a custom plan with no row behind it resolves free", subs)
+		t.Errorf("stored %d subscriptions, want 0 — a custom subscription maps through its row's product", subs)
 	}
 	if got := storedDelivery(t, f, "evt_1").Error; !strings.HasPrefix(got, "product:") {
 		t.Errorf("delivery error = %q, want a product rejection", got)
@@ -1004,7 +1005,7 @@ func TestCancellationWithNoStoredRowKeepsTheProductRefusal(t *testing.T) {
 	}
 }
 
-// Clear refuses to strand a live custom subscription; a floor plan reaches the
+// Clear refuses to strand a live custom subscription; setting free reaches the
 // same state by another route.
 func TestSetPlanIsRefusedWhenItWouldStrandALiveSubscription(t *testing.T) {
 	if testing.Short() {
@@ -1028,7 +1029,7 @@ func TestSetPlanIsRefusedWhenItWouldStrandALiveSubscription(t *testing.T) {
 	if _, err := f.entitlements.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug: entitlement.SlugFree,
 	}); !errors.Is(err, entitlement.ErrClearWouldStrandSubscription) {
-		t.Fatalf("SetPlan to a floor under a live custom subscription: err = %v, want a refusal", err)
+		t.Fatalf("SetPlan to free under a live custom subscription: err = %v, want a refusal", err)
 	}
 	ent, err := f.entitlements.GetEntitlement(ctx, f.orgID, time.Now())
 	if err != nil {

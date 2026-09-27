@@ -100,7 +100,7 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 
 // Clear reports the empty record its own transaction just wrote, not a re-read:
 // against a replica the re-read could still show the deleted row.
-func TestClearReturnsToTheFloor(t *testing.T) {
+func TestClearReturnsToFree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -122,8 +122,8 @@ func TestClearReturnsToTheFloor(t *testing.T) {
 	}
 }
 
-// An org id an operator mistyped must say so rather than report the floors for
-// an org that does not exist.
+// An org id an operator mistyped must say so rather than report free for an org
+// that does not exist.
 func TestUnknownOrgIsReported(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

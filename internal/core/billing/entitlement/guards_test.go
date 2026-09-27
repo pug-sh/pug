@@ -32,9 +32,9 @@ func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	}
 }
 
-// The contract belongs to the granted plan, so a downgrade must not leave a
+// The contract belongs to the deal, so a downgrade must not leave a
 // future date behind for a dashboard to render as "your Free plan ends...".
-func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
+func TestDowngradeToFreeClearsTheContract(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -228,9 +228,9 @@ func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	}
 }
 
-// The mirror of the case above: a floor plan WITH a date is a comped grant, and
-// its overrides are the whole point of it.
-func TestAFloorPlanWithAContractKeepsItsOverrides(t *testing.T) {
+// The mirror of the case above: free WITH a date is a comp, and its overrides are
+// the whole point of it.
+func TestFreeWithAContractKeepsItsOverrides(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -256,7 +256,7 @@ func TestAFloorPlanWithAContractKeepsItsOverrides(t *testing.T) {
 // take the overrides with it — otherwise the deal a lapse would have ended
 // becomes permanent, and "downgrade to free" leaves a larger quota than doing
 // nothing at all.
-func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
+func TestDowngradeToFreeEndsTheOverrides(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -296,7 +296,7 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 		t.Errorf("display name = %q, want Free, not the deal's", ent.DisplayName)
 	}
 
-	// A comped grant on the floor names its own terms, and those survive.
+	// A comp on free names its own terms, and those survive.
 	pilot, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:       entitlement.SlugFree,
 		IncludedEvents: new(int64(5_000_000)),
@@ -380,7 +380,7 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 // The lock must come before the read. `for update` locks nothing while the org has
 // no row, so a read taken first would see an operator's uncommitted first grant as
 // no row at all, and a subscription writer would map a paid deal against that —
-// consuming the delivery and leaving the org on the free floor.
+// consuming the delivery and leaving the org on free.
 func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

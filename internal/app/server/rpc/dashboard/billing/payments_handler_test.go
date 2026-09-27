@@ -491,7 +491,7 @@ func TestStatusReportsALiveSubscription(t *testing.T) {
 	}
 	// past_due keeps the plan: a failed card is worth a banner, never a block.
 	if status.GetPlan().GetSlug() != entitlement.SlugUsage {
-		t.Errorf("plan = %q, want growth", status.GetPlan().GetSlug())
+		t.Errorf("plan = %q, want %q", status.GetPlan().GetSlug(), entitlement.SlugUsage)
 	}
 	if !status.GetManageable() {
 		t.Error("manageable is false for an org with a provider customer")

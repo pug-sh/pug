@@ -102,7 +102,7 @@ func newBillingSetCmd() *cobra.Command {
 func newBillingClearCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clear <org-id>",
-		Short: "Delete the stored row, returning the org to the derived floors",
+		Short: "Delete the stored row, returning the org to the free allowance",
 		Args:  cobra.ExactArgs(1),
 		RunE: billingRunE(func(ctx context.Context, cli *appbilling.CLI, cmd *cobra.Command, orgID string) error {
 			actor, _ := cmd.Flags().GetString("actor")

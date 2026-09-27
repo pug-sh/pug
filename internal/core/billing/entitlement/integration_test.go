@@ -21,8 +21,8 @@ type fixture struct {
 	orgID string
 }
 
-// Orgs are backdated well past the trial so a test asserting a granted plan is
-// not also fighting a live trial window.
+// Orgs are backdated to a fixed date, so the anchor and every period derived from
+// it do not depend on the day the suite runs.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
@@ -47,7 +47,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 }
 
-func TestOrgWithNoRowResolvesFromItsAgeAndWritesNothing(t *testing.T) {
+func TestOrgWithNoRowResolvesFreeAndWritesNothing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -58,11 +58,11 @@ func TestOrgWithNoRowResolvesFromItsAgeAndWritesNothing(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Status != entitlement.StatusFree || ent.Slug != entitlement.SlugFree {
-		t.Errorf("status/slug = %s/%s, want FREE/free for an org past its trial", ent.Status, ent.Slug)
+		t.Errorf("status/slug = %s/%s, want FREE/free for an org with no row", ent.Status, ent.Slug)
 	}
 
 	// A read must not materialize a row: "no row" is the normal state, and one
-	// appearing here would make the trial stored rather than derived.
+	// appearing here would make free stored rather than derived.
 	var rows int
 	if err := f.pg.PgRO.QueryRow(t.Context(),
 		"select count(*) from billing_entitlements where org_id = $1", f.orgID).Scan(&rows); err != nil {
@@ -503,7 +503,7 @@ func TestHistorySurvivesTheOrgBeingDeleted(t *testing.T) {
 		t.Fatalf("History: %v", err)
 	}
 	if len(entries) != 1 || entries[0].Record.PlanSlug != entitlement.SlugFree {
-		t.Errorf("history after deletion = %+v, want the scale grant preserved", entries)
+		t.Errorf("history after deletion = %+v, want the free row preserved", entries)
 	}
 }
 

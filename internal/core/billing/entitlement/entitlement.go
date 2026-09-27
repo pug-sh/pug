@@ -255,9 +255,10 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	if err := lockOrg(ctx, w, orgID); err != nil {
 		return err
 	}
-	// A live custom subscription resolves its quota from the row this deletes, so
-	// clearing it drops an org that is still being charged to the free floor. Under
-	// the lock, which a subscription writer takes before it maps its product.
+	// A live custom subscription takes its negotiated terms from the row this deletes,
+	// and maps its renewals through the row's product, so clearing it strands a deal
+	// that is still being charged. Under the lock, which a subscription writer takes
+	// before it maps its product.
 	sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
 	if err != nil {
 		return err

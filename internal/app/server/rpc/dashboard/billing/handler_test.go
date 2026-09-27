@@ -96,11 +96,11 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 		t.Errorf("included_events = %d, want the current allowance", on.GetIncludedEvents().GetValue())
 	}
 	if on.GetRetentionDays().GetValue() != entitlement.RetentionYearDays {
-		t.Errorf("retention_days = %d, want the free floor's %d",
+		t.Errorf("retention_days = %d, want the current plan's %d",
 			on.GetRetentionDays().GetValue(), entitlement.RetentionYearDays)
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {
-		t.Errorf("status = %s, want FREE for an org past its trial", on.GetStatus())
+		t.Errorf("status = %s, want FREE for an org with no subscription", on.GetStatus())
 	}
 }
 
