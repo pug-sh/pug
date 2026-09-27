@@ -170,6 +170,7 @@ linters:
         # fully-qualified name, so an unqualified pattern would also match other packages.
         - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
         - github\.com/pug-sh/pug/internal/app/cron/billing\.setupFailed
+        - github\.com/pug-sh/pug/internal/app/cron/meter\.setupFailed
     gosec:
       excludes:
         - G115
