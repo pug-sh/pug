@@ -30,11 +30,14 @@ type BillingStatus int32
 
 const (
 	BillingStatus_BILLING_STATUS_UNSPECIFIED BillingStatus = 0
-	// Inside the trial window, which runs from org creation unless extended.
+	// Never emitted: the trial was removed. Kept because buf bans deleting an enum
+	// value.
+	//
+	// Deprecated: Marked as deprecated in dashboard/billing/v1/billing.proto.
 	BillingStatus_BILLING_STATUS_TRIALING BillingStatus = 1
-	// Holding a granted plan whose contract has not lapsed.
+	// A live subscription.
 	BillingStatus_BILLING_STATUS_ACTIVE BillingStatus = 2
-	// The floor: never trialed, trial expired, or a contract that has ended.
+	// No live subscription: the free allowance, a banner beyond it, never a bill.
 	BillingStatus_BILLING_STATUS_FREE BillingStatus = 3
 )
 
@@ -87,7 +90,7 @@ func (BillingStatus) EnumDescriptor() ([]byte, []int) {
 type SubscriptionStatus int32
 
 const (
-	// No live subscription: trialing, free, comped, or no provider configured.
+	// No live subscription: free, comped, or no provider configured.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED SubscriptionStatus = 0
 	SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE      SubscriptionStatus = 1
 	// The card failed and the provider is retrying. The entitlement is UNCHANGED:
@@ -241,17 +244,12 @@ func (x *GetBillingStatusRequest) GetOrgId() string {
 	return ""
 }
 
-// Plan is the tier as this org holds it, overrides applied.
+// Plan is the plan as this org holds it, overrides applied. It carries no price:
+// every rate lives on the provider's product.
 type Plan struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
-	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// The tier's LIST price, in minor units of `currency` -- never what a negotiated
-	// deal is charged. ABSENT is the custom tier, which is not a price of zero. A
-	// wrapper because a bare int64 would reach the dashboard as 0.
-	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
-	// ISO 4217.
-	Currency      *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Slug          *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -300,34 +298,18 @@ func (x *Plan) GetDisplayName() string {
 	return ""
 }
 
-func (x *Plan) GetPriceCents() *wrapperspb.Int64Value {
-	if x != nil {
-		return x.PriceCents
-	}
-	return nil
-}
-
-func (x *Plan) GetCurrency() string {
-	if x != nil && x.Currency != nil {
-		return *x.Currency
-	}
-	return ""
-}
-
 type GetBillingStatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// False on a deployment with billing switched off. Hide every billing surface.
 	BillingEnabled *bool          `protobuf:"varint,1,opt,name=billing_enabled,json=billingEnabled" json:"billing_enabled,omitempty"`
 	Plan           *Plan          `protobuf:"bytes,2,opt,name=plan" json:"plan,omitempty"`
 	Status         *BillingStatus `protobuf:"varint,3,opt,name=status,enum=dashboard.billing.v1.BillingStatus" json:"status,omitempty"`
-	// Events the org may send this period. ABSENT means NO QUOTA -- billing is off,
-	// or the plan carries none. Never render its absence as 0.
+	// The free allowance: events below it are never billed, and past it an org with
+	// no subscription sees a banner. ABSENT means NONE -- billing is off, or a
+	// subscription names a plan pug no longer knows. Never render its absence as 0.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,4,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
-	// When the trial ends, or when it ended. Kept once past, where it says why an
-	// org is on the free floor. Absent only with billing switched off.
-	TrialEndsAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=trial_ends_at,json=trialEndsAt" json:"trial_ends_at,omitempty"`
-	// When a granted plan lapses back to the free floor; absent means open-ended.
-	// The end of the agreement, NOT of the quota window.
+	// When a deal's negotiated terms lapse; absent means open-ended. The end of the
+	// agreement, NOT of the quota window.
 	ContractEndsAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=contract_ends_at,json=contractEndsAt" json:"contract_ends_at,omitempty"`
 	// The quota window, which runs from the org's billing anniversary. Identical to
 	// GetUsage's period bounds, which is what makes "X of Y" like for like.
@@ -404,13 +386,6 @@ func (x *GetBillingStatusResponse) GetStatus() BillingStatus {
 func (x *GetBillingStatusResponse) GetIncludedEvents() *wrapperspb.Int64Value {
 	if x != nil {
 		return x.IncludedEvents
-	}
-	return nil
-}
-
-func (x *GetBillingStatusResponse) GetTrialEndsAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.TrialEndsAt
 	}
 	return nil
 }
@@ -825,22 +800,19 @@ func (x *ListPlansRequest) GetOrgId() string {
 	return ""
 }
 
-// PlanOption is a tier as this deployment sells it. Plan is a tier as ONE ORG
-// holds it, overrides applied.
+// PlanOption is a plan as this deployment sells it. Plan is a plan as ONE ORG
+// holds it, overrides applied. Quantities only: the rates live on the provider's
+// product.
 type PlanOption struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// List price, in minor units of `currency`. ABSENT is the custom tier, whose
-	// price lives in the provider -- absence is never zero, here or below.
-	PriceCents *wrapperspb.Int64Value `protobuf:"bytes,3,opt,name=price_cents,json=priceCents" json:"price_cents,omitempty"`
-	// ISO 4217.
-	Currency *string `protobuf:"bytes,4,opt,name=currency" json:"currency,omitempty"`
-	// Events the tier includes. ABSENT is the custom tier.
+	// The plan's free allowance. ABSENT is the custom tier, whose row decides it --
+	// absence is never zero, here or below.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,5,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
-	// Days of history the tier keeps. ABSENT is the custom tier.
+	// Days of history the plan keeps. ABSENT is the custom tier.
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,7,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
-	// Whether a checkout for THIS tier would open -- the same helper
+	// Whether a checkout for THIS plan would open -- the same helper
 	// CreateCheckoutSession refuses on, so a dead button is impossible.
 	Purchasable   *bool `protobuf:"varint,6,opt,name=purchasable" json:"purchasable,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -887,20 +859,6 @@ func (x *PlanOption) GetSlug() string {
 func (x *PlanOption) GetDisplayName() string {
 	if x != nil && x.DisplayName != nil {
 		return *x.DisplayName
-	}
-	return ""
-}
-
-func (x *PlanOption) GetPriceCents() *wrapperspb.Int64Value {
-	if x != nil {
-		return x.PriceCents
-	}
-	return nil
-}
-
-func (x *PlanOption) GetCurrency() string {
-	if x != nil && x.Currency != nil {
-		return *x.Currency
 	}
 	return ""
 }
@@ -976,19 +934,15 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"\"dashboard/billing/v1/billing.proto\x12\x14dashboard.billing.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"9\n" +
 	"\x17GetBillingStatusRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\x97\x01\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"`\n" +
 	"\x04Plan\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12<\n" +
-	"\vprice_cents\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\n" +
-	"priceCents\x12\x1a\n" +
-	"\bcurrency\x18\x04 \x01(\tR\bcurrency\"\xa1\x06\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayNameJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\vprice_centsR\bcurrency\"\xf6\x05\n" +
 	"\x18GetBillingStatusResponse\x12'\n" +
 	"\x0fbilling_enabled\x18\x01 \x01(\bR\x0ebillingEnabled\x12.\n" +
 	"\x04plan\x18\x02 \x01(\v2\x1a.dashboard.billing.v1.PlanR\x04plan\x12;\n" +
 	"\x06status\x18\x03 \x01(\x0e2#.dashboard.billing.v1.BillingStatusR\x06status\x12D\n" +
-	"\x0fincluded_events\x18\x04 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12>\n" +
-	"\rtrial_ends_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vtrialEndsAt\x12D\n" +
+	"\x0fincluded_events\x18\x04 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12D\n" +
 	"\x10contract_ends_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0econtractEndsAt\x12=\n" +
 	"\fperiod_start\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\x129\n" +
 	"\n" +
@@ -1000,7 +954,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\x0eretention_days\x18\r \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12\x1e\n" +
 	"\n" +
 	"manageable\x18\f \x01(\bR\n" +
-	"manageable\"\xa9\x01\n" +
+	"manageableJ\x04\b\x05\x10\x06R\rtrial_ends_at\"\xa9\x01\n" +
 	"\x1cCreateCheckoutSessionRequest\x12\x1e\n" +
 	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\x12$\n" +
 	"\tplan_slug\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bplanSlug\x12C\n" +
@@ -1021,22 +975,19 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"portal_url\x18\x01 \x01(\tR\tportalUrl\"2\n" +
 	"\x10ListPlansRequest\x12\x1e\n" +
-	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\xc9\x02\n" +
+	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\"\x92\x02\n" +
 	"\n" +
 	"PlanOption\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12<\n" +
-	"\vprice_cents\x18\x03 \x01(\v2\x1b.google.protobuf.Int64ValueR\n" +
-	"priceCents\x12\x1a\n" +
-	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12D\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12D\n" +
 	"\x0fincluded_events\x18\x05 \x01(\v2\x1b.google.protobuf.Int64ValueR\x0eincludedEvents\x12B\n" +
 	"\x0eretention_days\x18\a \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12 \n" +
-	"\vpurchasable\x18\x06 \x01(\bR\vpurchasable\"K\n" +
+	"\vpurchasable\x18\x06 \x01(\bR\vpurchasableJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\vprice_centsR\bcurrency\"K\n" +
 	"\x11ListPlansResponse\x126\n" +
-	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x80\x01\n" +
+	"\x05plans\x18\x01 \x03(\v2 .dashboard.billing.v1.PlanOptionR\x05plans*\x84\x01\n" +
 	"\rBillingStatus\x12\x1e\n" +
-	"\x1aBILLING_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
-	"\x17BILLING_STATUS_TRIALING\x10\x01\x12\x19\n" +
+	"\x1aBILLING_STATUS_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x17BILLING_STATUS_TRIALING\x10\x01\x1a\x02\b\x01\x12\x19\n" +
 	"\x15BILLING_STATUS_ACTIVE\x10\x02\x12\x17\n" +
 	"\x13BILLING_STATUS_FREE\x10\x03*\xff\x01\n" +
 	"\x12SubscriptionStatus\x12#\n" +
@@ -1092,37 +1043,34 @@ var file_dashboard_billing_v1_billing_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil),         // 16: google.protobuf.Timestamp
 }
 var file_dashboard_billing_v1_billing_proto_depIdxs = []int32{
-	15, // 0: dashboard.billing.v1.Plan.price_cents:type_name -> google.protobuf.Int64Value
-	4,  // 1: dashboard.billing.v1.GetBillingStatusResponse.plan:type_name -> dashboard.billing.v1.Plan
-	0,  // 2: dashboard.billing.v1.GetBillingStatusResponse.status:type_name -> dashboard.billing.v1.BillingStatus
-	15, // 3: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
-	16, // 4: dashboard.billing.v1.GetBillingStatusResponse.trial_ends_at:type_name -> google.protobuf.Timestamp
-	16, // 5: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
-	16, // 6: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
-	16, // 7: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
-	1,  // 8: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
-	16, // 9: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
-	15, // 10: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
-	2,  // 11: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
-	15, // 12: dashboard.billing.v1.PlanOption.price_cents:type_name -> google.protobuf.Int64Value
-	15, // 13: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
-	15, // 14: dashboard.billing.v1.PlanOption.retention_days:type_name -> google.protobuf.Int64Value
-	13, // 15: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
-	3,  // 16: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
-	6,  // 17: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
-	8,  // 18: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
-	10, // 19: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
-	12, // 20: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
-	5,  // 21: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
-	7,  // 22: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
-	9,  // 23: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
-	11, // 24: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
-	14, // 25: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
-	21, // [21:26] is the sub-list for method output_type
-	16, // [16:21] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	4,  // 0: dashboard.billing.v1.GetBillingStatusResponse.plan:type_name -> dashboard.billing.v1.Plan
+	0,  // 1: dashboard.billing.v1.GetBillingStatusResponse.status:type_name -> dashboard.billing.v1.BillingStatus
+	15, // 2: dashboard.billing.v1.GetBillingStatusResponse.included_events:type_name -> google.protobuf.Int64Value
+	16, // 3: dashboard.billing.v1.GetBillingStatusResponse.contract_ends_at:type_name -> google.protobuf.Timestamp
+	16, // 4: dashboard.billing.v1.GetBillingStatusResponse.period_start:type_name -> google.protobuf.Timestamp
+	16, // 5: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
+	1,  // 6: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
+	16, // 7: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
+	15, // 8: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
+	2,  // 9: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
+	15, // 10: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
+	15, // 11: dashboard.billing.v1.PlanOption.retention_days:type_name -> google.protobuf.Int64Value
+	13, // 12: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
+	3,  // 13: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
+	6,  // 14: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
+	8,  // 15: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
+	10, // 16: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
+	12, // 17: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
+	5,  // 18: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
+	7,  // 19: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
+	9,  // 20: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
+	11, // 21: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
+	14, // 22: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
+	18, // [18:23] is the sub-list for method output_type
+	13, // [13:18] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_billing_v1_billing_proto_init() }
