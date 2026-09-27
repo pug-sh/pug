@@ -8,7 +8,7 @@ import (
 
 // Plan is a usage plan: what pug counts and how it splits a period's events into
 // tiers — never what it charges. Every rate lives on the provider's product, one
-// meter per tier (docs/architecture/payments.md §4). Go rather than
+// meter per tier (docs/architecture/payments.md §4.1). Go rather than
 // rows, so a change to what a plan includes goes through review and deploy.
 type Plan struct {
 	Slug        string

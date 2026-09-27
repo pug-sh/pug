@@ -105,7 +105,8 @@ expectation.
   reported to the provider, so never billed. `TierUpTo` splits the rest — tier k
   holds the events between the previous bound and its own, and the last tier is
   unbounded. The provider's product holds one meter per tier and each tier's rate
-  ([`payments.md`](payments.md) §4).
+  ([`payments.md`](payments.md) §4.1), and an hourly pass states each subscriber's
+  per-tier counts to it (§4.2 there).
 - **`free` and `custom` are states, not catalog entries.** `free` is an org with no
   live subscription: the current plan's allowance, a banner beyond it, never a
   bill. `custom` is a negotiated deal (§4.1), split over the current plan's tiers
@@ -385,9 +386,9 @@ an operator's grant and must not strip the terms of a deal somebody is being
 charged for.
 
 Whether a plan-in-force gate *should* exist is open. Nothing is enforced on an
-allowance, so today the gap costs a wrong number on a page. The usage meter will
-split a subscriber's bill from the resolved allowance, and then it costs revenue
-too: an open-ended comp rides onto a subscription bought after it, and its extra
+allowance, but the usage meter splits a subscriber's bill from the resolved one
+([`payments.md`](payments.md) §4.2), so the gap costs revenue as well as a number on
+a page: an open-ended comp rides onto a subscription bought after it, and its extra
 allowance goes unbilled. Until a gate exists, give a comp an `--until`.
 
 An **unknown slug on a live subscription** — only reachable if a slug is removed
@@ -569,6 +570,11 @@ every rate lives on the provider's product.
   either with another meaning. `BILLING_STATUS_TRIALING` stays in the enum,
   deprecated and never emitted: buf's `FILE` rules forbid deleting an enum value,
   and `buf.yaml` relaxes only field deletion, only for `proto/dashboard`.
+- **`tier_usage` came with usage billing**: each tier's count for the live
+  subscription's current period as last stated to the provider, carry included,
+  beside the tier's upper bound (0 for the unbounded last), with
+  `tier_usage_as_of`. Absent until the period's first statement
+  ([`payments.md`](payments.md) §4.2).
 - **No `ListPlans`** in this slice — a price list whose buy button does not exist
   yet is a dialog that can only disappoint. It arrived with checkout; see
   payments.md §12.
@@ -769,9 +775,9 @@ rewrites what this one stores.
    `CANCELLED`), in tables of its own. The catalog stayed in Go; what cannot be a
    Go const is the per-environment provider product id, and it lives in config.
    Usage billing (2026-09-27) builds on it: one usage plan whose rates live on the
-   provider's product, and — next — an hourly pass that reports each subscriber's
-   usage to that product's meters, one per tier. Four things had to be decided
-   *in* checkout rather than discovered after it:
+   provider's product, and an hourly pass that reports each subscriber's usage to
+   that product's meters, one per tier ([`payments.md`](payments.md) §4.2). Four
+   things had to be decided *in* checkout rather than discovered after it:
    - **The provider is a merchant of record** (Dodo, Paddle, Lemon Squeezy) —
      which is what makes VAT/GST registration, tax collection and legally
      compliant invoices somebody else's obligation. This is an architectural
@@ -865,7 +871,8 @@ on a 1-year plan can still query year-old data, and pug pays to store it.
 **Billing an org with no subscription.** Past the free allowance it sees a
 banner and nothing else: no event is refused and nothing is invoiced. Usage
 beyond the allowance is billed only to a subscriber, through its product's tier
-meters; turning a free org into one is a checkout, never an invoice pug raises.
+meters ([`payments.md`](payments.md) §4.2); turning a free org into one is a
+checkout, never an invoice pug raises.
 
 **Per-seat pricing, add-ons, credits and account balances.** The product is
 priced by events; members are free. Nothing here is close to needed, and each

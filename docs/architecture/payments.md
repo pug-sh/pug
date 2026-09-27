@@ -26,8 +26,8 @@ import (a depguard rule, not a convention), and beside `entitlement`, which is
 > (§2.1) was added to this design on 2026-09-06 and is not reflected in the
 > archive at all. **Revised 2026-09-27 for usage billing:** the three fixed-price
 > tiers became one usage plan, sold as a Dodo usage product (§4.1), a deal's
-> product is a usage product too (§5), and the trial is gone. Reporting usage to
-> the product's meters is the next slice.
+> product is a usage product too (§5), the trial is gone, and an hourly pass
+> reports each subscriber's usage to the product's meters (§4.2).
 
 ---
 
@@ -41,8 +41,7 @@ the pug dashboard rather than from a link we send (§5.2).
 
 **Out:** cheques, wire transfers, and any payment that happens outside the
 provider (§16 — this is the largest departure from the archived build); **a
-second provider implementation** (§2.1); reporting usage to the product's
-meters (the next slice); per-seat pricing; multi-currency (§3); an in-dashboard plan switcher (Dodo's
+second provider implementation** (§2.1); per-seat pricing; multi-currency (§3); an in-dashboard plan switcher (Dodo's
 customer portal does that); revenue reporting.
 
 **Unchanged:** the quota window, the plan catalog's quotas, and every existing
@@ -220,24 +219,94 @@ amount an operator may want stored where a query can reach it. `--note` is
 prose. If that turns out to matter, the column comes back — as a nullable
 mirror written by the webhook, never by a person.
 
-### 4.1 The usage product
+### 4.1 Setting up a usage product
 
 Each catalog plan sells as one Dodo **usage-based product**, created by hand in
-Dodo's dashboard like a deal's (§5.1) and mapped to its slug in config (§13).
-Every item below is set by hand, and a mistake in any bills silently wrong:
+Dodo's dashboard like a deal's (§5.1) and mapped to its slug in config (§13); a
+deal's product is set up the same way at its own rates. Every item is configured
+by hand, and a mistake in any bills silently wrong. The meter binary's startup
+check (for catalog products) and reconcile (for live deals' products, §9) catch
+the first three.
 
-- **A fixed price of at least $1.00 a month.** Dodo refuses payments under $1.00,
-  so the fee keeps every renewal chargeable however quiet the month.
-- **One meter per tier**, `Plan.Tiers()` of them, each priced at its tier's rate
-  per event, in cents: $11 per million is `0.0011`. The tier bounds are pug's
-  ([`billing.md`](billing.md) §4); the rates exist only here.
-- **A free threshold of 0 on every meter.** The allowance is pug's, and a
-  threshold in Dodo would apply it a second time.
-- **A subscription term of years**, never equal to the payment frequency: equal
-  values expire the subscription after one cycle instead of renewing it.
+1. **One `max` meter per tier** on the event `pug.usage`, keyed `t1`, `t2`, … —
+   `Plan.Tiers()` of them. Every product shares the same meters.
+2. **Every tier's meter attached to the product**, each at its tier's rate and
+   with a **free threshold of 0**: the allowance is pug's, and a threshold would
+   apply it twice.
+3. **A fixed price of at least $1.00 a month** (`FixedPrice ≥ 100`): Dodo refuses
+   payments under $1.00, so the fee keeps every renewal chargeable however quiet
+   the month.
+4. **A subscription term of years**, never equal to the payment frequency: equal
+   values expire the subscription after one cycle instead of renewing it.
+5. **Rates per event, in cents**: $11 per million is `0.0011`. The tier bounds
+   are pug's ([`billing.md`](billing.md) §4); the rates exist only here.
 
-How usage reaches those meters — the event, its keys, the cadence — belongs to
-the next slice.
+### 4.2 Reporting usage
+
+pug states each subscriber's usage to those meters, and Dodo bills it at the
+product's rates. `internal/core/billing/meter` is the pass and the only writer of
+its ledger, `billing_meter_periods`; `cmd/cron/billing-meter` runs it as an hourly
+CronJob, so the cadence is the schedule rather than a constant. Billing off exits
+0; billing on with no provider that meters, or with a catalog product failing
+§4.1's check, exits non-zero before stating anything; an org that fails is
+reported after every other org has run.
+
+**A statement** is one `pug.usage` event per org, carrying one metadata key per
+tier — `t1` … `tN`, each that tier's count for the period so far — stamped with
+the tick's start. Each meter keeps the **max** of its key over the period, so a
+statement is always the whole period: a repeat changes nothing and a lost one is
+superseded by the next. That is the only guard against a repeat — Dodo stores a
+repeated `event_id` rather than dropping it — and ingest refuses a timestamp more
+than an hour old, which the pass's 30-minute timeout stays inside.
+
+Each tick, for each live subscription:
+
+1. **Freeze.** Nothing is stated once `now` passes `current_period_end`. Dodo
+   renews about an hour late, backdating the period, and `on_hold` freezes it;
+   either way pug waits for the webhook or reconcile to report the new period.
+   Nothing is lost: the days keep counting and arrive through the carry.
+2. **Window.** A statement covers whole UTC days, because `usage_daily` counts
+   days while Dodo's periods start at an instant. An org's windows are contiguous
+   and never overlap: each starts where the previous ended — or at its own start
+   day after a gap — and ends on the day its period ends. Every day is stated at
+   most once, across renewals, re-subscriptions and deal cutovers: overlap days
+   stay with the old window, and gap days fall in none.
+3. **Split.** Tier k holds the window's events in
+   `[max(allowance, bound(k−1)), bound(k))`, the last tier unbounded, so tier 1
+   starts at the org's own allowance rather than the plan's default.
+4. **Carry.** When the previous window is contiguous, it is recounted and re-split
+   under the terms it was stated under, and whatever a tier ended short lands in
+   the same tier this period, at the rate it earned. Recomputed every tick, so
+   days metered late still arrive.
+5. **Never down.** Each count is the max of what was stated and what is computed —
+   what a `max` meter holds anyway — so an erasure mid-period never lowers a bill.
+6. **Write ahead, ingest, ack.** The ledger row is written before the ingest and
+   acknowledged after it, so the ledger never understates what Dodo holds:
+
+| Fails | Outcome |
+|---|---|
+| The write ahead | Nothing is sent; the next tick retries. |
+| The ingest | The row stays un-acked; the next tick re-sends it, byte-identical. |
+| The ack | The next tick re-sends it; `max` makes the repeat inert. |
+| The ingest, on the last tick before renewal | The row overstates what Dodo holds by one tick's growth, and the carry under-bills by that much. |
+
+Most org-ticks make no call at all: a statement goes only when a tier grew. The
+ledger row keeps, per org and Dodo period, the terms the period was split under
+(plan slug and allowance), its window, the period's own counts and the carry
+separately, and whether the last statement was acknowledged.
+
+**The dashboard shows what was stated.** `GetBillingStatus.tier_usage` is the
+ledger row of the live subscription's current period — each tier's count, carry
+included, beside its upper bound — and `tier_usage_as_of` says when. Quantities
+only: the rates live on the product, so pug never shows a price that can go stale.
+
+**Accepted limits.** A cancelled subscription loses the usage since its last
+statement, about an hour. A bill cannot go down within a period. The carry reaches
+one period back, so a day metered later than that goes unbilled. A subscription's
+first window includes its checkout day from UTC midnight, normally inside the
+allowance. **Open:** whether Dodo invoices a cancelled subscription's accrued usage
+at all is being measured in test mode; if it does not, every churned customer's
+last period, and every deal cutover's old subscription, go unbilled.
 
 ## 5. Custom deals
 
@@ -378,7 +447,7 @@ billing_subscriptions
   plan_slug             varchar(50) not null      -- resolved from the product id
   status                text not null             -- pug's vocabulary; §7
   provider_status       text not null             -- the provider's, verbatim; support reads this
-  price_cents           bigint not null           -- mirror; §4
+  price_cents           bigint not null           -- mirror; §4 (a usage product's fixed fee)
   currency              varchar(3) not null       -- always USD while §3 holds
   current_period_start  timestamptz
   current_period_end    timestamptz
@@ -626,6 +695,10 @@ API for each. Then the consistency reports, which are the point of invariant 3:
   pasted surfaces as the unmappable-product finding below instead.
 - A live subscription against a product no config key and no org row maps to
   (§8), which is a delivery that could not be applied.
+- A live deal whose product does not bill every tier as §4.2 states it — a
+  missing meter, a free threshold, a fee under $1.00 (`MisconfiguredDeals`). A
+  deal's product is built by hand, one per deal, so the meter's startup check,
+  which covers the catalog's products, cannot see it.
 - Two live subscriptions for one org, refused by the partial unique index. The
   one finding here that means an org may be paying twice.
 - A live subscription no writer can store: an unsold currency, no status, no
@@ -692,7 +765,8 @@ plan can be bought is `PlanOption.purchasable`, which does share a helper with
 `CreateCheckoutSession`'s refusal — a button that cannot work is worse than no
 button. Tested both
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
-portal; no `ChangePlan` RPC in this slice.
+portal; no `ChangePlan` RPC in this slice. Usage billing added `tier_usage` and
+`tier_usage_as_of` to it: what was last stated to the provider (§4.2).
 
 ### 12.1 Confirming the buyer who came back
 
@@ -780,6 +854,11 @@ still coming.
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
 | `PUG_DODO_PRODUCT_<SLUG>` | — | One per catalog plan, retired plans included — the slug upper-cased with `-` as `_`, so `PUG_DODO_PRODUCT_USAGE_2026_10` — mapping it to that plan's usage product (§4.1). Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A plan with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
+
+The meter pass (`cmd/cron/billing-meter`, §4.2) reads the same variables: with
+billing off it exits 0, and with billing on it needs a provider and its API key,
+and checks every `PUG_DODO_PRODUCT_<SLUG>` product against §4.1 before it states
+anything.
 
 Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's
