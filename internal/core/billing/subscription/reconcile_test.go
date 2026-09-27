@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
+	"github.com/rs/xid"
 )
 
 // fetchProvider serves reconcile: the subscription the provider reports, keyed
@@ -516,5 +518,53 @@ func TestReconcileStopsOnACancelledContext(t *testing.T) {
 	}
 	if report.Unreadable > 1 {
 		t.Errorf("unreadable = %d; a cancellation was counted as a provider outage", report.Unreadable)
+	}
+}
+
+// meteringCheck is a UsageMeter whose check fails for one product.
+type meteringCheck struct{ bad string }
+
+func (meteringCheck) IngestUsage(context.Context, corebilling.UsageStatement) error { return nil }
+
+func (m meteringCheck) VerifyMetering(_ context.Context, _ int, products []string) error {
+	if slices.Contains(products, m.bad) {
+		return errors.New("does not attach tier 2")
+	}
+	return nil
+}
+
+// A deal's product is built by hand, so a tier's meter can be missing from it and
+// that tier bills nothing, silently. Reconcile is where an operator hears of it.
+func TestReconcileFlagsADealThatDoesNotBillEveryTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id) values ($1, 'custom', 'prod_bad')`,
+		f.orgID); err != nil {
+		t.Fatalf("seed deal: %v", err)
+	}
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_subscriptions (currency, current_period_end, id, org_id, plan_slug, price_cents,
+		   provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
+		 values ('USD', now() + interval '20 days', $1, $2, 'custom', 100, $3, 'cus_1', 'active', 'sub_1',
+		         now() - interval '1 hour', 'active')`,
+		xid.New().String(), f.orgID, fakeProviderName); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+	svc := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, meteringCheck{bad: "prod_bad"})
+	report, err := svc.Reconcile(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.MisconfiguredDeals != 1 {
+		t.Fatalf("MisconfiguredDeals = %d, want 1", report.MisconfiguredDeals)
+	}
+
+	// The same deal on a product that bills every tier is no finding.
+	good := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, meteringCheck{bad: "prod_other"})
+	if report, err = good.Reconcile(t.Context(), time.Now()); err != nil || report.MisconfiguredDeals != 0 {
+		t.Fatalf("report = %+v, err = %v; want no misconfigured deal", report, err)
 	}
 }

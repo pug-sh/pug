@@ -62,6 +62,10 @@ type ReconcileReport struct {
 	// Deliveries that never settled: every retry failed, so nothing recorded a
 	// reason. The one outcome no other counter can represent.
 	Stranded int
+	// A live deal whose product does not bill every tier as the meter states it: a
+	// missing meter bills that tier at zero. A finding for an operator, who fixes the
+	// product in the provider's dashboard.
+	MisconfiguredDeals int
 }
 
 // Reconcile is the backstop for the one thing the inbox cannot cover: a webhook
@@ -119,6 +123,26 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 
+	// A deal's product is built by hand, one per deal, so the meter's startup check —
+	// which covers the catalog's products — cannot see it.
+	if s.payments.Usage != nil {
+		deals, err := s.read.ListLiveCustomDealProducts(ctx, provider.Name())
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to list live deal products", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return report, err
+		}
+		tiers := entitlement.CurrentPlan().Tiers()
+		for _, deal := range deals {
+			if err := s.payments.Usage.VerifyMetering(ctx, tiers, []string{deal.ProviderProductID}); err != nil {
+				report.MisconfiguredDeals++
+				slog.ErrorContext(ctx, "a live deal's product does not bill every tier", slogx.Error(err),
+					slog.String("org_id", deal.OrgID), slog.String("provider_product_id", deal.ProviderProductID))
+				telemetry.RecordError(ctx, err)
+			}
+		}
+	}
+
 	// The whole retention window, not since the last pass: a rejection is a person's
 	// to act on, so it is re-reported every run until the payload ages out.
 	rejected, err := s.read.ListRecentRejectedBillingWebhookDeliveries(ctx,
@@ -157,7 +181,8 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 		slog.Int("untracked", report.Untracked), slog.Int("entitled_unbilled", report.EntitledUnbilled),
 		slog.Int("unmapped_product", report.UnmappedProduct), slog.Int("unreadable", report.Unreadable),
 		slog.Int("two_live", report.TwoLive), slog.Int("rejected", report.Rejected),
-		slog.Int("stranded", report.Stranded), slog.Int("unapplicable", report.Unapplicable))
+		slog.Int("stranded", report.Stranded), slog.Int("unapplicable", report.Unapplicable),
+		slog.Int("misconfigured_deals", report.MisconfiguredDeals))
 	return report, nil
 }
 
