@@ -11,7 +11,8 @@ const (
 	ProfileUpsertSubject   = "profiles.upsert"
 
 	// Compliance subjects (GDPR/DPDP erasure, export, retention)
-	ComplianceEraseSubject = "compliance.erase"
+	ComplianceEraseSubject        = "compliance.erase"
+	ComplianceProjectPurgeSubject = "compliance.project_purge"
 
 	// Campaign subjects
 	CampaignScheduledSubject = "campaigns.scheduled"
@@ -27,13 +28,14 @@ const (
 
 	// Dead letter queue subjects — mirror the ingest subject hierarchy.
 	// Subscribe to "dlq.>" for all DLQ messages, or "dlq.profiles.>" for a domain.
-	DLQDevicesSubject          = "dlq.devices.ops"
-	DLQCampaignsSubject        = "dlq.campaigns.scheduled"
-	DLQDeliveriesSubject       = "dlq.deliveries.events"
-	DLQEventsSubject           = "dlq.events.ingest"
-	DLQMiscEmailSubject        = "dlq.misc.email.jobs"
-	DLQProfilesIdentifySubject = "dlq.profiles.identify"
-	DLQProfilesAliasSubject    = "dlq.profiles.alias"
-	DLQProfilesUpsertSubject   = "dlq.profiles.upsert"
-	DLQComplianceEraseSubject  = "dlq.compliance.erase"
+	DLQDevicesSubject                = "dlq.devices.ops"
+	DLQCampaignsSubject              = "dlq.campaigns.scheduled"
+	DLQDeliveriesSubject             = "dlq.deliveries.events"
+	DLQEventsSubject                 = "dlq.events.ingest"
+	DLQMiscEmailSubject              = "dlq.misc.email.jobs"
+	DLQProfilesIdentifySubject       = "dlq.profiles.identify"
+	DLQProfilesAliasSubject          = "dlq.profiles.alias"
+	DLQProfilesUpsertSubject         = "dlq.profiles.upsert"
+	DLQComplianceEraseSubject        = "dlq.compliance.erase"
+	DLQComplianceProjectPurgeSubject = "dlq.compliance.project_purge"
 )

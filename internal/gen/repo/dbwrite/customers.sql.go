@@ -7,12 +7,26 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const bumpCustomerSessionVersion = `-- name: BumpCustomerSessionVersion :execrows
+update customers set session_version = session_version + 1 where id = $1
+`
+
+func (q *Queries) BumpCustomerSessionVersion(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, bumpCustomerSessionVersion, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const createCustomer = `-- name: CreateCustomer :one
 insert into customers (id, display_name, email, password_hash, picture_uri)
 values ($1, $2, $3, $4, $5)
-returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at, disabled_at, session_version
 `
 
 type CreateCustomerParams struct {
@@ -41,7 +55,25 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.PictureUri,
 		&i.UpdateTime,
 		&i.EmailVerifiedAt,
+		&i.DisabledAt,
+		&i.SessionVersion,
 	)
+	return i, err
+}
+
+const getCustomerSignInState = `-- name: GetCustomerSignInState :one
+select disabled_at, session_version from customers where id = $1
+`
+
+type GetCustomerSignInStateRow struct {
+	DisabledAt     pgtype.Timestamptz
+	SessionVersion int64
+}
+
+func (q *Queries) GetCustomerSignInState(ctx context.Context, id string) (GetCustomerSignInStateRow, error) {
+	row := q.db.QueryRow(ctx, getCustomerSignInState, id)
+	var i GetCustomerSignInStateRow
+	err := row.Scan(&i.DisabledAt, &i.SessionVersion)
 	return i, err
 }
 
@@ -49,7 +81,7 @@ const markCustomerEmailVerified = `-- name: MarkCustomerEmailVerified :one
 update customers
 set email_verified_at = now()
 where id = $1
-returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at, disabled_at, session_version
 `
 
 func (q *Queries) MarkCustomerEmailVerified(ctx context.Context, id string) (Customer, error) {
@@ -64,6 +96,38 @@ func (q *Queries) MarkCustomerEmailVerified(ctx context.Context, id string) (Cus
 		&i.PictureUri,
 		&i.UpdateTime,
 		&i.EmailVerifiedAt,
+		&i.DisabledAt,
+		&i.SessionVersion,
+	)
+	return i, err
+}
+
+const setCustomerDisabled = `-- name: SetCustomerDisabled :one
+update customers
+set disabled_at = case when $1::boolean then now() else null end
+where id = $2
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at, disabled_at, session_version
+`
+
+type SetCustomerDisabledParams struct {
+	Disabled bool
+	ID       string
+}
+
+func (q *Queries) SetCustomerDisabled(ctx context.Context, arg SetCustomerDisabledParams) (Customer, error) {
+	row := q.db.QueryRow(ctx, setCustomerDisabled, arg.Disabled, arg.ID)
+	var i Customer
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.Email,
+		&i.ID,
+		&i.PasswordHash,
+		&i.PictureUri,
+		&i.UpdateTime,
+		&i.EmailVerifiedAt,
+		&i.DisabledAt,
+		&i.SessionVersion,
 	)
 	return i, err
 }
@@ -72,7 +136,7 @@ const updateCustomerPasswordHash = `-- name: UpdateCustomerPasswordHash :one
 update customers
 set password_hash = $1
 where id = $2
-returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at, disabled_at, session_version
 `
 
 type UpdateCustomerPasswordHashParams struct {
@@ -92,6 +156,8 @@ func (q *Queries) UpdateCustomerPasswordHash(ctx context.Context, arg UpdateCust
 		&i.PictureUri,
 		&i.UpdateTime,
 		&i.EmailVerifiedAt,
+		&i.DisabledAt,
+		&i.SessionVersion,
 	)
 	return i, err
 }

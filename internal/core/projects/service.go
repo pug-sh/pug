@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -42,19 +43,24 @@ func isUniqueViolationOn(err error, constraint string) bool {
 }
 
 type Service struct {
-	read  *dbread.Queries
-	write *dbwrite.Queries
-	pgW   *pgxpool.Pool // for the methods that need a tx of their own (CreateProject, CreateProjectAsAdmin)
-	repo  *Repo
+	read           *dbread.Queries
+	write          *dbwrite.Queries
+	pgW            *pgxpool.Pool // for the methods that need a tx of their own (CreateProject, CreateProjectAsAdmin)
+	repo           *Repo
+	purgePublisher deletion.Publisher
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *Repo) *Service {
-	return &Service{
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *Repo, purgePublishers ...deletion.Publisher) *Service {
+	s := &Service{
 		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
 		pgW:   pgW,
 		repo:  repo,
 	}
+	if len(purgePublishers) > 0 {
+		s.purgePublisher = purgePublishers[0]
+	}
+	return s
 }
 
 func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) error {
@@ -78,6 +84,28 @@ func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectPa
 	}
 	s.invalidateTokens(ctx, arg.ID, tokens...)
 	return nil
+}
+
+// RequestProjectDeletion fences writes immediately and leaves the slow data
+// purge to the durable compliance worker.
+func (s *Service) RequestProjectDeletion(ctx context.Context, actorID, orgID, projectID, confirmationName string) (deletion.Operation, error) {
+	return s.deletionService().RequestProject(ctx, actorID, orgID, projectID, confirmationName)
+}
+
+func (s *Service) ListProjectDeletions(ctx context.Context, orgID string, limit int, afterID string) ([]deletion.Operation, string, error) {
+	return deletion.NewService(s.pgW).ListProjectsPage(ctx, orgID, limit, afterID)
+}
+
+func (s *Service) RetryProjectDeletion(ctx context.Context, actorID, orgID, operationID string) (deletion.Operation, error) {
+	return s.deletionService().RetryProject(ctx, actorID, orgID, operationID)
+}
+
+func (s *Service) deletionService() *deletion.Service {
+	var invalidator deletion.ProjectKeyInvalidator
+	if s.repo != nil {
+		invalidator = s.repo
+	}
+	return deletion.NewServiceWithPublisher(s.pgW, invalidator, s.purgePublisher)
 }
 
 func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, displayName, reportingTimezone string) (dbwrite.Project, error) {

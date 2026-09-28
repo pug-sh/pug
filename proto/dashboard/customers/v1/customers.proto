@@ -19,6 +19,9 @@ message GetMeResponse {
   string customer_id = 1;
   string email = 2;
   bool email_verified = 3;
+  // Effective permissions from the current server configuration, not JWT claims.
+  bool instance_admin = 4;
+  bool can_create_organization = 5;
 }
 
 message SetPasswordRequest {

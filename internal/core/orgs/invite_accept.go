@@ -33,6 +33,14 @@ func ApplyInviteAcceptanceInTx(ctx context.Context, w *dbwrite.Queries, invitati
 		telemetry.RecordError(ctx, err)
 		return err
 	}
+	// Serialize invitation acceptance with the organization deletion request.
+	// A token issued earlier cannot create a membership after access is closed.
+	if _, err := w.GetActiveOrgForUpdate(ctx, inv.OrgID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInviteNotFound
+		}
+		return err
+	}
 	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
 		return ErrInviteNotPending
 	}

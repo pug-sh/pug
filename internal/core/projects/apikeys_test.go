@@ -10,11 +10,16 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
+	"github.com/rs/xid"
 )
+
+type noopPurgePublisher struct{}
+
+func (noopPurgePublisher) Publish(context.Context, string, []byte) error { return nil }
 
 // newApiKeyFixture spins up a project with a cache-backed service, the shape
 // every subtest here needs.
-func newApiKeyFixture(t *testing.T, orgID string) (context.Context, *projects.Service, *projects.Repo, *testutil.TestRedis, string) {
+func newApiKeyFixture(t *testing.T, orgID string) (context.Context, *projects.Service, *projects.Repo, *testutil.TestRedis, string, string) {
 	t.Helper()
 
 	db := testutil.SetupPostgres(t)
@@ -25,16 +30,20 @@ func newApiKeyFixture(t *testing.T, orgID string) (context.Context, *projects.Se
 	if _, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: orgID, DisplayName: "Keys Org"}); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
 	}
+	actorID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: actorID, Email: actorID + "@example.com", DisplayName: "", PasswordHash: "", PictureUri: ""}); err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
 
 	repo := projects.NewRepo(dbread.New(db.PgRO), rd.Client)
-	svc := projects.NewService(db.PgRO, db.PgW, repo)
+	svc := projects.NewService(db.PgRO, db.PgW, repo, noopPurgePublisher{})
 
 	proj, err := svc.CreateProject(ctx, orgID, "Keys Project", "")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	return ctx, svc, repo, rd, proj.ID
+	return ctx, svc, repo, rd, proj.ID, actorID
 }
 
 func TestCreateApiKey(t *testing.T) {
@@ -42,7 +51,7 @@ func TestCreateApiKey(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	ctx, svc, _, _, projectID := newApiKeyFixture(t, "org-keys-create")
+	ctx, svc, _, _, projectID, _ := newApiKeyFixture(t, "org-keys-create")
 
 	t.Run("private key is stored hashed and returned once", func(t *testing.T) {
 		created, err := svc.CreateApiKey(ctx, projectID, projects.KindPrivate, "CI")
@@ -115,7 +124,7 @@ func TestDeleteApiKey(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	ctx, svc, repo, rd, projectID := newApiKeyFixture(t, "org-keys-delete")
+	ctx, svc, repo, rd, projectID, _ := newApiKeyFixture(t, "org-keys-delete")
 
 	t.Run("a deleted key stops authenticating and leaves the cache", func(t *testing.T) {
 		created, err := svc.CreateApiKey(ctx, projectID, projects.KindPrivate, "doomed")
@@ -200,7 +209,7 @@ func TestDeleteStarterPublicKeyRevokesIt(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	ctx, svc, repo, _, projectID := newApiKeyFixture(t, "org-keys-starter")
+	ctx, svc, repo, _, projectID, _ := newApiKeyFixture(t, "org-keys-starter")
 
 	keys, err := svc.ListApiKeys(ctx, projectID)
 	if err != nil {
@@ -235,7 +244,7 @@ func TestDeleteProjectInvalidatesItsKeys(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	ctx, svc, repo, rd, projectID := newApiKeyFixture(t, "org-keys-cascade")
+	ctx, svc, repo, rd, projectID, _ := newApiKeyFixture(t, "org-keys-cascade")
 
 	created, err := svc.CreateApiKey(ctx, projectID, projects.KindPrivate, "doomed")
 	if err != nil {
@@ -254,5 +263,35 @@ func TestDeleteProjectInvalidatesItsKeys(t *testing.T) {
 	}
 	if _, err := repo.GetProjectByPrivateApiKey(ctx, created.RawKey); err == nil {
 		t.Error("a deleted project's key still resolves")
+	}
+}
+
+func TestRequestProjectDeletionInvalidatesItsKeys(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	const orgID = "org-keys-lifecycle"
+	ctx, svc, repo, rd, projectID, actorID := newApiKeyFixture(t, orgID)
+	created, err := svc.CreateApiKey(ctx, projectID, projects.KindPrivate, "doomed")
+	if err != nil {
+		t.Fatalf("CreateApiKey: %v", err)
+	}
+	if _, err := repo.GetProjectByPrivateApiKey(ctx, created.RawKey); err != nil {
+		t.Fatalf("resolve before deletion request: %v", err)
+	}
+	cacheKey := "project:prvkey:" + sha256Hex(created.RawKey)
+	if rd.Client.Exists(ctx, cacheKey).Val() != 1 {
+		t.Fatal("expected key to be cached before deletion request")
+	}
+
+	if _, err := svc.RequestProjectDeletion(ctx, actorID, orgID, projectID, "Keys Project"); err != nil {
+		t.Fatalf("RequestProjectDeletion: %v", err)
+	}
+	if rd.Client.Exists(ctx, cacheKey).Val() != 0 {
+		t.Error("a pending-deletion project's key is still cached")
+	}
+	if _, err := repo.GetProjectByPrivateApiKey(ctx, created.RawKey); err == nil {
+		t.Error("a pending-deletion project's key still resolves")
 	}
 }

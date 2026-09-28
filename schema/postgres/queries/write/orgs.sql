@@ -9,3 +9,5 @@ select * from orgs where id = @id;
 -- name: UpdateOrgDisplayName :one
 update orgs set display_name = @display_name where id = @id
 returning *;
+-- name: GetActiveOrgForUpdate :one
+select id from orgs where id = @id and deletion_state = 'active' for update;

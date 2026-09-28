@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -245,7 +246,7 @@ func signTestJWT(t *testing.T, key []byte, claims jwt.MapClaims) string {
 }
 
 func newJWTRequest(token, projectID string) *http.Request {
-	req := &http.Request{URL: &url.URL{Path: "/test"}, Header: http.Header{}}
+	req := &http.Request{URL: &url.URL{Path: projectsv1connect.ProjectsServiceGetProcedure}, Header: http.Header{}}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -359,6 +360,19 @@ func TestWithJWTAuth(t *testing.T) {
 			t.Fatal("expected error for nonexistent project")
 		} else if got := err.Error(); !strings.Contains(got, "project not found or access denied") {
 			t.Errorf("error = %q, want to contain %q", got, "project not found or access denied")
+		}
+	})
+
+	t.Run("organization procedure ignores stale project header", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1"})
+		req := newJWTRequest(token, "proj-nonexistent")
+		req.URL.Path = projectsv1connect.ProjectsServiceListDeletionsProcedure
+		result, err := authFunc(ctx, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if project := result.(*Principal).Project; project != nil {
+			t.Fatalf("organization procedure resolved stale project: %+v", project)
 		}
 	})
 

@@ -1,0 +1,212 @@
+edition = "2023";
+package dashboard.instance.v1;
+
+import "buf/validate/validate.proto";
+import "dashboard/orgs/v1/orgs.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/instance/v1;instancev1";
+
+service InstanceAdminService {
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {}
+  rpc SetUserDisabled(SetUserDisabledRequest) returns (SetUserDisabledResponse) {}
+  rpc RevokeUserSessions(RevokeUserSessionsRequest) returns (RevokeUserSessionsResponse) {}
+  rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse) {}
+  rpc GetOrganization(GetOrganizationRequest) returns (GetOrganizationResponse) {}
+  rpc ProvisionOrganization(ProvisionOrganizationRequest) returns (ProvisionOrganizationResponse) {}
+  rpc RenameOrganization(RenameOrganizationRequest) returns (RenameOrganizationResponse) {}
+  rpc InviteMember(InviteMemberRequest) returns (InviteMemberResponse) {}
+  rpc ResendInvitation(ResendInvitationRequest) returns (ResendInvitationResponse) {}
+  rpc RevokeInvitation(RevokeInvitationRequest) returns (RevokeInvitationResponse) {}
+  rpc SetMemberRole(SetMemberRoleRequest) returns (SetMemberRoleResponse) {}
+  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse) {}
+  rpc RequestProjectDeletion(RequestProjectDeletionRequest) returns (RequestProjectDeletionResponse) {}
+  rpc RequestOrganizationDeletion(RequestOrganizationDeletionRequest) returns (RequestOrganizationDeletionResponse) {}
+  rpc CancelOrganizationDeletion(CancelOrganizationDeletionRequest) returns (CancelOrganizationDeletionResponse) {}
+  rpc RetryDeletion(RetryDeletionRequest) returns (RetryDeletionResponse) {}
+  rpc ListDeletions(ListDeletionsRequest) returns (ListDeletionsResponse) {}
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string created_at = 3;
+  bool email_verified = 4;
+  bool disabled = 5;
+  repeated Membership memberships = 6;
+}
+
+message Membership {
+  string org_id = 1;
+  string org_name = 2;
+  dashboard.orgs.v1.OrgRole role = 3;
+}
+
+message Organization {
+  string id = 1;
+  string name = 2;
+  string created_at = 3;
+  uint32 member_count = 4;
+  uint32 project_count = 5;
+  repeated string admin_emails = 6;
+  bool needs_admin = 7;
+  string deletion_state = 8;
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+  string created_at = 3;
+  string reporting_timezone = 4;
+  string deletion_state = 5;
+}
+
+message Invitation {
+  string id = 1;
+  string email = 2;
+  string expires_at = 3;
+  dashboard.orgs.v1.OrgRole role = 4;
+}
+
+message ListUsersRequest {
+  string search = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+  string org_id = 4;
+  BooleanFilter verified = 5;
+  BooleanFilter enabled = 6;
+}
+enum BooleanFilter {
+  BOOLEAN_FILTER_UNSPECIFIED = 0;
+  BOOLEAN_FILTER_TRUE = 1;
+  BOOLEAN_FILTER_FALSE = 2;
+}
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+message SetUserDisabledRequest {
+  string user_id = 1 [(buf.validate.field).required = true];
+  bool disabled = 2;
+}
+message SetUserDisabledResponse { User user = 1; }
+message RevokeUserSessionsRequest { string user_id = 1 [(buf.validate.field).required = true]; }
+message RevokeUserSessionsResponse {}
+
+message ListOrganizationsRequest {
+  string search = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+  string next_page_token = 2;
+}
+message GetOrganizationRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  uint32 page_size = 2;
+  string project_page_token = 3;
+  string member_page_token = 4;
+  string invitation_page_token = 5;
+}
+message GetOrganizationResponse {
+  Organization organization = 1;
+  repeated Project projects = 2;
+  repeated User members = 3;
+  repeated Invitation invitations = 4;
+  string next_project_page_token = 5;
+  string next_member_page_token = 6;
+  string next_invitation_page_token = 7;
+}
+message ProvisionOrganizationRequest {
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 150}];
+  string admin_email = 2 [(buf.validate.field).string.email = true];
+}
+message ProvisionOrganizationResponse {
+  Organization organization = 1;
+  bool initial_invitation_created = 2;
+  string warning = 3;
+}
+message RenameOrganizationRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 150}];
+}
+message RenameOrganizationResponse { Organization organization = 1; }
+message InviteMemberRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string email = 2 [(buf.validate.field).string.email = true];
+  dashboard.orgs.v1.OrgRole role = 3;
+}
+message InviteMemberResponse { Invitation invitation = 1; }
+message ResendInvitationRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string invitation_id = 2 [(buf.validate.field).required = true];
+}
+message ResendInvitationResponse { Invitation invitation = 1; }
+message RevokeInvitationRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string invitation_id = 2 [(buf.validate.field).required = true];
+}
+message RevokeInvitationResponse {}
+message SetMemberRoleRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string user_id = 2 [(buf.validate.field).required = true];
+  dashboard.orgs.v1.OrgRole role = 3 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true, not_in: [0]}
+  }];
+}
+message SetMemberRoleResponse {}
+message RemoveMemberRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string user_id = 2 [(buf.validate.field).required = true];
+}
+message RemoveMemberResponse {}
+
+message DeletionOperation {
+  string id = 1;
+  string target_type = 2;
+  string target_id = 3;
+  string target_name = 4;
+  string org_id = 5;
+  string status = 6;
+  string requested_at = 7;
+  string purge_after = 8;
+  string finished_at = 9;
+  string last_error = 10;
+  repeated DeletionProjectStep projects = 11;
+  string actor_id = 12;
+  string reason = 13;
+  string actor_email = 14;
+}
+message DeletionProjectStep {
+  string project_id = 1;
+  string project_name = 2;
+  bool clickhouse_done = 3;
+  bool postgres_done = 4;
+}
+message RequestProjectDeletionRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string project_id = 2 [(buf.validate.field).required = true];
+  string confirmation_name = 3 [(buf.validate.field).required = true];
+}
+message RequestOrganizationDeletionRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string confirmation_id = 2 [(buf.validate.field).required = true];
+  string reason = 3 [(buf.validate.field).required = true];
+}
+message CancelOrganizationDeletionRequest { string operation_id = 1 [(buf.validate.field).required = true]; }
+message RetryDeletionRequest { string operation_id = 1 [(buf.validate.field).required = true]; }
+message RequestProjectDeletionResponse { DeletionOperation operation = 1; }
+message RequestOrganizationDeletionResponse { DeletionOperation operation = 1; }
+message CancelOrganizationDeletionResponse { DeletionOperation operation = 1; }
+message RetryDeletionResponse { DeletionOperation operation = 1; }
+message ListDeletionsRequest {
+  // Empty org_id lists deletion history across the instance.
+  string org_id = 1;
+  string page_token = 2;
+  uint32 page_size = 3;
+}
+message ListDeletionsResponse {
+  repeated DeletionOperation operations = 1;
+  string next_page_token = 2;
+}

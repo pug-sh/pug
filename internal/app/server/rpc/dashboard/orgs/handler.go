@@ -10,6 +10,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/instance"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -22,10 +23,15 @@ import (
 // the caller is already authorized for the (resource, action) recorded there.
 type server struct {
 	service *coreorgs.Service
+	policy  instance.Policy
 }
 
 func NewServer(service *coreorgs.Service) *server {
-	return &server{service: service}
+	return NewServerWithPolicy(service, instance.OpenPolicy())
+}
+
+func NewServerWithPolicy(service *coreorgs.Service, policy instance.Policy) *server {
+	return &server{service: service, policy: policy}
 }
 
 func (s *server) List(
@@ -273,6 +279,9 @@ func (s *server) Create(
 ) (*connect.Response[orgsv1.CreateResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if s.policy.Managed() {
+		return nil, apperr.PermissionDenied(apperr.ReasonOrgCreationDisabled, "organization creation is managed by an instance admin")
 	}
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)

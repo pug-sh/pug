@@ -2,9 +2,11 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"
 	goredis "github.com/redis/go-redis/v9"
@@ -79,6 +81,65 @@ func TestCacheProjectPopulatesWhenGenerationIsUnchanged(t *testing.T) {
 	}
 }
 
+func TestCachedKeyLookupDoesNotRequeryPostgres(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	repo, _ := newCacheRaceRepo(t) // deliberately has no DB handle
+	ctx := context.Background()
+	const rawKey = "prv_cached_lookup_test"
+	token := hashKey(rawKey)
+	observedGen, _ := repo.observeKeyGen(ctx, token)
+	repo.cacheProject(ctx, privateKeyCachePrefix+token, token, observedGen, dbread.Project{ID: "proj-cached"})
+
+	project, err := repo.GetProjectByPrivateApiKey(ctx, rawKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.ID != "proj-cached" {
+		t.Fatalf("cached project ID = %q", project.ID)
+	}
+}
+
+func TestBlockedKeyRejectsCachedProjectUntilUnblocked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	repo, rd := newCacheRaceRepo(t)
+	ctx := context.Background()
+	const rawKey = "prv_blocked_lookup_test"
+	token := hashKey(rawKey)
+	cacheKey := privateKeyCachePrefix + token
+	observedGen, _ := repo.observeKeyGen(ctx, token)
+	repo.cacheProject(ctx, cacheKey, token, observedGen, dbread.Project{ID: "proj-blocked"})
+
+	if err := repo.BlockProjectKeys(ctx, "proj-blocked", token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.GetProjectByPrivateApiKey(ctx, rawKey); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("blocked cached key lookup = %v, want pgx.ErrNoRows", err)
+	}
+	if n := rd.Client.Exists(ctx, cacheKey).Val(); n != 0 {
+		t.Fatal("blocking a project key left its cached project row present")
+	}
+
+	blockedGen, _ := repo.observeKeyGen(ctx, token)
+	repo.cacheProject(ctx, cacheKey, token, blockedGen, dbread.Project{ID: "proj-blocked"})
+	if n := rd.Client.Exists(ctx, cacheKey).Val(); n != 0 {
+		t.Fatal("a blocked project key repopulated its cached project row")
+	}
+	if err := repo.UnblockProjectKeys(ctx, "proj-blocked", token); err != nil {
+		t.Fatal(err)
+	}
+	unblockedGen, _ := repo.observeKeyGen(ctx, token)
+	repo.cacheProject(ctx, cacheKey, token, unblockedGen, dbread.Project{ID: "proj-blocked"})
+	if project, err := repo.GetProjectByPrivateApiKey(ctx, rawKey); err != nil || project.ID != "proj-blocked" {
+		t.Fatalf("unblocked cached key lookup = %+v, %v", project, err)
+	}
+}
+
 // deadRedis returns a client pointing at a port nothing listens on, so every command
 // fails with a connection error rather than goredis.Nil. That is what a Redis blip
 // looks like to observeKeyGen, and it is the one case the generation value alone
@@ -92,6 +153,13 @@ func deadRedis(t *testing.T) *goredis.Client {
 	})
 	t.Cleanup(func() { _ = c.Close() })
 	return c
+}
+
+func TestBlockProjectKeysReportsRedisFailure(t *testing.T) {
+	repo := NewRepo(nil, deadRedis(t))
+	if err := repo.BlockProjectKeys(context.Background(), "proj-block-failure", "token"); err == nil {
+		t.Fatal("BlockProjectKeys hid a Redis failure")
+	}
 }
 
 // TestPopulateSkippedWhenOutageHidGenerationAndInvalidation stages the interleaving

@@ -372,6 +372,19 @@ return 1
 // it is still unchanged (memberRolePopulateScript). A reader that read a now-stale
 // role therefore cannot resurrect it after a concurrent mutation has invalidated.
 func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (Role, error) {
+	// Role cache entries survive an organization state transition. Check the
+	// primary database before consulting Redis so pending deletion takes effect
+	// immediately even if invalidation is delayed.
+	var active bool
+	if err := s.pgW.QueryRow(ctx, `select deletion_state='active' from orgs where id=$1`, orgID).Scan(&active); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrMemberNotFound
+		}
+		return "", err
+	}
+	if !active {
+		return "", ErrMemberNotFound
+	}
 	cacheKey := memberRoleCacheKey(orgID, customerID)
 	genKey := memberRoleGenCacheKey(orgID, customerID)
 

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/authz"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/instance"
 	chdb "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -37,6 +38,7 @@ type deps struct {
 	port            string
 	demoEnabled     bool
 	billingEnabled  bool
+	instancePolicy  instance.Policy
 
 	// readyFailures counts consecutive failed readiness probes. It distinguishes
 	// a transient blip (logged at WARN) from a sustained outage (escalated to
@@ -97,6 +99,10 @@ func newDeps(ctx context.Context) (*deps, error) {
 
 	var serverCfg config
 	if err := envconfig.Process(ctx, &serverCfg); err != nil {
+		return nil, err
+	}
+	instancePolicy, err := instance.ParsePolicy(serverCfg.OrgCreationMode, serverCfg.InstanceAdminEmails)
+	if err != nil {
 		return nil, err
 	}
 
@@ -191,5 +197,6 @@ func newDeps(ctx context.Context) (*deps, error) {
 		port:            serverCfg.Port,
 		demoEnabled:     serverCfg.DemoEnabled,
 		billingEnabled:  billingCfg.Enabled,
+		instancePolicy:  instancePolicy,
 	}, nil
 }

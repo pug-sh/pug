@@ -21,6 +21,24 @@ import (
 // of served procedures, derived from the generated handler interfaces by
 // reflection: no RPC ships without a decision, and no entry outlives its RPC.
 var permissionRegistry = map[string]authzspec.Spec{
+	// --- dashboard.instance.v1.InstanceAdminService ---
+	"/dashboard.instance.v1.InstanceAdminService/ListUsers":                   authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/SetUserDisabled":             authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/RevokeUserSessions":          authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/ListOrganizations":           authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/GetOrganization":             authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/ProvisionOrganization":       authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/RenameOrganization":          authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/InviteMember":                authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/ResendInvitation":            authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/RevokeInvitation":            authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/SetMemberRole":               authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/RemoveMember":                authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/RequestProjectDeletion":      authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/RequestOrganizationDeletion": authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/CancelOrganizationDeletion":  authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/RetryDeletion":               authzspec.Instance(),
+	"/dashboard.instance.v1.InstanceAdminService/ListDeletions":               authzspec.Instance(),
 	// --- public.auth.v1.AuthService ---
 	"/public.auth.v1.AuthService/SignInWithEmail":    authzspec.Public(),
 	"/public.auth.v1.AuthService/RequestMagicLink":   authzspec.Public(),
@@ -53,6 +71,8 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.projects.v1.ProjectsService/Create":               authzspec.OrgGated(authz.ResourceProject, authz.ActionCreate, "interceptor is the coarse gate; the authoritative admin check is race-safe in the CreateProjectAsAdmin CTE"),
 	"/dashboard.projects.v1.ProjectsService/Get":                  authzspec.Project(),
 	"/dashboard.projects.v1.ProjectsService/Delete":               authzspec.ProjGated(authz.ResourceProject, authz.ActionDelete, "admin-only; org resolved from the x-project-id project"),
+	"/dashboard.projects.v1.ProjectsService/ListDeletions":        authzspec.OrgGated(authz.ResourceProject, authz.ActionDelete),
+	"/dashboard.projects.v1.ProjectsService/RetryDeletion":        authzspec.OrgGated(authz.ResourceProject, authz.ActionDelete),
 	"/dashboard.projects.v1.ProjectsService/UpdateMeta":           authzspec.ProjGated(authz.ResourceProject, authz.ActionUpdate, "admin-only; org resolved from the x-project-id project"),
 	"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON": authzspec.ProjGated(authz.ResourceProject, authz.ActionUpdate, "admin-only; org resolved from the x-project-id project"),
 	"/dashboard.projects.v1.ProjectsService/ListApiKeys":          authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionRead, "every role; a private key is only ever returned masked"),

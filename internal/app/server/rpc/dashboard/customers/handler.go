@@ -8,15 +8,23 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
+	"github.com/pug-sh/pug/internal/core/instance"
 	customersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1"
 	"google.golang.org/protobuf/proto"
 )
 
 type server struct {
 	customers *corecustomers.Service
+	policy    instance.Policy
 }
 
-func NewServer(customersSvc *corecustomers.Service) *server { return &server{customers: customersSvc} }
+func NewServer(customersSvc *corecustomers.Service) *server {
+	return NewServerWithPolicy(customersSvc, instance.OpenPolicy())
+}
+
+func NewServerWithPolicy(customersSvc *corecustomers.Service, policy instance.Policy) *server {
+	return &server{customers: customersSvc, policy: policy}
+}
 
 func (s *server) GetMe(
 	ctx context.Context,
@@ -27,9 +35,11 @@ func (s *server) GetMe(
 		return nil, err // already an apperr from the extractor
 	}
 	return connect.NewResponse(&customersv1.GetMeResponse{
-		CustomerId:    proto.String(principal.Customer.ID),
-		Email:         proto.String(principal.Customer.Email),
-		EmailVerified: proto.Bool(principal.Customer.EmailVerifiedAt.Valid),
+		CustomerId:            proto.String(principal.Customer.ID),
+		Email:                 proto.String(principal.Customer.Email),
+		EmailVerified:         proto.Bool(principal.Customer.EmailVerifiedAt.Valid),
+		InstanceAdmin:         proto.Bool(principal.Customer.EmailVerifiedAt.Valid && s.policy.AllowsAdmin(principal.Customer.Email)),
+		CanCreateOrganization: proto.Bool(!s.policy.Managed()),
 	}), nil
 }
 

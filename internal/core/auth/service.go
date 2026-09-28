@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	"github.com/pug-sh/pug/internal/core/emailaction"
+	"github.com/pug-sh/pug/internal/core/instance"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -110,10 +111,11 @@ type Service struct {
 	// demoEnabled gates DemoSignIn, the credential-less viewer login. It mirrors
 	// PUG_DEMO_ENABLED so the public demo login is only mintable on a demo
 	// deployment; everywhere else DemoSignIn returns ErrDemoUnavailable.
-	demoEnabled bool
+	demoEnabled    bool
+	instancePolicy instance.Policy
 }
 
-func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config, demoEnabled bool) (*Service, error) {
+func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config, demoEnabled bool, instancePolicy instance.Policy) (*Service, error) {
 	registry, err := coreoauth.NewRegistryFromConfig(oauthCfg, coreoauth.DefaultHTTPClient())
 	if err != nil {
 		return nil, err
@@ -121,13 +123,14 @@ func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtK
 	oauthSvc := coreoauth.NewService(oauthCfg, registry)
 
 	return &Service{
-		read:        dbread.New(pgRO),
-		write:       dbwrite.New(pgW),
-		pgW:         pgW,
-		jwtKey:      jwtKey,
-		publisher:   publisher,
-		oauth:       oauthSvc,
-		demoEnabled: demoEnabled,
+		read:           dbread.New(pgRO),
+		write:          dbwrite.New(pgW),
+		pgW:            pgW,
+		jwtKey:         jwtKey,
+		publisher:      publisher,
+		oauth:          oauthSvc,
+		demoEnabled:    demoEnabled,
+		instancePolicy: instancePolicy,
 	}, nil
 }
 
@@ -277,7 +280,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 
 	if isInvite {
 		invite := &InviteContext{OrgInvitationID: emailToken.OrgInvitationID.String}
-		if err := FinishSignup(ctx, w, customerID, createdNew, invite, reportingTimezone); err != nil {
+		if err := FinishSignup(ctx, w, customerID, createdNew, invite, reportingTimezone, s.instancePolicy.Managed()); err != nil {
 			if !errors.Is(err, ErrInvalidToken) {
 				slog.ErrorContext(ctx, "failed to apply org invite on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
 				telemetry.RecordError(ctx, err)
@@ -288,7 +291,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 		// Plain passwordless signup: give the new account a default org + project,
 		// seeding the project's reporting timezone from the browser that completed
 		// the link (coerced to UTC if malformed).
-		if err := FinishSignup(ctx, w, customerID, true, nil, reportingTimezone); err != nil {
+		if err := FinishSignup(ctx, w, customerID, true, nil, reportingTimezone, s.instancePolicy.Managed()); err != nil {
 			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
 			telemetry.RecordError(ctx, err)
 			return Session{}, err
@@ -338,7 +341,7 @@ func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth
 		// On first sign-in this seeds the new default project's reporting timezone
 		// from the browser that completed sign-in (coerced to UTC if malformed); on
 		// a returning sign-in FinishSignup is a no-op and the value is ignored.
-		if err := FinishSignup(ctx, w, customerID, createdNew, nil, reportingTimezone); err != nil {
+		if err := FinishSignup(ctx, w, customerID, createdNew, nil, reportingTimezone, s.instancePolicy.Managed()); err != nil {
 			return err // coreorgs records this at its detect site; don't re-record.
 		}
 		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
@@ -475,7 +478,7 @@ type UserClaims struct {
 	AdditionalClaims
 }
 
-func (s *Service) generateJWT(id string) (string, error) {
+func (s *Service) generateJWT(id string, sessionVersion int64) (string, error) {
 	now := time.Now()
 	standardClaims := jwt.RegisteredClaims{
 		Audience:  jwt.ClaimStrings{Audience},
@@ -486,7 +489,10 @@ func (s *Service) generateJWT(id string) (string, error) {
 		Subject:   id,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, standardClaims)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, struct {
+		jwt.RegisteredClaims
+		SessionVersion int64 `json:"sv"`
+	}{standardClaims, sessionVersion})
 
 	tokenString, err := token.SignedString(s.jwtKey)
 	if err != nil {
@@ -509,7 +515,19 @@ func (s *Service) issueSession(ctx context.Context, customerID string) (Session,
 // refresh token atomically with account provisioning. Each call starts a NEW
 // rotation family.
 func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, customerID string) (Session, error) {
-	accessToken, err := s.generateJWT(customerID)
+	// Every sign-in method comes through here, including OIDC, magic links and
+	// the demo account. Check the current database state before issuing tokens.
+	disabledAt, err := w.GetCustomerSignInState(ctx, customerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Session{}, ErrInvalidCredentials
+		}
+		return Session{}, err
+	}
+	if disabledAt.DisabledAt.Valid {
+		return Session{}, ErrInvalidCredentials
+	}
+	accessToken, err := s.generateJWT(customerID, disabledAt.SessionVersion)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate access token", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
@@ -619,10 +637,17 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Sess
 	if row.RevokedAt.Valid || !row.ExpiresAt.Time.After(time.Now()) {
 		return Session{}, ErrInvalidToken
 	}
+	disabledAt, err := w.GetCustomerSignInState(ctx, row.CustomerID)
+	if err != nil || disabledAt.DisabledAt.Valid {
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return Session{}, err
+		}
+		return Session{}, ErrInvalidToken
+	}
 
 	// Generate the access token before mutating state: a signing failure then
 	// leaves the presented token unconsumed and the client can retry cleanly.
-	accessToken, err := s.generateJWT(row.CustomerID)
+	accessToken, err := s.generateJWT(row.CustomerID, disabledAt.SessionVersion)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate access token on refresh", slogx.Error(err), slog.String("customer_id", row.CustomerID))
 		telemetry.RecordError(ctx, err)

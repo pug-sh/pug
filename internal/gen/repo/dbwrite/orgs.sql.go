@@ -12,7 +12,7 @@ import (
 const createOrg = `-- name: CreateOrg :one
 insert into orgs (display_name, id)
 values ($1, $2)
-returning create_time, display_name, id, update_time
+returning create_time, display_name, id, update_time, deletion_state
 `
 
 type CreateOrgParams struct {
@@ -28,12 +28,24 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
 
+const getActiveOrgForUpdate = `-- name: GetActiveOrgForUpdate :one
+select id from orgs where id = $1 and deletion_state = 'active' for update
+`
+
+func (q *Queries) GetActiveOrgForUpdate(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getActiveOrgForUpdate, id)
+	var id_2 string
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const getOrgByID = `-- name: GetOrgByID :one
-select create_time, display_name, id, update_time from orgs where id = $1
+select create_time, display_name, id, update_time, deletion_state from orgs where id = $1
 `
 
 func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
@@ -44,13 +56,14 @@ func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
 
 const updateOrgDisplayName = `-- name: UpdateOrgDisplayName :one
 update orgs set display_name = $1 where id = $2
-returning create_time, display_name, id, update_time
+returning create_time, display_name, id, update_time, deletion_state
 `
 
 type UpdateOrgDisplayNameParams struct {
@@ -66,6 +79,7 @@ func (q *Queries) UpdateOrgDisplayName(ctx context.Context, arg UpdateOrgDisplay
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }

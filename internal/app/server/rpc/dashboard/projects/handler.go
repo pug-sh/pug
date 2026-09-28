@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/deletion"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -30,6 +32,49 @@ type server struct {
 
 func NewServer(service *projects.Service) *server {
 	return &server{service: service}
+}
+
+func deletionToRPC(o deletion.Operation) *projectsv1.DeletionOperation {
+	r := &projectsv1.DeletionOperation{Id: proto.String(o.ID), ProjectId: proto.String(o.TargetID), ProjectName: proto.String(o.TargetName), Status: proto.String(o.Status), RequestedAt: proto.String(o.Requested.Format(time.RFC3339)), LastError: proto.String(o.LastError), ActorId: proto.String(o.ActorID), ActorEmail: proto.String(o.ActorEmail)}
+	if o.Finished != nil {
+		r.FinishedAt = proto.String(o.Finished.Format(time.RFC3339))
+	}
+	if len(o.Projects) > 0 {
+		r.ClickhouseDone = proto.Bool(o.Projects[0].ClickHouseDone != nil)
+		r.PostgresDone = proto.Bool(o.Projects[0].PostgresDone != nil)
+	}
+	return r
+}
+
+func (s *server) ListDeletions(ctx context.Context, req *connect.Request[projectsv1.ListDeletionsRequest]) (*connect.Response[projectsv1.ListDeletionsResponse], error) {
+	rows, next, err := s.service.ListProjectDeletions(ctx, req.Msg.GetOrgId(), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	result := &projectsv1.ListDeletionsResponse{NextPageToken: proto.String(next)}
+	for _, o := range rows {
+		result.Operations = append(result.Operations, deletionToRPC(o))
+	}
+	return connect.NewResponse(result), nil
+}
+
+func (s *server) RetryDeletion(ctx context.Context, req *connect.Request[projectsv1.RetryDeletionRequest]) (*connect.Response[projectsv1.RetryDeletionResponse], error) {
+	p, err := rpc.MustGetPrincipalWithCustomer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	o, err := s.service.RetryProjectDeletion(ctx, p.Customer.ID, req.Msg.GetOrgId(), req.Msg.GetOperationId())
+	if err != nil {
+		switch {
+		case errors.Is(err, deletion.ErrNotFound):
+			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "deletion operation not found")
+		case errors.Is(err, deletion.ErrCannotRetry):
+			return nil, apperr.FailedPrecondition(apperr.ReasonDeletionBlocked, err.Error())
+		default:
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+	}
+	return connect.NewResponse(&projectsv1.RetryDeletionResponse{Operation: deletionToRPC(o)}), nil
 }
 
 // Get returns the project specified by x-project-id header.
@@ -194,10 +239,10 @@ func (s *server) DeleteApiKey(
 	return connect.NewResponse(&projectsv1.DeleteApiKeyResponse{}), nil
 }
 
-// Delete removes the project specified by x-project-id header.
+// Delete requests permanent deletion of the project specified by x-project-id.
 func (s *server) Delete(
 	ctx context.Context,
-	_ *connect.Request[projectsv1.DeleteRequest],
+	req *connect.Request[projectsv1.DeleteRequest],
 ) (*connect.Response[projectsv1.DeleteResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -208,21 +253,26 @@ func (s *server) Delete(
 		return nil, err
 	}
 
-	wParams := dbwrite.DeleteProjectParams{
-		OrgID: principal.Project.OrgID,
-		ID:    principal.Project.ID,
+	if principal.Customer == nil {
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "customer required")
 	}
-
-	if err := s.service.DeleteProject(ctx, wParams); err != nil {
-		if errors.Is(err, projects.ErrProjectNotFound) {
+	op, err := s.service.RequestProjectDeletion(ctx, principal.Customer.ID, principal.Project.OrgID, principal.Project.ID, req.Msg.GetConfirmationName())
+	if err != nil {
+		if errors.Is(err, deletion.ErrNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", principal.Project.ID))
+		}
+		if errors.Is(err, deletion.ErrNameMismatch) {
+			return nil, apperr.Invalid(apperr.ReasonDeletionConfirmationMismatch, "confirmation name does not match")
+		}
+		if errors.Is(err, deletion.ErrAlreadyRequested) || errors.Is(err, deletion.ErrComplianceActive) {
+			return nil, apperr.FailedPrecondition(apperr.ReasonDeletionBlocked, err.Error())
 		}
 		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("org_id", principal.Project.OrgID), slog.String("id", principal.Project.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&projectsv1.DeleteResponse{}), nil
+	return connect.NewResponse(&projectsv1.DeleteResponse{DeletionOperationId: &op.ID}), nil
 }
 
 // UpdateMeta partially updates the editable metadata (display name + reporting

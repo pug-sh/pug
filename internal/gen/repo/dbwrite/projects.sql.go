@@ -14,7 +14,7 @@ import (
 const createProject = `-- name: CreateProject :one
 insert into projects (display_name, id, org_id, reporting_timezone)
 values ($1, $2, $3, $4)
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_state
 `
 
 type CreateProjectParams struct {
@@ -44,19 +44,20 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
 
 const createProjectAsAdmin = `-- name: CreateProjectAsAdmin :one
 with check_admin as (
-  select 1 from org_members
-  where org_id = $3 and customer_id = $5 and role = 'ORG_ROLE_ADMIN'
+  select 1 from org_members m join orgs o on o.id=m.org_id
+  where m.org_id = $3 and m.customer_id = $5 and m.role = 'ORG_ROLE_ADMIN' and o.deletion_state='active'
 )
 insert into projects (display_name, id, org_id, reporting_timezone)
 select $1, $2, $3, $4
 where exists (select 1 from check_admin)
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_state
 `
 
 type CreateProjectAsAdminParams struct {
@@ -87,6 +88,7 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
@@ -94,7 +96,7 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 const deleteProject = `-- name: DeleteProject :one
 delete from projects
 where org_id = $1 and id = $2
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_state
 `
 
 type DeleteProjectParams struct {
@@ -113,6 +115,7 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
@@ -121,7 +124,7 @@ const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
 update projects
 set fcm_service_json = $1
 where org_id = $2 and id = $3
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_state
 `
 
 type UpdateFCMServiceJSONParams struct {
@@ -141,6 +144,7 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }
@@ -150,7 +154,7 @@ update projects
 set display_name       = coalesce($1, display_name),
     reporting_timezone = coalesce($2, reporting_timezone)
 where org_id = $3 and id = $4
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_state
 `
 
 type UpdateProjectMetaParams struct {
@@ -179,6 +183,7 @@ func (q *Queries) UpdateProjectMeta(ctx context.Context, arg UpdateProjectMetaPa
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionState,
 	)
 	return i, err
 }

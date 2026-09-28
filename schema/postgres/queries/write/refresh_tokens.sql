@@ -53,3 +53,9 @@ where family_id = (
     select rt.family_id from refresh_tokens rt where rt.token_hash = @token_hash
   )
   and revoked_at is null;
+
+-- name: RevokeCustomerRefreshTokens :execrows
+update refresh_tokens
+set revoked_at = now()
+where customer_id = @customer_id
+  and revoked_at is null;
