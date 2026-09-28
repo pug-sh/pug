@@ -451,6 +451,7 @@ billing_subscriptions
   currency              varchar(3) not null       -- always USD while §3 holds
   current_period_start  timestamptz
   current_period_end    timestamptz
+  past_due_ends_at      timestamptz               -- the grace deadline; only a delivery sets it (§11)
   provider_updated_at   timestamptz not null      -- the CAS column; §8
   create_time           timestamptz not null default now()
   update_time           timestamptz not null default now()
@@ -546,6 +547,7 @@ is the first implementation of it:
 |---|---|---|
 | `active` | `active` | yes |
 | `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11) |
+| `past_due` | `past_due` | yes — the same, inside Dodo's grace period (§11) |
 | `paused` | `paused` | no |
 | `cancelled`, `expired`, `failed` | same word | no |
 | anything else | stored verbatim, treated as not live | no |
@@ -617,7 +619,7 @@ simply makes the CAS a no-op, so the inbox shape survives a swap unchanged:
 | New event types appear over time | Unknown types are stored, marked processed, ignored. A type we do not handle must never 500 and never retry forever. |
 | The payload's **shape** changes under us | A body `Normalize` cannot decode is the one unapplicable-looking case that IS retried: a redeploy inside the retry window fixes it, and marking it processed would consume the delivery, losing the replay. |
 
-Handled: `subscription.active`, `.updated`, `.renewed`, `.on_hold`, `.failed`,
+Handled: `subscription.active`, `.updated`, `.renewed`, `.on_hold`, `.past_due`, `.failed`,
 `.cancelled`, `.expired`, `.plan_changed`. Every `subscription.*` runs one apply
 path and the new state comes from the payload's `status`, not the event name —
 the name only selects side effects. That is also what makes the apply path
@@ -740,6 +742,23 @@ the org to free — by then the customer has had every notice the provider
 sends. This policy is pug's and survives a provider change; only the dunning
 schedule behind it moves.
 
+**The grace deadline.** Dodo's grace period is off by default: a failed renewal
+goes straight to `on_hold`, which lasts until the customer pays or someone
+cancels it. Enabled (Settings → Subscriptions, 1–30 days), it holds the
+subscription in Dodo's own `past_due` until `past_due_ends_at`, then moves it to
+`on_hold` or cancels it, as configured. Both states map to pug's `past_due` (§7),
+so the plan does not notice. What the window adds is a date:
+`billing_subscriptions.past_due_ends_at`, served as
+`GetBillingStatus.past_due_ends_at` for the banner's "update your card by".
+
+Only a delivery carries it — Dodo's subscription API does not return it — while
+reconcile re-reads every live subscription each pass with a newer stamp. So a
+write that cannot see the deadline keeps the stored one while the card is still
+failing and clears it otherwise; a delivery always replaces it, and one outside
+the window clears it. A delivery the CAS refuses loses its deadline with the rest
+of the payload, and the banner shows the failed card with no date, as it does for
+a hold.
+
 ## 12. RPC surface
 
 Four additions to `dashboard.billing.v1.BillingService`, all JWT. `ListPlans`
@@ -766,7 +785,8 @@ plan can be bought is `PlanOption.purchasable`, which does share a helper with
 button. Tested both
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
 portal; no `ChangePlan` RPC in this slice. Usage billing added `tier_usage` and
-`tier_usage_as_of` to it: what was last stated to the provider (§4.2).
+`tier_usage_as_of` to it: what was last stated to the provider (§4.2). Dunning
+added `past_due_ends_at`, absent outside a grace period (§11).
 
 ### 12.1 Confirming the buyer who came back
 
