@@ -329,6 +329,13 @@ func TestFetchSubscriptionMatchesADelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
+	// The one deliberate difference: only a delivery carries the grace deadline, so
+	// only a delivery can say there is none.
+	if fetched.PastDueEndsAtKnown || !normalized.PastDueEndsAtKnown {
+		t.Errorf("deadline known = (read %v, delivery %v), want (false, true)",
+			fetched.PastDueEndsAtKnown, normalized.PastDueEndsAtKnown)
+	}
+	normalized.PastDueEndsAtKnown = false
 	if fetched != normalized {
 		t.Errorf("fetched = %+v\nnormalized = %+v\nthe two apply paths disagree", fetched, normalized)
 	}

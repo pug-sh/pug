@@ -340,6 +340,8 @@ func (s *Service) applySubscription(
 			CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
 			ID:                 xid.New().String(),
 			OrgID:              orgID,
+			PastDueEndsAt:      postgres.NewOptionalTimestamptz(event.PastDueEndsAt),
+			PastDueEndsAtKnown: event.PastDueEndsAtKnown,
 			PlanSlug:           planSlug,
 			PriceCents:         event.PriceCents,
 			Provider:           provider.Name(),

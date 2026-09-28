@@ -82,6 +82,9 @@ type Entitlement struct {
 	SubPeriodStart     time.Time
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
+	// When the provider's grace period for the failed card ends — the banner's
+	// "update your card by". Zero outside one.
+	SubPastDueEndsAt time.Time
 }
 
 // Resolve is the whole rule set, as a pure function. sub is separate from Record
@@ -116,6 +119,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 		ent.SubPeriodStart = sub.CurrentPeriodStart
 		ent.SubPeriodEnd = sub.CurrentPeriodEnd
 		ent.ProviderCustomerID = sub.ProviderCustomerID
+		ent.SubPastDueEndsAt = sub.PastDueEndsAt
 	}
 	resolvePlan(&ent, sub)
 	// Stays once past, where it answers "when did this lapse" rather than "when will

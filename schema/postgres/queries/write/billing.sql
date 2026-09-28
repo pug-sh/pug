@@ -74,18 +74,25 @@ where coalesce(processed_at, received_at) < @older_than;
 -- a payload ARRIVED, so this orders a delivery that overtakes another. org_id is
 -- never updated: attribution is decided once, on first sight.
 insert into billing_subscriptions (
-  currency, current_period_end, current_period_start, id, org_id, plan_slug,
-  price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
-  provider_updated_at, status
+  currency, current_period_end, current_period_start, id, org_id, past_due_ends_at,
+  plan_slug, price_cents, provider, provider_customer_id, provider_status,
+  provider_sub_id, provider_updated_at, status
 ) values (
-  @currency, @current_period_end, @current_period_start, @id, @org_id, @plan_slug,
-  @price_cents, @provider, @provider_customer_id, @provider_status, @provider_sub_id,
-  @provider_updated_at, @status
+  @currency, @current_period_end, @current_period_start, @id, @org_id, @past_due_ends_at,
+  @plan_slug, @price_cents, @provider, @provider_customer_id, @provider_status,
+  @provider_sub_id, @provider_updated_at, @status
 )
 on conflict (provider, provider_sub_id) do update
 set currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
+    -- Only a delivery carries the grace deadline, and reconcile re-reads every live
+    -- subscription each pass: a write that cannot see it keeps the stored one while
+    -- the card is still failing, rather than erase it.
+    past_due_ends_at = case
+      when @past_due_ends_at_known::boolean then excluded.past_due_ends_at
+      when excluded.status = 'past_due' then billing_subscriptions.past_due_ends_at
+    end,
     plan_slug = excluded.plan_slug,
     price_cents = excluded.price_cents,
     provider_customer_id = excluded.provider_customer_id,

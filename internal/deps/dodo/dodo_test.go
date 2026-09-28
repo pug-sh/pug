@@ -173,6 +173,52 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
+// Inside Dodo's grace period the card has failed and the customer keeps access
+// until the deadline, which only a delivery carries.
+const pastDueBody = `{"type":"subscription.past_due","data":{` +
+	`"subscription_id":"sub_1","product_id":"prod_growth","status":"past_due",` +
+	`"currency":"USD","recurring_pre_tax_amount":2000,` +
+	`"customer":{"customer_id":"cus_1"},` +
+	`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
+	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z",` +
+	`"past_due_ends_at":"2026-07-04T00:00:00Z"}}`
+
+func TestNormalizeReadsTheGraceDeadline(t *testing.T) {
+	c := testClient(t, time.Now())
+	event, err := c.Normalize(corebilling.Delivery{
+		EventType:  "subscription.past_due",
+		RawPayload: []byte(pastDueBody),
+	})
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	want := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
+	if !event.PastDueEndsAtKnown || !event.PastDueEndsAt.Equal(want) {
+		t.Errorf("past_due_ends_at = (%s, known %v), want (%s, known)",
+			event.PastDueEndsAt, event.PastDueEndsAtKnown, want)
+	}
+	if event.Status != corebilling.SubStatusPastDue {
+		t.Errorf("status = %q, want past_due", event.Status)
+	}
+}
+
+// A delivery with no deadline is the provider saying there is no grace window —
+// what clears a stored one once the card recovers or the window ends in a hold.
+func TestNormalizeKnowsADeliveryWithNoDeadline(t *testing.T) {
+	c := testClient(t, time.Now())
+	event, err := c.Normalize(corebilling.Delivery{
+		EventType:  "subscription.active",
+		RawPayload: []byte(activeBody),
+	})
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if !event.PastDueEndsAtKnown || !event.PastDueEndsAt.IsZero() {
+		t.Errorf("past_due_ends_at = (%s, known %v), want (zero, known)",
+			event.PastDueEndsAt, event.PastDueEndsAtKnown)
+	}
+}
+
 // Dodo's metadata is string|number|bool. Decoding into map[string]string would fail
 // the whole delivery over one numeric value, and a rejection is never retried.
 func TestNormalizeKeepsAttributionBesideNonStringMetadata(t *testing.T) {

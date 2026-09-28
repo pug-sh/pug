@@ -13,18 +13,25 @@ import (
 
 const applyBillingSubscription = `-- name: ApplyBillingSubscription :execrows
 insert into billing_subscriptions (
-  currency, current_period_end, current_period_start, id, org_id, plan_slug,
-  price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
-  provider_updated_at, status
+  currency, current_period_end, current_period_start, id, org_id, past_due_ends_at,
+  plan_slug, price_cents, provider, provider_customer_id, provider_status,
+  provider_sub_id, provider_updated_at, status
 ) values (
   $1, $2, $3, $4, $5, $6,
   $7, $8, $9, $10, $11,
-  $12, $13
+  $12, $13, $14
 )
 on conflict (provider, provider_sub_id) do update
 set currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
+    -- Only a delivery carries the grace deadline, and reconcile re-reads every live
+    -- subscription each pass: a write that cannot see it keeps the stored one while
+    -- the card is still failing, rather than erase it.
+    past_due_ends_at = case
+      when $15::boolean then excluded.past_due_ends_at
+      when excluded.status = 'past_due' then billing_subscriptions.past_due_ends_at
+    end,
     plan_slug = excluded.plan_slug,
     price_cents = excluded.price_cents,
     provider_customer_id = excluded.provider_customer_id,
@@ -42,6 +49,7 @@ type ApplyBillingSubscriptionParams struct {
 	CurrentPeriodStart pgtype.Timestamptz
 	ID                 string
 	OrgID              string
+	PastDueEndsAt      pgtype.Timestamptz
 	PlanSlug           string
 	PriceCents         int64
 	Provider           string
@@ -50,6 +58,7 @@ type ApplyBillingSubscriptionParams struct {
 	ProviderSubID      string
 	ProviderUpdatedAt  pgtype.Timestamptz
 	Status             string
+	PastDueEndsAtKnown bool
 }
 
 // The mirror write: one statement, three callers. CAS on provider_updated_at, when
@@ -65,6 +74,7 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 		arg.CurrentPeriodStart,
 		arg.ID,
 		arg.OrgID,
+		arg.PastDueEndsAt,
 		arg.PlanSlug,
 		arg.PriceCents,
 		arg.Provider,
@@ -73,6 +83,7 @@ func (q *Queries) ApplyBillingSubscription(ctx context.Context, arg ApplyBilling
 		arg.ProviderSubID,
 		arg.ProviderUpdatedAt,
 		arg.Status,
+		arg.PastDueEndsAtKnown,
 	)
 	if err != nil {
 		return 0, err

@@ -29,7 +29,8 @@ type envelope struct {
 }
 
 // subscriptionPayload is the subscription object as both a delivery and a direct
-// read carry it, so Normalize and FetchSubscription produce identical events.
+// read carry it, so Normalize and FetchSubscription produce identical events — but
+// for the grace deadline, which only a delivery carries.
 type subscriptionPayload struct {
 	Currency   string `json:"currency"`
 	CustomerID string `json:"-"`
@@ -38,6 +39,7 @@ type subscriptionPayload struct {
 	} `json:"customer"`
 	Metadata              metadata   `json:"metadata"`
 	NextBillingDate       *time.Time `json:"next_billing_date"`
+	PastDueEndsAt         *time.Time `json:"past_due_ends_at"`
 	PreviousBillingDate   *time.Time `json:"previous_billing_date"`
 	ProductID             string     `json:"product_id"`
 	RecurringPreTaxAmount int64      `json:"recurring_pre_tax_amount"`
@@ -99,6 +101,9 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 	if event.IsZero() {
 		return corebilling.SubscriptionEvent{}, errors.New("dodo: subscription payload carries no subscription id")
 	}
+	// Every delivery answers for the grace window, so here a missing deadline means
+	// there is none. A direct read cannot see it at all.
+	event.PastDueEndsAtKnown = true
 	return event, nil
 }
 
@@ -122,6 +127,9 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 	}
 	if p.NextBillingDate != nil {
 		event.CurrentPeriodEnd = *p.NextBillingDate
+	}
+	if p.PastDueEndsAt != nil {
+		event.PastDueEndsAt = *p.PastDueEndsAt
 	}
 	return event
 }

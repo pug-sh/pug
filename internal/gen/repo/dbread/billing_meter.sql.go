@@ -78,7 +78,7 @@ func (q *Queries) GetPreviousBillingMeterPeriod(ctx context.Context, arg GetPrev
 }
 
 const listLiveBillingSubscriptionsForMeter = `-- name: ListLiveBillingSubscriptionsForMeter :many
-select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
+select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, past_due_ends_at from billing_subscriptions
 where provider = $1
   and status in ('active', 'past_due')
   and current_period_start is not null
@@ -113,6 +113,7 @@ func (q *Queries) ListLiveBillingSubscriptionsForMeter(ctx context.Context, prov
 			&i.ProviderUpdatedAt,
 			&i.Status,
 			&i.UpdateTime,
+			&i.PastDueEndsAt,
 		); err != nil {
 			return nil, err
 		}
