@@ -91,6 +91,9 @@ func (s *Server) GetBillingStatus(
 	if !ent.SubPeriodEnd.IsZero() {
 		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
 	}
+	if !ent.SubPastDueEndsAt.IsZero() {
+		resp.PastDueEndsAt = timestamppb.New(ent.SubPastDueEndsAt)
+	}
 	if !ent.ContractEndsAt.IsZero() {
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
 	}

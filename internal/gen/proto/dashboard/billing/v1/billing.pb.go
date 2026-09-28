@@ -94,7 +94,8 @@ const (
 	SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED SubscriptionStatus = 0
 	SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE      SubscriptionStatus = 1
 	// The card failed and the provider is retrying. The entitlement is UNCHANGED:
-	// worth a banner, never a block.
+	// worth a banner, never a block. past_due_ends_at says until when, inside a
+	// grace period.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE  SubscriptionStatus = 2
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAUSED    SubscriptionStatus = 3
 	SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELLED SubscriptionStatus = 4
@@ -377,6 +378,11 @@ type GetBillingStatusResponse struct {
 	// When the provider bills next: the MONEY's period, not the quota's above.
 	// Absent when there is no live subscription.
 	CurrentPeriodEnd *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=current_period_end,json=currentPeriodEnd" json:"current_period_end,omitempty"`
+	// When the provider stops waiting for the failed card -- the banner's "update
+	// your card by". Past it the subscription is held or cancelled, and this can read
+	// as past until that lands. Set only inside the provider's grace period: absent
+	// for a card that failed with none configured.
+	PastDueEndsAt *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=past_due_ends_at,json=pastDueEndsAt" json:"past_due_ends_at,omitempty"`
 	// Whether a checkout would open at all -- billing on, a provider configured, and
 	// a product to check out against. Per plan it is PlanOption.purchasable.
 	Purchasable *bool `protobuf:"varint,11,opt,name=purchasable" json:"purchasable,omitempty"`
@@ -485,6 +491,13 @@ func (x *GetBillingStatusResponse) GetSubscriptionStatus() SubscriptionStatus {
 func (x *GetBillingStatusResponse) GetCurrentPeriodEnd() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CurrentPeriodEnd
+	}
+	return nil
+}
+
+func (x *GetBillingStatusResponse) GetPastDueEndsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PastDueEndsAt
 	}
 	return nil
 }
@@ -1019,7 +1032,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"\tTierUsage\x12 \n" +
 	"\fup_to_events\x18\x01 \x01(\x03R\n" +
 	"upToEvents\x12\x16\n" +
-	"\x06events\x18\x02 \x01(\x03R\x06events\"\xfb\x06\n" +
+	"\x06events\x18\x02 \x01(\x03R\x06events\"\xc0\a\n" +
 	"\x18GetBillingStatusResponse\x12'\n" +
 	"\x0fbilling_enabled\x18\x01 \x01(\bR\x0ebillingEnabled\x12.\n" +
 	"\x04plan\x18\x02 \x01(\v2\x1a.dashboard.billing.v1.PlanR\x04plan\x12;\n" +
@@ -1031,7 +1044,8 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"period_end\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\x12Y\n" +
 	"\x13subscription_status\x18\t \x01(\x0e2(.dashboard.billing.v1.SubscriptionStatusR\x12subscriptionStatus\x12H\n" +
 	"\x12current_period_end\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\x10currentPeriodEnd\x12 \n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\x10currentPeriodEnd\x12C\n" +
+	"\x10past_due_ends_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\rpastDueEndsAt\x12 \n" +
 	"\vpurchasable\x18\v \x01(\bR\vpurchasable\x12B\n" +
 	"\x0eretention_days\x18\r \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12\x1e\n" +
 	"\n" +
@@ -1137,28 +1151,29 @@ var file_dashboard_billing_v1_billing_proto_depIdxs = []int32{
 	17, // 5: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
 	1,  // 6: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
 	17, // 7: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
-	16, // 8: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
-	5,  // 9: dashboard.billing.v1.GetBillingStatusResponse.tier_usage:type_name -> dashboard.billing.v1.TierUsage
-	17, // 10: dashboard.billing.v1.GetBillingStatusResponse.tier_usage_as_of:type_name -> google.protobuf.Timestamp
-	2,  // 11: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
-	16, // 12: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
-	16, // 13: dashboard.billing.v1.PlanOption.retention_days:type_name -> google.protobuf.Int64Value
-	14, // 14: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
-	3,  // 15: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
-	7,  // 16: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
-	9,  // 17: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
-	11, // 18: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
-	13, // 19: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
-	6,  // 20: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
-	8,  // 21: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
-	10, // 22: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
-	12, // 23: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
-	15, // 24: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
-	20, // [20:25] is the sub-list for method output_type
-	15, // [15:20] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	17, // 8: dashboard.billing.v1.GetBillingStatusResponse.past_due_ends_at:type_name -> google.protobuf.Timestamp
+	16, // 9: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
+	5,  // 10: dashboard.billing.v1.GetBillingStatusResponse.tier_usage:type_name -> dashboard.billing.v1.TierUsage
+	17, // 11: dashboard.billing.v1.GetBillingStatusResponse.tier_usage_as_of:type_name -> google.protobuf.Timestamp
+	2,  // 12: dashboard.billing.v1.CreateCheckoutSessionRequest.theme:type_name -> dashboard.billing.v1.CheckoutTheme
+	16, // 13: dashboard.billing.v1.PlanOption.included_events:type_name -> google.protobuf.Int64Value
+	16, // 14: dashboard.billing.v1.PlanOption.retention_days:type_name -> google.protobuf.Int64Value
+	14, // 15: dashboard.billing.v1.ListPlansResponse.plans:type_name -> dashboard.billing.v1.PlanOption
+	3,  // 16: dashboard.billing.v1.BillingService.GetBillingStatus:input_type -> dashboard.billing.v1.GetBillingStatusRequest
+	7,  // 17: dashboard.billing.v1.BillingService.CreateCheckoutSession:input_type -> dashboard.billing.v1.CreateCheckoutSessionRequest
+	9,  // 18: dashboard.billing.v1.BillingService.ConfirmCheckout:input_type -> dashboard.billing.v1.ConfirmCheckoutRequest
+	11, // 19: dashboard.billing.v1.BillingService.CreatePortalSession:input_type -> dashboard.billing.v1.CreatePortalSessionRequest
+	13, // 20: dashboard.billing.v1.BillingService.ListPlans:input_type -> dashboard.billing.v1.ListPlansRequest
+	6,  // 21: dashboard.billing.v1.BillingService.GetBillingStatus:output_type -> dashboard.billing.v1.GetBillingStatusResponse
+	8,  // 22: dashboard.billing.v1.BillingService.CreateCheckoutSession:output_type -> dashboard.billing.v1.CreateCheckoutSessionResponse
+	10, // 23: dashboard.billing.v1.BillingService.ConfirmCheckout:output_type -> dashboard.billing.v1.ConfirmCheckoutResponse
+	12, // 24: dashboard.billing.v1.BillingService.CreatePortalSession:output_type -> dashboard.billing.v1.CreatePortalSessionResponse
+	15, // 25: dashboard.billing.v1.BillingService.ListPlans:output_type -> dashboard.billing.v1.ListPlansResponse
+	21, // [21:26] is the sub-list for method output_type
+	16, // [16:21] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_billing_v1_billing_proto_init() }

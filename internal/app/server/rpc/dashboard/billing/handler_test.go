@@ -223,3 +223,41 @@ func TestGetBillingStatusReportsTheStatedTiers(t *testing.T) {
 		t.Error("tier_usage_as_of must be set with tier_usage")
 	}
 }
+
+// The banner's "update your card by" date: set inside the provider's grace period,
+// and absent — never a zero timestamp — outside it.
+func TestGetBillingStatusReportsTheGraceDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	srv := newServer(t, pg, true)
+	orgID := seedOrg(t, pg, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
+	start := time.Now().UTC().Truncate(time.Hour).AddDate(0, 0, -3)
+	deadline := time.Now().UTC().Truncate(time.Second).Add(72 * time.Hour)
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_subscriptions (currency, current_period_end, current_period_start, id, org_id,
+		   past_due_ends_at, plan_slug, price_cents, provider, provider_customer_id, provider_status,
+		   provider_sub_id, provider_updated_at, status)
+		 values ('USD', $1, $2, $3, $4, $5, $6, 100, 'dodo', 'cus_1', 'past_due', 'sub_1', now(), 'past_due')`,
+		start.AddDate(0, 1, 0), start, xid.New().String(), orgID, deadline, entitlement.SlugUsage); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+
+	got := getStatus(t, srv, orgID)
+	if got.GetSubscriptionStatus() != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE {
+		t.Fatalf("subscription_status = %s, want PAST_DUE", got.GetSubscriptionStatus())
+	}
+	if got.GetPastDueEndsAt() == nil || !got.GetPastDueEndsAt().AsTime().Equal(deadline) {
+		t.Errorf("past_due_ends_at = %v, want %s", got.GetPastDueEndsAt(), deadline)
+	}
+
+	if _, err := pg.PgW.Exec(t.Context(),
+		`update billing_subscriptions set past_due_ends_at = null, provider_status = 'active', status = 'active'`); err != nil {
+		t.Fatalf("recover subscription: %v", err)
+	}
+	if got := getStatus(t, srv, orgID); got.GetPastDueEndsAt() != nil {
+		t.Errorf("past_due_ends_at = %v with no grace window, want absent", got.GetPastDueEndsAt())
+	}
+}
