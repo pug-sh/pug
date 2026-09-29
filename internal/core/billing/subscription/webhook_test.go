@@ -782,8 +782,14 @@ func TestPayloadOrgIDDoesNotAttributeADelivery(t *testing.T) {
 	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — metadata.org_id attributed a subscription", ent.Slug)
 	}
-	if d := storedDelivery(t, f, "evt_forged"); !strings.HasPrefix(d.Error, "attribution") {
+	d := storedDelivery(t, f, "evt_forged")
+	if !strings.HasPrefix(d.Error, "attribution") {
 		t.Errorf("error = %q, want it to start with %q", d.Error, "attribution")
+	}
+	// The payload names an org that exists: what failed is every route to it, and a
+	// reason reporting the org missing sends whoever reads it after a deleted org.
+	if strings.Contains(d.Error, entitlement.ErrOrgNotFound.Error()) {
+		t.Errorf("error = %q reports a missing org, for one that exists", d.Error)
 	}
 }
 

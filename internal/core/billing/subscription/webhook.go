@@ -100,7 +100,7 @@ func (s *Service) applySubscriptionEvent(
 	if err != nil {
 		// A read that failed is retryable; accepting it would lose the delivery for
 		// good, because the provider only retries on a non-2xx.
-		if !errors.Is(err, entitlement.ErrOrgNotFound) && !errors.Is(err, ErrCustomerNotUnique) {
+		if !errors.Is(err, errUnattributable) && !errors.Is(err, ErrCustomerNotUnique) {
 			slog.ErrorContext(ctx, "failed to attribute a subscription delivery", slogx.Error(err),
 				slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)
@@ -183,7 +183,7 @@ func (s *Service) attributeDelivery(ctx context.Context, provider billing.Paymen
 			return "", ErrCustomerNotUnique
 		}
 	}
-	return "", entitlement.ErrOrgNotFound
+	return "", errUnattributable
 }
 
 // finishDelivery marks the row processed — for an applied delivery and every
@@ -276,6 +276,12 @@ func (s *Service) PruneDeliveries(ctx context.Context, olderThan time.Time) (int
 // ErrCustomerNotUnique is one provider customer holding subscriptions for two
 // orgs: the delivery names a buyer, and a buyer is not an org.
 var ErrCustomerNotUnique = errors.New("billing: the provider customer maps to more than one org")
+
+// errUnattributable is a delivery no route places on an org. Not
+// entitlement.ErrOrgNotFound, which it once was: the org a payload names usually
+// exists, and its stored reason would send whoever reads it after a deleted org.
+var errUnattributable = errors.New(
+	"billing: no checkout ref, staged product or provider customer places this delivery on an org")
 
 // ErrTwoLiveSubscriptions is the partial unique index refusing a second live
 // subscription. Returned, not swallowed: the caller cannot tell it from the CAS's
