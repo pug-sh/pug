@@ -310,7 +310,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	w := dbwrite.New(tx)
-	// The same lock the other two take: without it a concurrent SetPlan inserts
+	// The lock every other writer takes: without it a concurrent SetPlan inserts
 	// between this delete and its commit, and the history says "cleared".
 	if err := lockOrg(ctx, w, orgID); err != nil {
 		return err
@@ -362,6 +362,15 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 // ending it early would drop the lock with fn's write half made. No row is
 // Record{}, the ordinary state. The lock is advisory, so an org that does not
 // exist reads the same way.
+//
+// fn decides from cur and reaches the database only through w. It must not call
+// back into this service: SetPlan, ExtendTrial, Clear and WithOrgLock would queue
+// for this lock on a second connection until their context gave up, a wait
+// Postgres never reports as a deadlock because this transaction is idle, not
+// waiting; and GetEntitlement or StoredRecord would take a second pool connection
+// while this one is held. fn's error comes back unlogged, where a failure to
+// begin, lock, read or commit is logged and recorded here, so fn logs and records
+// whatever it detects.
 func (s *Service) WithOrgLock(ctx context.Context, orgID string, fn func(w *dbwrite.Queries, cur Record) error) error {
 	tx, w, cur, err := s.beginLocked(ctx, orgID)
 	if err != nil {
@@ -374,8 +383,10 @@ func (s *Service) WithOrgLock(ctx context.Context, orgID string, fn func(w *dbwr
 	return s.commit(ctx, tx, orgID)
 }
 
-// beginLocked opens the transaction every mutation runs in and hands back the row
-// as it stands. The caller owns the rollback.
+// beginLocked opens the locked transaction SetPlan, ExtendTrial and WithOrgLock
+// run in and hands back the row as it stands. Clear takes the same lock without
+// the read, since it deletes the row rather than merging onto it. The caller owns
+// the rollback.
 func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwrite.Queries, Record, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
