@@ -44,9 +44,13 @@ var (
 	ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
 )
 
-// takesMoney is the check every money path opens with: billing switched on, read
-// through the entitlement service, and a provider wired. Failing it is what
-// billing.ErrNoProvider means.
+// takesMoney is the guard the dashboard's money paths share: billing switched
+// on, read through the entitlement service, and a provider wired.
+// CreateCheckoutSession, CreatePortalSession and ConfirmCheckout refuse on it with
+// billing.ErrNoProvider; Purchasable, Manageable and each PlanOption report it.
+// HandleDelivery and Reconcile ask only for a provider: the webhook mirrors the
+// provider whether or not the switch is on, and the reconcile CronJob builds no
+// provider while it is off.
 func (s *Service) takesMoney() bool {
 	return s.entitlements.BillingEnabled() && s.payments.Configured()
 }
