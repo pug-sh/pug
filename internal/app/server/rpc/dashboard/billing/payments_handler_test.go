@@ -299,7 +299,20 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
-	srv := newPayingServer(t, pg, true)
+	// The floors have products here, as a retired tier does in production, where
+	// app/payments keeps it mapped for its holders' renewals: a product must not be
+	// enough to sell a tier. Unmapped, the floors would be refused for want of one
+	// and Plan.OnSale would never be reached.
+	var in corebilling.CheckoutInput
+	srv := newServerWith(t, pg, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{
+			"growth":              "prod_growth",
+			entitlement.SlugFree:  "prod_free",
+			entitlement.SlugTrial: "prod_trial",
+		},
+		Provider:  stubProvider{in: &in},
+		ReturnURL: "https://app.example/settings/billing",
+	})
 
 	cases := map[string]struct {
 		slug string
@@ -325,6 +338,10 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 				t.Errorf("code = %s, want %s", got, tc.code)
 			}
 		})
+	}
+	// Refused before the provider opened anything, not after.
+	if in.ProductID != "" {
+		t.Errorf("the provider was asked to open a checkout for %q", in.ProductID)
 	}
 }
 
