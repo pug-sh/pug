@@ -491,10 +491,7 @@ func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	other, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	other := dbwriteOrg(t, f.pg)
 	seedCheckoutRef(t, f, other)
 
 	for i, orgID := range []string{f.orgID, other} {
@@ -924,10 +921,7 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	other, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	other := dbwriteOrg(t, f.pg)
 	seedCheckoutRef(t, f, other)
 
 	// The customer id names `other`, via a subscription it already holds.

@@ -324,10 +324,7 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	other, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	other := dbwriteOrg(t, f.pg)
 	seedCheckoutRef(t, f, other)
 
 	event := subEvent(f.orgID, "sub00000000000000031", "prod_growth", corebilling.SubStatusActive)

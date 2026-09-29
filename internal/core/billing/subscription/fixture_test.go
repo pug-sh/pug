@@ -30,10 +30,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
 
-	orgID, err := dbwriteOrg(t, pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	orgID := dbwriteOrg(t, pg)
 	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
@@ -48,17 +45,17 @@ func newFixture(t *testing.T) *fixture {
 
 // dbwriteOrg creates a backdated org, so a test asserting a granted plan is not
 // also fighting a live trial window.
-func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) (string, error) {
+func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) string {
 	t.Helper()
 	org, err := dbwrite.New(pg.PgW).CreateOrg(t.Context(), dbwrite.CreateOrgParams{
 		ID:          xid.New().String(),
 		DisplayName: "acme",
 	})
 	if err != nil {
-		return "", err
+		t.Fatalf("create org: %v", err)
 	}
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
-	return org.ID, nil
+	return org.ID
 }
 
 // svcWithProvider builds the paid service against provider, sharing the fixture's
