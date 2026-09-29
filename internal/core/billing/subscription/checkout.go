@@ -55,14 +55,24 @@ func (s *Service) takesMoney() bool {
 	return s.entitlements.BillingEnabled() && s.payments.Configured()
 }
 
-// Purchasable reports whether this deployment sells anything to this org at all.
-// Per tier it is PlanOption.Purchasable, which shares checkoutProduct with it.
+// Purchasable reports whether this deployment sells anything to this org at all:
+// some tier on sale whose product checkoutProduct resolves, the lookup
+// CreateCheckoutSession refuses on. Per tier it is PlanOption.Purchasable.
 func (s *Service) Purchasable(rec entitlement.Record) bool {
 	if !s.takesMoney() {
 		return false
 	}
-	// Either a catalog tier is on sale, or this org has a negotiated product.
-	return len(s.payments.ProductBySlug) > 0 || rec.ProviderProductID != ""
+	// Not the product map's size: it keeps retired tiers so their renewals
+	// resolve, and custom resolves from this org's row instead.
+	for _, plan := range entitlement.Plans() {
+		if !plan.OnSale() {
+			continue
+		}
+		if _, err := s.checkoutProduct(rec, plan.Slug); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Manageable reports whether a portal session would open, from the SAME lookup

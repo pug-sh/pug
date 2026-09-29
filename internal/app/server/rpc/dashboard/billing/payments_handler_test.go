@@ -243,6 +243,17 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 		// A provider with credentials but no product ids: nothing is on sale, so
 		// the button must not render even though checkout is otherwise wired.
 		{"no products configured", func() *Server { return newProductlessServer(t, pg) }, true, false},
+		// A product only for a tier checkout will not sell: app/payments keeps a
+		// retired tier mapped for its holders' renewals, so once the one tier a
+		// deployment has a product for retires, the map is not empty and nothing is
+		// on sale. A floor stands in for the retired tier the catalog lacks.
+		{"only a tier off sale has a product", func() *Server {
+			return newServerWith(t, pg, true, &corebilling.Payments{
+				ProductBySlug: map[string]string{entitlement.SlugFree: "prod_free"},
+				Provider:      stubProvider{},
+				ReturnURL:     "https://app.example/settings/billing",
+			})
+		}, true, false},
 	}
 
 	for _, tc := range cases {
