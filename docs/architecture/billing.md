@@ -880,13 +880,16 @@ Where the code differs from the sections above, the code wins and the reason is
 here.
 
 - **`Sellable` became `Retired`** (§4). One flag was conflating "may be granted"
-  with "may be purchased", and `custom` needs the first while never having the
-  second — a negotiated deal is granted to an org that has never held one, so
+  with "may be purchased", and `custom` needs the first whatever the second says
+  — a negotiated deal is granted to an org that has never held one, so
   a `Sellable: false` guard made every custom deal impossible to create. Splitting
   them now would have shipped a purchasability flag with no consumer, so only the
   guard's own concept exists: `Retired`. Checkout brings the other half, as
   `Plan.OnSale`: derived from the floors and `Retired`, never stored, so the two
-  cannot be conflated again.
+  cannot be conflated again. `custom` is on sale in that sense, against §4's
+  expectation that it would never appear in a purchase catalog: checkout offers
+  it to the one org whose row records its product ([`payments.md`](payments.md)
+  §5.2), so an `OnSale` false for it would break every negotiated-deal checkout.
 - **A granted plan is resolved before a live trial date** (§6, steps 3 and 4 are
   swapped relative to the first draft). The original order let a stale
   `trial_ends_at` demote a customer who had converted mid-trial.
