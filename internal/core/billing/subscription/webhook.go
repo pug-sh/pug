@@ -25,10 +25,10 @@ import (
 // the row is durable. Everything unapplicable is stored, marked processed and NOT
 // retried — the provider retries and fixes none of it. A body it cannot DECODE is retried.
 //
-// It stores, attributes and maps under this service's own provider, the one
-// MountBilling verified the delivery with; no second one is handed in beside it.
+// It stores, attributes and maps under this service's own provider, the one whose
+// Verifier the mounted route checked the delivery with.
 func (s *Service) HandleDelivery(ctx context.Context, d billing.Delivery) error {
-	provider := s.Provider()
+	provider := s.provider()
 	if provider == nil {
 		// MountBilling mounts no route without one, so this is wiring gone wrong.
 		// Retried rather than accepted: stored under no provider, it could never map.

@@ -86,7 +86,7 @@ func newService(t *testing.T, provider corebilling.PaymentProvider) (*subscripti
 // handlerFor is the route's handler as MountBilling builds it, over the service's
 // own provider.
 func handlerFor(svc *subscription.Service) *billingHandler {
-	return &billingHandler{provider: svc.Provider(), service: svc}
+	return &billingHandler{verifier: svc.Verifier(), service: svc}
 }
 
 func post(t *testing.T, h http.Handler, path, body string) *http.Response {

@@ -157,8 +157,8 @@ func start(ctx context.Context, d *deps) error {
 	// Off the service, like the webhook route, so the name logged here is the one
 	// the route mounts at.
 	provider := ""
-	if p := subscriptionSvc.Provider(); p != nil {
-		provider = p.Name()
+	if v := subscriptionSvc.Verifier(); v != nil {
+		provider = v.Name()
 	}
 	// The likeliest misconfig is a pod missing the flag: every org would then read as
 	// having no quota, with nothing failing. Same for a missing provider key.

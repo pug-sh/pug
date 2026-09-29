@@ -34,18 +34,7 @@ var (
 // else in this slice imports a provider package. The payload is deliberately not
 // abstracted — a common payload schema across providers cannot be maintained.
 type PaymentProvider interface {
-	// Name is the provider's slug, stored on every row it produces and the path
-	// segment its webhook mounts at — changing it orphans stored rows.
-	Name() string
-
-	// Verify authenticates a raw delivery, taking the exact bytes because every
-	// signature scheme signs those, not a decoded message.
-	Verify(headers http.Header, rawBody []byte) (Delivery, error)
-
-	// CanVerify reports whether a signing secret is configured, i.e. whether Verify
-	// can authenticate anything. False mounts no webhook route at all rather than
-	// taking unverified deliveries on the money path.
-	CanVerify() bool
+	WebhookVerifier
 
 	// Normalize maps one verified delivery onto pug's vocabulary. A zero
 	// SubscriptionEvent means "store, mark processed, ignore".
@@ -62,6 +51,23 @@ type PaymentProvider interface {
 	// shape. A zero SubscriptionEvent means "not settled yet" and is not an error; a
 	// checkout the provider gave up on must return ErrCheckoutFailed instead.
 	FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
+}
+
+// WebhookVerifier is the part of a provider the webhook route holds: a name to
+// mount at and a signature to check, and nothing that moves money.
+type WebhookVerifier interface {
+	// Name is the provider's slug, stored on every row it produces and the path
+	// segment its webhook mounts at — changing it orphans stored rows.
+	Name() string
+
+	// Verify authenticates a raw delivery, taking the exact bytes because every
+	// signature scheme signs those, not a decoded message.
+	Verify(headers http.Header, rawBody []byte) (Delivery, error)
+
+	// CanVerify reports whether a signing secret is configured, i.e. whether Verify
+	// can authenticate anything. False mounts no webhook route at all rather than
+	// taking unverified deliveries on the money path.
+	CanVerify() bool
 }
 
 // Delivery is one verified webhook, still in the provider's own vocabulary.

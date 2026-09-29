@@ -103,14 +103,9 @@ at the edges:
 // billing.PaymentProvider is the whole seam. Three verbs for the inbound half,
 // four for the outbound; nothing else in the slice imports a provider package.
 type PaymentProvider interface {
-    Name() string
-
-    // Verify authenticates a raw delivery. It takes the exact bytes because
-    // every scheme signs those, not a decoded message.
-    Verify(headers http.Header, rawBody []byte) (Delivery, error)
-    // CanVerify reports whether a signing secret is configured. False mounts no
-    // webhook route at all rather than taking unverified deliveries.
-    CanVerify() bool
+    // The route's half: a name to mount at and a signature to check. The webhook
+    // route holds only this, so it cannot move money.
+    WebhookVerifier
     // Normalize maps one verified delivery onto pug's vocabulary. Returning a
     // zero SubscriptionEvent means "store, mark processed, ignore".
     Normalize(Delivery) (SubscriptionEvent, error)
@@ -122,6 +117,16 @@ type PaymentProvider interface {
     // A zero SubscriptionEvent means "not settled yet"; a checkout the provider
     // gave up on must return ErrCheckoutFailed instead.
     FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
+}
+
+type WebhookVerifier interface {
+    Name() string
+    // Verify authenticates a raw delivery. It takes the exact bytes because
+    // every scheme signs those, not a decoded message.
+    Verify(headers http.Header, rawBody []byte) (Delivery, error)
+    // CanVerify reports whether a signing secret is configured. False mounts no
+    // webhook route at all rather than taking unverified deliveries.
+    CanVerify() bool
 }
 ```
 
