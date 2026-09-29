@@ -30,6 +30,12 @@ var mutatedTable = regexp.MustCompile(`(?i)\b(?:insert\s+into|delete\s+from|merg
 // itself, so a new writer is covered the day it is written, and fails a call to
 // one from outside the owning package. Tests are exempt: seeding a row is not a
 // second writer.
+//
+// It reads text, not types, so a write it cannot see passes: a method value
+// called later, raw SQL through pgx rather than sqlc, `update only`, a quoted
+// table name, the second table of a truncate. A comment that spells out a call in
+// Go, or a write in a /* */ block of SQL, fails instead. None of these occurs
+// today.
 func checkTableOwners(root string) ([]string, error) {
 	files, err := sqlFiles(root, "schema/postgres/queries/write")
 	if err != nil {
@@ -43,8 +49,7 @@ func checkTableOwners(root string) ([]string, error) {
 			return nil, err
 		}
 		for _, q := range splitQueries(body) {
-			scrubbed := rowLock.ReplaceAll(sqlComment.ReplaceAll(q.sql, nil), []byte("for share"))
-			for _, m := range mutatedTable.FindAllSubmatch(scrubbed, -1) {
+			for _, m := range mutatedTable.FindAllSubmatch(scrubSQL(q.sql), -1) {
 				table := strings.ToLower(string(m[1]))
 				if i := strings.LastIndexByte(table, '.'); i >= 0 {
 					table = table[i+1:]
