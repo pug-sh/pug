@@ -322,8 +322,9 @@ billing_entitlements
 ```
 
 NULL is every org that is not a negotiated deal — the catalog tiers get their
-product ids from config (section 13), not from the row: one key per purchasable
-tier, mapping a catalog slug to a provider product id.
+product ids from config (section 13), not from the row: one key per catalog tier
+but the floors and `custom`, retired tiers included, mapping a catalog slug to a
+provider product id.
 
 The id belongs to whichever provider is configured, and a provider swap
 invalidates every stored one along with every config key. That is a re-paste per
@@ -746,7 +747,7 @@ still coming.
 | `PUG_DASHBOARD_BASE_URL` | — | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
-| `PUG_DODO_PRODUCT_<SLUG>` | — | One per purchasable catalog tier (`..._STARTER`, `..._GROWTH`, `..._SCALE`), mapping the slug to a Dodo product id. Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A tier with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
+| `PUG_DODO_PRODUCT_<SLUG>` | — | One per catalog tier but the floors and `custom` (`..._STARTER`, `..._GROWTH`, `..._SCALE`), the slug upper-cased with `-` written `_`, so a repriced `growth-v2` is `..._GROWTH_V2`. Maps the slug to a Dodo product id in both directions: checkout reads slug → product, the webhook reads product → slug (§8). A tier on sale with no key is not purchasable (§12). A **retired** tier keeps its key: it is never sold, but without the key the webhook rejects its holders' renewals as an unmapped product. `custom` has no key, since its product id lives on the org's row. |
 
 Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's

@@ -39,7 +39,8 @@ func TestProductIDs(t *testing.T) {
 }
 
 // Only the floors and custom are excluded. A retired tier keeps its mapping, or the
-// webhook could not place its existing holders' renewals and cancellations.
+// webhook would reject its existing holders' renewals; a cancellation lands either
+// way, on the plan slug already stored.
 func TestMappedSlug(t *testing.T) {
 	for _, tc := range []struct {
 		plan entitlement.Plan

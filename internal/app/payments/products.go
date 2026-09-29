@@ -13,9 +13,11 @@ const productEnvPrefix = "PUG_DODO_PRODUCT_"
 
 // productIDs reads Dodo's product ids into slug -> product id: one
 // PUG_DODO_PRODUCT_<SLUG> per catalog tier but the floors and custom, retired
-// tiers included (see mappedSlug). A tier with no key is simply not purchasable.
-// It is catalog-to-env wiring rather than adapter logic, so it lives here and not
-// in internal/deps/dodo. lookup is os.LookupEnv outside tests.
+// tiers included (see mappedSlug), the slug upper-cased with - written _. A tier
+// on sale with no key is not purchasable; a retired tier with no key can no
+// longer place its holders' renewals. It is catalog-to-env wiring rather than
+// adapter logic, so it lives here and not in internal/deps/dodo. lookup is
+// os.LookupEnv outside tests.
 func productIDs(lookup func(string) (string, bool)) (map[string]string, error) {
 	out := map[string]string{}
 	byProduct := map[string]string{}
