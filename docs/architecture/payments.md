@@ -13,11 +13,9 @@ fee schedules move, and being locked to one is a commercial risk, not only a
 technical one. Dodo is the first and, for now, the only implementation.
 
 The code is `internal/core/billing/subscription`, the lifecycle of the provider
-subscription an org buys. It was named `mandate` until Dodo turned out to refuse
-on-demand mandates for usage-based products. It sits beside
-the port in `internal/core/billing`, which is all of core the Dodo adapter may
-import (a depguard rule, not a convention), and beside `entitlement`, which is
-[`billing.md`](billing.md).
+subscription an org buys. It sits beside the port in `internal/core/billing`,
+which is all of core the Dodo adapter may import (a depguard rule, not a
+convention), and beside `entitlement`, which is [`billing.md`](billing.md).
 
 > **Status: implemented 2026-09-06.** §17 records where the build departs from
 > this design, and §15's open questions are resolved there. An earlier,
@@ -153,16 +151,19 @@ key that permits two providers at once) while they are free.
 Dodo is a merchant of record and can present local currency to a buyer, but pug
 sells in USD and stores USD, and every plan in the catalog is USD today.
 
-This is enforced rather than assumed, in exactly one place: a subscription whose
-currency is not `USD` is **rejected at the webhook boundary** — stored in the
-inbox, marked processed, logged as an error, and not applied. A currency pug
+This is enforced rather than assumed, by the one write every subscription goes
+through: the apply the webhook, reconcile and `ConfirmCheckout` share refuses a
+currency that is not `USD`. The webhook and `ConfirmCheckout` also check before
+it, so a foreign-currency delivery is **rejected at the webhook** — stored in the
+inbox, marked processed, logged as an error, and not applied — and a buyer back
+from checkout is told why rather than handed an internal error. A currency pug
 cannot render honestly must not silently become a number on a dashboard.
 
 The payoff for writing the guard down instead of leaving it implicit: while it
-holds, `price_cents` is an accurate field name. When multi-currency arrives, the
-guard is the single place that changes, and the rename to `price_minor_units`
-happens with it — JPY has no cents, so the name and the constraint fall together
-or not at all.
+holds, `price_cents` is an accurate field name. When multi-currency arrives, what
+changes is every comparison against `billing.Currency`, and the rename to
+`price_minor_units` happens with it — JPY has no cents, so the name and the
+constraint fall together or not at all.
 
 ## 4. Who owns the price
 
@@ -440,7 +441,7 @@ is the first implementation of it:
 | Dodo `status` | pug `status` | Live |
 |---|---|---|
 | `active` | `active` | yes |
-| `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11) |
+| `past_due`, `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11): `past_due` inside Dodo's grace period, `on_hold` outside it |
 | `paused` | `paused` | no |
 | `cancelled`, `expired`, `failed` | same word | no |
 | anything else | stored verbatim, treated as not live | no |
@@ -790,7 +791,8 @@ likely to be wrong in a way nothing else catches, and it is per provider.
    subscription row name their provider.
 2. **§4 — pug stores no money.** DECIDED yes, and already applied to migration
    019 and the CLI.
-3. **§3 — USD only**, enforced at the webhook boundary. DECIDED.
+3. **§3 — USD only**, enforced by the apply every subscription write goes
+   through. DECIDED.
 4. **§5.1 — custom products are created by hand in Dodo**, not over the API.
    DECIDED for v1.
 5. **§5.2 — no payment links.** The operator pastes the product id onto the org

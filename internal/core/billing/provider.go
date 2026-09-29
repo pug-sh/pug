@@ -188,9 +188,11 @@ func ParseSubStatus(v string) (SubStatus, bool) {
 	return "", false
 }
 
-// Currency is the one pug sells in. subscription refuses any other at each of its
-// writers — the webhook, ConfirmCheckout and the apply they share — so going
-// multi-currency starts here, and renames price_cents with it.
+// Currency is the one pug sells in. subscription's shared apply refuses any other
+// for all three writers (the webhook, reconcile and ConfirmCheckout), and the
+// webhook and ConfirmCheckout check before it, so a foreign-currency delivery is
+// consumed as rejected and a returning buyer is told why. Going multi-currency
+// starts here, and renames price_cents with it.
 const Currency = "USD"
 
 // Payments is the provider wiring. Nil means no provider, which is legal.
