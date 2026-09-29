@@ -614,6 +614,50 @@ func TestWithOrgLockCommitsOnlyWhenFnSucceeds(t *testing.T) {
 	}
 }
 
+// A refused fn must let go of the lock as well as the write. The write is
+// invisible either way, so only taking the lock again shows a transaction left
+// open, and in production every later write for the org would queue behind it: a
+// delivery, a confirm, `billing set`.
+func TestWithOrgLockReleasesTheLockWhenFnFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	// A pool of its own, closed with a deadline: a leaked transaction never returns
+	// its connection, and closing the harness's pool would wait on it until the
+	// test binary timed out.
+	pool, err := pgxpool.NewWithConfig(t.Context(), f.pg.PgW.Config())
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(func() {
+		closed := make(chan struct{})
+		go func() { pool.Close(); close(closed) }()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Error("a connection never came back to the pool: WithOrgLock left a transaction open")
+		}
+	})
+	svc, err := entitlement.NewService(f.pg.PgRO, pool, true)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	refused := errors.New("refused")
+	err = svc.WithOrgLock(t.Context(), f.orgID, func(*dbwrite.Queries, entitlement.Record) error { return refused })
+	if !errors.Is(err, refused) {
+		t.Fatalf("err = %v, want fn's own error back", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := svc.WithOrgLock(ctx, f.orgID, func(*dbwrite.Queries, entitlement.Record) error { return nil }); err != nil {
+		t.Fatalf("taking the org lock after fn failed: %v; the refused call still holds it", err)
+	}
+}
+
 // waitForLockWaiter blocks until a session is parked on an advisory lock, so a test
 // never races the commit that releases it. The package runs its tests serially
 // against one container, so any waiter is the one under test. A call that settled
