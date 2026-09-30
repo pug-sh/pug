@@ -51,10 +51,20 @@ func NewService(pgRO, pgW *pgxpool.Pool, payments *billing.Payments, entitlement
 // lives there, and two services wired apart would report two switches.
 func (s *Service) Entitlements() *entitlement.Service { return s.entitlements }
 
-// Provider is the provider this lifecycle was built with, nil when there is none.
-// The webhook route mounts it from here, so the route that verifies a delivery and
-// the service that stores and maps it cannot name two providers.
-func (s *Service) Provider() billing.PaymentProvider {
+// Verifier is the webhook half of the provider this lifecycle was built with, nil
+// when there is none. The route mounts it from here, so the route that verifies a
+// delivery and the service that stores and maps it cannot name two providers, and
+// a holder of this service gets a signature check from it, never a port that
+// opens checkouts past takesMoney and OnSale.
+func (s *Service) Verifier() billing.WebhookVerifier {
+	if p := s.provider(); p != nil {
+		return p
+	}
+	return nil
+}
+
+// provider is the whole port this lifecycle was built with, nil when there is none.
+func (s *Service) provider() billing.PaymentProvider {
 	if !s.payments.Configured() {
 		return nil
 	}

@@ -96,7 +96,7 @@ func TestCancelledSubscriptionFallsBackToTheComp(t *testing.T) {
 // tier mean anything.
 func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
 	rec := entitlement.Record{
-		Present: true, PlanSlug: entitlement.SlugCustom,
+		Present: true, PlanSlug: entitlement.SlugCustom, BasePlanSlug: entitlement.SlugUsage,
 		IncludedEventsOverride: 5_000_000,
 		DisplayNameOverride:    "Acme Enterprise",
 		ProviderProductID:      "prod_acme",
@@ -115,6 +115,7 @@ func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
 func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 	rec := entitlement.Record{
 		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_acme",
+		BasePlanSlug:           entitlement.SlugUsage,
 		IncludedEventsOverride: 5_000_000,
 		ContractEndsAt:         later.AddDate(0, 0, -1),
 	}
@@ -123,10 +124,47 @@ func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 		t.Errorf("allowance = %d, want 5000000 — the customer is still being charged", got)
 	}
 
-	// With nothing being charged, the lapsed contract does expire the deal.
+	// With nothing being charged, the deal's terms are gone with it.
 	lapsed := entitlement.Resolve(created, rec, nil, later, true)
-	if lapsed.Slug != entitlement.SlugFree {
-		t.Errorf("slug with no subscription = %q, want free", lapsed.Slug)
+	if lapsed.Slug != entitlement.SlugFree || quota(t, lapsed) != freeEvents() {
+		t.Errorf("with no subscription: %s on %d, want free on %d", lapsed.Slug, quota(t, lapsed), freeEvents())
+	}
+}
+
+// A staged deal is not held until its subscription lands: its terms are what the
+// org would buy, so the org stays plain free, name and all.
+func TestAStagedDealIsPlainFree(t *testing.T) {
+	rec := entitlement.Record{
+		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_acme",
+		BasePlanSlug:           entitlement.SlugUsage,
+		IncludedEventsOverride: 5_000_000,
+		RetentionDaysOverride:  2555,
+		DisplayNameOverride:    "Acme Enterprise",
+	}
+	ent := entitlement.Resolve(created, rec, nil, later, true)
+	if ent.Status != entitlement.StatusFree || ent.DisplayName != entitlement.FreeDisplayName ||
+		quota(t, ent) != freeEvents() || retention(t, ent) != freeRetention() {
+		t.Errorf("resolved %s %q on %v / %v, want plain free", ent.Status, ent.DisplayName, str(ent.IncludedEvents), str(ent.RetentionDays))
+	}
+}
+
+// Buying the usage plan instead of a staged deal is a different purchase: the deal's
+// terms must not ride on it, lapsed or not, or its allowance goes unbilled at usage
+// rates.
+func TestADealsTermsDoNotRideOnAPublicPlan(t *testing.T) {
+	rec := entitlement.Record{
+		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_acme",
+		BasePlanSlug:           entitlement.SlugUsage,
+		IncludedEventsOverride: 5_000_000,
+		DisplayNameOverride:    "Acme Enterprise",
+		ContractEndsAt:         later.AddDate(1, 0, 0),
+	}
+	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, true)
+	if got := quota(t, ent); got != freeEvents() {
+		t.Errorf("allowance = %d, want the usage plan's %d", got, freeEvents())
+	}
+	if want := entitlement.CurrentPlan().DisplayName; ent.DisplayName != want {
+		t.Errorf("display name = %q, want %q", ent.DisplayName, want)
 	}
 }
 
@@ -161,6 +199,9 @@ func TestSubscriptionOnAnUnknownSlugKeepsItsName(t *testing.T) {
 	}
 	if ent.IncludedEvents != nil {
 		t.Errorf("allowance = %d, want absent", *ent.IncludedEvents)
+	}
+	if ent.RetentionDays != nil {
+		t.Errorf("retention = %d, want no bound", *ent.RetentionDays)
 	}
 }
 

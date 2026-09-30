@@ -144,6 +144,7 @@ func TestResolveExpiresACompsOverrides(t *testing.T) {
 func TestResolveAppliesNegotiatedOverrides(t *testing.T) {
 	ent := entitlement.Resolve(created, entitlement.Record{
 		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_deal",
+		BasePlanSlug:           entitlement.SlugUsage,
 		IncludedEventsOverride: 5_000_000,
 		DisplayNameOverride:    "Acme Enterprise",
 	}, liveSub(entitlement.SlugCustom), later, true)
@@ -350,35 +351,72 @@ func TestResolveWithNoSubscriptionIsFreeOnTheCurrentAllowance(t *testing.T) {
 			if ent.IncludedEvents == nil || *ent.IncludedEvents != plan.FreeEvents {
 				t.Errorf("IncludedEvents = %v, want %d", ent.IncludedEvents, plan.FreeEvents)
 			}
-			if !slices.Equal(ent.TierUpTo, plan.TierUpTo) {
-				t.Errorf("TierUpTo = %v, want the current plan's", ent.TierUpTo)
+			// Nothing bills a free org, so nothing splits its usage.
+			if ent.TierUpTo != nil || ent.TierPlanSlug != "" {
+				t.Errorf("TierUpTo = %v from %q, want none on free", ent.TierUpTo, ent.TierPlanSlug)
 			}
 		})
 	}
 }
 
-func TestResolveACustomSubscriptionSplitsOverTheCurrentTiers(t *testing.T) {
+// A deal splits over the plan pinned on its row, at its own product's rates. With
+// no override it takes that plan's allowance, not nothing: a deal needs no quota.
+func TestResolveADealSplitsOverItsBasePlan(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
-	rec := entitlement.Record{Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_deal"}
+	rec := entitlement.Record{
+		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_deal",
+		BasePlanSlug: entitlement.SlugUsage,
+	}
 	sub := &entitlement.Subscription{PlanSlug: entitlement.SlugCustom, Status: corebilling.SubStatusActive}
 	ent := entitlement.Resolve(now.AddDate(0, -3, 0), rec, sub, now, true)
 	if ent.Status != entitlement.StatusActive || ent.Slug != entitlement.SlugCustom {
 		t.Fatalf("resolved %s/%s, want ACTIVE/custom", ent.Status, ent.Slug)
 	}
-	// No override: the default allowance, not nothing. A deal no longer needs a quota.
-	if ent.IncludedEvents == nil || *ent.IncludedEvents != entitlement.CurrentPlan().FreeEvents {
-		t.Errorf("IncludedEvents = %v, want the current plan's allowance", ent.IncludedEvents)
+	base, _ := entitlement.PlanBySlug(entitlement.SlugUsage)
+	if ent.IncludedEvents == nil || *ent.IncludedEvents != base.FreeEvents ||
+		!slices.Equal(ent.TierUpTo, base.TierUpTo) || ent.TierPlanSlug != base.Slug {
+		t.Errorf("resolved %v / %v from %q, want the base plan's allowance and tiers",
+			ent.IncludedEvents, ent.TierUpTo, ent.TierPlanSlug)
 	}
 }
 
-// The catalog dropped a slug a paying org still holds: no allowance and no tiers,
-// which the meter reports rather than guess a split.
+// A deal pinned to a plan the catalog lost is an unknown plan like any other: no
+// allowance, retention or tiers, rather than a guess at the current plan's.
+func TestResolveADealOnAnUnknownBasePlanHasNoTiers(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	rec := entitlement.Record{
+		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_deal",
+		BasePlanSlug: "usage-2019-01", IncludedEventsOverride: 5_000_000,
+	}
+	sub := &entitlement.Subscription{PlanSlug: entitlement.SlugCustom, Status: corebilling.SubStatusActive}
+	ent := entitlement.Resolve(now.AddDate(0, -3, 0), rec, sub, now, true)
+	if ent.Status != entitlement.StatusActive || ent.Slug != entitlement.SlugCustom ||
+		ent.IncludedEvents != nil || ent.RetentionDays != nil || ent.TierUpTo != nil {
+		t.Fatalf("resolved %+v, want ACTIVE/custom with no allowance, retention or tiers", ent)
+	}
+}
+
+// The catalog dropped a slug a paying org still holds: no allowance, retention or
+// tiers, which the meter reports rather than guess a split. A comp's overrides do
+// not supply them either: an allowance with nothing to split it by is exactly the
+// guess.
 func TestResolveAnUnknownSubscriptionPlanHasNoTiers(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	sub := &entitlement.Subscription{PlanSlug: "usage-2019-01", Status: corebilling.SubStatusActive}
-	ent := entitlement.Resolve(now.AddDate(0, -3, 0), entitlement.Record{}, sub, now, true)
-	if ent.Status != entitlement.StatusActive || ent.Slug != "usage-2019-01" ||
-		ent.IncludedEvents != nil || ent.TierUpTo != nil {
-		t.Fatalf("resolved %+v, want ACTIVE on its own slug with no allowance and no tiers", ent)
+	for name, rec := range map[string]entitlement.Record{
+		"no row": {},
+		"a comp": {
+			Present: true, PlanSlug: entitlement.SlugFree,
+			IncludedEventsOverride: 1_000_000, RetentionDaysOverride: 730, DisplayNameOverride: "Beta",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ent := entitlement.Resolve(now.AddDate(0, -3, 0), rec, sub, now, true)
+			if ent.Status != entitlement.StatusActive || ent.Slug != "usage-2019-01" ||
+				ent.DisplayName != "usage-2019-01" || ent.IncludedEvents != nil ||
+				ent.RetentionDays != nil || ent.TierUpTo != nil {
+				t.Fatalf("resolved %+v, want ACTIVE on its own slug with no allowance, retention or tiers", ent)
+			}
+		})
 	}
 }

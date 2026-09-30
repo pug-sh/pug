@@ -177,8 +177,10 @@ func (s *Service) meterOrg(ctx context.Context, sub dbread.BillingSubscription, 
 		}
 	}
 
+	// The plan the period split by, not the one the org holds: a deal holds custom,
+	// which names no layout, and carryFrom and the dashboard look the layout up.
 	next := period{
-		Start: periodStart, Window: win, PlanSlug: ent.Slug, Allowance: allowance,
+		Start: periodStart, Window: win, PlanSlug: ent.TierPlanSlug, Allowance: allowance,
 		Own: own, Carry: carried, CustomerID: sub.ProviderCustomerID,
 		// Microseconds, what timestamptz stores: the ack matches on it exactly.
 		StatedAt: now.UTC().Truncate(time.Microsecond),

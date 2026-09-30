@@ -2,12 +2,15 @@ package subscription_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 // storedSubscriptions counts the rows the confirm path writes, so a refusal can
@@ -48,6 +51,36 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 	}
 	if ent.SubStatus != corebilling.SubStatusActive {
 		t.Errorf("sub status = %q, want active", ent.SubStatus)
+	}
+}
+
+// A deal is bought from the dashboard like any plan: its checkout confirms against
+// the product on the org's own row, and the org then holds the deal's terms over
+// the plan it is pinned to.
+func TestConfirmCheckoutAppliesADealsCheckout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f, provider := newPaidFixture(t)
+	if _, err := f.entitlements.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
+		PlanSlug: entitlement.SlugCustom, ProviderProductID: new("prod_deal"), IncludedEvents: new(int64(5_000_000)),
+	}); err != nil {
+		t.Fatalf("stage the deal: %v", err)
+	}
+	provider.checkout = subEvent(f.orgID, "sub00000000000000031", "prod_deal", corebilling.SubStatusActive)
+
+	confirmed, err := f.svc.ConfirmCheckout(t.Context(), f.orgID, "cs_1", time.Now())
+	if err != nil || !confirmed {
+		t.Fatalf("ConfirmCheckout = %v, %v; want the deal confirmed", confirmed, err)
+	}
+	ent, err := f.entitlements.GetEntitlement(t.Context(), f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.Slug != entitlement.SlugCustom || ent.IncludedEvents == nil || *ent.IncludedEvents != 5_000_000 ||
+		!slices.Equal(ent.TierUpTo, entitlement.CurrentPlan().TierUpTo) {
+		t.Errorf("resolved %s on %v over %v, want the deal's allowance over its pinned plan's tiers",
+			ent.Slug, ent.IncludedEvents, ent.TierUpTo)
 	}
 }
 
@@ -322,10 +355,7 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	other, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	other := dbwriteOrg(t, f.pg)
 	seedCheckoutRef(t, f, other)
 
 	event := subEvent(f.orgID, "sub00000000000000031", "prod_u", corebilling.SubStatusActive)
@@ -366,8 +396,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))`, f.orgID); err != nil {
+	if err := dbwrite.New(tx).LockBillingEntitlementOrg(ctx, f.orgID); err != nil {
 		t.Fatalf("take the entitlement lock: %v", err)
 	}
 	if _, err := tx.Exec(ctx, `delete from billing_entitlements where org_id = $1`, f.orgID); err != nil {
@@ -383,7 +412,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 		confirmed, confirmErr = f.svc.ConfirmCheckout(ctx, f.orgID, "cs_1", time.Now())
 	}()
 
-	waitForEntitlementLockWaiter(t, f, done)
+	testutil.WaitForAdvisoryLockWaiter(t, f.pg.PgRO, done)
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("commit the clear: %v", err)
 	}

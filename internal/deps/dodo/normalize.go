@@ -135,14 +135,16 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 }
 
 // An unmapped state comes back as the provider's own word, stored verbatim and
-// unparsed at read time — so it can only withhold a plan, never grant one.
+// unparsed at read time — so it can only withhold a plan, never grant one,
+// provided every word that spells a live pug state is mapped here.
 func statusFromDodo(status string) corebilling.SubStatus {
 	raw := strings.ToLower(strings.TrimSpace(status))
 	switch raw {
 	case "active":
 		return corebilling.SubStatusActive
-	// The card failed, the entitlement does not.
-	case "on_hold":
+	// The card failed, the entitlement does not: on_hold outside Dodo's grace
+	// period, past_due inside it.
+	case "on_hold", "past_due":
 		return corebilling.SubStatusPastDue
 	case "paused":
 		return corebilling.SubStatusPaused

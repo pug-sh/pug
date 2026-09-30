@@ -6,6 +6,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"
+	"github.com/rs/xid"
 )
 
 func TestValidateCatalog(t *testing.T) {
@@ -50,10 +51,11 @@ func TestNewServiceRefusesACatalogWithNothingOnSale(t *testing.T) {
 	}
 }
 
-// The reconcile pass walks deals with no live subscription: staged and not yet
-// bought, or lapsed while their contract runs. A free row is ordinary, and a row
-// naming a usage plan is not a deal. Inside the package for seedOrg.
-func TestTheWalkSelectsOnlyDeals(t *testing.T) {
+// The reconcile pass walks deals with no live subscription of their own: staged and
+// not yet bought, bought as the usage plan instead, or lapsed while their contract
+// runs. A free row is ordinary, and a deal whose own subscription is live is
+// billed. Inside the package for seedOrg.
+func TestTheWalkSelectsOnlyUnbilledDeals(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -61,34 +63,50 @@ func TestTheWalkSelectsOnlyDeals(t *testing.T) {
 	ctx := t.Context()
 
 	rows := map[string]struct {
-		slug    string
-		product any
+		deal   bool
+		liveOn string
+		walked bool
 	}{
-		"free":  {SlugFree, nil},
-		"deal":  {SlugCustom, "prod_deal"},
-		"usage": {SlugUsage, nil},
+		"free":                   {walked: false},
+		"a staged deal":          {deal: true, walked: true},
+		"a deal bought as usage": {deal: true, liveOn: SlugUsage, walked: true},
+		"a billed deal":          {deal: true, liveOn: SlugCustom, walked: false},
 	}
 	orgs := make(map[string]string, len(rows))
 	for name, row := range rows {
-		orgs[name] = seedOrg(t, pg)
-		if _, err := pg.PgW.Exec(ctx,
-			`insert into billing_entitlements (org_id, plan_slug, provider_product_id) values ($1, $2, $3)`,
-			orgs[name], row.slug, row.product); err != nil {
+		orgID := seedOrg(t, pg)
+		orgs[name] = orgID
+		insert := `insert into billing_entitlements (org_id, plan_slug) values ($1, 'free')`
+		if row.deal {
+			insert = `insert into billing_entitlements (org_id, plan_slug, provider_product_id, base_plan_slug)
+			          values ($1, 'custom', 'prod_deal', '` + SlugUsage + `')`
+		}
+		if _, err := pg.PgW.Exec(ctx, insert, orgID); err != nil {
 			t.Fatalf("seed %s entitlement: %v", name, err)
+		}
+		if row.liveOn != "" {
+			if _, err := pg.PgW.Exec(ctx,
+				`insert into billing_subscriptions (currency, current_period_end, id, org_id, plan_slug, price_cents,
+				   provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
+				 values ('USD', now() + interval '20 days', $1, $2, $3, 100, 'dodo', 'cus_1', 'active', $4,
+				         now() - interval '1 hour', 'active')`,
+				xid.New().String(), orgID, row.liveOn, "sub_"+orgID); err != nil {
+				t.Fatalf("seed %s subscription: %v", name, err)
+			}
 		}
 	}
 
-	walkedRows, err := dbread.New(pg.PgW).ListPaidEntitlementsWithoutLiveSubscription(ctx)
+	walkedRows, err := dbread.New(pg.PgW).ListCustomDealsWithoutLiveSubscription(ctx)
 	if err != nil {
-		t.Fatalf("ListPaidEntitlementsWithoutLiveSubscription: %v", err)
+		t.Fatalf("ListCustomDealsWithoutLiveSubscription: %v", err)
 	}
 	walked := make(map[string]bool, len(walkedRows))
 	for _, row := range walkedRows {
 		walked[row.OrgID] = true
 	}
-	for name := range rows {
-		if got, want := walked[orgs[name]], name == "deal"; got != want {
-			t.Errorf("%s: walked as a deal with no subscription = %v, want %v", name, got, want)
+	for name, row := range rows {
+		if got := walked[orgs[name]]; got != row.walked {
+			t.Errorf("%s: walked as an unbilled deal = %v, want %v", name, got, row.walked)
 		}
 	}
 }

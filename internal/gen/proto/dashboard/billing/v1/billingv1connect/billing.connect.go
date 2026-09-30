@@ -73,7 +73,8 @@ type BillingServiceClient interface {
 	// The plans this deployment sells, in display order, as quantities: the rates
 	// live on the provider's product. On the viewer floor: the person reading the
 	// allowance banner wants to see what is on sale, they just cannot buy it. Never
-	// returns a product id, and never free, which is a state rather than a plan.
+	// returns a product id, and never free; the org's own deal is listed beside the
+	// plans when its row names a product.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 
@@ -178,7 +179,8 @@ type BillingServiceHandler interface {
 	// The plans this deployment sells, in display order, as quantities: the rates
 	// live on the provider's product. On the viewer floor: the person reading the
 	// allowance banner wants to see what is on sale, they just cannot buy it. Never
-	// returns a product id, and never free, which is a state rather than a plan.
+	// returns a product id, and never free; the org's own deal is listed beside the
+	// plans when its row names a product.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 

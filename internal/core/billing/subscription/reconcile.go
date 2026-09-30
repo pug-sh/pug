@@ -39,9 +39,9 @@ type ReconcileReport struct {
 	// A subscription pug stores that the provider no longer knows. A finding for a
 	// person: nothing here tells a purged subscription from one never theirs.
 	Untracked int
-	// A custom deal with no live subscription behind it: staged and not yet bought,
-	// or lapsed while its contract runs. An org with NO entitlement row is invisible
-	// here — see UnmappedProduct.
+	// A custom deal with no live custom subscription behind it: staged and not yet
+	// bought, passed over for the usage plan, or lapsed while its contract runs. An
+	// org with NO entitlement row is invisible here — see UnmappedProduct.
 	EntitledUnbilled int
 	// A live subscription against a product nothing maps to: a deploy is missing a
 	// product key, or an operator created a product without pasting its id.
@@ -74,7 +74,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	var report ReconcileReport
 	if !s.payments.Configured() {
 		// Not an error: a deployment with no provider has nothing to reconcile
-		// against, which is the self-hosted shape.
+		// against, a self-hosted install among them.
 		slog.InfoContext(ctx, "no payments provider configured; nothing to reconcile")
 		return report, nil
 	}
@@ -110,7 +110,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 		}
 	}
 
-	unbilled, err := s.read.ListPaidEntitlementsWithoutLiveSubscription(ctx)
+	unbilled, err := s.read.ListCustomDealsWithoutLiveSubscription(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list entitlements with no subscription", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -119,7 +119,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	for _, row := range unbilled {
 		report.EntitledUnbilled++
 		// Warn, not error: a deal staged ahead of its checkout is ordinary.
-		slog.WarnContext(ctx, "org holds a custom deal with no live subscription",
+		slog.WarnContext(ctx, "org holds a custom deal with no live custom subscription",
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 
@@ -132,9 +132,16 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 			telemetry.RecordError(ctx, err)
 			return report, err
 		}
-		tiers := entitlement.CurrentPlan().Tiers()
 		for _, deal := range deals {
-			if err := s.payments.Usage.VerifyMetering(ctx, tiers, []string{deal.ProviderProductID}); err != nil {
+			// Against the deal's own plan: its product was made for that layout, which a
+			// reprice does not move.
+			var err error
+			if plan, ok := entitlement.PlanBySlug(deal.BasePlanSlug); ok {
+				err = s.payments.Usage.VerifyMetering(ctx, plan.Tiers(), []string{deal.ProviderProductID})
+			} else {
+				err = fmt.Errorf("the deal is pinned to %q, which the catalog does not know", deal.BasePlanSlug)
+			}
+			if err != nil {
 				report.MisconfiguredDeals++
 				slog.ErrorContext(ctx, "a live deal's product does not bill every tier", slogx.Error(err),
 					slog.String("org_id", deal.OrgID), slog.String("provider_product_id", deal.ProviderProductID))

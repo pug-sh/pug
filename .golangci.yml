@@ -42,6 +42,9 @@ linters:
             - "**/internal/core/insights/**"
             - "**/internal/app/workers/**"
             - "**/internal/deps/clickhouse/**"
+            # The SDK handlers are where an event enters, so the likeliest place a
+            # quota check would be added.
+            - "**/internal/app/server/rpc/sdk/**"
             - "!$test"
           deny:
             - pkg: github.com/pug-sh/pug/internal/core/billing

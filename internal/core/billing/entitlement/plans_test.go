@@ -63,11 +63,9 @@ func TestTiersFor(t *testing.T) {
 	if got, ok := entitlement.TiersFor(entitlement.SlugUsage); !ok || !slices.Equal(got, current) {
 		t.Errorf("TiersFor(usage) = %v, %v", got, ok)
 	}
-	// A deal is split over the current plan's tiers, at its own product's rates.
-	if got, ok := entitlement.TiersFor(entitlement.SlugCustom); !ok || !slices.Equal(got, current) {
-		t.Errorf("TiersFor(custom) = %v, %v", got, ok)
-	}
-	for _, slug := range []string{entitlement.SlugFree, "growth", ""} {
+	// A deal splits over its own base plan, which only its row names: its layout is
+	// TiersFor(that plan), never the current plan's by default.
+	for _, slug := range []string{entitlement.SlugCustom, entitlement.SlugFree, "growth", ""} {
 		if _, ok := entitlement.TiersFor(slug); ok {
 			t.Errorf("TiersFor(%q) reported a layout; nothing can split it", slug)
 		}

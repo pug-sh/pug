@@ -78,8 +78,8 @@ func TestHandleDeliveryRefusesWithoutAProvider(t *testing.T) {
 	}
 }
 
-// Listed but not purchasable, rather than an empty catalog: a price with no
-// button is the honest render for a self-hosted install.
+// Listed but not purchasable, rather than an empty catalog: a deployment with
+// billing on and no provider shows what is on sale with no button to buy it.
 func TestPlanOptionsAreListedButNotPurchasableWithNoProvider(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

@@ -24,9 +24,9 @@ var billingCmd = newBillingCmd()
 func newBillingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "billing",
-		Short: "Grant and inspect org billing entitlements",
-		Long: "Operator commands for the entitlement store — what an org is allowed to\n" +
-			"send. Postgres only: no payments provider is contacted, and no price is\n" +
+		Short: "Set and inspect org billing entitlements",
+		Long: "Operator commands for the entitlement store — an org's free allowance and any\n" +
+			"negotiated deal. Postgres only: no payments provider is contacted, and no price is\n" +
 			"ever written here. Every write is attributed to --actor and appended to\n" +
 			"the org's history in the same transaction.",
 	}
@@ -63,12 +63,15 @@ func newBillingSetCmd() *cobra.Command {
 		Use:   "set <org-id>",
 		Short: "Put an org on free or a deal, merging the flags given over whatever is stored",
 		Long: "Sets free (with any comped overrides) or custom (a deal: its provider product\n" +
-			"and negotiated terms). A usage plan is held only through a subscription, so\n" +
-			"it is never set here. Omitting an override flag leaves the stored value alone —\n" +
-			"the common re-set is a renewal on terms that have not changed — and\n" +
-			"passing its empty value (--events 0, --retention-days 0, --name \"\",\n" +
-			"--anchor-day 0, --until \"\") clears it back to the plan's.\n\n" +
-			"--until is INCLUSIVE of the date given: --until 2026-12-31 runs the plan\n" +
+			"and negotiated terms). A deal splits over the plan current when its product is\n" +
+			"set, pinned on its row; a renewal on the same product keeps the pin. A usage\n" +
+			"plan is held only through a subscription, so it is never set here. Omitting an\n" +
+			"override flag leaves the stored value alone — the common re-set is a renewal\n" +
+			"on terms that have not changed — and passing its empty value (--events 0,\n" +
+			"--retention-days 0, --name \"\", --anchor-day 0, --until \"\") clears it back\n" +
+			"to the plan's. A deal refuses --events 0: pass --events 1 to bill from the\n" +
+			"first event.\n\n" +
+			"--until is INCLUSIVE of the date given: --until 2026-12-31 runs the terms\n" +
 			"through all of 31 December, and `show` prints the stored instant, which is\n" +
 			"therefore the 1st.",
 		Args: cobra.ExactArgs(1),
@@ -81,13 +84,13 @@ func newBillingSetCmd() *cobra.Command {
 			err = cli.Set(ctx, cmd.OutOrStdout(), orgID, actor, change)
 			// The service owns which slugs exist; naming them is a help message.
 			if errors.Is(err, entitlement.ErrPlanNotFound) {
-				return fmt.Errorf("%w %q (want %s)", err, change.PlanSlug, strings.Join(grantableSlugs(), ", "))
+				return fmt.Errorf("%w %q (want %s)", err, change.PlanSlug, strings.Join(entitlement.AssignableSlugs(), ", "))
 			}
 			return err
 		}),
 	}
 	cmd.Flags().String("plan", "", "free, or custom for a negotiated deal")
-	cmd.Flags().Int64("events", 0, "negotiated monthly free allowance; 0 clears the override")
+	cmd.Flags().Int64("events", 0, "negotiated monthly free allowance; 0 clears the override, except on a deal")
 	cmd.Flags().Int64("retention-days", 0, "negotiated days of event history kept; 0 clears the override")
 	cmd.Flags().String("name", "", "display name shown to the org; empty clears the override")
 	cmd.Flags().Int("anchor-day", 0, "day of month the usage period turns over (1-31); 0 clears the override")
@@ -176,10 +179,6 @@ func flagIfSet[T any](cmd *cobra.Command, name string, get func(string) (T, erro
 	v, _ := get(name)
 	return &v
 }
-
-// What --plan accepts. A usage plan is held only through a subscription, so set
-// never grants one.
-func grantableSlugs() []string { return []string{entitlement.SlugFree, entitlement.SlugCustom} }
 
 // Logs move to stderr so a command's report is the only thing on stdout. args[0]
 // is the org id: every billing command declares ExactArgs(1).

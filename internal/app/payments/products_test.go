@@ -35,8 +35,9 @@ func TestProductIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("productIDs: %v", err)
 	}
-	// A retired plan keeps its mapping, or the webhook could not place its holders'
-	// renewals and cancellations; a plan with no key is simply not purchasable.
+	// A retired plan keeps its mapping, or the webhook would reject its holders'
+	// renewals; a cancellation lands either way, on the plan slug already stored. A
+	// plan on sale with no key is not purchasable.
 	if got["usage-old"] != "prod_old" || got["usage-new"] != "prod_new" || len(got) != 2 {
 		t.Errorf("productIDs = %v, want the retired and the new plan mapped", got)
 	}
