@@ -4,6 +4,7 @@
 select
   o.create_time as org_create_time,
   e.anchor_day,
+  e.base_plan_slug,
   e.contract_ends_at,
   e.display_name_override,
   e.included_events_override,
@@ -35,13 +36,13 @@ where provider = @provider
 order by id
 limit @row_limit offset @row_offset;
 
--- name: ListPaidEntitlementsWithoutLiveSubscription :many
--- A deal with no live subscription behind it: staged and not yet bought, or one
--- whose subscription lapsed while its contract still runs.
+-- name: ListCustomDealsWithoutLiveSubscription :many
+-- A deal with no live custom subscription behind it: staged and not yet bought,
+-- bought as a catalog plan instead, or lapsed while its contract still runs.
 select e.org_id, e.plan_slug
 from billing_entitlements e
 left join billing_subscriptions s
-  on s.org_id = e.org_id and s.status in ('active', 'past_due')
+  on s.org_id = e.org_id and s.status in ('active', 'past_due') and s.plan_slug = 'custom'
 where e.plan_slug = 'custom'
   and (e.contract_ends_at is null or e.contract_ends_at > now())
   and s.org_id is null

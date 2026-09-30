@@ -243,10 +243,10 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 		// A provider with credentials but no product ids: nothing is on sale, so
 		// the button must not render even though checkout is otherwise wired.
 		{"no products configured", func() *Server { return newProductlessServer(t, pg) }, true, false},
-		// A product only for a plan checkout will not sell: app/payments keeps a
-		// retired plan mapped for its holders' renewals, so once the one plan a
-		// deployment has a product for retires, the map is not empty and nothing is
-		// on sale. Free, never sold, stands in for the retired plan the catalog lacks.
+		// A product only for a slug checkout will not sell: free is never sold. A
+		// retired plan, whose product app/payments keeps mapped for its holders'
+		// renewals, is the same case; the catalog has none, so
+		// TestARetiredPlanIsNeverOffered covers it in the subscription package.
 		{"only a plan off sale has a product", func() *Server {
 			return newServerWith(t, pg, true, &corebilling.Payments{
 				ProductBySlug: map[string]string{entitlement.SlugFree: "prod_free"},
@@ -277,6 +277,26 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 			if !tc.want && err == nil {
 				t.Error("purchasable is false but checkout succeeded")
 			}
+
+			// The same agreement for an org whose row stages its own deal, which is
+			// purchasable exactly when one of its checkouts opens.
+			dealOrg := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+			if _, err := pg.PgW.Exec(t.Context(),
+				`insert into billing_entitlements (org_id, plan_slug, provider_product_id, base_plan_slug)
+				 values ($1, 'custom', 'prod_acme', $2)`, dealOrg, entitlement.SlugUsage); err != nil {
+				t.Fatalf("stage the deal: %v", err)
+			}
+			_, usageErr := checkout(t, srv, dealOrg, entitlement.SlugUsage)
+			_, dealErr := checkout(t, srv, dealOrg, entitlement.SlugCustom)
+			opens := usageErr == nil || dealErr == nil
+			if got := getStatus(t, srv, dealOrg).GetPurchasable(); got != opens {
+				t.Errorf("with its own deal: purchasable = %v, but a checkout opens = %v (%v, %v)",
+					got, opens, usageErr, dealErr)
+			}
+			// A deal's product is the org's own, so only the money switches gate it.
+			if wantDeal := tc.enabled && tc.name != "no provider"; (dealErr == nil) != wantDeal {
+				t.Errorf("the deal's checkout opened = %v, want %v: %v", dealErr == nil, wantDeal, dealErr)
+			}
 		})
 	}
 }
@@ -292,8 +312,8 @@ func TestPurchasableCountsTheOrgsOwnDeal(t *testing.T) {
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 	srv := newProductlessServer(t, pg)
 	if _, err := pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (org_id, plan_slug, provider_product_id)
-		 values ($1, 'custom', 'prod_acme')`, orgID); err != nil {
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, base_plan_slug)
+		 values ($1, 'custom', 'prod_acme', $2)`, orgID, entitlement.SlugUsage); err != nil {
 		t.Fatalf("seed entitlement: %v", err)
 	}
 
@@ -624,8 +644,8 @@ func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 	quota := int64(5_000_000)
 	productID := "prod_acme"
 	if _, err := pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (included_events_override, org_id, plan_slug, provider_product_id)
-		 values ($1, $2, 'custom', $3)`, quota, orgID, productID); err != nil {
+		`insert into billing_entitlements (included_events_override, org_id, plan_slug, provider_product_id, base_plan_slug)
+		 values ($1, $2, 'custom', $3, $4)`, quota, orgID, productID, entitlement.SlugUsage); err != nil {
 		t.Fatalf("seed entitlement: %v", err)
 	}
 

@@ -1,10 +1,11 @@
 # Payments
 
-Design reference for the second billing slice: taking money. Entitlement — what
-an org is *allowed* to send — is [`billing.md`](billing.md) and is already
-implemented; counting is [`usage.md`](usage.md). This document covers the
-provider, checkout, the webhook inbox, and the one question that decides the
-shape of everything else: who owns the price.
+Design reference for the second billing slice: taking money. Entitlement — how
+much of what an org sends is free, and how the rest splits — is
+[`billing.md`](billing.md) and is already implemented; counting is
+[`usage.md`](usage.md). This document covers the provider, checkout, the webhook
+inbox, and the one question that decides the shape of everything else: who owns
+the price.
 
 **Dodo Payments is the provider, and it sits behind an interface (§2.1).** The
 provider is a choice pug should be able to change without touching resolution,
@@ -43,12 +44,13 @@ second provider implementation** (§2.1); reporting usage to the product's
 meters (the next slice); per-seat pricing; multi-currency (§3); an in-dashboard plan switcher (Dodo's
 customer portal does that); revenue reporting.
 
-**Unchanged:** the quota window, the plan catalog's quotas, and every existing
-test. `Resolve` gains one argument — a nullable subscription (§7) — and every
-branch it already has survives beneath it. `billing_entitlements` gains exactly
-one nullable column (§6) and `pug billing set` one flag. This slice is
-additive. If it were reverted, orgs would keep resolving exactly as they do
-today.
+**Unchanged when it shipped:** the quota window, the plan catalog's quotas, and
+every existing test. `Resolve` gained one argument — a nullable subscription
+(§7) — and every branch it already had survived beneath it. `billing_entitlements`
+gained exactly one nullable column (§6) and `pug billing set` one flag. That
+slice was additive; usage billing is not. A plan now comes only from
+`billing_subscriptions`, so reverting payments would drop every subscriber to
+free.
 
 ## 2. Structural invariants
 
@@ -65,8 +67,8 @@ today.
    reads which table each write query mutates from its SQL and fails a call to
    one from outside the owning package.
    The two sides still meet on one org: a custom subscription maps through the
-   entitlement row's product and takes its negotiated terms from that row, so
-   `applySubscription` maps and writes inside the
+   entitlement row's product and takes its base plan and negotiated terms from
+   that row, so `applySubscription` maps and writes inside the
    entitlement service's `WithOrgLock`, which takes the same
    `pg_advisory_xact_lock` a `billing clear` does and hands it that row as read
    under the lock. Otherwise a clear can commit between the mapping and the
@@ -76,8 +78,8 @@ today.
 3. **Every paid org has a provider subscription**, negotiated deals included —
    by construction: there is no manual-payment path, and an entitlement row never
    grants a plan on its own ([`billing.md`](billing.md) §6). A `custom` row with
-   no live subscription is a deal staged and not bought, or one that lapsed, and
-   reconcile reports it (§9).
+   no live custom subscription is a deal staged and not bought, passed over for
+   the usage plan, or lapsed, and reconcile reports it (§9).
 4. **The webhook fails closed.** No secret configured ⇒ the route is not
    mounted and the provider gets 404s. Never verify-nothing.
 5. **Enforcement stays out.** Nothing here blocks ingestion. A `PAST_DUE` org
@@ -169,8 +171,9 @@ through: the apply the webhook, reconcile and `ConfirmCheckout` share refuses a
 currency that is not `USD`. The webhook and `ConfirmCheckout` also check before
 it, so a foreign-currency delivery is **rejected at the webhook** — stored in the
 inbox, marked processed, logged as an error, and not applied — and a buyer back
-from checkout is told why rather than handed an internal error. A currency pug
-cannot render honestly must not silently become a number on a dashboard.
+from checkout is told why rather than handed an internal error. The write stores
+`USD` rather than the payload's code, so a foreign currency let through would be
+stored as a USD figure it never was.
 
 The payoff for writing the guard down instead of leaving it implicit: while it
 holds, `price_cents` is an accurate field name. When multi-currency arrives, what
@@ -197,7 +200,7 @@ comes back every time somebody wants a price on a page.
 | Question | Answer | Source |
 |---|---|---|
 | How much of what it sends is free? | `included_events` | pug — the catalog's allowance, or the org's override |
-| How is the rest split into tiers? | `TierUpTo` | pug — the catalog; a deal splits over the current plan's |
+| How is the rest split into tiers? | `TierUpTo` | pug — the catalog; a deal splits over its pinned base plan's |
 | How long is its history kept? | `retention_days` | pug — catalog, or the org's override |
 | What does each tier cost, and the fee? | the rates | Dodo — the product's meters and fixed price (§4.1) |
 | What does this org pay? | the amount | Dodo — the subscription, mirrored read-only |
@@ -254,16 +257,20 @@ allowance, the retention and the name — and they do.
 
 The split for `custom`:
 
-- **In Dodo:** a usage product like the plan's (§4.1) — every tier meter
-  attached at the deal's rates, and the deal's monthly fee as its fixed price,
-  never under $1.00 — and the subscription the customer holds against it.
-  Created **by hand in Dodo's dashboard**, not by pug (§5.1).
+- **In Dodo:** a usage product like the plan's (§4.1) — one meter per tier of
+  the plan it is made against, at the deal's rates, and the deal's monthly fee as
+  its fixed price, never under $1.00 — and the subscription the customer holds
+  against it. Created **by hand in Dodo's dashboard**, not by pug (§5.1).
 - **In pug:** `plan_slug = 'custom'` with that product's id
-  (`provider_product_id`, §5.2) — `custom_needs_product` makes the two
-  inseparable — plus whatever the deal negotiated on top:
-  `included_events_override` for its free allowance (the current plan's without
-  one; `--events 1` for a deal that charges from the first event),
+  (`provider_product_id`, §5.2) and the plan it splits over (`base_plan_slug`,
+  which `pug billing set` pins to the current plan when the product is set) —
+  `custom_needs_product` and `custom_needs_base_plan` make the three inseparable
+  — plus whatever the deal negotiated on top: `included_events_override` for its
+  free allowance (the base plan's without one; `--events 1` for a deal that
+  charges from the first event, since `--events 0` is refused),
   `retention_days_override`, a display name, `contract_ends_at` and `--note`.
+  The pin is what keeps a reprice from moving a deal: its product still carries
+  its base plan's meters ([`billing.md`](billing.md) §4.2).
 - **The join:** the subscription row the webhook writes, attributed by the
   `checkout_ref` pug mints for the checkout session it opens — or, for a payment
   link, by `metadata.org_id` paired with the `provider_product_id` staged above.
@@ -363,7 +370,8 @@ billing_entitlements
 NULL is every org that is not a negotiated deal — the catalog plans get their
 product ids from config (section 13), not from the row: one key per catalog plan,
 retired plans included, mapping its slug to a provider product id. Since usage
-billing it is also set exactly when the row is `custom` (`custom_needs_product`,
+billing it is also set exactly when the row is `custom` (`custom_needs_product`),
+beside the base plan its meters were made for (`base_plan_slug`,
 [`billing.md`](billing.md) §5).
 
 The id belongs to whichever provider is configured, and a provider swap
@@ -461,12 +469,15 @@ would put the operator's type in the provider's write path.
 
 The order, most specific first:
 
-1. A **live subscription** supplies the plan — a usage slug, or `custom`.
+1. A **live subscription** supplies the plan — a usage slug, or `custom` over
+   the base plan its row pins.
 2. Otherwise the org is **free**, on the current plan's allowance. An
    entitlement row never supplies a plan on its own: without a subscription
    nothing bills, so a comp is a bigger allowance on free rather than a plan.
 3. Overrides from the entitlement row apply on top of either, which is what
-   gives a `custom` subscription its negotiated allowance, retention and name.
+   gives a `custom` subscription its negotiated allowance, retention and name. A
+   deal's apply only under its own live custom subscription, so a staged deal is
+   plain free until it is bought.
 
 The whole rule, with billing switched off and the contract gate, is
 [`billing.md`](billing.md) §6.
@@ -625,11 +636,13 @@ API for each. Then the consistency reports, which are the point of invariant 3:
   re-read, or a row left behind by an environment switch. A finding, deliberately
   not a read failure: counting it as one would hold the CronJob red on every
   later run over a row that is never coming back.
-- A `custom` row with no live subscription behind it — a deal staged and not
-  yet bought, or one that lapsed while its row stayed. An org with **no**
-  entitlement row is invisible here, since the query reads
-  `billing_entitlements`; the §5.2 case of a deal paid before its product was
-  pasted surfaces as the unmappable-product finding below instead.
+- A `custom` row with no live custom subscription behind it
+  (`ListCustomDealsWithoutLiveSubscription`) — a deal staged and not yet bought,
+  one whose org bought the usage plan instead, or one whose subscription lapsed
+  while its contract still runs. An org with **no** entitlement row is invisible
+  here, since the query reads `billing_entitlements`; the §5.2 case of a deal
+  paid before its product was pasted surfaces as the unmappable-product finding
+  below instead.
 - A live subscription against a product no config key and no org row maps to
   (§8), which is a delivery that could not be applied.
 - Two live subscriptions for one org, refused by the partial unique index. The
@@ -692,11 +705,13 @@ the allowance banner stays on the viewer floor but starting a checkout does not:
 `purchasable` bool — what the FE renders the buy button from, without ever
 seeing a product id. It is true only when the checkout would actually open:
 billing enabled, a Dodo API key configured, and a product to check out against
-(a configured catalog plan, or `custom` once the org has a
+(a configured plan on sale, or `custom` once the org has a
 `provider_product_id`). It gates the buy button as a whole; whether a particular
-plan can be bought is `PlanOption.purchasable`, which does share a helper with
-`CreateCheckoutSession`'s refusal — a button that cannot work is worse than no
-button. Tested both
+plan can be bought is `PlanOption.purchasable`. Both are read off one list,
+`offers`, which is also the only thing `CreateCheckoutSession` opens a checkout
+from, so a button and the call behind it cannot disagree — a button that cannot
+work is worse than no button. A retired plan is kept off sale there
+(`TestARetiredPlanIsNeverOffered`). Tested both
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
 portal; no `ChangePlan` RPC in this slice.
 
@@ -796,7 +811,8 @@ so a cutover must keep the outgoing provider configured until its last
 cancellation has arrived.
 
 Billing enabled with no provider credentials is a supported mode, not a broken
-one: allowances and comps work, and only the buy button is missing. That is the self-hosted configuration.
+one: allowances and comps work, and only the buy button is missing. It is not the
+self-hosted shape, which is billing off and no allowance at all.
 
 ## 14. Testing
 
@@ -858,10 +874,10 @@ this slice plus the next two. Where this design differs, it is on purpose:
   product is created in Dodo's dashboard and its id pasted into `pug billing set`,
   which gets the customer a buy button without pug touching the product API.
 - **The plan catalog stays in Go.** The archive moved plans to rows because a
-  purchasable tier binds to a per-environment product id. This design maps
+  purchasable plan binds to a per-environment product id. This design maps
   product id → slug in config instead: a handful of plans, two environments, a
   handful of strings, which does not justify migrating the catalog out of code. Revisit
-  when tiers are edited by someone who cannot deploy.
+  when plans are edited by someone who cannot deploy.
 - **Custom deals are pug overrides, not `PRIVATE` plan rows.** The archive modelled
   a deal as a private plan; entitlement overrides already do this, and they
   shipped.
@@ -900,24 +916,26 @@ Same rule as `purchasable`: read from the one helper the RPC refuses on. Writing
 it as `ProviderCustomerID != ""` on the resolved entitlement reproduced exactly
 the drift this is meant to prevent, and a test caught it.
 
-**A lapsed contract no longer gates the overrides when a subscription is live
-(§7).** `applyOverrides` was contract-gated, which collapsed a live custom deal
-to no quota — and then to the free tier — on the day its agreed term passed,
-while Dodo went on charging. The contract bounds a grant an operator made; it
-cannot expire a subscription the provider still says is live.
+**A lapsed contract no longer gates the overrides when a custom subscription is
+live (§7).** `applyOverrides` was contract-gated, which collapsed a live custom
+deal to no quota — and then to free — on the day its agreed term passed, while
+Dodo went on charging. The contract bounds a grant an operator made; it cannot
+expire a subscription the provider still says is live. Only a custom one is
+exempt: a lapsed comp's numbers must not ride onto a usage plan.
 
 **`ListPlans` was added (§12).** The design adds two RPCs and says the dashboard
 renders its buy button from `purchasable` — but `CreateCheckoutSession` takes a
-plan *slug*, so something has to name the tiers, and the catalog is Go rather
+plan *slug*, so something has to name the plans, and the catalog is Go rather
 than rows precisely so it is not queryable. The alternative was a hardcoded
 catalog in the frontend, which would put a second authority on what a plan costs
 — the mistake §4 exists to prevent, one layer up. It sits on the viewer floor
-beside `GetBillingStatus`: a price is a marketing number, and the person reading
-the quota banner is the one who wants to know what the next tier costs. It never
-returns a product id, never the floors, and offers `custom` only to the org whose
-row records its product. Since usage billing it lists quantities only — the plan's
-free allowance and retention — and never `free`, which is a state rather than a
-plan.
+beside `GetBillingStatus`: the person reading the allowance banner is the one who
+wants to see what is on sale. It never returns a product id, and offers `custom`
+only to the org whose row records its product. Since usage billing it lists
+quantities only — the plan's free allowance and retention — and never `free`,
+which is a state rather than a plan. A deal's option leaves both absent: once
+bought, its terms are the org's entitlement, its base plan's unless its row
+overrides them.
 
 **`ConfirmCheckout` was added, and the redirect stopped being a spinner (§12.1).**
 The design has the dashboard poll after checkout, and the implementation did —

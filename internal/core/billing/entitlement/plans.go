@@ -27,7 +27,8 @@ type Plan struct {
 }
 
 // Tiers is how many tiers the plan splits into, and so how many meters its
-// provider product must attach.
+// provider product must attach — by hand: nothing checks the product against it
+// (payments.md §4).
 func (p Plan) Tiers() int { return len(p.TierUpTo) + 1 }
 
 // OnSale reports whether checkout may offer the plan: every plan until it retires.
@@ -38,7 +39,8 @@ const (
 	// banner beyond it, and never a bill. A state, not a catalog entry.
 	SlugFree = "free"
 	// SlugCustom is a negotiated deal: its own provider product at its own rates,
-	// split over the current plan's tiers. A state, not a catalog entry.
+	// split over the tiers of the plan pinned on its row (Record.BasePlanSlug). A
+	// state, not a catalog entry.
 	SlugCustom = "custom"
 	// SlugUsage is the plan on sale. Repricing mints a new slug and retires this one,
 	// which keeps resolving for the orgs already on it.
@@ -71,8 +73,9 @@ const (
 
 // catalog is every usage plan pug has ever sold, newest last. Once any org holds a
 // plan its FreeEvents, TierUpTo and RetentionDays are fixed: the tiers must match the
-// meters on its provider product, and an edit would re-split every existing
-// subscription silently. Repricing mints a new slug and retires the old.
+// meters on its provider product (and on every deal pinned to it), and an edit
+// would re-split every existing subscription silently. Repricing mints a new slug
+// and retires the old.
 var catalog = []Plan{
 	{
 		Slug:        SlugUsage,
@@ -108,8 +111,8 @@ func PlanBySlug(slug string) (Plan, bool) {
 }
 
 // CurrentPlan is the newest plan on sale: what an org with no subscription is
-// measured against, and whose tiers a custom deal is split over. NewService checks
-// one exists, so this cannot panic after wiring.
+// measured against, and what a deal is pinned to when its product is set.
+// NewService checks one exists, so this cannot panic after wiring.
 func CurrentPlan() Plan {
 	for _, p := range slices.Backward(catalog) {
 		if p.OnSale() {
@@ -119,13 +122,11 @@ func CurrentPlan() Plan {
 	panic("billing: the catalog has no plan on sale")
 }
 
-// TiersFor is the tier layout a subscription on slug is split by: its catalog plan's,
-// or the current plan's for a custom deal. False for anything else, which nothing can
-// split.
+// TiersFor is the tier layout a subscription on the catalog plan slug is split by.
+// A deal splits over its own base plan, which only its row names, so its layout is
+// TiersFor(Record.BasePlanSlug). False for anything else, free and custom included:
+// nothing can split those by slug alone.
 func TiersFor(slug string) ([]int64, bool) {
-	if slug == SlugCustom {
-		return CurrentPlan().TierUpTo, true
-	}
 	p, ok := PlanBySlug(slug)
 	if !ok {
 		return nil, false
@@ -140,8 +141,8 @@ func copyPlan(p Plan) Plan {
 	return p
 }
 
-// validateCatalog checks what Resolve and the meter rely on, at wiring time rather
-// than on a request: a plan on sale, no plan named like a state, and every plan's
+// validateCatalog checks what Resolve relies on, and the usage meter will, at wiring
+// time rather than on a request: a plan on sale, no plan named like a state, and every plan's
 // bounds strictly rising above its allowance.
 func validateCatalog(plans []Plan) error {
 	seen := map[string]bool{}

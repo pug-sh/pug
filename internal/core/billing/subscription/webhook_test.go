@@ -176,7 +176,7 @@ func TestPastDueHoldsTheOneLiveSlot(t *testing.T) {
 	}
 }
 
-// A live custom subscription resolves its quota from the entitlement row, so
+// A live custom subscription resolves its terms from the entitlement row, so
 // deleting it drops an org still being charged — and reconcile looks for the inverse.
 func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 	if testing.Short() {
@@ -530,7 +530,7 @@ func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
 }
 
 // A negotiated deal's product is not in config; it is on the org's own row, and
-// the quota comes from the same row.
+// its terms come from the same row.
 func TestCustomProductResolvesFromTheOrgRow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -827,9 +827,9 @@ func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
 	}
 	f, provider := newPaidFixture(t)
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override)
-		 values ($1, 'custom', $2, 5000000)`,
-		f.orgID, "prod_deal"); err != nil {
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override, base_plan_slug)
+		 values ($1, 'custom', $2, 5000000, $3)`,
+		f.orgID, "prod_deal", entitlement.SlugUsage); err != nil {
 		t.Fatalf("stage the deal: %v", err)
 	}
 
@@ -860,9 +860,9 @@ func TestAnUnstagedProductDoesNotAttributeAPaymentLink(t *testing.T) {
 	}
 	f, provider := newPaidFixture(t)
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override)
-		 values ($1, 'custom', $2, 5000000)`,
-		f.orgID, "prod_deal"); err != nil {
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override, base_plan_slug)
+		 values ($1, 'custom', $2, 5000000, $3)`,
+		f.orgID, "prod_deal", entitlement.SlugUsage); err != nil {
 		t.Fatalf("stage the deal: %v", err)
 	}
 

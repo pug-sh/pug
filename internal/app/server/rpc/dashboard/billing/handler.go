@@ -98,8 +98,8 @@ func internalErr() error {
 }
 
 // int64Value keeps an absent number absent on the wire: protoc-gen-es renders an
-// edition-2023 singular scalar as a non-optional bigint, so "no quota" would land
-// in the dashboard as a quota of zero.
+// edition-2023 singular scalar as a non-optional bigint, so "no allowance" would
+// land in the dashboard as an allowance of zero.
 func int64Value(v *int64) *wrapperspb.Int64Value {
 	if v == nil {
 		return nil
@@ -229,8 +229,9 @@ func (s *Server) CreatePortalSession(
 	}), nil
 }
 
-// ListPlans returns the tiers this deployment sells. Never a product id: the
-// dashboard renders a buy button from `purchasable` alone.
+// ListPlans returns what this deployment sells the org: the plans on sale, and its
+// own deal. Never a product id: the dashboard renders a buy button from
+// `purchasable` alone.
 func (s *Server) ListPlans(
 	ctx context.Context,
 	req *connect.Request[billingv1.ListPlansRequest],

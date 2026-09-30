@@ -39,9 +39,9 @@ type ReconcileReport struct {
 	// A subscription pug stores that the provider no longer knows. A finding for a
 	// person: nothing here tells a purged subscription from one never theirs.
 	Untracked int
-	// A custom deal with no live subscription behind it: staged and not yet bought,
-	// or lapsed while its contract runs. An org with NO entitlement row is invisible
-	// here — see UnmappedProduct.
+	// A custom deal with no live custom subscription behind it: staged and not yet
+	// bought, passed over for the usage plan, or lapsed while its contract runs. An
+	// org with NO entitlement row is invisible here — see UnmappedProduct.
 	EntitledUnbilled int
 	// A live subscription against a product nothing maps to: a deploy is missing a
 	// product key, or an operator created a product without pasting its id.
@@ -70,7 +70,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	var report ReconcileReport
 	if !s.payments.Configured() {
 		// Not an error: a deployment with no provider has nothing to reconcile
-		// against, which is the self-hosted shape.
+		// against, a self-hosted install among them.
 		slog.InfoContext(ctx, "no payments provider configured; nothing to reconcile")
 		return report, nil
 	}
@@ -106,7 +106,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 		}
 	}
 
-	unbilled, err := s.read.ListPaidEntitlementsWithoutLiveSubscription(ctx)
+	unbilled, err := s.read.ListCustomDealsWithoutLiveSubscription(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list entitlements with no subscription", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -115,7 +115,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	for _, row := range unbilled {
 		report.EntitledUnbilled++
 		// Warn, not error: a deal staged ahead of its checkout is ordinary.
-		slog.WarnContext(ctx, "org holds a custom deal with no live subscription",
+		slog.WarnContext(ctx, "org holds a custom deal with no live custom subscription",
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 

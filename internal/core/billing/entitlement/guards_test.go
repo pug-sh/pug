@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -410,8 +411,8 @@ func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
 		t.Fatalf("lock: %v", err)
 	}
 	if _, err := grant.Exec(ctx,
-		`insert into billing_entitlements (org_id, plan_slug, included_events_override, provider_product_id)
-		 values ($1, 'custom', 5000000, 'prod_acme')`, f.orgID); err != nil {
+		`insert into billing_entitlements (org_id, plan_slug, included_events_override, provider_product_id, base_plan_slug)
+		 values ($1, 'custom', 5000000, 'prod_acme', $2)`, f.orgID, entitlement.SlugUsage); err != nil {
 		t.Fatalf("stage the grant: %v", err)
 	}
 
@@ -599,10 +600,10 @@ func TestNegativeOverridesAreRefused(t *testing.T) {
 	}
 }
 
-// Rows outlive a slug dropped from the Go catalog, so failing the read would take
-// the dashboard down for whoever holds it. The row's slug decides nothing now: the
-// org is free on the current allowance.
-func TestAnEntitlementNamingAnUnknownPlanStillReads(t *testing.T) {
+// The row holds a state, never a plan: a usage plan is held only through a
+// subscription, and a removed tier has nowhere to live. The database refuses both,
+// below the service.
+func TestAnEntitlementHoldsOnlyAState(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -611,18 +612,12 @@ func TestAnEntitlementNamingAnUnknownPlanStillReads(t *testing.T) {
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	// Straight to the column: no writer would store this.
-	if _, err := f.pg.PgW.Exec(t.Context(),
-		`update billing_entitlements set plan_slug = 'growth-v9' where org_id = $1`, f.orgID); err != nil {
-		t.Fatalf("rewrite the slug: %v", err)
-	}
-
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
-	if err != nil {
-		t.Fatalf("GetEntitlement on a slug the catalog dropped: %v", err)
-	}
-	if ent.Status != entitlement.StatusFree || ent.IncludedEvents == nil ||
-		*ent.IncludedEvents != entitlement.CurrentPlan().FreeEvents {
-		t.Errorf("resolved %s with %v, want FREE on the current allowance", ent.Status, ent.IncludedEvents)
+	for _, slug := range []string{entitlement.SlugUsage, "growth"} {
+		_, err := f.pg.PgW.Exec(t.Context(),
+			`update billing_entitlements set plan_slug = $2 where org_id = $1`, f.orgID, slug)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.ConstraintName != "billing_entitlements_plan_slug_state_check" {
+			t.Errorf("storing %q: err = %v, want the plan_slug_state_check constraint", slug, err)
+		}
 	}
 }

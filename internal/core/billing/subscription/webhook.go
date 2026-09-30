@@ -320,7 +320,7 @@ func (s *Service) applySubscription(
 		planSlug, err := s.planForProduct(event.ProductID, rec)
 		if err != nil {
 			// A product only has to resolve to GRANT a plan. Refusing a cancellation whose
-			// product left the config would strand the org on a tier it stopped paying for.
+			// product left the config would strand the org on a plan it stopped paying for.
 			if event.Status.Live() || !errors.Is(err, ErrNotPurchasable) {
 				return err
 			}
