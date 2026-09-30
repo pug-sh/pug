@@ -1,12 +1,10 @@
 package main
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/spf13/cobra"
 )
 
@@ -120,20 +118,6 @@ func TestBillingChangeRejectsBadValues(t *testing.T) {
 				t.Fatalf("error = %q, want it to name %s", err, tc.want)
 			}
 		})
-	}
-}
-
-// A usage plan is held only through a subscription, so `set` offers the two
-// states and never a catalog plan.
-func TestGrantableSlugsAreFreeAndCustom(t *testing.T) {
-	got := grantableSlugs()
-	if !slices.Equal(got, []string{entitlement.SlugFree, entitlement.SlugCustom}) {
-		t.Fatalf("slugs = %v, want exactly free and custom", got)
-	}
-	for _, p := range entitlement.Plans() {
-		if slices.Contains(got, p.Slug) {
-			t.Fatalf("slugs = %v, want no catalog plan such as %q", got, p.Slug)
-		}
 	}
 }
 

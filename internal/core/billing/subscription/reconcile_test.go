@@ -98,10 +98,7 @@ func TestReconcileReportsADealWithNoSubscription(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	freeOrg, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	freeOrg := dbwriteOrg(t, f.pg)
 	if _, err := f.entitlements.SetPlan(t.Context(), freeOrg, actor, entitlement.Change{PlanSlug: entitlement.SlugFree}); err != nil {
 		t.Fatalf("SetPlan free: %v", err)
 	}
@@ -541,8 +538,8 @@ func TestReconcileFlagsADealThatDoesNotBillEveryTier(t *testing.T) {
 	}
 	f := newFixture(t)
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (org_id, plan_slug, provider_product_id) values ($1, 'custom', 'prod_bad')`,
-		f.orgID); err != nil {
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, base_plan_slug) values ($1, 'custom', 'prod_bad', $2)`,
+		f.orgID, entitlement.SlugUsage); err != nil {
 		t.Fatalf("seed deal: %v", err)
 	}
 	if _, err := f.pg.PgW.Exec(t.Context(),
@@ -560,6 +557,21 @@ func TestReconcileFlagsADealThatDoesNotBillEveryTier(t *testing.T) {
 	}
 	if report.MisconfiguredDeals != 1 {
 		t.Fatalf("MisconfiguredDeals = %d, want 1", report.MisconfiguredDeals)
+	}
+
+	// Pinned to a plan the catalog does not know, a deal has no tier count to check
+	// its product against, however that product is built: the meter cannot split it.
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_entitlements set base_plan_slug = 'usage-2019-01' where org_id = $1`, f.orgID); err != nil {
+		t.Fatalf("repin the deal: %v", err)
+	}
+	unknown := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, meteringCheck{bad: "prod_other"})
+	if report, err = unknown.Reconcile(t.Context(), time.Now()); err != nil || report.MisconfiguredDeals != 1 {
+		t.Fatalf("report = %+v, err = %v; want the deal on an unknown plan flagged", report, err)
+	}
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_entitlements set base_plan_slug = $2 where org_id = $1`, f.orgID, entitlement.SlugUsage); err != nil {
+		t.Fatalf("repin the deal: %v", err)
 	}
 
 	// The same deal on a product that bills every tier is no finding.

@@ -335,11 +335,53 @@ func TestOneOrgFailingDoesNotStopTheOthers(t *testing.T) {
 }
 
 // A deal allowing fewer events than the default still bills from its own allowance.
+// A deal splits over the plan pinned on its row, so its ledger records that plan:
+// carryFrom and the dashboard's tier bounds both look the layout up from it, and
+// "custom" names no layout.
+func TestCarriesADealsShortfallOverItsPinnedPlan(t *testing.T) {
+	f := setup(t)
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, base_plan_slug)
+		 values ($1, 'custom', 'prod_deal', $2)`, f.org, entitlement.SlugUsage); err != nil {
+		t.Fatalf("seed deal: %v", err)
+	}
+	plan, _ := entitlement.PlanBySlug(entitlement.SlugUsage)
+	oct, nov, dec := d(10, 3), d(11, 3), d(12, 3)
+	f.subscribe(t, entitlement.SlugCustom, "cus_1", oct, nov)
+	f.usage(t, d(10, 20), 3_000_000)
+	if _, err := f.svc.Run(t.Context(), d(10, 21)); err != nil {
+		t.Fatalf("October Run: %v", err)
+	}
+	f.usage(t, d(11, 2), 500_000)
+	f.subscribe(t, entitlement.SlugCustom, "cus_1", nov, dec)
+	f.usage(t, d(11, 10), 200_000)
+	if _, err := f.svc.Run(t.Context(), d(11, 10).Add(time.Hour)); err != nil {
+		t.Fatalf("November Run: %v", err)
+	}
+
+	var split string
+	if err := f.pg.PgW.QueryRow(t.Context(),
+		`select plan_slug from billing_meter_periods where org_id = $1 and period_start = $2`, f.org, oct).Scan(&split); err != nil {
+		t.Fatalf("read ledger: %v", err)
+	}
+	if split != plan.Slug {
+		t.Errorf("October's period records %q, want the plan it split by, %q", split, plan.Slug)
+	}
+	final := meter.Split(3_500_000, plan.FreeEvents, plan.TierUpTo)
+	stated := meter.Split(3_000_000, plan.FreeEvents, plan.TierUpTo)
+	_, carry, _ := f.ledger(t, nov)
+	for k := range carry {
+		if carry[k] != final[k]-stated[k] {
+			t.Fatalf("carry = %v, want October's shortfall %v - %v", carry, final, stated)
+		}
+	}
+}
+
 func TestADealsAllowanceMovesTierOne(t *testing.T) {
 	f := setup(t)
 	if _, err := f.pg.PgW.Exec(t.Context(),
-		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override)
-		 values ($1, 'custom', 'prod_deal', 1)`, f.org); err != nil {
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id, included_events_override, base_plan_slug)
+		 values ($1, 'custom', 'prod_deal', 1, $2)`, f.org, entitlement.SlugUsage); err != nil {
 		t.Fatalf("seed deal: %v", err)
 	}
 	f.subscribe(t, entitlement.SlugCustom, "cus_1", d(10, 3), d(11, 3))

@@ -24,8 +24,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// BillingStatus is derived from the clock on every read, never stored. The
-// states a provider reports live on SubscriptionStatus instead.
+// BillingStatus is derived on every read from the billing switch and the live
+// subscription, never stored. The states a provider reports live on
+// SubscriptionStatus instead.
 type BillingStatus int32
 
 const (
@@ -364,17 +365,18 @@ type GetBillingStatusResponse struct {
 	Status         *BillingStatus `protobuf:"varint,3,opt,name=status,enum=dashboard.billing.v1.BillingStatus" json:"status,omitempty"`
 	// The free allowance: events below it are never billed, and past it an org with
 	// no subscription sees a banner. ABSENT means NONE -- billing is off, or a
-	// subscription names a plan pug no longer knows. Never render its absence as 0.
+	// subscription resolves to a plan pug no longer knows. Never render its absence
+	// as 0.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,4,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
 	// When a deal's negotiated terms lapse; absent means open-ended. The end of the
-	// agreement, NOT of the quota window.
+	// agreement, NOT of the usage period.
 	ContractEndsAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=contract_ends_at,json=contractEndsAt" json:"contract_ends_at,omitempty"`
-	// The quota window, which runs from the org's billing anniversary. Identical to
+	// The usage period, which runs from the org's billing anniversary. Identical to
 	// GetUsage's period bounds, which is what makes "X of Y" like for like.
 	PeriodStart        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=period_start,json=periodStart" json:"period_start,omitempty"`
 	PeriodEnd          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=period_end,json=periodEnd" json:"period_end,omitempty"`
 	SubscriptionStatus *SubscriptionStatus    `protobuf:"varint,9,opt,name=subscription_status,json=subscriptionStatus,enum=dashboard.billing.v1.SubscriptionStatus" json:"subscription_status,omitempty"`
-	// When the provider bills next: the MONEY's period, not the quota's above.
+	// When the provider bills next: the MONEY's period, not the usage period above.
 	// Absent when there is no live subscription.
 	CurrentPeriodEnd *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=current_period_end,json=currentPeriodEnd" json:"current_period_end,omitempty"`
 	// Whether a checkout would open at all -- billing on, a provider configured, and
@@ -527,7 +529,8 @@ func (x *GetBillingStatusResponse) GetTierUsageAsOf() *timestamppb.Timestamp {
 type CreateCheckoutSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// A catalog slug. Never a price and never a product id.
+	// A catalog plan's slug, or custom for the org's own deal. Never a price and
+	// never a product id.
 	PlanSlug *string `protobuf:"bytes,2,opt,name=plan_slug,json=planSlug" json:"plan_slug,omitempty"`
 	// The mode the overlay opens over, so it does not land light on a dark page.
 	// The dashboard's resolved theme, not the stored preference -- "system" is
@@ -885,7 +888,8 @@ type PlanOption struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Slug        *string                `protobuf:"bytes,1,opt,name=slug" json:"slug,omitempty"`
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	// The plan's free allowance. ABSENT is a deal, whose row decides it --
+	// The plan's free allowance. ABSENT is a deal: once bought, its terms are the
+	// org's entitlement -- its base plan's unless its row overrides them --
 	// absence is never zero, here or below.
 	IncludedEvents *wrapperspb.Int64Value `protobuf:"bytes,5,opt,name=included_events,json=includedEvents" json:"included_events,omitempty"`
 	// Days of history the plan keeps. ABSENT is a deal.

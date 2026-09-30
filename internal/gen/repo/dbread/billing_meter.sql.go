@@ -125,7 +125,8 @@ func (q *Queries) ListLiveBillingSubscriptionsForMeter(ctx context.Context, prov
 }
 
 const listLiveCustomDealProducts = `-- name: ListLiveCustomDealProducts :many
-select s.org_id, e.provider_product_id::text as provider_product_id
+select s.org_id, e.provider_product_id::text as provider_product_id,
+  e.base_plan_slug::text as base_plan_slug
 from billing_subscriptions s
 join billing_entitlements e on e.org_id = s.org_id
 where s.provider = $1
@@ -138,9 +139,11 @@ order by s.org_id
 type ListLiveCustomDealProductsRow struct {
 	OrgID             string
 	ProviderProductID string
+	BasePlanSlug      string
 }
 
-// Reconcile's check that every live deal's product bills every tier.
+// Reconcile's check that every live deal's product bills every tier of the plan
+// the deal is pinned to.
 func (q *Queries) ListLiveCustomDealProducts(ctx context.Context, provider string) ([]ListLiveCustomDealProductsRow, error) {
 	rows, err := q.db.Query(ctx, listLiveCustomDealProducts, provider)
 	if err != nil {
@@ -150,7 +153,7 @@ func (q *Queries) ListLiveCustomDealProducts(ctx context.Context, provider strin
 	var items []ListLiveCustomDealProductsRow
 	for rows.Next() {
 		var i ListLiveCustomDealProductsRow
-		if err := rows.Scan(&i.OrgID, &i.ProviderProductID); err != nil {
+		if err := rows.Scan(&i.OrgID, &i.ProviderProductID, &i.BasePlanSlug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

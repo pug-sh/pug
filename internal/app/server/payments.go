@@ -50,7 +50,7 @@ func newPayments(ctx context.Context) (*corebilling.Payments, error) {
 			slog.String("provider", p.Provider.Name()))
 	}
 	if len(p.ProductBySlug) == 0 {
-		slog.WarnContext(ctx, "billing provider configured with no product ids; no catalog tier is purchasable",
+		slog.WarnContext(ctx, "billing provider configured with no product ids; no catalog plan is purchasable",
 			slog.String("provider", p.Provider.Name()))
 	}
 

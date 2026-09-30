@@ -28,8 +28,10 @@ order by period_start desc
 limit 1;
 
 -- name: ListLiveCustomDealProducts :many
--- Reconcile's check that every live deal's product bills every tier.
-select s.org_id, e.provider_product_id::text as provider_product_id
+-- Reconcile's check that every live deal's product bills every tier of the plan
+-- the deal is pinned to.
+select s.org_id, e.provider_product_id::text as provider_product_id,
+  e.base_plan_slug::text as base_plan_slug
 from billing_subscriptions s
 join billing_entitlements e on e.org_id = s.org_id
 where s.provider = @provider

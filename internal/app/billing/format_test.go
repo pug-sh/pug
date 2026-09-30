@@ -155,22 +155,22 @@ func TestReportAbsentRowIsNotAnError(t *testing.T) {
 }
 
 func TestHistoryLine(t *testing.T) {
-	cleared := historyLine(entitlement.Record{})
+	cleared := historyLine(entitlement.HistoryEntry{})
 	if cleared != "cleared" {
 		t.Fatalf("cleared = %q", cleared)
 	}
 
-	got := historyLine(entitlement.Record{
+	got := historyLine(entitlement.HistoryEntry{Record: entitlement.Record{
 		Present: true, PlanSlug: "custom", IncludedEventsOverride: 5_000_000,
 		RetentionDaysOverride: 3_650,
 		DisplayNameOverride:   "Acme Enterprise", AnchorDay: 17,
 		ContractEndsAt:    time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
-		ProviderProductID: "prod_2f9k", Note: "$400/mo, INV-123",
-	})
+		ProviderProductID: "prod_2f9k", BasePlanSlug: "usage-2026-10", Note: "$400/mo, INV-123",
+	}})
 	for _, want := range []string{
 		"custom", "events=5,000,000", "retention=3,650d", `name="Acme Enterprise"`, "anchor-day=17",
 		"until=2027-01-01T00:00:00Z",
-		"product=prod_2f9k", `note="$400/mo, INV-123"`,
+		"product=prod_2f9k", "base=usage-2026-10", `note="$400/mo, INV-123"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("history line = %q, want it to carry %s", got, want)
@@ -178,9 +178,28 @@ func TestHistoryLine(t *testing.T) {
 	}
 
 	// A renewal reads as the fields that carry a value, not as eight (none)s.
-	renewal := historyLine(entitlement.Record{Present: true, PlanSlug: entitlement.SlugFree})
+	renewal := historyLine(entitlement.HistoryEntry{Record: entitlement.Record{Present: true, PlanSlug: entitlement.SlugFree}})
 	if strings.Contains(renewal, none) {
 		t.Fatalf("renewal line = %q, want no absent fields spelled out", renewal)
+	}
+
+	// A snapshot written before the trial was removed still says when it ended.
+	trial := historyLine(entitlement.HistoryEntry{
+		Record:      entitlement.Record{Present: true, PlanSlug: "trial"},
+		TrialEndsAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if !strings.Contains(trial, "trial-ends=2026-09-01T00:00:00Z") {
+		t.Fatalf("legacy trial line = %q, want its trial end", trial)
+	}
+}
+
+// A deal's pin is what its usage splits by, so the stored row shows it.
+func TestReportShowsADealsBasePlan(t *testing.T) {
+	out := render(t, entitlement.Entitlement{Slug: entitlement.SlugCustom}, entitlement.Record{
+		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_2f9k", BasePlanSlug: "usage-2026-10",
+	}, nil)
+	if got := line(t, out, "STORED", "base plan"); got != "usage-2026-10" {
+		t.Fatalf("stored base plan = %q, want usage-2026-10", got)
 	}
 }
 
@@ -276,7 +295,19 @@ func TestReportShowsTheTiers(t *testing.T) {
 	if got := tiers(&allowance, []int64{2_000_000, 15_000_000}); got != "100,000 free · ≤ 2,000,000 · ≤ 15,000,000 · beyond" {
 		t.Fatalf("tiers = %q", got)
 	}
-	if got := tiers(nil, nil); got != none {
-		t.Fatalf("tiers(nil) = %q, want %q", got, none)
+	// A deal's allowance can pass a bound: the meter bills that tier nothing, so it is
+	// not listed as one.
+	deal := int64(5_000_000)
+	if got := tiers(&deal, []int64{2_000_000, 15_000_000}); got != "5,000,000 free · ≤ 15,000,000 · beyond" {
+		t.Fatalf("tiers past the allowance = %q", got)
+	}
+	// Nothing splits free's usage, an unknown plan's, or anything with billing off.
+	for _, tc := range []struct {
+		allowance *int64
+		upTo      []int64
+	}{{nil, nil}, {&allowance, nil}} {
+		if got := tiers(tc.allowance, tc.upTo); got != none {
+			t.Fatalf("tiers(%v, %v) = %q, want %q", tc.allowance, tc.upTo, got, none)
+		}
 	}
 }

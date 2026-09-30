@@ -32,19 +32,20 @@ const maxBodyBytes = 1 << 20
 const billingHandlerTimeout = 10 * time.Second
 
 // MountBilling mounts the service's own provider, so the route that verifies a
-// delivery and the service that stores it cannot name two. It skips a service with
-// no provider, and a provider that cannot verify a signature: 404 is the
-// fail-closed direction.
+// delivery and the service that stores it cannot name two. The route holds only
+// the provider's Verifier: it checks signatures and moves no money. It skips a
+// service with no provider, and a provider that cannot verify a signature: 404 is
+// the fail-closed direction.
 func MountBilling(mux *http.ServeMux, service *subscription.Service) bool {
 	if service == nil {
 		return false
 	}
-	provider := service.Provider()
-	if provider == nil || !provider.CanVerify() {
+	verifier := service.Verifier()
+	if verifier == nil || !verifier.CanVerify() {
 		return false
 	}
-	h := &billingHandler{provider: provider, service: service}
-	path := BillingPath(provider.Name())
+	h := &billingHandler{verifier: verifier, service: service}
+	path := BillingPath(verifier.Name())
 	mux.Handle(path, h)
 	// ServeMux only redirects toward the trailing slash, so the twin is registered
 	// rather than relied on.
@@ -53,7 +54,7 @@ func MountBilling(mux *http.ServeMux, service *subscription.Service) bool {
 }
 
 type billingHandler struct {
-	provider corebilling.PaymentProvider
+	verifier corebilling.WebhookVerifier
 	service  *subscription.Service
 }
 
@@ -76,7 +77,7 @@ func (h *billingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
 			slog.ErrorContext(ctx, "panic serving a billing webhook",
-				slog.Any("panic", v), slog.String("provider", h.provider.Name()))
+				slog.Any("panic", v), slog.String("provider", h.verifier.Name()))
 			telemetry.RecordError(ctx, fmt.Errorf("webhook: panic: %v", v))
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -92,26 +93,26 @@ func (h *billingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// and 400 would stop the retry of a delivery that never landed.
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			slog.WarnContext(ctx, "rejected an oversized billing webhook body", slogx.Error(err),
-				slog.String("provider", h.provider.Name()))
+				slog.String("provider", h.verifier.Name()))
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		// This is the detecting layer, and a systematic read failure burns every retry
 		// and then leaves the delivery stranded with no reason recorded anywhere.
 		slog.ErrorContext(ctx, "failed to read a billing webhook body", slogx.Error(err),
-			slog.String("provider", h.provider.Name()))
+			slog.String("provider", h.verifier.Name()))
 		telemetry.RecordError(ctx, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	delivery, err := h.provider.Verify(r.Header, body)
+	delivery, err := h.verifier.Verify(r.Header, body)
 	if err != nil {
 		// Verified but unreadable is pug's fault: 401 would file the money path going
 		// down under the warning a port scanner produces.
 		if errors.Is(err, corebilling.ErrUndecodable) {
 			slog.ErrorContext(ctx, "cannot decode a verified billing webhook", slogx.Error(err),
-				slog.String("provider", h.provider.Name()))
+				slog.String("provider", h.verifier.Name()))
 			telemetry.RecordError(ctx, err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -119,7 +120,7 @@ func (h *billingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// An auth failure, not a server fault: recording it lets a scanner probing an
 		// open route fill the error telemetry.
 		slog.WarnContext(ctx, "rejected a billing webhook", slogx.Error(err),
-			slog.String("provider", h.provider.Name()))
+			slog.String("provider", h.verifier.Name()))
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -128,7 +129,7 @@ func (h *billingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.HandleDelivery(ctx, delivery); err != nil {
 		// Disposition only: HandleDelivery already logged and recorded it.
 		slog.WarnContext(ctx, "asking the provider to retry a billing webhook", slogx.Error(err),
-			slog.String("provider", h.provider.Name()), slog.String("webhook_id", delivery.WebhookID))
+			slog.String("provider", h.verifier.Name()), slog.String("webhook_id", delivery.WebhookID))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

@@ -17,8 +17,10 @@ import (
 
 // period is one ledger row: a provider period as pug last stated it.
 type period struct {
-	Start      time.Time
-	Window     Window
+	Start  time.Time
+	Window Window
+	// The catalog plan whose tiers the period was split by: a subscriber's own plan,
+	// or a deal's base plan. TiersFor gives its layout back.
 	PlanSlug   string
 	Allowance  int64
 	Own, Carry []int64
@@ -115,6 +117,7 @@ func ack(ctx context.Context, w *dbwrite.Queries, orgID string, p period) error 
 // Stated is what the dashboard shows: a period's per-tier counts as last stated to
 // the provider, carry included — exactly what it will bill.
 type Stated struct {
+	// The plan the tiers were split by, for their bounds (see period.PlanSlug).
 	PlanSlug string
 	Tiers    []int64
 	AsOf     time.Time

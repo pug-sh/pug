@@ -34,18 +34,7 @@ var (
 // else in this slice imports a provider package. The payload is deliberately not
 // abstracted — a common payload schema across providers cannot be maintained.
 type PaymentProvider interface {
-	// Name is the provider's slug, stored on every row it produces and the path
-	// segment its webhook mounts at — changing it orphans stored rows.
-	Name() string
-
-	// Verify authenticates a raw delivery, taking the exact bytes because every
-	// signature scheme signs those, not a decoded message.
-	Verify(headers http.Header, rawBody []byte) (Delivery, error)
-
-	// CanVerify reports whether a signing secret is configured, i.e. whether Verify
-	// can authenticate anything. False mounts no webhook route at all rather than
-	// taking unverified deliveries on the money path.
-	CanVerify() bool
+	WebhookVerifier
 
 	// Normalize maps one verified delivery onto pug's vocabulary. A zero
 	// SubscriptionEvent means "store, mark processed, ignore".
@@ -62,6 +51,23 @@ type PaymentProvider interface {
 	// shape. A zero SubscriptionEvent means "not settled yet" and is not an error; a
 	// checkout the provider gave up on must return ErrCheckoutFailed instead.
 	FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
+}
+
+// WebhookVerifier is the part of a provider the webhook route holds: a name to
+// mount at and a signature to check, and nothing that moves money.
+type WebhookVerifier interface {
+	// Name is the provider's slug, stored on every row it produces and the path
+	// segment its webhook mounts at — changing it orphans stored rows.
+	Name() string
+
+	// Verify authenticates a raw delivery, taking the exact bytes because every
+	// signature scheme signs those, not a decoded message.
+	Verify(headers http.Header, rawBody []byte) (Delivery, error)
+
+	// CanVerify reports whether a signing secret is configured, i.e. whether Verify
+	// can authenticate anything. False mounts no webhook route at all rather than
+	// taking unverified deliveries on the money path.
+	CanVerify() bool
 }
 
 // Delivery is one verified webhook, still in the provider's own vocabulary.
@@ -84,7 +90,7 @@ type SubscriptionEvent struct {
 	ProviderSubID      string
 	ProviderCustomerID string
 	// ProductID is the provider's product. It is what resolves a plan slug — from
-	// config for a catalog tier, from the org's row for a negotiated deal.
+	// config for a catalog plan, from the org's row for a negotiated deal.
 	ProductID string
 	// OrgID is metadata.org_id, which a buyer can set on a static payment link. It
 	// attributes only beside a ProductID an operator staged, and cross-checks a confirm.
@@ -188,9 +194,11 @@ func ParseSubStatus(v string) (SubStatus, bool) {
 	return "", false
 }
 
-// Currency is the one pug sells in. subscription refuses any other at each of its
-// writers — the webhook, ConfirmCheckout and the apply they share — so going
-// multi-currency starts here, and renames price_cents with it.
+// Currency is the one pug sells in. subscription's shared apply refuses any other
+// for all three writers (the webhook, reconcile and ConfirmCheckout), and the
+// webhook and ConfirmCheckout check before it, so a foreign-currency delivery is
+// consumed as rejected and a returning buyer is told why. Going multi-currency
+// starts here, and renames price_cents with it.
 const Currency = "USD"
 
 // Payments is the provider wiring. Nil means no provider, which is legal.

@@ -130,7 +130,7 @@ func (q *Queries) GetBillingCheckoutSessionOrgID(ctx context.Context, arg GetBil
 }
 
 const getBillingEntitlementForUpdate = `-- name: GetBillingEntitlementForUpdate :one
-select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, update_time, provider_product_id from billing_entitlements where org_id = $1 for update
+select anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, update_time, provider_product_id, base_plan_slug from billing_entitlements where org_id = $1 for update
 `
 
 // Returns no rows for an org that has never been touched, which is normal.
@@ -149,6 +149,7 @@ func (q *Queries) GetBillingEntitlementForUpdate(ctx context.Context, orgID stri
 		&i.RetentionDaysOverride,
 		&i.UpdateTime,
 		&i.ProviderProductID,
+		&i.BasePlanSlug,
 	)
 	return i, err
 }
@@ -188,19 +189,20 @@ func (q *Queries) GetBillingSubscriptionPlanSlug(ctx context.Context, arg GetBil
 
 const insertBillingEntitlementHistory = `-- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
-  actor, anchor_day, contract_ends_at, display_name_override,
+  actor, anchor_day, base_plan_slug, contract_ends_at, display_name_override,
   id, included_events_override, note, org_id, plan_slug, provider_product_id,
   retention_days_override
 ) values (
-  $1, $2, $3, $4,
-  $5, $6, $7, $8, $9, $10,
-  $11
+  $1, $2, $3, $4, $5,
+  $6, $7, $8, $9, $10, $11,
+  $12
 )
 `
 
 type InsertBillingEntitlementHistoryParams struct {
 	Actor                  string
 	AnchorDay              pgtype.Int2
+	BasePlanSlug           pgtype.Text
 	ContractEndsAt         pgtype.Timestamptz
 	DisplayNameOverride    pgtype.Text
 	ID                     string
@@ -216,6 +218,7 @@ func (q *Queries) InsertBillingEntitlementHistory(ctx context.Context, arg Inser
 	_, err := q.db.Exec(ctx, insertBillingEntitlementHistory,
 		arg.Actor,
 		arg.AnchorDay,
+		arg.BasePlanSlug,
 		arg.ContractEndsAt,
 		arg.DisplayNameOverride,
 		arg.ID,
@@ -366,16 +369,17 @@ func (q *Queries) PruneBillingWebhookDeliveries(ctx context.Context, olderThan p
 
 const upsertBillingEntitlement = `-- name: UpsertBillingEntitlement :one
 insert into billing_entitlements (
-  anchor_day, contract_ends_at, display_name_override,
+  anchor_day, base_plan_slug, contract_ends_at, display_name_override,
   included_events_override, note, org_id, plan_slug, provider_product_id,
   retention_days_override
 ) values (
-  $1, $2, $3,
-  $4, $5, $6, $7, $8,
-  $9
+  $1, $2, $3, $4,
+  $5, $6, $7, $8, $9,
+  $10
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
+    base_plan_slug = excluded.base_plan_slug,
     contract_ends_at = excluded.contract_ends_at,
     display_name_override = excluded.display_name_override,
     included_events_override = excluded.included_events_override,
@@ -383,11 +387,12 @@ set anchor_day = excluded.anchor_day,
     plan_slug = excluded.plan_slug,
     provider_product_id = excluded.provider_product_id,
     retention_days_override = excluded.retention_days_override
-returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, update_time, provider_product_id
+returning anchor_day, contract_ends_at, create_time, display_name_override, included_events_override, note, org_id, plan_slug, retention_days_override, update_time, provider_product_id, base_plan_slug
 `
 
 type UpsertBillingEntitlementParams struct {
 	AnchorDay              pgtype.Int2
+	BasePlanSlug           pgtype.Text
 	ContractEndsAt         pgtype.Timestamptz
 	DisplayNameOverride    pgtype.Text
 	IncludedEventsOverride pgtype.Int8
@@ -403,6 +408,7 @@ type UpsertBillingEntitlementParams struct {
 func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillingEntitlementParams) (BillingEntitlement, error) {
 	row := q.db.QueryRow(ctx, upsertBillingEntitlement,
 		arg.AnchorDay,
+		arg.BasePlanSlug,
 		arg.ContractEndsAt,
 		arg.DisplayNameOverride,
 		arg.IncludedEventsOverride,
@@ -425,6 +431,7 @@ func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillin
 		&i.RetentionDaysOverride,
 		&i.UpdateTime,
 		&i.ProviderProductID,
+		&i.BasePlanSlug,
 	)
 	return i, err
 }

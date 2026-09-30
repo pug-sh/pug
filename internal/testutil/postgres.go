@@ -17,7 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/xid"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -74,6 +74,31 @@ func SetOrgCreateTime(t *testing.T, pool *pgxpool.Pool, orgID string, at time.Ti
 	if tag.RowsAffected() != 1 {
 		t.Fatalf("backdate org %s: matched %d rows, want 1", orgID, tag.RowsAffected())
 	}
+}
+
+// WaitForAdvisoryLockWaiter blocks until a session is parked on an advisory lock,
+// so a lock test never races the commit that releases it. A package runs its
+// tests serially against its one container, so any waiter is the one under test.
+// It also returns once done closes: a call that settled without waiting is what a
+// lock test exists to catch, and its assertions name that better than a timeout.
+func WaitForAdvisoryLockWaiter(t *testing.T, pool *pgxpool.Pool, done <-chan struct{}) {
+	t.Helper()
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		var n int
+		if err := pool.QueryRow(t.Context(),
+			`select count(*) from pg_locks where locktype = 'advisory' and not granted`).Scan(&n); err != nil {
+			t.Fatalf("testutil: read pg_locks: %v", err)
+		}
+		if n > 0 {
+			return
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	t.Fatal("testutil: nothing blocked on an advisory lock within 30s")
 }
 
 // sharedPostgres is the single container backing every test in the package.
@@ -283,12 +308,10 @@ func migrate(ctx context.Context, connStr string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		return errors.New("unable to determine source file path")
+	dir, err := postgresMigrationsDir()
+	if err != nil {
+		return err
 	}
-	dir := filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "postgres", "migrations")
-
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS(dir))
 	if err != nil {
 		return err
@@ -296,4 +319,31 @@ func migrate(ctx context.Context, connStr string) error {
 
 	_, err = provider.Up(ctx)
 	return err
+}
+
+func postgresMigrationsDir() (string, error) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("unable to determine source file path")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "postgres", "migrations"), nil
+}
+
+// PostgresMigrations steps one test database through the migrations SetupPostgres
+// applied, for a test of a migration's data rewrite: the database arrives fully
+// migrated, so step it down, seed rows in the older shape, then apply the next one.
+func PostgresMigrations(t *testing.T, pg *TestPostgres) *goose.Provider {
+	t.Helper()
+	dir, err := postgresMigrationsDir()
+	if err != nil {
+		t.Fatalf("testutil: %v", err)
+	}
+	// Over the test's own pool: closing this handle leaves the pool open.
+	db := stdlib.OpenDBFromPool(pg.PgW)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS(dir))
+	if err != nil {
+		t.Fatalf("testutil: goose provider: %v", err)
+	}
+	return provider
 }

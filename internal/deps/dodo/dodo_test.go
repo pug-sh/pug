@@ -225,6 +225,7 @@ func TestStatusMapping(t *testing.T) {
 	}{
 		"active":    {corebilling.SubStatusActive, true},
 		"on_hold":   {corebilling.SubStatusPastDue, true},
+		"past_due":  {corebilling.SubStatusPastDue, true}, // Dodo's grace period
 		"paused":    {corebilling.SubStatusPaused, false},
 		"cancelled": {corebilling.SubStatusCancelled, false},
 		"expired":   {corebilling.SubStatusExpired, false},
