@@ -56,14 +56,19 @@ func (s *Service) takesMoney() bool {
 }
 
 // Purchasable reports whether this deployment sells anything to this org at all:
-// some tier on sale whose product checkoutProduct resolves, the lookup
-// CreateCheckoutSession refuses on. Per tier it is PlanOption.Purchasable.
+// some plan on sale, or this org's own deal, whose product checkoutProduct
+// resolves, the lookup CreateCheckoutSession refuses on. Per plan it is
+// PlanOption.Purchasable.
 func (s *Service) Purchasable(rec entitlement.Record) bool {
 	if !s.takesMoney() {
 		return false
 	}
-	// Not the product map's size: it keeps retired tiers so their renewals
-	// resolve, and custom resolves from this org's row instead.
+	// Not the product map's size: it keeps retired plans so their renewals resolve.
+	// Custom is a state rather than a catalog plan, so the loop never reaches it; it
+	// resolves from this org's row, as in PlanOptions.
+	if _, err := s.checkoutProduct(rec, entitlement.SlugCustom); err == nil {
+		return true
+	}
 	for _, plan := range entitlement.Plans() {
 		if !plan.OnSale() {
 			continue

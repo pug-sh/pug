@@ -281,6 +281,30 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 	}
 }
 
+// Custom is a state rather than a catalog plan, so a deal's product comes from the
+// org's own row: an org holding one is purchasable where no catalog plan has a
+// product, exactly as its checkout opens.
+func TestPurchasableCountsTheOrgsOwnDeal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pg := testutil.SetupPostgres(t)
+	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+	srv := newProductlessServer(t, pg)
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_entitlements (org_id, plan_slug, provider_product_id)
+		 values ($1, 'custom', 'prod_acme')`, orgID); err != nil {
+		t.Fatalf("seed entitlement: %v", err)
+	}
+
+	if !getStatus(t, srv, orgID).GetPurchasable() {
+		t.Error("purchasable = false for the org whose row records its deal's product")
+	}
+	if _, err := checkout(t, srv, orgID, entitlement.SlugCustom); err != nil {
+		t.Errorf("checkout of the org's own deal: %v", err)
+	}
+}
+
 func TestCheckoutReturnsAURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

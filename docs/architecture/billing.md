@@ -900,7 +900,10 @@ here.
   them now would have shipped a purchasability flag with no consumer, so only the
   guard's own concept exists: `Retired`. Checkout brought the other half as
   `Plan.OnSale`, derived and never stored — now simply `!Retired`, since `free`
-  and `custom` left the catalog.
+  and `custom` left the catalog. `custom` is still sold, to the one org whose row
+  records its product ([`payments.md`](payments.md) §5.2), so a sale check that
+  walks only the catalog misses it: `PlanOptions` and `Purchasable` each ask that
+  row too.
 - **The trial and the fixed-price tiers are gone** (2026-09-27, usage billing).
   The catalog is one usage plan of quantities, `free` and `custom` are states, a
   plan is held only through a subscription, and `extend-trial` went with the
