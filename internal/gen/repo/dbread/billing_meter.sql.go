@@ -11,8 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countLiveBillingSubscriptions = `-- name: CountLiveBillingSubscriptions :one
+select count(*) from billing_subscriptions
+where status in ('active', 'past_due')
+`
+
+// Every live subscription, whichever provider holds it: what the meter binary
+// checks before deciding that a deployment with nothing to meter is healthy.
+func (q *Queries) CountLiveBillingSubscriptions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveBillingSubscriptions)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getBillingMeterPeriod = `-- name: GetBillingMeterPeriod :one
-select acked, allowance, carry_events, create_time, org_id, own_events, period_start, plan_slug, provider_customer_id, stated_at, update_time, window_end, window_start from billing_meter_periods
+select acked, allowance, carry_events, create_time, org_id, own_events, period_start, plan_slug, provider_customer_id, provider_sub_id, stated_at, summed_through, update_time, window_end, window_start from billing_meter_periods
 where org_id = $1 and period_start = $2
 `
 
@@ -34,7 +48,9 @@ func (q *Queries) GetBillingMeterPeriod(ctx context.Context, arg GetBillingMeter
 		&i.PeriodStart,
 		&i.PlanSlug,
 		&i.ProviderCustomerID,
+		&i.ProviderSubID,
 		&i.StatedAt,
+		&i.SummedThrough,
 		&i.UpdateTime,
 		&i.WindowEnd,
 		&i.WindowStart,
@@ -43,21 +59,28 @@ func (q *Queries) GetBillingMeterPeriod(ctx context.Context, arg GetBillingMeter
 }
 
 const getPreviousBillingMeterPeriod = `-- name: GetPreviousBillingMeterPeriod :one
-select acked, allowance, carry_events, create_time, org_id, own_events, period_start, plan_slug, provider_customer_id, stated_at, update_time, window_end, window_start from billing_meter_periods
-where org_id = $1 and period_start < $2
-order by period_start desc
+select acked, allowance, carry_events, create_time, org_id, own_events, period_start, plan_slug, provider_customer_id, provider_sub_id, stated_at, summed_through, update_time, window_end, window_start from billing_meter_periods
+where org_id = $1 and period_start <> $2
+order by case when provider_sub_id = $3 then window_end else summed_through end desc,
+  period_start desc
 limit 1
 `
 
 type GetPreviousBillingMeterPeriodParams struct {
-	OrgID       string
-	PeriodStart pgtype.Timestamptz
+	OrgID         string
+	PeriodStart   pgtype.Timestamptz
+	ProviderSubID string
 }
 
-// The org's latest stated period before this one: what a contiguous window
-// carries from.
+// The window a new one follows: the org's other period whose days end latest. A
+// period of the same subscription ends with its window, since a renewal is
+// continuous; another subscription's ends at summed_through, the last day it was
+// seen live, so the days after it are not re-billed through a carry. Not the
+// latest period_start: a cutover that straddles the old subscription's renewal
+// starts before that renewal's period, which it must follow. On a tie the later
+// period, which has carried the other already.
 func (q *Queries) GetPreviousBillingMeterPeriod(ctx context.Context, arg GetPreviousBillingMeterPeriodParams) (BillingMeterPeriod, error) {
-	row := q.db.QueryRow(ctx, getPreviousBillingMeterPeriod, arg.OrgID, arg.PeriodStart)
+	row := q.db.QueryRow(ctx, getPreviousBillingMeterPeriod, arg.OrgID, arg.PeriodStart, arg.ProviderSubID)
 	var i BillingMeterPeriod
 	err := row.Scan(
 		&i.Acked,
@@ -69,7 +92,9 @@ func (q *Queries) GetPreviousBillingMeterPeriod(ctx context.Context, arg GetPrev
 		&i.PeriodStart,
 		&i.PlanSlug,
 		&i.ProviderCustomerID,
+		&i.ProviderSubID,
 		&i.StatedAt,
+		&i.SummedThrough,
 		&i.UpdateTime,
 		&i.WindowEnd,
 		&i.WindowStart,
@@ -77,17 +102,31 @@ func (q *Queries) GetPreviousBillingMeterPeriod(ctx context.Context, arg GetPrev
 	return i, err
 }
 
+const getUsageComputedAt = `-- name: GetUsageComputedAt :one
+select max(usage_computed_at)::timestamptz as usage_computed_at from usage_periods
+`
+
+// When the usage pass last verified a count, across every org: it refreshes every
+// org's period in one pass, and refreshes none from a read it cannot trust. NULL
+// means it has never run. The meter sums the day cells that pass writes, so it
+// refuses to state from them once this is stale.
+func (q *Queries) GetUsageComputedAt(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getUsageComputedAt)
+	var usage_computed_at pgtype.Timestamptz
+	err := row.Scan(&usage_computed_at)
+	return usage_computed_at, err
+}
+
 const listLiveBillingSubscriptionsForMeter = `-- name: ListLiveBillingSubscriptionsForMeter :many
 select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time from billing_subscriptions
 where provider = $1
   and status in ('active', 'past_due')
-  and current_period_start is not null
-  and current_period_end is not null
 order by org_id
 `
 
-// The meter's work list: every live subscription of one provider whose period the
-// provider has reported. One per org, by the partial unique index.
+// The meter's work list: every live subscription of one provider. One per org, by
+// the partial unique index. A row the provider has reported no period for is
+// listed too: the pass cannot meter it, and fails it rather than leaving it out.
 func (q *Queries) ListLiveBillingSubscriptionsForMeter(ctx context.Context, provider string) ([]BillingSubscription, error) {
 	rows, err := q.db.Query(ctx, listLiveBillingSubscriptionsForMeter, provider)
 	if err != nil {

@@ -32,8 +32,8 @@ func TestSubscriptionSuppliesThePlan(t *testing.T) {
 	if ent.SubStatus != corebilling.SubStatusActive {
 		t.Errorf("sub_status = %q, want active", ent.SubStatus)
 	}
-	if ent.ProviderCustomerID != "cus_1" {
-		t.Errorf("provider_customer_id = %q, want cus_1", ent.ProviderCustomerID)
+	if ent.ProviderCustomerID != "cus_1" || ent.ProviderSubID != "sub_1" {
+		t.Errorf("provider ids = %q / %q, want cus_1 / sub_1", ent.ProviderCustomerID, ent.ProviderSubID)
 	}
 }
 

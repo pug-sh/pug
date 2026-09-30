@@ -68,7 +68,9 @@ type BillingMeterPeriod struct {
 	PeriodStart        pgtype.Timestamptz
 	PlanSlug           string
 	ProviderCustomerID string
+	ProviderSubID      string
 	StatedAt           pgtype.Timestamptz
+	SummedThrough      pgtype.Date
 	UpdateTime         pgtype.Timestamptz
 	WindowEnd          pgtype.Date
 	WindowStart        pgtype.Date

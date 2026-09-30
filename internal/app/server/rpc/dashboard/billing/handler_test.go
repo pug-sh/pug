@@ -198,28 +198,53 @@ func TestGetBillingStatusReportsTheStatedTiers(t *testing.T) {
 		t.Fatalf("tier_usage = %v as of %v before any statement, want none", got.GetTierUsage(), got.GetTierUsageAsOf())
 	}
 
-	tiers := entitlement.CurrentPlan().Tiers()
+	plan := entitlement.CurrentPlan()
+	tiers := plan.Tiers()
 	own, carry := make([]int64, tiers), make([]int64, tiers)
 	own[0], own[1], carry[1] = 1_900_000, 100_000, 5_000
-	if _, err := pg.PgW.Exec(t.Context(),
-		`insert into billing_meter_periods (acked, allowance, carry_events, org_id, own_events, period_start,
-		   plan_slug, provider_customer_id, stated_at, window_end, window_start)
-		 values (true, 100000, $1, $2, $3, $4, $5, 'cus_1', now(), $6, $7)`,
-		carry, orgID, own, start, entitlement.SlugUsage, start.AddDate(0, 1, 0), start); err != nil {
-		t.Fatalf("seed ledger: %v", err)
+	seedLedger := func(planSlug string, allowance int64) {
+		t.Helper()
+		if _, err := pg.PgW.Exec(t.Context(),
+			`insert into billing_meter_periods (acked, allowance, carry_events, org_id, own_events, period_start,
+			   plan_slug, provider_customer_id, provider_sub_id, stated_at, summed_through, window_end, window_start)
+			 values (true, $1, $2, $3, $4, $5, $6, 'cus_1', 'sub_1', now(), $7, $8, $7)
+			 on conflict (org_id, period_start) do update set allowance = excluded.allowance, plan_slug = excluded.plan_slug`,
+			allowance, carry, orgID, own, start, planSlug, start.Truncate(24*time.Hour),
+			start.AddDate(0, 1, 0).Truncate(24*time.Hour)); err != nil {
+			t.Fatalf("seed ledger: %v", err)
+		}
 	}
+	seedLedger(entitlement.SlugUsage, plan.FreeEvents)
 	resp := getStatus(t, srv, orgID)
 	got := resp.GetTierUsage()
 	if len(got) != tiers || got[0].GetEvents() != 1_900_000 || got[1].GetEvents() != 105_000 {
 		t.Fatalf("tier_usage = %v, want every tier with tier 2's carry included", got)
 	}
-	if got[0].GetUpToEvents() != entitlement.CurrentPlan().TierUpTo[0] {
-		t.Errorf("tier 1 up_to_events = %d, want the plan's first bound", got[0].GetUpToEvents())
+	if got[0].GetFromEvents() != plan.FreeEvents || got[0].GetUpToEvents().GetValue() != plan.TierUpTo[0] ||
+		got[1].GetFromEvents() != plan.TierUpTo[0] {
+		t.Errorf("tiers 1 and 2 = %v, %v; want [allowance, first bound) and [first bound, ...)", got[0], got[1])
 	}
-	if got[len(got)-1].GetUpToEvents() != 0 {
-		t.Error("the last tier must be unbounded (0)")
+	// Unbounded is absent, never a 0 a client would read as a bound.
+	if got[len(got)-1].GetUpToEvents() != nil {
+		t.Error("the last tier's bound must be absent")
 	}
 	if resp.GetTierUsageAsOf() == nil {
 		t.Error("tier_usage_as_of must be set with tier_usage")
+	}
+
+	// A deal allowing more than the first bound starts tier 1 at its allowance — the
+	// one it was split under — so tier 1 holds nothing rather than a range that runs
+	// backwards.
+	seedLedger(entitlement.SlugUsage, 5_000_000)
+	got = getStatus(t, srv, orgID).GetTierUsage()
+	if got[0].GetFromEvents() != 5_000_000 || got[1].GetFromEvents() != 5_000_000 {
+		t.Errorf("tiers 1 and 2 start at %d and %d, want the split's allowance, 5,000,000",
+			got[0].GetFromEvents(), got[1].GetFromEvents())
+	}
+
+	// Split by a plan pug no longer knows: no bounds to describe it by, so no tiers.
+	seedLedger("usage-2019-01", plan.FreeEvents)
+	if resp := getStatus(t, srv, orgID); len(resp.GetTierUsage()) != 0 || resp.GetTierUsageAsOf() != nil {
+		t.Fatalf("tier_usage = %v under an unknown plan, want none", resp.GetTierUsage())
 	}
 }

@@ -32,13 +32,36 @@ func (q *Queries) AckBillingMeterPeriod(ctx context.Context, arg AckBillingMeter
 	return result.RowsAffected(), nil
 }
 
+const advanceBillingMeterPeriodSummedThrough = `-- name: AdvanceBillingMeterPeriodSummedThrough :exec
+update billing_meter_periods set summed_through = least($1::date, window_end)
+where org_id = $2 and period_start = $3
+  and summed_through < least($1::date, window_end)
+`
+
+type AdvanceBillingMeterPeriodSummedThroughParams struct {
+	SummedThrough pgtype.Date
+	OrgID         string
+	PeriodStart   pgtype.Timestamptz
+}
+
+// A tick that stated nothing still saw the subscription live. Moves forward only,
+// and writes at most once a UTC day, since that is how often the value changes.
+// Capped at the row's own window_end, which only a statement moves: a period whose
+// end the provider pushed out since then is summed past it, and the row's CHECK
+// would fail the org on every quiet tick.
+func (q *Queries) AdvanceBillingMeterPeriodSummedThrough(ctx context.Context, arg AdvanceBillingMeterPeriodSummedThroughParams) error {
+	_, err := q.db.Exec(ctx, advanceBillingMeterPeriodSummedThrough, arg.SummedThrough, arg.OrgID, arg.PeriodStart)
+	return err
+}
+
 const writeAheadBillingMeterPeriod = `-- name: WriteAheadBillingMeterPeriod :exec
 insert into billing_meter_periods (
   acked, allowance, carry_events, org_id, own_events, period_start, plan_slug,
-  provider_customer_id, stated_at, window_end, window_start
+  provider_customer_id, provider_sub_id, stated_at, summed_through, window_end, window_start
 ) values (
   false, $1, $2::bigint[], $3, $4::bigint[], $5,
-  $6, $7, $8, $9, $10
+  $6, $7, $8, $9, $10,
+  $11, $12
 )
 on conflict (org_id, period_start) do update
 set acked = false,
@@ -47,7 +70,10 @@ set acked = false,
     own_events = excluded.own_events,
     plan_slug = excluded.plan_slug,
     provider_customer_id = excluded.provider_customer_id,
+    provider_sub_id = excluded.provider_sub_id,
     stated_at = excluded.stated_at,
+    summed_through = least(greatest(billing_meter_periods.summed_through, excluded.summed_through),
+      excluded.window_end),
     window_end = excluded.window_end
 `
 
@@ -59,7 +85,9 @@ type WriteAheadBillingMeterPeriodParams struct {
 	PeriodStart        pgtype.Timestamptz
 	PlanSlug           string
 	ProviderCustomerID string
+	ProviderSubID      string
 	StatedAt           pgtype.Timestamptz
+	SummedThrough      pgtype.Date
 	WindowEnd          pgtype.Date
 	WindowStart        pgtype.Date
 }
@@ -77,7 +105,9 @@ func (q *Queries) WriteAheadBillingMeterPeriod(ctx context.Context, arg WriteAhe
 		arg.PeriodStart,
 		arg.PlanSlug,
 		arg.ProviderCustomerID,
+		arg.ProviderSubID,
 		arg.StatedAt,
+		arg.SummedThrough,
 		arg.WindowEnd,
 		arg.WindowStart,
 	)
