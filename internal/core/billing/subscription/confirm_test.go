@@ -8,6 +8,8 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 // storedSubscriptions counts the rows the confirm path writes, so a refusal can
@@ -322,10 +324,7 @@ func TestConfirmCheckoutRefusesAnotherOrgsRef(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	other, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	other := dbwriteOrg(t, f.pg)
 	seedCheckoutRef(t, f, other)
 
 	event := subEvent(f.orgID, "sub00000000000000031", "prod_u", corebilling.SubStatusActive)
@@ -366,8 +365,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))`, f.orgID); err != nil {
+	if err := dbwrite.New(tx).LockBillingEntitlementOrg(ctx, f.orgID); err != nil {
 		t.Fatalf("take the entitlement lock: %v", err)
 	}
 	if _, err := tx.Exec(ctx, `delete from billing_entitlements where org_id = $1`, f.orgID); err != nil {
@@ -383,7 +381,7 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 		confirmed, confirmErr = f.svc.ConfirmCheckout(ctx, f.orgID, "cs_1", time.Now())
 	}()
 
-	waitForEntitlementLockWaiter(t, f, done)
+	testutil.WaitForAdvisoryLockWaiter(t, f.pg.PgRO, done)
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("commit the clear: %v", err)
 	}

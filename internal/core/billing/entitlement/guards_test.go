@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
@@ -171,20 +172,26 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 		t.Fatalf("lock: %v", err)
 	}
 
-	done := make(chan error, 1)
-	go func() { done <- f.svc.Clear(t.Context(), f.orgID, actor) }()
+	var clearErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		clearErr = f.svc.Clear(t.Context(), f.orgID, actor)
+	}()
 
+	testutil.WaitForAdvisoryLockWaiter(t, f.pg.PgRO, done)
 	select {
-	case err := <-done:
-		t.Fatalf("Clear finished (%v) while the org lock was held; it is not taking the lock", err)
-	case <-time.After(300 * time.Millisecond):
+	case <-done:
+		t.Fatalf("Clear finished (%v) while the org lock was held; it is not taking the lock", clearErr)
+	default:
 	}
 
 	if err := tx.Rollback(t.Context()); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
-	if err := <-done; err != nil {
-		t.Fatalf("Clear after the lock was released: %v", err)
+	<-done
+	if clearErr != nil {
+		t.Fatalf("Clear after the lock was released: %v", clearErr)
 	}
 }
 
@@ -357,23 +364,26 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 		t.Fatalf("lock: %v", err)
 	}
 
-	done := make(chan error, 1)
+	var setErr error
+	done := make(chan struct{})
 	go func() {
-		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree})
-		done <- err
+		defer close(done)
+		_, setErr = f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree})
 	}()
 
+	testutil.WaitForAdvisoryLockWaiter(t, f.pg.PgRO, done)
 	select {
-	case err := <-done:
-		t.Fatalf("SetPlan finished (%v) while the org lock was held; it is not taking the lock", err)
-	case <-time.After(300 * time.Millisecond):
+	case <-done:
+		t.Fatalf("SetPlan finished (%v) while the org lock was held; it is not taking the lock", setErr)
+	default:
 	}
 
 	if err := tx.Rollback(t.Context()); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
-	if err := <-done; err != nil {
-		t.Fatalf("SetPlan after the lock was released: %v", err)
+	<-done
+	if setErr != nil {
+		t.Fatalf("SetPlan after the lock was released: %v", setErr)
 	}
 }
 
@@ -416,7 +426,7 @@ func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
 		})
 	}()
 
-	waitForLockWaiter(t, f, done)
+	testutil.WaitForAdvisoryLockWaiter(t, f.pg.PgRO, done)
 	if err := grant.Commit(ctx); err != nil {
 		t.Fatalf("commit the grant: %v", err)
 	}
@@ -487,29 +497,48 @@ func TestWithOrgLockCommitsOnlyWhenFnSucceeds(t *testing.T) {
 	}
 }
 
-// waitForLockWaiter blocks until a session is parked on an advisory lock, so a test
-// never races the commit that releases it. The package runs its tests serially
-// against one container, so any waiter is the one under test. A call that settled
-// without waiting returns too: that is the unlocked read these tests exist to
-// catch, and their assertions name it better than a timeout would.
-func waitForLockWaiter(t *testing.T, f *fixture, done <-chan struct{}) {
-	t.Helper()
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
-		var n int
-		if err := f.pg.PgRO.QueryRow(t.Context(),
-			`select count(*) from pg_locks where locktype = 'advisory' and not granted`).Scan(&n); err != nil {
-			t.Fatalf("read pg_locks: %v", err)
-		}
-		if n > 0 {
-			return
-		}
-		select {
-		case <-done:
-			return
-		case <-time.After(20 * time.Millisecond):
-		}
+// A refused fn must let go of the lock as well as the write. The write is
+// invisible either way, so only taking the lock again shows a transaction left
+// open, and in production every later write for the org would queue behind it: a
+// delivery, a confirm, `billing set`.
+func TestWithOrgLockReleasesTheLockWhenFnFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
 	}
-	t.Fatal("WithOrgLock never blocked on the org lock")
+
+	f := newFixture(t)
+	// A pool of its own, closed with a deadline: a leaked transaction never returns
+	// its connection, and closing the harness's pool would wait on it until the
+	// test binary timed out.
+	pool, err := pgxpool.NewWithConfig(t.Context(), f.pg.PgW.Config())
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(func() {
+		closed := make(chan struct{})
+		go func() { pool.Close(); close(closed) }()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Error("a connection never came back to the pool: WithOrgLock left a transaction open")
+		}
+	})
+	svc, err := entitlement.NewService(f.pg.PgRO, pool, true)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	refused := errors.New("refused")
+	err = svc.WithOrgLock(t.Context(), f.orgID, func(*dbwrite.Queries, entitlement.Record) error { return refused })
+	if !errors.Is(err, refused) {
+		t.Fatalf("err = %v, want fn's own error back", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := svc.WithOrgLock(ctx, f.orgID, func(*dbwrite.Queries, entitlement.Record) error { return nil }); err != nil {
+		t.Fatalf("taking the org lock after fn failed: %v; the refused call still holds it", err)
+	}
 }
 
 // The guard runs inside mutate's transaction, which already holds a connection.

@@ -12,6 +12,7 @@ import (
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
 )
 
@@ -491,10 +492,7 @@ func TestAmbiguousProviderCustomerIsNotAttributed(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	other, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	other := dbwriteOrg(t, f.pg)
 	seedCheckoutRef(t, f, other)
 
 	for i, orgID := range []string{f.orgID, other} {
@@ -697,8 +695,7 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`select pg_advisory_xact_lock(hashtext('billing_entitlement:' || $1::text))`, f.orgID); err != nil {
+	if err := dbwrite.New(tx).LockBillingEntitlementOrg(ctx, f.orgID); err != nil {
 		t.Fatalf("take the entitlement lock: %v", err)
 	}
 	if _, err := tx.Exec(ctx, `delete from billing_entitlements where org_id = $1`, f.orgID); err != nil {
@@ -713,7 +710,7 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 		applyErr = f.svc.HandleDelivery(ctx, delivery("evt_1", time.Now().UTC()))
 	}()
 
-	waitForEntitlementLockWaiter(t, f, done)
+	testutil.WaitForAdvisoryLockWaiter(t, f.pg.PgRO, done)
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("commit the clear: %v", err)
 	}
@@ -733,32 +730,6 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 	if got := storedDelivery(t, f, "evt_1").Error; !strings.HasPrefix(got, "product:") {
 		t.Errorf("delivery error = %q, want a product rejection", got)
 	}
-}
-
-// waitForEntitlementLockWaiter blocks until the delivery is parked on the org's
-// advisory lock, so the test never races the commit that releases it. The package
-// runs its tests serially against one container, so any waiter is this one. A
-// delivery that settled without waiting returns too: that is the unserialized
-// write this test exists to catch, and the assertions name it better than a
-// timeout would.
-func waitForEntitlementLockWaiter(t *testing.T, f *fixture, done <-chan struct{}) {
-	t.Helper()
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
-		var n int
-		if err := f.pg.PgRO.QueryRow(t.Context(),
-			`select count(*) from pg_locks where locktype = 'advisory' and not granted`).Scan(&n); err != nil {
-			t.Fatalf("read pg_locks: %v", err)
-		}
-		if n > 0 {
-			return
-		}
-		select {
-		case <-done:
-			return
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-	t.Fatal("the delivery never blocked on the entitlement lock")
 }
 
 // A product dropped from the config must not refuse a CANCELLATION. Refusing it
@@ -816,8 +787,14 @@ func TestPayloadOrgIDDoesNotAttributeADelivery(t *testing.T) {
 	if ent.Slug != entitlement.SlugFree {
 		t.Errorf("slug = %q, want free — metadata.org_id attributed a subscription", ent.Slug)
 	}
-	if d := storedDelivery(t, f, "evt_forged"); !strings.HasPrefix(d.Error, "attribution") {
+	d := storedDelivery(t, f, "evt_forged")
+	if !strings.HasPrefix(d.Error, "attribution") {
 		t.Errorf("error = %q, want it to start with %q", d.Error, "attribution")
+	}
+	// The payload names an org that exists: what failed is every route to it, and a
+	// reason reporting the org missing sends whoever reads it after a deleted org.
+	if strings.Contains(d.Error, entitlement.ErrOrgNotFound.Error()) {
+		t.Errorf("error = %q reports a missing org, for one that exists", d.Error)
 	}
 }
 
@@ -955,10 +932,7 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	other, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	other := dbwriteOrg(t, f.pg)
 	seedCheckoutRef(t, f, other)
 
 	// The customer id names `other`, via a subscription it already holds.

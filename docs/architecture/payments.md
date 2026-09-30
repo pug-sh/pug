@@ -13,11 +13,9 @@ fee schedules move, and being locked to one is a commercial risk, not only a
 technical one. Dodo is the first and, for now, the only implementation.
 
 The code is `internal/core/billing/subscription`, the lifecycle of the provider
-subscription an org buys. It was named `mandate` until Dodo turned out to refuse
-on-demand mandates for usage-based products. It sits beside
-the port in `internal/core/billing`, which is all of core the Dodo adapter may
-import (a depguard rule, not a convention), and beside `entitlement`, which is
-[`billing.md`](billing.md).
+subscription an org buys. It sits beside the port in `internal/core/billing`,
+which is all of core the Dodo adapter may import (a depguard rule, not a
+convention), and beside `entitlement`, which is [`billing.md`](billing.md).
 
 > **Status: implemented 2026-09-06.** §17 records where the build departs from
 > this design, and §15's open questions are resolved there. An earlier,
@@ -113,14 +111,9 @@ at the edges:
 // billing.PaymentProvider is the whole seam. Three verbs for the inbound half,
 // four for the outbound; nothing else in the slice imports a provider package.
 type PaymentProvider interface {
-    Name() string
-
-    // Verify authenticates a raw delivery. It takes the exact bytes because
-    // every scheme signs those, not a decoded message.
-    Verify(headers http.Header, rawBody []byte) (Delivery, error)
-    // CanVerify reports whether a signing secret is configured. False mounts no
-    // webhook route at all rather than taking unverified deliveries.
-    CanVerify() bool
+    // The route's half: a name to mount at and a signature to check. The webhook
+    // route holds only this, so it cannot move money.
+    WebhookVerifier
     // Normalize maps one verified delivery onto pug's vocabulary. Returning a
     // zero SubscriptionEvent means "store, mark processed, ignore".
     Normalize(Delivery) (SubscriptionEvent, error)
@@ -132,6 +125,16 @@ type PaymentProvider interface {
     // A zero SubscriptionEvent means "not settled yet"; a checkout the provider
     // gave up on must return ErrCheckoutFailed instead.
     FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
+}
+
+type WebhookVerifier interface {
+    Name() string
+    // Verify authenticates a raw delivery. It takes the exact bytes because
+    // every scheme signs those, not a decoded message.
+    Verify(headers http.Header, rawBody []byte) (Delivery, error)
+    // CanVerify reports whether a signing secret is configured. False mounts no
+    // webhook route at all rather than taking unverified deliveries.
+    CanVerify() bool
 }
 ```
 
@@ -161,16 +164,19 @@ key that permits two providers at once) while they are free.
 Dodo is a merchant of record and can present local currency to a buyer, but pug
 sells in USD and stores USD, and every product pug sells is priced in USD.
 
-This is enforced rather than assumed, in exactly one place: a subscription whose
-currency is not `USD` is **rejected at the webhook boundary** — stored in the
-inbox, marked processed, logged as an error, and not applied. A currency pug
+This is enforced rather than assumed, by the one write every subscription goes
+through: the apply the webhook, reconcile and `ConfirmCheckout` share refuses a
+currency that is not `USD`. The webhook and `ConfirmCheckout` also check before
+it, so a foreign-currency delivery is **rejected at the webhook** — stored in the
+inbox, marked processed, logged as an error, and not applied — and a buyer back
+from checkout is told why rather than handed an internal error. A currency pug
 cannot render honestly must not silently become a number on a dashboard.
 
 The payoff for writing the guard down instead of leaving it implicit: while it
-holds, `price_cents` is an accurate field name. When multi-currency arrives, the
-guard is the single place that changes, and the rename to `price_minor_units`
-happens with it — JPY has no cents, so the name and the constraint fall together
-or not at all.
+holds, `price_cents` is an accurate field name. When multi-currency arrives, what
+changes is every comparison against `billing.Currency`, and the rename to
+`price_minor_units` happens with it — JPY has no cents, so the name and the
+constraint fall together or not at all.
 
 ## 4. Who owns the price
 
@@ -356,9 +362,9 @@ billing_entitlements
 
 NULL is every org that is not a negotiated deal — the catalog plans get their
 product ids from config (section 13), not from the row: one key per catalog plan,
-mapping its slug to a provider product id. Since usage billing it is also set
-exactly when the row is `custom` (`custom_needs_product`, [`billing.md`](billing.md)
-§5).
+retired plans included, mapping its slug to a provider product id. Since usage
+billing it is also set exactly when the row is `custom` (`custom_needs_product`,
+[`billing.md`](billing.md) §5).
 
 The id belongs to whichever provider is configured, and a provider swap
 invalidates every stored one along with every config key. That is a re-paste per
@@ -476,7 +482,7 @@ is the first implementation of it:
 | Dodo `status` | pug `status` | Live |
 |---|---|---|
 | `active` | `active` | yes |
-| `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11) |
+| `past_due`, `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11): `past_due` inside Dodo's grace period, `on_hold` outside it |
 | `paused` | `paused` | no |
 | `cancelled`, `expired`, `failed` | same word | no |
 | anything else | stored verbatim, treated as not live | no |
@@ -779,7 +785,7 @@ still coming.
 | `PUG_DASHBOARD_BASE_URL` | — | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
 | `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
-| `PUG_DODO_PRODUCT_<SLUG>` | — | One per catalog plan, retired plans included — the slug upper-cased with `-` as `_`, so `PUG_DODO_PRODUCT_USAGE_2026_10` — mapping it to that plan's usage product (§4.1). Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A plan with no key is not purchasable (§12); `custom` has no key, since its product id lives on the org's row. |
+| `PUG_DODO_PRODUCT_<SLUG>` | — | One per catalog plan, retired plans included — the slug upper-cased with `-` as `_`, so `PUG_DODO_PRODUCT_USAGE_2026_10` — mapping it to that plan's usage product (§4.1). Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A plan on sale with no key is not purchasable (§12). A **retired** plan keeps its key: it is never sold, but without the key the webhook rejects its holders' renewals as an unmapped product. `custom` has no key, since its product id lives on the org's row. |
 
 Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's
@@ -821,7 +827,8 @@ likely to be wrong in a way nothing else catches, and it is per provider.
    subscription row name their provider.
 2. **§4 — pug stores no money.** DECIDED yes, and already applied to migration
    019 and the CLI.
-3. **§3 — USD only**, enforced at the webhook boundary. DECIDED.
+3. **§3 — USD only**, enforced by the apply every subscription write goes
+   through. DECIDED.
 4. **§5.1 — custom products are created by hand in Dodo**, not over the API.
    DECIDED for v1.
 5. **§5.2 — no payment links.** The operator pastes the product id onto the org

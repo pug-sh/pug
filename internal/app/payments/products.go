@@ -12,10 +12,11 @@ import (
 const productEnvPrefix = "PUG_DODO_PRODUCT_"
 
 // productIDs reads Dodo's product ids into slug -> product id: one
-// PUG_DODO_PRODUCT_<SLUG> per plan, retired plans included — their holders still
-// renew. A plan with no key is simply not purchasable. The plans are a parameter so
-// the duplicate-product guard stays testable while the real catalog holds one plan.
-// Free and custom are not catalog plans, so nothing needs excluding. It is
+// PUG_DODO_PRODUCT_<SLUG> per plan, retired plans included, the slug upper-cased
+// with - written _. A plan on sale with no key is not purchasable; a retired plan
+// with no key can no longer place its holders' renewals. The plans are a parameter
+// so the duplicate-product guard stays testable while the real catalog holds one
+// plan. Free and custom are not catalog plans, so nothing needs excluding. It is
 // catalog-to-env wiring rather than adapter logic, so it lives here and not in
 // internal/deps/dodo. lookup is os.LookupEnv outside tests.
 func productIDs(lookup func(string) (string, bool), plans []entitlement.Plan) (map[string]string, error) {

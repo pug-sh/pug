@@ -243,6 +243,17 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 		// A provider with credentials but no product ids: nothing is on sale, so
 		// the button must not render even though checkout is otherwise wired.
 		{"no products configured", func() *Server { return newProductlessServer(t, pg) }, true, false},
+		// A product only for a plan checkout will not sell: app/payments keeps a
+		// retired plan mapped for its holders' renewals, so once the one plan a
+		// deployment has a product for retires, the map is not empty and nothing is
+		// on sale. Free, never sold, stands in for the retired plan the catalog lacks.
+		{"only a plan off sale has a product", func() *Server {
+			return newServerWith(t, pg, true, &corebilling.Payments{
+				ProductBySlug: map[string]string{entitlement.SlugFree: "prod_free"},
+				Provider:      stubProvider{},
+				ReturnURL:     "https://app.example/settings/billing",
+			})
+		}, true, false},
 	}
 
 	for _, tc := range cases {
@@ -299,7 +310,12 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
-	srv := newPayingServer(t, pg, true)
+	var in corebilling.CheckoutInput
+	srv := newServerWith(t, pg, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
+		Provider:      stubProvider{in: &in},
+		ReturnURL:     "https://app.example/settings/billing",
+	})
 
 	cases := map[string]struct {
 		slug string
@@ -322,6 +338,10 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 				t.Errorf("code = %s, want %s", got, tc.code)
 			}
 		})
+	}
+	// Refused before the provider opened anything, not after.
+	if in.ProductID != "" {
+		t.Errorf("the provider was asked to open a checkout for %q", in.ProductID)
 	}
 
 	// In the catalog but with no product id in this deployment.

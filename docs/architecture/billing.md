@@ -894,8 +894,8 @@ Where the code differs from the sections above, the code wins and the reason is
 here.
 
 - **`Sellable` became `Retired`** (§4). One flag was conflating "may be granted"
-  with "may be purchased", and `custom` needs the first while never having the
-  second — a negotiated deal is granted to an org that has never held one, so
+  with "may be purchased", and `custom` needs the first whatever the second says
+  — a negotiated deal is granted to an org that has never held one, so
   a `Sellable: false` guard made every custom deal impossible to create. Splitting
   them now would have shipped a purchasability flag with no consumer, so only the
   guard's own concept exists: `Retired`. Checkout brought the other half as

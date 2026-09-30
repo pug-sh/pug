@@ -44,21 +44,35 @@ var (
 	ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
 )
 
-// takesMoney is the check every money path opens with: billing switched on, read
-// through the entitlement service, and a provider wired. Failing it is what
-// billing.ErrNoProvider means.
+// takesMoney is the guard the dashboard's money paths share: billing switched
+// on, read through the entitlement service, and a provider wired.
+// CreateCheckoutSession, CreatePortalSession and ConfirmCheckout refuse on it with
+// billing.ErrNoProvider; Purchasable, Manageable and each PlanOption report it.
+// HandleDelivery and Reconcile ask only for a provider: the webhook mirrors the
+// provider whether or not the switch is on, and the reconcile CronJob builds no
+// provider while it is off.
 func (s *Service) takesMoney() bool {
 	return s.entitlements.BillingEnabled() && s.payments.Configured()
 }
 
-// Purchasable reports whether this deployment sells anything to this org at all.
-// Per tier it is PlanOption.Purchasable, which shares checkoutProduct with it.
+// Purchasable reports whether this deployment sells anything to this org at all:
+// some tier on sale whose product checkoutProduct resolves, the lookup
+// CreateCheckoutSession refuses on. Per tier it is PlanOption.Purchasable.
 func (s *Service) Purchasable(rec entitlement.Record) bool {
 	if !s.takesMoney() {
 		return false
 	}
-	// Either a catalog tier is on sale, or this org has a negotiated product.
-	return len(s.payments.ProductBySlug) > 0 || rec.ProviderProductID != ""
+	// Not the product map's size: it keeps retired tiers so their renewals
+	// resolve, and custom resolves from this org's row instead.
+	for _, plan := range entitlement.Plans() {
+		if !plan.OnSale() {
+			continue
+		}
+		if _, err := s.checkoutProduct(rec, plan.Slug); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Manageable reports whether a portal session would open, from the SAME lookup

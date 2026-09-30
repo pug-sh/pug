@@ -154,9 +154,11 @@ func start(ctx context.Context, d *deps) error {
 	// The money side, which does talk to the provider, built over the entitlement
 	// service.
 	subscriptionSvc := subscription.NewService(d.pgRo, d.pgW, d.payments, entitlementSvc)
+	// Off the service, like the webhook route, so the name logged here is the one
+	// the route mounts at.
 	provider := ""
-	if d.payments != nil {
-		provider = d.payments.Provider.Name()
+	if v := subscriptionSvc.Verifier(); v != nil {
+		provider = v.Name()
 	}
 	// The likeliest misconfig is a pod missing the flag: every org would then read as
 	// having no quota, with nothing failing. Same for a missing provider key.
@@ -251,8 +253,7 @@ func start(ctx context.Context, d *deps) error {
 	// Mounted directly for the same reason as /mcp. The route is unauthenticated in
 	// the middleware sense: it authenticates by HMAC over the raw body.
 	if webhook.MountBilling(mux, subscriptionSvc) {
-		slog.InfoContext(ctx, "mounted the payments webhook",
-			slog.String("path", webhook.BillingPath(subscriptionSvc.Provider().Name())))
+		slog.InfoContext(ctx, "mounted the payments webhook", slog.String("path", webhook.BillingPath(provider)))
 	}
 
 	// WithCorrelationID wraps the whole mux so auth rejections — which happen outside

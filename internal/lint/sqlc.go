@@ -18,6 +18,12 @@ var (
 	sqlComment   = regexp.MustCompile(`(?m)--.*$`)
 )
 
+// scrubSQL is the text both mutation checks match against, comments and row locks
+// masked, so the read-only check and the owner check agree on what is a write.
+func scrubSQL(sql []byte) []byte {
+	return rowLock.ReplaceAll(sqlComment.ReplaceAll(sql, nil), []byte("for share"))
+}
+
 // sqlFiles walks dir for .sql files. A missing directory is an error, not an
 // empty result: a glob that matches nothing looks exactly like a clean tree.
 func sqlFiles(root, dir string) ([]string, error) {
@@ -49,8 +55,7 @@ func checkSqlcReadOnly(root string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		scrubbed := rowLock.ReplaceAll(sqlComment.ReplaceAll(body, nil), []byte("for share"))
-		for _, m := range mutatingStmt.FindAll(scrubbed, -1) {
+		for _, m := range mutatingStmt.FindAll(scrubSQL(body), -1) {
 			out = append(out, fmt.Sprintf("%s: %s statement in the read query set",
 				rel(root, f), strings.ToUpper(strings.Join(strings.Fields(string(m)), " "))))
 		}

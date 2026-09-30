@@ -96,10 +96,7 @@ func TestReconcileReportsADealWithNoSubscription(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	freeOrg, err := dbwriteOrg(t, f.pg)
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
+	freeOrg := dbwriteOrg(t, f.pg)
 	if _, err := f.entitlements.SetPlan(t.Context(), freeOrg, actor, entitlement.Change{PlanSlug: entitlement.SlugFree}); err != nil {
 		t.Fatalf("SetPlan free: %v", err)
 	}
