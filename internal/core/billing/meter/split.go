@@ -12,7 +12,8 @@ package meter
 //
 // Tier 1 therefore starts where the org's own allowance ends, not at the plan's
 // default: a deal allowing fewer events than the default still bills from where
-// its allowance ends. The tiers always sum to max(0, total-allowance).
+// its allowance ends. The tiers always sum to max(0, total-allowance), and none is
+// ever negative; a negative allowance, which nothing produces, counts as none.
 func Split(total, allowance int64, tierUpTo []int64) []int64 {
 	out := make([]int64, len(tierUpTo)+1)
 	var bound int64

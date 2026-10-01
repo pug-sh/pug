@@ -42,6 +42,23 @@ func TestWindowThrough(t *testing.T) {
 	if got := w.through(time.Date(2026, 11, 3, 1, 0, 0, 0, time.UTC)); !got.Equal(date(2026, 11, 3)) {
 		t.Errorf("through on the renewal day = %s, want the window's end", got)
 	}
+	// A cutover's window can start days after its period does: nothing of it is
+	// summed until then, so nothing is recorded as summed either.
+	if got := w.through(time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)); !got.Equal(w.Start) {
+		t.Errorf("through before the window begins = %s, want its start", got)
+	}
+}
+
+// Across a renewal the subscription was live for the whole window; across a change
+// of subscription only for what was summed while it was.
+func TestDaysFor(t *testing.T) {
+	p := period{Window: Window{date(2026, 10, 3), date(2026, 11, 3)}, SummedThrough: date(2026, 10, 11), SubID: "sub_a"}
+	if got := p.daysFor("sub_a"); got != p.Window {
+		t.Errorf("daysFor its own subscription = %v, want the whole window", got)
+	}
+	if got := p.daysFor("sub_b"); got != (Window{date(2026, 10, 3), date(2026, 10, 11)}) {
+		t.Errorf("daysFor another subscription = %v, want the days summed while it was live", got)
+	}
 }
 
 func TestContiguous(t *testing.T) {

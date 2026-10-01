@@ -518,14 +518,22 @@ func TestReconcileStopsOnACancelledContext(t *testing.T) {
 	}
 }
 
-// meteringCheck is a UsageMeter whose check fails for one product.
-type meteringCheck struct{ bad string }
+// meteringCheck is a UsageMeter whose check finds one product misconfigured and
+// cannot reach another, and records the tier count each check was held to.
+type meteringCheck struct {
+	bad, unreachable string
+	tiers            []int
+}
 
-func (meteringCheck) IngestUsage(context.Context, corebilling.UsageStatement) error { return nil }
+func (*meteringCheck) IngestUsage(context.Context, corebilling.UsageStatement) error { return nil }
 
-func (m meteringCheck) VerifyMetering(_ context.Context, _ int, products []string) error {
-	if slices.Contains(products, m.bad) {
-		return errors.New("does not attach tier 2")
+func (m *meteringCheck) VerifyMetering(_ context.Context, tiers int, products []string) error {
+	m.tiers = append(m.tiers, tiers)
+	switch {
+	case slices.Contains(products, m.bad):
+		return fmt.Errorf("%w: does not attach tier 2", corebilling.ErrMeteringMisconfigured)
+	case slices.Contains(products, m.unreachable):
+		return errors.New("dodo: get product: 503 Service Unavailable")
 	}
 	return nil
 }
@@ -550,13 +558,22 @@ func TestReconcileFlagsADealThatDoesNotBillEveryTier(t *testing.T) {
 		xid.New().String(), f.orgID, fakeProviderName); err != nil {
 		t.Fatalf("seed subscription: %v", err)
 	}
-	svc := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, meteringCheck{bad: "prod_bad"})
+	check := &meteringCheck{bad: "prod_bad"}
+	svc := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, check)
 	report, err := svc.Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if report.MisconfiguredDeals != 1 {
 		t.Fatalf("MisconfiguredDeals = %d, want 1", report.MisconfiguredDeals)
+	}
+	// The fake cannot re-read the subscription itself, which the walk counts
+	// unreadable whatever the deal check finds.
+	walkUnreadable := report.Unreadable
+	// Held to the tier count of the plan the deal is pinned to, not merely called.
+	plan, _ := entitlement.PlanBySlug(entitlement.SlugUsage)
+	if !slices.Equal(check.tiers, []int{plan.Tiers()}) {
+		t.Fatalf("checked with tier counts %v, want [%d]", check.tiers, plan.Tiers())
 	}
 
 	// Pinned to a plan the catalog does not know, a deal has no tier count to check
@@ -565,7 +582,7 @@ func TestReconcileFlagsADealThatDoesNotBillEveryTier(t *testing.T) {
 		`update billing_entitlements set base_plan_slug = 'usage-2019-01' where org_id = $1`, f.orgID); err != nil {
 		t.Fatalf("repin the deal: %v", err)
 	}
-	unknown := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, meteringCheck{bad: "prod_other"})
+	unknown := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, &meteringCheck{bad: "prod_other"})
 	if report, err = unknown.Reconcile(t.Context(), time.Now()); err != nil || report.MisconfiguredDeals != 1 {
 		t.Fatalf("report = %+v, err = %v; want the deal on an unknown plan flagged", report, err)
 	}
@@ -575,8 +592,16 @@ func TestReconcileFlagsADealThatDoesNotBillEveryTier(t *testing.T) {
 	}
 
 	// The same deal on a product that bills every tier is no finding.
-	good := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, meteringCheck{bad: "prod_other"})
+	good := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, &meteringCheck{bad: "prod_other"})
 	if report, err = good.Reconcile(t.Context(), time.Now()); err != nil || report.MisconfiguredDeals != 0 {
 		t.Fatalf("report = %+v, err = %v; want no misconfigured deal", report, err)
+	}
+
+	// A check the provider did not answer found nothing either way: counted as a
+	// read that failed, which fails the CronJob, not as a misconfigured deal.
+	down := f.svcWithMeter(t, &fakeProvider{name: fakeProviderName}, &meteringCheck{unreachable: "prod_bad"})
+	if report, err = down.Reconcile(t.Context(), time.Now()); err != nil ||
+		report.MisconfiguredDeals != 0 || report.Unreadable != walkUnreadable+1 {
+		t.Fatalf("report = %+v, err = %v; want the unreachable check counted unreadable", report, err)
 	}
 }

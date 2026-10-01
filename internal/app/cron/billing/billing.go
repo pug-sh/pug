@@ -130,7 +130,7 @@ func pass(ctx context.Context, svc *subscription.Service, now time.Time) error {
 	// A pass that could not read the provider has verified nothing, and exiting 0
 	// would report that as consistent. The other counters are findings, not failures.
 	if report.Unreadable > 0 {
-		return fmt.Errorf("billing reconcile could not read %d of %d subscriptions",
+		return fmt.Errorf("billing reconcile could not settle %d reads (%d subscriptions checked)",
 			report.Unreadable, report.Checked)
 	}
 	return nil

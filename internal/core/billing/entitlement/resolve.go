@@ -86,11 +86,14 @@ type Entitlement struct {
 
 	// The live provider subscription, if any; an empty SubStatus means none. These
 	// describe the MONEY: SubPeriodStart and SubPeriodEnd bound the period the
-	// provider bills, not PeriodStart and PeriodEnd.
+	// provider bills, not PeriodStart and PeriodEnd. ProviderSubID names the
+	// subscription the rest describe, which a caller that read it separately checks
+	// it is still talking about.
 	SubStatus          billing.SubStatus
 	SubPeriodStart     time.Time
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
+	ProviderSubID      string
 	// When the provider's grace period for the failed card ends — the banner's
 	// "update your card by". Zero outside one.
 	SubPastDueEndsAt time.Time
@@ -128,6 +131,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 		ent.SubPeriodStart = sub.CurrentPeriodStart
 		ent.SubPeriodEnd = sub.CurrentPeriodEnd
 		ent.ProviderCustomerID = sub.ProviderCustomerID
+		ent.ProviderSubID = sub.ProviderSubID
 		ent.SubPastDueEndsAt = sub.PastDueEndsAt
 	}
 	resolved := resolvePlan(&ent, rec, sub)
@@ -166,8 +170,8 @@ func resolvePlan(ent *Entitlement, rec Record, sub *Subscription) bool {
 			return true
 		}
 		// The catalog dropped a slug a paying org still holds. Keep its name with no
-		// allowance and no tiers: no banner can fire, and the usage meter is to report
-		// the org rather than guess a split. GetEntitlement logs it.
+		// allowance and no tiers: no banner can fire, and the billing meter is to
+		// report the org rather than guess a split. GetEntitlement logs it.
 		ent.Slug, ent.DisplayName, ent.Status = sub.PlanSlug, sub.PlanSlug, StatusActive
 		return false
 	}

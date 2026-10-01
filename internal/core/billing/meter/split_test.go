@@ -25,6 +25,10 @@ func TestSplit(t *testing.T) {
 		{"a deal allowing past the first bound", 20_000_000, 5_000_000, bounds, []int64{0, 10_000_000, 5_000_000}},
 		{"no allowance at all", 10, 0, bounds, []int64{10, 0, 0}},
 		{"a plan of one unbounded tier", 1_000, 100, nil, []int64{900}},
+		// Neither occurs — a count is never negative, and the catalog and the ledger
+		// both refuse a negative allowance — but neither may produce a negative tier.
+		{"a negative total", -5, 100_000, bounds, []int64{0, 0, 0}},
+		{"a negative allowance counts as none", 10, -5, bounds, []int64{10, 0, 0}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

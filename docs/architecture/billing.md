@@ -646,8 +646,11 @@ every rate lives on the provider's product.
   and `buf.yaml` relaxes only field deletion, only for `proto/dashboard`.
 - **`tier_usage` came with usage billing**: each tier's count for the live
   subscription's current period as last stated to the provider, carry included,
-  beside the tier's upper bound (0 for the unbounded last), with
-  `tier_usage_as_of`. Absent until the period's first statement
+  between its bounds under the plan and allowance the period was split by —
+  `from_events`, and an `up_to_events` wrapper left **absent** for the unbounded
+  last tier rather than a 0 a client would read as a bound — with
+  `tier_usage_as_of`. A running figure, not an invoice. Absent until the period's
+  first statement, and for a period split by a plan the catalog no longer knows
   ([`payments.md`](payments.md) §4.2).
 - **No `ListPlans`** in this slice — a price list whose buy button does not exist
   yet is a dialog that can only disappoint. It arrived with checkout; see

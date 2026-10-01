@@ -84,14 +84,19 @@ message Plan {
 }
 
 // TierUsage is one tier of the current billing period as last stated to the
-// provider -- exactly what it will bill for that tier, never a price.
+// provider: a running count, never a price. The provider bills each tier the most
+// it was told by the period's end, so a later statement can still raise it.
 message TierUsage {
-  // Exclusive upper bound; 0 is the unbounded last tier, since no real bound can be
-  // 0. A tier's lower bound is the previous tier's upper bound, or included_events
-  // for the first.
-  int64 up_to_events = 1;
+  // Exclusive upper bound. ABSENT for the last tier, which is unbounded -- never
+  // render its absence as 0.
+  google.protobuf.Int64Value up_to_events = 1;
   // Events in this tier stated for the current period, carry included.
   int64 events = 2;
+  // Inclusive lower bound: the previous tier's upper bound (0 for the first), or
+  // the free allowance the period was split under where that is higher. That
+  // allowance can differ from included_events, which is today's. A tier whose
+  // from_events reaches its up_to_events holds nothing: the allowance covers it.
+  int64 from_events = 3;
 }
 
 message GetBillingStatusResponse {
@@ -132,8 +137,8 @@ message GetBillingStatusResponse {
   // which only a checkout leaves behind. Not implied by subscription_status.
   bool manageable = 12;
   // Every tier of the live subscription's current period, zeros included, as last
-  // stated to the provider. Empty with no live subscription, and until the
-  // period's first statement.
+  // stated to the provider. Empty with no live subscription, until the period's
+  // first statement, and for a period split by a plan pug no longer knows.
   repeated TierUsage tier_usage = 14;
   // When tier_usage was stated. Absent whenever tier_usage is empty.
   google.protobuf.Timestamp tier_usage_as_of = 15;

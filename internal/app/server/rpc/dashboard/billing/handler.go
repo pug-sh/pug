@@ -97,34 +97,42 @@ func (s *Server) GetBillingStatus(
 	if !ent.ContractEndsAt.IsZero() {
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
 	}
-	// What the provider will bill for each tier, as last stated. Quantities only: the
-	// rates live on the provider's product.
+	// Each tier's count as last stated to the provider. Quantities only: the rates
+	// live on the provider's product.
 	if ent.SubStatus.Live() && !ent.SubPeriodStart.IsZero() {
 		stated, ok, err := s.meters.Stated(ctx, orgID, ent.SubPeriodStart)
 		if err != nil {
 			return nil, internalErr()
 		}
-		if ok {
-			resp.TierUsage = tierUsage(stated.Tiers, stated.PlanSlug)
+		if tiers, known := tierUsage(stated); ok && known {
+			resp.TierUsage = tiers
 			resp.TierUsageAsOf = timestamppb.New(stated.AsOf)
 		}
 	}
 	return connect.NewResponse(resp), nil
 }
 
-// tierUsage pairs each stated count with its tier's upper bound, 0 for the
-// unbounded last.
-func tierUsage(counts []int64, planSlug string) []*billingv1.TierUsage {
-	bounds, _ := entitlement.TiersFor(planSlug)
-	out := make([]*billingv1.TierUsage, len(counts))
-	for k, n := range counts {
-		var upTo int64
-		if k < len(bounds) {
-			upTo = bounds[k]
-		}
-		out[k] = &billingv1.TierUsage{UpToEvents: proto.Int64(upTo), Events: proto.Int64(n)}
+// tierUsage pairs each stated count with its tier's bounds, under the plan and the
+// allowance the period was split by — the bounds meter.Split used. False for a plan
+// the catalog no longer knows: bounds taken from any other would misdescribe what
+// the provider bills.
+func tierUsage(stated meter.Stated) ([]*billingv1.TierUsage, bool) {
+	bounds, ok := entitlement.TiersFor(stated.PlanSlug)
+	if !ok || len(bounds)+1 != len(stated.Tiers) {
+		return nil, false
 	}
-	return out
+	out := make([]*billingv1.TierUsage, len(stated.Tiers))
+	var prev int64
+	for k, n := range stated.Tiers {
+		tier := &billingv1.TierUsage{FromEvents: proto.Int64(max(prev, stated.Allowance)), Events: proto.Int64(n)}
+		// The last tier is unbounded, so its bound stays absent rather than 0.
+		if k < len(bounds) {
+			tier.UpToEvents = wrapperspb.Int64(bounds[k])
+			prev = bounds[k]
+		}
+		out[k] = tier
+	}
+	return out, true
 }
 
 // The service logs and records at source, so the handler only translates.
