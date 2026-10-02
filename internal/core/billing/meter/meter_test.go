@@ -755,6 +755,36 @@ func TestAPeriodWhoseEndMovesOutStaysMeterable(t *testing.T) {
 	}
 }
 
+// Paying off a hold keeps the period's start and pushes its end out. The tick that
+// sees the new end may state nothing, and must still record it: otherwise the next
+// period starts past where this window last ended, finds a gap, and carries nothing.
+func TestAPeriodWhoseEndMovesOutStillCarries(t *testing.T) {
+	f := setup(t)
+	start, end, pushed, next := d(10, 3), d(11, 3), d(11, 10), d(12, 10)
+	f.subscribe(t, entitlement.SlugUsage, "cus_1", start, end)
+	f.usage(t, d(10, 20), 3_000_000)
+	if _, err := f.run(t, d(10, 21)); err != nil {
+		t.Fatalf("October Run: %v", err)
+	}
+	if _, err := f.pg.PgW.Exec(t.Context(),
+		`update billing_subscriptions set current_period_end = $1 where org_id = $2`, pushed, f.org); err != nil {
+		t.Fatalf("push the end out: %v", err)
+	}
+	report, err := f.run(t, d(11, 9).Add(13*time.Hour))
+	if err != nil || report.Unchanged != 1 {
+		t.Fatalf("report = %+v, err = %v; want a quiet tick", report, err)
+	}
+	// Late metering for the stretched period lands after its last tick.
+	f.usage(t, d(11, 9), 500_000)
+	f.renew(t, pushed, next)
+	if _, err := f.run(t, pushed.Add(2*time.Hour)); err != nil {
+		t.Fatalf("Run in the next period: %v", err)
+	}
+	if _, carry, _ := f.ledger(t, pushed); !slices.Equal(carry, sumDiff(split(3_500_000), split(3_000_000))) {
+		t.Fatalf("carry = %v; the stretched period's late 500,000 must carry", carry)
+	}
+}
+
 // seedPeriod writes a ledger row as an earlier pass would have, split by plan.
 func (f *fixture) seedPeriod(t *testing.T, start, from, to time.Time, plan, subID string, own []int64) {
 	t.Helper()

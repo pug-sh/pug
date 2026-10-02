@@ -122,10 +122,11 @@ func writeAhead(ctx context.Context, w *dbwrite.Queries, orgID string, p period)
 }
 
 // advance records that a tick stating nothing still saw the period's subscription
-// live, through the day before through.
-func advance(ctx context.Context, w *dbwrite.Queries, orgID string, start, through time.Time) error {
-	err := w.AdvanceBillingMeterPeriodSummedThrough(ctx, dbwrite.AdvanceBillingMeterPeriodSummedThroughParams{
-		OrgID: orgID, PeriodStart: postgres.NewTimestamptz(start), SummedThrough: postgres.NewDate(through),
+// live, through the day before through, and its window ending at end.
+func advance(ctx context.Context, w *dbwrite.Queries, orgID string, start, end, through time.Time) error {
+	err := w.AdvanceBillingMeterPeriod(ctx, dbwrite.AdvanceBillingMeterPeriodParams{
+		OrgID: orgID, PeriodStart: postgres.NewTimestamptz(start), WindowEnd: postgres.NewDate(end),
+		SummedThrough: postgres.NewDate(through),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to advance the meter period", slogx.Error(err), slog.String("org_id", orgID))

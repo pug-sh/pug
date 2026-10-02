@@ -285,8 +285,9 @@ func (s *Service) meterOrg(ctx context.Context, sub dbread.BillingSubscription, 
 		own, carried = maxEach(row.Own, own), maxEach(row.Carry, carried)
 		if slices.Equal(own, row.Own) && slices.Equal(carried, row.Carry) {
 			// Nothing to state, but the tick saw the subscription live, which a change
-			// of subscription later reads to know which days were this one's.
-			if err := advance(ctx, s.w, orgID, periodStart, through); err != nil {
+			// of subscription later reads to know which days were this one's, and saw
+			// where its period now ends, which the next period reads to carry.
+			if err := advance(ctx, s.w, orgID, periodStart, win.End, through); err != nil {
 				return 0, resent, err
 			}
 			return outcomeUnchanged, resent, nil

@@ -295,11 +295,16 @@ that hour.
 Each tick, for each live subscription:
 
 1. **Freeze.** Nothing is stated once `now` reaches `current_period_end`. Dodo
-   renews about an hour late, backdating the period, and `on_hold` freezes it;
-   either way pug waits for the webhook or reconcile to report the new period.
-   Nothing is lost while the new period follows on: the days keep counting and
-   arrive through the carry. A period still frozen a day past its end is logged
-   as an error on every tick (`frozenTooLong`).
+   renews about an hour late, backdating the period, and pug waits for the
+   webhook or reconcile to report the new period. Nothing is lost while the new
+   period follows on: the days keep counting and arrive through the carry. A
+   declined renewal still opens the new period, then holds it (`on_hold`); paying
+   the hold off keeps that period's start and pushes its end out to the payment
+   plus one cycle, so the held days stay in its window (measured in test mode).
+   A tick that sees the new end records it even with nothing to state, or the
+   next period would find a gap and carry nothing. A renewal whose debit never
+   resolves holds the old period instead, and a period still frozen a day past
+   its end is logged as an error on every tick (`frozenTooLong`).
 2. **Still the org's.** The subscription is listed when the pass starts and the
    entitlement read when the org's turn comes. A cancellation, cutover or renewal
    in between leaves terms that are not this period's, so the org is left to the
@@ -365,12 +370,10 @@ one period back, so a day metered later than that goes unbilled. A subscription'
 first window includes its checkout day from UTC midnight, normally inside the
 allowance. Only `PUG_BILLING_PROVIDER`'s subscriptions are metered, so during a
 provider cutover nothing states the outgoing provider's live subscriptions.
-**Open:** whether Dodo invoices a cancelled subscription's accrued usage at all is
-being measured in test mode; if it does not, every churned customer's last
-period, and every deal cutover's old subscription, go unbilled. **Open:** "nothing
-is lost" under `on_hold` holds only if the recovered period starts where the held
-one ended. If Dodo re-anchors it at the payment, the held days fall between the
-two windows and the carry is dropped — worth a test-mode check.
+**Open:** Dodo does not invoice a cancelled subscription's accrued usage, whether
+it ends at the period's end or at once (measured in test mode), so every churned
+customer's last period, and every deal cutover's old subscription, go unbilled
+until a later change settles them.
 
 ## 5. Custom deals
 
