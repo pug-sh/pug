@@ -10,8 +10,10 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/meter"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -39,7 +41,7 @@ func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool,
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	return NewServer(subscription.NewService(pg.PgRO, pg.PgW, payments, entitlements))
+	return NewServer(subscription.NewService(pg.PgRO, pg.PgW, payments, entitlements), meter.NewReader(dbread.New(pg.PgW)))
 }
 
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
@@ -168,5 +170,81 @@ func TestSubStatusToRPCCoversEveryStoredStatus(t *testing.T) {
 	// UNSPECIFIED — the same "not live" resolution gives it.
 	if got := subStatusToRPC("some_state_the_provider_added"); got != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED {
 		t.Errorf("an unmapped status = %s, want UNSPECIFIED", got)
+	}
+}
+
+// tier_usage is the ledger's row for the live subscription's current period: what
+// the provider will bill each tier, carry included, and the last tier unbounded.
+func TestGetBillingStatusReportsTheStatedTiers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	srv := newServer(t, pg, true)
+	orgID := seedOrg(t, pg, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
+	start := time.Now().UTC().Truncate(time.Hour).AddDate(0, 0, -3)
+	if _, err := pg.PgW.Exec(t.Context(),
+		`insert into billing_subscriptions (currency, current_period_end, current_period_start, id, org_id,
+		   plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
+		   provider_updated_at, status)
+		 values ('USD', $1, $2, $3, $4, $5, 100, 'dodo', 'cus_1', 'active', 'sub_1', now(), 'active')`,
+		start.AddDate(0, 1, 0), start, xid.New().String(), orgID, entitlement.SlugUsage); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+
+	// Nothing stated yet: the tiers are absent, not zeros that read as "nothing sent".
+	if got := getStatus(t, srv, orgID); len(got.GetTierUsage()) != 0 || got.GetTierUsageAsOf() != nil {
+		t.Fatalf("tier_usage = %v as of %v before any statement, want none", got.GetTierUsage(), got.GetTierUsageAsOf())
+	}
+
+	plan := entitlement.CurrentPlan()
+	tiers := plan.Tiers()
+	own, carry := make([]int64, tiers), make([]int64, tiers)
+	own[0], own[1], carry[1] = 1_900_000, 100_000, 5_000
+	seedLedger := func(planSlug string, allowance int64) {
+		t.Helper()
+		if _, err := pg.PgW.Exec(t.Context(),
+			`insert into billing_meter_periods (acked, allowance, carry_events, org_id, own_events, period_start,
+			   plan_slug, provider_customer_id, provider_sub_id, stated_at, summed_through, window_end, window_start)
+			 values (true, $1, $2, $3, $4, $5, $6, 'cus_1', 'sub_1', now(), $7, $8, $7)
+			 on conflict (org_id, period_start) do update set allowance = excluded.allowance, plan_slug = excluded.plan_slug`,
+			allowance, carry, orgID, own, start, planSlug, start.Truncate(24*time.Hour),
+			start.AddDate(0, 1, 0).Truncate(24*time.Hour)); err != nil {
+			t.Fatalf("seed ledger: %v", err)
+		}
+	}
+	seedLedger(entitlement.SlugUsage, plan.FreeEvents)
+	resp := getStatus(t, srv, orgID)
+	got := resp.GetTierUsage()
+	if len(got) != tiers || got[0].GetEvents() != 1_900_000 || got[1].GetEvents() != 105_000 {
+		t.Fatalf("tier_usage = %v, want every tier with tier 2's carry included", got)
+	}
+	if got[0].GetFromEvents() != plan.FreeEvents || got[0].GetUpToEvents().GetValue() != plan.TierUpTo[0] ||
+		got[1].GetFromEvents() != plan.TierUpTo[0] {
+		t.Errorf("tiers 1 and 2 = %v, %v; want [allowance, first bound) and [first bound, ...)", got[0], got[1])
+	}
+	// Unbounded is absent, never a 0 a client would read as a bound.
+	if got[len(got)-1].GetUpToEvents() != nil {
+		t.Error("the last tier's bound must be absent")
+	}
+	if resp.GetTierUsageAsOf() == nil {
+		t.Error("tier_usage_as_of must be set with tier_usage")
+	}
+
+	// A deal allowing more than the first bound starts tier 1 at its allowance — the
+	// one it was split under — so tier 1 holds nothing rather than a range that runs
+	// backwards.
+	seedLedger(entitlement.SlugUsage, 5_000_000)
+	got = getStatus(t, srv, orgID).GetTierUsage()
+	if got[0].GetFromEvents() != 5_000_000 || got[1].GetFromEvents() != 5_000_000 {
+		t.Errorf("tiers 1 and 2 start at %d and %d, want the split's allowance, 5,000,000",
+			got[0].GetFromEvents(), got[1].GetFromEvents())
+	}
+
+	// Split by a plan pug no longer knows: no bounds to describe it by, so no tiers.
+	seedLedger("usage-2019-01", plan.FreeEvents)
+	if resp := getStatus(t, srv, orgID); len(resp.GetTierUsage()) != 0 || resp.GetTierUsageAsOf() != nil {
+		t.Fatalf("tier_usage = %v under an unknown plan, want none", resp.GetTierUsage())
 	}
 }

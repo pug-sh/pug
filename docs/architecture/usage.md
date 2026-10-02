@@ -18,13 +18,21 @@ Three properties everything below preserves.
 1. **Ingestion never consults usage.** The meter reads ClickHouse well after
    ingestion has committed. No event is rejected, throttled, delayed or dropped
    because of a count, and no ingestion path imports `internal/core/usage`.
-2. **The meter is optional.** A deployment that never schedules `pug cron usage`
-   has no numbers, and nothing else degrades. `GetUsage` reports an absent
+2. **The meter is optional only with billing off.** A deployment that never
+   schedules `pug cron usage` has no numbers: `GetUsage` reports an absent
    `usage_computed_at`, which the client renders as "unknown" — never as zero.
-3. **Counts are reporting, not entitlement.** Nothing in pug branches on a usage
-   number. Tiers and quotas do not exist yet: `billing_entitlements` (migration
-   019) carries the schema, and `anchor_day` is the only column anything here
-   reads. There is no over-limit state anywhere.
+   With billing on, the billing meter (`cmd/cron/billing-meter`,
+   [`payments.md`](payments.md) §4.2) sums the day cells this pass writes and
+   states them to the payments provider, so a usage pass that is unscheduled or
+   stalled would bill every subscriber the fee alone. While anybody is
+   subscribed, the billing meter therefore states nothing and exits non-zero once
+   the newest `usage_computed_at` is absent or more than three hours old.
+3. **Counts limit nothing.** No event is refused and there is no over-limit
+   state: past its free allowance an org sees a banner, and `anchor_day` is the
+   only column of `billing_entitlements` (migration 019) anything here reads. With
+   billing on, though, the counts are what pug bills from — the billing meter
+   splits each subscriber's period into the plan's tiers — so a wrong count is a
+   wrong invoice, not only a wrong number on a page.
 
 ## 2. What gets counted
 
@@ -133,6 +141,8 @@ long-running meter process — scheduling belongs to the deployment, so the cade
 is a k8s CronJob's `schedule`, not a constant in this repo. Hourly is the intended
 setting, but nothing enforces it — which is why no surface may state a staleness
 bound and every one must date-stamp the number it shows from `usage_computed_at`.
+The one bound anything holds this pass to is the billing meter's three hours,
+which is a refusal to bill from older counts rather than a promise to a viewer.
 
 **A failed pass must exit non-zero.** The exit code is the CronJob's only success
 signal, so `Run` propagates rather than swallows; a meter that logged and returned
@@ -349,7 +359,8 @@ the switch, and the RPC serves whatever it stored.
 
 Nothing runs the meter implicitly — not `pug server`, not `pug dev`. A deployment
 (or a developer) that wants numbers schedules the job; until then `GetUsage`
-answers with an absent `usage_computed_at`, never a fabricated zero.
+answers with an absent `usage_computed_at`, never a fabricated zero. A deployment
+with billing on must schedule it (invariant 2).
 
 ## 7. Knowing whether the meter ran
 
@@ -364,7 +375,9 @@ Three layers that do work, in order of usefulness:
 
 1. **`usage_periods.usage_computed_at` going stale.** An outcome check, not a
    process check, so it catches the failure modes above and "nobody ever
-   scheduled it". This is the alert worth having.
+   scheduled it". This is the alert worth having. With billing on it has a second
+   consumer that alerts on its own: the billing meter reads the same stamp and
+   fails its CronJob as `stale_usage` three hours in.
 
    It only works because nothing advances the stamp on a pass that did not verify
    a count. That is why a suspicious empty read (section 4) refreshes no period at

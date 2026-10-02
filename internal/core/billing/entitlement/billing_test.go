@@ -352,8 +352,8 @@ func TestResolveWithNoSubscriptionIsFreeOnTheCurrentAllowance(t *testing.T) {
 				t.Errorf("IncludedEvents = %v, want %d", ent.IncludedEvents, plan.FreeEvents)
 			}
 			// Nothing bills a free org, so nothing splits its usage.
-			if ent.TierUpTo != nil {
-				t.Errorf("TierUpTo = %v, want none on free", ent.TierUpTo)
+			if ent.TierUpTo != nil || ent.TierPlanSlug != "" {
+				t.Errorf("TierUpTo = %v from %q, want none on free", ent.TierUpTo, ent.TierPlanSlug)
 			}
 		})
 	}
@@ -374,8 +374,9 @@ func TestResolveADealSplitsOverItsBasePlan(t *testing.T) {
 	}
 	base, _ := entitlement.PlanBySlug(entitlement.SlugUsage)
 	if ent.IncludedEvents == nil || *ent.IncludedEvents != base.FreeEvents ||
-		!slices.Equal(ent.TierUpTo, base.TierUpTo) {
-		t.Errorf("resolved %v / %v, want the base plan's allowance and tiers", ent.IncludedEvents, ent.TierUpTo)
+		!slices.Equal(ent.TierUpTo, base.TierUpTo) || ent.TierPlanSlug != base.Slug {
+		t.Errorf("resolved %v / %v from %q, want the base plan's allowance and tiers",
+			ent.IncludedEvents, ent.TierUpTo, ent.TierPlanSlug)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/meter"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -27,7 +28,7 @@ func TestNewServerRejectsANilService(t *testing.T) {
 			t.Errorf("panic = %v, want it to name the subscription service", v)
 		}
 	}()
-	NewServer(nil)
+	NewServer(nil, meter.NewReader(nil))
 }
 
 // The status read and the buy button must answer to one billing switch, so the
@@ -38,7 +39,7 @@ func TestNewServerReadsEntitlementsOffTheSubscriptionService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
-	if got := NewServer(subscription.NewService(nil, nil, nil, entitlements)).entitlements; got != entitlements {
+	if got := NewServer(subscription.NewService(nil, nil, nil, entitlements), meter.NewReader(nil)).entitlements; got != entitlements {
 		t.Error("the handler holds an entitlement service the subscription service was not built over")
 	}
 }
