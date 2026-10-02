@@ -32,25 +32,36 @@ func (q *Queries) AckBillingMeterPeriod(ctx context.Context, arg AckBillingMeter
 	return result.RowsAffected(), nil
 }
 
-const advanceBillingMeterPeriodSummedThrough = `-- name: AdvanceBillingMeterPeriodSummedThrough :exec
-update billing_meter_periods set summed_through = least($1::date, window_end)
-where org_id = $2 and period_start = $3
-  and summed_through < least($1::date, window_end)
+const advanceBillingMeterPeriod = `-- name: AdvanceBillingMeterPeriod :exec
+update billing_meter_periods
+set window_end = greatest(window_end, $1::date),
+  summed_through = least($2::date, greatest(window_end, $1::date))
+where org_id = $3 and period_start = $4
+  and (window_end < $1::date
+    or summed_through < least($2::date, greatest(window_end, $1::date)))
 `
 
-type AdvanceBillingMeterPeriodSummedThroughParams struct {
+type AdvanceBillingMeterPeriodParams struct {
+	WindowEnd     pgtype.Date
 	SummedThrough pgtype.Date
 	OrgID         string
 	PeriodStart   pgtype.Timestamptz
 }
 
-// A tick that stated nothing still saw the subscription live. Moves forward only,
-// and writes at most once a UTC day, since that is how often the value changes.
-// Capped at the row's own window_end, which only a statement moves: a period whose
-// end the provider pushed out since then is summed past it, and the row's CHECK
-// would fail the org on every quiet tick.
-func (q *Queries) AdvanceBillingMeterPeriodSummedThrough(ctx context.Context, arg AdvanceBillingMeterPeriodSummedThroughParams) error {
-	_, err := q.db.Exec(ctx, advanceBillingMeterPeriodSummedThrough, arg.SummedThrough, arg.OrgID, arg.PeriodStart)
+// A tick that stated nothing still saw the subscription live, through
+// @summed_through, and saw its period end at @window_end. The end moves when the
+// provider pushes it out, as paying off a hold does, and a quiet tick has no
+// statement to record that: without it the next period would find a gap where this
+// window last ended and carry nothing. Both only move forward, so the row is written
+// about once a UTC day, and the end never moves back: the days a period stated stay
+// in its window.
+func (q *Queries) AdvanceBillingMeterPeriod(ctx context.Context, arg AdvanceBillingMeterPeriodParams) error {
+	_, err := q.db.Exec(ctx, advanceBillingMeterPeriod,
+		arg.WindowEnd,
+		arg.SummedThrough,
+		arg.OrgID,
+		arg.PeriodStart,
+	)
 	return err
 }
 
