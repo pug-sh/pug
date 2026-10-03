@@ -13,8 +13,8 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
-// none is what an absent value prints as. Never a zero: absent means no quota, no
-// bound on history and no list price — "0 days of history" worst of all.
+// none is what an absent value prints as. Never a zero: absent means no allowance
+// and no bound on history — "0 days of history" worst of all.
 const none = "(none)"
 
 func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec entitlement.Record, subs []dbread.BillingSubscription, history []entitlement.HistoryEntry) error {
@@ -26,23 +26,22 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 		row(w, "billing", "enabled")
 	} else {
 		// Said in full because every field below it is the disabled answer, not this
-		// org's: with the switch off every org resolves free with no quota at all.
-		row(w, "billing", "DISABLED (PUG_BILLING_ENABLED) — every org resolves with no quota")
+		// org's: with the switch off every org resolves free with no allowance at all.
+		row(w, "billing", "DISABLED (PUG_BILLING_ENABLED) — every org resolves with no allowance")
 	}
 
 	section(w, "RESOLVED", "")
 	row(w, "  plan", fmt.Sprintf("%s (%s)", ent.DisplayName, ent.Slug))
 	row(w, "  status", string(ent.Status))
 	row(w, "  included events", quota(ent.IncludedEvents))
+	row(w, "  tiers", tiers(ent.IncludedEvents, ent.TierUpTo))
 	row(w, "  retention", retention(ent.RetentionDays))
-	row(w, "  list price", price(ent.PriceCents, ent.Currency))
 	row(w, "  usage period", fmt.Sprintf("%s → %s", instant(ent.PeriodStart), instant(ent.PeriodEnd)))
-	row(w, "  trial ends", instant(ent.TrialEndsAt))
 	row(w, "  contract ends", contractEnd(ent.ContractEndsAt))
 	row(w, "  subscription", subscription(ent))
 
 	if !rec.Present {
-		section(w, "STORED", "(no row — resolving from the org's age)")
+		section(w, "STORED", "(no row — free, unless a subscription says otherwise)")
 	} else {
 		section(w, "STORED", "")
 		row(w, "  plan slug", rec.PlanSlug)
@@ -52,7 +51,7 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 		row(w, "  anchor day", override(int64(rec.AnchorDay)))
 		row(w, "  contract ends", contractEnd(rec.ContractEndsAt))
 		row(w, "  provider product", text(rec.ProviderProductID))
-		row(w, "  trial ends", instant(rec.TrialEndsAt))
+		row(w, "  base plan", text(rec.BasePlanSlug))
 		row(w, "  note", text(rec.Note))
 	}
 
@@ -75,7 +74,7 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 		} else {
 			section(w, "HISTORY", "(newest first)")
 			for _, h := range history {
-				fmt.Fprintf(w, "  %s\t%s\t%s\n", instant(h.ChangedAt), h.Actor, historyLine(h.Record))
+				fmt.Fprintf(w, "  %s\t%s\t%s\n", instant(h.ChangedAt), h.Actor, historyLine(h))
 			}
 		}
 	}
@@ -100,7 +99,8 @@ func section(w io.Writer, name, note string) {
 
 // historyLine is one recorded snapshot on a single line, carrying only the fields
 // that have a value, so a renewal reads as the two things that changed.
-func historyLine(rec entitlement.Record) string {
+func historyLine(h entitlement.HistoryEntry) string {
+	rec := h.Record
 	if !rec.Present {
 		return "cleared"
 	}
@@ -120,11 +120,14 @@ func historyLine(rec entitlement.Record) string {
 	if !rec.ContractEndsAt.IsZero() {
 		parts = append(parts, "until="+instant(rec.ContractEndsAt))
 	}
-	if !rec.TrialEndsAt.IsZero() {
-		parts = append(parts, "trial-ends="+instant(rec.TrialEndsAt))
-	}
 	if rec.ProviderProductID != "" {
 		parts = append(parts, "product="+rec.ProviderProductID)
+	}
+	if rec.BasePlanSlug != "" {
+		parts = append(parts, "base="+rec.BasePlanSlug)
+	}
+	if !h.TrialEndsAt.IsZero() {
+		parts = append(parts, "trial-ends="+instant(h.TrialEndsAt))
 	}
 	if rec.Note != "" {
 		parts = append(parts, fmt.Sprintf("note=%q", rec.Note))
@@ -191,6 +194,25 @@ func retention(v *int64) string {
 		return fmt.Sprintf("%s  (%d years)", out, years)
 	}
 	return out
+}
+
+// tiers renders how an org's usage is split: where its allowance ends and each
+// tier's upper bound, by the meter's rule — a tier starts where the allowance ends,
+// so one whose bound the allowance passes bills nothing and is not listed.
+// Quantities only: the rates live on the provider's product.
+func tiers(allowance *int64, upTo []int64) string {
+	// No layout is nothing splitting the usage: free, which nothing bills, an unknown
+	// plan, or billing off.
+	if allowance == nil || upTo == nil {
+		return none
+	}
+	parts := []string{comma(*allowance) + " free"}
+	for _, bound := range upTo {
+		if bound > *allowance {
+			parts = append(parts, "≤ "+comma(bound))
+		}
+	}
+	return strings.Join(append(parts, "beyond"), " · ")
 }
 
 func quota(v *int64) string {

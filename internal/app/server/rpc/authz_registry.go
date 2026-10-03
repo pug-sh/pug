@@ -79,7 +79,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 
 	// --- dashboard.billing.v1.BillingService ---
 	"/dashboard.billing.v1.BillingService/GetBillingStatus":      authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead),
-	"/dashboard.billing.v1.BillingService/ListPlans":             authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead, "on the viewer floor: whoever reads the quota banner is who wants to know what the next tier costs"),
+	"/dashboard.billing.v1.BillingService/ListPlans":             authzspec.OrgGated(authz.ResourceBilling, authz.ActionRead, "on the viewer floor: whoever reads the allowance banner is who wants to see what is on sale"),
 	"/dashboard.billing.v1.BillingService/CreateCheckoutSession": authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; starting a checkout spends money"),
 	"/dashboard.billing.v1.BillingService/CreatePortalSession":   authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; the portal reaches invoices"),
 	"/dashboard.billing.v1.BillingService/ConfirmCheckout":       authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; the other half of starting, and it writes the subscription row"),

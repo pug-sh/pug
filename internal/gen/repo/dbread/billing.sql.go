@@ -83,14 +83,14 @@ const getOrgEntitlement = `-- name: GetOrgEntitlement :one
 select
   o.create_time as org_create_time,
   e.anchor_day,
+  e.base_plan_slug,
   e.contract_ends_at,
   e.display_name_override,
   e.included_events_override,
   e.note,
   e.plan_slug,
   e.provider_product_id,
-  e.retention_days_override,
-  e.trial_ends_at
+  e.retention_days_override
 from orgs o
 left join billing_entitlements e on e.org_id = o.id
 where o.id = $1
@@ -99,6 +99,7 @@ where o.id = $1
 type GetOrgEntitlementRow struct {
 	OrgCreateTime          pgtype.Timestamptz
 	AnchorDay              pgtype.Int2
+	BasePlanSlug           pgtype.Text
 	ContractEndsAt         pgtype.Timestamptz
 	DisplayNameOverride    pgtype.Text
 	IncludedEventsOverride pgtype.Int8
@@ -106,7 +107,6 @@ type GetOrgEntitlementRow struct {
 	PlanSlug               pgtype.Text
 	ProviderProductID      pgtype.Text
 	RetentionDaysOverride  pgtype.Int8
-	TrialEndsAt            pgtype.Timestamptz
 }
 
 // Left join rather than two reads: most orgs have no entitlement row, and that
@@ -117,6 +117,7 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 	err := row.Scan(
 		&i.OrgCreateTime,
 		&i.AnchorDay,
+		&i.BasePlanSlug,
 		&i.ContractEndsAt,
 		&i.DisplayNameOverride,
 		&i.IncludedEventsOverride,
@@ -124,13 +125,12 @@ func (q *Queries) GetOrgEntitlement(ctx context.Context, orgID string) (GetOrgEn
 		&i.PlanSlug,
 		&i.ProviderProductID,
 		&i.RetentionDaysOverride,
-		&i.TrialEndsAt,
 	)
 	return i, err
 }
 
 const listBillingEntitlementHistory = `-- name: ListBillingEntitlementHistory :many
-select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id from billing_entitlement_history
+select actor, anchor_day, changed_at, contract_ends_at, display_name_override, id, included_events_override, note, org_id, plan_slug, retention_days_override, trial_ends_at, provider_product_id, base_plan_slug from billing_entitlement_history
 where org_id = $1
 order by changed_at desc, id desc
 limit $2
@@ -164,6 +164,7 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			&i.RetentionDaysOverride,
 			&i.TrialEndsAt,
 			&i.ProviderProductID,
+			&i.BasePlanSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -270,33 +271,33 @@ func (q *Queries) ListBillingSubscriptionsByProvider(ctx context.Context, arg Li
 	return items, nil
 }
 
-const listPaidEntitlementsWithoutLiveSubscription = `-- name: ListPaidEntitlementsWithoutLiveSubscription :many
+const listCustomDealsWithoutLiveSubscription = `-- name: ListCustomDealsWithoutLiveSubscription :many
 select e.org_id, e.plan_slug
 from billing_entitlements e
 left join billing_subscriptions s
-  on s.org_id = e.org_id and s.status in ('active', 'past_due')
-where e.plan_slug not in ('free', 'trial')
+  on s.org_id = e.org_id and s.status in ('active', 'past_due') and s.plan_slug = 'custom'
+where e.plan_slug = 'custom'
   and (e.contract_ends_at is null or e.contract_ends_at > now())
   and s.org_id is null
 order by e.org_id
 `
 
-type ListPaidEntitlementsWithoutLiveSubscriptionRow struct {
+type ListCustomDealsWithoutLiveSubscriptionRow struct {
 	OrgID    string
 	PlanSlug string
 }
 
-// Every paid org should have a provider subscription. A row here is an org
-// entitled to something nobody is charged for.
-func (q *Queries) ListPaidEntitlementsWithoutLiveSubscription(ctx context.Context) ([]ListPaidEntitlementsWithoutLiveSubscriptionRow, error) {
-	rows, err := q.db.Query(ctx, listPaidEntitlementsWithoutLiveSubscription)
+// A deal with no live custom subscription behind it: staged and not yet bought,
+// bought as a catalog plan instead, or lapsed while its contract still runs.
+func (q *Queries) ListCustomDealsWithoutLiveSubscription(ctx context.Context) ([]ListCustomDealsWithoutLiveSubscriptionRow, error) {
+	rows, err := q.db.Query(ctx, listCustomDealsWithoutLiveSubscription)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListPaidEntitlementsWithoutLiveSubscriptionRow
+	var items []ListCustomDealsWithoutLiveSubscriptionRow
 	for rows.Next() {
-		var i ListPaidEntitlementsWithoutLiveSubscriptionRow
+		var i ListCustomDealsWithoutLiveSubscriptionRow
 		if err := rows.Scan(&i.OrgID, &i.PlanSlug); err != nil {
 			return nil, err
 		}

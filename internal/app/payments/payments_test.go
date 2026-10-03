@@ -44,7 +44,7 @@ func TestNewReportsAMissingAPIKey(t *testing.T) {
 
 func TestNewBuildsBothDirectionsOfTheProductMap(t *testing.T) {
 	t.Setenv("PUG_DODO_API_KEY", "sk_test")
-	t.Setenv("PUG_DODO_PRODUCT_GROWTH", "prod_growth")
+	t.Setenv("PUG_DODO_PRODUCT_USAGE_2026_10", "prod_u")
 
 	p, err := New(t.Context(), dodo.Name)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestNewBuildsBothDirectionsOfTheProductMap(t *testing.T) {
 	if p == nil {
 		t.Fatal("New returned no provider for a configured deployment")
 	}
-	if p.ProductBySlug["growth"] != "prod_growth" {
+	if p.ProductBySlug["usage-2026-10"] != "prod_u" {
 		t.Errorf("product map = %v", p.ProductBySlug)
 	}
 	// Only a caller that starts checkouts knows where a buyer returns to.

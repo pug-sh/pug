@@ -36,9 +36,9 @@ type BillingEntitlement struct {
 	OrgID                  string
 	PlanSlug               string
 	RetentionDaysOverride  pgtype.Int8
-	TrialEndsAt            pgtype.Timestamptz
 	UpdateTime             pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
+	BasePlanSlug           pgtype.Text
 }
 
 type BillingEntitlementHistory struct {
@@ -55,6 +55,7 @@ type BillingEntitlementHistory struct {
 	RetentionDaysOverride  pgtype.Int8
 	TrialEndsAt            pgtype.Timestamptz
 	ProviderProductID      pgtype.Text
+	BasePlanSlug           pgtype.Text
 }
 
 type BillingSubscription struct {

@@ -66,7 +66,7 @@ func (c *CLI) Close() {
 }
 
 // Show prints the resolved entitlement and the stored row beneath it: a lapsed
-// deal's quota is invisible in the resolved answer and still carries onto a set.
+// deal's allowance is invisible in the resolved answer and still carries onto a set.
 func (c *CLI) Show(ctx context.Context, out io.Writer, orgID string, history bool) error {
 	rec, err := c.svc.StoredRecord(ctx, orgID)
 	if err != nil {
@@ -81,7 +81,7 @@ func (c *CLI) Show(ctx context.Context, out io.Writer, orgID string, history boo
 	return c.report(ctx, out, orgID, rec, entries)
 }
 
-// Set grants a plan, merging change over whatever is stored.
+// Set puts an org on free or a deal, merging change over whatever is stored.
 func (c *CLI) Set(ctx context.Context, out io.Writer, orgID, actor string, change entitlement.Change) error {
 	rec, err := c.svc.SetPlan(ctx, orgID, actor, change)
 	if err != nil {
@@ -90,16 +90,7 @@ func (c *CLI) Set(ctx context.Context, out io.Writer, orgID, actor string, chang
 	return c.report(ctx, out, orgID, rec, nil)
 }
 
-// ExtendTrial moves the org's trial end to days from now.
-func (c *CLI) ExtendTrial(ctx context.Context, out io.Writer, orgID, actor string, days int) error {
-	rec, err := c.svc.ExtendTrial(ctx, orgID, actor, days, time.Now())
-	if err != nil {
-		return err
-	}
-	return c.report(ctx, out, orgID, rec, nil)
-}
-
-// Clear deletes the row, returning the org to the derived trial-then-free floors.
+// Clear deletes the row, returning the org to the free allowance.
 func (c *CLI) Clear(ctx context.Context, out io.Writer, orgID, actor string) error {
 	if err := c.svc.Clear(ctx, orgID, actor); err != nil {
 		return err

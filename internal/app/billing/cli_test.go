@@ -69,14 +69,16 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 	cli, orgID := newBilling(t)
 	events := int64(5_000_000)
 	name := "Acme Enterprise"
-	note := "$400/mo, INV-123"
+	note := "INV-123"
+	product := "prod_acme"
 
 	var set strings.Builder
 	if err := cli.Set(t.Context(), &set, orgID, actor, entitlement.Change{
-		PlanSlug:       entitlement.SlugCustom,
-		IncludedEvents: &events,
-		DisplayName:    &name,
-		Note:           &note,
+		PlanSlug:          entitlement.SlugCustom,
+		ProviderProductID: &product,
+		IncludedEvents:    &events,
+		DisplayName:       &name,
+		Note:              &note,
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
@@ -96,39 +98,18 @@ func TestSetThenShowReportsBothHalves(t *testing.T) {
 	}
 }
 
-func TestExtendTrialReportsTheNewEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	cli, orgID := newBilling(t)
-	var out strings.Builder
-	// Bracketed, because the command reads its own clock: a UTC midnight crossing
-	// between the two reads would otherwise fail a correct write.
-	before := time.Now()
-	if err := cli.ExtendTrial(t.Context(), &out, orgID, actor, 30); err != nil {
-		t.Fatalf("ExtendTrial: %v", err)
-	}
-	wants := []string{
-		before.AddDate(0, 0, 30).UTC().Format(time.DateOnly),
-		time.Now().AddDate(0, 0, 30).UTC().Format(time.DateOnly),
-	}
-	if !strings.Contains(out.String(), wants[0]) && !strings.Contains(out.String(), wants[1]) {
-		t.Errorf("ExtendTrial output is missing the new trial end %v:\n%s", wants, out.String())
-	}
-}
-
 // Clear reports the empty record its own transaction just wrote, not a re-read:
 // against a replica the re-read could still show the deleted row.
-func TestClearReturnsToTheFloor(t *testing.T) {
+func TestClearReturnsToFree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	cli, orgID := newBilling(t)
 	events := int64(1_000_000)
+	product := "prod_acme"
 	if err := cli.Set(t.Context(), &strings.Builder{}, orgID, actor,
-		entitlement.Change{PlanSlug: entitlement.SlugCustom, IncludedEvents: &events}); err != nil {
+		entitlement.Change{PlanSlug: entitlement.SlugCustom, ProviderProductID: &product, IncludedEvents: &events}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -141,8 +122,8 @@ func TestClearReturnsToTheFloor(t *testing.T) {
 	}
 }
 
-// An org id an operator mistyped must say so rather than report the floors for
-// an org that does not exist.
+// An org id an operator mistyped must say so rather than report free for an org
+// that does not exist.
 func TestUnknownOrgIsReported(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -168,8 +149,11 @@ func TestRefusedMutationsReportTheirReason(t *testing.T) {
 	if err := cli.Set(t.Context(), &out, orgID, actor, entitlement.Change{PlanSlug: "no-such-tier"}); !errors.Is(err, entitlement.ErrPlanNotFound) {
 		t.Errorf("Set on an unknown slug = %v, want ErrPlanNotFound", err)
 	}
-	if err := cli.ExtendTrial(t.Context(), &out, orgID, actor, 0); !errors.Is(err, entitlement.ErrTrialDaysRange) {
-		t.Errorf("ExtendTrial with no days = %v, want ErrTrialDaysRange", err)
+	if err := cli.Set(t.Context(), &out, orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugUsage}); !errors.Is(err, entitlement.ErrPlanNotAssignable) {
+		t.Errorf("Set on a usage plan = %v, want ErrPlanNotAssignable", err)
+	}
+	if err := cli.Set(t.Context(), &out, orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugCustom}); !errors.Is(err, entitlement.ErrCustomNeedsProduct) {
+		t.Errorf("Set on a deal with no product = %v, want ErrCustomNeedsProduct", err)
 	}
 	if err := cli.Clear(t.Context(), &out, orgID, actor); !errors.Is(err, entitlement.ErrNoEntitlement) {
 		t.Errorf("Clear on an org with no row = %v, want ErrNoEntitlement", err)

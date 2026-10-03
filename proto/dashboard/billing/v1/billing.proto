@@ -9,14 +9,15 @@ import "google/protobuf/wrappers.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1;billingv1";
 
 service BillingService {
-  // What the org may send this period: plan, quota, and the window both are
+  // What is free this period: plan, free allowance, and the window both are
   // measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
   // from both. Plan fields arrive already resolved, overrides applied.
   rpc GetBillingStatus(GetBillingStatusRequest) returns (GetBillingStatusResponse) {}
 
-  // Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-  // the viewer floor, but starting a checkout spends money. The price lives on
-  // the provider's product; this request names a plan slug, never an amount.
+  // Opens a checkout for one catalog plan, or the org's own deal. Admin-only: the
+  // allowance banner is on the viewer floor, but starting a checkout spends money.
+  // The rates live on the provider's product; this request names a plan slug,
+  // never an amount.
   rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CreateCheckoutSessionResponse) {}
 
   // Verifies one checkout against the provider and applies its subscription:
@@ -30,21 +31,25 @@ service BillingService {
   // FailedPrecondition for an org that has never checked out.
   rpc CreatePortalSession(CreatePortalSessionRequest) returns (CreatePortalSessionResponse) {}
 
-  // The tiers this deployment sells, in display order. On the viewer floor: the
-  // person reading the quota banner wants to know what the next tier costs, they
-  // just cannot buy it. Never returns a product id, and never the floors.
+  // The plans this deployment sells, in display order, as quantities: the rates
+  // live on the provider's product. On the viewer floor: the person reading the
+  // allowance banner wants to see what is on sale, they just cannot buy it. Never
+  // returns a product id, and never free; the org's own deal is listed beside the
+  // plans when its row names a product.
   rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {}
 }
 
-// BillingStatus is derived from the clock on every read, never stored. The
-// states a provider reports live on SubscriptionStatus instead.
+// BillingStatus is derived on every read from the billing switch and the live
+// subscription, never stored. The states a provider reports live on
+// SubscriptionStatus instead.
 enum BillingStatus {
   BILLING_STATUS_UNSPECIFIED = 0;
-  // Inside the trial window, which runs from org creation unless extended.
-  BILLING_STATUS_TRIALING = 1;
-  // Holding a granted plan whose contract has not lapsed.
+  // Never emitted: the trial was removed. Kept because buf bans deleting an enum
+  // value.
+  BILLING_STATUS_TRIALING = 1 [deprecated = true];
+  // A live subscription.
   BILLING_STATUS_ACTIVE = 2;
-  // The floor: never trialed, trial expired, or a contract that has ended.
+  // No live subscription: the free allowance, a banner beyond it, never a bill.
   BILLING_STATUS_FREE = 3;
 }
 
@@ -52,7 +57,7 @@ enum BillingStatus {
 // own vocabulary. Only UNSPECIFIED, ACTIVE and PAST_DUE are ever emitted -- the
 // rest exist because a stored row holds them.
 enum SubscriptionStatus {
-  // No live subscription: trialing, free, comped, or no provider configured.
+  // No live subscription: free, comped, or no provider configured.
   SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
   SUBSCRIPTION_STATUS_ACTIVE = 1;
   // The card failed and the provider is retrying. The entitlement is UNCHANGED:
@@ -68,16 +73,13 @@ message GetBillingStatusRequest {
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
-// Plan is the tier as this org holds it, overrides applied.
+// Plan is the plan as this org holds it, overrides applied. It carries no price:
+// every rate lives on the provider's product.
 message Plan {
   string slug = 1;
   string display_name = 2;
-  // The tier's LIST price, in minor units of `currency` -- never what a negotiated
-  // deal is charged. ABSENT is the custom tier, which is not a price of zero. A
-  // wrapper because a bare int64 would reach the dashboard as 0.
-  google.protobuf.Int64Value price_cents = 3;
-  // ISO 4217.
-  string currency = 4;
+  reserved 3, 4;
+  reserved price_cents, currency;
 }
 
 message GetBillingStatusResponse {
@@ -85,25 +87,26 @@ message GetBillingStatusResponse {
   bool billing_enabled = 1;
   Plan plan = 2;
   BillingStatus status = 3;
-  // Events the org may send this period. ABSENT means NO QUOTA -- billing is off,
-  // or the plan carries none. Never render its absence as 0.
+  // The free allowance: events below it are never billed, and past it an org with
+  // no subscription sees a banner. ABSENT means NONE -- billing is off, or a
+  // subscription resolves to a plan pug no longer knows. Never render its absence
+  // as 0.
   google.protobuf.Int64Value included_events = 4;
-  // When the trial ends, or when it ended. Kept once past, where it says why an
-  // org is on the free floor. Absent only with billing switched off.
-  google.protobuf.Timestamp trial_ends_at = 5;
-  // When a granted plan lapses back to the free floor; absent means open-ended.
-  // The end of the agreement, NOT of the quota window.
+  reserved 5;
+  reserved trial_ends_at;
+  // When a deal's negotiated terms lapse; absent means open-ended. The end of the
+  // agreement, NOT of the usage period.
   google.protobuf.Timestamp contract_ends_at = 6;
-  // The quota window, which runs from the org's billing anniversary. Identical to
+  // The usage period, which runs from the org's billing anniversary. Identical to
   // GetUsage's period bounds, which is what makes "X of Y" like for like.
   google.protobuf.Timestamp period_start = 7;
   google.protobuf.Timestamp period_end = 8;
   SubscriptionStatus subscription_status = 9;
-  // When the provider bills next: the MONEY's period, not the quota's above.
+  // When the provider bills next: the MONEY's period, not the usage period above.
   // Absent when there is no live subscription.
   google.protobuf.Timestamp current_period_end = 10;
   // Whether a checkout would open at all -- billing on, a provider configured, and
-  // a product to check out against. Per tier it is PlanOption.purchasable.
+  // a product to check out against. Per plan it is PlanOption.purchasable.
   bool purchasable = 11;
   // Days of event history the plan promises. ABSENT means NO BOUND and is never
   // zero. Nothing in pug deletes on this number today.
@@ -115,7 +118,8 @@ message GetBillingStatusResponse {
 
 message CreateCheckoutSessionRequest {
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
-  // A catalog slug. Never a price and never a product id.
+  // A catalog plan's slug, or custom for the org's own deal. Never a price and
+  // never a product id.
   string plan_slug = 2 [(buf.validate.field).string.min_len = 1];
   // The mode the overlay opens over, so it does not land light on a dark page.
   // The dashboard's resolved theme, not the stored preference -- "system" is
@@ -165,25 +169,25 @@ message CreatePortalSessionResponse {
 
 message ListPlansRequest {
   // Scoped to an org because purchasability is: only the org whose row records a
-  // product can buy the custom tier.
+  // product can buy its deal.
   string org_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
-// PlanOption is a tier as this deployment sells it. Plan is a tier as ONE ORG
-// holds it, overrides applied.
+// PlanOption is a plan as this deployment sells it. Plan is a plan as ONE ORG
+// holds it, overrides applied. Quantities only: the rates live on the provider's
+// product.
 message PlanOption {
   string slug = 1;
   string display_name = 2;
-  // List price, in minor units of `currency`. ABSENT is the custom tier, whose
-  // price lives in the provider -- absence is never zero, here or below.
-  google.protobuf.Int64Value price_cents = 3;
-  // ISO 4217.
-  string currency = 4;
-  // Events the tier includes. ABSENT is the custom tier.
+  reserved 3, 4;
+  reserved price_cents, currency;
+  // The plan's free allowance. ABSENT is a deal: once bought, its terms are the
+  // org's entitlement -- its base plan's unless its row overrides them --
+  // absence is never zero, here or below.
   google.protobuf.Int64Value included_events = 5;
-  // Days of history the tier keeps. ABSENT is the custom tier.
+  // Days of history the plan keeps. ABSENT is a deal.
   google.protobuf.Int64Value retention_days = 7;
-  // Whether a checkout for THIS tier would open -- the same helper
+  // Whether a checkout for THIS plan would open -- the same helper
   // CreateCheckoutSession refuses on, so a dead button is impossible.
   bool purchasable = 6;
 }

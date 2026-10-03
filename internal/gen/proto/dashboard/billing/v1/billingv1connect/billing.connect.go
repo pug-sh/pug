@@ -52,13 +52,14 @@ const (
 
 // BillingServiceClient is a client for the dashboard.billing.v1.BillingService service.
 type BillingServiceClient interface {
-	// What the org may send this period: plan, quota, and the window both are
+	// What is free this period: plan, free allowance, and the window both are
 	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
 	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-	// the viewer floor, but starting a checkout spends money. The price lives on
-	// the provider's product; this request names a plan slug, never an amount.
+	// Opens a checkout for one catalog plan, or the org's own deal. Admin-only: the
+	// allowance banner is on the viewer floor, but starting a checkout spends money.
+	// The rates live on the provider's product; this request names a plan slug,
+	// never an amount.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
@@ -69,9 +70,11 @@ type BillingServiceClient interface {
 	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor: the
-	// person reading the quota banner wants to know what the next tier costs, they
-	// just cannot buy it. Never returns a product id, and never the floors.
+	// The plans this deployment sells, in display order, as quantities: the rates
+	// live on the provider's product. On the viewer floor: the person reading the
+	// allowance banner wants to see what is on sale, they just cannot buy it. Never
+	// returns a product id, and never free; the org's own deal is listed beside the
+	// plans when its row names a product.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 
@@ -155,13 +158,14 @@ func (c *billingServiceClient) ListPlans(ctx context.Context, req *connect.Reque
 
 // BillingServiceHandler is an implementation of the dashboard.billing.v1.BillingService service.
 type BillingServiceHandler interface {
-	// What the org may send this period: plan, quota, and the window both are
+	// What is free this period: plan, free allowance, and the window both are
 	// measured over. Usage is UsageService.GetUsage; a client renders "X of Y"
 	// from both. Plan fields arrive already resolved, overrides applied.
 	GetBillingStatus(context.Context, *connect.Request[v1.GetBillingStatusRequest]) (*connect.Response[v1.GetBillingStatusResponse], error)
-	// Opens a checkout for one catalog tier. Admin-only: the quota banner is on
-	// the viewer floor, but starting a checkout spends money. The price lives on
-	// the provider's product; this request names a plan slug, never an amount.
+	// Opens a checkout for one catalog plan, or the org's own deal. Admin-only: the
+	// allowance banner is on the viewer floor, but starting a checkout spends money.
+	// The rates live on the provider's product; this request names a plan slug,
+	// never an amount.
 	CreateCheckoutSession(context.Context, *connect.Request[v1.CreateCheckoutSessionRequest]) (*connect.Response[v1.CreateCheckoutSessionResponse], error)
 	// Verifies one checkout against the provider and applies its subscription:
 	// what confirms a returning buyer on a deployment with no reachable webhook
@@ -172,9 +176,11 @@ type BillingServiceHandler interface {
 	// invoices and cancellation live -- hence no ChangePlan or CancelSubscription.
 	// FailedPrecondition for an org that has never checked out.
 	CreatePortalSession(context.Context, *connect.Request[v1.CreatePortalSessionRequest]) (*connect.Response[v1.CreatePortalSessionResponse], error)
-	// The tiers this deployment sells, in display order. On the viewer floor: the
-	// person reading the quota banner wants to know what the next tier costs, they
-	// just cannot buy it. Never returns a product id, and never the floors.
+	// The plans this deployment sells, in display order, as quantities: the rates
+	// live on the provider's product. On the viewer floor: the person reading the
+	// allowance banner wants to see what is on sale, they just cannot buy it. Never
+	// returns a product id, and never free; the org's own deal is listed beside the
+	// plans when its row names a product.
 	ListPlans(context.Context, *connect.Request[v1.ListPlansRequest]) (*connect.Response[v1.ListPlansResponse], error)
 }
 

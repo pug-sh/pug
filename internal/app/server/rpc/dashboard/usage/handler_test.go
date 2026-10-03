@@ -31,7 +31,7 @@ func TestGetUsageFollowsTheOrgsAnchorDay(t *testing.T) {
 	svc := coreusage.NewService(pg.PgRO, pg.PgW)
 	orgID, _ := seedOrgProject(t, pg)
 	if _, err := pg.PgW.Exec(t.Context(),
-		"insert into billing_entitlements (org_id, plan_slug, anchor_day) values ($1, 'growth', 17)",
+		"insert into billing_entitlements (org_id, plan_slug, anchor_day) values ($1, 'free', 17)",
 		orgID); err != nil {
 		t.Fatalf("seed entitlement: %v", err)
 	}

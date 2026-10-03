@@ -90,48 +90,17 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 		t.Error("billing_enabled is false with the switch on")
 	}
 	if on.GetIncludedEvents() == nil {
-		t.Fatal("included_events is absent with billing on; the free floor has a quota")
+		t.Fatal("included_events is absent with billing on; free has an allowance")
 	}
-	if on.GetIncludedEvents().GetValue() != 10_000 {
-		t.Errorf("included_events = %d, want the free floor's 10000", on.GetIncludedEvents().GetValue())
+	if on.GetIncludedEvents().GetValue() != entitlement.CurrentPlan().FreeEvents {
+		t.Errorf("included_events = %d, want the current allowance", on.GetIncludedEvents().GetValue())
 	}
 	if on.GetRetentionDays().GetValue() != entitlement.RetentionYearDays {
-		t.Errorf("retention_days = %d, want the free floor's %d",
+		t.Errorf("retention_days = %d, want the current plan's %d",
 			on.GetRetentionDays().GetValue(), entitlement.RetentionYearDays)
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {
-		t.Errorf("status = %s, want FREE for an org past its trial", on.GetStatus())
-	}
-}
-
-func TestGetBillingStatusReportsATrial(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	pg := testutil.SetupPostgres(t)
-	orgID := seedOrg(t, pg, time.Now().AddDate(0, 0, -2))
-
-	msg := getStatus(t, newServer(t, pg, true), orgID)
-	if msg.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_TRIALING {
-		t.Errorf("status = %s two days after signup, want TRIALING", msg.GetStatus())
-	}
-	if msg.GetTrialEndsAt() == nil {
-		t.Error("trial_ends_at is absent while trialing")
-	}
-	if msg.GetPlan().GetSlug() != entitlement.SlugTrial {
-		t.Errorf("plan = %q, want the trial tier", msg.GetPlan().GetSlug())
-	}
-	// A price of zero is a real price and must survive as one rather than
-	// collapsing into "no price recorded".
-	if msg.GetPlan().GetPriceCents() == nil {
-		t.Fatal("price_cents is absent on the trial tier; free is a price, not the lack of one")
-	}
-	if msg.GetPlan().GetPriceCents().GetValue() != 0 {
-		t.Errorf("price_cents = %d, want 0", msg.GetPlan().GetPriceCents().GetValue())
-	}
-	if msg.GetPlan().GetCurrency() == "" {
-		t.Error("currency is empty; an amount without its unit cannot be formatted")
+		t.Errorf("status = %s, want FREE for an org with no subscription", on.GetStatus())
 	}
 }
 
@@ -163,11 +132,10 @@ func TestGetBillingStatusReportsAnUnknownOrg(t *testing.T) {
 // falls through to UNSPECIFIED beside a populated plan, with nothing failing.
 func TestStatusToRPCCoversEveryResolvedStatus(t *testing.T) {
 	// Exact values, not merely "not UNSPECIFIED": two statuses swapped would tell a
-	// paying customer they are on a trial, and pass a presence-only assertion.
+	// paying customer they are on free, and pass a presence-only assertion.
 	want := map[entitlement.Status]billingv1.BillingStatus{
-		entitlement.StatusTrialing: billingv1.BillingStatus_BILLING_STATUS_TRIALING,
-		entitlement.StatusActive:   billingv1.BillingStatus_BILLING_STATUS_ACTIVE,
-		entitlement.StatusFree:     billingv1.BillingStatus_BILLING_STATUS_FREE,
+		entitlement.StatusActive: billingv1.BillingStatus_BILLING_STATUS_ACTIVE,
+		entitlement.StatusFree:   billingv1.BillingStatus_BILLING_STATUS_FREE,
 	}
 	for s, w := range want {
 		if got := statusToRPC(s); got != w {

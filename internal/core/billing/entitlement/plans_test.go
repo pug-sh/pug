@@ -1,180 +1,89 @@
 package entitlement_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 )
 
-// Checkout's half of the catalog. Retired is set by hand because no catalog tier
-// is retired yet, and the product map keeps a retired tier mapped for its holders'
-// renewals, so this is the only thing that keeps one off sale the day one is.
-func TestOnSale(t *testing.T) {
-	floor := func(slug string) entitlement.Plan {
-		p, ok := entitlement.PlanBySlug(slug)
-		if !ok {
-			t.Fatalf("catalog is missing the floor %q", slug)
-		}
-		return p
-	}
-	for name, tc := range map[string]struct {
-		plan entitlement.Plan
-		want bool
-	}{
-		"free floor":   {floor(entitlement.SlugFree), false},
-		"trial floor":  {floor(entitlement.SlugTrial), false},
-		"a sold tier":  {entitlement.Plan{Slug: "growth"}, true},
-		"retired tier": {entitlement.Plan{Slug: "growth-v0", Retired: true}, false},
-		// On sale to the catalog; whether this org has a product for it is checkout's
-		// question, answered from its row.
-		"custom": {entitlement.Plan{Slug: entitlement.SlugCustom}, true},
-	} {
-		if got := tc.plan.OnSale(); got != tc.want {
-			t.Errorf("%s: OnSale() = %v, want %v", name, got, tc.want)
-		}
-	}
-}
-
-// A tier's money and quota are fixed once any org holds it: editing them
-// re-negotiates every live agreement on that tier with a one-line diff, applied
-// retroactively on deploy and recorded nowhere. Repricing mints a NEW slug
-// (growth-v2) and flips the old one to Retired, so existing customers
-// keep resolving against what they agreed to.
-//
-// This test is the only guard against that edit, because nothing else in the
-// system can tell an intended reprice from a typo. Editing an existing row here
-// is almost never the fix; adding a row for a newly minted slug is.
-//
-// DisplayName is deliberately absent: renaming "Growth" to "Team" changes
-// nothing anybody bought.
+// A sold plan's numbers must match the meters on its provider product, and an edit
+// re-splits every subscription on it silently. The values are PLACEHOLDERS until
+// the commercial split is decided — then this pin is what makes changing them a
+// deliberate act.
 func TestCatalogIsPinned(t *testing.T) {
-	type pin struct {
-		currency  string
-		price     *int64
-		events    *int64
-		retention *int64
+	want := map[string]struct {
+		free      int64
+		tierUpTo  []int64
+		retention int64
 		retired   bool
+	}{
+		entitlement.SlugUsage: {
+			free:      100_000,
+			tierUpTo:  []int64{2_000_000, 15_000_000, 50_000_000, 100_000_000, 250_000_000},
+			retention: 365,
+		},
 	}
-	cents := func(v int64) *int64 { return &v }
-
-	// Retention is pinned as literal days, not as a multiple of RetentionYearDays:
-	// shortening the constant would cut every tier at once.
-	want := map[string]pin{
-		"free":    {currency: "USD", price: cents(0), events: cents(10_000), retention: cents(365)},
-		"trial":   {currency: "USD", price: cents(0), events: cents(500_000), retention: cents(365)},
-		"starter": {currency: "USD", price: cents(1_000), events: cents(100_000), retention: cents(365)},
-		"growth":  {currency: "USD", price: cents(2_000), events: cents(500_000), retention: cents(1_095)},
-		"scale":   {currency: "USD", price: cents(3_000), events: cents(1_000_000), retention: cents(2_555)},
-		// No price, no quota and no retention of its own: all three come from the
-		// org's row.
-		"custom": {currency: "USD"},
-	}
-
 	plans := entitlement.Plans()
-	// PlanBySlug returns the first match, so a duplicate would silently shadow.
-	seen := make(map[string]bool, len(plans))
-	for _, p := range plans {
-		if seen[p.Slug] {
-			t.Errorf("%s: duplicated in the catalog", p.Slug)
-		}
-		seen[p.Slug] = true
-	}
 	if len(plans) != len(want) {
-		t.Errorf("catalog has %d plans, want %d — a tier may be added, but none may be REMOVED "+
-			"while rows still name it", len(plans), len(want))
+		t.Fatalf("catalog has %d plans, want %d", len(plans), len(want))
 	}
-
 	for _, p := range plans {
 		w, ok := want[p.Slug]
 		if !ok {
-			t.Errorf("%s: new tier — add it here, and confirm nothing edited an existing one", p.Slug)
-			continue
+			t.Fatalf("unpinned plan %q", p.Slug)
 		}
-		if p.Currency != w.currency {
-			t.Errorf("%s: currency = %q, want %q", p.Slug, p.Currency, w.currency)
-		}
-		if !samePtr(p.PriceCents, w.price) {
-			t.Errorf("%s: price_cents = %v, want %v — reprice by minting a new slug", p.Slug, str(p.PriceCents), str(w.price))
-		}
-		if !samePtr(p.IncludedEvents, w.events) {
-			t.Errorf("%s: included_events = %v, want %v — this changes what every existing "+
-				"customer on this tier gets", p.Slug, str(p.IncludedEvents), str(w.events))
-		}
-		if !samePtr(p.RetentionDays, w.retention) {
-			t.Errorf("%s: retention_days = %v, want %v — shortening this is a promise to "+
-				"delete data a customer already sent", p.Slug, str(p.RetentionDays), str(w.retention))
-		}
-		if p.Retired != w.retired {
-			t.Errorf("%s: retired = %v, want %v", p.Slug, p.Retired, w.retired)
+		if p.FreeEvents != w.free || !slices.Equal(p.TierUpTo, w.tierUpTo) ||
+			p.RetentionDays != w.retention || p.Retired != w.retired {
+			t.Errorf("plan %q = %+v, want %+v", p.Slug, p, w)
 		}
 	}
 }
 
-// The custom tier is unresolvable without an org-level override, which the
-// database enforces. Nothing may quietly give it a default.
-func TestCustomPlanCarriesNoNumbersOfItsOwn(t *testing.T) {
-	plan, ok := entitlement.PlanBySlug(entitlement.SlugCustom)
-	if !ok {
-		t.Fatal("the custom slug is missing from the catalog")
-	}
-	if plan.IncludedEvents != nil {
-		t.Errorf("custom has a quota of %d; a deal's quota must come from its own row", *plan.IncludedEvents)
-	}
-	if plan.PriceCents != nil {
-		t.Errorf("custom has a price of %d; a deal's price must come from its own row", *plan.PriceCents)
-	}
-	if plan.RetentionDays != nil {
-		t.Errorf("custom retains %d days; a deal's retention must come from its own row", *plan.RetentionDays)
-	}
-	if plan.Retired {
-		t.Error("custom is retired; an operator must still be able to grant a negotiated deal")
-	}
-}
-
-func TestPlanBySlugReportsAnUnknownSlug(t *testing.T) {
-	if _, ok := entitlement.PlanBySlug("growth-v9"); ok {
-		t.Error("PlanBySlug resolved a slug the catalog does not have")
-	}
-}
-
-func samePtr(a, b *int64) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
-}
-
-func str(v *int64) any {
-	if v == nil {
-		return "none"
-	}
-	return *v
-}
-
-// The catalog hands out pointers, so a caller writing through one would reprice
-// a tier for the whole process — a mutation TestCatalogIsPinned cannot see,
-// because it is not a source edit.
-func TestCatalogPointersAreNotShared(t *testing.T) {
-	got, ok := entitlement.PlanBySlug("growth")
-	if !ok {
-		t.Fatal("growth is missing from the catalog")
-	}
-	want := *got.IncludedEvents
-	wantRetention := *got.RetentionDays
-	*got.IncludedEvents = 1
-	*got.PriceCents = 1
-	*got.RetentionDays = 1
-
-	again, _ := entitlement.PlanBySlug("growth")
-	if *again.IncludedEvents != want {
-		t.Errorf("quota = %d after mutating a returned copy, want %d", *again.IncludedEvents, want)
-	}
-	if *again.RetentionDays != wantRetention {
-		t.Errorf("retention = %d after mutating a returned copy, want %d", *again.RetentionDays, wantRetention)
-	}
-	for _, p := range entitlement.Plans() {
-		if p.Slug == "growth" && *p.IncludedEvents != want {
-			t.Errorf("Plans() quota = %d, want %d", *p.IncludedEvents, want)
+// Free and custom are states, never catalog entries: nothing may sell them.
+func TestFreeAndCustomAreStatesNotPlans(t *testing.T) {
+	for _, slug := range []string{entitlement.SlugFree, entitlement.SlugCustom} {
+		if _, ok := entitlement.PlanBySlug(slug); ok {
+			t.Errorf("PlanBySlug(%q) found a plan; it is a state", slug)
 		}
+	}
+}
+
+func TestCurrentPlanIsTheUsagePlan(t *testing.T) {
+	if got := entitlement.CurrentPlan(); got.Slug != entitlement.SlugUsage || !got.OnSale() {
+		t.Fatalf("CurrentPlan = %+v, want the usage plan on sale", got)
+	}
+	if got := entitlement.CurrentPlan().Tiers(); got != 6 {
+		t.Fatalf("Tiers = %d, want 6 (five bounds and the unbounded last)", got)
+	}
+}
+
+func TestTiersFor(t *testing.T) {
+	current := entitlement.CurrentPlan().TierUpTo
+	if got, ok := entitlement.TiersFor(entitlement.SlugUsage); !ok || !slices.Equal(got, current) {
+		t.Errorf("TiersFor(usage) = %v, %v", got, ok)
+	}
+	// A deal splits over its own base plan, which only its row names: its layout is
+	// TiersFor(that plan), never the current plan's by default.
+	for _, slug := range []string{entitlement.SlugCustom, entitlement.SlugFree, "growth", ""} {
+		if _, ok := entitlement.TiersFor(slug); ok {
+			t.Errorf("TiersFor(%q) reported a layout; nothing can split it", slug)
+		}
+	}
+}
+
+// A caller writing through a returned plan must not re-split the catalog.
+func TestCatalogSlicesAreNotShared(t *testing.T) {
+	p, _ := entitlement.PlanBySlug(entitlement.SlugUsage)
+	p.TierUpTo[0] = 1
+	listed := entitlement.Plans()[0]
+	listed.TierUpTo[1] = 1
+	cur := entitlement.CurrentPlan()
+	cur.TierUpTo[2] = 1
+	tiers, _ := entitlement.TiersFor(entitlement.SlugUsage)
+	tiers[3] = 1
+	if again, _ := entitlement.PlanBySlug(entitlement.SlugUsage); again.TierUpTo[0] == 1 || again.TierUpTo[1] == 1 ||
+		again.TierUpTo[2] == 1 || again.TierUpTo[3] == 1 {
+		t.Fatalf("the catalog changed through a returned slice: %v", again.TierUpTo)
 	}
 }
