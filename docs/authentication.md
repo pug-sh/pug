@@ -64,11 +64,20 @@ An older Pug refuses to start with `emailDomains` in the file, since unknown fie
 
 ## Requiring SSO
 
-An org admin can require SSO for a domain the org verified. Accounts on that domain then sign in only through a provider that proves it: Google with `hd`, or a provider whose `emailDomains` lists it. Passwords and email links stop working for them. If that provider breaks, for example when its client secret expires, nobody on the domain can sign in to turn the setting off, admins included. Turn it off in every org with:
+An org admin can require SSO for a domain the org verified. Accounts on that domain then sign in only through a provider that proves it: Google with `hd`, a provider whose `emailDomains` lists it, or the org SSO connection that signs it in. Passwords and email links stop working for them. If that provider breaks, for example when its client secret expires, nobody on the domain can sign in to turn the setting off, admins included. Turn it off in every org with:
 
 ```sh
 ./bin/pug domains unenforce acme.com
 ```
+
+## Org SSO connections
+
+Org admins can connect their own OIDC provider through the `OrgsService` SSO connection RPCs, with no change to `PUG_CONFIG_FILE` (see [`architecture/sso.md`](architecture/sso.md), phase 3). The app has no screen for it yet. Two settings control it:
+
+- `PUG_SSO_SECRET_KEY` encrypts the connections' client secrets. Generate it with `openssl rand -base64 32`. Empty turns connections off, and then a domain that requires SSO only through a connection can't sign in until `pug domains unenforce`; the server logs an error at startup when connections exist. A different key can't read the stored secrets, so connection sign-ins fail until each admin enters the secret again.
+- `PUG_SSO_ALLOW_PRIVATE_ISSUERS=true` lets connections reach issuers on private addresses, and use the environment's proxy. Set it for an identity provider on an internal network, or a server that reaches the internet only through a proxy. Leave it off on a public deployment, so an org admin can't point a connection at internal services.
+
+Each connection has its own redirect URI, `/oauth/callback/<connection id>`, which its admin registers with their provider.
 
 ## Google
 

@@ -29,8 +29,9 @@ returning *;
 -- name: DeleteOrgDomain :execrows
 delete from org_domains where id = @id and org_id = @org_id;
 
--- name: DeleteOrgDomainByOrgIDAndDomain :execrows
-delete from org_domains where org_id = @org_id and domain = @domain;
+-- name: DeleteOrgDomainByOrgIDAndDomain :one
+delete from org_domains where org_id = @org_id and domain = @domain
+returning sso_connection_id;
 
 -- name: UpdateOrgDomainRequireSSO :one
 -- Turning it on needs a verified claim that an SSO sign-in has proven.
@@ -53,6 +54,9 @@ select exists (
 update org_domains
 set sso_seen_at = now()
 where domain = @domain and verified_at is not null and sso_seen_at is null;
+
+-- name: ClearOrgDomainsSSOSeen :exec
+update org_domains set sso_seen_at = null where domain = any(@domains::text[]);
 
 -- name: AutoJoinOrgsByDomain :many
 insert into org_members (org_id, customer_id, role, joined_via_domain)

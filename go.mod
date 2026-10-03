@@ -5,6 +5,7 @@ go 1.26.7
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	buf.build/go/protovalidate v1.4.0
+	code.dny.dev/ssrf v0.3.0
 	connectrpc.com/authn v0.2.0
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/cors v0.1.0

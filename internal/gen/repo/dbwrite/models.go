@@ -211,6 +211,7 @@ type OrgDomain struct {
 	VerificationMethod pgtype.Text
 	VerificationToken  string
 	VerifiedAt         pgtype.Timestamptz
+	SsoConnectionID    pgtype.Text
 }
 
 type OrgEmailProvider struct {
@@ -241,6 +242,17 @@ type OrgMember struct {
 	OrgID           string
 	Role            string
 	JoinedViaDomain pgtype.Text
+}
+
+type OrgSsoConnection struct {
+	ClientID               string
+	ClientSecretCiphertext []byte
+	CreateTime             pgtype.Timestamptz
+	ID                     string
+	IssuerUrl              string
+	Label                  string
+	OrgID                  string
+	UpdateTime             pgtype.Timestamptz
 }
 
 type Profile struct {

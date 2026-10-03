@@ -2,17 +2,21 @@ package orgs_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/rs/xid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	orgshandler "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -257,4 +261,64 @@ func TestRequireSSOHandlers(t *testing.T) {
 			t.Fatalf("listed = %v", got)
 		}
 	}
+}
+
+// The handlers map every field. A swapped client id and secret would publish the secret,
+// since DiscoverSignIn returns the client id.
+func TestSSOConnectionHandlers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	cipher, err := secret.NewCipher(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := orgshandler.NewServer(h.svc.WithSSOConnections(cipher, func(context.Context, string) error { return nil }))
+	admin := seedCustomerWithEmail(t, h, "admin@acme.com")
+	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.svc.VerifyDomainByOperator(h.ctx, org.ID, "acme.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := ctxWithCustomer(h.ctx, admin)
+	orgID := proto.String(org.ID)
+
+	created, err := srv.SetSSOConnection(ctx, connect.NewRequest(&orgsv1.SetSSOConnectionRequest{
+		OrgId: orgID, Label: proto.String("Acme SSO"), IssuerUrl: proto.String("https://acme.okta.com"),
+		ClientId: proto.String("cid"), ClientSecret: proto.String("s3cret"), DomainIds: []string{d.ID},
+	}))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	connID := created.Msg.GetConnection().Id
+	if _, err := srv.SetSSOConnection(ctx, connect.NewRequest(&orgsv1.SetSSOConnectionRequest{
+		OrgId: orgID, ConnectionId: connID, Label: proto.String("Renamed"), IssuerUrl: proto.String("https://acme.okta.com"),
+		ClientId: proto.String("cid"), DomainIds: []string{d.ID},
+	})); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	list, err := srv.ListSSOConnections(ctx, connect.NewRequest(&orgsv1.ListSSOConnectionsRequest{OrgId: orgID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conns := list.Msg.GetConnections()
+	if len(conns) != 1 || conns[0].GetClientId() != "cid" || conns[0].GetLabel() != "Renamed" || conns[0].GetDomains()[0].GetDomain() != "acme.com" {
+		t.Fatalf("connections = %v", conns)
+	}
+	if strings.Contains(protojson.Format(list.Msg), "s3cret") {
+		t.Fatal("ListSSOConnections returned the client secret")
+	}
+	if conn, err := coreorgs.SSOConnectionForSignIn(h.ctx, h.write, cipher, *connID); err != nil || conn.ClientSecret != "s3cret" {
+		t.Fatalf("stored secret = %q, %v", conn.ClientSecret, err)
+	}
+
+	if _, err := srv.DeleteSSOConnection(ctx, connect.NewRequest(&orgsv1.DeleteSSOConnectionRequest{OrgId: orgID, ConnectionId: connID})); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, err = srv.DeleteSSOConnection(ctx, connect.NewRequest(&orgsv1.DeleteSSOConnectionRequest{OrgId: orgID, ConnectionId: connID}))
+	wantAppErr(t, err, connect.CodeNotFound, apperr.ReasonSSOConnectionNotFound)
 }

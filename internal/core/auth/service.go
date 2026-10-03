@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
+	"github.com/pug-sh/pug/internal/core/email/secret"
 	"github.com/pug-sh/pug/internal/core/emailaction"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/nats"
@@ -114,6 +115,8 @@ type Service struct {
 	jwtKey    []byte
 	publisher JobPublisher
 	oauth     *coreoauth.Service
+	oauthCfg  coreoauth.Config
+	ssoCipher *secret.Cipher
 	// demoEnabled gates DemoSignIn, the credential-less viewer login. It mirrors
 	// PUG_DEMO_ENABLED so the public demo login is only mintable on a demo
 	// deployment; everywhere else DemoSignIn returns ErrDemoUnavailable.
@@ -134,6 +137,7 @@ func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtK
 		jwtKey:      jwtKey,
 		publisher:   publisher,
 		oauth:       oauthSvc,
+		oauthCfg:    oauthCfg,
 		demoEnabled: demoEnabled,
 	}, nil
 }
@@ -343,7 +347,32 @@ func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.Pro
 	if err != nil {
 		return Session{}, err
 	}
-	session, err := s.completeExternalIdentity(ctx, ident, inviteToken, reportingTimezone)
+	return s.completeOIDC(ctx, ident, nil, inviteToken, reportingTimezone)
+}
+
+// CompleteConnectionSignIn signs in through an org's SSO connection. It reads the
+// connection at every sign-in, so an edit takes effect on every server at once.
+func (s *Service) CompleteConnectionSignIn(ctx context.Context, connectionID string, code coreoauth.AuthorizationCode, inviteToken, reportingTimezone string) (Session, error) {
+	if s.ssoCipher == nil {
+		return Session{}, coreoauth.ErrOAuthProviderDisabled
+	}
+	conn, err := coreorgs.SSOConnectionForSignIn(ctx, s.write, s.ssoCipher, connectionID)
+	if errors.Is(err, coreorgs.ErrSSOConnectionNotFound) {
+		return Session{}, coreoauth.ErrOAuthProviderDisabled
+	}
+	if err != nil {
+		return Session{}, err
+	}
+	ident, err := s.oauth.ExchangeConnectionCode(ctx, conn, code)
+	if err != nil {
+		return Session{}, err
+	}
+	return s.completeOIDC(ctx, ident, &conn, inviteToken, reportingTimezone)
+}
+
+// conn is the connection the code was exchanged through, or nil for a config provider.
+func (s *Service) completeOIDC(ctx context.Context, ident *coreoauth.Identity, conn *coreoauth.Connection, inviteToken, reportingTimezone string) (Session, error) {
+	session, err := s.completeExternalIdentity(ctx, ident, conn, inviteToken, reportingTimezone)
 	// The refusal rolls back, so the invite is still good for another provider.
 	if ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err); ok {
 		ssoErr.Invite = inviteToken != ""
@@ -351,7 +380,7 @@ func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.Pro
 	return session, err
 }
 
-func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, inviteToken, reportingTimezone string) (Session, error) {
+func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, conn *coreoauth.Connection, inviteToken, reportingTimezone string) (Session, error) {
 	var session Session
 	var joined []string
 	provenDomain := ident.ProvenDomain()
@@ -360,6 +389,11 @@ func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth
 		return Session{}, err
 	}
 	_, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
+		if conn != nil {
+			if err := coreorgs.SSOConnectionUnchangedInTx(ctx, w, *conn); err != nil {
+				return err
+			}
+		}
 		email, err := w.GetCustomerEmailByID(ctx, customerID)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to get customer email on oidc sign-in", slogx.Error(err), slog.String("customer_id", customerID))
@@ -367,6 +401,11 @@ func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth
 			return err
 		}
 		// Sign-in resolves sub before email, so the account can be on another domain than the token's email.
+		if !ident.AllowsAccount(email) {
+			slog.WarnContext(ctx, "sso connection sign-in refused: account not on a listed domain",
+				slog.String("provider", string(ident.Provider())), slog.String("customer_id", customerID))
+			return coreoauth.ErrEmailNotOnConnection
+		}
 		if err := coreorgs.CheckSignInInTx(ctx, w, email, provenDomain); err != nil {
 			return err
 		}

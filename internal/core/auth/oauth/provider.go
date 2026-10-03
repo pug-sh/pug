@@ -3,7 +3,10 @@ package oauth
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/pug-sh/pug/internal/domainname"
 )
 
 // Claims are the fields extracted from an IdP credential, before the
@@ -31,6 +34,8 @@ type Identity struct {
 	displayName  string
 	pictureURI   string
 	provenDomain string
+	// Set for a connection: the domains it lists.
+	connectionDomains []string
 }
 
 // Display-field caps match the storage columns (customers.display_name
@@ -77,6 +82,16 @@ func (i *Identity) Email() string          { return i.email }
 func (i *Identity) DisplayName() string    { return i.displayName }
 func (i *Identity) PictureURI() string     { return i.pictureURI }
 func (i *Identity) ProvenDomain() string   { return i.provenDomain }
+
+// AllowsAccount reports whether the identity may sign in to an account with this email.
+// A connection only reaches accounts on the domains it lists.
+func (i *Identity) AllowsAccount(email string) bool {
+	return !i.provider.isConnection() || slices.Contains(i.connectionDomains, domainname.Of(email))
+}
+
+func (n ProviderName) isConnection() bool {
+	return strings.HasPrefix(string(n), connectionProviderPrefix)
+}
 
 // truncateRunes clamps s to at most max runes. Postgres varchar(n) counts
 // characters, so truncating by rune (not byte) avoids splitting a multi-byte

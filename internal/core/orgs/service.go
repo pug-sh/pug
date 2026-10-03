@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/email/secret"
 	"github.com/pug-sh/pug/internal/core/emailaction"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/nats"
@@ -112,6 +113,9 @@ type Service struct {
 	// privilege change beyond memberRoleCacheTTL. Optional: nil disables caching.
 	roleCache *goredis.Client
 	resolver  TXTResolver
+
+	ssoCipher   *secret.Cipher
+	checkIssuer IssuerChecker
 }
 
 type JobPublisher interface {

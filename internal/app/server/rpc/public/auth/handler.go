@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
+	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -30,6 +32,9 @@ type authService interface {
 	RequestMagicLink(ctx context.Context, email string) error
 	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
 	CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, inviteToken, reportingTimezone string) (coreauth.Session, error)
+	CompleteConnectionSignIn(ctx context.Context, connectionID string, code coreoauth.AuthorizationCode, inviteToken, reportingTimezone string) (coreauth.Session, error)
+	DiscoverSignIn(ctx context.Context, email string) (coreauth.SignInDiscovery, error)
+	ProvidersFor(ctx context.Context, domain string) ([]coreauth.SignInProvider, error)
 	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
 	RevokeSession(ctx context.Context, refreshToken string) error
 	DemoSignIn(ctx context.Context) (coreauth.DemoSession, error)
@@ -40,7 +45,7 @@ type server struct {
 	oauthCfg coreoauth.Config
 }
 
-func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool) (*server, error) {
+func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool, ssoCipher *secret.Cipher, ssoClient *http.Client) (*server, error) {
 	oauthCfg, err := coreoauth.LoadConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load oauth config: %w", err)
@@ -53,7 +58,7 @@ func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKe
 	}
 
 	return &server{
-		service:  service,
+		service:  service.WithSSOConnections(ssoCipher, ssoClient),
 		oauthCfg: oauthCfg,
 	}, nil
 }
@@ -92,21 +97,58 @@ func (s *server) GetAuthConfig(
 func toRPCProviders(providers []coreoauth.ProviderConfig) []*authv1.AuthProviderConfig {
 	out := make([]*authv1.AuthProviderConfig, 0, len(providers))
 	for _, provider := range providers {
-		providerType, ok := authProviderTypes[provider.Type]
-		// A type the browser has no flow for must not render a sign-in button.
-		if !ok {
-			continue
+		if p := toRPCProvider(provider); p != nil {
+			out = append(out, p)
 		}
-		out = append(out, &authv1.AuthProviderConfig{
-			Id:          proto.String(provider.ID),
-			Type:        providerType.Enum(),
-			DisplayName: proto.String(provider.DisplayName),
-			ClientId:    proto.String(provider.ClientID),
-			IssuerUrl:   proto.String(provider.IssuerURL),
-			Scopes:      provider.Scopes,
-		})
 	}
 	return out
+}
+
+func toRPCSignInProviders(providers []coreauth.SignInProvider) []*authv1.AuthProviderConfig {
+	out := make([]*authv1.AuthProviderConfig, 0, len(providers))
+	for _, provider := range providers {
+		p := toRPCProvider(provider.Config)
+		if p == nil {
+			continue
+		}
+		if provider.ConnectionID != "" {
+			p.Id = nil
+			p.ConnectionId = proto.String(provider.ConnectionID)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func toRPCProvider(provider coreoauth.ProviderConfig) *authv1.AuthProviderConfig {
+	providerType, ok := authProviderTypes[provider.Type]
+	// A type the browser has no flow for must not render a sign-in button.
+	if !ok {
+		return nil
+	}
+	return &authv1.AuthProviderConfig{
+		Id:          proto.String(provider.ID),
+		Type:        providerType.Enum(),
+		DisplayName: proto.String(provider.DisplayName),
+		ClientId:    proto.String(provider.ClientID),
+		IssuerUrl:   proto.String(provider.IssuerURL),
+		Scopes:      provider.Scopes,
+	}
+}
+
+func (s *server) DiscoverSignIn(
+	ctx context.Context,
+	req *connect.Request[authv1.DiscoverSignInRequest],
+) (*connect.Response[authv1.DiscoverSignInResponse], error) {
+	d, err := s.service.DiscoverSignIn(ctx, req.Msg.GetEmail())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	return connect.NewResponse(&authv1.DiscoverSignInResponse{
+		Domain:     proto.String(d.Domain),
+		Providers:  toRPCSignInProviders(d.Providers),
+		RequireSso: proto.Bool(d.RequireSSO),
+	}), nil
 }
 
 // ssoRequiredError maps a Require SSO refusal to code, with the providers that can
@@ -116,10 +158,13 @@ func (s *server) ssoRequiredError(ctx context.Context, err error, code connect.C
 	if !ok {
 		return nil
 	}
-	providers := toRPCProviders(s.oauthCfg.ProvidersFor(ssoErr.Domain))
+	// A failed lookup was recorded where it happened. The refusal still goes out, because a
+	// refused refresh has already revoked the session.
+	found, lookupErr := s.service.ProvidersFor(ctx, ssoErr.Domain)
+	providers := toRPCSignInProviders(found)
 	// Nobody on the domain can sign in until the config is fixed or the operator runs
 	// `pug domains unenforce`, and the refusal alone looks routine.
-	if len(providers) == 0 {
+	if len(providers) == 0 && lookupErr == nil {
 		noProvider := fmt.Errorf("no configured provider can sign in %s, which requires SSO", ssoErr.Domain)
 		slog.ErrorContext(ctx, "domain requires sso but no provider can sign it in", slogx.Error(noProvider), slog.String("domain", ssoErr.Domain))
 		telemetry.RecordError(ctx, noProvider)
@@ -190,7 +235,13 @@ func (s *server) CompleteOIDCSignIn(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteOIDCSignInRequest],
 ) (*connect.Response[authv1.CompleteOIDCSignInResponse], error) {
-	redirectURI, err := validateOIDCRedirectURI(req.Msg.GetRedirectUri(), req.Header().Get("Origin"))
+	// A connection's code must come back on its own callback path (sso.md rule 8). This
+	// backs the app's check: the server sees only the redirect_uri it is sent.
+	callbackPath := "/oauth/callback"
+	if id := req.Msg.GetConnectionId(); id != "" {
+		callbackPath += "/" + id
+	}
+	redirectURI, err := validateOIDCRedirectURI(req.Msg.GetRedirectUri(), req.Header().Get("Origin"), callbackPath)
 	if err != nil {
 		slog.WarnContext(ctx, "rejected oidc redirect uri", slogx.Error(err),
 			slog.String("redirect_uri", req.Msg.GetRedirectUri()),
@@ -198,12 +249,18 @@ func (s *server) CompleteOIDCSignIn(
 		return nil, apperr.Invalid(apperr.ReasonInvalidArgument, "invalid oauth redirect URI") // apperr:exempt
 	}
 
-	session, err := s.service.CompleteOIDCSignIn(ctx, coreoauth.ProviderName(req.Msg.GetProviderId()), coreoauth.AuthorizationCode{
+	code := coreoauth.AuthorizationCode{
 		Code:         req.Msg.GetCode(),
 		CodeVerifier: req.Msg.GetCodeVerifier(),
 		RedirectURI:  redirectURI,
 		Nonce:        req.Msg.GetNonce(),
-	}, req.Msg.GetInviteToken(), req.Msg.GetTimezone())
+	}
+	var session coreauth.Session
+	if req.Msg.GetConnectionId() != "" {
+		session, err = s.service.CompleteConnectionSignIn(ctx, req.Msg.GetConnectionId(), code, req.Msg.GetInviteToken(), req.Msg.GetTimezone())
+	} else {
+		session, err = s.service.CompleteOIDCSignIn(ctx, coreoauth.ProviderName(req.Msg.GetProviderId()), code, req.Msg.GetInviteToken(), req.Msg.GetTimezone())
+	}
 	if err != nil {
 		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeFailedPrecondition); ssoErr != nil {
 			return nil, ssoErr
@@ -217,7 +274,7 @@ func (s *server) CompleteOIDCSignIn(
 	}), nil
 }
 
-func validateOIDCRedirectURI(rawRedirectURI, requestOrigin string) (string, error) {
+func validateOIDCRedirectURI(rawRedirectURI, requestOrigin, callbackPath string) (string, error) {
 	redirectURI, err := url.Parse(rawRedirectURI)
 	if err != nil || redirectURI.Scheme == "" || redirectURI.Host == "" || redirectURI.User != nil || redirectURI.RawQuery != "" || redirectURI.Fragment != "" {
 		return "", errors.New("redirect URI must be absolute and have no credentials, query, or fragment")
@@ -226,7 +283,7 @@ func validateOIDCRedirectURI(rawRedirectURI, requestOrigin string) (string, erro
 	if redirectURI.Scheme != "https" && (redirectURI.Scheme != "http" || !localhost) {
 		return "", errors.New("redirect URI must use HTTPS except on localhost")
 	}
-	if redirectURI.Path != "/oauth/callback" {
+	if redirectURI.Path != callbackPath {
 		return "", errors.New("unexpected callback path")
 	}
 
@@ -323,6 +380,8 @@ func mapOAuthHandlerError(err error) error {
 		// Generic reason intentional: no distinct client action for an unverified IdP
 		// email (rare edge), so it maps to plain InvalidArgument.
 		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
+	case errors.Is(err, coreoauth.ErrEmailNotOnConnection):
+		return apperr.PermissionDenied(apperr.ReasonSSOConnectionDomainMismatch, "this SSO connection can't sign in that account")
 	case errors.Is(err, coreoauth.ErrNonASCIIEmail):
 		return apperr.Invalid(apperr.ReasonInvalidArgument, "email addresses with non-ASCII characters are not supported") // apperr:exempt
 	case errors.Is(err, coreoauth.ErrProviderUnavailable):

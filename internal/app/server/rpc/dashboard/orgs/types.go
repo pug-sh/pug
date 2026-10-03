@@ -171,5 +171,21 @@ func toRPCDomain(d coreorgs.Domain) *orgsv1.OrgDomain {
 		RequireSso:                     proto.Bool(d.RequireSSO),
 		SsoSeen:                        proto.Bool(d.SSOSeen),
 		SsoRequiredElsewhere:           proto.Bool(d.SSORequiredElsewhere),
+		SsoConnectionId:                proto.String(d.SSOConnectionID),
+		SsoConnectionElsewhere:         proto.Bool(d.SSOConnectionElsewhere),
+	}
+}
+
+func toRPCSSOConnection(c coreorgs.SSOConnection) *orgsv1.SSOConnection {
+	domains := make([]*orgsv1.SSOConnectionDomain, 0, len(c.Domains))
+	for _, d := range c.Domains {
+		domains = append(domains, &orgsv1.SSOConnectionDomain{Id: proto.String(d.ID), Domain: proto.String(d.Domain)})
+	}
+	return &orgsv1.SSOConnection{
+		Id:        proto.String(c.ID),
+		Label:     proto.String(c.Label),
+		IssuerUrl: proto.String(c.IssuerURL),
+		ClientId:  proto.String(c.ClientID),
+		Domains:   domains,
 	}
 }

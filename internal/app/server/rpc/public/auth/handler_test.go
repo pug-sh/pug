@@ -30,6 +30,12 @@ type fakeAuthService struct {
 	onOIDC          func(coreoauth.ProviderName, coreoauth.AuthorizationCode)
 	oidcInvite      *string
 	session         coreauth.Session
+	cfg             coreoauth.Config
+	// Set, they replace the providers cfg would give.
+	providers    []coreauth.SignInProvider
+	providersErr error
+	onConnection func(connectionID string)
+	discovery    coreauth.SignInDiscovery
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
@@ -47,6 +53,25 @@ func (f fakeAuthService) CompleteOIDCSignIn(_ context.Context, provider coreoaut
 		*f.oidcInvite = inviteToken
 	}
 	return f.session, f.completeOIDCErr
+}
+func (f fakeAuthService) CompleteConnectionSignIn(_ context.Context, connectionID string, _ coreoauth.AuthorizationCode, _, _ string) (coreauth.Session, error) {
+	if f.onConnection != nil {
+		f.onConnection(connectionID)
+	}
+	return f.session, f.completeOIDCErr
+}
+func (f fakeAuthService) DiscoverSignIn(context.Context, string) (coreauth.SignInDiscovery, error) {
+	return f.discovery, nil
+}
+func (f fakeAuthService) ProvidersFor(_ context.Context, domain string) ([]coreauth.SignInProvider, error) {
+	if f.providers != nil || f.providersErr != nil {
+		return f.providers, f.providersErr
+	}
+	var out []coreauth.SignInProvider
+	for _, p := range f.cfg.ProvidersFor(domain) {
+		out = append(out, coreauth.SignInProvider{Config: p})
+	}
+	return out, nil
 }
 func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.refreshErr
@@ -209,7 +234,8 @@ func TestSSORequiredMapping(t *testing.T) {
 		{"globex.com", false, []string{"google"}},
 	} {
 		refused := &coreorgs.SSORequiredError{Domain: tt.domain, Invite: tt.invite}
-		s := &server{oauthCfg: cfg, service: fakeAuthService{
+		s := &server{service: fakeAuthService{
+			cfg:       cfg,
 			signInErr: refused, magicLinkErr: refused, completeErr: refused, completeOIDCErr: refused, refreshErr: refused,
 		}}
 		for name, call := range map[string]func() error{
@@ -265,7 +291,7 @@ func TestSSORequiredWithNoProviderForTheDomain(t *testing.T) {
 	cfg := coreoauth.Config{Providers: []coreoauth.ProviderConfig{
 		{ID: "okta", Type: coreoauth.ProviderTypeOIDC, DisplayName: "Acme SSO", ClientID: "o", IssuerURL: "https://acme.okta.com", EmailDomains: []string{"acme.com"}},
 	}}
-	s := &server{oauthCfg: cfg, service: fakeAuthService{signInErr: &coreorgs.SSORequiredError{Domain: "globex.com"}}}
+	s := &server{service: fakeAuthService{cfg: cfg, signInErr: &coreorgs.SSORequiredError{Domain: "globex.com"}}}
 	_, err := s.SignInWithEmail(context.Background(), connect.NewRequest(&authv1.SignInWithEmailRequest{}))
 	ae, ok := errors.AsType[*apperr.Error](err)
 	if !ok || ae.Reason() != apperr.ReasonSSORequired {
@@ -274,6 +300,31 @@ func TestSSORequiredWithNoProviderForTheDomain(t *testing.T) {
 	detail, ok := ae.Details()[0].(*authv1.SSORequired)
 	if !ok || detail.GetDomain() != "globex.com" || len(detail.GetProviders()) != 0 {
 		t.Fatalf("details = %v, want globex.com with no providers", ae.Details())
+	}
+}
+
+// The detail lists the domain's connection by connection_id. A failed lookup still
+// refuses with the same code, because a refused refresh has already revoked the session.
+func TestSSORequiredWithAConnection(t *testing.T) {
+	refused := &coreorgs.SSORequiredError{Domain: "acme.com"}
+	conn := coreauth.SignInProvider{ConnectionID: "db0bnpqvh7le8fq2jqug", Config: coreoauth.ProviderConfig{
+		Type: coreoauth.ProviderTypeOIDC, DisplayName: "Acme SSO", ClientID: "c", IssuerURL: "https://acme.okta.com",
+	}}
+	s := &server{service: fakeAuthService{refreshErr: refused, providers: []coreauth.SignInProvider{conn}}}
+	_, err := s.RefreshSession(context.Background(), connect.NewRequest(&authv1.RefreshSessionRequest{}))
+	ae, ok := errors.AsType[*apperr.Error](err)
+	if !ok || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("err = %v, want Unauthenticated", err)
+	}
+	p := ae.Details()[0].(*authv1.SSORequired).GetProviders()
+	if len(p) != 1 || p[0].GetConnectionId() != "db0bnpqvh7le8fq2jqug" || p[0].Id != nil {
+		t.Fatalf("providers = %v, want the connection", p)
+	}
+
+	s = &server{service: fakeAuthService{refreshErr: refused, providersErr: errors.New("db down")}}
+	_, err = s.RefreshSession(context.Background(), connect.NewRequest(&authv1.RefreshSessionRequest{}))
+	if ae, ok := errors.AsType[*apperr.Error](err); !ok || ae.Code() != connect.CodeUnauthenticated || ae.Reason() != apperr.ReasonSSORequired {
+		t.Fatalf("failed lookup: err = %v, want Unauthenticated / SSO_REQUIRED", err)
 	}
 }
 
@@ -314,7 +365,7 @@ func TestValidateOIDCRedirectURI(t *testing.T) {
 		{"malformed origin", "https://pug.example.com/oauth/callback", "https://pug.example.com/path", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := validateOIDCRedirectURI(tt.redirect, tt.origin)
+			_, err := validateOIDCRedirectURI(tt.redirect, tt.origin, "/oauth/callback")
 			if (err == nil) != tt.valid {
 				t.Fatalf("err = %v, valid = %v", err, tt.valid)
 			}
@@ -540,5 +591,77 @@ func TestSignInResponsesCarryJoinedOrgs(t *testing.T) {
 	}
 	if got := link.Msg.GetJoinedOrgIds(); strings.Join(got, ",") != "org-a,org-b" {
 		t.Fatalf("magic link joined_org_ids = %v", got)
+	}
+}
+
+func TestCompleteOIDCWithAConnection(t *testing.T) {
+	var gotConn string
+	s := &server{service: fakeAuthService{
+		onOIDC: func(coreoauth.ProviderName, coreoauth.AuthorizationCode) {
+			t.Fatal("a connection sign-in must not use a config provider")
+		},
+		onConnection: func(id string) { gotConn = id },
+	}}
+	req := validCompleteOIDCRequest()
+	req.Msg.ProviderId = nil
+	req.Msg.ConnectionId = proto.String("db0bnpqvh7le8fq2jqug")
+	// The shared callback, or another connection's, would let another provider's code
+	// reach the connection (mix-up).
+	if _, err := s.CompleteOIDCSignIn(context.Background(), req); !isInvalidArgument(err) || gotConn != "" {
+		t.Fatalf("connection on the shared callback: err = %v, connection = %q; want InvalidArgument", err, gotConn)
+	}
+	req.Msg.RedirectUri = proto.String("https://pug.example.com/oauth/callback/c00bnpqvh7le8fq2jqug")
+	if _, err := s.CompleteOIDCSignIn(context.Background(), req); !isInvalidArgument(err) || gotConn != "" {
+		t.Fatalf("connection on another connection's callback: err = %v, connection = %q; want InvalidArgument", err, gotConn)
+	}
+	req.Msg.RedirectUri = proto.String("https://pug.example.com/oauth/callback/db0bnpqvh7le8fq2jqug")
+	if _, err := s.CompleteOIDCSignIn(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if gotConn != "db0bnpqvh7le8fq2jqug" {
+		t.Fatalf("connection = %q", gotConn)
+	}
+	provider := validCompleteOIDCRequest()
+	provider.Msg.RedirectUri = req.Msg.RedirectUri
+	if _, err := s.CompleteOIDCSignIn(context.Background(), provider); !isInvalidArgument(err) {
+		t.Fatalf("provider on a connection's callback: err = %v, want InvalidArgument", err)
+	}
+
+	s = &server{service: fakeAuthService{completeOIDCErr: coreoauth.ErrEmailNotOnConnection}}
+	_, err := s.CompleteOIDCSignIn(context.Background(), req)
+	ae, ok := errors.AsType[*apperr.Error](err)
+	if !ok || ae.Code() != connect.CodePermissionDenied || ae.Reason() != apperr.ReasonSSOConnectionDomainMismatch {
+		t.Fatalf("err = %v, want PermissionDenied / SSO_CONNECTION_DOMAIN_MISMATCH", err)
+	}
+}
+
+func isInvalidArgument(err error) bool {
+	ae, ok := errors.AsType[*apperr.Error](err)
+	return ok && ae.Code() == connect.CodeInvalidArgument
+}
+
+// A connection is sent with connection_id and no id, so the browser can't mistake it for a config provider.
+func TestDiscoverSignInReturnsTheConnection(t *testing.T) {
+	s := &server{service: fakeAuthService{discovery: coreauth.SignInDiscovery{
+		Domain:     "acme.com",
+		RequireSSO: true,
+		Providers: []coreauth.SignInProvider{
+			{ConnectionID: "db0bnpqvh7le8fq2jqug", Config: coreoauth.ProviderConfig{Type: coreoauth.ProviderTypeOIDC, DisplayName: "Acme SSO", ClientID: "c", IssuerURL: "https://acme.okta.com"}},
+			{Config: coreoauth.ProviderConfig{ID: "okta", Type: coreoauth.ProviderTypeOIDC, DisplayName: "Okta", ClientID: "o", IssuerURL: "https://okta.example.com"}},
+		},
+	}}}
+	resp, err := s.DiscoverSignIn(context.Background(), connect.NewRequest(&authv1.DiscoverSignInRequest{Email: proto.String("bob@acme.com")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := resp.Msg.GetProviders()
+	if resp.Msg.GetDomain() != "acme.com" || !resp.Msg.GetRequireSso() || len(p) != 2 {
+		t.Fatalf("response = %v", resp.Msg)
+	}
+	if p[0].Id != nil || p[0].GetConnectionId() != "db0bnpqvh7le8fq2jqug" || p[0].GetDisplayName() != "Acme SSO" {
+		t.Fatalf("connection = %v", p[0])
+	}
+	if p[1].GetId() != "okta" || p[1].ConnectionId != nil {
+		t.Fatalf("config provider = %v", p[1])
 	}
 }

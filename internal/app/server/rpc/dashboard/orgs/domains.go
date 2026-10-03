@@ -119,8 +119,67 @@ func (s *server) UpdateDomain(
 	return connect.NewResponse(&orgsv1.UpdateDomainResponse{Domain: toRPCDomain(d)}), nil
 }
 
-// domainError maps domain errors to RPC errors. Other errors were recorded at source.
+func (s *server) ListSSOConnections(
+	ctx context.Context,
+	req *connect.Request[orgsv1.ListSSOConnectionsRequest],
+) (*connect.Response[orgsv1.ListSSOConnectionsResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	conns, err := s.service.ListSSOConnections(ctx, req.Msg.GetOrgId())
+	if err != nil {
+		return nil, domainError(err, req.Msg.GetOrgId())
+	}
+	result := make([]*orgsv1.SSOConnection, 0, len(conns))
+	for _, c := range conns {
+		result = append(result, toRPCSSOConnection(c))
+	}
+	return connect.NewResponse(&orgsv1.ListSSOConnectionsResponse{Connections: result}), nil
+}
+
+func (s *server) SetSSOConnection(
+	ctx context.Context,
+	req *connect.Request[orgsv1.SetSSOConnectionRequest],
+) (*connect.Response[orgsv1.SetSSOConnectionResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	c, err := s.service.SetSSOConnection(ctx, req.Msg.GetOrgId(), coreorgs.SSOConnectionInput{
+		ID:           req.Msg.GetConnectionId(),
+		Label:        req.Msg.GetLabel(),
+		IssuerURL:    req.Msg.GetIssuerUrl(),
+		ClientID:     req.Msg.GetClientId(),
+		ClientSecret: req.Msg.GetClientSecret(),
+		DomainIDs:    req.Msg.GetDomainIds(),
+	})
+	if err != nil {
+		return nil, domainError(err, req.Msg.GetOrgId())
+	}
+	return connect.NewResponse(&orgsv1.SetSSOConnectionResponse{Connection: toRPCSSOConnection(c)}), nil
+}
+
+func (s *server) DeleteSSOConnection(
+	ctx context.Context,
+	req *connect.Request[orgsv1.DeleteSSOConnectionRequest],
+) (*connect.Response[orgsv1.DeleteSSOConnectionResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := s.service.DeleteSSOConnection(ctx, req.Msg.GetOrgId(), req.Msg.GetConnectionId()); err != nil {
+		return nil, domainError(err, req.Msg.GetOrgId())
+	}
+	return connect.NewResponse(&orgsv1.DeleteSSOConnectionResponse{}), nil
+}
+
+// domainError maps domain and SSO connection errors to RPC errors. Other errors were recorded at source.
 func domainError(err error, orgID string) error {
+	if inUse, ok := errors.AsType[*coreorgs.SSOConnectionInUseError](err); ok {
+		return apperr.FailedPrecondition(apperr.ReasonSSOConnectionInUse,
+			inUse.Domain+" requires SSO and this org's connection signs it in; every org that requires it must turn Require SSO off first")
+	}
 	if verr, ok := errors.AsType[*coreorgs.DomainVerificationError](err); ok {
 		return apperr.FailedPrecondition(apperr.ReasonDomainVerificationFailed,
 			"no TXT record for "+verr.Domain+" holds this org's verification value; check it and try again",
@@ -139,6 +198,26 @@ func domainError(err error, orgID string) error {
 		return apperr.FailedPrecondition(apperr.ReasonDomainNotVerified, "verify a domain before turning this on")
 	case errors.Is(err, coreorgs.ErrDomainSSONotSeen):
 		return apperr.FailedPrecondition(apperr.ReasonDomainSSONotSeen, "sign in once through SSO with an account on this domain before requiring it")
+	case errors.Is(err, coreorgs.ErrSSOConnectionsDisabled):
+		return apperr.FailedPrecondition(apperr.ReasonSSOConnectionsDisabled, "SSO connections are not enabled on this server")
+	case errors.Is(err, coreorgs.ErrSSOConnectionNotFound):
+		return apperr.NotFound(apperr.ReasonSSOConnectionNotFound, "SSO connection not found")
+	case errors.Is(err, coreorgs.ErrSSOConnectionLimitReached):
+		return apperr.FailedPrecondition(apperr.ReasonSSOConnectionLimitReached, "an org can add at most 10 SSO connections")
+	case errors.Is(err, coreorgs.ErrSSOConnectionIssuerInvalid):
+		return apperr.Invalid(apperr.ReasonSSOConnectionIssuerInvalid, "enter an HTTPS issuer URL")
+	case errors.Is(err, coreorgs.ErrSSOConnectionGoogleIssuer):
+		return apperr.Invalid(apperr.ReasonSSOConnectionIssuerInvalid, "Google needs no connection: verify the domain and people sign in with Google")
+	case errors.Is(err, coreorgs.ErrSSOConnectionSecretRequired):
+		return apperr.Invalid(apperr.ReasonSSOConnectionSecretRequired, "enter the client secret again; the stored one can't be used")
+	case errors.Is(err, coreorgs.ErrSSOConnectionDiscovery):
+		return apperr.FailedPrecondition(apperr.ReasonSSOConnectionDiscoveryFailed, "we couldn't read the issuer's OpenID configuration; check the issuer URL")
+	case errors.Is(err, coreorgs.ErrSSOConnectionIssuerMismatch):
+		return apperr.Invalid(apperr.ReasonSSOConnectionIssuerInvalid, "enter the issuer exactly as its OpenID configuration names it, including any trailing slash")
+	case errors.Is(err, coreorgs.ErrSSOConnectionPrivateIssuer):
+		return apperr.FailedPrecondition(apperr.ReasonSSOConnectionDiscoveryFailed, "the issuer is on a private network address, which this server doesn't reach")
+	case errors.Is(err, coreorgs.ErrDomainHasSSOConnection):
+		return apperr.FailedPrecondition(apperr.ReasonDomainSSOConnectionTaken, "another SSO connection already signs in this domain")
 	case errors.Is(err, coreorgs.ErrDNSUnavailable):
 		return apperr.Unavailable(apperr.ReasonDomainLookupFailed, "we couldn't reach DNS to check the record; try again in a minute")
 	default:
