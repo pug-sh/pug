@@ -94,9 +94,9 @@ const (
 	// No live subscription: free, comped, or no provider configured.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED SubscriptionStatus = 0
 	SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE      SubscriptionStatus = 1
-	// The card failed and the provider is retrying. The entitlement is UNCHANGED:
-	// worth a banner, never a block. grace_period_ends_at says until when, inside a
-	// grace period.
+	// The card failed. The entitlement is UNCHANGED: worth a banner, never a block.
+	// Inside a grace period, grace_period_ends_at is when the provider stops waiting
+	// and holds or cancels the subscription; a hold stays PAST_DUE.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE  SubscriptionStatus = 2
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAUSED    SubscriptionStatus = 3
 	SubscriptionStatus_SUBSCRIPTION_STATUS_CANCELLED SubscriptionStatus = 4
@@ -393,9 +393,10 @@ type GetBillingStatusResponse struct {
 	// Absent when there is no live subscription.
 	CurrentPeriodEnd *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=current_period_end,json=currentPeriodEnd" json:"current_period_end,omitempty"`
 	// When the provider stops waiting for the failed card -- the banner's "update
-	// your card by". Past it the subscription is held or cancelled, and this can read
-	// as past until that lands. Set only inside the provider's grace period: absent
-	// for a card that failed with none configured.
+	// your card by". Past it the provider holds the subscription (still PAST_DUE,
+	// this field then absent) or cancels it, and this can read as past until pug sees
+	// which. Set only beside PAST_DUE; absent with no grace window open: none
+	// configured, or one already ended in a hold.
 	GracePeriodEndsAt *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=grace_period_ends_at,json=gracePeriodEndsAt" json:"grace_period_ends_at,omitempty"`
 	// Whether a checkout would open at all -- billing on, a provider configured, and
 	// a product to check out against. Per plan it is PlanOption.purchasable.

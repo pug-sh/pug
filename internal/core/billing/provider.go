@@ -119,7 +119,7 @@ type SubscriptionEvent struct {
 	// GracePeriodEndsAt is read only when GracePeriodEndsAtKnown: it is then when the
 	// provider's grace window for a failed card ends, zero for no window. Known is
 	// false when the source cannot see the deadline — a read API that does not return
-	// it — and the write then keeps a stored one while the subscription stays past_due.
+	// it — and the write then decides whether to keep the stored one.
 	GracePeriodEndsAt      time.Time
 	GracePeriodEndsAtKnown bool
 	// GracePeriodEndsAtIssue says why the adapter set aside a deadline the delivery

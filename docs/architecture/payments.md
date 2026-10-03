@@ -621,7 +621,7 @@ is the first implementation of it:
 | Dodo `status` | pug `status` | Live |
 |---|---|---|
 | `active` | `active` | yes |
-| `on_hold` | `past_due` | yes — the card failed, the entitlement does not (§11), outside Dodo's grace period |
+| `on_hold` | `past_due` | yes — with no grace period, or after one ends; the card failed, the entitlement does not (§11) |
 | `past_due` | `past_due` | yes — the same, inside Dodo's grace period (§11) |
 | `paused` | `paused` | no |
 | `cancelled`, `expired`, `failed` | same word | no |
@@ -694,9 +694,9 @@ simply makes the CAS a no-op, so the inbox shape survives a swap unchanged:
 | New event types appear over time | Unknown types are stored, marked processed, ignored. A type we do not handle must never 500 and never retry forever. |
 | The payload's **shape** changes under us | A body `Normalize` cannot decode is the one unapplicable-looking case that IS retried: a redeploy inside the retry window fixes it, and marking it processed would consume the delivery, losing the replay. |
 
-Handled: `subscription.active`, `.updated`, `.renewed`, `.on_hold`, `.past_due`, `.failed`,
-`.cancelled`, `.expired`, `.plan_changed`. Every `subscription.*` runs one apply
-path and the new state comes from the payload's `status`, not the event name —
+Handled: every `subscription.*`, since `Normalize` matches the prefix — Dodo's
+twelve as of SDK v1.116.0, `.update_payment_method` and `.paused` among them. Every
+one runs one apply path and the new state comes from the payload's `status`, not the event name —
 the name only selects side effects. That is also what makes the apply path
 portable: event-type vocabularies differ sharply between providers, subscription
 *states* barely do, so `Normalize` maps names to nothing and status to
@@ -816,28 +816,36 @@ delete, and refuse to proceed if the cancel call fails.
 
 A failed renewal changes nothing about entitlement. `PAST_DUE` keeps the plan;
 degrading a paying customer's product over an expired card is worse for both
-sides than a few unbilled days. The provider retries and emails on its own
-schedule, and the delivery that normalizes to `cancelled` is what finally drops
-the org to free — by then the customer has had every notice the provider
-sends. This policy is pug's and survives a provider change; only the dunning
-schedule behind it moves.
+sides than a few unbilled days. What ends it is the provider's dunning, never
+pug, which cancels nothing itself (§17). Under Dodo's defaults — the grace period
+and card retries both off — a declined renewal goes straight to `on_hold`
+(measured in test mode, 2026-10-01), and a hold lasts until the customer pays or
+someone cancels it, so an org that never pays keeps its plan. Only a grace period
+set to end in cancellation bounds it; the delivery that normalizes to
+`cancelled` then drops the org to free, by which time the customer has had every
+notice the provider sends. **Open:** the deployment's dunning settings. This
+policy is pug's and survives a provider change; only the dunning schedule behind
+it moves.
 
-**The grace deadline.** Dodo's grace period is off by default: a failed renewal
-goes straight to `on_hold`, which lasts until the customer pays or someone
-cancels it. Enabled (Settings → Subscriptions, 1–30 days), it holds the
-subscription in Dodo's own `past_due` until `past_due_ends_at`, then moves it to
-`on_hold` or cancels it, as configured. Both states map to pug's `past_due` (§7),
-so the plan does not notice. What the window adds is a date:
-`billing_subscriptions.grace_period_ends_at`, served as
-`GetBillingStatus.grace_period_ends_at` for the banner's "update your card by".
+**The grace deadline.** Enabled (Dodo's dashboard as of 2026-10: Settings →
+Subscriptions, 1–30 days), a grace period holds the subscription in Dodo's own
+`past_due` until `past_due_ends_at`, then moves it to `on_hold` or cancels it, as
+configured. Both states map to pug's `past_due` (§7), so the plan does not
+notice. What the window adds is a date: `billing_subscriptions.grace_period_ends_at`,
+served as `GetBillingStatus.grace_period_ends_at` for the banner's "update your
+card by". It dates the window, not the failure: a hold that follows it is still
+`PAST_DUE`, with no date.
 
-Only a delivery carries it — Dodo's subscription API does not return it — while
-reconcile re-reads every live subscription each pass with a newer stamp. So a
-write that cannot see the deadline keeps the stored one while the card is still
-failing and clears it otherwise; a delivery always replaces it, and one outside
-the window clears it. A delivery the CAS refuses loses its deadline with the rest
-of the payload, and the banner shows the failed card with no date, as it does for
-a hold.
+Only a delivery carries it — Dodo's subscription API does not return it (SDK
+v1.116.0) — while reconcile re-reads every subscription each pass with a newer
+stamp. A read knows there is no window in any state but Dodo's `past_due`, a hold
+included, and clears the deadline; inside the window a write that cannot see it
+keeps the stored one. A delivery replaces it, believed only when the date is
+there, parses and could end a window open when it was sent: otherwise the stored
+one is kept, the rest of the delivery still applies, and the reason is logged. A
+delivery the CAS refuses — held back while a reconcile pass stamped the row —
+still dates a window the row has no date for, while the provider reports the
+state it was sent in: never over a stored deadline, and never one already past.
 
 ## 12. RPC surface
 
@@ -868,7 +876,8 @@ work is worse than no button. A retired plan is kept off sale there
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
 portal; no `ChangePlan` RPC in this slice. Usage billing added `tier_usage` and
 `tier_usage_as_of` to it: what was last stated to the provider (§4.2). Dunning
-added `grace_period_ends_at`, absent outside a grace period (§11).
+added `grace_period_ends_at`: set only beside `PAST_DUE` inside a grace window, and
+absent otherwise, a hold that follows one included (§11).
 
 ### 12.1 Confirming the buyer who came back
 

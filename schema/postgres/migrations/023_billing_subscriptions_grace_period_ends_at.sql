@@ -1,8 +1,8 @@
 -- +goose Up
--- When the provider's grace period for a failed card ends; past it the subscription
--- is held or cancelled. Null outside one. Only a delivery carries it -- a direct
--- read cannot see it -- so the apply keeps a stored one across reads while the card
--- is still failing.
+-- When the provider's grace window for a failed card ends; past it the subscription
+-- is held or cancelled. Null with no window open. Only a delivery carries it -- a
+-- direct read cannot see it -- so the apply keeps a stored one across reads while
+-- the provider still reports the window.
 alter table billing_subscriptions add column grace_period_ends_at timestamptz;
 
 -- +goose Down
