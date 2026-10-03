@@ -3,6 +3,11 @@ insert into org_members (customer_id, org_id, role)
 values (@customer_id, @org_id, @role)
 returning *;
 
+-- name: CreateOrgMemberIfAbsent :execrows
+insert into org_members (customer_id, org_id, role)
+values (@customer_id, @org_id, @role)
+on conflict (org_id, customer_id) do nothing;
+
 -- name: GetOrgMemberRole :one
 select role from org_members where org_id = @org_id and customer_id = @customer_id;
 

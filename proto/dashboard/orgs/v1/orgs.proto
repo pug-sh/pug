@@ -31,6 +31,33 @@ service OrgsService {
   rpc Create(CreateRequest) returns (CreateResponse) {}
   rpc Leave(LeaveRequest) returns (LeaveResponse) {}
   rpc UpdateMemberRole(UpdateMemberRoleRequest) returns (UpdateMemberRoleResponse) {}
+  // ListDomains returns the org's domain settings and its domains.
+  rpc ListDomains(ListDomainsRequest) returns (ListDomainsResponse) {}
+  // SetDomainSettings replaces both settings. Turning auto-join on or up to Member,
+  // or org creation off, needs a verified domain and re-checks the org's DNS records.
+  rpc SetDomainSettings(SetDomainSettingsRequest) returns (SetDomainSettingsResponse) {}
+  // AddDomain adds a pending domain, or returns the org's existing one.
+  rpc AddDomain(AddDomainRequest) returns (AddDomainResponse) {}
+  // VerifyDomain checks a pending domain's TXT record now. A verified one is returned as is.
+  rpc VerifyDomain(VerifyDomainRequest) returns (VerifyDomainResponse) {}
+  // RemoveDomain drops the org's claim. Members who joined through it stay.
+  rpc RemoveDomain(RemoveDomainRequest) returns (RemoveDomainResponse) {}
+  // UpdateDomain turns Require SSO on or off for this org's claim. Turning it on needs a
+  // verified domain that someone signed in to through SSO, and re-checks its DNS record.
+  rpc UpdateDomain(UpdateDomainRequest) returns (UpdateDomainResponse) {}
+}
+
+enum DomainStatus {
+  DOMAIN_STATUS_UNSPECIFIED = 0;
+  DOMAIN_STATUS_PENDING = 1;
+  DOMAIN_STATUS_VERIFIED = 2;
+}
+
+enum DomainVerificationMethod {
+  DOMAIN_VERIFICATION_METHOD_UNSPECIFIED = 0;
+  DOMAIN_VERIFICATION_METHOD_DNS = 1;
+  // Marked verified by the server's operator with `pug domains verify`.
+  DOMAIN_VERIFICATION_METHOD_OPERATOR = 2;
 }
 
 message Org {
@@ -45,6 +72,8 @@ message OrgMember {
   string email = 3;
   string org_id = 4;
   OrgRole role = 5;
+  // The verified domain the member auto-joined through; empty otherwise.
+  string joined_via_domain = 6;
 }
 
 message OrgInvitation {
@@ -60,6 +89,8 @@ message ListRequest {}
 
 message ListResponse {
   repeated Org orgs = 1;
+  // False when the caller's email domain restricts org creation.
+  bool can_create_org = 2;
 }
 
 message GetRequest {
@@ -165,4 +196,96 @@ message UpdateMemberRoleRequest {
 
 message UpdateMemberRoleResponse {
   OrgMember member = 1;
+}
+
+message OrgDomain {
+  string id = 1;
+  string domain = 2;
+  DomainStatus status = 3;
+  // UNSPECIFIED while pending.
+  DomainVerificationMethod verification_method = 4;
+  // The TXT record that proves the domain, e.g. _pug-verification.acme.com.
+  string txt_record_name = 5;
+  string txt_record_value = 6;
+  // RFC 3339; empty while pending.
+  string verified_at = 7;
+  // True when another org that verified this domain turned org creation off.
+  // Set only by ListDomains, and only on a verified domain.
+  bool org_creation_restricted_elsewhere = 8;
+  // Accounts on the domain may sign in only through SSO.
+  bool require_sso = 9;
+  // Someone has signed in through SSO with an account on the domain since it was
+  // verified. Require SSO can't be turned on before that.
+  bool sso_seen = 10;
+  // True when another org that verified this domain requires SSO for it.
+  // Set only by ListDomains, and only on a verified domain.
+  bool sso_required_elsewhere = 11;
+}
+
+message DomainSettings {
+  // The role auto-join grants; UNSPECIFIED means auto-join is off.
+  OrgRole auto_join_role = 1;
+  bool members_can_create_orgs = 2;
+}
+
+message ListDomainsRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+}
+
+message ListDomainsResponse {
+  DomainSettings settings = 1;
+  repeated OrgDomain domains = 2;
+}
+
+message SetDomainSettingsRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  // UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor any OrgRole value added later.
+  OrgRole auto_join_role = 2 [(buf.validate.field).enum = {
+    in: [0, 2, 3]
+  }];
+  // Required so an omitted field can't silently turn org creation off.
+  bool members_can_create_orgs = 3 [(buf.validate.field).required = true];
+}
+
+message SetDomainSettingsResponse {
+  DomainSettings settings = 1;
+}
+
+message AddDomainRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string domain = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.hostname = true
+  ];
+}
+
+message AddDomainResponse {
+  OrgDomain domain = 1;
+}
+
+message VerifyDomainRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string domain_id = 2 [(buf.validate.field).required = true];
+}
+
+message VerifyDomainResponse {
+  OrgDomain domain = 1;
+}
+
+message RemoveDomainRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string domain_id = 2 [(buf.validate.field).required = true];
+}
+
+message RemoveDomainResponse {}
+
+message UpdateDomainRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string domain_id = 2 [(buf.validate.field).required = true];
+  // Required so an omitted field can't silently turn Require SSO off.
+  bool require_sso = 3 [(buf.validate.field).required = true];
+}
+
+message UpdateDomainResponse {
+  OrgDomain domain = 1;
 }

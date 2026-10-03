@@ -45,6 +45,17 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 	return i, err
 }
 
+const getCustomerEmailByID = `-- name: GetCustomerEmailByID :one
+select email from customers where id = $1
+`
+
+func (q *Queries) GetCustomerEmailByID(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getCustomerEmailByID, id)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
 const markCustomerEmailVerified = `-- name: MarkCustomerEmailVerified :one
 update customers
 set email_verified_at = now()

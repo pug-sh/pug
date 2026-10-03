@@ -7,12 +7,14 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createOrg = `-- name: CreateOrg :one
 insert into orgs (display_name, id)
 values ($1, $2)
-returning create_time, display_name, id, update_time
+returning create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs
 `
 
 type CreateOrgParams struct {
@@ -28,12 +30,14 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.AutoJoinRole,
+		&i.MembersCanCreateOrgs,
 	)
 	return i, err
 }
 
 const getOrgByID = `-- name: GetOrgByID :one
-select create_time, display_name, id, update_time from orgs where id = $1
+select create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs from orgs where id = $1
 `
 
 func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
@@ -44,13 +48,33 @@ func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.AutoJoinRole,
+		&i.MembersCanCreateOrgs,
+	)
+	return i, err
+}
+
+const getOrgByIDForUpdate = `-- name: GetOrgByIDForUpdate :one
+select create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs from orgs where id = $1 for update
+`
+
+func (q *Queries) GetOrgByIDForUpdate(ctx context.Context, id string) (Org, error) {
+	row := q.db.QueryRow(ctx, getOrgByIDForUpdate, id)
+	var i Org
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.ID,
+		&i.UpdateTime,
+		&i.AutoJoinRole,
+		&i.MembersCanCreateOrgs,
 	)
 	return i, err
 }
 
 const updateOrgDisplayName = `-- name: UpdateOrgDisplayName :one
 update orgs set display_name = $1 where id = $2
-returning create_time, display_name, id, update_time
+returning create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs
 `
 
 type UpdateOrgDisplayNameParams struct {
@@ -66,6 +90,36 @@ func (q *Queries) UpdateOrgDisplayName(ctx context.Context, arg UpdateOrgDisplay
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.AutoJoinRole,
+		&i.MembersCanCreateOrgs,
+	)
+	return i, err
+}
+
+const updateOrgDomainSettings = `-- name: UpdateOrgDomainSettings :one
+update orgs
+set auto_join_role = $1,
+    members_can_create_orgs = $2
+where id = $3
+returning create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs
+`
+
+type UpdateOrgDomainSettingsParams struct {
+	AutoJoinRole         pgtype.Text
+	MembersCanCreateOrgs bool
+	ID                   string
+}
+
+func (q *Queries) UpdateOrgDomainSettings(ctx context.Context, arg UpdateOrgDomainSettingsParams) (Org, error) {
+	row := q.db.QueryRow(ctx, updateOrgDomainSettings, arg.AutoJoinRole, arg.MembersCanCreateOrgs, arg.ID)
+	var i Org
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.ID,
+		&i.UpdateTime,
+		&i.AutoJoinRole,
+		&i.MembersCanCreateOrgs,
 	)
 	return i, err
 }

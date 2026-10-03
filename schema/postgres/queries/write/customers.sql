@@ -14,3 +14,6 @@ update customers
 set password_hash = @password_hash
 where id = @id
 returning *;
+
+-- name: GetCustomerEmailByID :one
+select email from customers where id = @id;

@@ -7,6 +7,7 @@ import (
 
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -74,3 +75,46 @@ func TestSetPassword_OverwritesExistingHash(t *testing.T) {
 type stubPublisher struct{}
 
 func (stubPublisher) Publish(context.Context, string, []byte) error { return nil }
+
+func TestSetPasswordRefusedWhereSSOIsRequired(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	ctx := context.Background()
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+
+	for _, c := range []dbwrite.CreateCustomerParams{
+		{ID: "cust-admin", Email: "admin@acme.com"},
+		{ID: "cust-bob", Email: "bob@acme.com"},
+		{ID: "cust-carol", Email: "carol@globex.com"},
+	} {
+		if _, err := write.CreateCustomer(ctx, c); err != nil {
+			t.Fatalf("CreateCustomer: %v", err)
+		}
+	}
+	org, err := orgs.CreateOrgWithDefaults(ctx, "cust-admin", "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := orgs.VerifyDomainByOperator(ctx, org.ID, "acme.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coreorgs.MarkSSOSeenInTx(ctx, write, "acme.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := orgs.UpdateDomain(ctx, org.ID, d.ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := corecustomers.NewService(db.PgW)
+	err = svc.SetPassword(ctx, "cust-bob", "brand-new-password")
+	if ssoErr, ok := errors.AsType[*coreorgs.SSORequiredError](err); !ok || ssoErr.Domain != "acme.com" {
+		t.Fatalf("err = %v, want SSORequiredError for acme.com", err)
+	}
+	if err := svc.SetPassword(ctx, "cust-carol", "brand-new-password"); err != nil {
+		t.Fatalf("another domain: %v", err)
+	}
+}
