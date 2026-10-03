@@ -88,15 +88,9 @@ func (s *Server) GetBillingStatus(
 	// dashboard renders and a call that would fail cannot drift apart.
 	resp.Purchasable = proto.Bool(s.subscriptions.Purchasable(rec))
 	resp.Manageable = proto.Bool(s.subscriptions.Manageable(ctx, orgID))
-	if !ent.SubPeriodEnd.IsZero() {
-		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
-	}
-	if !ent.SubGracePeriodEndsAt.IsZero() {
-		resp.GracePeriodEndsAt = timestamppb.New(ent.SubGracePeriodEndsAt)
-	}
-	if !ent.ContractEndsAt.IsZero() {
-		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
-	}
+	resp.CurrentPeriodEnd = timestamp(ent.SubPeriodEnd)
+	resp.GracePeriodEndsAt = timestamp(ent.SubGracePeriodEndsAt)
+	resp.ContractEndsAt = timestamp(ent.ContractEndsAt)
 	// Each tier's count as last stated to the provider. Quantities only: the rates
 	// live on the provider's product.
 	if ent.SubStatus.Live() && !ent.SubPeriodStart.IsZero() {
@@ -148,6 +142,15 @@ func int64Value(v *int64) *wrapperspb.Int64Value {
 		return nil
 	}
 	return wrapperspb.Int64(*v)
+}
+
+// timestamp keeps an absent instant absent on the wire: a zero time sent as a
+// timestamp would reach the dashboard as 0001-01-01, a date to render.
+func timestamp(t time.Time) *timestamppb.Timestamp {
+	if t.IsZero() {
+		return nil
+	}
+	return timestamppb.New(t)
 }
 
 // An unset theme is the client declining to say, not a light one: the checkout
