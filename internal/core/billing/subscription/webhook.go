@@ -75,6 +75,13 @@ func (s *Service) HandleDelivery(ctx context.Context, d billing.Delivery) error 
 func (s *Service) applySubscriptionEvent(
 	ctx context.Context, provider billing.PaymentProvider, d billing.Delivery, event billing.SubscriptionEvent,
 ) error {
+	// The rest of the delivery still applies, the deadline as if unseen. Worth a look:
+	// a provider that dates its grace windows sent one pug could not trust.
+	if event.GracePeriodEndsAtIssue != "" {
+		slog.WarnContext(ctx, "set aside a delivery's grace deadline",
+			slog.String("reason", event.GracePeriodEndsAtIssue), slog.String("provider", provider.Name()),
+			slog.String("webhook_id", d.WebhookID), slog.String("provider_sub_id", event.ProviderSubID))
+	}
 	// Not constraint mirroring like the two below: the insert writes the Currency
 	// constant, so an unguarded foreign-currency event would be STORED as USD.
 	if cur := normalizeCurrency(event.Currency); cur != billing.Currency {
@@ -313,6 +320,11 @@ func (s *Service) applySubscription(
 			slog.String("status", string(event.Status)))
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
+	}
+	// A time beside an unknown means nothing: dropped, so first sight and every later
+	// update agree that an unseen deadline is never stored.
+	if !event.GracePeriodEndsAtKnown {
+		event.GracePeriodEndsAt = time.Time{}
 	}
 	var applied int64
 	err := s.entitlements.WithOrgLock(ctx, orgID, func(w *dbwrite.Queries, rec entitlement.Record) error {

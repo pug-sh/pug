@@ -329,18 +329,35 @@ func TestFetchSubscriptionMatchesADelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
-	// The one deliberate difference: only a delivery carries the grace deadline, so
-	// only a delivery can say there is none.
-	if fetched.GracePeriodEndsAtKnown || !normalized.GracePeriodEndsAtKnown {
-		t.Errorf("deadline known = (read %v, delivery %v), want (false, true)",
-			fetched.GracePeriodEndsAtKnown, normalized.GracePeriodEndsAtKnown)
-	}
-	normalized.GracePeriodEndsAtKnown = false
+	// Outside a grace window they agree on the deadline too: there is none.
 	if fetched != normalized {
 		t.Errorf("fetched = %+v\nnormalized = %+v\nthe two apply paths disagree", fetched, normalized)
 	}
 	if fetched.OrgID != "org_abc" || fetched.Status != corebilling.SubStatusActive || fetched.PriceCents != 2000 {
 		t.Errorf("event = %+v", fetched)
+	}
+}
+
+// A read never carries the grace deadline. Inside Dodo's past_due window that makes
+// it unknown, so the stored one is kept; in any other state there is none to keep,
+// and the read says so — or a hold read after its window ended would keep a date
+// already past.
+func TestFetchSubscriptionKnowsTheGraceDeadlineOnlyOutsideAWindow(t *testing.T) {
+	for status, known := range map[string]bool{
+		"past_due": false, "on_hold": true, "active": true, "paused": true, "cancelled": true, "expired": true,
+	} {
+		t.Run(status, func(t *testing.T) {
+			body := strings.Replace(subscriptionJSONBody, `"status":"active"`, `"status":"`+status+`"`, 1)
+			c := apiClient(t, jsonHandler(t, http.StatusOK, body, nil))
+			got, err := c.FetchSubscription(context.Background(), "sub_1")
+			if err != nil {
+				t.Fatalf("FetchSubscription: %v", err)
+			}
+			if got.GracePeriodEndsAtKnown != known || !got.GracePeriodEndsAt.IsZero() {
+				t.Errorf("grace deadline = (%s, known %v), want (zero, known %v)",
+					got.GracePeriodEndsAt, got.GracePeriodEndsAtKnown, known)
+			}
+		})
 	}
 }
 
@@ -389,6 +406,11 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 		}
 		if got.ProviderSubID != "sub_1" || got.OrgID != "org_abc" {
 			t.Errorf("event = %+v, want the subscription the checkout produced", got)
+		}
+		// The confirm path reads the same way: an active subscription has no deadline.
+		if !got.GracePeriodEndsAtKnown || !got.GracePeriodEndsAt.IsZero() {
+			t.Errorf("grace deadline = (%s, known %v), want (zero, known)",
+				got.GracePeriodEndsAt, got.GracePeriodEndsAtKnown)
 		}
 	})
 

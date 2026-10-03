@@ -37,15 +37,39 @@ type subscriptionPayload struct {
 	Customer   struct {
 		CustomerID string `json:"customer_id"`
 	} `json:"customer"`
-	Metadata              metadata   `json:"metadata"`
-	NextBillingDate       *time.Time `json:"next_billing_date"`
-	GracePeriodEndsAt     *time.Time `json:"past_due_ends_at"`
-	PreviousBillingDate   *time.Time `json:"previous_billing_date"`
-	ProductID             string     `json:"product_id"`
-	RecurringPreTaxAmount int64      `json:"recurring_pre_tax_amount"`
-	Status                string     `json:"status"`
-	SubscriptionID        string     `json:"subscription_id"`
+	Metadata        metadata   `json:"metadata"`
+	NextBillingDate *time.Time `json:"next_billing_date"`
+	// Kept raw: whether the key was sent at all matters, and a value that does not
+	// parse must not fail the delivery, since the field only dates a banner.
+	GracePeriodEndsAt     presentJSON `json:"past_due_ends_at"`
+	PreviousBillingDate   *time.Time  `json:"previous_billing_date"`
+	ProductID             string      `json:"product_id"`
+	RecurringPreTaxAmount int64       `json:"recurring_pre_tax_amount"`
+	Status                string      `json:"status"`
+	SubscriptionID        string      `json:"subscription_id"`
 }
+
+// presentJSON keeps a field's raw value and whether its key was sent: encoding/json
+// calls UnmarshalJSON for an explicit null, never for a missing key.
+type presentJSON struct {
+	Present bool
+	Raw     json.RawMessage
+}
+
+func (p *presentJSON) UnmarshalJSON(b []byte) error {
+	p.Present, p.Raw = true, append(p.Raw[:0], b...)
+	return nil
+}
+
+func (p presentJSON) isNull() bool { return string(p.Raw) == "null" }
+
+// A grace deadline is believed only where a window can end: no earlier than the
+// delivery that dates it, give or take a window closing as it is sent, and within a
+// year of it. Dodo's windows run 1–30 days; anything far outside is garbage.
+const (
+	graceDeadlineSlack   = time.Hour
+	graceDeadlineHorizon = 366 * 24 * time.Hour
+)
 
 // metadata narrows Dodo's string|number|bool map to the string values pug writes:
 // decoding into map[string]string would fail a delivery over one numeric value.
@@ -101,10 +125,42 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 	if event.IsZero() {
 		return corebilling.SubscriptionEvent{}, errors.New("dodo: subscription payload carries no subscription id")
 	}
-	// Every delivery answers for the grace window, so here a missing deadline means
-	// there is none. A direct read cannot see it at all.
-	event.GracePeriodEndsAtKnown = true
+	// Only a delivery carries the deadline. Inside the window it is believed only when
+	// it is there, parses and is plausible; otherwise it stays unknown, which keeps the
+	// stored one, and the apply logs why. Outside a window there is none to believe.
+	if inGraceWindow(payload.Status) {
+		event.GracePeriodEndsAt, event.GracePeriodEndsAtIssue = graceDeadline(payload.GracePeriodEndsAt, d.DeliveredAt)
+		event.GracePeriodEndsAtKnown = event.GracePeriodEndsAtIssue == ""
+	} else if payload.GracePeriodEndsAt.Present && !payload.GracePeriodEndsAt.isNull() {
+		event.GracePeriodEndsAtIssue = "past_due_ends_at sent outside a grace window, in " + payload.Status
+	}
 	return event, nil
+}
+
+// graceDeadline is the deadline a delivery inside a grace window dates it with, or
+// why none can be believed.
+func graceDeadline(field presentJSON, sent time.Time) (time.Time, string) {
+	if !field.Present {
+		return time.Time{}, "no past_due_ends_at inside a grace window"
+	}
+	if field.isNull() {
+		return time.Time{}, "a null past_due_ends_at inside a grace window"
+	}
+	var at time.Time
+	if err := json.Unmarshal(field.Raw, &at); err != nil {
+		return time.Time{}, "past_due_ends_at does not parse: " + err.Error()
+	}
+	if at.Before(sent.Add(-graceDeadlineSlack)) || at.After(sent.Add(graceDeadlineHorizon)) {
+		return time.Time{}, fmt.Sprintf("past_due_ends_at %s cannot end a window open at %s",
+			at.Format(time.RFC3339), sent.Format(time.RFC3339))
+	}
+	return at, ""
+}
+
+// inGraceWindow is Dodo's own past_due, the one state it dates a grace window in.
+// pug's past_due also holds on_hold, which has none.
+func inGraceWindow(status string) bool {
+	return strings.ToLower(strings.TrimSpace(status)) == "past_due"
 }
 
 func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.SubscriptionEvent {
@@ -128,9 +184,10 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 	if p.NextBillingDate != nil {
 		event.CurrentPeriodEnd = *p.NextBillingDate
 	}
-	if p.GracePeriodEndsAt != nil {
-		event.GracePeriodEndsAt = *p.GracePeriodEndsAt
-	}
+	// Outside Dodo's past_due there is no grace window, which even a read can say:
+	// otherwise a hold read after its window ended would keep a date already past.
+	// Inside one only a delivery carries the date, and Normalize reads it.
+	event.GracePeriodEndsAtKnown = !inGraceWindow(p.Status)
 	return event
 }
 

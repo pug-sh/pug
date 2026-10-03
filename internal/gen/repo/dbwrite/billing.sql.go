@@ -25,12 +25,14 @@ on conflict (provider, provider_sub_id) do update
 set currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
-    -- Only a delivery carries the grace deadline, and reconcile re-reads every live
+    -- Only a delivery carries the grace deadline, and reconcile re-reads every
     -- subscription each pass: a write that cannot see it keeps the stored one while
-    -- the card is still failing, rather than erase it.
+    -- the subscription stays past_due, rather than erase it, and clears it otherwise.
+    -- A read that can tell the window has closed, as in a hold, says so and clears it.
     grace_period_ends_at = case
       when $15::boolean then excluded.grace_period_ends_at
       when excluded.status = 'past_due' then billing_subscriptions.grace_period_ends_at
+      else null
     end,
     plan_slug = excluded.plan_slug,
     price_cents = excluded.price_cents,

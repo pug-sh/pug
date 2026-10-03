@@ -173,49 +173,73 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
-// Inside Dodo's grace period the card has failed and the customer keeps access
-// until the deadline, which only a delivery carries.
-const pastDueBody = `{"type":"subscription.past_due","data":{` +
-	`"subscription_id":"sub_1","product_id":"prod_growth","status":"past_due",` +
-	`"currency":"USD","recurring_pre_tax_amount":2000,` +
-	`"customer":{"customer_id":"cus_1"},` +
-	`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
-	`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z",` +
-	`"past_due_ends_at":"2026-07-04T00:00:00Z"}}`
-
-func TestNormalizeReadsTheGraceDeadline(t *testing.T) {
-	c := testClient(t, time.Now())
-	event, err := c.Normalize(corebilling.Delivery{
-		EventType:  "subscription.past_due",
-		RawPayload: []byte(pastDueBody),
-	})
-	if err != nil {
-		t.Fatalf("Normalize: %v", err)
+// subscriptionDelivery is a delivery of eventType for a subscription in status, its
+// grace deadline written as deadline: a JSON value, or "" to leave the key out.
+func subscriptionDelivery(eventType, status, deadline string) []byte {
+	field := ""
+	if deadline != "" {
+		field = `,"past_due_ends_at":` + deadline
 	}
-	want := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
-	if !event.GracePeriodEndsAtKnown || !event.GracePeriodEndsAt.Equal(want) {
-		t.Errorf("grace deadline = (%s, known %v), want (%s, known)",
-			event.GracePeriodEndsAt, event.GracePeriodEndsAtKnown, want)
-	}
-	if event.Status != corebilling.SubStatusPastDue {
-		t.Errorf("status = %q, want past_due", event.Status)
-	}
+	return []byte(`{"type":"` + eventType + `","data":{` +
+		`"subscription_id":"sub_1","product_id":"prod_growth","status":"` + status + `",` +
+		`"currency":"USD","recurring_pre_tax_amount":2000,` +
+		`"customer":{"customer_id":"cus_1"},` +
+		`"metadata":{"org_id":"org_abc","checkout_ref":"ref_deadbeef"},` +
+		`"previous_billing_date":"2026-06-01T00:00:00Z","next_billing_date":"2026-07-01T00:00:00Z"` +
+		field + `}}`)
 }
 
-// A delivery with no deadline is the provider saying there is no grace window —
-// what clears a stored one once the card recovers or the window ends in a hold.
-func TestNormalizeKnowsADeliveryWithNoDeadline(t *testing.T) {
-	c := testClient(t, time.Now())
-	event, err := c.Normalize(corebilling.Delivery{
-		EventType:  "subscription.active",
-		RawPayload: []byte(activeBody),
-	})
-	if err != nil {
-		t.Fatalf("Normalize: %v", err)
+// Dodo dates a grace window only in its own past_due, and on every subscription
+// event sent inside one. Inside a window a deadline is believed only when it is
+// there, parses and is plausible: anything else is doubt, which keeps the stored
+// one and is reported, but never fails the delivery — the field only dates a
+// banner. Outside a window there is no deadline, whatever the payload says.
+func TestNormalizeTheGraceDeadline(t *testing.T) {
+	sent := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	deadline := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
+	const dated = `"2026-07-04T00:00:00Z"`
+	cases := []struct {
+		name, eventType, status, field string
+		want                           time.Time
+		known, issue                   bool
+	}{
+		{"inside a window", "subscription.past_due", "past_due", dated, deadline, true, false},
+		{"a payment method update inside a window", "subscription.update_payment_method", "past_due", dated, deadline, true, false},
+		{"a renewal inside a window", "subscription.renewed", "past_due", dated, deadline, true, false},
+		{"an update inside a window", "subscription.updated", "past_due", dated, deadline, true, false},
+		{"a plan change inside a window", "subscription.plan_changed", "past_due", dated, deadline, true, false},
+		{"inside a window with the key missing", "subscription.past_due", "past_due", "", time.Time{}, false, true},
+		{"inside a window with a null", "subscription.past_due", "past_due", `null`, time.Time{}, false, true},
+		{"inside a window with an empty string", "subscription.past_due", "past_due", `""`, time.Time{}, false, true},
+		{"inside a window with a date and no time", "subscription.past_due", "past_due", `"2026-07-04"`, time.Time{}, false, true},
+		{"inside a window with a number", "subscription.past_due", "past_due", `1783123200`, time.Time{}, false, true},
+		{"inside a window dated 1970", "subscription.past_due", "past_due", `"1970-01-01T00:00:00Z"`, time.Time{}, false, true},
+		{"inside a window dated year 0", "subscription.past_due", "past_due", `"0000-01-01T00:00:00Z"`, time.Time{}, false, true},
+		{"inside a window dated before it was sent", "subscription.past_due", "past_due", `"2026-06-29T00:00:00Z"`, time.Time{}, false, true},
+		{"a hold", "subscription.on_hold", "on_hold", `null`, time.Time{}, true, false},
+		{"a hold still carrying a deadline", "subscription.on_hold", "on_hold", dated, time.Time{}, true, true},
+		{"active with the key missing", "subscription.active", "active", "", time.Time{}, true, false},
+		{"a cancellation", "subscription.cancelled", "cancelled", `null`, time.Time{}, true, false},
 	}
-	if !event.GracePeriodEndsAtKnown || !event.GracePeriodEndsAt.IsZero() {
-		t.Errorf("grace deadline = (%s, known %v), want (zero, known)",
-			event.GracePeriodEndsAt, event.GracePeriodEndsAtKnown)
+	c := testClient(t, sent)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			event, err := c.Normalize(corebilling.Delivery{
+				DeliveredAt: sent,
+				EventType:   tc.eventType,
+				RawPayload:  subscriptionDelivery(tc.eventType, tc.status, tc.field),
+			})
+			if err != nil {
+				t.Fatalf("Normalize: %v — a grace deadline must never fail the delivery", err)
+			}
+			if !event.GracePeriodEndsAt.Equal(tc.want) || event.GracePeriodEndsAtKnown != tc.known {
+				t.Errorf("grace deadline = (%s, known %v), want (%s, known %v)",
+					event.GracePeriodEndsAt, event.GracePeriodEndsAtKnown, tc.want, tc.known)
+			}
+			if got := event.GracePeriodEndsAtIssue != ""; got != tc.issue {
+				t.Errorf("issue = %q, want one: %v", event.GracePeriodEndsAtIssue, tc.issue)
+			}
+		})
 	}
 }
 

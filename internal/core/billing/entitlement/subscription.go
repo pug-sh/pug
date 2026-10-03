@@ -28,7 +28,8 @@ type Subscription struct {
 
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
-	// When the provider's grace period for a failed card ends; zero outside one.
+	// The grace deadline the last delivery reported; zero for none. It can be past: it
+	// stays until a write says the window closed.
 	GracePeriodEndsAt time.Time
 }
 

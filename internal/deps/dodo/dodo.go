@@ -156,7 +156,9 @@ func (c *Client) CreatePortalSession(ctx context.Context, customerID string) (st
 }
 
 // FetchSubscription re-reads one subscription in the same shape a delivery
-// carries, so the reconcile pass and the webhook share an apply path.
+// carries, so the reconcile pass and the webhook share an apply path. SDK v1.116.0's
+// Subscription has no past_due_ends_at, so inside a grace window a read cannot date
+// it; if the SDK gains the field, wire it here.
 func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (corebilling.SubscriptionEvent, error) {
 	sub, err := c.api.Subscriptions.Get(ctx, providerSubID)
 	if err != nil {
