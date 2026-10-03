@@ -13,9 +13,9 @@ func graceDeadline(t *testing.T, f *fixture, subID string) *time.Time {
 	t.Helper()
 	var at *time.Time
 	if err := f.pg.PgRO.QueryRow(t.Context(),
-		`select past_due_ends_at from billing_subscriptions where provider = $1 and provider_sub_id = $2`,
+		`select grace_period_ends_at from billing_subscriptions where provider = $1 and provider_sub_id = $2`,
 		fakeProviderName, subID).Scan(&at); err != nil {
-		t.Fatalf("read past_due_ends_at: %v", err)
+		t.Fatalf("read grace_period_ends_at: %v", err)
 	}
 	return at
 }
@@ -23,7 +23,7 @@ func graceDeadline(t *testing.T, f *fixture, subID string) *time.Time {
 // pastDue is a delivery inside the provider's grace period.
 func pastDue(orgID, subID string, deadline time.Time) corebilling.SubscriptionEvent {
 	event := subEvent(orgID, subID, "prod_u", corebilling.SubStatusPastDue)
-	event.PastDueEndsAt, event.PastDueEndsAtKnown = deadline, true
+	event.GracePeriodEndsAt, event.GracePeriodEndsAtKnown = deadline, true
 	return event
 }
 
@@ -50,8 +50,8 @@ func TestADeliveryStoresTheGraceDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if ent.SubStatus != corebilling.SubStatusPastDue || !ent.SubPastDueEndsAt.Equal(deadline) {
-		t.Errorf("entitlement = (%s, %s), want (past_due, %s)", ent.SubStatus, ent.SubPastDueEndsAt, deadline)
+	if ent.SubStatus != corebilling.SubStatusPastDue || !ent.SubGracePeriodEndsAt.Equal(deadline) {
+		t.Errorf("entitlement = (%s, %s), want (past_due, %s)", ent.SubStatus, ent.SubGracePeriodEndsAt, deadline)
 	}
 }
 
@@ -79,7 +79,7 @@ func TestAReadKeepsTheGraceDeadlineWhileTheCardFails(t *testing.T) {
 		t.Fatalf("applied = %d, want 1 — the read has to land for this to test anything", report.Applied)
 	}
 	if got := graceDeadline(t, f, "sub_grace"); got == nil || !got.Equal(deadline) {
-		t.Errorf("past_due_ends_at = %v after a read, want %s kept", got, deadline)
+		t.Errorf("grace_period_ends_at = %v after a read, want %s kept", got, deadline)
 	}
 }
 
@@ -97,17 +97,17 @@ func TestTheGraceDeadlineClearsOnceTheWindowCloses(t *testing.T) {
 	}{
 		{name: "a delivery after the card recovered", next: func(orgID string) corebilling.SubscriptionEvent {
 			event := subEvent(orgID, "sub_grace", "prod_u", corebilling.SubStatusActive)
-			event.PastDueEndsAtKnown = true
+			event.GracePeriodEndsAtKnown = true
 			return event
 		}},
 		{name: "a delivery after the window ended in a hold", next: func(orgID string) corebilling.SubscriptionEvent {
 			event := subEvent(orgID, "sub_grace", "prod_u", corebilling.SubStatusPastDue)
-			event.ProviderStatus, event.PastDueEndsAtKnown = "on_hold", true
+			event.ProviderStatus, event.GracePeriodEndsAtKnown = "on_hold", true
 			return event
 		}},
 		{name: "a delivery after the window ended in a cancellation", next: func(orgID string) corebilling.SubscriptionEvent {
 			event := subEvent(orgID, "sub_grace", "prod_u", corebilling.SubStatusCancelled)
-			event.PastDueEndsAtKnown = true
+			event.GracePeriodEndsAtKnown = true
 			return event
 		}},
 		{name: "a read after the card recovered", read: true, next: func(orgID string) corebilling.SubscriptionEvent {
@@ -138,7 +138,7 @@ func TestTheGraceDeadlineClearsOnceTheWindowCloses(t *testing.T) {
 				}
 			}
 			if got := graceDeadline(t, f, "sub_grace"); got != nil {
-				t.Errorf("past_due_ends_at = %s, want none", got)
+				t.Errorf("grace_period_ends_at = %s, want none", got)
 			}
 		})
 	}

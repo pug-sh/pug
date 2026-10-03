@@ -523,7 +523,7 @@ billing_subscriptions
   currency              varchar(3) not null       -- always USD while §3 holds
   current_period_start  timestamptz
   current_period_end    timestamptz
-  past_due_ends_at      timestamptz               -- the grace deadline; only a delivery sets it (§11)
+  grace_period_ends_at  timestamptz               -- the grace deadline; only a delivery sets it (§11)
   provider_updated_at   timestamptz not null      -- the CAS column; §8
   create_time           timestamptz not null default now()
   update_time           timestamptz not null default now()
@@ -828,8 +828,8 @@ cancels it. Enabled (Settings → Subscriptions, 1–30 days), it holds the
 subscription in Dodo's own `past_due` until `past_due_ends_at`, then moves it to
 `on_hold` or cancels it, as configured. Both states map to pug's `past_due` (§7),
 so the plan does not notice. What the window adds is a date:
-`billing_subscriptions.past_due_ends_at`, served as
-`GetBillingStatus.past_due_ends_at` for the banner's "update your card by".
+`billing_subscriptions.grace_period_ends_at`, served as
+`GetBillingStatus.grace_period_ends_at` for the banner's "update your card by".
 
 Only a delivery carries it — Dodo's subscription API does not return it — while
 reconcile re-reads every live subscription each pass with a newer stamp. So a
@@ -868,7 +868,7 @@ work is worse than no button. A retired plan is kept off sale there
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
 portal; no `ChangePlan` RPC in this slice. Usage billing added `tier_usage` and
 `tier_usage_as_of` to it: what was last stated to the provider (§4.2). Dunning
-added `past_due_ends_at`, absent outside a grace period (§11).
+added `grace_period_ends_at`, absent outside a grace period (§11).
 
 ### 12.1 Confirming the buyer who came back
 

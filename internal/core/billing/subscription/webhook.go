@@ -341,21 +341,21 @@ func (s *Service) applySubscription(
 			planSlug = stored
 		}
 		applied, err = w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
-			Currency:           billing.Currency,
-			CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
-			CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
-			ID:                 xid.New().String(),
-			OrgID:              orgID,
-			PastDueEndsAt:      postgres.NewOptionalTimestamptz(event.PastDueEndsAt),
-			PastDueEndsAtKnown: event.PastDueEndsAtKnown,
-			PlanSlug:           planSlug,
-			PriceCents:         event.PriceCents,
-			Provider:           provider.Name(),
-			ProviderCustomerID: event.ProviderCustomerID,
-			ProviderStatus:     event.ProviderStatus,
-			ProviderSubID:      event.ProviderSubID,
-			ProviderUpdatedAt:  postgres.NewTimestamptz(at),
-			Status:             string(event.Status),
+			Currency:               billing.Currency,
+			CurrentPeriodEnd:       postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
+			CurrentPeriodStart:     postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
+			ID:                     xid.New().String(),
+			OrgID:                  orgID,
+			GracePeriodEndsAt:      postgres.NewOptionalTimestamptz(event.GracePeriodEndsAt),
+			GracePeriodEndsAtKnown: event.GracePeriodEndsAtKnown,
+			PlanSlug:               planSlug,
+			PriceCents:             event.PriceCents,
+			Provider:               provider.Name(),
+			ProviderCustomerID:     event.ProviderCustomerID,
+			ProviderStatus:         event.ProviderStatus,
+			ProviderSubID:          event.ProviderSubID,
+			ProviderUpdatedAt:      postgres.NewTimestamptz(at),
+			Status:                 string(event.Status),
 		})
 		if err != nil {
 			if isTwoLiveViolation(err) {

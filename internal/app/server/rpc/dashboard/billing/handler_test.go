@@ -263,7 +263,7 @@ func TestGetBillingStatusReportsTheGraceDeadline(t *testing.T) {
 	deadline := time.Now().UTC().Truncate(time.Second).Add(72 * time.Hour)
 	if _, err := pg.PgW.Exec(t.Context(),
 		`insert into billing_subscriptions (currency, current_period_end, current_period_start, id, org_id,
-		   past_due_ends_at, plan_slug, price_cents, provider, provider_customer_id, provider_status,
+		   grace_period_ends_at, plan_slug, price_cents, provider, provider_customer_id, provider_status,
 		   provider_sub_id, provider_updated_at, status)
 		 values ('USD', $1, $2, $3, $4, $5, $6, 100, 'dodo', 'cus_1', 'past_due', 'sub_1', now(), 'past_due')`,
 		start.AddDate(0, 1, 0), start, xid.New().String(), orgID, deadline, entitlement.SlugUsage); err != nil {
@@ -274,15 +274,15 @@ func TestGetBillingStatusReportsTheGraceDeadline(t *testing.T) {
 	if got.GetSubscriptionStatus() != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE {
 		t.Fatalf("subscription_status = %s, want PAST_DUE", got.GetSubscriptionStatus())
 	}
-	if got.GetPastDueEndsAt() == nil || !got.GetPastDueEndsAt().AsTime().Equal(deadline) {
-		t.Errorf("past_due_ends_at = %v, want %s", got.GetPastDueEndsAt(), deadline)
+	if got.GetGracePeriodEndsAt() == nil || !got.GetGracePeriodEndsAt().AsTime().Equal(deadline) {
+		t.Errorf("grace_period_ends_at = %v, want %s", got.GetGracePeriodEndsAt(), deadline)
 	}
 
 	if _, err := pg.PgW.Exec(t.Context(),
-		`update billing_subscriptions set past_due_ends_at = null, provider_status = 'active', status = 'active'`); err != nil {
+		`update billing_subscriptions set grace_period_ends_at = null, provider_status = 'active', status = 'active'`); err != nil {
 		t.Fatalf("recover subscription: %v", err)
 	}
-	if got := getStatus(t, srv, orgID); got.GetPastDueEndsAt() != nil {
-		t.Errorf("past_due_ends_at = %v with no grace window, want absent", got.GetPastDueEndsAt())
+	if got := getStatus(t, srv, orgID); got.GetGracePeriodEndsAt() != nil {
+		t.Errorf("grace_period_ends_at = %v with no grace window, want absent", got.GetGracePeriodEndsAt())
 	}
 }

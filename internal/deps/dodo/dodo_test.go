@@ -193,9 +193,9 @@ func TestNormalizeReadsTheGraceDeadline(t *testing.T) {
 		t.Fatalf("Normalize: %v", err)
 	}
 	want := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
-	if !event.PastDueEndsAtKnown || !event.PastDueEndsAt.Equal(want) {
-		t.Errorf("past_due_ends_at = (%s, known %v), want (%s, known)",
-			event.PastDueEndsAt, event.PastDueEndsAtKnown, want)
+	if !event.GracePeriodEndsAtKnown || !event.GracePeriodEndsAt.Equal(want) {
+		t.Errorf("grace deadline = (%s, known %v), want (%s, known)",
+			event.GracePeriodEndsAt, event.GracePeriodEndsAtKnown, want)
 	}
 	if event.Status != corebilling.SubStatusPastDue {
 		t.Errorf("status = %q, want past_due", event.Status)
@@ -213,9 +213,9 @@ func TestNormalizeKnowsADeliveryWithNoDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
-	if !event.PastDueEndsAtKnown || !event.PastDueEndsAt.IsZero() {
-		t.Errorf("past_due_ends_at = (%s, known %v), want (zero, known)",
-			event.PastDueEndsAt, event.PastDueEndsAtKnown)
+	if !event.GracePeriodEndsAtKnown || !event.GracePeriodEndsAt.IsZero() {
+		t.Errorf("grace deadline = (%s, known %v), want (zero, known)",
+			event.GracePeriodEndsAt, event.GracePeriodEndsAtKnown)
 	}
 }
 

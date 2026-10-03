@@ -331,11 +331,11 @@ func TestFetchSubscriptionMatchesADelivery(t *testing.T) {
 	}
 	// The one deliberate difference: only a delivery carries the grace deadline, so
 	// only a delivery can say there is none.
-	if fetched.PastDueEndsAtKnown || !normalized.PastDueEndsAtKnown {
+	if fetched.GracePeriodEndsAtKnown || !normalized.GracePeriodEndsAtKnown {
 		t.Errorf("deadline known = (read %v, delivery %v), want (false, true)",
-			fetched.PastDueEndsAtKnown, normalized.PastDueEndsAtKnown)
+			fetched.GracePeriodEndsAtKnown, normalized.GracePeriodEndsAtKnown)
 	}
-	normalized.PastDueEndsAtKnown = false
+	normalized.GracePeriodEndsAtKnown = false
 	if fetched != normalized {
 		t.Errorf("fetched = %+v\nnormalized = %+v\nthe two apply paths disagree", fetched, normalized)
 	}

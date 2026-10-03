@@ -95,7 +95,7 @@ const (
 	SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED SubscriptionStatus = 0
 	SubscriptionStatus_SUBSCRIPTION_STATUS_ACTIVE      SubscriptionStatus = 1
 	// The card failed and the provider is retrying. The entitlement is UNCHANGED:
-	// worth a banner, never a block. past_due_ends_at says until when, inside a
+	// worth a banner, never a block. grace_period_ends_at says until when, inside a
 	// grace period.
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAST_DUE  SubscriptionStatus = 2
 	SubscriptionStatus_SUBSCRIPTION_STATUS_PAUSED    SubscriptionStatus = 3
@@ -396,7 +396,7 @@ type GetBillingStatusResponse struct {
 	// your card by". Past it the subscription is held or cancelled, and this can read
 	// as past until that lands. Set only inside the provider's grace period: absent
 	// for a card that failed with none configured.
-	PastDueEndsAt *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=past_due_ends_at,json=pastDueEndsAt" json:"past_due_ends_at,omitempty"`
+	GracePeriodEndsAt *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=grace_period_ends_at,json=gracePeriodEndsAt" json:"grace_period_ends_at,omitempty"`
 	// Whether a checkout would open at all -- billing on, a provider configured, and
 	// a product to check out against. Per plan it is PlanOption.purchasable.
 	Purchasable *bool `protobuf:"varint,11,opt,name=purchasable" json:"purchasable,omitempty"`
@@ -509,9 +509,9 @@ func (x *GetBillingStatusResponse) GetCurrentPeriodEnd() *timestamppb.Timestamp 
 	return nil
 }
 
-func (x *GetBillingStatusResponse) GetPastDueEndsAt() *timestamppb.Timestamp {
+func (x *GetBillingStatusResponse) GetGracePeriodEndsAt() *timestamppb.Timestamp {
 	if x != nil {
-		return x.PastDueEndsAt
+		return x.GracePeriodEndsAt
 	}
 	return nil
 }
@@ -1050,7 +1050,7 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"upToEvents\x12\x16\n" +
 	"\x06events\x18\x02 \x01(\x03R\x06events\x12\x1f\n" +
 	"\vfrom_events\x18\x03 \x01(\x03R\n" +
-	"fromEvents\"\xc0\a\n" +
+	"fromEvents\"\xc8\a\n" +
 	"\x18GetBillingStatusResponse\x12'\n" +
 	"\x0fbilling_enabled\x18\x01 \x01(\bR\x0ebillingEnabled\x12.\n" +
 	"\x04plan\x18\x02 \x01(\v2\x1a.dashboard.billing.v1.PlanR\x04plan\x12;\n" +
@@ -1062,8 +1062,8 @@ const file_dashboard_billing_v1_billing_proto_rawDesc = "" +
 	"period_end\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\x12Y\n" +
 	"\x13subscription_status\x18\t \x01(\x0e2(.dashboard.billing.v1.SubscriptionStatusR\x12subscriptionStatus\x12H\n" +
 	"\x12current_period_end\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\x10currentPeriodEnd\x12C\n" +
-	"\x10past_due_ends_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\rpastDueEndsAt\x12 \n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\x10currentPeriodEnd\x12K\n" +
+	"\x14grace_period_ends_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\x11gracePeriodEndsAt\x12 \n" +
 	"\vpurchasable\x18\v \x01(\bR\vpurchasable\x12B\n" +
 	"\x0eretention_days\x18\r \x01(\v2\x1b.google.protobuf.Int64ValueR\rretentionDays\x12\x1e\n" +
 	"\n" +
@@ -1170,7 +1170,7 @@ var file_dashboard_billing_v1_billing_proto_depIdxs = []int32{
 	17, // 6: dashboard.billing.v1.GetBillingStatusResponse.period_end:type_name -> google.protobuf.Timestamp
 	1,  // 7: dashboard.billing.v1.GetBillingStatusResponse.subscription_status:type_name -> dashboard.billing.v1.SubscriptionStatus
 	17, // 8: dashboard.billing.v1.GetBillingStatusResponse.current_period_end:type_name -> google.protobuf.Timestamp
-	17, // 9: dashboard.billing.v1.GetBillingStatusResponse.past_due_ends_at:type_name -> google.protobuf.Timestamp
+	17, // 9: dashboard.billing.v1.GetBillingStatusResponse.grace_period_ends_at:type_name -> google.protobuf.Timestamp
 	16, // 10: dashboard.billing.v1.GetBillingStatusResponse.retention_days:type_name -> google.protobuf.Int64Value
 	5,  // 11: dashboard.billing.v1.GetBillingStatusResponse.tier_usage:type_name -> dashboard.billing.v1.TierUsage
 	17, // 12: dashboard.billing.v1.GetBillingStatusResponse.tier_usage_as_of:type_name -> google.protobuf.Timestamp

@@ -92,7 +92,7 @@ type BillingSubscription struct {
 	ProviderUpdatedAt  pgtype.Timestamptz
 	Status             string
 	UpdateTime         pgtype.Timestamptz
-	PastDueEndsAt      pgtype.Timestamptz
+	GracePeriodEndsAt  pgtype.Timestamptz
 }
 
 type BillingWebhookDelivery struct {

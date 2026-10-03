@@ -39,7 +39,7 @@ type subscriptionPayload struct {
 	} `json:"customer"`
 	Metadata              metadata   `json:"metadata"`
 	NextBillingDate       *time.Time `json:"next_billing_date"`
-	PastDueEndsAt         *time.Time `json:"past_due_ends_at"`
+	GracePeriodEndsAt     *time.Time `json:"past_due_ends_at"`
 	PreviousBillingDate   *time.Time `json:"previous_billing_date"`
 	ProductID             string     `json:"product_id"`
 	RecurringPreTaxAmount int64      `json:"recurring_pre_tax_amount"`
@@ -103,7 +103,7 @@ func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEven
 	}
 	// Every delivery answers for the grace window, so here a missing deadline means
 	// there is none. A direct read cannot see it at all.
-	event.PastDueEndsAtKnown = true
+	event.GracePeriodEndsAtKnown = true
 	return event, nil
 }
 
@@ -128,8 +128,8 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 	if p.NextBillingDate != nil {
 		event.CurrentPeriodEnd = *p.NextBillingDate
 	}
-	if p.PastDueEndsAt != nil {
-		event.PastDueEndsAt = *p.PastDueEndsAt
+	if p.GracePeriodEndsAt != nil {
+		event.GracePeriodEndsAt = *p.GracePeriodEndsAt
 	}
 	return event
 }

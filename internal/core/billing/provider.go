@@ -116,12 +116,12 @@ type SubscriptionEvent struct {
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
 
-	// PastDueEndsAt is when the provider's grace period for a failed card ends; zero
-	// outside one. PastDueEndsAtKnown is false when the source cannot see the
+	// GracePeriodEndsAt is when the provider's grace period for a failed card ends; zero
+	// outside one. GracePeriodEndsAtKnown is false when the source cannot see the
 	// deadline at all — Dodo's subscription API does not return it — so the write
 	// keeps a stored deadline instead of clearing it.
-	PastDueEndsAt      time.Time
-	PastDueEndsAtKnown bool
+	GracePeriodEndsAt      time.Time
+	GracePeriodEndsAtKnown bool
 }
 
 // IsZero reports the "nothing to apply" disposition.
