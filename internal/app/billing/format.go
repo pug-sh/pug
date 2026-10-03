@@ -60,9 +60,7 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	} else {
 		section(w, "SUBSCRIPTIONS", "")
 		for _, sub := range subs {
-			row(w, "  "+sub.Status, fmt.Sprintf("%s  %s  %s  %s  ends %s",
-				sub.PlanSlug, price(&sub.PriceCents, sub.Currency), sub.Provider,
-				sub.ProviderSubID, instant(sub.CurrentPeriodEnd.Time)))
+			row(w, "  "+sub.Status, storedSubscription(sub))
 		}
 	}
 
@@ -143,8 +141,23 @@ func subscription(ent entitlement.Entitlement) string {
 	if !ent.SubPeriodEnd.IsZero() {
 		out += "  bills next " + instant(ent.SubPeriodEnd)
 	}
+	if !ent.SubGracePeriodEndsAt.IsZero() {
+		out += "  grace ends " + instant(ent.SubGracePeriodEndsAt)
+	}
 	if ent.ProviderCustomerID != "" {
 		out += "  customer " + ent.ProviderCustomerID
+	}
+	return out
+}
+
+// storedSubscription is one row as stored. The provider's own status beside pug's
+// tells a provider past_due from an on_hold, which pug maps alike.
+func storedSubscription(sub dbread.BillingSubscription) string {
+	out := fmt.Sprintf("%s  %s  %s  %s  ends %s  provider status %s",
+		sub.PlanSlug, price(&sub.PriceCents, sub.Currency), sub.Provider,
+		sub.ProviderSubID, instant(sub.CurrentPeriodEnd.Time), text(sub.ProviderStatus))
+	if sub.GracePeriodEndsAt.Valid {
+		out += "  grace ends " + instant(sub.GracePeriodEndsAt.Time)
 	}
 	return out
 }

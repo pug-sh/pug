@@ -75,6 +75,13 @@ func (s *Service) HandleDelivery(ctx context.Context, d billing.Delivery) error 
 func (s *Service) applySubscriptionEvent(
 	ctx context.Context, provider billing.PaymentProvider, d billing.Delivery, event billing.SubscriptionEvent,
 ) error {
+	// The rest of the delivery still applies, the deadline as if unseen. Worth a look:
+	// a provider that dates its grace windows sent one pug could not trust.
+	if event.GracePeriodEndsAtIssue != "" {
+		slog.WarnContext(ctx, "set aside a delivery's grace deadline",
+			slog.String("reason", event.GracePeriodEndsAtIssue), slog.String("provider", provider.Name()),
+			slog.String("webhook_id", d.WebhookID), slog.String("provider_sub_id", event.ProviderSubID))
+	}
 	// Not constraint mirroring like the two below: the insert writes the Currency
 	// constant, so an unguarded foreign-currency event would be STORED as USD.
 	if cur := normalizeCurrency(event.Currency); cur != billing.Currency {
@@ -126,8 +133,43 @@ func (s *Service) applySubscriptionEvent(
 		// this is ordinary, and reconcile reports a non-empty error as a lost payment.
 		slog.InfoContext(ctx, "skipped a stale subscription delivery",
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+	} else {
+		// What the dashboard shows now, for a support question about it: pug's status
+		// alone cannot tell the provider's past_due from its on_hold.
+		attrs := []any{slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
+			slog.String("status", string(event.Status)), slog.String("provider_status", event.ProviderStatus)}
+		if event.GracePeriodEndsAtKnown && !event.GracePeriodEndsAt.IsZero() {
+			attrs = append(attrs, slog.Time("grace_period_ends_at", event.GracePeriodEndsAt))
+		}
+		slog.InfoContext(ctx, "applied a subscription delivery", attrs...)
 	}
 	return s.finishDelivery(ctx, provider, d, "")
+}
+
+// fillGraceDeadline dates a grace window from a delivery the CAS refused: it lost to
+// a newer stamp, typically a reconcile read, which can never see the deadline, so
+// without this the window would go undated until the provider sent another.
+func fillGraceDeadline(
+	ctx context.Context, w *dbwrite.Queries, provider, orgID string, event billing.SubscriptionEvent,
+) error {
+	filled, err := w.FillBillingSubscriptionGracePeriodEndsAt(ctx, dbwrite.FillBillingSubscriptionGracePeriodEndsAtParams{
+		GracePeriodEndsAt: postgres.NewTimestamptz(event.GracePeriodEndsAt),
+		Provider:          provider,
+		ProviderStatus:    event.ProviderStatus,
+		ProviderSubID:     event.ProviderSubID,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to date a grace window from a refused delivery", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if filled > 0 {
+		slog.InfoContext(ctx, "dated a grace window from a refused delivery",
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
+			slog.Time("grace_period_ends_at", event.GracePeriodEndsAt))
+	}
+	return nil
 }
 
 // attributeDelivery places a delivery on an org: the ref from a checkout pug
@@ -314,6 +356,11 @@ func (s *Service) applySubscription(
 		telemetry.RecordError(ctx, ErrSubscriptionUnapplicable)
 		return 0, ErrSubscriptionUnapplicable
 	}
+	// A time beside an unknown means nothing: dropped, so first sight and every later
+	// update agree that an unseen deadline is never stored.
+	if !event.GracePeriodEndsAtKnown {
+		event.GracePeriodEndsAt = time.Time{}
+	}
 	var applied int64
 	err := s.entitlements.WithOrgLock(ctx, orgID, func(w *dbwrite.Queries, rec entitlement.Record) error {
 		// The org's own row carries the negotiated-deal product.
@@ -341,19 +388,21 @@ func (s *Service) applySubscription(
 			planSlug = stored
 		}
 		applied, err = w.ApplyBillingSubscription(ctx, dbwrite.ApplyBillingSubscriptionParams{
-			Currency:           billing.Currency,
-			CurrentPeriodEnd:   postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
-			CurrentPeriodStart: postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
-			ID:                 xid.New().String(),
-			OrgID:              orgID,
-			PlanSlug:           planSlug,
-			PriceCents:         event.PriceCents,
-			Provider:           provider.Name(),
-			ProviderCustomerID: event.ProviderCustomerID,
-			ProviderStatus:     event.ProviderStatus,
-			ProviderSubID:      event.ProviderSubID,
-			ProviderUpdatedAt:  postgres.NewTimestamptz(at),
-			Status:             string(event.Status),
+			Currency:               billing.Currency,
+			CurrentPeriodEnd:       postgres.NewOptionalTimestamptz(event.CurrentPeriodEnd),
+			CurrentPeriodStart:     postgres.NewOptionalTimestamptz(event.CurrentPeriodStart),
+			ID:                     xid.New().String(),
+			OrgID:                  orgID,
+			GracePeriodEndsAt:      postgres.NewOptionalTimestamptz(event.GracePeriodEndsAt),
+			GracePeriodEndsAtKnown: event.GracePeriodEndsAtKnown,
+			PlanSlug:               planSlug,
+			PriceCents:             event.PriceCents,
+			Provider:               provider.Name(),
+			ProviderCustomerID:     event.ProviderCustomerID,
+			ProviderStatus:         event.ProviderStatus,
+			ProviderSubID:          event.ProviderSubID,
+			ProviderUpdatedAt:      postgres.NewTimestamptz(at),
+			Status:                 string(event.Status),
 		})
 		if err != nil {
 			if isTwoLiveViolation(err) {
@@ -366,6 +415,9 @@ func (s *Service) applySubscription(
 				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)
 			return err
+		}
+		if applied == 0 && event.GracePeriodEndsAtKnown && !event.GracePeriodEndsAt.IsZero() {
+			return fillGraceDeadline(ctx, w, provider.Name(), orgID, event)
 		}
 		return nil
 	})
