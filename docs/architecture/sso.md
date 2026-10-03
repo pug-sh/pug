@@ -1,8 +1,7 @@
 # SSO: Google Workspace and verified domains
 
 > **Status: phases 1 and 2 implemented, phase 3 is design.** Written
-> 2026-09-25; phases 1 and 2 built 2026-09-26. The Email Verified test below is
-> still to do, and it decides whether `hd` alone can prove a domain.
+> 2026-09-25; phases 1 and 2 built 2026-09-26.
 
 ## Summary
 
@@ -60,16 +59,26 @@ Two rules follow from this:
 Pug still needs its own proof that the org owns the domain. Without it, anyone
 could claim `acme.com` and pull Acme's people into their org.
 
-One case needs a test before phase 1 ships. Google also lets someone sign up
-for Workspace with just an email address and verify the domain later. The
-domain can stay unverified for up to 21 days, or longer once billing is set up.
-In July 2024, Google said attackers had created such "Email Verified" accounts
-and used them to sign in to other apps with Sign in with Google. Google does not
-say whether their tokens carry `hd`. If they do, anyone who can read one
-`acme.com` inbox can get `hd: "acme.com"`. That is no stronger than an email
-link (open question 1), and `hd` alone could not prove a domain. The test: sign
-up for Workspace with only an email address, sign in to a test client, and read
-the ID token.
+Google also lets someone sign up for Workspace with just a work email address
+and verify the domain later. In July 2024, Google said attackers had created
+such "Email Verified" accounts and used them to sign in to other apps with Sign
+in with Google. These accounts carry no `hd`, so Pug treats them as personal
+accounts:
+
+- Google calls them "User owned", unlike the "Organization owned" accounts of a
+  verified domain
+  ([account types](https://knowledge.workspace.google.com/admin/domains/about-gmail-business-email-and-domain-verified-google-workspace-accounts)).
+  Their users "automatically become managed users" only once the domain is
+  verified
+  ([verifying later](https://knowledge.workspace.google.com/admin/domains/verify-your-domain-to-unlock-features-for-business-email-accounts)).
+- `hd` appears only on accounts a Google organization manages. A personal
+  account on a work address has none
+  ([ID token examples](https://jpassing.com/2021/01/27/what-does-the-email_verified-claim-indicate-in-google-idtokens/)).
+
+A test on 2026-10-03 confirmed it: an Essentials Starter account on a domain new
+to Google got an ID token with `email_verified: true` and no `hd`. If Google ever
+adds `hd` to these accounts, anyone who could read one `acme.com` inbox could get
+`hd: "acme.com"`. That is no stronger than an email link (open question 1).
 
 ## Cloud and self-hosted
 
@@ -1010,8 +1019,7 @@ only adds members.
 
 ## Phases
 
-**Phase 1: domains and org settings.** It starts with the Email Verified test
-(see "Why Google needs no per-org setup"). Then the migration, `ProvenDomain()`
+**Phase 1: domains and org settings.** The migration, `ProvenDomain()`
 (Google `hd` and `emailDomains`), the `email_verified` fallback, DNS
 verification and its re-check, `pug domains verify`/`show`/`release`, the
 auto-join and org creation settings, auto-join on sign-in and on session
@@ -1152,8 +1160,12 @@ Integration tests use the repo's `testutil` setup; 11 to 14 are unit tests.
     vouches for the address: a domain the provider speaks for, or Entra's
     `xms_edov`. An explicit `false` is always refused.
 14. **Email Verified Workspace accounts.** Google lets a Workspace exist before
-    its domain is verified. Unconfirmed: whether such accounts carry `hd`.
-    Phase 1 starts by testing it (see "Why Google needs no per-org setup").
+    its domain is verified. Its accounts aren't managed until then, so they
+    carry no `hd` and prove nothing (see "Why Google needs no per-org setup").
+    A test on 2026-10-03 confirmed it. Chrome Browser Cloud Management accounts
+    do get `hd` with no DNS check, but only for a `*.deviceadmin.goog`
+    subdomain Google made. No org can verify one, because nobody can add a TXT
+    record there.
 
 ## Not in scope
 
