@@ -133,6 +133,15 @@ func (s *Service) applySubscriptionEvent(
 		// this is ordinary, and reconcile reports a non-empty error as a lost payment.
 		slog.InfoContext(ctx, "skipped a stale subscription delivery",
 			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+	} else {
+		// What the dashboard shows now, for a support question about it: pug's status
+		// alone cannot tell the provider's past_due from its on_hold.
+		attrs := []any{slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
+			slog.String("status", string(event.Status)), slog.String("provider_status", event.ProviderStatus)}
+		if event.GracePeriodEndsAtKnown && !event.GracePeriodEndsAt.IsZero() {
+			attrs = append(attrs, slog.Time("grace_period_ends_at", event.GracePeriodEndsAt))
+		}
+		slog.InfoContext(ctx, "applied a subscription delivery", attrs...)
 	}
 	return s.finishDelivery(ctx, provider, d, "")
 }

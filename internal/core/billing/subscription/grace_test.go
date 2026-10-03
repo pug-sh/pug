@@ -1,6 +1,9 @@
 package subscription_test
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -289,6 +292,33 @@ func TestARefusedDeliveryStillDatesTheWindow(t *testing.T) {
 				t.Errorf("grace_period_ends_at = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// What a delivery applied, and any deadline it set aside, reach the logs: they are
+// what a support question about the banner has to go on.
+func TestADeliveryLogsWhatItApplied(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	f, provider := newPaidFixture(t)
+	provider.event = subEvent(f.orgID, "sub_grace", "prod_u", corebilling.SubStatusPastDue)
+	provider.event.GracePeriodEndsAtIssue = "a null past_due_ends_at inside a grace window"
+	if err := f.svc.HandleDelivery(t.Context(), delivery("wh_logged", time.Now())); err != nil {
+		t.Fatalf("HandleDelivery: %v", err)
+	}
+	for _, want := range []string{
+		`msg="set aside a delivery's grace deadline"`, `reason="a null past_due_ends_at inside a grace window"`,
+		`msg="applied a subscription delivery"`, "provider_status=past_due",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("log is missing %s:\n%s", want, buf.String())
+		}
 	}
 }
 
