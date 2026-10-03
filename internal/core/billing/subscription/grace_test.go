@@ -210,6 +210,88 @@ func TestTheGraceDeadlineClearsOnceTheWindowCloses(t *testing.T) {
 	}
 }
 
+// reconcileInWindow applies a read inside the grace window, which cannot see the
+// deadline, stamped now: newer than any delivery stamped before it.
+func reconcileInWindow(t *testing.T, f *fixture, provider *fakeProvider) {
+	t.Helper()
+	read := subEvent(f.orgID, "sub_grace", "prod_u", corebilling.SubStatusPastDue)
+	svc := f.svcWithProvider(t, &fetchProvider{
+		fakeProvider: *provider,
+		remote:       map[string]corebilling.SubscriptionEvent{"sub_grace": read},
+	})
+	if report, err := svc.Reconcile(t.Context(), time.Now()); err != nil || report.Applied != 1 {
+		t.Fatalf("Reconcile: applied %d, err %v; want the read to land", report.Applied, err)
+	}
+}
+
+// A delivery held back while a reconcile pass ran is refused by the CAS, yet it
+// carries the one thing no read can see. It dates a window the row has no date for,
+// but never over a stored one, never one already past, and never once the provider
+// reports another state.
+func TestARefusedDeliveryStillDatesTheWindow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	active := func(orgID string) corebilling.SubscriptionEvent {
+		event := subEvent(orgID, "sub_grace", "prod_u", corebilling.SubStatusActive)
+		event.GracePeriodEndsAtKnown = true
+		return event
+	}
+	deadline := time.Now().Add(72 * time.Hour).UTC().Truncate(time.Second)
+	stored := deadline.Add(24 * time.Hour)
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, f *fixture, provider *fakeProvider)
+		late  time.Time
+		want  *time.Time
+	}{
+		{name: "a window with no date", late: deadline, want: &deadline,
+			setup: func(t *testing.T, f *fixture, provider *fakeProvider) {
+				provider.event = active(f.orgID)
+				if err := f.svc.HandleDelivery(t.Context(), delivery("wh_active", time.Now().Add(-3*time.Minute))); err != nil {
+					t.Fatalf("HandleDelivery: %v", err)
+				}
+				reconcileInWindow(t, f, provider)
+			}},
+		{name: "a window already dated", late: deadline, want: &stored,
+			setup: func(t *testing.T, f *fixture, provider *fakeProvider) {
+				deliverPastDue(t, f, provider, stored)
+				reconcileInWindow(t, f, provider)
+			}},
+		{name: "a deadline already past", late: time.Now().Add(-time.Hour).UTC().Truncate(time.Second),
+			setup: func(t *testing.T, f *fixture, provider *fakeProvider) {
+				provider.event = active(f.orgID)
+				if err := f.svc.HandleDelivery(t.Context(), delivery("wh_active", time.Now().Add(-3*time.Minute))); err != nil {
+					t.Fatalf("HandleDelivery: %v", err)
+				}
+				reconcileInWindow(t, f, provider)
+			}},
+		{name: "a card that has since recovered", late: deadline,
+			setup: func(t *testing.T, f *fixture, provider *fakeProvider) {
+				deliverPastDue(t, f, provider, stored)
+				provider.event = active(f.orgID)
+				if err := f.svc.HandleDelivery(t.Context(), delivery("wh_recovered", time.Now())); err != nil {
+					t.Fatalf("HandleDelivery: %v", err)
+				}
+			}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, provider := newPaidFixture(t)
+			tc.setup(t, f, provider)
+			// Stamped two minutes ago: older than what landed since, so the CAS refuses it.
+			provider.event = pastDue(f.orgID, "sub_grace", tc.late)
+			if err := f.svc.HandleDelivery(t.Context(), delivery("wh_late", time.Now().Add(-2*time.Minute))); err != nil {
+				t.Fatalf("HandleDelivery: %v", err)
+			}
+			got := graceDeadline(t, f, "sub_grace")
+			if (got == nil) != (tc.want == nil) || (got != nil && !got.Equal(*tc.want)) {
+				t.Errorf("grace_period_ends_at = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // 023 only adds a column, and its down has to take it away again.
 func TestMigration023RoundTrips(t *testing.T) {
 	if testing.Short() {

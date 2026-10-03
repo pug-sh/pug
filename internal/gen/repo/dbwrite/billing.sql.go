@@ -123,6 +123,38 @@ func (q *Queries) DeleteBillingEntitlement(ctx context.Context, orgID string) (i
 	return result.RowsAffected(), nil
 }
 
+const fillBillingSubscriptionGracePeriodEndsAt = `-- name: FillBillingSubscriptionGracePeriodEndsAt :execrows
+update billing_subscriptions set grace_period_ends_at = $1
+where provider = $2 and provider_sub_id = $3
+  and status = 'past_due' and provider_status = $4
+  and grace_period_ends_at is null and $1::timestamptz > now()
+`
+
+type FillBillingSubscriptionGracePeriodEndsAtParams struct {
+	GracePeriodEndsAt pgtype.Timestamptz
+	Provider          string
+	ProviderSubID     string
+	ProviderStatus    string
+}
+
+// A delivery the CAS refused, held back while a reconcile pass stamped the row,
+// still carries the one thing no read can see. It dates a window the row has no date
+// for, while the provider still reports the state it was sent in: never over a
+// stored deadline, and never one already past, which a retry from an earlier window
+// would carry.
+func (q *Queries) FillBillingSubscriptionGracePeriodEndsAt(ctx context.Context, arg FillBillingSubscriptionGracePeriodEndsAtParams) (int64, error) {
+	result, err := q.db.Exec(ctx, fillBillingSubscriptionGracePeriodEndsAt,
+		arg.GracePeriodEndsAt,
+		arg.Provider,
+		arg.ProviderSubID,
+		arg.ProviderStatus,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getBillingCheckoutSessionOrgID = `-- name: GetBillingCheckoutSessionOrgID :one
 select org_id from billing_checkout_sessions
 where provider = $1 and ref = $2

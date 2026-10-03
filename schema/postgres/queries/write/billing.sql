@@ -109,6 +109,17 @@ where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
    or (billing_subscriptions.provider_updated_at = excluded.provider_updated_at
        and billing_subscriptions.status in ('active', 'past_due'));
 
+-- name: FillBillingSubscriptionGracePeriodEndsAt :execrows
+-- A delivery the CAS refused, held back while a reconcile pass stamped the row,
+-- still carries the one thing no read can see. It dates a window the row has no date
+-- for, while the provider still reports the state it was sent in: never over a
+-- stored deadline, and never one already past, which a retry from an earlier window
+-- would carry.
+update billing_subscriptions set grace_period_ends_at = @grace_period_ends_at
+where provider = @provider and provider_sub_id = @provider_sub_id
+  and status = 'past_due' and provider_status = @provider_status
+  and grace_period_ends_at is null and @grace_period_ends_at::timestamptz > now();
+
 -- name: CreateBillingCheckoutSession :exec
 -- Written before the provider is called, because the ref has to be in the
 -- checkout's metadata. An abandoned checkout's row is pruned.

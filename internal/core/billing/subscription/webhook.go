@@ -137,6 +137,32 @@ func (s *Service) applySubscriptionEvent(
 	return s.finishDelivery(ctx, provider, d, "")
 }
 
+// fillGraceDeadline dates a grace window from a delivery the CAS refused: it lost to
+// a newer stamp, typically a reconcile read, which can never see the deadline, so
+// without this the window would go undated until the provider sent another.
+func fillGraceDeadline(
+	ctx context.Context, w *dbwrite.Queries, provider, orgID string, event billing.SubscriptionEvent,
+) error {
+	filled, err := w.FillBillingSubscriptionGracePeriodEndsAt(ctx, dbwrite.FillBillingSubscriptionGracePeriodEndsAtParams{
+		GracePeriodEndsAt: postgres.NewTimestamptz(event.GracePeriodEndsAt),
+		Provider:          provider,
+		ProviderStatus:    event.ProviderStatus,
+		ProviderSubID:     event.ProviderSubID,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to date a grace window from a refused delivery", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if filled > 0 {
+		slog.InfoContext(ctx, "dated a grace window from a refused delivery",
+			slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID),
+			slog.Time("grace_period_ends_at", event.GracePeriodEndsAt))
+	}
+	return nil
+}
+
 // attributeDelivery places a delivery on an org: the ref from a checkout pug
 // started, then a staged deal's product, then the provider customer, and that one
 // only while it names a single org. A delivery resolving to no org, or to two, is
@@ -380,6 +406,9 @@ func (s *Service) applySubscription(
 				slog.String("org_id", orgID), slog.String("provider_sub_id", event.ProviderSubID))
 			telemetry.RecordError(ctx, err)
 			return err
+		}
+		if applied == 0 && event.GracePeriodEndsAtKnown && !event.GracePeriodEndsAt.IsZero() {
+			return fillGraceDeadline(ctx, w, provider.Name(), orgID, event)
 		}
 		return nil
 	})
