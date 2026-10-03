@@ -1,4 +1,4 @@
-package billing
+package subscription
 
 import (
 	"context"
@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 )
@@ -27,9 +30,6 @@ func newCheckoutRef() (string, error) {
 }
 
 var (
-	// ErrNoProvider is billing running with no payments credentials: the
-	// self-hosted mode, where only the buy button is missing.
-	ErrNoProvider = errors.New("billing: no payments provider is configured")
 	// ErrNotPurchasable is a plan with no product to check out against — an
 	// unconfigured catalog tier, or a deal whose product id nobody pasted on yet.
 	ErrNotPurchasable = errors.New("billing: this plan has no product to check out against")
@@ -44,38 +44,41 @@ var (
 	ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
 )
 
-// Currency is the one pug sells in, enforced at the webhook boundary so
-// multi-currency changes here — and renames price_cents with it.
-const Currency = "USD"
-
-// Payments is the provider wiring. Nil means no provider, which is legal.
-type Payments struct {
-	Provider PaymentProvider
-	// ProductBySlug is the only product mapping. The webhook needs the inverse and
-	// scans for it: a stored second map could disagree, and a slug that maps one way
-	// takes money and then rejects the delivery.
-	ProductBySlug map[string]string
-	// ReturnURL is where the provider sends a buyer after checkout: the dashboard's
-	// own billing page, never a provider page.
-	ReturnURL string
+// takesMoney is the guard the dashboard's money paths share: billing switched
+// on, read through the entitlement service, and a provider wired.
+// CreateCheckoutSession, CreatePortalSession and ConfirmCheckout refuse on it with
+// billing.ErrNoProvider; Purchasable, Manageable and each PlanOption report it.
+// HandleDelivery and Reconcile ask only for a provider: the webhook mirrors the
+// provider whether or not the switch is on, and the reconcile CronJob builds no
+// provider while it is off.
+func (s *Service) takesMoney() bool {
+	return s.entitlements.BillingEnabled() && s.payments.Configured()
 }
 
-func (p *Payments) configured() bool { return p != nil && p.Provider != nil }
-
-// Purchasable reports whether this deployment sells anything to this org at all.
-// Per tier it is PlanOption.Purchasable, which shares checkoutProduct with it.
-func (s *Service) Purchasable(rec Record) bool {
-	if !s.billingEnabled || !s.payments.configured() {
+// Purchasable reports whether this deployment sells anything to this org at all:
+// some tier on sale whose product checkoutProduct resolves, the lookup
+// CreateCheckoutSession refuses on. Per tier it is PlanOption.Purchasable.
+func (s *Service) Purchasable(rec entitlement.Record) bool {
+	if !s.takesMoney() {
 		return false
 	}
-	// Either a catalog tier is on sale, or this org has a negotiated product.
-	return len(s.payments.ProductBySlug) > 0 || rec.ProviderProductID != ""
+	// Not the product map's size: it keeps retired tiers so their renewals
+	// resolve, and custom resolves from this org's row instead.
+	for _, plan := range entitlement.Plans() {
+		if !plan.OnSale() {
+			continue
+		}
+		if _, err := s.checkoutProduct(rec, plan.Slug); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Manageable reports whether a portal session would open, from the SAME lookup
 // CreatePortalSession refuses on: a cancelled org still wants its invoices.
 func (s *Service) Manageable(ctx context.Context, orgID string) bool {
-	if !s.billingEnabled || !s.payments.configured() {
+	if !s.takesMoney() {
 		return false
 	}
 	customerID, err := s.anyProviderCustomer(ctx, orgID)
@@ -85,11 +88,11 @@ func (s *Service) Manageable(ctx context.Context, orgID string) bool {
 
 // checkoutProduct resolves the product a slug is bought against. The custom tier
 // is the org's own, so a negotiated deal is buyable without pug creating one.
-func (s *Service) checkoutProduct(rec Record, slug string) (string, error) {
-	if !s.payments.configured() {
-		return "", ErrNoProvider
+func (s *Service) checkoutProduct(rec entitlement.Record, slug string) (string, error) {
+	if !s.payments.Configured() {
+		return "", billing.ErrNoProvider
 	}
-	if slug == SlugCustom {
+	if slug == entitlement.SlugCustom {
 		if rec.ProviderProductID == "" {
 			return "", ErrNotPurchasable
 		}
@@ -110,7 +113,7 @@ type Checkout struct {
 	// Email and Name pre-fill the provider's form. Both may be empty.
 	Email string
 	Name  string
-	Theme CheckoutTheme
+	Theme billing.CheckoutTheme
 }
 
 // CreateCheckoutSession opens a provider checkout for one tier and returns the
@@ -119,20 +122,22 @@ func (s *Service) CreateCheckoutSession(
 	ctx context.Context, in Checkout,
 ) (sessionID, checkoutURL string, err error) {
 	orgID, planSlug := in.OrgID, in.PlanSlug
-	if !s.billingEnabled || !s.payments.configured() {
-		return "", "", ErrNoProvider
+	if !s.takesMoney() {
+		return "", "", billing.ErrNoProvider
 	}
-	plan, ok := PlanBySlug(planSlug)
+	plan, ok := entitlement.PlanBySlug(planSlug)
 	if !ok {
-		return "", "", ErrPlanNotFound
+		return "", "", entitlement.ErrPlanNotFound
 	}
-	// The provider's product map already excludes both, but that is a PROVIDER's
-	// rule; core must not assume the next one builds its map the same way.
-	if plan.isFloor() || plan.Retired {
+	// The product map leaves out the floors but keeps retired tiers mapped, so their
+	// holders' renewals still resolve (see app/payments). This is what keeps a
+	// retired tier off sale, and the map is the wiring's rule besides: core must not
+	// assume the next wiring builds it the same way.
+	if !plan.OnSale() {
 		return "", "", ErrNotPurchasable
 	}
 
-	rec, err := s.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		return "", "", err
 	}
@@ -158,7 +163,7 @@ func (s *Service) CreateCheckoutSession(
 		return "", "", err
 	}
 
-	sessionID, url, err := s.payments.Provider.CreateCheckoutSession(ctx, CheckoutInput{
+	sessionID, url, err := s.payments.Provider.CreateCheckoutSession(ctx, billing.CheckoutInput{
 		CheckoutRef:   ref,
 		CustomerEmail: in.Email,
 		CustomerName:  in.Name,
@@ -179,8 +184,8 @@ func (s *Service) CreateCheckoutSession(
 // CreatePortalSession opens the provider's customer portal, where plan changes,
 // card updates, invoices and cancellation live. Pug serves none of those.
 func (s *Service) CreatePortalSession(ctx context.Context, orgID string) (string, error) {
-	if !s.billingEnabled || !s.payments.configured() {
-		return "", ErrNoProvider
+	if !s.takesMoney() {
+		return "", billing.ErrNoProvider
 	}
 	// Any subscription, not only a live one: a customer whose subscription lapsed
 	// still has invoices to fetch and a card to re-add.
@@ -204,7 +209,7 @@ func normalizeCurrency(v string) string { return strings.ToUpper(strings.TrimSpa
 
 // planForProduct maps a delivery's product onto a catalog slug. The org's own
 // product resolves to the custom tier, whose quota then comes from its row.
-func (s *Service) planForProduct(productID string, rec Record) (string, error) {
+func (s *Service) planForProduct(productID string, rec entitlement.Record) (string, error) {
 	if productID == "" {
 		return "", ErrNotPurchasable
 	}
@@ -214,13 +219,13 @@ func (s *Service) planForProduct(productID string, rec Record) (string, error) {
 		}
 	}
 	if rec.ProviderProductID != "" && rec.ProviderProductID == productID {
-		return SlugCustom, nil
+		return entitlement.SlugCustom, nil
 	}
 	return "", fmt.Errorf("%w: product %s", ErrNotPurchasable, productID)
 }
 
-// PlanOption is a tier as this deployment sells it, distinct from Entitlement,
-// which is a tier as ONE ORG holds it.
+// PlanOption is a tier as this deployment sells it, distinct from
+// entitlement.Entitlement, which is a tier as ONE ORG holds it.
 type PlanOption struct {
 	Slug        string
 	DisplayName string
@@ -236,20 +241,21 @@ type PlanOption struct {
 	Purchasable bool
 }
 
-// PlanOptions is the sellable catalog for one org: the floors and retired tiers
-// are excluded, and custom appears only for the org whose row records a product.
+// PlanOptions is the catalog on sale to one org (see Plan.OnSale), with custom
+// listed only for the org whose row records a product.
 func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, error) {
-	rec, err := s.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make([]PlanOption, 0, len(catalog))
-	for _, plan := range Plans() {
-		if plan.isFloor() || plan.Retired {
+	plans := entitlement.Plans()
+	out := make([]PlanOption, 0, len(plans))
+	for _, plan := range plans {
+		if !plan.OnSale() {
 			continue
 		}
-		if plan.Slug == SlugCustom && rec.ProviderProductID == "" {
+		if plan.Slug == entitlement.SlugCustom && rec.ProviderProductID == "" {
 			continue
 		}
 		// Per tier, not per org: a deployment can configure a product for some tiers
@@ -260,7 +266,7 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 			DisplayName:    plan.DisplayName,
 			IncludedEvents: plan.IncludedEvents,
 			PriceCents:     plan.PriceCents,
-			Purchasable:    s.billingEnabled && err == nil,
+			Purchasable:    s.takesMoney() && err == nil,
 			RetentionDays:  plan.RetentionDays,
 			Slug:           plan.Slug,
 		})
@@ -272,15 +278,15 @@ func (s *Service) PlanOptions(ctx context.Context, orgID string) ([]PlanOption, 
 // subscription through the same CAS the webhook uses. false, nil means the
 // provider has no subscription yet — the buyer beat their own payment home.
 func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, now time.Time) (bool, error) {
-	if !s.billingEnabled || !s.payments.configured() {
-		return false, ErrNoProvider
+	if !s.takesMoney() {
+		return false, billing.ErrNoProvider
 	}
 	provider := s.payments.Provider
 
 	event, err := provider.FetchCheckoutOutcome(ctx, sessionID)
 	if err != nil {
 		// A decline is an ordinary buyer outcome; only a failed read is a fault.
-		if errors.Is(err, ErrCheckoutFailed) {
+		if errors.Is(err, billing.ErrCheckoutFailed) {
 			slog.InfoContext(ctx, "checkout did not settle", slogx.Error(err),
 				slog.String("org_id", orgID))
 			return false, err
@@ -332,14 +338,14 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 	}
 	// The customer has paid and pug cannot place it. A person has to act either
 	// way, but somebody is waiting here, so it is returned as well as logged.
-	if cur := normalizeCurrency(event.Currency); cur != Currency {
+	if cur := normalizeCurrency(event.Currency); cur != billing.Currency {
 		slog.ErrorContext(ctx, "confirmed checkout is billed in an unsupported currency",
 			slogx.Error(ErrCurrencyNotSupported), slog.String("org_id", orgID),
 			slog.String("currency", cur), slog.String("provider_sub_id", event.ProviderSubID))
 		telemetry.RecordError(ctx, ErrCurrencyNotSupported)
 		return false, ErrCurrencyNotSupported
 	}
-	rec, err := s.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
 		return false, err
 	}
@@ -360,4 +366,32 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 	// the write when a webhook already stored a newer row, and telling a buyer to
 	// wait for the plan they already hold is what this path exists to remove.
 	return event.Status.Live(), nil
+}
+
+// anyProviderCustomer resolves the customer the portal is opened for. Checkout
+// is what leaves one behind, so a trialing, free or comped org has none.
+func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string, error) {
+	if !s.payments.Configured() {
+		return "", billing.ErrNoProvider
+	}
+	// The write pool: a lagging replica would hide "Manage billing" from a customer
+	// who has just paid.
+	row, err := dbread.New(s.pgW).GetLatestBillingSubscription(ctx,
+		dbread.GetLatestBillingSubscriptionParams{
+			OrgID:    orgID,
+			Provider: s.payments.Provider.Name(),
+		})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNoCustomer
+		}
+		slog.ErrorContext(ctx, "failed to read the billing subscription for a portal session", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if row.ProviderCustomerID == "" {
+		return "", ErrNoCustomer
+	}
+	return row.ProviderCustomerID, nil
 }

@@ -1,4 +1,4 @@
-package billing_test
+package subscription_test
 
 import (
 	"errors"
@@ -6,26 +6,28 @@ import (
 	"time"
 
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 )
 
 // The two shapes with no way to take money: no provider credentials, and the
 // billing switch off. Both must refuse identically.
-func noProviderCases(t *testing.T) (*fixture, map[string]*corebilling.Service) {
+func noProviderCases(t *testing.T) (*fixture, map[string]*subscription.Service) {
 	t.Helper()
 	f, provider := newPaidFixture(t)
 
-	unconfigured, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, true, nil)
+	unconfigured := subscription.NewService(f.pg.PgRO, f.pg.PgW, nil, f.entitlements)
+	// A provider wired and the switch off, which means an entitlement service built
+	// off, as the server builds it.
+	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, false)
 	if err != nil {
-		t.Fatalf("new service with no payments: %v", err)
+		t.Fatalf("new entitlement service: %v", err)
 	}
-	switchedOff, err := corebilling.NewService(f.pg.PgRO, f.pg.PgW, false, &corebilling.Payments{
+	switchedOff := subscription.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
-	})
-	if err != nil {
-		t.Fatalf("new service with billing off: %v", err)
-	}
-	return f, map[string]*corebilling.Service{
+	}, off)
+	return f, map[string]*subscription.Service{
 		"no provider credentials": unconfigured,
 		"billing switched off":    switchedOff,
 	}
@@ -39,7 +41,7 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 
 	for name, svc := range services {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := svc.CreateCheckoutSession(t.Context(), corebilling.Checkout{
+			if _, _, err := svc.CreateCheckoutSession(t.Context(), subscription.Checkout{
 				OrgID: f.orgID, PlanSlug: "growth", Email: "buyer@example.com", Name: "Ada Buyer",
 			}); !errors.Is(err, corebilling.ErrNoProvider) {
 				t.Errorf("CreateCheckoutSession err = %v, want ErrNoProvider", err)
@@ -51,6 +53,28 @@ func TestMoneyPathsRefuseWithNoProvider(t *testing.T) {
 				t.Errorf("ConfirmCheckout err = %v, want ErrNoProvider", err)
 			}
 		})
+	}
+}
+
+// A delivery that reaches a service with no provider has nothing to be stored or
+// mapped under. MountBilling mounts no route for one, so this is wiring gone
+// wrong, and it is refused for the provider's retry rather than stored orphaned.
+func TestHandleDeliveryRefusesWithoutAProvider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newFixture(t)
+
+	err := f.svc.HandleDelivery(t.Context(), delivery("evt_1", time.Now().UTC()))
+	if !errors.Is(err, corebilling.ErrNoProvider) {
+		t.Fatalf("HandleDelivery err = %v, want ErrNoProvider", err)
+	}
+	var n int
+	if err := f.pg.PgRO.QueryRow(t.Context(), `select count(*) from billing_webhook_deliveries`).Scan(&n); err != nil {
+		t.Fatalf("count deliveries: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("stored %d deliveries under no provider, want 0", n)
 	}
 }
 

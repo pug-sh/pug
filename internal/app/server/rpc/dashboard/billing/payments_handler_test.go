@@ -14,6 +14,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -115,15 +116,11 @@ func (failingProvider) FetchCheckoutOutcome(context.Context, string) (corebillin
 
 func newFailingServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	return newServerWith(t, pg, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      failingProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
 	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	return NewServer(svc)
 }
 
 // Internal, and silent: the provider's request ids and status text must not reach
@@ -176,27 +173,19 @@ func TestProviderFailuresAreInternalAndSayNothing(t *testing.T) {
 // id — the deploy variable is missing. Nothing is purchasable.
 func newProductlessServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	return newServerWith(t, pg, true, &corebilling.Payments{
 		Provider:  stubProvider{},
 		ReturnURL: "https://app.example/settings/billing",
 	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	return NewServer(svc)
 }
 
 func newPayingServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, billingEnabled, &corebilling.Payments{
+	return newServerWith(t, pg, billingEnabled, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
 	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	return NewServer(svc)
 }
 
 func TestCheckoutPrefillsTheBuyer(t *testing.T) {
@@ -205,16 +194,13 @@ func TestCheckoutPrefillsTheBuyer(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	var in corebilling.CheckoutInput
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	srv := newServerWith(t, pg, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      stubProvider{in: &in},
 		ReturnURL:     "https://app.example/settings/billing",
 	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
-	if _, err := checkout(t, NewServer(svc), orgID, "growth"); err != nil {
+	if _, err := checkout(t, srv, orgID, "growth"); err != nil {
 		t.Fatalf("CreateCheckoutSession: %v", err)
 	}
 	// Both halves are strings, so a transposed pair compiles and reaches the provider.
@@ -257,6 +243,17 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 		// A provider with credentials but no product ids: nothing is on sale, so
 		// the button must not render even though checkout is otherwise wired.
 		{"no products configured", func() *Server { return newProductlessServer(t, pg) }, true, false},
+		// A product only for a tier checkout will not sell: app/payments keeps a
+		// retired tier mapped for its holders' renewals, so once the one tier a
+		// deployment has a product for retires, the map is not empty and nothing is
+		// on sale. A floor stands in for the retired tier the catalog lacks.
+		{"only a tier off sale has a product", func() *Server {
+			return newServerWith(t, pg, true, &corebilling.Payments{
+				ProductBySlug: map[string]string{entitlement.SlugFree: "prod_free"},
+				Provider:      stubProvider{},
+				ReturnURL:     "https://app.example/settings/billing",
+			})
+		}, true, false},
 	}
 
 	for _, tc := range cases {
@@ -264,7 +261,11 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 			orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 			srv := tc.server()
 
-			got := getStatus(t, srv, orgID).GetPurchasable()
+			status := getStatus(t, srv, orgID)
+			if got := status.GetBillingEnabled(); got != tc.enabled {
+				t.Errorf("billing_enabled = %v, want %v", got, tc.enabled)
+			}
+			got := status.GetPurchasable()
 			if got != tc.want {
 				t.Errorf("purchasable = %v, want %v", got, tc.want)
 			}
@@ -309,19 +310,32 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
-	srv := newPayingServer(t, pg, true)
+	// The floors have products here, as a retired tier does in production, where
+	// app/payments keeps it mapped for its holders' renewals: a product must not be
+	// enough to sell a tier. Unmapped, the floors would be refused for want of one
+	// and Plan.OnSale would never be reached.
+	var in corebilling.CheckoutInput
+	srv := newServerWith(t, pg, true, &corebilling.Payments{
+		ProductBySlug: map[string]string{
+			"growth":              "prod_growth",
+			entitlement.SlugFree:  "prod_free",
+			entitlement.SlugTrial: "prod_trial",
+		},
+		Provider:  stubProvider{in: &in},
+		ReturnURL: "https://app.example/settings/billing",
+	})
 
 	cases := map[string]struct {
 		slug string
 		code connect.Code
 	}{
 		// A floor is never sold, even though the catalog knows it.
-		"free floor":  {corebilling.SlugFree, connect.CodeFailedPrecondition},
-		"trial floor": {corebilling.SlugTrial, connect.CodeFailedPrecondition},
+		"free floor":  {entitlement.SlugFree, connect.CodeFailedPrecondition},
+		"trial floor": {entitlement.SlugTrial, connect.CodeFailedPrecondition},
 		// Configured in the catalog but with no product id in this deployment.
 		"unconfigured tier": {"scale", connect.CodeFailedPrecondition},
 		// A negotiated deal with no product id recorded on the org.
-		"custom with no product": {corebilling.SlugCustom, connect.CodeFailedPrecondition},
+		"custom with no product": {entitlement.SlugCustom, connect.CodeFailedPrecondition},
 		"no such plan":           {"platinum", connect.CodeNotFound},
 	}
 
@@ -335,6 +349,10 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 				t.Errorf("code = %s, want %s", got, tc.code)
 			}
 		})
+	}
+	// Refused before the provider opened anything, not after.
+	if in.ProductID != "" {
+		t.Errorf("the provider was asked to open a checkout for %q", in.ProductID)
 	}
 }
 
@@ -357,6 +375,54 @@ func TestCheckoutIsUnavailableWithoutAProvider(t *testing.T) {
 	}
 	if ae.Reason() != apperr.ReasonBillingUnavailable {
 		t.Errorf("reason = %q, want BILLING_UNAVAILABLE", ae.Reason())
+	}
+}
+
+// manageable is what the dashboard renders the portal button from, and it must
+// agree with CreatePortalSession as purchasable does with checkout. Billing off is
+// the case to watch: the server builds payments whether or not the switch is on,
+// so a provider and a customer can both exist behind a switched-off deployment.
+func TestManageableAgreesWithThePortal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	cases := []struct {
+		name    string
+		server  func(*testutil.TestPostgres) *Server
+		enabled bool
+		want    bool
+	}{
+		{"provider configured", func(pg *testutil.TestPostgres) *Server { return newPayingServer(t, pg, true) }, true, true},
+		{"no provider", func(pg *testutil.TestPostgres) *Server { return newServer(t, pg, true) }, true, false},
+		{"billing off", func(pg *testutil.TestPostgres) *Server { return newPayingServer(t, pg, false) }, false, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// A database each: seedCustomer's subscription ids are fixed.
+			pg := testutil.SetupPostgres(t)
+			orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
+			seedCustomer(t, pg, orgID)
+			srv := tc.server(pg)
+
+			status := getStatus(t, srv, orgID)
+			if got := status.GetBillingEnabled(); got != tc.enabled {
+				t.Errorf("billing_enabled = %v, want %v", got, tc.enabled)
+			}
+			if got := status.GetManageable(); got != tc.want {
+				t.Errorf("manageable = %v, want %v", got, tc.want)
+			}
+
+			_, err := srv.CreatePortalSession(buyerCtx(t),
+				connect.NewRequest(&billingv1.CreatePortalSessionRequest{OrgId: &orgID}))
+			if tc.want && err != nil {
+				t.Errorf("manageable is true but the portal refused: %v", err)
+			}
+			if !tc.want && err == nil {
+				t.Error("manageable is false but the portal opened")
+			}
+		})
 	}
 }
 
@@ -408,7 +474,7 @@ func TestCancelledOrgIsStillManageable(t *testing.T) {
 		t.Errorf("subscription_status = %s, want UNSPECIFIED — a dead subscription supplies nothing",
 			status.GetSubscriptionStatus())
 	}
-	if status.GetPlan().GetSlug() != corebilling.SlugFree {
+	if status.GetPlan().GetSlug() != entitlement.SlugFree {
 		t.Errorf("plan = %q, want free", status.GetPlan().GetSlug())
 	}
 	if !status.GetManageable() {
@@ -495,13 +561,13 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 		bySlug[plan.GetSlug()] = plan
 	}
 
-	for _, floor := range []string{corebilling.SlugFree, corebilling.SlugTrial} {
+	for _, floor := range []string{entitlement.SlugFree, entitlement.SlugTrial} {
 		if _, ok := bySlug[floor]; ok {
 			t.Errorf("%q is offered for sale; nobody buys a floor", floor)
 		}
 	}
 	// No product id on this org's row, so there is no custom deal to buy.
-	if _, ok := bySlug[corebilling.SlugCustom]; ok {
+	if _, ok := bySlug[entitlement.SlugCustom]; ok {
 		t.Error("custom is offered to an org with no recorded product")
 	}
 
@@ -522,7 +588,7 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 	}
 	// A wrapper for the same reason the quota is one: a pricing table rendering
 	// "0 days of history" beside a tier is worse than rendering nothing.
-	if got := bySlug["growth"].GetRetentionDays(); got == nil || got.GetValue() != 3*corebilling.RetentionYearDays {
+	if got := bySlug["growth"].GetRetentionDays(); got == nil || got.GetValue() != 3*entitlement.RetentionYearDays {
 		t.Errorf("growth retention = %v, want 3 years of days", got)
 	}
 }
@@ -547,7 +613,7 @@ func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 
 	var custom *billingv1.PlanOption
 	for _, plan := range listPlans(t, srv, orgID) {
-		if plan.GetSlug() == corebilling.SlugCustom {
+		if plan.GetSlug() == entitlement.SlugCustom {
 			custom = plan
 		}
 	}
@@ -584,15 +650,11 @@ func (c confirmStub) FetchCheckoutOutcome(context.Context, string) (corebilling.
 
 func newConfirmingServer(t *testing.T, pg *testutil.TestPostgres, provider corebilling.PaymentProvider) *Server {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	return newServerWith(t, pg, true, &corebilling.Payments{
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
 	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	return NewServer(svc)
 }
 
 func confirm(t *testing.T, srv *Server, orgID string) (bool, error) {

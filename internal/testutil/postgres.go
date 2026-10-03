@@ -76,6 +76,31 @@ func SetOrgCreateTime(t *testing.T, pool *pgxpool.Pool, orgID string, at time.Ti
 	}
 }
 
+// WaitForAdvisoryLockWaiter blocks until a session is parked on an advisory lock,
+// so a lock test never races the commit that releases it. A package runs its
+// tests serially against its one container, so any waiter is the one under test.
+// It also returns once done closes: a call that settled without waiting is what a
+// lock test exists to catch, and its assertions name that better than a timeout.
+func WaitForAdvisoryLockWaiter(t *testing.T, pool *pgxpool.Pool, done <-chan struct{}) {
+	t.Helper()
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		var n int
+		if err := pool.QueryRow(t.Context(),
+			`select count(*) from pg_locks where locktype = 'advisory' and not granted`).Scan(&n); err != nil {
+			t.Fatalf("testutil: read pg_locks: %v", err)
+		}
+		if n > 0 {
+			return
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	t.Fatal("testutil: nothing blocked on an advisory lock within 30s")
+}
+
 // sharedPostgres is the single container backing every test in the package.
 type sharedPostgres struct {
 	admin *pgxpool.Pool

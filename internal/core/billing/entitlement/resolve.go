@@ -1,15 +1,18 @@
-// Package billing answers what an org is entitled to send. It counts nothing:
-// consumption is internal/core/usage's job, and the two meet only in a client
-// rendering "X of Y".
+// Package entitlement answers what an org is entitled to send: the plan catalog,
+// the stored row, the live subscription the subscription package writes, and the
+// resolution of the three against the clock, where a live subscription outranks
+// the row. It counts nothing — consumption is internal/core/usage's job, and the
+// two meet only in a client rendering "X of Y".
 //
-// A quota drives a banner and never a rejected event, so a wrong row costs a
-// wrong number on a page. Nothing on the ingestion path imports this package,
-// and nothing here issues a ClickHouse query.
-package billing
+// A quota drives a banner and never a rejected event, so a wrong row costs a wrong
+// number on a page. Nothing on the ingestion path imports this package, and nothing
+// here issues a ClickHouse query.
+package entitlement
 
 import (
 	"time"
 
+	"github.com/pug-sh/pug/internal/core/billing"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 )
 
@@ -80,7 +83,7 @@ type Entitlement struct {
 
 	// The live provider subscription, if any; an empty SubStatus means none. These
 	// describe the MONEY: SubPeriodEnd is when the provider bills, not PeriodEnd.
-	SubStatus          SubStatus
+	SubStatus          billing.SubStatus
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
 }

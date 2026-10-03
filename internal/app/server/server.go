@@ -31,7 +31,8 @@ import (
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
 	"github.com/pug-sh/pug/internal/app/server/webhook"
 	"github.com/pug-sh/pug/internal/cookieless"
-	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
@@ -146,19 +147,24 @@ func start(ctx context.Context, d *deps) error {
 
 	// Postgres only: an entitlement is a row plus the clock, and the quota it
 	// carries enforces nothing, so no ingestion or ClickHouse path is involved.
-	billingSvc, err := corebilling.NewService(d.pgRo, d.pgW, d.billingEnabled, d.payments)
+	entitlementSvc, err := entitlement.NewService(d.pgRo, d.pgW, d.billingEnabled)
 	if err != nil {
-		return fmt.Errorf("billing service: %w", err)
+		return fmt.Errorf("entitlement service: %w", err)
 	}
+	// The money side, which does talk to the provider, built over the entitlement
+	// service.
+	subscriptionSvc := subscription.NewService(d.pgRo, d.pgW, d.payments, entitlementSvc)
+	// Off the service, like the webhook route, so the name logged here is the one
+	// the route mounts at.
 	provider := ""
-	if d.payments != nil {
-		provider = d.payments.Provider.Name()
+	if v := subscriptionSvc.Verifier(); v != nil {
+		provider = v.Name()
 	}
 	// The likeliest misconfig is a pod missing the flag: every org would then read as
 	// having no quota, with nothing failing. Same for a missing provider key.
 	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled), slog.String("provider", provider))
 	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
-		billingrpc.NewServer(billingSvc), handlerOpts)
+		billingrpc.NewServer(subscriptionSvc), handlerOpts)
 
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
@@ -246,11 +252,8 @@ func start(ctx context.Context, d *deps) error {
 
 	// Mounted directly for the same reason as /mcp. The route is unauthenticated in
 	// the middleware sense: it authenticates by HMAC over the raw body.
-	if d.payments != nil {
-		if webhook.MountBilling(mux, billingSvc, d.payments.Provider) {
-			slog.InfoContext(ctx, "mounted the payments webhook",
-				slog.String("path", webhook.BillingPath(d.payments.Provider.Name())))
-		}
+	if webhook.MountBilling(mux, subscriptionSvc) {
+		slog.InfoContext(ctx, "mounted the payments webhook", slog.String("path", webhook.BillingPath(provider)))
 	}
 
 	// WithCorrelationID wraps the whole mux so auth rejections — which happen outside

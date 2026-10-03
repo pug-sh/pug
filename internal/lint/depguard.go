@@ -12,9 +12,10 @@ import (
 
 const modulePath = "github.com/pug-sh/pug/"
 
-// checkDepguardTargets pins every depguard glob and denied package to a path
-// that exists. depguard reports nothing when a pattern matches no file, so a
-// typo or a moved package silently retires the rule rather than failing.
+// checkDepguardTargets pins every depguard glob and every denied or allowed
+// package to a path that exists. depguard reports nothing when a pattern matches
+// no file, so a typo or a moved package silently retires the rule rather than
+// failing.
 func checkDepguardTargets(root string) ([]string, error) {
 	var doc struct {
 		Linters struct {
@@ -22,6 +23,7 @@ func checkDepguardTargets(root string) ([]string, error) {
 				Depguard struct {
 					Rules map[string]struct {
 						Files []string `yaml:"files"`
+						Allow []string `yaml:"allow"`
 						Deny  []struct {
 							Pkg string `yaml:"pkg"`
 						} `yaml:"deny"`
@@ -50,17 +52,33 @@ func checkDepguardTargets(root string) ([]string, error) {
 			}
 		}
 		for _, d := range rule.Deny {
-			dir, ok := strings.CutPrefix(d.Pkg, modulePath)
-			if !ok {
-				continue
-			}
-			if _, err := os.Stat(filepath.Join(root, strings.TrimSuffix(dir, "/"))); err != nil {
+			if !modulePathExists(root, d.Pkg) {
 				out = append(out, fmt.Sprintf(".golangci.yml: depguard rule %q denies no such package %q", name, d.Pkg))
+			}
+		}
+		// A stale allow is not silent in lax mode, whose deny then catches the port's
+		// real imports, but it reads as a rule about a package that is gone.
+		for _, pkg := range rule.Allow {
+			if !modulePathExists(root, pkg) {
+				out = append(out, fmt.Sprintf(".golangci.yml: depguard rule %q allows no such package %q", name, pkg))
 			}
 		}
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// modulePathExists reports whether a depguard entry inside this module names a
+// real directory, reading past the `$` that makes it exact and the trailing slash
+// that makes it a subtree. An entry outside the module is not checked.
+func modulePathExists(root, pkg string) bool {
+	dir, ok := strings.CutPrefix(pkg, modulePath)
+	if !ok {
+		return true
+	}
+	dir = strings.TrimSuffix(strings.TrimSuffix(dir, "$"), "/")
+	_, err := os.Stat(filepath.Join(root, dir))
+	return err == nil
 }
 
 // globDir reduces "**/internal/core/**/*.go" to "internal/core", the literal
