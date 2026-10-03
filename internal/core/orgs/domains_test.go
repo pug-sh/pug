@@ -259,9 +259,12 @@ func TestRemoveDomainKeepsMembers(t *testing.T) {
 	f := newDomainFixture(t)
 	orgID, _ := f.org("admin@acme.com")
 	d := f.verifiedDomain(orgID, "acme.com")
-	f.settings(orgID, orgs.RoleViewer, true)
+	f.settings(orgID, orgs.RoleViewer, false)
 	bob := f.customer("bob@acme.com")
 	f.autoJoin(bob, "bob@acme.com", "acme.com")
+	if ok, err := f.svc.OrgCreationAllowed(f.ctx, bob, "bob@acme.com"); err != nil || ok {
+		t.Fatalf("OrgCreationAllowed = %v, %v; want restricted before removal", ok, err)
+	}
 
 	other, _ := f.org("admin@globex.com")
 	if err := f.svc.RemoveDomain(f.ctx, other, d.ID); !errors.Is(err, orgs.ErrDomainNotFound) {
@@ -278,6 +281,9 @@ func TestRemoveDomainKeepsMembers(t *testing.T) {
 	}
 	if joined := f.autoJoin(f.customer("carol@acme.com"), "carol@acme.com", "acme.com"); len(joined) != 0 {
 		t.Fatalf("auto-join through a removed domain joined %v", joined)
+	}
+	if ok, err := f.svc.OrgCreationAllowed(f.ctx, bob, "bob@acme.com"); err != nil || !ok {
+		t.Fatalf("OrgCreationAllowed = %v, %v; want removing the domain to lift the restriction", ok, err)
 	}
 }
 
