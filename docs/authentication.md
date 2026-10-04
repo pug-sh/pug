@@ -31,6 +31,10 @@ Enable Authorization Code flow and PKCE (`S256`). Configure `clientSecret` only 
 - `email`
 - `email_verified: true`
 
+Pug also accepts a token with no `email_verified` claim when the email is on one of the provider's `emailDomains` (see below), or when the token carries Entra ID's `xms_edov: true`. Entra ID never sends `email_verified`, so an Entra provider needs one of the two. An explicit `email_verified: false` is always refused.
+
+Pug refuses to create or link an account from an `email` with non-ASCII characters. An account already linked to the provider keeps signing in.
+
 `name` and `picture` are optional. Pug verifies the ID token's signature, issuer, audience, expiry, `nonce`, and verified-email claim on the server. The external identity is stored as the provider `id` plus the token's `sub`; since each provider is one issuer and client, `sub` is unique within it.
 
 The browser must send a `nonce` on the authorization request and pass the same value to `CompleteOIDCSignIn`; Pug rejects the sign-in if it does not match the ID token's `nonce` claim. Pug does not mint or store the nonce, so that check confirms the token belongs to the request that carried it — the binding to the browser that started the flow comes from PKCE and from the `state` value the browser must generate, store, and re-check on the callback.
@@ -39,9 +43,38 @@ Pug requires the `redirect_uri` to use the path `/oauth/callback`, with no query
 
 The dashboard requests `openid profile email` by default. Override `scopes` only when the provider needs a different set; `openid` and `email` are always required, since sign-in resolves accounts on a verified email claim. Pug does not request or retain an external refresh token, map provider groups to Pug roles, or initiate provider-wide logout in this first implementation.
 
+## Domains a provider speaks for
+
+A provider the company itself runs can list the email domains it speaks for:
+
+```json
+{
+  "id": "okta",
+  "type": "oidc",
+  "displayName": "Acme SSO",
+  "clientId": "…",
+  "issuerUrl": "https://acme.okta.com",
+  "emailDomains": ["acme.com"]
+}
+```
+
+A sign-in through it with an email on a listed domain proves that domain, the same way Google's `hd` claim proves a Google Workspace domain. Orgs that verified the domain can then let those people auto-join (see [`architecture/sso.md`](architecture/sso.md)). Never list domains on a provider anyone can sign up to. Pug refuses `emailDomains` on Google's issuer, because Google proves domains through `hd` alone.
+
+An older Pug refuses to start with `emailDomains` in the file, since unknown fields are errors. Add it only after every server runs a version that knows it, and remove it before a rollback.
+
+## Requiring SSO
+
+An org admin can require SSO for a domain the org verified. Accounts on that domain then sign in only through a provider that proves it: Google with `hd`, or a provider whose `emailDomains` lists it. Passwords and email links stop working for them. If that provider breaks, for example when its client secret expires, nobody on the domain can sign in to turn the setting off, admins included. Turn it off in every org with:
+
+```sh
+./bin/pug domains unenforce acme.com
+```
+
 ## Google
 
 Configure Google as an OIDC provider with issuer `https://accounts.google.com`, its client ID, and its client secret, as shown in the example config. Register the same `/oauth/callback` redirect URI in the Google OAuth client. The secret remains server-side; Google otherwise uses the same OIDC flow as every other provider.
+
+A Google Workspace account's ID token carries an `hd` claim naming its domain, and Pug treats it as proof of that domain. It reads `hd` only from a provider whose configured issuer is `https://accounts.google.com`. A personal Google account has no `hd` and proves nothing.
 
 The legacy `PUG_OAUTH_GOOGLE_CLIENT_ID` configuration and Google-specific ID-token endpoint have been removed. This is a breaking change, and the variable is now ignored rather than rejected — an install that upgrades without setting `PUG_CONFIG_FILE` starts cleanly with no external providers and Google sign-in absent — the server logs a startup warning naming the ignored variable.
 

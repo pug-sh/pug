@@ -6,6 +6,7 @@ var (
 	ErrOAuthProviderDisabled    = errors.New("oauth provider disabled")
 	ErrInvalidCredential        = errors.New("invalid oauth credential")
 	ErrUnverifiedEmail          = errors.New("email not verified by identity provider")
+	ErrNonASCIIEmail            = errors.New("email has non-ASCII characters")
 	ErrIdentityResolutionFailed = errors.New("oauth identity resolution failed")
 	// Our fault or the IdP's, so it must not reach the caller as a bad credential.
 	ErrProviderUnavailable = errors.New("oauth provider unavailable")

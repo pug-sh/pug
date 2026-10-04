@@ -12,7 +12,7 @@ import (
 const createOrgMember = `-- name: CreateOrgMember :one
 insert into org_members (customer_id, org_id, role)
 values ($1, $2, $3)
-returning create_time, customer_id, org_id, role
+returning create_time, customer_id, org_id, role, joined_via_domain
 `
 
 type CreateOrgMemberParams struct {
@@ -29,8 +29,29 @@ func (q *Queries) CreateOrgMember(ctx context.Context, arg CreateOrgMemberParams
 		&i.CustomerID,
 		&i.OrgID,
 		&i.Role,
+		&i.JoinedViaDomain,
 	)
 	return i, err
+}
+
+const createOrgMemberIfAbsent = `-- name: CreateOrgMemberIfAbsent :execrows
+insert into org_members (customer_id, org_id, role)
+values ($1, $2, $3)
+on conflict (org_id, customer_id) do nothing
+`
+
+type CreateOrgMemberIfAbsentParams struct {
+	CustomerID string
+	OrgID      string
+	Role       string
+}
+
+func (q *Queries) CreateOrgMemberIfAbsent(ctx context.Context, arg CreateOrgMemberIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createOrgMemberIfAbsent, arg.CustomerID, arg.OrgID, arg.Role)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteOrgMember = `-- name: DeleteOrgMember :execrows
@@ -144,7 +165,7 @@ const updateOrgMemberRole = `-- name: UpdateOrgMemberRole :one
 update org_members
 set role = $1
 where org_id = $2 and customer_id = $3
-returning create_time, customer_id, org_id, role
+returning create_time, customer_id, org_id, role, joined_via_domain
 `
 
 type UpdateOrgMemberRoleParams struct {
@@ -161,6 +182,7 @@ func (q *Queries) UpdateOrgMemberRole(ctx context.Context, arg UpdateOrgMemberRo
 		&i.CustomerID,
 		&i.OrgID,
 		&i.Role,
+		&i.JoinedViaDomain,
 	)
 	return i, err
 }
@@ -185,7 +207,7 @@ where om.org_id = $2 and om.customer_id = $3
     or (select role from target) != 'ORG_ROLE_ADMIN'
     or (select cnt from admin_count) > 1
   )
-returning create_time, customer_id, org_id, role
+returning create_time, customer_id, org_id, role, joined_via_domain
 `
 
 type UpdateOrgMemberRoleIfNotLastAdminParams struct {
@@ -208,6 +230,7 @@ func (q *Queries) UpdateOrgMemberRoleIfNotLastAdmin(ctx context.Context, arg Upd
 		&i.CustomerID,
 		&i.OrgID,
 		&i.Role,
+		&i.JoinedViaDomain,
 	)
 	return i, err
 }

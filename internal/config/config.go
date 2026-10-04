@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/pug-sh/pug/internal/domainname"
 	"github.com/sethvargo/go-envconfig"
 )
 
@@ -42,6 +43,15 @@ type AuthProvider struct {
 	ClientSecret string       `json:"clientSecret,omitempty"`
 	IssuerURL    string       `json:"issuerUrl,omitempty"`
 	Scopes       []string     `json:"scopes,omitempty"`
+	// Emails on these domains prove the domain and need no email_verified. Company-run providers only.
+	EmailDomains []string `json:"emailDomains,omitempty"`
+}
+
+// GoogleIssuerURL is the one issuer whose hd claim proves a domain.
+const GoogleIssuerURL = "https://accounts.google.com"
+
+func IsGoogleIssuer(issuerURL string) bool {
+	return strings.TrimSuffix(issuerURL, "/") == GoogleIssuerURL
 }
 
 type envConfig struct {
@@ -133,6 +143,9 @@ func (c *Config) Validate() error {
 			if err := validateScopes(p.Scopes); err != nil {
 				return fmt.Errorf("%s.scopes: %w", prefix, err)
 			}
+			if err := validateEmailDomains(p); err != nil {
+				return fmt.Errorf("%s.emailDomains: %w", prefix, err)
+			}
 		default:
 			return fmt.Errorf("%s.type must be %q", prefix, ProviderTypeOIDC)
 		}
@@ -151,6 +164,29 @@ func validateIssuer(raw string) (string, error) {
 		return "", errors.New("must use HTTPS (HTTP is allowed only for localhost)")
 	}
 	return raw, nil
+}
+
+func validateEmailDomains(p *AuthProvider) error {
+	if len(p.EmailDomains) == 0 {
+		return nil
+	}
+	// On Google, a listed domain would also accept personal accounts using its addresses.
+	if IsGoogleIssuer(p.IssuerURL) {
+		return errors.New("is not allowed on Google's issuer, which proves domains through hd")
+	}
+	seen := make(map[string]struct{}, len(p.EmailDomains))
+	for i, raw := range p.EmailDomains {
+		d, err := domainname.Normalize(raw)
+		if err != nil {
+			return fmt.Errorf("entry %d (%q) must be a hostname", i, raw)
+		}
+		if _, ok := seen[d]; ok {
+			return fmt.Errorf("entry %d (%q) is duplicated", i, raw)
+		}
+		seen[d] = struct{}{}
+		p.EmailDomains[i] = d
+	}
+	return nil
 }
 
 func validateScopes(scopes []string) error {
