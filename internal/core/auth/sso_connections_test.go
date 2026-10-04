@@ -406,6 +406,9 @@ func TestDiscoverSignInWithGoogleConfigured(t *testing.T) {
 	if err != nil || len(d.Providers) != 1 || d.Providers[0].Config.ID != "google" {
 		t.Fatalf("globex.com: %+v, %v; want Google", d, err)
 	}
+	if d, err := svc.DiscoverSignIn(f.ctx, "dave@localhost"); err != nil || d.Domain != "" || len(d.Providers) != 0 {
+		t.Fatalf("localhost: %+v, %v; want no domain and no provider", d, err)
+	}
 
 	// A failed connection lookup still returns the config providers.
 	canceled, cancel := context.WithCancel(f.ctx)

@@ -76,7 +76,13 @@ func TestSSOConnectionsOffWithoutAKey(t *testing.T) {
 	orgID, _ := f.org("admin@acme.com")
 	d := f.verifiedDomain(orgID, "acme.com")
 	if _, err := f.connection(orgID, orgs.SSOConnectionInput{DomainIDs: []string{d.ID}}); !errors.Is(err, orgs.ErrSSOConnectionsDisabled) {
-		t.Fatalf("err = %v, want ErrSSOConnectionsDisabled", err)
+		t.Fatalf("set: err = %v, want ErrSSOConnectionsDisabled", err)
+	}
+	if _, err := f.svc.ListSSOConnections(f.ctx, orgID); !errors.Is(err, orgs.ErrSSOConnectionsDisabled) {
+		t.Fatalf("list: err = %v, want ErrSSOConnectionsDisabled", err)
+	}
+	if err := f.svc.DeleteSSOConnection(f.ctx, orgID, xid.New().String()); !errors.Is(err, orgs.ErrSSOConnectionsDisabled) {
+		t.Fatalf("delete: err = %v, want ErrSSOConnectionsDisabled", err)
 	}
 }
 
@@ -321,6 +327,9 @@ func TestSSOConnectionLimit(t *testing.T) {
 	}
 	if _, err := f.connection(orgID, orgs.SSOConnectionInput{}); !errors.Is(err, orgs.ErrSSOConnectionLimitReached) {
 		t.Fatalf("11th connection: err = %v, want ErrSSOConnectionLimitReached", err)
+	}
+	if _, err := f.connection(xid.New().String(), orgs.SSOConnectionInput{}); !errors.Is(err, orgs.ErrOrgNotFound) {
+		t.Fatalf("unknown org: err = %v, want ErrOrgNotFound", err)
 	}
 }
 
@@ -593,7 +602,8 @@ func TestSSOConnectionSecretRecheckedUnderTheLock(t *testing.T) {
 	}
 }
 
-// A secret saved under another PUG_SSO_SECRET_KEY can't be kept, so the admin enters it again.
+// A secret saved under another PUG_SSO_SECRET_KEY can't sign anyone in or be kept, so the
+// admin enters it again.
 func TestSSOConnectionSecretUnreadableAfterAKeyChange(t *testing.T) {
 	f, _, _ := newSSOConnectionFixture(t)
 	orgID, _ := f.org("admin@acme.com")
@@ -605,6 +615,9 @@ func TestSSOConnectionSecretUnreadableAfterAKeyChange(t *testing.T) {
 	}
 	f.svc.WithSSOConnections(rotated, func(context.Context, string) error { return nil })
 
+	if _, err := orgs.SSOConnectionForSignIn(f.ctx, f.w, rotated, c.ID); err == nil {
+		t.Fatal("sign-in read a secret saved under another key")
+	}
 	if _, err := f.connection(orgID, orgs.SSOConnectionInput{ID: c.ID, Label: "Renamed", DomainIDs: []string{acme.ID}}); !errors.Is(err, orgs.ErrSSOConnectionSecretRequired) {
 		t.Fatalf("blank secret: err = %v, want ErrSSOConnectionSecretRequired", err)
 	}

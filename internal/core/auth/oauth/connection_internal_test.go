@@ -201,3 +201,13 @@ func TestConnectionTimeoutIsProviderUnavailable(t *testing.T) {
 		t.Fatalf("err = %v, want ErrProviderUnavailable", err)
 	}
 }
+
+// A caller that gave up is not an IdP outage.
+func TestCanceledSignInIsNotProviderUnavailable(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := NewService(Config{}, nil).handleIdentityResult(ctx, "conn:x", nil, fmt.Errorf("exchange: %w", context.Canceled))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}

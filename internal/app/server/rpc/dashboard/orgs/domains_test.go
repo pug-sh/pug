@@ -270,6 +270,9 @@ func TestSSOConnectionHandlers(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	h := setupOrgsBackend(t, nil)
+	// Without a key, the SSO tab says connections are off.
+	_, err := orgshandler.NewServer(h.svc).ListSSOConnections(h.ctx, connect.NewRequest(&orgsv1.ListSSOConnectionsRequest{OrgId: proto.String(xid.New().String())}))
+	wantAppErr(t, err, connect.CodeFailedPrecondition, apperr.ReasonSSOConnectionsDisabled)
 	cipher, err := secret.NewCipher(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
 	if err != nil {
 		t.Fatal(err)
@@ -301,6 +304,11 @@ func TestSSOConnectionHandlers(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("update: %v", err)
 	}
+	_, err = srv.SetSSOConnection(ctx, connect.NewRequest(&orgsv1.SetSSOConnectionRequest{
+		OrgId: orgID, ConnectionId: connID, Label: proto.String("Renamed"), IssuerUrl: proto.String("https://acme.okta.com"),
+		ClientId: proto.String("other-cid"), DomainIds: []string{d.ID},
+	}))
+	wantAppErr(t, err, connect.CodeInvalidArgument, apperr.ReasonSSOConnectionSecretRequired)
 	list, err := srv.ListSSOConnections(ctx, connect.NewRequest(&orgsv1.ListSSOConnectionsRequest{OrgId: orgID}))
 	if err != nil {
 		t.Fatal(err)

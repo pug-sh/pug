@@ -39,6 +39,10 @@ func TestNewSSO(t *testing.T) {
 	if d, err := newSSO(t.Context()); err != nil || d.cipher != nil {
 		t.Fatalf("no key: %+v, %v; want connections off", d, err)
 	}
+	t.Setenv("PUG_SSO_SECRET_KEY", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 16))))
+	if _, err := newSSO(t.Context()); err == nil {
+		t.Fatal("16-byte key: want a startup error, not connections off")
+	}
 	t.Setenv("PUG_SSO_SECRET_KEY", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
 	d, err := newSSO(t.Context())
 	if err != nil || d.cipher == nil {
