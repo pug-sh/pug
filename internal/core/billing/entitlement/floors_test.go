@@ -1,4 +1,4 @@
-package billing
+package entitlement
 
 import (
 	"testing"
@@ -24,7 +24,7 @@ func TestNewServiceRefusesACatalogMissingAFloor(t *testing.T) {
 			catalog = trimmed
 
 			// Construction never touches the pools, so nil reaches the check.
-			if _, err := NewService(nil, nil, true, nil); err == nil {
+			if _, err := NewService(nil, nil, true); err == nil {
 				t.Fatalf("NewService accepted a catalog with no %q tier", missing)
 			}
 		})
@@ -33,7 +33,7 @@ func TestNewServiceRefusesACatalogMissingAFloor(t *testing.T) {
 
 // The unbilled walk hardcodes the floor slugs, so a tier the catalog calls a floor
 // but SQL does not would be reported as a paid plan nobody is charged for, on
-// every reconcile pass. Reads isFloor, hence living inside the package.
+// every reconcile pass. Inside the package for catalog and seedOrg.
 func TestTheFloorSlugsAgreeBetweenGoAndSQL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

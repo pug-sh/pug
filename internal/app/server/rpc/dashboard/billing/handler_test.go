@@ -9,6 +9,8 @@ import (
 
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -28,13 +30,21 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 	return org.ID
 }
 
+// newServerWith wires the pair as the server does: the subscription service over an
+// entitlement service, which the handler reads back off it. A nil payments is the
+// no-provider shape.
+func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool, payments *corebilling.Payments) *Server {
+	t.Helper()
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, billingEnabled)
+	if err != nil {
+		t.Fatalf("new entitlement service: %v", err)
+	}
+	return NewServer(subscription.NewService(pg.PgRO, pg.PgW, payments, entitlements))
+}
+
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, billingEnabled, nil)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	return NewServer(svc)
+	return newServerWith(t, pg, billingEnabled, nil)
 }
 
 func getStatus(t *testing.T, srv *Server, orgID string) *billingv1.GetBillingStatusResponse {
@@ -85,9 +95,9 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 	if on.GetIncludedEvents().GetValue() != 10_000 {
 		t.Errorf("included_events = %d, want the free floor's 10000", on.GetIncludedEvents().GetValue())
 	}
-	if on.GetRetentionDays().GetValue() != corebilling.RetentionYearDays {
+	if on.GetRetentionDays().GetValue() != entitlement.RetentionYearDays {
 		t.Errorf("retention_days = %d, want the free floor's %d",
-			on.GetRetentionDays().GetValue(), corebilling.RetentionYearDays)
+			on.GetRetentionDays().GetValue(), entitlement.RetentionYearDays)
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {
 		t.Errorf("status = %s, want FREE for an org past its trial", on.GetStatus())
@@ -109,7 +119,7 @@ func TestGetBillingStatusReportsATrial(t *testing.T) {
 	if msg.GetTrialEndsAt() == nil {
 		t.Error("trial_ends_at is absent while trialing")
 	}
-	if msg.GetPlan().GetSlug() != corebilling.SlugTrial {
+	if msg.GetPlan().GetSlug() != entitlement.SlugTrial {
 		t.Errorf("plan = %q, want the trial tier", msg.GetPlan().GetSlug())
 	}
 	// A price of zero is a real price and must survive as one rather than
@@ -154,18 +164,18 @@ func TestGetBillingStatusReportsAnUnknownOrg(t *testing.T) {
 func TestStatusToRPCCoversEveryResolvedStatus(t *testing.T) {
 	// Exact values, not merely "not UNSPECIFIED": two statuses swapped would tell a
 	// paying customer they are on a trial, and pass a presence-only assertion.
-	want := map[corebilling.Status]billingv1.BillingStatus{
-		corebilling.StatusTrialing: billingv1.BillingStatus_BILLING_STATUS_TRIALING,
-		corebilling.StatusActive:   billingv1.BillingStatus_BILLING_STATUS_ACTIVE,
-		corebilling.StatusFree:     billingv1.BillingStatus_BILLING_STATUS_FREE,
+	want := map[entitlement.Status]billingv1.BillingStatus{
+		entitlement.StatusTrialing: billingv1.BillingStatus_BILLING_STATUS_TRIALING,
+		entitlement.StatusActive:   billingv1.BillingStatus_BILLING_STATUS_ACTIVE,
+		entitlement.StatusFree:     billingv1.BillingStatus_BILLING_STATUS_FREE,
 	}
 	for s, w := range want {
 		if got := statusToRPC(s); got != w {
 			t.Errorf("statusToRPC(%s) = %s, want %s", s, got, w)
 		}
 	}
-	if len(want) != len(corebilling.AllStatuses()) {
-		t.Errorf("the table covers %d statuses, the resolver produces %d", len(want), len(corebilling.AllStatuses()))
+	if len(want) != len(entitlement.AllStatuses()) {
+		t.Errorf("the table covers %d statuses, the resolver produces %d", len(want), len(entitlement.AllStatuses()))
 	}
 }
 

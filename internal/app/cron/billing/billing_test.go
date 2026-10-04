@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/app/cron"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	"github.com/pug-sh/pug/internal/deps/dodo"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -18,13 +20,15 @@ import (
 
 func TestMain(m *testing.M) { testutil.Main(m) }
 
-func newSvc(t *testing.T, pg *testutil.TestPostgres) *corebilling.Service {
+// newSvc builds the pass's service with billing on. A nil payments is the
+// no-provider shape, where Reconcile is a no-op and only the prune runs.
+func newSvc(t *testing.T, pg *testutil.TestPostgres, payments *corebilling.Payments) *subscription.Service {
 	t.Helper()
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, nil)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
 	if err != nil {
-		t.Fatalf("new service: %v", err)
+		t.Fatalf("new entitlement service: %v", err)
 	}
-	return svc
+	return subscription.NewService(pg.PgRO, pg.PgW, payments, entitlements)
 }
 
 // seedDelivery stores one processed delivery stamped at `at`.
@@ -80,10 +84,10 @@ func TestPassPrunesOnlyPastRetention(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-corebilling.DeliveryRetention-time.Hour))
-	seedDelivery(t, pg.PgW, "evt_fresh", now.Add(-corebilling.DeliveryRetention+time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-subscription.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_fresh", now.Add(-subscription.DeliveryRetention+time.Hour))
 
-	if err := pass(t.Context(), newSvc(t, pg), now); err != nil {
+	if err := pass(t.Context(), newSvc(t, pg, nil), now); err != nil {
 		t.Fatalf("pass: %v", err)
 	}
 	got := deliveryIDs(t, pg.PgRO)
@@ -155,16 +159,13 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 
 	pg := testutil.SetupPostgres(t)
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-corebilling.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", now.Add(-subscription.DeliveryRetention-time.Hour))
 	seedLiveSubscription(t, pg.PgW)
 
-	svc, err := corebilling.NewService(pg.PgRO, pg.PgW, true, &corebilling.Payments{
+	svc := newSvc(t, pg, &corebilling.Payments{
 		Provider:      unreachableProvider{},
 		ProductBySlug: map[string]string{"growth": "prod_growth"},
 	})
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
 	if err := pass(t.Context(), svc, now); err == nil {
 		t.Fatal("pass returned nil though the provider could not be read")
 	}
@@ -182,7 +183,7 @@ func TestRunPrunesWhenBillingIsDisabled(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-corebilling.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-subscription.DeliveryRetention-time.Hour))
 	seedDelivery(t, pg.PgW, "evt_recent", time.Now())
 	t.Setenv("PUG_BILLING_ENABLED", "false")
 	// Named and unbuildable: a disabled pass must not reach the provider at all.
@@ -238,7 +239,7 @@ func TestRunPrunesWithNoProviderConfigured(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-corebilling.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-subscription.DeliveryRetention-time.Hour))
 	t.Setenv("PUG_BILLING_ENABLED", "true")
 	t.Setenv("PUG_BILLING_PROVIDER", "")
 	t.Setenv("DATABASE_URL", pg.PgW.Config().ConnString())
@@ -259,7 +260,7 @@ func TestRunExitsZeroWhenAnotherPassHoldsTheLock(t *testing.T) {
 	}
 
 	pg := testutil.SetupPostgres(t)
-	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-corebilling.DeliveryRetention-time.Hour))
+	seedDelivery(t, pg.PgW, "evt_expired", time.Now().Add(-subscription.DeliveryRetention-time.Hour))
 	holdLock(t, pg.PgW)
 
 	t.Setenv("PUG_BILLING_ENABLED", "true")
