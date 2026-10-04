@@ -24,7 +24,7 @@ begin
    where (plan_slug = 'custom') <> (provider_product_id is not null)
       or plan_slug not in ('free', 'custom', 'trial', 'starter', 'growth', 'scale');
   if unplaceable is not null then
-    raise exception 'migration 021 cannot place these rows (a deal needs a provider product, '
+    raise exception 'migration 022 cannot place these rows (a deal needs a provider product, '
       'a product needs a deal, and a plan must be free, custom or a removed tier): %', unplaceable;
   end if;
 end $$;
@@ -77,7 +77,7 @@ insert into billing_entitlement_history (
   included_events_override, note, org_id, plan_slug, provider_product_id,
   retention_days_override
 )
-select 'migration/021', anchor_day, base_plan_slug, contract_ends_at, display_name_override,
+select 'migration/022', anchor_day, base_plan_slug, contract_ends_at, display_name_override,
   left(replace(gen_random_uuid()::text, '-', ''), 20),
   included_events_override, note, org_id, plan_slug, provider_product_id,
   retention_days_override
@@ -101,7 +101,7 @@ alter table billing_entitlements drop column trial_ends_at;
 
 -- +goose Down
 -- The rewrites stay: nothing but the history records which tier a free row came
--- from, and the snapshots 021 appended stay with it.
+-- from, and the snapshots 022 appended stay with it.
 alter table billing_entitlements add column trial_ends_at timestamptz;
 alter table billing_entitlements drop constraint billing_entitlements_plan_slug_state_check;
 alter table billing_entitlements drop constraint billing_entitlements_custom_needs_base_plan;

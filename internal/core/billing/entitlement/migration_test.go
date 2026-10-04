@@ -21,8 +21,8 @@ type legacyRow struct {
 	trialEnd any
 }
 
-// seed020 stores row for a new org, against a database stepped down to 020.
-func seed020(t *testing.T, pg *testutil.TestPostgres, row legacyRow) string {
+// seed021 stores row for a new org, against a database stepped down to 021.
+func seed021(t *testing.T, pg *testutil.TestPostgres, row legacyRow) string {
 	t.Helper()
 	org, err := dbwrite.New(pg.PgW).CreateOrg(t.Context(), dbwrite.CreateOrgParams{
 		ID:          xid.New().String(),
@@ -41,40 +41,40 @@ func seed020(t *testing.T, pg *testutil.TestPostgres, row legacyRow) string {
 	return org.ID
 }
 
-// down020 steps the test's database back to the schema 021 migrates from.
-func down020(t *testing.T, pg *testutil.TestPostgres) {
+// down021 steps the test's database back to the schema 022 migrates from.
+func down021(t *testing.T, pg *testutil.TestPostgres) {
 	t.Helper()
-	if _, err := testutil.PostgresMigrations(t, pg).DownTo(t.Context(), 20); err != nil {
-		t.Fatalf("migrate down to 020: %v", err)
+	if _, err := testutil.PostgresMigrations(t, pg).DownTo(t.Context(), 21); err != nil {
+		t.Fatalf("migrate down to 021: %v", err)
 	}
 }
 
-// 021 refuses rows its new checks would, and says which: Postgres names only the
+// 022 refuses rows its new checks would, and says which: Postgres names only the
 // constraint, so an operator whose deploy stops here would otherwise have to find
 // the row themselves. main's `pug billing set` writes every one of these.
-func TestMigration021NamesEveryRowItCannotPlace(t *testing.T) {
+func TestMigration022NamesEveryRowItCannotPlace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	pg := testutil.SetupPostgres(t)
-	down020(t, pg)
+	down021(t, pg)
 
 	refused := map[string]string{
-		"a deal with no product": seed020(t, pg, legacyRow{plan: "custom", events: int64(5_000_000)}),
-		"a product on a tier": seed020(t, pg, legacyRow{
+		"a deal with no product": seed021(t, pg, legacyRow{plan: "custom", events: int64(5_000_000)}),
+		"a product on a tier": seed021(t, pg, legacyRow{
 			plan: "growth", events: int64(1_000_000), product: "prod_g",
 		}),
 		// A deal wound down to a comp on main keeps its product.
-		"a comp that kept a deal's product": seed020(t, pg, legacyRow{
+		"a comp that kept a deal's product": seed021(t, pg, legacyRow{
 			plan: "free", events: int64(1_000_000), product: "prod_f", until: time.Now().AddDate(0, 1, 0),
 		}),
 	}
-	placeable := seed020(t, pg, legacyRow{plan: "growth", events: int64(1_000_000)})
+	placeable := seed021(t, pg, legacyRow{plan: "growth", events: int64(1_000_000)})
 
 	migrations := testutil.PostgresMigrations(t, pg)
 	_, err := migrations.UpByOne(t.Context())
 	if err == nil {
-		t.Fatal("021 applied over rows its checks refuse")
+		t.Fatal("022 applied over rows its checks refuse")
 	}
 	for name, orgID := range refused {
 		if !strings.Contains(err.Error(), orgID) {
@@ -82,29 +82,29 @@ func TestMigration021NamesEveryRowItCannotPlace(t *testing.T) {
 		}
 	}
 	if strings.Contains(err.Error(), placeable) {
-		t.Errorf("the error names org %s, whose row 021 can place: %v", placeable, err)
+		t.Errorf("the error names org %s, whose row 022 can place: %v", placeable, err)
 	}
-	if version, err := migrations.GetDBVersion(t.Context()); err != nil || version != 20 {
-		t.Errorf("version = %d (%v), want 20: a refused 021 must leave nothing applied", version, err)
+	if version, err := migrations.GetDBVersion(t.Context()); err != nil || version != 21 {
+		t.Errorf("version = %d (%v), want 21: a refused 022 must leave nothing applied", version, err)
 	}
 }
 
-// Every row 021 changes is recorded, as every other write to the row is: a retired
+// Every row 022 changes is recorded, as every other write to the row is: a retired
 // tier becomes free with its overrides, and an existing deal is pinned to the one
 // plan there is. The history keeps what it recorded before, trial ends included.
-func TestMigration021RecordsWhatItRewrites(t *testing.T) {
+func TestMigration022RecordsWhatItRewrites(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	pg := testutil.SetupPostgres(t)
 	ctx := t.Context()
-	down020(t, pg)
+	down021(t, pg)
 
 	trialEnd := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	comp := seed020(t, pg, legacyRow{plan: "growth", events: int64(1_000_000), name: "Acme Growth"})
-	trial := seed020(t, pg, legacyRow{plan: "trial", trialEnd: trialEnd})
-	deal := seed020(t, pg, legacyRow{plan: "custom", events: int64(5_000_000), product: "prod_deal"})
-	untouched := seed020(t, pg, legacyRow{plan: "free"})
+	comp := seed021(t, pg, legacyRow{plan: "growth", events: int64(1_000_000), name: "Acme Growth"})
+	trial := seed021(t, pg, legacyRow{plan: "trial", trialEnd: trialEnd})
+	deal := seed021(t, pg, legacyRow{plan: "custom", events: int64(5_000_000), product: "prod_deal"})
+	untouched := seed021(t, pg, legacyRow{plan: "free"})
 	if _, err := pg.PgW.Exec(ctx,
 		`insert into billing_entitlement_history (actor, id, org_id, plan_slug, trial_ends_at)
 		 values ('ops', $1, $2, 'trial', $3)`, xid.New().String(), trial, trialEnd); err != nil {
@@ -113,7 +113,7 @@ func TestMigration021RecordsWhatItRewrites(t *testing.T) {
 
 	migrations := testutil.PostgresMigrations(t, pg)
 	if _, err := migrations.UpByOne(ctx); err != nil {
-		t.Fatalf("021: %v", err)
+		t.Fatalf("022: %v", err)
 	}
 
 	want := map[string]struct {
@@ -143,13 +143,13 @@ func TestMigration021RecordsWhatItRewrites(t *testing.T) {
 		var snapEvents int64
 		if err := pg.PgW.QueryRow(ctx,
 			`select plan_slug, coalesce(base_plan_slug, ''), coalesce(included_events_override, 0)
-			 from billing_entitlement_history where org_id = $1 and actor = 'migration/021'`,
+			 from billing_entitlement_history where org_id = $1 and actor = 'migration/022'`,
 			orgID).Scan(&snapPlan, &snapBase, &snapEvents); err != nil {
-			t.Errorf("%s: no single migration/021 snapshot: %v", orgID, err)
+			t.Errorf("%s: no single migration/022 snapshot: %v", orgID, err)
 			continue
 		}
 		if snapPlan != w.plan || snapBase != w.basePlan || snapEvents != w.events {
-			t.Errorf("%s: snapshot %s/%q/%d, want the row as 021 left it", orgID, snapPlan, snapBase, snapEvents)
+			t.Errorf("%s: snapshot %s/%q/%d, want the row as 022 left it", orgID, snapPlan, snapBase, snapEvents)
 		}
 	}
 
@@ -159,7 +159,7 @@ func TestMigration021RecordsWhatItRewrites(t *testing.T) {
 		t.Fatalf("count snapshots: %v", err)
 	}
 	if snapshots != 0 {
-		t.Errorf("021 recorded %d snapshots for a row it did not change", snapshots)
+		t.Errorf("022 recorded %d snapshots for a row it did not change", snapshots)
 	}
 
 	var kept time.Time
@@ -170,7 +170,7 @@ func TestMigration021RecordsWhatItRewrites(t *testing.T) {
 	}
 
 	// Down reverses the schema over the rows Up left behind.
-	if _, err := migrations.DownTo(ctx, 20); err != nil {
-		t.Errorf("021 down: %v", err)
+	if _, err := migrations.DownTo(ctx, 21); err != nil {
+		t.Errorf("022 down: %v", err)
 	}
 }
