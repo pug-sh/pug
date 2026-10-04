@@ -13,20 +13,26 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
+	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 )
 
 // Role gating is enforced by rpc.AuthzInterceptor before any handler runs. Not that
 // the org still exists: it can be deleted between the two reads.
 type Server struct {
-	service *corebilling.Service
+	entitlements  *entitlement.Service
+	subscriptions *subscription.Service
 }
 
-func NewServer(service *corebilling.Service) *Server {
-	if service == nil {
-		panic("billing: service is nil")
+// NewServer reads the entitlement service off subscriptions rather than taking one
+// beside it. GetBillingStatus reports billing_enabled from one and purchasable from
+// the other, so a pair wired apart would contradict itself in a single response.
+func NewServer(subscriptions *subscription.Service) *Server {
+	if subscriptions == nil {
+		panic("billing: subscription service is nil")
 	}
-	return &Server{service: service}
+	return &Server{entitlements: subscriptions.Entitlements(), subscriptions: subscriptions}
 }
 
 func (s *Server) GetBillingStatus(
@@ -38,18 +44,18 @@ func (s *Server) GetBillingStatus(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	ent, err := s.service.GetEntitlement(ctx, orgID, time.Now())
+	ent, err := s.entitlements.GetEntitlement(ctx, orgID, time.Now())
 	if err != nil {
-		if errors.Is(err, corebilling.ErrOrgNotFound) {
+		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
 		}
 		return nil, internalErr()
 	}
 	// The stored row, for purchasable alone: a negotiated deal's product id lives
 	// there and never reaches the wire.
-	rec, err := s.service.StoredRecord(ctx, orgID)
+	rec, err := s.entitlements.StoredRecord(ctx, orgID)
 	if err != nil {
-		if errors.Is(err, corebilling.ErrOrgNotFound) {
+		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
 		}
 		return nil, internalErr()
@@ -76,8 +82,8 @@ func (s *Server) GetBillingStatus(
 	resp.SubscriptionStatus = subStatusToRPC(ent.SubStatus).Enum()
 	// Read from the same helpers the two session RPCs refuse on, so a button the
 	// dashboard renders and a call that would fail cannot drift apart.
-	resp.Purchasable = proto.Bool(s.service.Purchasable(rec))
-	resp.Manageable = proto.Bool(s.service.Manageable(ctx, orgID))
+	resp.Purchasable = proto.Bool(s.subscriptions.Purchasable(rec))
+	resp.Manageable = proto.Bool(s.subscriptions.Manageable(ctx, orgID))
 	if !ent.SubPeriodEnd.IsZero() {
 		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
 	}
@@ -136,7 +142,7 @@ func (s *Server) CreateCheckoutSession(
 		return nil, err
 	}
 
-	sessionID, url, err := s.service.CreateCheckoutSession(ctx, corebilling.Checkout{
+	sessionID, url, err := s.subscriptions.CreateCheckoutSession(ctx, subscription.Checkout{
 		OrgID:    orgID,
 		PlanSlug: req.Msg.GetPlanSlug(),
 		Email:    principal.Customer.Email,
@@ -162,7 +168,7 @@ func (s *Server) ConfirmCheckout(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	confirmed, err := s.service.ConfirmCheckout(ctx, orgID, req.Msg.GetSessionId(), time.Now())
+	confirmed, err := s.subscriptions.ConfirmCheckout(ctx, orgID, req.Msg.GetSessionId(), time.Now())
 	if err != nil {
 		return nil, confirmErr(err, orgID)
 	}
@@ -181,19 +187,19 @@ func confirmErr(err error, orgID string) error {
 				"the payment succeeded; it cannot be applied automatically"))
 	}
 	switch {
-	case errors.Is(err, corebilling.ErrCheckoutNotForOrg):
+	case errors.Is(err, subscription.ErrCheckoutNotForOrg):
 		return apperr.PermissionDenied(apperr.ReasonBillingCheckoutNotForOrg,
 			"this checkout does not belong to this organization")
-	case errors.Is(err, corebilling.ErrCurrencyNotSupported):
+	case errors.Is(err, subscription.ErrCurrencyNotSupported):
 		return paid(apperr.ReasonBillingCurrencyUnsupported,
 			"this subscription is billed in a currency pug does not support")
-	case errors.Is(err, corebilling.ErrNotPurchasable):
+	case errors.Is(err, subscription.ErrNotPurchasable):
 		return paid(apperr.ReasonBillingProductUnmapped,
 			"this subscription is for a product pug cannot match to a plan")
-	case errors.Is(err, corebilling.ErrTwoLiveSubscriptions):
+	case errors.Is(err, subscription.ErrTwoLiveSubscriptions):
 		return paid(apperr.ReasonBillingTwoLiveSubscriptions,
 			"this organization already has a live subscription")
-	case errors.Is(err, corebilling.ErrSubscriptionUnapplicable):
+	case errors.Is(err, subscription.ErrSubscriptionUnapplicable):
 		return paid(apperr.ReasonBillingSubscriptionUnapplicable,
 			"this subscription is in a state pug cannot record")
 	case errors.Is(err, corebilling.ErrCheckoutFailed):
@@ -218,7 +224,7 @@ func (s *Server) CreatePortalSession(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	url, err := s.service.CreatePortalSession(ctx, orgID)
+	url, err := s.subscriptions.CreatePortalSession(ctx, orgID)
 	if err != nil {
 		return nil, checkoutErr(err, orgID, "")
 	}
@@ -238,9 +244,9 @@ func (s *Server) ListPlans(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	options, err := s.service.PlanOptions(ctx, orgID)
+	options, err := s.subscriptions.PlanOptions(ctx, orgID)
 	if err != nil {
-		if errors.Is(err, corebilling.ErrOrgNotFound) {
+		if errors.Is(err, entitlement.ErrOrgNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
 		}
 		return nil, internalErr()
@@ -265,20 +271,20 @@ func (s *Server) ListPlans(
 // internal: its message is the provider's and must not reach an API consumer.
 func checkoutErr(err error, orgID, planSlug string) error {
 	switch {
-	case errors.Is(err, corebilling.ErrOrgNotFound):
+	case errors.Is(err, entitlement.ErrOrgNotFound):
 		return apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", orgID))
 	case errors.Is(err, corebilling.ErrNoProvider):
 		return apperr.Unavailable(apperr.ReasonBillingUnavailable,
 			"this deployment has no payments provider configured")
-	case errors.Is(err, corebilling.ErrPlanNotFound):
+	case errors.Is(err, entitlement.ErrPlanNotFound):
 		return apperr.NotFound(apperr.ReasonBillingPlanNotFound, "no such plan",
 			apperr.Resource("plan", planSlug))
-	case errors.Is(err, corebilling.ErrNotPurchasable):
+	case errors.Is(err, subscription.ErrNotPurchasable):
 		return apperr.FailedPrecondition(apperr.ReasonBillingNotPurchasable,
 			"this plan cannot be purchased",
 			apperr.Precondition(string(apperr.ReasonBillingNotPurchasable), planSlug,
 				"no product is configured for this plan"))
-	case errors.Is(err, corebilling.ErrNoCustomer):
+	case errors.Is(err, subscription.ErrNoCustomer):
 		return apperr.FailedPrecondition(apperr.ReasonBillingNoCustomer,
 			"this organization has no billing account yet",
 			apperr.Precondition(string(apperr.ReasonBillingNoCustomer), orgID,
@@ -287,13 +293,13 @@ func checkoutErr(err error, orgID, planSlug string) error {
 	return internalErr()
 }
 
-func statusToRPC(s corebilling.Status) billingv1.BillingStatus {
+func statusToRPC(s entitlement.Status) billingv1.BillingStatus {
 	switch s {
-	case corebilling.StatusTrialing:
+	case entitlement.StatusTrialing:
 		return billingv1.BillingStatus_BILLING_STATUS_TRIALING
-	case corebilling.StatusActive:
+	case entitlement.StatusActive:
 		return billingv1.BillingStatus_BILLING_STATUS_ACTIVE
-	case corebilling.StatusFree:
+	case entitlement.StatusFree:
 		return billingv1.BillingStatus_BILLING_STATUS_FREE
 	}
 	return billingv1.BillingStatus_BILLING_STATUS_UNSPECIFIED

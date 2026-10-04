@@ -1,3 +1,13 @@
+// Package billing is the seam between pug and a merchant of record: the
+// PaymentProvider port, the vocabulary a delivery is normalized into, and the
+// wiring that names a provider, beside Config, the PUG_BILLING_ENABLED switch
+// every billing binary reads. It does no I/O, and its only rules are the
+// vocabulary's own, such as past_due counting as live; that is what lets the
+// payment adapter in internal/deps import it and nothing else in core, which
+// depguard holds it to.
+//
+// What an org is entitled to send lives in ./entitlement; the subscription lifecycle
+// that buys it lives in ./subscription.
 package billing
 
 import (
@@ -24,18 +34,7 @@ var (
 // else in this slice imports a provider package. The payload is deliberately not
 // abstracted — a common payload schema across providers cannot be maintained.
 type PaymentProvider interface {
-	// Name is the provider's slug, stored on every row it produces and the path
-	// segment its webhook mounts at — changing it orphans stored rows.
-	Name() string
-
-	// Verify authenticates a raw delivery, taking the exact bytes because every
-	// signature scheme signs those, not a decoded message.
-	Verify(headers http.Header, rawBody []byte) (Delivery, error)
-
-	// CanVerify reports whether a signing secret is configured, i.e. whether Verify
-	// can authenticate anything. False mounts no webhook route at all rather than
-	// taking unverified deliveries on the money path.
-	CanVerify() bool
+	WebhookVerifier
 
 	// Normalize maps one verified delivery onto pug's vocabulary. A zero
 	// SubscriptionEvent means "store, mark processed, ignore".
@@ -52,6 +51,23 @@ type PaymentProvider interface {
 	// shape. A zero SubscriptionEvent means "not settled yet" and is not an error; a
 	// checkout the provider gave up on must return ErrCheckoutFailed instead.
 	FetchCheckoutOutcome(ctx context.Context, sessionID string) (SubscriptionEvent, error)
+}
+
+// WebhookVerifier is the part of a provider the webhook route holds: a name to
+// mount at and a signature to check, and nothing that moves money.
+type WebhookVerifier interface {
+	// Name is the provider's slug, stored on every row it produces and the path
+	// segment its webhook mounts at — changing it orphans stored rows.
+	Name() string
+
+	// Verify authenticates a raw delivery, taking the exact bytes because every
+	// signature scheme signs those, not a decoded message.
+	Verify(headers http.Header, rawBody []byte) (Delivery, error)
+
+	// CanVerify reports whether a signing secret is configured, i.e. whether Verify
+	// can authenticate anything. False mounts no webhook route at all rather than
+	// taking unverified deliveries on the money path.
+	CanVerify() bool
 }
 
 // Delivery is one verified webhook, still in the provider's own vocabulary.
@@ -178,16 +194,30 @@ func ParseSubStatus(v string) (SubStatus, bool) {
 	return "", false
 }
 
-// Subscription is the stored mirror row, as resolution consumes it.
-type Subscription struct {
-	PlanSlug   string
-	Status     SubStatus
-	PriceCents int64
-	Currency   string
+// Currency is the one pug sells in. subscription's shared apply refuses any other
+// for all three writers (the webhook, reconcile and ConfirmCheckout), and the
+// webhook and ConfirmCheckout check before it, so a foreign-currency delivery is
+// consumed as rejected and a returning buyer is told why. Going multi-currency
+// starts here, and renames price_cents with it.
+const Currency = "USD"
 
-	ProviderCustomerID string
-	ProviderSubID      string
-
-	CurrentPeriodStart time.Time
-	CurrentPeriodEnd   time.Time
+// Payments is the provider wiring. Nil means no provider, which is legal.
+type Payments struct {
+	Provider PaymentProvider
+	// ProductBySlug is the only product mapping. The webhook needs the inverse and
+	// scans for it: a stored second map could disagree, and a slug that maps one way
+	// takes money and then rejects the delivery.
+	ProductBySlug map[string]string
+	// ReturnURL is where the provider sends a buyer after checkout: the dashboard's
+	// own billing page, never a provider page.
+	ReturnURL string
 }
+
+// Configured reports whether a provider is wired. Safe on a nil *Payments, which
+// is the no-provider shape.
+func (p *Payments) Configured() bool { return p != nil && p.Provider != nil }
+
+// ErrNoProvider is a money path refused because this deployment takes no money: no
+// provider credentials, or billing switched off. Returned by subscription, never by an
+// adapter.
+var ErrNoProvider = errors.New("billing: no payments provider is configured")

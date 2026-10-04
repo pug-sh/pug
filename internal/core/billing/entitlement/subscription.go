@@ -1,19 +1,38 @@
-package billing
+package entitlement
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
+// Subscription is the stored mirror row, as resolution consumes it. The subscription
+// package writes the row; this package only reads it, so the type lives with its
+// one consumer rather than in the provider vocabulary.
+type Subscription struct {
+	PlanSlug   string
+	Status     billing.SubStatus
+	PriceCents int64
+	Currency   string
+
+	ProviderCustomerID string
+	ProviderSubID      string
+
+	CurrentPeriodStart time.Time
+	CurrentPeriodEnd   time.Time
+}
+
 // liveSubscription reads the one row that can supply a plan. No row is the
-// ordinary answer, so it returns nil rather than an error.
+// ordinary answer, so it returns nil rather than an error. Read-only: subscription is
+// the one writer of billing_subscriptions.
 func (s *Service) liveSubscription(ctx context.Context, orgID string) (*Subscription, error) {
 	// The write pool, like every read on the money path: ConfirmCheckout writes the
 	// row and GetBillingStatus reads it immediately after, which a replica loses.
@@ -46,8 +65,10 @@ func readLiveSubscription(ctx context.Context, r *dbread.Queries, orgID string) 
 	return &sub, nil
 }
 
+// subscriptionFromRow maps a stored row onto the resolution type, reporting false
+// on a status pug has no word for.
 func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
-	status, ok := ParseSubStatus(row.Status)
+	status, ok := billing.ParseSubStatus(row.Status)
 	if !ok {
 		return Subscription{}, false
 	}
@@ -61,32 +82,4 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 		ProviderSubID:      row.ProviderSubID,
 		Status:             status,
 	}, true
-}
-
-// anyProviderCustomer resolves the customer the portal is opened for. Checkout
-// is what leaves one behind, so a trialing, free or comped org has none.
-func (s *Service) anyProviderCustomer(ctx context.Context, orgID string) (string, error) {
-	if !s.payments.configured() {
-		return "", ErrNoProvider
-	}
-	// The write pool, for liveSubscription's reason: a lagging replica would hide
-	// "Manage billing" from a customer who has just paid.
-	row, err := dbread.New(s.pgW).GetLatestBillingSubscription(ctx,
-		dbread.GetLatestBillingSubscriptionParams{
-			OrgID:    orgID,
-			Provider: s.payments.Provider.Name(),
-		})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrNoCustomer
-		}
-		slog.ErrorContext(ctx, "failed to read the billing subscription for a portal session", slogx.Error(err),
-			slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	if row.ProviderCustomerID == "" {
-		return "", ErrNoCustomer
-	}
-	return row.ProviderCustomerID, nil
 }
