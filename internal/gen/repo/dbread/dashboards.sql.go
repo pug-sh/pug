@@ -58,11 +58,13 @@ func (q *Queries) GetDashboardShareByDashboardID(ctx context.Context, dashboardI
 }
 
 const getEnabledDashboardShareByToken = `-- name: GetEnabledDashboardShareByToken :one
-select id, dashboard_id, project_id, share_token, enabled, create_time, update_time
-from dashboard_shares
-where share_token = $1 and enabled = true
+select s.id, s.dashboard_id, s.project_id, s.share_token, s.enabled, s.create_time, s.update_time
+from dashboard_shares s
+join projects p on p.id = s.project_id
+where s.share_token = $1 and s.enabled = true and p.deletion_time is null
 `
 
+// The join skips a project being deleted, even a share created after its delete.
 func (q *Queries) GetEnabledDashboardShareByToken(ctx context.Context, shareToken string) (DashboardShare, error) {
 	row := q.db.QueryRow(ctx, getEnabledDashboardShareByToken, shareToken)
 	var i DashboardShare

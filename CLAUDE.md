@@ -57,7 +57,7 @@ make clickstack
 # can't double-meter (the lock tx disables idle_in_transaction_session_timeout, or
 # it would be dropped mid-pass), and exits non-zero when the pass failed (a CronJob's only
 # success signal) — with two deliberate exceptions that exit 0: lock contention,
-# and a read the pass cannot trust (empty over stored days, or naming no project
+# and a read the pass cannot trust (empty over live projects' stored days, or naming no project
 # Postgres knows), which refreshes nothing and lets the stamp go stale instead.
 # The pass is bounded by its own 30m timeout, not only the CronJob's
 # activeDeadlineSeconds, since a hang would hold the lock and turn every later run

@@ -29,7 +29,9 @@ func (q *Queries) CountKnownProjectIDs(ctx context.Context, projectIds []string)
 }
 
 const countUsageDailyInRange = `-- name: CountUsageDailyInRange :one
-select count(*) from usage_daily where day >= $1 and day < $2
+select count(*) from usage_daily
+where day >= $1 and day < $2
+  and project_id in (select id from projects where deletion_time is null)
 `
 
 type CountUsageDailyInRangeParams struct {
@@ -37,10 +39,11 @@ type CountUsageDailyInRangeParams struct {
 	ToDay   pgtype.Date
 }
 
-// Whether the meter has stored anything over a window, across every org. An
+// Whether live projects have days stored over a window, across every org. An
 // empty ClickHouse read while this is non-zero is a contradiction an idle
 // deployment cannot produce, which is what lets the pass tell "nothing to count"
 // apart from "counted nothing" -- see docs/architecture/usage.md section 4.
+// Live projects only: a deleted project's days stay stored after its events go.
 func (q *Queries) CountUsageDailyInRange(ctx context.Context, arg CountUsageDailyInRangeParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countUsageDailyInRange, arg.FromDay, arg.ToDay)
 	var count int64
