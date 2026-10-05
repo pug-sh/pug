@@ -1,6 +1,6 @@
 # Project deletion
 
-> **Status: phase 1 implemented; phases 2 to 4 not yet.** Written 2026-10-05 for review.
+> **Status: phases 1 and 2a implemented; 2b to 4 not yet.** Written 2026-10-05 for review.
 
 ## Summary
 
