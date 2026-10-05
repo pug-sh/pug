@@ -259,7 +259,7 @@ func TestSSOConnectionIssuerChangeUnlinksIdentities(t *testing.T) {
 	if !linked() {
 		t.Fatal("a change that keeps the issuer must keep linked identities")
 	}
-	conn, err := orgs.SSOConnectionForSignIn(f.ctx, f.w, cipher, c.ID)
+	conn, err := orgs.SSOConnectionForSignIn(f.ctx, f.r, cipher, c.ID)
 	if err != nil || conn.ClientSecret != "secret" || conn.Label != "Renamed" {
 		t.Fatalf("an empty secret must keep the stored one: %+v, %v", conn, err)
 	}
@@ -275,7 +275,7 @@ func TestSSOConnectionIssuerChangeUnlinksIdentities(t *testing.T) {
 	if linked() {
 		t.Fatal("a new issuer must drop the connection's linked identities")
 	}
-	conn, err = orgs.SSOConnectionForSignIn(f.ctx, f.w, cipher, c.ID)
+	conn, err = orgs.SSOConnectionForSignIn(f.ctx, f.r, cipher, c.ID)
 	if err != nil || conn.ClientSecret != "new-secret" {
 		t.Fatalf("SSOConnectionForSignIn = %+v, %v", conn, err)
 	}
@@ -596,7 +596,7 @@ func TestSSOConnectionSecretRecheckedUnderTheLock(t *testing.T) {
 	if _, err := f.connection(orgID, orgs.SSOConnectionInput{ID: c.ID, Label: "Renamed", DomainIDs: []string{acme.ID}}); !errors.Is(err, orgs.ErrSSOConnectionSecretRequired) {
 		t.Fatalf("err = %v, want ErrSSOConnectionSecretRequired", err)
 	}
-	conn, err := orgs.SSOConnectionForSignIn(f.ctx, f.w, cipher, c.ID)
+	conn, err := orgs.SSOConnectionForSignIn(f.ctx, f.r, cipher, c.ID)
 	if err != nil || conn.IssuerURL != "https://new.okta.com" || conn.ClientSecret != "new-secret" {
 		t.Fatalf("connection = %+v, %v; want the issuer change kept", conn, err)
 	}
@@ -615,7 +615,7 @@ func TestSSOConnectionSecretUnreadableAfterAKeyChange(t *testing.T) {
 	}
 	f.svc.WithSSOConnections(rotated, func(context.Context, string) error { return nil })
 
-	if _, err := orgs.SSOConnectionForSignIn(f.ctx, f.w, rotated, c.ID); err == nil {
+	if _, err := orgs.SSOConnectionForSignIn(f.ctx, f.r, rotated, c.ID); err == nil {
 		t.Fatal("sign-in read a secret saved under another key")
 	}
 	if _, err := f.connection(orgID, orgs.SSOConnectionInput{ID: c.ID, Label: "Renamed", DomainIDs: []string{acme.ID}}); !errors.Is(err, orgs.ErrSSOConnectionSecretRequired) {

@@ -296,7 +296,7 @@ func TestWithIdentityTx_RollsBackIdentityWhenFinalizeFails(t *testing.T) {
 		Subject: "google-sub-rollback", Email: "oauth-rollback@example.com", EmailVerified: true,
 	})
 	var attempts int
-	_, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, ident, func(context.Context, *dbwrite.Queries, string, bool) error {
+	_, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, ident, func(context.Context, *dbread.Queries, *dbwrite.Queries, string, bool) error {
 		attempts++
 		return errors.New("simulated provisioning failure")
 	})

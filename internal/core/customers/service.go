@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"golang.org/x/crypto/bcrypt"
@@ -19,11 +20,13 @@ import (
 var ErrPasswordTooLong = errors.New("password is too long")
 
 type Service struct {
+	read  *dbread.Queries
 	write *dbwrite.Queries
 }
 
 func NewService(pgW *pgxpool.Pool) *Service {
-	return &Service{write: dbwrite.New(pgW)}
+	// Reads go to the write pool too: the SSO check must see a Require SSO just turned on.
+	return &Service{read: dbread.New(pgW), write: dbwrite.New(pgW)}
 }
 
 // SetPassword hashes and stores a password for the given customer (used by the
@@ -31,13 +34,13 @@ func NewService(pgW *pgxpool.Pool) *Service {
 // password). It overwrites any existing hash. An account whose domain requires SSO
 // gets *coreorgs.SSORequiredError, since sign-in would refuse the password anyway.
 func (s *Service) SetPassword(ctx context.Context, customerID, password string) error {
-	email, err := s.write.GetCustomerEmailByID(ctx, customerID)
+	email, err := s.read.GetCustomerEmailByID(ctx, customerID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get customer email", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	if err := coreorgs.CheckSignInInTx(ctx, s.write, email, ""); err != nil {
+	if err := coreorgs.CheckSignInInTx(ctx, s.read, email, ""); err != nil {
 		return err
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

@@ -265,7 +265,7 @@ func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int
 
 	// The trial being extended is usually the derived one, which the locked row
 	// cannot see. Through the tx: a lagging replica would report ErrOrgNotFound.
-	orgCreateTime, err := orgCreateTime(ctx, w, orgID)
+	orgCreateTime, err := orgCreateTime(ctx, dbread.New(tx), orgID)
 	if err != nil {
 		return Record{}, err
 	}
@@ -336,7 +336,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	if n == 0 {
 		// Through the tx, not s.read: against a real replica, a lagging read would
 		// report ErrOrgNotFound for an org that was just created.
-		if _, err := w.GetOrgByID(ctx, orgID); err != nil {
+		if _, err := dbread.New(tx).GetOrgByID(ctx, orgID); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrOrgNotFound
 			}
@@ -363,7 +363,7 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 // Record{}, the ordinary state. The lock is advisory, so an org that does not
 // exist reads the same way.
 //
-// fn decides from cur and reaches the database only through w. It must not call
+// fn decides from cur and reaches the database only through r and w. It must not call
 // back into this service: SetPlan, ExtendTrial, Clear and WithOrgLock would queue
 // for this lock on a second connection until their context gave up, a wait
 // Postgres never reports as a deadlock because this transaction is idle, not
@@ -371,13 +371,13 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 // while this one is held. fn's error comes back unlogged, where a failure to
 // begin, lock, read or commit is logged and recorded here, so fn logs and records
 // whatever it detects.
-func (s *Service) WithOrgLock(ctx context.Context, orgID string, fn func(w *dbwrite.Queries, cur Record) error) error {
+func (s *Service) WithOrgLock(ctx context.Context, orgID string, fn func(r *dbread.Queries, w *dbwrite.Queries, cur Record) error) error {
 	tx, w, cur, err := s.beginLocked(ctx, orgID)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := fn(w, cur); err != nil {
+	if err := fn(dbread.New(tx), w, cur); err != nil {
 		return err
 	}
 	return s.commit(ctx, tx, orgID)
@@ -478,8 +478,8 @@ func (s *Service) commit(ctx context.Context, tx pgx.Tx, orgID string) error {
 
 // orgCreateTime reads the org's age, which is what the derived trial is measured
 // from.
-func orgCreateTime(ctx context.Context, w *dbwrite.Queries, orgID string) (time.Time, error) {
-	org, err := w.GetOrgByID(ctx, orgID)
+func orgCreateTime(ctx context.Context, r *dbread.Queries, orgID string) (time.Time, error) {
+	org, err := r.GetOrgByID(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return time.Time{}, ErrOrgNotFound

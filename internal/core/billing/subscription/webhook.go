@@ -16,6 +16,7 @@ import (
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/rs/xid"
@@ -141,9 +142,9 @@ func (s *Service) applySubscriptionEvent(
 func (s *Service) attributeDelivery(ctx context.Context, provider billing.PaymentProvider, event billing.SubscriptionEvent) (string, error) {
 	// Every read here goes through the WRITE pool: a lagging replica would report "no
 	// such org" for an org that just checked out, rejecting the delivery permanently.
-	w := s.write()
+	r := dbread.New(s.pgW)
 	if event.CheckoutRef != "" {
-		orgID, err := w.GetBillingCheckoutSessionOrgID(ctx, dbwrite.GetBillingCheckoutSessionOrgIDParams{
+		orgID, err := r.GetBillingCheckoutSessionOrgID(ctx, dbread.GetBillingCheckoutSessionOrgIDParams{
 			Provider: provider.Name(),
 			Ref:      event.CheckoutRef,
 		})
@@ -159,7 +160,7 @@ func (s *Service) attributeDelivery(ctx context.Context, provider billing.Paymen
 	// to buy — the negotiated-deal payment link. Buyer-settable metadata alone
 	// names an org; paired with a staged product it can only buy what was staged.
 	if event.OrgID != "" && event.ProductID != "" {
-		staged, err := w.GetBillingEntitlementProviderProductID(ctx, event.OrgID)
+		staged, err := r.GetBillingEntitlementProviderProductID(ctx, event.OrgID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return "", err
 		}
@@ -168,8 +169,8 @@ func (s *Service) attributeDelivery(ctx context.Context, provider billing.Paymen
 		}
 	}
 	if event.ProviderCustomerID != "" {
-		orgs, err := w.ListBillingSubscriptionOrgsByProviderCustomerID(ctx,
-			dbwrite.ListBillingSubscriptionOrgsByProviderCustomerIDParams{
+		orgs, err := r.ListBillingSubscriptionOrgsByProviderCustomerID(ctx,
+			dbread.ListBillingSubscriptionOrgsByProviderCustomerIDParams{
 				Provider:           provider.Name(),
 				ProviderCustomerID: event.ProviderCustomerID,
 			})
@@ -315,7 +316,7 @@ func (s *Service) applySubscription(
 		return 0, ErrSubscriptionUnapplicable
 	}
 	var applied int64
-	err := s.entitlements.WithOrgLock(ctx, orgID, func(w *dbwrite.Queries, rec entitlement.Record) error {
+	err := s.entitlements.WithOrgLock(ctx, orgID, func(r *dbread.Queries, w *dbwrite.Queries, rec entitlement.Record) error {
 		// The org's own row carries the negotiated-deal product.
 		planSlug, err := s.planForProduct(event.ProductID, rec)
 		if err != nil {
@@ -324,7 +325,7 @@ func (s *Service) applySubscription(
 			if event.Status.Live() || !errors.Is(err, ErrNotPurchasable) {
 				return err
 			}
-			stored, storedErr := w.GetBillingSubscriptionPlanSlug(ctx, dbwrite.GetBillingSubscriptionPlanSlugParams{
+			stored, storedErr := r.GetBillingSubscriptionPlanSlug(ctx, dbread.GetBillingSubscriptionPlanSlugParams{
 				Provider:      provider.Name(),
 				ProviderSubID: event.ProviderSubID,
 			})

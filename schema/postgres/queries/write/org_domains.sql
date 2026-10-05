@@ -1,12 +1,3 @@
--- name: GetOrgDomainByID :one
-select * from org_domains where id = @id and org_id = @org_id;
-
--- name: GetOrgDomainByOrgIDAndDomain :one
-select * from org_domains where org_id = @org_id and domain = @domain;
-
--- name: CountOrgDomainsByOrgID :one
-select count(*) from org_domains where org_id = @org_id;
-
 -- name: CreateOrgDomain :one
 insert into org_domains (id, org_id, domain, verification_token)
 values (@id, @org_id, @domain, @verification_token)
@@ -44,12 +35,6 @@ returning *;
 -- name: UnenforceOrgDomainRequireSSO :execrows
 update org_domains set require_sso = false where domain = @domain and require_sso;
 
--- name: IsSSORequired :one
-select exists (
-  select 1 from org_domains
-  where domain = @domain and verified_at is not null and require_sso
-)::boolean as required;
-
 -- name: MarkOrgDomainsSSOSeen :exec
 update org_domains
 set sso_seen_at = now()
@@ -74,18 +59,16 @@ where d.domain = @domain
 on conflict (org_id, customer_id) do nothing
 returning org_id;
 
--- name: IsOrgCreationRestricted :one
-select (
-  exists (
-    select 1 from org_domains d
-    join orgs o on o.id = d.org_id
-    where d.domain = @domain and d.verified_at is not null
-      and not o.members_can_create_orgs
-  )
-  and not exists (
-    select 1 from org_domains d
-    join org_members m on m.org_id = d.org_id
-    where d.domain = @domain and d.verified_at is not null
-      and m.customer_id = @customer_id::char(20) and m.role = 'ORG_ROLE_ADMIN'
-  )
-)::boolean as restricted;
+-- name: DetachOrgDomainsFromSSOConnection :many
+update org_domains
+set sso_connection_id = null
+where org_id = @org_id and sso_connection_id = @sso_connection_id::char(20)
+  and not (id = any(@keep_ids::text[]))
+returning domain;
+
+-- name: AttachOrgDomainsToSSOConnection :execrows
+-- Skips a domain another connection of the org already signs in.
+update org_domains
+set sso_connection_id = @sso_connection_id::char(20)
+where org_id = @org_id and id = any(@ids::text[]) and verified_at is not null
+  and (sso_connection_id is null or sso_connection_id = @sso_connection_id::char(20));

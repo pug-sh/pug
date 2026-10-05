@@ -310,8 +310,8 @@ func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, 
 	}
 	// metadata.org_id only names an org; the minted ref proves one. Pug mints one for
 	// every checkout it opens, and "" matches no row, so a ref-less confirm lands here.
-	refOrg, err := s.write().GetBillingCheckoutSessionOrgID(ctx,
-		dbwrite.GetBillingCheckoutSessionOrgIDParams{
+	refOrg, err := dbread.New(s.pgW).GetBillingCheckoutSessionOrgID(ctx,
+		dbread.GetBillingCheckoutSessionOrgIDParams{
 			Provider: provider.Name(),
 			Ref:      event.CheckoutRef,
 		})

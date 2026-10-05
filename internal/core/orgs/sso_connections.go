@@ -16,6 +16,7 @@ import (
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	"github.com/pug-sh/pug/internal/core/email/secret"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/rs/xid"
@@ -80,13 +81,14 @@ func (s *Service) ListSSOConnections(ctx context.Context, orgID string) ([]SSOCo
 	if s.ssoCipher == nil {
 		return nil, ErrSSOConnectionsDisabled
 	}
-	rows, err := s.write.ListSSOConnectionsByOrgID(ctx, orgID)
+	r := dbread.New(s.pgW)
+	rows, err := r.ListSSOConnectionsByOrgID(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list sso connections", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
-	domains, err := s.write.ListOrgDomainsWithSSOConnection(ctx, orgID)
+	domains, err := r.ListOrgDomainsWithSSOConnection(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list sso connection domains", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
@@ -94,7 +96,7 @@ func (s *Service) ListSSOConnections(ctx context.Context, orgID string) ([]SSOCo
 	}
 	out := make([]SSOConnection, 0, len(rows))
 	for _, row := range rows {
-		c := connectionFromRow(row)
+		c := connectionFromRow(dbwrite.OrgSsoConnection(row))
 		for _, d := range domains {
 			if d.SsoConnectionID.String == row.ID {
 				c.Domains = append(c.Domains, SSOConnectionDomain{ID: d.ID, Domain: d.Domain})
@@ -129,7 +131,7 @@ func (s *Service) SetSSOConnection(ctx context.Context, orgID string, in SSOConn
 		if cur, err = getSSOConnection(ctx, s.write, orgID, in.ID); err != nil {
 			return SSOConnection{}, err
 		}
-		if curDomains, err = s.write.ListSSOConnectionDomains(ctx, in.ID); err != nil {
+		if curDomains, err = dbread.New(s.pgW).ListSSOConnectionDomains(ctx, in.ID); err != nil {
 			slog.ErrorContext(ctx, "failed to list sso connection domains", slogx.Error(err), slog.String("org_id", orgID))
 			telemetry.RecordError(ctx, err)
 			return SSOConnection{}, err
@@ -139,7 +141,7 @@ func (s *Service) SetSSOConnection(ctx context.Context, orgID string, in SSOConn
 	if (cur.IssuerUrl != issuer || cur.ClientID != in.ClientID) && in.ClientSecret == "" {
 		return SSOConnection{}, ErrSSOConnectionSecretRequired
 	}
-	rows, err := s.write.ListOrgDomainsByIDs(ctx, dbwrite.ListOrgDomainsByIDsParams{OrgID: orgID, Ids: domainIDs})
+	rows, err := dbread.New(s.pgW).ListOrgDomainsByIDs(ctx, dbread.ListOrgDomainsByIDsParams{OrgID: orgID, Ids: domainIDs})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get org domains for sso connection", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
@@ -150,7 +152,7 @@ func (s *Service) SetSSOConnection(ctx context.Context, orgID string, in SSOConn
 	}
 	var domains []string
 	for _, row := range rows {
-		d := domainFromRow(row)
+		d := domainFromRow(dbwrite.OrgDomain(row))
 		if !d.Verified() {
 			return SSOConnection{}, ErrDomainNotVerified
 		}
@@ -186,6 +188,7 @@ func (s *Service) SetSSOConnection(ctx context.Context, orgID string, in SSOConn
 		return SSOConnection{}, err
 	}
 	defer rollback(ctx, tx, "sso connection")
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 
 	if in.ID != "" {
@@ -208,7 +211,7 @@ func (s *Service) SetSSOConnection(ctx context.Context, orgID string, in SSOConn
 			telemetry.RecordError(ctx, err)
 			return SSOConnection{}, err
 		}
-		n, err := w.CountSSOConnectionsByOrgID(ctx, orgID)
+		n, err := r.CountSSOConnectionsByOrgID(ctx, orgID)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to count sso connections", slogx.Error(err), slog.String("org_id", orgID))
 			telemetry.RecordError(ctx, err)
@@ -276,7 +279,7 @@ func (s *Service) SetSSOConnection(ctx context.Context, orgID string, in SSOConn
 		telemetry.RecordError(ctx, err)
 		return SSOConnection{}, err
 	}
-	if err := dropDomainsInTx(ctx, w, detached); err != nil {
+	if err := dropDomainsInTx(ctx, r, w, detached); err != nil {
 		return SSOConnection{}, err
 	}
 	attached, err := w.AttachOrgDomainsToSSOConnection(ctx, dbwrite.AttachOrgDomainsToSSOConnectionParams{
@@ -303,8 +306,8 @@ func (s *Service) SetSSOConnection(ctx context.Context, orgID string, in SSOConn
 		return SSOConnection{}, err
 	}
 	out := connectionFromRow(row)
-	for _, r := range rows {
-		out.Domains = append(out.Domains, SSOConnectionDomain{ID: r.ID, Domain: r.Domain})
+	for _, d := range rows {
+		out.Domains = append(out.Domains, SSOConnectionDomain{ID: d.ID, Domain: d.Domain})
 	}
 	slices.SortFunc(out.Domains, func(a, b SSOConnectionDomain) int { return cmp.Compare(a.Domain, b.Domain) })
 	return out, nil
@@ -323,12 +326,13 @@ func (s *Service) DeleteSSOConnection(ctx context.Context, orgID, id string) err
 		return err
 	}
 	defer rollback(ctx, tx, "delete sso connection")
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 
 	if _, err := getSSOConnection(ctx, w, orgID, id); err != nil {
 		return err
 	}
-	domains, err := w.ListSSOConnectionDomains(ctx, id)
+	domains, err := r.ListSSOConnectionDomains(ctx, id)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list sso connection domains", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
@@ -342,7 +346,7 @@ func (s *Service) DeleteSSOConnection(ctx context.Context, orgID, id string) err
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	if err := dropDomainsInTx(ctx, w, domains); err != nil {
+	if err := dropDomainsInTx(ctx, r, w, domains); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -353,8 +357,8 @@ func (s *Service) DeleteSSOConnection(ctx context.Context, orgID, id string) err
 	return nil
 }
 
-func SSOConnectionForSignIn(ctx context.Context, w *dbwrite.Queries, cipher *secret.Cipher, id string) (coreoauth.Connection, error) {
-	row, err := w.GetSSOConnectionByID(ctx, id)
+func SSOConnectionForSignIn(ctx context.Context, r *dbread.Queries, cipher *secret.Cipher, id string) (coreoauth.Connection, error) {
+	row, err := r.GetSSOConnectionByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return coreoauth.Connection{}, ErrSSOConnectionNotFound
@@ -363,7 +367,7 @@ func SSOConnectionForSignIn(ctx context.Context, w *dbwrite.Queries, cipher *sec
 		telemetry.RecordError(ctx, err)
 		return coreoauth.Connection{}, err
 	}
-	domains, err := w.ListSSOConnectionDomains(ctx, id)
+	domains, err := r.ListSSOConnectionDomains(ctx, id)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list sso connection domains for sign-in", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -389,14 +393,14 @@ func SSOConnectionForSignIn(ctx context.Context, w *dbwrite.Queries, cipher *sec
 // SSOConnectionUnchangedInTx refuses a sign-in whose connection was deleted, or got a new issuer
 // or domains, since the sign-in read it, so it can't relink an unlinked sub or prove a dropped
 // domain. The share lock waits for a change in flight, except `pug domains release`.
-func SSOConnectionUnchangedInTx(ctx context.Context, w *dbwrite.Queries, conn coreoauth.Connection) error {
+func SSOConnectionUnchangedInTx(ctx context.Context, r *dbread.Queries, w *dbwrite.Queries, conn coreoauth.Connection) error {
 	issuer, err := w.GetSSOConnectionIssuerForShare(ctx, conn.ID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to recheck sso connection", slogx.Error(err), slog.String("connection_id", conn.ID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
-	domains, err := w.ListSSOConnectionDomains(ctx, conn.ID)
+	domains, err := r.ListSSOConnectionDomains(ctx, conn.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to recheck sso connection domains", slogx.Error(err), slog.String("connection_id", conn.ID))
 		telemetry.RecordError(ctx, err)
@@ -409,8 +413,8 @@ func SSOConnectionUnchangedInTx(ctx context.Context, w *dbwrite.Queries, conn co
 	return nil
 }
 
-func SSOConnectionForDomain(ctx context.Context, w *dbwrite.Queries, domain string) (SSOConnection, bool, error) {
-	row, err := w.GetSSOConnectionByDomain(ctx, domain)
+func SSOConnectionForDomain(ctx context.Context, r *dbread.Queries, domain string) (SSOConnection, bool, error) {
+	row, err := r.GetSSOConnectionByDomain(ctx, domain)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return SSOConnection{}, false, nil
@@ -419,18 +423,18 @@ func SSOConnectionForDomain(ctx context.Context, w *dbwrite.Queries, domain stri
 		telemetry.RecordError(ctx, err)
 		return SSOConnection{}, false, err
 	}
-	return connectionFromRow(row), true, nil
+	return connectionFromRow(dbwrite.OrgSsoConnection(row)), true, nil
 }
 
 // dropDomainsInTx is for domains a connection stops signing in: it clears sso_seen_at, then
 // refuses if any org requires SSO for one. The clear locks every org's claim first, so a
 // concurrent Require SSO is either seen here or refused for want of a new SSO sign-in.
-func dropDomainsInTx(ctx context.Context, w *dbwrite.Queries, domains []string) error {
+func dropDomainsInTx(ctx context.Context, r *dbread.Queries, w *dbwrite.Queries, domains []string) error {
 	if err := clearSSOSeenInTx(ctx, w, domains); err != nil {
 		return err
 	}
 	for _, domain := range domains {
-		required, err := w.IsSSORequired(ctx, domain)
+		required, err := r.IsSSORequired(ctx, domain)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to check whether the domain requires sso", slogx.Error(err), slog.String("domain", domain))
 			telemetry.RecordError(ctx, err)

@@ -11,6 +11,116 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOrgDomainsByOrgID = `-- name: CountOrgDomainsByOrgID :one
+select count(*) from org_domains where org_id = $1
+`
+
+func (q *Queries) CountOrgDomainsByOrgID(ctx context.Context, orgID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrgDomainsByOrgID, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getOrgDomainByID = `-- name: GetOrgDomainByID :one
+select create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at, sso_connection_id from org_domains where id = $1 and org_id = $2
+`
+
+type GetOrgDomainByIDParams struct {
+	ID    string
+	OrgID string
+}
+
+func (q *Queries) GetOrgDomainByID(ctx context.Context, arg GetOrgDomainByIDParams) (OrgDomain, error) {
+	row := q.db.QueryRow(ctx, getOrgDomainByID, arg.ID, arg.OrgID)
+	var i OrgDomain
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Domain,
+		&i.ID,
+		&i.OrgID,
+		&i.RequireSso,
+		&i.SsoSeenAt,
+		&i.UpdateTime,
+		&i.VerificationMethod,
+		&i.VerificationToken,
+		&i.VerifiedAt,
+		&i.SsoConnectionID,
+	)
+	return i, err
+}
+
+const getOrgDomainByOrgIDAndDomain = `-- name: GetOrgDomainByOrgIDAndDomain :one
+select create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at, sso_connection_id from org_domains where org_id = $1 and domain = $2
+`
+
+type GetOrgDomainByOrgIDAndDomainParams struct {
+	OrgID  string
+	Domain string
+}
+
+func (q *Queries) GetOrgDomainByOrgIDAndDomain(ctx context.Context, arg GetOrgDomainByOrgIDAndDomainParams) (OrgDomain, error) {
+	row := q.db.QueryRow(ctx, getOrgDomainByOrgIDAndDomain, arg.OrgID, arg.Domain)
+	var i OrgDomain
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Domain,
+		&i.ID,
+		&i.OrgID,
+		&i.RequireSso,
+		&i.SsoSeenAt,
+		&i.UpdateTime,
+		&i.VerificationMethod,
+		&i.VerificationToken,
+		&i.VerifiedAt,
+		&i.SsoConnectionID,
+	)
+	return i, err
+}
+
+const isOrgCreationRestricted = `-- name: IsOrgCreationRestricted :one
+select (
+  exists (
+    select 1 from org_domains d
+    join orgs o on o.id = d.org_id
+    where d.domain = $1 and d.verified_at is not null
+      and not o.members_can_create_orgs
+  )
+  and not exists (
+    select 1 from org_domains d
+    join org_members m on m.org_id = d.org_id
+    where d.domain = $1 and d.verified_at is not null
+      and m.customer_id = $2::char(20) and m.role = 'ORG_ROLE_ADMIN'
+  )
+)::boolean as restricted
+`
+
+type IsOrgCreationRestrictedParams struct {
+	Domain     string
+	CustomerID string
+}
+
+func (q *Queries) IsOrgCreationRestricted(ctx context.Context, arg IsOrgCreationRestrictedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isOrgCreationRestricted, arg.Domain, arg.CustomerID)
+	var restricted bool
+	err := row.Scan(&restricted)
+	return restricted, err
+}
+
+const isSSORequired = `-- name: IsSSORequired :one
+select exists (
+  select 1 from org_domains
+  where domain = $1 and verified_at is not null and require_sso
+)::boolean as required
+`
+
+func (q *Queries) IsSSORequired(ctx context.Context, domain string) (bool, error) {
+	row := q.db.QueryRow(ctx, isSSORequired, domain)
+	var required bool
+	err := row.Scan(&required)
+	return required, err
+}
+
 const listOrgDomainsByDomain = `-- name: ListOrgDomainsByDomain :many
 select
   d.id,
@@ -65,6 +175,47 @@ func (q *Queries) ListOrgDomainsByDomain(ctx context.Context, domain string) ([]
 			&i.OrgDisplayName,
 			&i.AutoJoinRole,
 			&i.MembersCanCreateOrgs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgDomainsByIDs = `-- name: ListOrgDomainsByIDs :many
+select create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at, sso_connection_id from org_domains where org_id = $1 and id = any($2::text[])
+`
+
+type ListOrgDomainsByIDsParams struct {
+	OrgID string
+	Ids   []string
+}
+
+func (q *Queries) ListOrgDomainsByIDs(ctx context.Context, arg ListOrgDomainsByIDsParams) ([]OrgDomain, error) {
+	rows, err := q.db.Query(ctx, listOrgDomainsByIDs, arg.OrgID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgDomain
+	for rows.Next() {
+		var i OrgDomain
+		if err := rows.Scan(
+			&i.CreateTime,
+			&i.Domain,
+			&i.ID,
+			&i.OrgID,
+			&i.RequireSso,
+			&i.SsoSeenAt,
+			&i.UpdateTime,
+			&i.VerificationMethod,
+			&i.VerificationToken,
+			&i.VerifiedAt,
+			&i.SsoConnectionID,
 		); err != nil {
 			return nil, err
 		}
@@ -161,6 +312,64 @@ func (q *Queries) ListOrgDomainsByOrgID(ctx context.Context, orgID string) ([]Li
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgDomainsWithSSOConnection = `-- name: ListOrgDomainsWithSSOConnection :many
+select id, domain, sso_connection_id from org_domains
+where org_id = $1 and sso_connection_id is not null
+order by domain
+`
+
+type ListOrgDomainsWithSSOConnectionRow struct {
+	ID              string
+	Domain          string
+	SsoConnectionID pgtype.Text
+}
+
+func (q *Queries) ListOrgDomainsWithSSOConnection(ctx context.Context, orgID string) ([]ListOrgDomainsWithSSOConnectionRow, error) {
+	rows, err := q.db.Query(ctx, listOrgDomainsWithSSOConnection, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgDomainsWithSSOConnectionRow
+	for rows.Next() {
+		var i ListOrgDomainsWithSSOConnectionRow
+		if err := rows.Scan(&i.ID, &i.Domain, &i.SsoConnectionID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSSOConnectionDomains = `-- name: ListSSOConnectionDomains :many
+select domain from org_domains
+where sso_connection_id = $1::char(20) and verified_at is not null
+order by domain
+`
+
+func (q *Queries) ListSSOConnectionDomains(ctx context.Context, ssoConnectionID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listSSOConnectionDomains, ssoConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var domain string
+		if err := rows.Scan(&domain); err != nil {
+			return nil, err
+		}
+		items = append(items, domain)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

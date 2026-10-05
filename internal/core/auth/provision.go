@@ -7,6 +7,7 @@ import (
 
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 )
@@ -24,7 +25,7 @@ type Signup struct {
 // FinishSignup accepts the invite and runs auto-join, at sign-in and at session refresh.
 // A new account that joined nothing gets a default org if its domain allows it. It
 // returns the orgs joined.
-func FinishSignup(ctx context.Context, w *dbwrite.Queries, s Signup) ([]string, error) {
+func FinishSignup(ctx context.Context, r *dbread.Queries, w *dbwrite.Queries, s Signup) ([]string, error) {
 	var joined []string
 	if s.OrgInvitationID != "" {
 		orgID, err := coreorgs.ApplyInviteAcceptanceInTx(ctx, w, s.OrgInvitationID, s.CustomerID)
@@ -44,7 +45,7 @@ func FinishSignup(ctx context.Context, w *dbwrite.Queries, s Signup) ([]string, 
 		return joined, nil
 	}
 
-	email, err := w.GetCustomerEmailByID(ctx, s.CustomerID)
+	email, err := r.GetCustomerEmailByID(ctx, s.CustomerID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get customer email for signup", slogx.Error(err), slog.String("customer_id", s.CustomerID))
 		telemetry.RecordError(ctx, err)
@@ -59,7 +60,7 @@ func FinishSignup(ctx context.Context, w *dbwrite.Queries, s Signup) ([]string, 
 		return joined, nil
 	}
 
-	allowed, err := coreorgs.OrgCreationAllowedInTx(ctx, w, s.CustomerID, email)
+	allowed, err := coreorgs.OrgCreationAllowedInTx(ctx, r, s.CustomerID, email)
 	if err != nil || !allowed {
 		return nil, err
 	}

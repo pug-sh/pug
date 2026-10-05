@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -102,7 +103,7 @@ func TestUnenforce(t *testing.T) {
 	if !strings.Contains(out.String(), "turned off in 1 org") || !strings.HasSuffix(strings.TrimSpace(out.String()), "off") {
 		t.Errorf("Unenforce output = %q", out.String())
 	}
-	if err := coreorgs.CheckSignInInTx(t.Context(), w, "bob@acme.com", ""); err != nil {
+	if err := coreorgs.CheckSignInInTx(t.Context(), dbread.New(pg.PgW), "bob@acme.com", ""); err != nil {
 		t.Errorf("after unenforce: %v", err)
 	}
 	if err := cli.Unenforce(t.Context(), &out, "acme.io"); !errors.Is(err, coreorgs.ErrDomainNotFound) {

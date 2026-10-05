@@ -320,7 +320,7 @@ func TestSSOConnectionHandlers(t *testing.T) {
 	if strings.Contains(protojson.Format(list.Msg), "s3cret") {
 		t.Fatal("ListSSOConnections returned the client secret")
 	}
-	if conn, err := coreorgs.SSOConnectionForSignIn(h.ctx, h.write, cipher, *connID); err != nil || conn.ClientSecret != "s3cret" {
+	if conn, err := coreorgs.SSOConnectionForSignIn(h.ctx, h.read, cipher, *connID); err != nil || conn.ClientSecret != "s3cret" {
 		t.Fatalf("stored secret = %q, %v", conn.ClientSecret, err)
 	}
 

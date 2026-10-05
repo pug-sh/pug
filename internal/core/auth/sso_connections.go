@@ -10,6 +10,7 @@ import (
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/domainname"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -43,7 +44,7 @@ func (s *Service) DiscoverSignIn(ctx context.Context, email string) (SignInDisco
 	if err != nil {
 		return SignInDiscovery{}, err
 	}
-	required, err := s.write.IsSSORequired(ctx, domain)
+	required, err := dbread.New(s.pgW).IsSSORequired(ctx, domain)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to check whether the domain requires sso", slogx.Error(err), slog.String("domain", domain))
 		telemetry.RecordError(ctx, err)
@@ -61,7 +62,7 @@ func (s *Service) ProvidersFor(ctx context.Context, domain string) ([]SignInProv
 	if s.ssoCipher != nil {
 		var conn coreorgs.SSOConnection
 		var ok bool
-		conn, ok, err = coreorgs.SSOConnectionForDomain(ctx, s.write, domain)
+		conn, ok, err = coreorgs.SSOConnectionForDomain(ctx, dbread.New(s.pgW), domain)
 		if ok {
 			out = append(out, SignInProvider{
 				ConnectionID: conn.ID,
