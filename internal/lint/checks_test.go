@@ -170,6 +170,37 @@ func TestChecksDetectViolations(t *testing.T) {
 			want: "",
 		},
 		{
+			check: "sqlc-write-mutates-or-locks",
+			files: map[string]string{
+				// A column called update_time is not a write.
+				"schema/postgres/queries/write/a.sql": "-- name: BumpThing :exec\nupdate things set n = n + 1;\n\n" +
+					"-- name: GetThing :one\nselect * from things order by update_time;\n",
+			},
+			want: "query GetThing neither mutates nor locks",
+		},
+		{
+			check: "sqlc-write-mutates-or-locks",
+			files: map[string]string{
+				// A write named only in a comment is still a read.
+				"schema/postgres/queries/write/a.sql": "-- name: GetThing :one\n-- Read before we update it.\nselect * from things;\n",
+			},
+			want: "query GetThing neither mutates nor locks",
+		},
+		{
+			check: "sqlc-write-mutates-or-locks",
+			files: map[string]string{
+				// Row locks, advisory locks and a data-modifying CTE all need the write tx.
+				"schema/postgres/queries/write/a.sql": "-- name: LockThing :one\nselect * from things for update;\n\n" +
+					"-- name: LockThingNoKey :one\nselect * from things for no key update;\n\n" +
+					"-- name: ShareThing :one\nselect * from things for share;\n\n" +
+					"-- name: KeyShareThing :one\nselect * from things for key share;\n\n" +
+					"-- name: LockOrg :exec\nselect pg_advisory_xact_lock(hashtext(@id::text));\n\n" +
+					"-- name: TryLock :one\nselect pg_try_advisory_xact_lock(@key::bigint) as acquired;\n\n" +
+					"-- name: ListAndPrune :many\nwith d as (delete from things returning *) select * from d;\n",
+			},
+			want: "",
+		},
+		{
 			check: "sqlc-query-naming",
 			files: map[string]string{
 				"schema/postgres/queries/read/a.sql": "-- name: GetThingById :one\nselect 1;\n",
@@ -400,7 +431,7 @@ func TestChecksDetectViolations(t *testing.T) {
 // A query directory that has moved must be an error, not zero findings: a glob
 // that matches nothing is indistinguishable from a clean tree.
 func TestSqlcChecksFailOnMissingQueryDir(t *testing.T) {
-	for _, name := range []string{"sqlc-read-is-read-only", "sqlc-query-naming", "table-has-one-writer"} {
+	for _, name := range []string{"sqlc-read-is-read-only", "sqlc-write-mutates-or-locks", "sqlc-query-naming", "table-has-one-writer"} {
 		t.Run(name, func(t *testing.T) {
 			for _, c := range lint.Checks() {
 				if c.Name != name {

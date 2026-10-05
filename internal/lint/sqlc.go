@@ -63,6 +63,32 @@ func checkSqlcReadOnly(root string) ([]string, error) {
 	return out, nil
 }
 
+// A lock needs a write transaction, so a query that takes one stays in the write
+// set without mutating. Matched after scrubSQL, which rewrites `for update` to
+// `for share`.
+var lockingStmt = regexp.MustCompile(`(?i)\bfor\s+(?:key\s+)?share\b|\bpg_(?:try_)?advisory_(?:xact_)?(?:un)?lock(?:_shared|_all)?\s*\(`)
+
+func checkSqlcWriteMutatesOrLocks(root string) ([]string, error) {
+	files, err := sqlFiles(root, "schema/postgres/queries/write")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, f := range files {
+		body, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		for _, q := range splitQueries(body) {
+			if sql := scrubSQL(q.sql); !mutatingStmt.Match(sql) && !lockingStmt.Match(sql) {
+				out = append(out, fmt.Sprintf("%s: query %s neither mutates nor locks; move it to the read query set",
+					rel(root, f), q.name))
+			}
+		}
+	}
+	return out, nil
+}
+
 var (
 	queryName    = regexp.MustCompile(`(?m)^--\s*name:\s*(\S+)`)
 	pascalWithID = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
