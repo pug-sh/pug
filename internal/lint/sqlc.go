@@ -15,13 +15,13 @@ import (
 var (
 	mutatingStmt = regexp.MustCompile(`(?i)\binsert\s+into\b|\bdelete\s+from\b|\bmerge\s+into\b|\btruncate\s|\bupdate\s`)
 	rowLock      = regexp.MustCompile(`(?i)\bfor\s+(?:no\s+key\s+)?update\b`)
-	sqlComment   = regexp.MustCompile(`(?m)--.*$`)
+	commentOrStr = regexp.MustCompile(`(?s)--[^\n]*|/\*.*?\*/|'(?:[^']|'')*'`)
 )
 
-// scrubSQL is the text both mutation checks match against, comments and row locks
-// masked, so the read-only check and the owner check agree on what is a write.
+// scrubSQL masks comments, string literals and row locks for the SQL checks. One
+// pass, so an apostrophe in a comment cannot open a literal that hides real SQL.
 func scrubSQL(sql []byte) []byte {
-	return rowLock.ReplaceAll(sqlComment.ReplaceAll(sql, nil), []byte("for share"))
+	return rowLock.ReplaceAll(commentOrStr.ReplaceAll(sql, []byte(" ")), []byte("for share"))
 }
 
 // sqlFiles walks dir for .sql files. A missing directory is an error, not an

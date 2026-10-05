@@ -170,6 +170,15 @@ func TestChecksDetectViolations(t *testing.T) {
 			want: "",
 		},
 		{
+			check: "sqlc-read-is-read-only",
+			files: map[string]string{
+				// An apostrophe in a comment or a -- in a string must not hide the next query.
+				"schema/postgres/queries/read/a.sql": "-- name: GetThing :one\n-- Don't lock it.\nselect * from things where note like '%--%';\n\n" +
+					"-- name: BumpThing :exec\nupdate things set note = 'x';\n",
+			},
+			want: "UPDATE statement in the read query set",
+		},
+		{
 			check: "sqlc-write-mutates-or-locks",
 			files: map[string]string{
 				// A column called update_time is not a write.
@@ -181,8 +190,9 @@ func TestChecksDetectViolations(t *testing.T) {
 		{
 			check: "sqlc-write-mutates-or-locks",
 			files: map[string]string{
-				// A write named only in a comment is still a read.
-				"schema/postgres/queries/write/a.sql": "-- name: GetThing :one\n-- Read before we update it.\nselect * from things;\n",
+				// A write or lock named only in a comment or a string is still a read.
+				"schema/postgres/queries/write/a.sql": "-- name: GetThing :one\n-- Read before we update it.\n" +
+					"/* update things set n = 1 */ select * from things where note = 'for share';\n",
 			},
 			want: "query GetThing neither mutates nor locks",
 		},
