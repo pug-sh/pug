@@ -1,8 +1,7 @@
 # SSO: Google Workspace and verified domains
 
-> **Status: phases 1 and 2 implemented; phase 3 backend implemented, its
-> frontend not started.** Written 2026-09-25; phases 1 and 2 built 2026-09-26;
-> phase 3 backend built 2026-10-03.
+> **Status: phases 1, 2 and 3 implemented.** Written 2026-09-25; phases 1 and 2
+> built 2026-09-26; phase 3's backend built 2026-10-03, its frontend 2026-10-04.
 
 ## Summary
 
@@ -794,7 +793,6 @@ backstop.
 | `OrgsService` | `ListSSOConnections`, `SetSSOConnection` (creates or updates one, with its domains), `DeleteSSOConnection`. Admin-only, on `ResourceDomain`. At most 10 connections per org. An empty `client_secret` on update keeps the stored one, unless the issuer or client id changes. |
 | `OrgDomain` | New `sso_connection_id` (this org's connection) and `sso_connection_elsewhere` (another org's connection signs it in; verified domains only). |
 | Config | `PUG_SSO_SECRET_KEY` and `PUG_SSO_ALLOW_PRIVATE_ISSUERS`. |
-| Frontend | The connection cards with their domain picker, the email-first step, and the connection's own callback path (rule 8). |
 
 Which connection signs a domain in is a column on `org_domains`. The foreign key
 keeps it inside the org. The partial unique index allows one connection per
@@ -854,6 +852,15 @@ create unique index org_domains_sso_connection_domain_key
 
 A sign-in with an unknown connection, or with connections off, fails like a
 disabled provider (`OAUTH_PROVIDER_DISABLED`).
+
+### Frontend (`../app`)
+
+| File | Change |
+|---|---|
+| `src/pages/routegen/settings/sso/` | The SSO connections section, below the domains: add, edit and remove, all inline. The picker lists the org's verified domains, and says why one can't be picked: another of the org's connections, or another org's, signs it in. A saved connection shows its redirect URL. With `PUG_SSO_SECRET_KEY` empty, the section says connections are off and names the variable. |
+| `src/pages/sign-in.tsx` | Email-first. Continue asks `DiscoverSignIn` first. A connection, or Require SSO, puts the domain's providers where Continue was, with "Email me a link instead" unless Require SSO is on. Any other answer, such as Google for `gmail.com`, sends the email link as before, and so does a lookup that fails. |
+| `src/auth/oidc.ts`, `src/pages/oauth-callback.tsx`, `src/App.tsx` | A connection's sign-in returns to `/oauth/callback/<connection id>`. `GetAuthConfig` doesn't list connections, so the connection's settings wait in session storage for the callback. The callback refuses a code that lands on another path than the one its sign-in started with (rule 8). |
+| `src/auth/auth.atoms.ts` | `CompleteOIDCSignIn` gets `connection_id` or `provider_id`, never both. The fields have explicit presence, so an empty `provider_id` still counts as set and breaks "exactly one". A connection that refuses the account (`SSO_CONNECTION_DOMAIN_MISMATCH`) gets its own message. |
 
 ## Backend changes (phases 1 and 2)
 
@@ -1084,9 +1091,9 @@ Nothing blocks a sign-in yet.
 `pug domains unenforce`, and the frontend handling.
 
 **Phase 3: company SSO connections.** The connection table, the domain column
-and the RPCs, `DiscoverSignIn`, email-first sign-in, `connection_id` on
-`CompleteOIDCSignIn`, and the connection HTTP client with its address guard and
-size cap.
+and the RPCs, the connections section of the tab, `DiscoverSignIn`, email-first
+sign-in, `connection_id` on `CompleteOIDCSignIn`, and the connection HTTP client
+with its address guard and size cap.
 
 All phases are additive, and old clients keep working. The new errors can only
 appear after an admin changes a setting from the new frontend. An old client
