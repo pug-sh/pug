@@ -26,6 +26,13 @@ where occur_time >= ? and occur_time < ?
 group by project_id, day
 `
 
+const meterProjectQuery = `
+select project_id, toDate(occur_time, 'UTC') as day, uniqExact(event_id) as event_count
+from events
+where project_id = ? and occur_time >= ? and occur_time < ?
+group by project_id, day
+`
+
 // ErrNoMeteringConn is returned when a Service built without ClickHouse meters —
 // the server never does.
 var ErrNoMeteringConn = errors.New("usage: no clickhouse connection for metering")
@@ -41,16 +48,25 @@ type DailyUsage struct {
 // particular row order. The (project, day) grain lets one pass serve every org's
 // period, and it bounds uniqExact's state.
 func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyUsage, error) {
+	return s.meter(ctx, meterQuery, []any{from.UTC(), to.UTC()}, slog.Time("from", from), slog.Time("to", to))
+}
+
+// MeterProject is MeterWindow for one project.
+func (s *Service) MeterProject(ctx context.Context, projectID string, from, to time.Time) ([]DailyUsage, error) {
+	return s.meter(ctx, meterProjectQuery, []any{projectID, from.UTC(), to.UTC()},
+		slog.String("project_id", projectID), slog.Time("from", from), slog.Time("to", to))
+}
+
+func (s *Service) meter(ctx context.Context, query string, args []any, attrs ...any) ([]DailyUsage, error) {
 	if s.ch == nil {
 		return nil, ErrNoMeteringConn
 	}
 
 	// chdb.Conn.Query records the error on the ClickHouse span already, so this
 	// logs the window it failed over without re-recording it.
-	rows, err := s.ch.Query(ctx, meterQuery, from.UTC(), to.UTC())
+	rows, err := s.ch.Query(ctx, query, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to meter events", slogx.Error(err),
-			slog.Time("from", from), slog.Time("to", to)) // puglint:exempt — chdb.Conn.Query recorded it on the query span
+		slog.ErrorContext(ctx, "failed to meter events", append([]any{slogx.Error(err)}, attrs...)...) // puglint:exempt — chdb.Conn.Query recorded it on the query span
 		return nil, err
 	}
 	defer func() {
@@ -143,6 +159,31 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 		// back and the loop never issued the ones after it.
 		err := fmt.Errorf("usage upsert failed in the chunk starting at cell %d; %d of %d cells unwritten: %w",
 			failedChunkStart, len(usage)-failedChunkStart, len(usage), firstErr)
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	return nil
+}
+
+// FreezeDailyUsageInTx stores the purge job's last count of a project being
+// deleted, which RecordDailyUsage would skip.
+func FreezeDailyUsageInTx(ctx context.Context, w *dbwrite.Queries, orgID, projectID string, usage []DailyUsage) error {
+	if len(usage) == 0 {
+		return nil
+	}
+	days := make([]pgtype.Date, 0, len(usage))
+	counts := make([]int64, 0, len(usage))
+	for _, u := range usage {
+		days = append(days, postgres.NewDate(u.Day))
+		counts = append(counts, u.EventCount)
+	}
+	if err := w.FreezeUsageDaily(ctx, dbwrite.FreezeUsageDailyParams{
+		Days:        days,
+		EventCounts: counts,
+		OrgID:       orgID,
+		ProjectID:   projectID,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to freeze daily usage", slogx.Error(err), slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
@@ -300,6 +341,28 @@ func (s *Service) OrgPeriods(ctx context.Context, now time.Time) ([]OrgPeriod, e
 		out = append(out, OrgPeriod{OrgID: o.ID, Start: start, End: end})
 	}
 	return out, nil
+}
+
+// DefaultRescanDays is the meter's trailing window when PUG_USAGE_RESCAN_DAYS is unset.
+const DefaultRescanDays = 2
+
+// FullRecomputeFrom is the lower bound of the meter's widest pass.
+//
+// It floors at month-to-date, which is what the erasure reconcile needs and what
+// the empty-read guard reads as its evidence window — on the 1st or 2nd that floor
+// is all that keeps a full pass wider than the trailing rescan. Anniversaries only
+// widen it further: on the 3rd, an org anchored on the 10th is still inside a
+// period that began last month, and stopping at the month boundary would re-sum it
+// over a window the pass had not fully read.
+func FullRecomputeFrom(now time.Time, rescanDays int, periods []OrgPeriod) time.Time {
+	from := FloorDayUTC(now.AddDate(0, 0, -rescanDays))
+	if monthStart := FloorMonthUTC(now); monthStart.Before(from) {
+		from = monthStart
+	}
+	if earliest := EarliestPeriodStart(periods); !earliest.IsZero() && earliest.Before(from) {
+		from = earliest
+	}
+	return from
 }
 
 // EarliestPeriodStart is the oldest window start in a work list, and the lower

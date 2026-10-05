@@ -55,6 +55,34 @@ func (q *Queries) DeleteUnmeteredUsageDaily(ctx context.Context, arg DeleteUnmet
 	return result.RowsAffected(), nil
 }
 
+const freezeUsageDaily = `-- name: FreezeUsageDaily :exec
+insert into usage_daily (day, event_count, org_id, project_id)
+select unnest($1::date[]), unnest($2::bigint[]), $3::text, $4::text
+on conflict (project_id, day) do update
+set event_count = excluded.event_count,
+    update_time = now()
+where usage_daily.event_count is distinct from excluded.event_count
+`
+
+type FreezeUsageDailyParams struct {
+	Days        []pgtype.Date
+	EventCounts []int64
+	OrgID       string
+	ProjectID   string
+}
+
+// The purge job's last count of a project being deleted, which UpsertUsageDaily
+// skips. The org comes from the deletion row.
+func (q *Queries) FreezeUsageDaily(ctx context.Context, arg FreezeUsageDailyParams) error {
+	_, err := q.db.Exec(ctx, freezeUsageDaily,
+		arg.Days,
+		arg.EventCounts,
+		arg.OrgID,
+		arg.ProjectID,
+	)
+	return err
+}
+
 const pruneUsageDaily = `-- name: PruneUsageDaily :execrows
 delete from usage_daily where day < $1
 `
