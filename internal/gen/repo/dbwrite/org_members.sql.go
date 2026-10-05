@@ -145,22 +145,6 @@ func (q *Queries) DeleteOrgMemberIfNotLastAdminAndNotLastMember(ctx context.Cont
 	return result.RowsAffected(), nil
 }
 
-const getOrgMemberRole = `-- name: GetOrgMemberRole :one
-select role from org_members where org_id = $1 and customer_id = $2
-`
-
-type GetOrgMemberRoleParams struct {
-	OrgID      string
-	CustomerID string
-}
-
-func (q *Queries) GetOrgMemberRole(ctx context.Context, arg GetOrgMemberRoleParams) (string, error) {
-	row := q.db.QueryRow(ctx, getOrgMemberRole, arg.OrgID, arg.CustomerID)
-	var role string
-	err := row.Scan(&role)
-	return role, err
-}
-
 const updateOrgMemberRole = `-- name: UpdateOrgMemberRole :one
 update org_members
 set role = $1

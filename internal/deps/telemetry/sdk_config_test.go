@@ -79,10 +79,7 @@ func TestDoSetupWithoutExport_installsNoopProviders(t *testing.T) {
 		slog.SetDefault(prevSlog)
 	})
 
-	shutdown, err := doSetupWithoutExport(context.Background())
-	if err != nil {
-		t.Fatalf("doSetupWithoutExport: %v", err)
-	}
+	shutdown := doSetupWithoutExport(context.Background())
 
 	_, span := otel.Tracer("test").Start(context.Background(), "s")
 	if span.IsRecording() {

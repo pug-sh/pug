@@ -34,6 +34,7 @@ func Analyzers() []*analysis.Analyzer {
 func Checks() []Check {
 	return []Check{
 		{"sqlc-read-is-read-only", "queries under queries/read must not mutate; they generate into dbread, whose handle is the read-only pool unless a caller binds it to a write tx", checkSqlcReadOnly},
+		{"sqlc-write-mutates-or-locks", "queries under queries/write must mutate or take a lock; a plain read belongs in queries/read, and dbread.New(tx) runs it inside a write tx", checkSqlcWriteMutatesOrLocks},
 		{"sqlc-query-naming", "sqlc query names are PascalCase with an uppercase ID", checkSqlcNaming},
 		{"table-has-one-writer", "a table with an owner is written only from that package, which is what a package doc's \"only writer\" claim rests on", checkTableOwners},
 		{"migration-numbering", "migration numbers are unique and contiguous; git will not flag a duplicate", checkMigrationNumbering},

@@ -62,6 +62,7 @@ type domainFixture struct {
 	t   *testing.T
 	ctx context.Context
 	db  *testutil.TestPostgres
+	r   *dbread.Queries
 	w   *dbwrite.Queries
 	svc *orgs.Service
 	dns *fakeResolver
@@ -78,6 +79,7 @@ func newDomainFixture(t *testing.T) *domainFixture {
 		t:   t,
 		ctx: context.Background(),
 		db:  db,
+		r:   dbread.New(db.PgW),
 		w:   dbwrite.New(db.PgW),
 		svc: orgs.NewService(db.PgRO, db.PgW, &stubPublisher{}).WithTXTResolver(dns),
 		dns: dns,
@@ -499,7 +501,7 @@ func TestApplyInviteAcceptanceInTxAlreadyMemberKeepsTheTransaction(t *testing.T)
 		if _, err := orgs.ApplyInviteAcceptanceInTx(f.ctx, w, dispatch.Invitation.ID, bob); !errors.Is(err, orgs.ErrAlreadyMember) {
 			t.Fatalf("apply err = %v, want ErrAlreadyMember", err)
 		}
-		_, err := w.GetOrgMemberRole(f.ctx, dbwrite.GetOrgMemberRoleParams{OrgID: orgID, CustomerID: bob})
+		_, err := w.GetOrgInvitationByIDForUpdate(f.ctx, dispatch.Invitation.ID)
 		return err
 	})
 	if err != nil {
@@ -776,7 +778,7 @@ func TestRequireSSORechecksTheRecord(t *testing.T) {
 	f.dns.unpublish(d)
 	_, err := f.svc.UpdateDomain(f.ctx, orgID, d.ID, true)
 	wantVerificationError(t, err, "acme.com")
-	if err := orgs.CheckSignInInTx(f.ctx, f.w, "bob@acme.com", ""); err != nil {
+	if err := orgs.CheckSignInInTx(f.ctx, f.r, "bob@acme.com", ""); err != nil {
 		t.Fatalf("a refused change must leave Require SSO off, got %v", err)
 	}
 
@@ -809,14 +811,14 @@ func TestRequireSSOStrictestWins(t *testing.T) {
 	f.ssoSeen("acme.com")
 	f.requireSSO(strictOrg, d, true)
 
-	wantSSORequired(t, orgs.CheckSignInInTx(f.ctx, f.w, "Bob@ACME.com", ""), "acme.com")
-	wantSSORequired(t, orgs.CheckSignInInTx(f.ctx, f.w, "bob@acme.com", "acme.io"), "acme.com")
+	wantSSORequired(t, orgs.CheckSignInInTx(f.ctx, f.r, "Bob@ACME.com", ""), "acme.com")
+	wantSSORequired(t, orgs.CheckSignInInTx(f.ctx, f.r, "bob@acme.com", "acme.io"), "acme.com")
 	for _, tc := range []struct{ email, proven string }{
 		{"bob@acme.com", "acme.com"},
 		{"bob@globex.com", ""},
 		{"bob@eng.acme.com", ""},
 	} {
-		if err := orgs.CheckSignInInTx(f.ctx, f.w, tc.email, tc.proven); err != nil {
+		if err := orgs.CheckSignInInTx(f.ctx, f.r, tc.email, tc.proven); err != nil {
 			t.Fatalf("CheckSignInInTx(%s, %q) = %v, want nil", tc.email, tc.proven, err)
 		}
 	}
@@ -836,7 +838,7 @@ func TestRequireSSOStrictestWins(t *testing.T) {
 	if err != nil || n != 2 {
 		t.Fatalf("UnenforceDomain = %d, %v; want 2 claims changed", n, err)
 	}
-	if err := orgs.CheckSignInInTx(f.ctx, f.w, "bob@acme.com", ""); err != nil {
+	if err := orgs.CheckSignInInTx(f.ctx, f.r, "bob@acme.com", ""); err != nil {
 		t.Fatalf("after unenforce: %v", err)
 	}
 	if n, err := f.svc.UnenforceDomain(f.ctx, "acme.com"); err != nil || n != 0 {

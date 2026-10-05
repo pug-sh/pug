@@ -48,6 +48,12 @@ func TestCompleteOIDCSignInRequest_Validation(t *testing.T) {
 	if err := protovalidate.Validate(valid()); err != nil {
 		t.Fatalf("expected valid, got error: %v", err)
 	}
+	conn := valid()
+	conn.ProviderId = nil
+	conn.ConnectionId = proto.String("db0bnpqvh7le8fq2jqug")
+	if err := protovalidate.Validate(conn); err != nil {
+		t.Fatalf("connection_id alone: expected valid, got error: %v", err)
+	}
 
 	for _, tt := range []struct {
 		name   string
@@ -63,6 +69,12 @@ func TestCompleteOIDCSignInRequest_Validation(t *testing.T) {
 		{"empty code", func(r *authv1.CompleteOIDCSignInRequest) { r.Code = proto.String("") }},
 		{"empty provider id", func(r *authv1.CompleteOIDCSignInRequest) { r.ProviderId = proto.String("") }},
 		{"provider id with uppercase", func(r *authv1.CompleteOIDCSignInRequest) { r.ProviderId = proto.String("Company_SSO") }},
+		{"no provider or connection", func(r *authv1.CompleteOIDCSignInRequest) { r.ProviderId = nil }},
+		{"both provider and connection", func(r *authv1.CompleteOIDCSignInRequest) { r.ConnectionId = proto.String("db0bnpqvh7le8fq2jqug") }},
+		{"short connection id", func(r *authv1.CompleteOIDCSignInRequest) {
+			r.ProviderId = nil
+			r.ConnectionId = proto.String("db0bnpqvh7")
+		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req := valid()

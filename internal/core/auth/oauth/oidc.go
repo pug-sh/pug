@@ -148,6 +148,10 @@ func (p *oidcProvider) verifyIDToken(ctx context.Context, credential, expectedNo
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("oauth: decode claims from %q: %w", p.name, err)
 	}
+	// No email at all is refused below as unverified, not as another domain.
+	if p.name.isConnection() && claims.Email != "" && !p.speaksFor(domainname.Of(claims.Email)) {
+		return nil, fmt.Errorf("%w: %q", ErrEmailNotOnConnection, domainname.Of(claims.Email))
+	}
 
 	// An explicit email_verified wins, then an explicit xms_edov, even when false.
 	// With neither, the provider vouches for its emailDomains.
@@ -173,12 +177,18 @@ func (p *oidcProvider) verifyIDToken(ctx context.Context, credential, expectedNo
 		// The rejection log should say which claim refused the sign-in.
 		return nil, fmt.Errorf("%w: email_verified present=%t, xms_edov=%v", err, claims.EmailVerified != nil, claims.EmailDomainOwnerVerified)
 	}
-	return ident, err
+	if err != nil {
+		return nil, err
+	}
+	if p.name.isConnection() {
+		ident.connectionDomains = p.cfg.EmailDomains
+	}
+	return ident, nil
 }
 
 // provenDomain checks the configured issuer, not iss, which Google may send without https://.
 func (p *oidcProvider) provenDomain(email, hostedDomain string) string {
-	if appconfig.IsGoogleIssuer(p.cfg.IssuerURL) {
+	if !p.name.isConnection() && appconfig.IsGoogleIssuer(p.cfg.IssuerURL) {
 		d, err := domainname.Normalize(hostedDomain)
 		if err != nil {
 			return ""

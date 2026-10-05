@@ -74,9 +74,11 @@ type Domain struct {
 	VerificationMethod string
 	RequireSSO         bool
 	SSOSeen            bool
+	SSOConnectionID    string
 	// Set only by ListDomains, and only on a verified domain.
 	OrgCreationRestrictedElsewhere bool
 	SSORequiredElsewhere           bool
+	SSOConnectionElsewhere         bool
 }
 
 func (d Domain) Verified() bool { return !d.VerifiedAt.IsZero() }
@@ -106,6 +108,7 @@ func domainFromRow(r dbwrite.OrgDomain) Domain {
 		VerificationMethod: r.VerificationMethod.String,
 		RequireSSO:         r.RequireSso,
 		SSOSeen:            r.SsoSeenAt.Valid,
+		SSOConnectionID:    r.SsoConnectionID.String,
 	}
 }
 
@@ -141,8 +144,10 @@ func (s *Service) ListDomains(ctx context.Context, orgID string) (DomainSettings
 			VerificationMethod:             row.VerificationMethod.String,
 			RequireSSO:                     row.RequireSso,
 			SSOSeen:                        row.SsoSeenAt.Valid,
+			SSOConnectionID:                row.SsoConnectionID.String,
 			OrgCreationRestrictedElsewhere: row.OrgCreationRestrictedElsewhere,
 			SSORequiredElsewhere:           row.SsoRequiredElsewhere,
+			SSOConnectionElsewhere:         row.SsoConnectionElsewhere,
 		})
 	}
 	return settingsFromOrg(org.AutoJoinRole.String, org.MembersCanCreateOrgs), domains, nil
@@ -168,6 +173,7 @@ func (s *Service) AddDomain(ctx context.Context, orgID, rawDomain string) (Domai
 		}
 	}()
 
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 	// Locks the org so concurrent adds can't both pass the limit.
 	if _, err := w.GetOrgByIDForUpdate(ctx, orgID); err != nil {
@@ -178,16 +184,16 @@ func (s *Service) AddDomain(ctx context.Context, orgID, rawDomain string) (Domai
 		telemetry.RecordError(ctx, err)
 		return Domain{}, err
 	}
-	existing, err := w.GetOrgDomainByOrgIDAndDomain(ctx, dbwrite.GetOrgDomainByOrgIDAndDomainParams{OrgID: orgID, Domain: domain})
+	existing, err := r.GetOrgDomainByOrgIDAndDomain(ctx, dbread.GetOrgDomainByOrgIDAndDomainParams{OrgID: orgID, Domain: domain})
 	if err == nil {
-		return domainFromRow(existing), nil
+		return domainFromRow(dbwrite.OrgDomain(existing)), nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to look up org domain", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return Domain{}, err
 	}
-	n, err := w.CountOrgDomainsByOrgID(ctx, orgID)
+	n, err := r.CountOrgDomainsByOrgID(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to count org domains", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
@@ -243,9 +249,31 @@ func (s *Service) VerifyDomain(ctx context.Context, orgID, domainID string) (Dom
 	return domainFromRow(row), nil
 }
 
-// RemoveDomain drops this org's claim. Members who joined through it stay.
+// RemoveDomain drops this org's claim. Members who joined through it stay. It is
+// refused while the domain requires SSO and this org's connection signs it in.
 func (s *Service) RemoveDomain(ctx context.Context, orgID, domainID string) error {
-	n, err := s.write.DeleteOrgDomain(ctx, dbwrite.DeleteOrgDomainParams{ID: domainID, OrgID: orgID})
+	d, err := s.getDomain(ctx, orgID, domainID)
+	if err != nil {
+		return err
+	}
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin remove domain transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	defer rollback(ctx, tx, "remove domain")
+	w := dbwrite.New(tx)
+	if d.SSOConnectionID != "" {
+		// Waits for sign-ins through the connection, so none proves the domain after the clear.
+		if _, err := getSSOConnection(ctx, w, orgID, d.SSOConnectionID); err != nil {
+			return err
+		}
+		if err := dropDomainsInTx(ctx, dbread.New(tx), w, []string{d.Domain}); err != nil {
+			return err
+		}
+	}
+	n, err := w.DeleteOrgDomain(ctx, dbwrite.DeleteOrgDomainParams{ID: domainID, OrgID: orgID})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to delete org domain", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
@@ -253,6 +281,11 @@ func (s *Service) RemoveDomain(ctx context.Context, orgID, domainID string) erro
 	}
 	if n == 0 {
 		return ErrDomainNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit remove domain transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
 	}
 	return nil
 }
@@ -313,9 +346,12 @@ func (s *Service) UpdateDomain(ctx context.Context, orgID, domainID string, requ
 		RequireSso: requireSSO,
 	})
 	if err != nil {
-		// verified_at and sso_seen_at are never unset, so the claim was removed meanwhile.
+		// The claim was removed meanwhile, or a connection stopped signing it in.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Domain{}, ErrDomainNotFound
+			if _, err := s.getDomain(ctx, orgID, domainID); err != nil {
+				return Domain{}, err
+			}
+			return Domain{}, ErrDomainSSONotSeen
 		}
 		slog.ErrorContext(ctx, "failed to update org domain", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
@@ -368,7 +404,7 @@ func (s *Service) checkTXT(ctx context.Context, d Domain) error {
 }
 
 func (s *Service) getDomain(ctx context.Context, orgID, domainID string) (Domain, error) {
-	row, err := s.write.GetOrgDomainByID(ctx, dbwrite.GetOrgDomainByIDParams{ID: domainID, OrgID: orgID})
+	row, err := dbread.New(s.pgW).GetOrgDomainByID(ctx, dbread.GetOrgDomainByIDParams{ID: domainID, OrgID: orgID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Domain{}, ErrDomainNotFound
@@ -377,7 +413,7 @@ func (s *Service) getDomain(ctx context.Context, orgID, domainID string) (Domain
 		telemetry.RecordError(ctx, err)
 		return Domain{}, err
 	}
-	return domainFromRow(row), nil
+	return domainFromRow(dbwrite.OrgDomain(row)), nil
 }
 
 // VerifyDomainByOperator verifies the domain without DNS, adding it if needed.
@@ -386,7 +422,7 @@ func (s *Service) VerifyDomainByOperator(ctx context.Context, orgID, rawDomain s
 	if err != nil {
 		return Domain{}, ErrDomainInvalid
 	}
-	if _, err := s.write.GetOrgByID(ctx, orgID); err != nil {
+	if _, err := dbread.New(s.pgW).GetOrgByID(ctx, orgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Domain{}, ErrOrgNotFound
 		}
@@ -415,20 +451,32 @@ func (s *Service) ReleaseDomain(ctx context.Context, orgID, rawDomain string) er
 		return ErrDomainInvalid
 	}
 	// So a mistyped org id doesn't read as "this org has no claim".
-	if _, err := s.write.GetOrgByID(ctx, orgID); err != nil {
+	if _, err := dbread.New(s.pgW).GetOrgByID(ctx, orgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrOrgNotFound
 		}
 		return fmt.Errorf("get org: %w", err)
 	}
-	n, err := s.write.DeleteOrgDomainByOrgIDAndDomain(ctx, dbwrite.DeleteOrgDomainByOrgIDAndDomainParams{OrgID: orgID, Domain: domain})
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin release domain: %w", err)
+	}
+	defer rollback(ctx, tx, "release domain")
+	w := dbwrite.New(tx)
+	connID, err := w.DeleteOrgDomainByOrgIDAndDomain(ctx, dbwrite.DeleteOrgDomainByOrgIDAndDomainParams{OrgID: orgID, Domain: domain})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrDomainNotFound
+	}
 	if err != nil {
 		return fmt.Errorf("release domain: %w", err)
 	}
-	if n == 0 {
-		return ErrDomainNotFound
+	// The claim's connection no longer signs the domain in.
+	if connID.Valid {
+		if err := clearSSOSeenInTx(ctx, w, []string{domain}); err != nil {
+			return err
+		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 // UnenforceDomain turns Require SSO off in every org that claimed the domain, for when
@@ -466,7 +514,7 @@ func (s *Service) DomainClaims(ctx context.Context, rawDomain string) ([]dbread.
 
 // OrgCreationAllowed only hides the button; CreateOrgWithDefaults enforces the rule.
 func (s *Service) OrgCreationAllowed(ctx context.Context, customerID, email string) (bool, error) {
-	return OrgCreationAllowedInTx(ctx, s.write, customerID, email)
+	return OrgCreationAllowedInTx(ctx, dbread.New(s.pgW), customerID, email)
 }
 
 // AutoJoinInTx adds the customer to every org that verified provenDomain with auto-join
@@ -505,12 +553,12 @@ func MarkSSOSeenInTx(ctx context.Context, w *dbwrite.Queries, provenDomain strin
 
 // CheckSignInInTx refuses a sign-in for an email whose domain requires SSO, unless the
 // sign-in proved that domain. It returns *SSORequiredError.
-func CheckSignInInTx(ctx context.Context, w *dbwrite.Queries, email, provenDomain string) error {
+func CheckSignInInTx(ctx context.Context, r *dbread.Queries, email, provenDomain string) error {
 	domain := domainname.Of(email)
 	if domain == "" || domain == provenDomain {
 		return nil
 	}
-	required, err := w.IsSSORequired(ctx, domain)
+	required, err := r.IsSSORequired(ctx, domain)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to check whether the domain requires sso", slogx.Error(err), slog.String("domain", domain))
 		telemetry.RecordError(ctx, err)
@@ -524,12 +572,12 @@ func CheckSignInInTx(ctx context.Context, w *dbwrite.Queries, email, provenDomai
 
 // OrgCreationAllowedInTx is false when any org that verified the email's domain
 // turned org creation off, unless the customer is an admin of one of them.
-func OrgCreationAllowedInTx(ctx context.Context, w *dbwrite.Queries, customerID, email string) (bool, error) {
+func OrgCreationAllowedInTx(ctx context.Context, r *dbread.Queries, customerID, email string) (bool, error) {
 	domain := domainname.Of(email)
 	if domain == "" {
 		return true, nil
 	}
-	restricted, err := w.IsOrgCreationRestricted(ctx, dbwrite.IsOrgCreationRestrictedParams{
+	restricted, err := r.IsOrgCreationRestricted(ctx, dbread.IsOrgCreationRestrictedParams{
 		Domain:     domain,
 		CustomerID: customerID,
 	})

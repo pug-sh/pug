@@ -132,7 +132,7 @@ func (c *Config) Validate() error {
 
 		switch p.Type {
 		case ProviderTypeOIDC:
-			issuer, err := validateIssuer(p.IssuerURL)
+			issuer, err := ValidateIssuer(p.IssuerURL)
 			if err != nil {
 				return fmt.Errorf("%s.issuerUrl: %w", prefix, err)
 			}
@@ -153,7 +153,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func validateIssuer(raw string) (string, error) {
+func ValidateIssuer(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {

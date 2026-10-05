@@ -15,13 +15,13 @@ import (
 var (
 	mutatingStmt = regexp.MustCompile(`(?i)\binsert\s+into\b|\bdelete\s+from\b|\bmerge\s+into\b|\btruncate\s|\bupdate\s`)
 	rowLock      = regexp.MustCompile(`(?i)\bfor\s+(?:no\s+key\s+)?update\b`)
-	sqlComment   = regexp.MustCompile(`(?m)--.*$`)
+	commentOrStr = regexp.MustCompile(`(?s)--[^\n]*|/\*.*?\*/|'(?:[^']|'')*'`)
 )
 
-// scrubSQL is the text both mutation checks match against, comments and row locks
-// masked, so the read-only check and the owner check agree on what is a write.
+// scrubSQL masks comments, string literals and row locks for the SQL checks. One
+// pass, so an apostrophe in a comment cannot open a literal that hides real SQL.
 func scrubSQL(sql []byte) []byte {
-	return rowLock.ReplaceAll(sqlComment.ReplaceAll(sql, nil), []byte("for share"))
+	return rowLock.ReplaceAll(commentOrStr.ReplaceAll(sql, []byte(" ")), []byte("for share"))
 }
 
 // sqlFiles walks dir for .sql files. A missing directory is an error, not an
@@ -58,6 +58,32 @@ func checkSqlcReadOnly(root string) ([]string, error) {
 		for _, m := range mutatingStmt.FindAll(scrubSQL(body), -1) {
 			out = append(out, fmt.Sprintf("%s: %s statement in the read query set",
 				rel(root, f), strings.ToUpper(strings.Join(strings.Fields(string(m)), " "))))
+		}
+	}
+	return out, nil
+}
+
+// A lock needs a write transaction, so a query that takes one stays in the write
+// set without mutating. Matched after scrubSQL, which rewrites `for update` to
+// `for share`.
+var lockingStmt = regexp.MustCompile(`(?i)\bfor\s+(?:key\s+)?share\b|\bpg_(?:try_)?advisory_(?:xact_)?(?:un)?lock(?:_shared|_all)?\s*\(`)
+
+func checkSqlcWriteMutatesOrLocks(root string) ([]string, error) {
+	files, err := sqlFiles(root, "schema/postgres/queries/write")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, f := range files {
+		body, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		for _, q := range splitQueries(body) {
+			if sql := scrubSQL(q.sql); !mutatingStmt.Match(sql) && !lockingStmt.Match(sql) {
+				out = append(out, fmt.Sprintf("%s: query %s neither mutates nor locks; move it to the read query set",
+					rel(root, f), q.name))
+			}
 		}
 	}
 	return out, nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -15,6 +16,9 @@ import (
 type Service struct {
 	cfg      Config
 	registry *Registry
+
+	connClient    *http.Client
+	connEndpoints connectionEndpoints
 }
 
 func NewService(cfg Config, registry *Registry) *Service {
@@ -22,6 +26,26 @@ func NewService(cfg Config, registry *Registry) *Service {
 		cfg:      cfg,
 		registry: registry,
 	}
+}
+
+func (s *Service) WithConnections(client *http.Client) *Service {
+	s.connClient = client
+	return s
+}
+
+func (s *Service) ExchangeConnectionCode(ctx context.Context, conn Connection, code AuthorizationCode) (*Identity, error) {
+	if s.connClient == nil {
+		return nil, ErrOAuthProviderDisabled
+	}
+	p := newOIDCProvider(conn.providerConfig(), s.connClient)
+	key := connectionKey{id: conn.ID, issuer: conn.IssuerURL, clientID: conn.ClientID}
+	p.discovered = s.connEndpoints.get(key)
+	cached := p.discovered != nil
+	ident, err := p.ExchangeCode(ctx, code)
+	if !cached && p.discovered != nil {
+		s.connEndpoints.put(key, p.discovered)
+	}
+	return s.handleIdentityResult(ctx, p.name, ident, err)
 }
 
 func (s *Service) ExchangeCode(ctx context.Context, provider ProviderName, code AuthorizationCode) (*Identity, error) {
@@ -48,20 +72,24 @@ func (s *Service) ExchangeCode(ctx context.Context, provider ProviderName, code 
 
 func (s *Service) handleIdentityResult(ctx context.Context, provider ProviderName, ident *Identity, err error) (*Identity, error) {
 	if err != nil {
+		// Library errors can carry a whole response body, and a connection's IdP is an
+		// org admin's, so only the start of the error is logged.
+		logged := fmt.Errorf("%.2048s", err.Error())
 		// Client-input outcomes pass through unchanged so the handler can map
 		// them precisely; the handler keeps the client-facing message vague.
 		// Logged at Warn because per request they are the caller's fault, but a
 		// sustained rate means a misregistered redirect URI or a missing
 		// email_verified claim mapping — both otherwise invisible.
-		if errors.Is(err, ErrInvalidCredential) || errors.Is(err, ErrUnverifiedEmail) {
-			slog.WarnContext(ctx, "oidc sign-in rejected", slog.String("provider", string(provider)), slogx.Error(err))
+		if errors.Is(err, ErrInvalidCredential) || errors.Is(err, ErrUnverifiedEmail) || errors.Is(err, ErrEmailNotOnConnection) {
+			slog.WarnContext(ctx, "oidc sign-in rejected", slog.String("provider", string(provider)), slogx.Error(logged))
 			return nil, err
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		// The caller gave up. Not errors.Is: an http.Client timeout also wraps DeadlineExceeded.
+		if ctx.Err() != nil {
 			return nil, err
 		}
-		slog.ErrorContext(ctx, "oauth identity verification failed", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
+		slog.ErrorContext(ctx, "oauth identity verification failed", slog.String("provider", string(provider)), slogx.Error(logged))
+		telemetry.RecordError(ctx, logged)
 		// Our own bug stays itself (the handler maps it to Internal); everything
 		// else collapses so provider internals never reach the client.
 		if errors.Is(err, ErrIdentityResolutionFailed) {

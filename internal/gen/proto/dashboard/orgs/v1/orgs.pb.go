@@ -1566,14 +1566,20 @@ type OrgDomain struct {
 	OrgCreationRestrictedElsewhere *bool `protobuf:"varint,8,opt,name=org_creation_restricted_elsewhere,json=orgCreationRestrictedElsewhere" json:"org_creation_restricted_elsewhere,omitempty"`
 	// Accounts on the domain may sign in only through SSO.
 	RequireSso *bool `protobuf:"varint,9,opt,name=require_sso,json=requireSso" json:"require_sso,omitempty"`
-	// Someone has signed in through SSO with an account on the domain since it was
-	// verified. Require SSO can't be turned on before that.
+	// Someone has signed in through SSO with an account on the domain since it was verified,
+	// and since an SSO connection last dropped it or changed issuer. Require SSO can't be
+	// turned on before that.
 	SsoSeen *bool `protobuf:"varint,10,opt,name=sso_seen,json=ssoSeen" json:"sso_seen,omitempty"`
 	// True when another org that verified this domain requires SSO for it.
 	// Set only by ListDomains, and only on a verified domain.
 	SsoRequiredElsewhere *bool `protobuf:"varint,11,opt,name=sso_required_elsewhere,json=ssoRequiredElsewhere" json:"sso_required_elsewhere,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// The org's SSO connection that signs the domain in; empty when none does.
+	SsoConnectionId *string `protobuf:"bytes,12,opt,name=sso_connection_id,json=ssoConnectionId" json:"sso_connection_id,omitempty"`
+	// True when another org's SSO connection signs the domain in.
+	// Set only by ListDomains, and only on a verified domain.
+	SsoConnectionElsewhere *bool `protobuf:"varint,13,opt,name=sso_connection_elsewhere,json=ssoConnectionElsewhere" json:"sso_connection_elsewhere,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *OrgDomain) Reset() {
@@ -1679,6 +1685,20 @@ func (x *OrgDomain) GetSsoSeen() bool {
 func (x *OrgDomain) GetSsoRequiredElsewhere() bool {
 	if x != nil && x.SsoRequiredElsewhere != nil {
 		return *x.SsoRequiredElsewhere
+	}
+	return false
+}
+
+func (x *OrgDomain) GetSsoConnectionId() string {
+	if x != nil && x.SsoConnectionId != nil {
+		return *x.SsoConnectionId
+	}
+	return ""
+}
+
+func (x *OrgDomain) GetSsoConnectionElsewhere() bool {
+	if x != nil && x.SsoConnectionElsewhere != nil {
+		return *x.SsoConnectionElsewhere
 	}
 	return false
 }
@@ -2323,6 +2343,451 @@ func (x *UpdateDomainResponse) GetDomain() *OrgDomain {
 	return nil
 }
 
+type SSOConnection struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	// The sign-in button's label.
+	Label         *string                `protobuf:"bytes,2,opt,name=label" json:"label,omitempty"`
+	IssuerUrl     *string                `protobuf:"bytes,3,opt,name=issuer_url,json=issuerUrl" json:"issuer_url,omitempty"`
+	ClientId      *string                `protobuf:"bytes,4,opt,name=client_id,json=clientId" json:"client_id,omitempty"`
+	Domains       []*SSOConnectionDomain `protobuf:"bytes,5,rep,name=domains" json:"domains,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSOConnection) Reset() {
+	*x = SSOConnection{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSOConnection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSOConnection) ProtoMessage() {}
+
+func (x *SSOConnection) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSOConnection.ProtoReflect.Descriptor instead.
+func (*SSOConnection) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *SSOConnection) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetLabel() string {
+	if x != nil && x.Label != nil {
+		return *x.Label
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetIssuerUrl() string {
+	if x != nil && x.IssuerUrl != nil {
+		return *x.IssuerUrl
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetClientId() string {
+	if x != nil && x.ClientId != nil {
+		return *x.ClientId
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetDomains() []*SSOConnectionDomain {
+	if x != nil {
+		return x.Domains
+	}
+	return nil
+}
+
+type SSOConnectionDomain struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Domain        *string                `protobuf:"bytes,2,opt,name=domain" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSOConnectionDomain) Reset() {
+	*x = SSOConnectionDomain{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSOConnectionDomain) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSOConnectionDomain) ProtoMessage() {}
+
+func (x *SSOConnectionDomain) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSOConnectionDomain.ProtoReflect.Descriptor instead.
+func (*SSOConnectionDomain) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *SSOConnectionDomain) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *SSOConnectionDomain) GetDomain() string {
+	if x != nil && x.Domain != nil {
+		return *x.Domain
+	}
+	return ""
+}
+
+type ListSSOConnectionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSSOConnectionsRequest) Reset() {
+	*x = ListSSOConnectionsRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSSOConnectionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSSOConnectionsRequest) ProtoMessage() {}
+
+func (x *ListSSOConnectionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSSOConnectionsRequest.ProtoReflect.Descriptor instead.
+func (*ListSSOConnectionsRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *ListSSOConnectionsRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+type ListSSOConnectionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connections   []*SSOConnection       `protobuf:"bytes,1,rep,name=connections" json:"connections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSSOConnectionsResponse) Reset() {
+	*x = ListSSOConnectionsResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSSOConnectionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSSOConnectionsResponse) ProtoMessage() {}
+
+func (x *ListSSOConnectionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSSOConnectionsResponse.ProtoReflect.Descriptor instead.
+func (*ListSSOConnectionsResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ListSSOConnectionsResponse) GetConnections() []*SSOConnection {
+	if x != nil {
+		return x.Connections
+	}
+	return nil
+}
+
+type SetSSOConnectionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	// Unset creates a connection.
+	ConnectionId *string `protobuf:"bytes,2,opt,name=connection_id,json=connectionId" json:"connection_id,omitempty"`
+	Label        *string `protobuf:"bytes,3,opt,name=label" json:"label,omitempty"`
+	IssuerUrl    *string `protobuf:"bytes,4,opt,name=issuer_url,json=issuerUrl" json:"issuer_url,omitempty"`
+	ClientId     *string `protobuf:"bytes,5,opt,name=client_id,json=clientId" json:"client_id,omitempty"`
+	// Empty keeps the stored secret, unless the issuer or client id changes or the server's key
+	// can't read it.
+	ClientSecret *string `protobuf:"bytes,6,opt,name=client_secret,json=clientSecret" json:"client_secret,omitempty"`
+	// The org's verified domains the connection signs in.
+	DomainIds     []string `protobuf:"bytes,7,rep,name=domain_ids,json=domainIds" json:"domain_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSSOConnectionRequest) Reset() {
+	*x = SetSSOConnectionRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSSOConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSSOConnectionRequest) ProtoMessage() {}
+
+func (x *SetSSOConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSSOConnectionRequest.ProtoReflect.Descriptor instead.
+func (*SetSSOConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *SetSSOConnectionRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetConnectionId() string {
+	if x != nil && x.ConnectionId != nil {
+		return *x.ConnectionId
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetLabel() string {
+	if x != nil && x.Label != nil {
+		return *x.Label
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetIssuerUrl() string {
+	if x != nil && x.IssuerUrl != nil {
+		return *x.IssuerUrl
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetClientId() string {
+	if x != nil && x.ClientId != nil {
+		return *x.ClientId
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetClientSecret() string {
+	if x != nil && x.ClientSecret != nil {
+		return *x.ClientSecret
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetDomainIds() []string {
+	if x != nil {
+		return x.DomainIds
+	}
+	return nil
+}
+
+type SetSSOConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *SSOConnection         `protobuf:"bytes,1,opt,name=connection" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSSOConnectionResponse) Reset() {
+	*x = SetSSOConnectionResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSSOConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSSOConnectionResponse) ProtoMessage() {}
+
+func (x *SetSSOConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSSOConnectionResponse.ProtoReflect.Descriptor instead.
+func (*SetSSOConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *SetSSOConnectionResponse) GetConnection() *SSOConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type DeleteSSOConnectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	ConnectionId  *string                `protobuf:"bytes,2,opt,name=connection_id,json=connectionId" json:"connection_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSSOConnectionRequest) Reset() {
+	*x = DeleteSSOConnectionRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSSOConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSSOConnectionRequest) ProtoMessage() {}
+
+func (x *DeleteSSOConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSSOConnectionRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSSOConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *DeleteSSOConnectionRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *DeleteSSOConnectionRequest) GetConnectionId() string {
+	if x != nil && x.ConnectionId != nil {
+		return *x.ConnectionId
+	}
+	return ""
+}
+
+type DeleteSSOConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSSOConnectionResponse) Reset() {
+	*x = DeleteSSOConnectionResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSSOConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSSOConnectionResponse) ProtoMessage() {}
+
+func (x *DeleteSSOConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSSOConnectionResponse.ProtoReflect.Descriptor instead.
+func (*DeleteSSOConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{48}
+}
+
 var File_dashboard_orgs_v1_orgs_proto protoreflect.FileDescriptor
 
 const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
@@ -2411,7 +2876,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x04role\"P\n" +
 	"\x18UpdateMemberRoleResponse\x124\n" +
-	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member\"\xfa\x03\n" +
+	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member\"\xe0\x04\n" +
 	"\tOrgDomain\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x127\n" +
@@ -2426,7 +2891,9 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"requireSso\x12\x19\n" +
 	"\bsso_seen\x18\n" +
 	" \x01(\bR\assoSeen\x124\n" +
-	"\x16sso_required_elsewhere\x18\v \x01(\bR\x14ssoRequiredElsewhere\"\x89\x01\n" +
+	"\x16sso_required_elsewhere\x18\v \x01(\bR\x14ssoRequiredElsewhere\x12*\n" +
+	"\x11sso_connection_id\x18\f \x01(\tR\x0fssoConnectionId\x128\n" +
+	"\x18sso_connection_elsewhere\x18\r \x01(\bR\x16ssoConnectionElsewhere\"\x89\x01\n" +
 	"\x0eDomainSettings\x12@\n" +
 	"\x0eauto_join_role\x18\x01 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\fautoJoinRole\x125\n" +
 	"\x17members_can_create_orgs\x18\x02 \x01(\bR\x14membersCanCreateOrgs\"3\n" +
@@ -2462,7 +2929,43 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\vrequire_sso\x18\x03 \x01(\bB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"requireSso\"L\n" +
 	"\x14UpdateDomainResponse\x124\n" +
-	"\x06domain\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgDomainR\x06domain*a\n" +
+	"\x06domain\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgDomainR\x06domain\"\xb3\x01\n" +
+	"\rSSOConnection\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1d\n" +
+	"\n" +
+	"issuer_url\x18\x03 \x01(\tR\tissuerUrl\x12\x1b\n" +
+	"\tclient_id\x18\x04 \x01(\tR\bclientId\x12@\n" +
+	"\adomains\x18\x05 \x03(\v2&.dashboard.orgs.v1.SSOConnectionDomainR\adomains\"=\n" +
+	"\x13SSOConnectionDomain\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\":\n" +
+	"\x19ListSSOConnectionsRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"`\n" +
+	"\x1aListSSOConnectionsResponse\x12B\n" +
+	"\vconnections\x18\x01 \x03(\v2 .dashboard.orgs.v1.SSOConnectionR\vconnections\"\xd3\x03\n" +
+	"\x17SetSSOConnectionRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12-\n" +
+	"\rconnection_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\fconnectionId\x12\"\n" +
+	"\x05label\x18\x03 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x10\x01\x18@R\x05label\x12-\n" +
+	"\n" +
+	"issuer_url\x18\x04 \x01(\tB\x0e\xbaH\v\xc8\x01\x01r\x06\x18\x80\x10\x88\x01\x01R\tissuerUrl\x12*\n" +
+	"\tclient_id\x18\x05 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\xff\x01R\bclientId\x12-\n" +
+	"\rclient_secret\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\fclientSecret\x12)\n" +
+	"\n" +
+	"domain_ids\x18\a \x03(\tB\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x10\n" +
+	"R\tdomainIds:\x90\x01\xbaH\x8c\x01\x1a\x89\x01\n" +
+	"\"set_sso_connection.secret_required\x12.client_secret is required for a new connection\x1a3has(this.connection_id) || this.client_secret != ''\"\\\n" +
+	"\x18SetSSOConnectionResponse\x12@\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2 .dashboard.orgs.v1.SSOConnectionR\n" +
+	"connection\"h\n" +
+	"\x1aDeleteSSOConnectionRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12+\n" +
+	"\rconnection_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\fconnectionId\"\x1d\n" +
+	"\x1bDeleteSSOConnectionResponse*a\n" +
 	"\aOrgRole\x12\x18\n" +
 	"\x14ORG_ROLE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eORG_ROLE_ADMIN\x10\x01\x12\x13\n" +
@@ -2479,7 +2982,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x18DomainVerificationMethod\x12*\n" +
 	"&DOMAIN_VERIFICATION_METHOD_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eDOMAIN_VERIFICATION_METHOD_DNS\x10\x01\x12'\n" +
-	"#DOMAIN_VERIFICATION_METHOD_OPERATOR\x10\x022\xcd\r\n" +
+	"#DOMAIN_VERIFICATION_METHOD_OPERATOR\x10\x022\xa9\x10\n" +
 	"\vOrgsService\x12I\n" +
 	"\x04List\x12\x1e.dashboard.orgs.v1.ListRequest\x1a\x1f.dashboard.orgs.v1.ListResponse\"\x00\x12F\n" +
 	"\x03Get\x12\x1d.dashboard.orgs.v1.GetRequest\x1a\x1e.dashboard.orgs.v1.GetResponse\"\x00\x12p\n" +
@@ -2498,7 +3001,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\tAddDomain\x12#.dashboard.orgs.v1.AddDomainRequest\x1a$.dashboard.orgs.v1.AddDomainResponse\"\x00\x12a\n" +
 	"\fVerifyDomain\x12&.dashboard.orgs.v1.VerifyDomainRequest\x1a'.dashboard.orgs.v1.VerifyDomainResponse\"\x00\x12a\n" +
 	"\fRemoveDomain\x12&.dashboard.orgs.v1.RemoveDomainRequest\x1a'.dashboard.orgs.v1.RemoveDomainResponse\"\x00\x12a\n" +
-	"\fUpdateDomain\x12&.dashboard.orgs.v1.UpdateDomainRequest\x1a'.dashboard.orgs.v1.UpdateDomainResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
+	"\fUpdateDomain\x12&.dashboard.orgs.v1.UpdateDomainRequest\x1a'.dashboard.orgs.v1.UpdateDomainResponse\"\x00\x12s\n" +
+	"\x12ListSSOConnections\x12,.dashboard.orgs.v1.ListSSOConnectionsRequest\x1a-.dashboard.orgs.v1.ListSSOConnectionsResponse\"\x00\x12m\n" +
+	"\x10SetSSOConnection\x12*.dashboard.orgs.v1.SetSSOConnectionRequest\x1a+.dashboard.orgs.v1.SetSSOConnectionResponse\"\x00\x12v\n" +
+	"\x13DeleteSSOConnection\x12-.dashboard.orgs.v1.DeleteSSOConnectionRequest\x1a..dashboard.orgs.v1.DeleteSSOConnectionResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_orgs_v1_orgs_proto_rawDescOnce sync.Once
@@ -2513,53 +3019,61 @@ func file_dashboard_orgs_v1_orgs_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_orgs_v1_orgs_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
-	(OrgRole)(0),                      // 0: dashboard.orgs.v1.OrgRole
-	(InvitationStatus)(0),             // 1: dashboard.orgs.v1.InvitationStatus
-	(DomainStatus)(0),                 // 2: dashboard.orgs.v1.DomainStatus
-	(DomainVerificationMethod)(0),     // 3: dashboard.orgs.v1.DomainVerificationMethod
-	(*Org)(nil),                       // 4: dashboard.orgs.v1.Org
-	(*OrgMember)(nil),                 // 5: dashboard.orgs.v1.OrgMember
-	(*OrgInvitation)(nil),             // 6: dashboard.orgs.v1.OrgInvitation
-	(*ListRequest)(nil),               // 7: dashboard.orgs.v1.ListRequest
-	(*ListResponse)(nil),              // 8: dashboard.orgs.v1.ListResponse
-	(*GetRequest)(nil),                // 9: dashboard.orgs.v1.GetRequest
-	(*GetResponse)(nil),               // 10: dashboard.orgs.v1.GetResponse
-	(*UpdateDisplayNameRequest)(nil),  // 11: dashboard.orgs.v1.UpdateDisplayNameRequest
-	(*UpdateDisplayNameResponse)(nil), // 12: dashboard.orgs.v1.UpdateDisplayNameResponse
-	(*ListMembersRequest)(nil),        // 13: dashboard.orgs.v1.ListMembersRequest
-	(*ListMembersResponse)(nil),       // 14: dashboard.orgs.v1.ListMembersResponse
-	(*RemoveMemberRequest)(nil),       // 15: dashboard.orgs.v1.RemoveMemberRequest
-	(*RemoveMemberResponse)(nil),      // 16: dashboard.orgs.v1.RemoveMemberResponse
-	(*InviteMemberRequest)(nil),       // 17: dashboard.orgs.v1.InviteMemberRequest
-	(*InviteMemberResponse)(nil),      // 18: dashboard.orgs.v1.InviteMemberResponse
-	(*ResendInviteRequest)(nil),       // 19: dashboard.orgs.v1.ResendInviteRequest
-	(*ResendInviteResponse)(nil),      // 20: dashboard.orgs.v1.ResendInviteResponse
-	(*RevokeInviteRequest)(nil),       // 21: dashboard.orgs.v1.RevokeInviteRequest
-	(*RevokeInviteResponse)(nil),      // 22: dashboard.orgs.v1.RevokeInviteResponse
-	(*ListInvitationsRequest)(nil),    // 23: dashboard.orgs.v1.ListInvitationsRequest
-	(*ListInvitationsResponse)(nil),   // 24: dashboard.orgs.v1.ListInvitationsResponse
-	(*CreateRequest)(nil),             // 25: dashboard.orgs.v1.CreateRequest
-	(*CreateResponse)(nil),            // 26: dashboard.orgs.v1.CreateResponse
-	(*LeaveRequest)(nil),              // 27: dashboard.orgs.v1.LeaveRequest
-	(*LeaveResponse)(nil),             // 28: dashboard.orgs.v1.LeaveResponse
-	(*UpdateMemberRoleRequest)(nil),   // 29: dashboard.orgs.v1.UpdateMemberRoleRequest
-	(*UpdateMemberRoleResponse)(nil),  // 30: dashboard.orgs.v1.UpdateMemberRoleResponse
-	(*OrgDomain)(nil),                 // 31: dashboard.orgs.v1.OrgDomain
-	(*DomainSettings)(nil),            // 32: dashboard.orgs.v1.DomainSettings
-	(*ListDomainsRequest)(nil),        // 33: dashboard.orgs.v1.ListDomainsRequest
-	(*ListDomainsResponse)(nil),       // 34: dashboard.orgs.v1.ListDomainsResponse
-	(*SetDomainSettingsRequest)(nil),  // 35: dashboard.orgs.v1.SetDomainSettingsRequest
-	(*SetDomainSettingsResponse)(nil), // 36: dashboard.orgs.v1.SetDomainSettingsResponse
-	(*AddDomainRequest)(nil),          // 37: dashboard.orgs.v1.AddDomainRequest
-	(*AddDomainResponse)(nil),         // 38: dashboard.orgs.v1.AddDomainResponse
-	(*VerifyDomainRequest)(nil),       // 39: dashboard.orgs.v1.VerifyDomainRequest
-	(*VerifyDomainResponse)(nil),      // 40: dashboard.orgs.v1.VerifyDomainResponse
-	(*RemoveDomainRequest)(nil),       // 41: dashboard.orgs.v1.RemoveDomainRequest
-	(*RemoveDomainResponse)(nil),      // 42: dashboard.orgs.v1.RemoveDomainResponse
-	(*UpdateDomainRequest)(nil),       // 43: dashboard.orgs.v1.UpdateDomainRequest
-	(*UpdateDomainResponse)(nil),      // 44: dashboard.orgs.v1.UpdateDomainResponse
+	(OrgRole)(0),                        // 0: dashboard.orgs.v1.OrgRole
+	(InvitationStatus)(0),               // 1: dashboard.orgs.v1.InvitationStatus
+	(DomainStatus)(0),                   // 2: dashboard.orgs.v1.DomainStatus
+	(DomainVerificationMethod)(0),       // 3: dashboard.orgs.v1.DomainVerificationMethod
+	(*Org)(nil),                         // 4: dashboard.orgs.v1.Org
+	(*OrgMember)(nil),                   // 5: dashboard.orgs.v1.OrgMember
+	(*OrgInvitation)(nil),               // 6: dashboard.orgs.v1.OrgInvitation
+	(*ListRequest)(nil),                 // 7: dashboard.orgs.v1.ListRequest
+	(*ListResponse)(nil),                // 8: dashboard.orgs.v1.ListResponse
+	(*GetRequest)(nil),                  // 9: dashboard.orgs.v1.GetRequest
+	(*GetResponse)(nil),                 // 10: dashboard.orgs.v1.GetResponse
+	(*UpdateDisplayNameRequest)(nil),    // 11: dashboard.orgs.v1.UpdateDisplayNameRequest
+	(*UpdateDisplayNameResponse)(nil),   // 12: dashboard.orgs.v1.UpdateDisplayNameResponse
+	(*ListMembersRequest)(nil),          // 13: dashboard.orgs.v1.ListMembersRequest
+	(*ListMembersResponse)(nil),         // 14: dashboard.orgs.v1.ListMembersResponse
+	(*RemoveMemberRequest)(nil),         // 15: dashboard.orgs.v1.RemoveMemberRequest
+	(*RemoveMemberResponse)(nil),        // 16: dashboard.orgs.v1.RemoveMemberResponse
+	(*InviteMemberRequest)(nil),         // 17: dashboard.orgs.v1.InviteMemberRequest
+	(*InviteMemberResponse)(nil),        // 18: dashboard.orgs.v1.InviteMemberResponse
+	(*ResendInviteRequest)(nil),         // 19: dashboard.orgs.v1.ResendInviteRequest
+	(*ResendInviteResponse)(nil),        // 20: dashboard.orgs.v1.ResendInviteResponse
+	(*RevokeInviteRequest)(nil),         // 21: dashboard.orgs.v1.RevokeInviteRequest
+	(*RevokeInviteResponse)(nil),        // 22: dashboard.orgs.v1.RevokeInviteResponse
+	(*ListInvitationsRequest)(nil),      // 23: dashboard.orgs.v1.ListInvitationsRequest
+	(*ListInvitationsResponse)(nil),     // 24: dashboard.orgs.v1.ListInvitationsResponse
+	(*CreateRequest)(nil),               // 25: dashboard.orgs.v1.CreateRequest
+	(*CreateResponse)(nil),              // 26: dashboard.orgs.v1.CreateResponse
+	(*LeaveRequest)(nil),                // 27: dashboard.orgs.v1.LeaveRequest
+	(*LeaveResponse)(nil),               // 28: dashboard.orgs.v1.LeaveResponse
+	(*UpdateMemberRoleRequest)(nil),     // 29: dashboard.orgs.v1.UpdateMemberRoleRequest
+	(*UpdateMemberRoleResponse)(nil),    // 30: dashboard.orgs.v1.UpdateMemberRoleResponse
+	(*OrgDomain)(nil),                   // 31: dashboard.orgs.v1.OrgDomain
+	(*DomainSettings)(nil),              // 32: dashboard.orgs.v1.DomainSettings
+	(*ListDomainsRequest)(nil),          // 33: dashboard.orgs.v1.ListDomainsRequest
+	(*ListDomainsResponse)(nil),         // 34: dashboard.orgs.v1.ListDomainsResponse
+	(*SetDomainSettingsRequest)(nil),    // 35: dashboard.orgs.v1.SetDomainSettingsRequest
+	(*SetDomainSettingsResponse)(nil),   // 36: dashboard.orgs.v1.SetDomainSettingsResponse
+	(*AddDomainRequest)(nil),            // 37: dashboard.orgs.v1.AddDomainRequest
+	(*AddDomainResponse)(nil),           // 38: dashboard.orgs.v1.AddDomainResponse
+	(*VerifyDomainRequest)(nil),         // 39: dashboard.orgs.v1.VerifyDomainRequest
+	(*VerifyDomainResponse)(nil),        // 40: dashboard.orgs.v1.VerifyDomainResponse
+	(*RemoveDomainRequest)(nil),         // 41: dashboard.orgs.v1.RemoveDomainRequest
+	(*RemoveDomainResponse)(nil),        // 42: dashboard.orgs.v1.RemoveDomainResponse
+	(*UpdateDomainRequest)(nil),         // 43: dashboard.orgs.v1.UpdateDomainRequest
+	(*UpdateDomainResponse)(nil),        // 44: dashboard.orgs.v1.UpdateDomainResponse
+	(*SSOConnection)(nil),               // 45: dashboard.orgs.v1.SSOConnection
+	(*SSOConnectionDomain)(nil),         // 46: dashboard.orgs.v1.SSOConnectionDomain
+	(*ListSSOConnectionsRequest)(nil),   // 47: dashboard.orgs.v1.ListSSOConnectionsRequest
+	(*ListSSOConnectionsResponse)(nil),  // 48: dashboard.orgs.v1.ListSSOConnectionsResponse
+	(*SetSSOConnectionRequest)(nil),     // 49: dashboard.orgs.v1.SetSSOConnectionRequest
+	(*SetSSOConnectionResponse)(nil),    // 50: dashboard.orgs.v1.SetSSOConnectionResponse
+	(*DeleteSSOConnectionRequest)(nil),  // 51: dashboard.orgs.v1.DeleteSSOConnectionRequest
+	(*DeleteSSOConnectionResponse)(nil), // 52: dashboard.orgs.v1.DeleteSSOConnectionResponse
 }
 var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	0,  // 0: dashboard.orgs.v1.Org.role:type_name -> dashboard.orgs.v1.OrgRole
@@ -2587,47 +3101,56 @@ var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	31, // 22: dashboard.orgs.v1.AddDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
 	31, // 23: dashboard.orgs.v1.VerifyDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
 	31, // 24: dashboard.orgs.v1.UpdateDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
-	7,  // 25: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
-	9,  // 26: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
-	11, // 27: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
-	13, // 28: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
-	15, // 29: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
-	17, // 30: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
-	19, // 31: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
-	21, // 32: dashboard.orgs.v1.OrgsService.RevokeInvite:input_type -> dashboard.orgs.v1.RevokeInviteRequest
-	23, // 33: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
-	25, // 34: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
-	27, // 35: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
-	29, // 36: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
-	33, // 37: dashboard.orgs.v1.OrgsService.ListDomains:input_type -> dashboard.orgs.v1.ListDomainsRequest
-	35, // 38: dashboard.orgs.v1.OrgsService.SetDomainSettings:input_type -> dashboard.orgs.v1.SetDomainSettingsRequest
-	37, // 39: dashboard.orgs.v1.OrgsService.AddDomain:input_type -> dashboard.orgs.v1.AddDomainRequest
-	39, // 40: dashboard.orgs.v1.OrgsService.VerifyDomain:input_type -> dashboard.orgs.v1.VerifyDomainRequest
-	41, // 41: dashboard.orgs.v1.OrgsService.RemoveDomain:input_type -> dashboard.orgs.v1.RemoveDomainRequest
-	43, // 42: dashboard.orgs.v1.OrgsService.UpdateDomain:input_type -> dashboard.orgs.v1.UpdateDomainRequest
-	8,  // 43: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
-	10, // 44: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
-	12, // 45: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
-	14, // 46: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
-	16, // 47: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
-	18, // 48: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
-	20, // 49: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
-	22, // 50: dashboard.orgs.v1.OrgsService.RevokeInvite:output_type -> dashboard.orgs.v1.RevokeInviteResponse
-	24, // 51: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
-	26, // 52: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
-	28, // 53: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
-	30, // 54: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
-	34, // 55: dashboard.orgs.v1.OrgsService.ListDomains:output_type -> dashboard.orgs.v1.ListDomainsResponse
-	36, // 56: dashboard.orgs.v1.OrgsService.SetDomainSettings:output_type -> dashboard.orgs.v1.SetDomainSettingsResponse
-	38, // 57: dashboard.orgs.v1.OrgsService.AddDomain:output_type -> dashboard.orgs.v1.AddDomainResponse
-	40, // 58: dashboard.orgs.v1.OrgsService.VerifyDomain:output_type -> dashboard.orgs.v1.VerifyDomainResponse
-	42, // 59: dashboard.orgs.v1.OrgsService.RemoveDomain:output_type -> dashboard.orgs.v1.RemoveDomainResponse
-	44, // 60: dashboard.orgs.v1.OrgsService.UpdateDomain:output_type -> dashboard.orgs.v1.UpdateDomainResponse
-	43, // [43:61] is the sub-list for method output_type
-	25, // [25:43] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	46, // 25: dashboard.orgs.v1.SSOConnection.domains:type_name -> dashboard.orgs.v1.SSOConnectionDomain
+	45, // 26: dashboard.orgs.v1.ListSSOConnectionsResponse.connections:type_name -> dashboard.orgs.v1.SSOConnection
+	45, // 27: dashboard.orgs.v1.SetSSOConnectionResponse.connection:type_name -> dashboard.orgs.v1.SSOConnection
+	7,  // 28: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
+	9,  // 29: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
+	11, // 30: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
+	13, // 31: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
+	15, // 32: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
+	17, // 33: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
+	19, // 34: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
+	21, // 35: dashboard.orgs.v1.OrgsService.RevokeInvite:input_type -> dashboard.orgs.v1.RevokeInviteRequest
+	23, // 36: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
+	25, // 37: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
+	27, // 38: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
+	29, // 39: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
+	33, // 40: dashboard.orgs.v1.OrgsService.ListDomains:input_type -> dashboard.orgs.v1.ListDomainsRequest
+	35, // 41: dashboard.orgs.v1.OrgsService.SetDomainSettings:input_type -> dashboard.orgs.v1.SetDomainSettingsRequest
+	37, // 42: dashboard.orgs.v1.OrgsService.AddDomain:input_type -> dashboard.orgs.v1.AddDomainRequest
+	39, // 43: dashboard.orgs.v1.OrgsService.VerifyDomain:input_type -> dashboard.orgs.v1.VerifyDomainRequest
+	41, // 44: dashboard.orgs.v1.OrgsService.RemoveDomain:input_type -> dashboard.orgs.v1.RemoveDomainRequest
+	43, // 45: dashboard.orgs.v1.OrgsService.UpdateDomain:input_type -> dashboard.orgs.v1.UpdateDomainRequest
+	47, // 46: dashboard.orgs.v1.OrgsService.ListSSOConnections:input_type -> dashboard.orgs.v1.ListSSOConnectionsRequest
+	49, // 47: dashboard.orgs.v1.OrgsService.SetSSOConnection:input_type -> dashboard.orgs.v1.SetSSOConnectionRequest
+	51, // 48: dashboard.orgs.v1.OrgsService.DeleteSSOConnection:input_type -> dashboard.orgs.v1.DeleteSSOConnectionRequest
+	8,  // 49: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
+	10, // 50: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
+	12, // 51: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
+	14, // 52: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
+	16, // 53: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
+	18, // 54: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
+	20, // 55: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
+	22, // 56: dashboard.orgs.v1.OrgsService.RevokeInvite:output_type -> dashboard.orgs.v1.RevokeInviteResponse
+	24, // 57: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
+	26, // 58: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
+	28, // 59: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
+	30, // 60: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
+	34, // 61: dashboard.orgs.v1.OrgsService.ListDomains:output_type -> dashboard.orgs.v1.ListDomainsResponse
+	36, // 62: dashboard.orgs.v1.OrgsService.SetDomainSettings:output_type -> dashboard.orgs.v1.SetDomainSettingsResponse
+	38, // 63: dashboard.orgs.v1.OrgsService.AddDomain:output_type -> dashboard.orgs.v1.AddDomainResponse
+	40, // 64: dashboard.orgs.v1.OrgsService.VerifyDomain:output_type -> dashboard.orgs.v1.VerifyDomainResponse
+	42, // 65: dashboard.orgs.v1.OrgsService.RemoveDomain:output_type -> dashboard.orgs.v1.RemoveDomainResponse
+	44, // 66: dashboard.orgs.v1.OrgsService.UpdateDomain:output_type -> dashboard.orgs.v1.UpdateDomainResponse
+	48, // 67: dashboard.orgs.v1.OrgsService.ListSSOConnections:output_type -> dashboard.orgs.v1.ListSSOConnectionsResponse
+	50, // 68: dashboard.orgs.v1.OrgsService.SetSSOConnection:output_type -> dashboard.orgs.v1.SetSSOConnectionResponse
+	52, // 69: dashboard.orgs.v1.OrgsService.DeleteSSOConnection:output_type -> dashboard.orgs.v1.DeleteSSOConnectionResponse
+	49, // [49:70] is the sub-list for method output_type
+	28, // [28:49] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_orgs_v1_orgs_proto_init() }
@@ -2641,7 +3164,7 @@ func file_dashboard_orgs_v1_orgs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_orgs_v1_orgs_proto_rawDesc), len(file_dashboard_orgs_v1_orgs_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   41,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

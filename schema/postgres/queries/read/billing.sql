@@ -80,3 +80,29 @@ order by received_at;
 select * from billing_subscriptions
 where org_id = @org_id
 order by create_time desc;
+
+-- name: GetBillingCheckoutSessionOrgID :one
+-- Attribution: turns a ref that came back on a delivery into the org pug chose
+-- when it started the checkout.
+select org_id from billing_checkout_sessions
+where provider = @provider and ref = @ref;
+
+-- name: GetBillingEntitlementProviderProductID :one
+-- The product an operator staged this org to buy. It is what lets a payment
+-- link's metadata.org_id attribute: buyer-settable on its own, it only counts
+-- when an operator has already pointed this org at this product.
+select provider_product_id from billing_entitlements where org_id = @org_id;
+
+-- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
+-- Attribution's last resort, once the ref missed and no staged product matched.
+-- Two rows is the answer that matters: one buyer purchasing for two orgs shares a
+-- provider customer, so the caller rejects the delivery rather than guessing.
+select distinct org_id from billing_subscriptions
+where provider = @provider and provider_customer_id = @provider_customer_id
+limit 2;
+
+-- name: GetBillingSubscriptionPlanSlug :one
+-- Read inside the apply lock so a delivery that ENDS a subscription keeps the
+-- stored slug: a product dropped from config must not refuse a cancellation.
+select plan_slug from billing_subscriptions
+where provider = @provider and provider_sub_id = @provider_sub_id;

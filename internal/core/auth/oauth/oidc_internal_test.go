@@ -363,7 +363,9 @@ func newTestProvider(t *testing.T, cfg ProviderConfig, verifierIssuer string) (*
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.ID = "company_sso"
+	if cfg.ID == "" {
+		cfg.ID = "company_sso"
+	}
 	cfg.ClientID = testOIDCClientID
 	p := newOIDCProvider(cfg, DefaultHTTPClient())
 	p.discovered = &endpoints{

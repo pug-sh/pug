@@ -1,7 +1,7 @@
 # SSO: Google Workspace and verified domains
 
-> **Status: phases 1 and 2 implemented, phase 3 is design.** Written
-> 2026-09-25; phases 1 and 2 built 2026-09-26.
+> **Status: phases 1, 2 and 3 implemented.** Written 2026-09-25; phases 1 and 2
+> built 2026-09-26; phase 3's backend built 2026-10-03, its frontend 2026-10-04.
 
 ## Summary
 
@@ -391,9 +391,9 @@ The blocked screen:
   Use a different email
 ```
 
-It shows one button per provider that can sign the domain in: the
-`PUG_CONFIG_FILE` providers whose `emailDomains` list it or, when none does,
-Google. The `SSO_REQUIRED` error carries that list, so the screen needs no
+It shows one button per provider that can sign the domain in: the domain's
+SSO connection (phase 3) and the `PUG_CONFIG_FILE` providers whose `emailDomains`
+list it or, when there are none, Google. The `SSO_REQUIRED` error carries that list, so the screen needs no
 second call. The Google button sends `hd=acme.com` to Google, and
 `login_hint=bob@acme.com` when the person typed their email, so Google's account
 picker shows only Acme accounts. This is only a UI hint. The server still checks
@@ -623,7 +623,7 @@ acts on other people:
 | Auto-join turned on, or raised from Viewer to Member | Every domain the org verified through DNS |
 | "Let members create their own orgs" turned off | Every domain the org verified through DNS |
 | Require SSO turned on (phase 2) | That domain |
-| An SSO connection gets a new domain or a new issuer (phase 3) | The connection's domains |
+| An SSO connection gets a new domain or a new issuer (phase 3) | The new domains, or every domain on a new issuer |
 
 If a record is gone, the change is refused with `DOMAIN_VERIFICATION_FAILED`,
 naming the domain. If DNS can't be reached, it is refused with
@@ -668,13 +668,14 @@ SSO connections                                   [+ Add connection]
   Domains         [x] acme.com   [ ] globex.com
 
   Add this redirect URL in your identity provider:
-    https://app.pug.sh/oauth/callback              [copy]
+    https://app.pug.sh/oauth/callback/<id>         [copy]
 
                                                   [ Save ]
 ```
 
-On save, Pug fetches the issuer's discovery document, so a wrong issuer fails
-right away. A new domain or a new issuer also re-checks the TXT records (see
+The redirect URL ends in the connection's id, so it shows after the first save
+(rule 8). On save, Pug fetches the issuer's discovery document, so a wrong issuer
+fails right away. A new domain or a new issuer also re-checks the TXT records (see
 "Re-checking the record"). The provider must send the `email` claim. It need
 not send `email_verified` for the domains the connection lists, which is what
 lets Entra ID work (see "Providers that don't send `email_verified`"). A domain
@@ -752,9 +753,10 @@ backstop.
      default, and company providers often use 8443.
    - No proxy. Behind a proxy, the hook would check the proxy's address, not the
      issuer's.
-   - A 1 MiB cap on every response. go-oidc reads discovery documents and
-     signing keys whole, so without a cap an admin could point a connection at
-     a server that streams data until the timeout and run Pug out of memory.
+   - A 1 MiB cap on every response body, and 64 KiB on its headers. go-oidc
+     reads discovery documents and signing keys whole, so without a cap an admin
+     could point a connection at a server that streams data until the timeout
+     and run Pug out of memory.
 
    A self-hosted operator whose provider sits on an internal network sets
    `PUG_SSO_ALLOW_PRIVATE_ISSUERS=true`. So does one whose server reaches the
@@ -769,6 +771,13 @@ backstop.
    prove its domains for any Google account with a matching email, including a
    personal account without `hd`. This matches `PUG_CONFIG_FILE`, where
    `emailDomains` is refused on Google's issuer.
+8. Each connection has its own callback, `/oauth/callback/<connection id>`. Pug
+   refuses a connection sign-in whose redirect URI has another path, and a
+   provider sign-in that uses a connection's path. The app refuses a callback
+   that lands on a path other than the one its sign-in started with. Otherwise a connection's identity provider could send someone on
+   to Google or another connection, and Pug would hand that provider's code and
+   PKCE verifier to the first connection's token endpoint (an OAuth mix-up
+   attack).
 
 ### Backend
 
@@ -776,16 +785,20 @@ backstop.
 |---|---|
 | Table `org_sso_connections` | `id`, `org_id`, `label`, `issuer_url`, `client_id`, `client_secret_ciphertext`, times. Unique on `(org_id, id)`, for the foreign key below. |
 | Column `org_domains.sso_connection_id` | The connection that signs the domain in, or null. See the SQL below. |
-| `DiscoverSignIn(email)` | New public RPC. Returns the providers that can sign in the email's domain, the same list the `SSO_REQUIRED` details carry: its connection (id, label, issuer, client id, scopes), a `PUG_CONFIG_FILE` provider that lists it, or Google. Also returns whether Require SSO is on. It reveals only facts about the domain, never whether an account exists. |
+| `DiscoverSignIn(email)` | New public RPC. Returns the providers that can sign in the email's domain, the same list the `SSO_REQUIRED` details carry: its connection (id, label, issuer, client id, scopes) and the `PUG_CONFIG_FILE` providers that list it or, when there are none, Google. Also returns whether Require SSO is on. It reveals only facts about the domain, never whether an account exists. |
 | `CompleteOIDCSignIn` | New optional `connection_id`. Exactly one of `provider_id` and `connection_id` is set. |
-| `coreoauth` | Reads the connection row and its domains at every sign-in, so an edit takes effect on every server at once. Only the discovery result is cached, keyed by connection id, issuer and client id. `ProvenDomain()` is the email's domain when the connection lists it. Any other email is refused, and so is a resolved account whose email is not on a listed domain (rule 1). An email on a listed domain needs no `email_verified`. |
-| Connection HTTP client | `net.Dialer{Control: ssrf.New(ssrf.WithAnyPort()).Safe}`, no proxy, and a 1 MiB cap on every response (rule 5). Passed to `newOIDCProvider` for connection providers only; go-oidc keeps it for later key fetches. Config providers keep `DefaultHTTPClient`. One new dependency: `code.dny.dev/ssrf`. |
-| `OrgsService` | `ListSSOConnections`, `SetSSOConnection` (creates or updates one, with its domains), `DeleteSSOConnection`. Admin-only, on `ResourceDomain`. |
-| Frontend | The connection cards with their domain picker, the email-first step, and keeping the discovered connection in session storage across the redirect, the way `src/auth/oidc.ts` keeps the provider id today. |
+| `AuthProviderConfig` | New `connection_id`. A connection has it and no `id`. `DiscoverSignIn` and the `SSO_REQUIRED` detail both list connections this way. |
+| `coreoauth` | Gets the connection row and its domains, read at every sign-in by `coreorgs.SSOConnectionForSignIn`, so an edit takes effect on every server at once. Only the discovery result is cached, keyed by connection id, issuer and client id. `ProvenDomain()` is the email's domain when the connection lists it. Any other email is refused, and so is a resolved account whose email is not on a listed domain (rule 1). An email on a listed domain needs no `email_verified`. |
+| Connection HTTP client | `net.Dialer{Control: ssrf.New(ssrf.WithAnyPort()).Safe}`, no proxy, and a 1 MiB cap on every response body, 64 KiB on headers (rule 5). Passed to `newOIDCProvider` for connection providers only; go-oidc keeps it for later key fetches. Config providers keep `DefaultHTTPClient`. One new dependency: `code.dny.dev/ssrf`. |
+| `OrgsService` | `ListSSOConnections`, `SetSSOConnection` (creates or updates one, with its domains), `DeleteSSOConnection`. Admin-only, on `ResourceDomain`. At most 10 connections per org. An empty `client_secret` on update keeps the stored one, unless the issuer or client id changes. |
+| `OrgDomain` | New `sso_connection_id` (this org's connection) and `sso_connection_elsewhere` (another org's connection signs it in; verified domains only). |
+| Config | `PUG_SSO_SECRET_KEY` and `PUG_SSO_ALLOW_PRIVATE_ISSUERS`. |
 
 Which connection signs a domain in is a column on `org_domains`. The foreign key
 keeps it inside the org. The partial unique index allows one connection per
 domain across all orgs.
+
+Built as migration `022`.
 
 ```sql
 alter table org_domains
@@ -794,19 +807,66 @@ alter table org_domains
     foreign key (org_id, sso_connection_id)
     references org_sso_connections (org_id, id)
     on delete set null (sso_connection_id),
-  add constraint org_domains_sso_connection_needs_verified
+  add constraint org_domains_sso_connection_id_check
     check (sso_connection_id is null or verified_at is not null);
 
 create unique index org_domains_sso_connection_domain_key
   on org_domains (domain) where sso_connection_id is not null;
 ```
 
+### What the build added
+
+- Deleting a connection also deletes its linked identities, like an issuer change.
+- A new issuer needs the client secret again. The stored one was issued for the
+  old issuer, and sending it to a new one would leak it. A new client id needs it
+  too, since a secret belongs to one client. A stored secret the server's key
+  can't read needs it again as well.
+- Picking a domain another of the org's connections signs in is refused, not moved.
+- `pug domains release` skips rule 4: it is the operator's way out.
+- A connection never reads `hd`, even if its issuer were Google's.
+- A sign-in is refused when its connection got a new issuer or domains, or was
+  deleted, while it was exchanging its code. Otherwise it could link the old
+  issuer's `sub` again right after the change unlinked it, or prove a domain the
+  change took off.
+- With `PUG_SSO_SECRET_KEY` empty, the server logs an error at startup when
+  connections exist, since none of them can sign anyone in.
+- Deleting a connection, taking a domain off it, removing the claim that carries
+  it, or giving the connection a new issuer clears `sso_seen_at` for the domain.
+  Turning Require SSO on then waits for a new SSO sign-in, so it can't be turned
+  on with nothing that works to sign the domain in.
+- Rule 4 is checked after that clear, in the same transaction. The clear locks
+  every org's claim of the domain, so another org turning Require SSO on at the
+  same moment is either seen by the check or refused for want of a new sign-in.
+
+| Reason | Code | When |
+|---|---|---|
+| `SSO_CONNECTIONS_DISABLED` | FailedPrecondition | `PUG_SSO_SECRET_KEY` is empty. |
+| `SSO_CONNECTION_NOT_FOUND` | NotFound | The connection id is not one of this org's. |
+| `SSO_CONNECTION_LIMIT_REACHED` | FailedPrecondition | More than 10 connections. |
+| `SSO_CONNECTION_ISSUER_INVALID` | InvalidArgument | Not an HTTPS issuer URL, Google's issuer (rule 7), or not exactly the issuer its discovery document names. |
+| `SSO_CONNECTION_SECRET_REQUIRED` | InvalidArgument | A new issuer or client id, or a stored secret the server's key can't read, without a client secret. |
+| `SSO_CONNECTION_DISCOVERY_FAILED` | FailedPrecondition | The discovery document could not be read on save, or the issuer is on a private address the server won't reach. |
+| `DOMAIN_SSO_CONNECTION_TAKEN` | FailedPrecondition | Another connection already signs in the domain (rule 1). |
+| `SSO_CONNECTION_IN_USE` | FailedPrecondition | Rule 4. The message names the domain. |
+| `SSO_CONNECTION_DOMAIN_MISMATCH` | PermissionDenied | Sign-in: the token's email, or the account it resolves to, is not on a listed domain. |
+
+A sign-in with an unknown connection, or with connections off, fails like a
+disabled provider (`OAUTH_PROVIDER_DISABLED`).
+
+### Frontend (`../app`)
+
+| File | Change |
+|---|---|
+| `src/pages/routegen/settings/sso/` | The SSO connections section, below the domains: add, edit and remove, all inline. The picker lists the org's verified domains, and says why one can't be picked: another of the org's connections, or another org's, signs it in. A saved connection shows its redirect URL. With `PUG_SSO_SECRET_KEY` empty, the section says connections are off and names the variable. |
+| `src/pages/sign-in.tsx` | Email-first. Continue asks `DiscoverSignIn` first. A connection, or Require SSO, puts the domain's providers where Continue was, with "Email me a link instead" unless Require SSO is on. Any other answer, such as Google for `gmail.com`, sends the email link as before, and so does a lookup that fails. |
+| `src/auth/oidc.ts`, `src/pages/oauth-callback.tsx`, `src/App.tsx` | A connection's sign-in returns to `/oauth/callback/<connection id>`. `GetAuthConfig` doesn't list connections, so the connection's settings wait in session storage for the callback. The callback refuses a code that lands on another path than the one its sign-in started with (rule 8). |
+| `src/auth/auth.atoms.ts` | `CompleteOIDCSignIn` gets `connection_id` or `provider_id`, never both. The fields have explicit presence, so an empty `provider_id` still counts as set and breaks "exactly one". A connection that refuses the account (`SSO_CONNECTION_DOMAIN_MISMATCH`) gets its own message. |
+
 ## Backend changes (phases 1 and 2)
 
 ### Schema
 
-One migration, built as `021`. Renumber it at merge time, because open branches
-already claim `021`.
+One migration, built as `021`.
 
 ```sql
 create table org_domains (
@@ -1031,9 +1091,9 @@ Nothing blocks a sign-in yet.
 `pug domains unenforce`, and the frontend handling.
 
 **Phase 3: company SSO connections.** The connection table, the domain column
-and the RPCs, `DiscoverSignIn`, email-first sign-in, `connection_id` on
-`CompleteOIDCSignIn`, and the connection HTTP client with its address guard and
-size cap.
+and the RPCs, the connections section of the tab, `DiscoverSignIn`, email-first
+sign-in, `connection_id` on `CompleteOIDCSignIn`, and the connection HTTP client
+with its address guard and size cap.
 
 All phases are additive, and old clients keep working. The new errors can only
 appear after an admin changes a setting from the new frontend. An old client
@@ -1140,8 +1200,9 @@ Integration tests use the repo's `testutil` setup; 11 to 14 are unit tests.
     also auto-join orgs that turn auto-join on later. Admins should still remove
     people who leave. While auto-join is on, that doesn't hold yet (note 9).
     Open question 2 closes most of this; SCIM would close it fully. The same holds when an operator takes a domain off a provider's
-    `emailDomains`: sessions that proved it keep proving it at each refresh until
-    they lapse, and Pug has no tool to revoke them.
+    `emailDomains`, or an org admin deletes a connection, changes its issuer or
+    takes a domain off it: sessions that proved the domain keep proving it at each
+    refresh until they lapse, and Pug has no tool to revoke them.
 11. **An existing gap, found while writing this.** Today a personal Google
     account links to a Pug account by email, for any address. For a non-Gmail
     address without `hd`, Google says it is not the authority: the address may

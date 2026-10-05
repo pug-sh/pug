@@ -29,7 +29,7 @@ type resolveResult struct {
 }
 
 // FinalizeFunc runs in the same transaction as identity resolution (org provisioning, verify, etc.).
-type FinalizeFunc func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error
+type FinalizeFunc func(ctx context.Context, r *dbread.Queries, w *dbwrite.Queries, customerID string, createdNew bool) error
 
 // WithIdentityTx finds-or-creates the customer for a verified identity and runs
 // finalize in the same transaction as identity resolution on the common path. On
@@ -86,7 +86,7 @@ func resolveAndFinalizeInTx(ctx context.Context, pool *pgxpool.Pool, provider Pr
 	if finalize != nil {
 		// finalize errors are recorded by finalize itself (coreorgs at its detect
 		// site; the oauth callback for FinalizeVerifiedCustomer), so return bare.
-		if err := finalize(ctx, w, result.CustomerID, result.CreatedNew); err != nil {
+		if err := finalize(ctx, r, w, result.CustomerID, result.CreatedNew); err != nil {
 			return resolveResult{}, err
 		}
 	}
@@ -112,8 +112,9 @@ func finalizeExistingCustomer(ctx context.Context, pool *pgxpool.Pool, customerI
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
-	if err := finalize(ctx, w, customerID, false); err != nil {
+	if err := finalize(ctx, r, w, customerID, false); err != nil {
 		return resolveResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -166,7 +167,7 @@ func linkByEmailAndFinalize(ctx context.Context, pool *pgxpool.Pool, provider Pr
 	}
 
 	if finalize != nil {
-		if err := finalize(ctx, w, customer.ID, false); err != nil {
+		if err := finalize(ctx, r, w, customer.ID, false); err != nil {
 			return resolveResult{}, err
 		}
 	}

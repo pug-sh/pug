@@ -7,6 +7,7 @@ import (
 
 	orgs "github.com/pug-sh/pug/internal/core/orgs"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -47,7 +48,7 @@ func TestApplyInviteAcceptanceInTx(t *testing.T) {
 	if orgID != org.ID {
 		t.Fatalf("joined org = %q, want %q", orgID, org.ID)
 	}
-	role, err := write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{OrgID: org.ID, CustomerID: invitee.ID})
+	role, err := dbread.New(db.PgW).GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{OrgID: org.ID, CustomerID: invitee.ID})
 	if err != nil || role != orgs.RoleMember.String() {
 		t.Fatalf("member role = %q err=%v, want MEMBER", role, err)
 	}
