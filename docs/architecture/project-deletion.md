@@ -1,6 +1,6 @@
 # Project deletion
 
-> **Status: phases 1 and 2a implemented; 2b to 4 not yet.** Written 2026-10-05 for review.
+> **Status: phases 1, 2a and 2b implemented; 2c to 4 not yet.** Written 2026-10-05 for review.
 
 ## Summary
 
@@ -486,10 +486,11 @@ Tests:
 3. **Late write.** A row inserted mid-delete gets a second round. The deletion
    then finishes, with an error recorded.
 4. **Watch.** A row inserted after `done` reopens the deletion.
-5. **Usage.** Frozen days survive the last step. The meter's next pass neither
-   updates nor drops them. The org's total is unchanged. When the deleted
-   project was the only one with events, the next pass refreshes every org as
-   idle. A reopened deletion does not count again.
+5. **Usage.** The pass counts the project's days once, before any delete. The
+   frozen days survive the last step and sum into the org's total. A reopened
+   deletion does not count again. Phase 1's tests cover the meter's side.
+6. **Stuck.** A deletion not `done` a day after its last round started records
+   an error.
 
 ### Phase 2c: the pass
 

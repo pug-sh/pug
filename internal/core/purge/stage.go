@@ -1,4 +1,3 @@
-// Package purge erases what a deleted project stored.
 package purge
 
 import (
@@ -8,10 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	chdb "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
-	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -56,15 +52,6 @@ type Table struct {
 	// The running delete's last failure. ClickHouse retries it on its own.
 	FailReason string
 	Rebuilt    bool
-}
-
-type Service struct {
-	ch   *chdb.Conn
-	read *dbread.Queries
-}
-
-func NewService(pgW *pgxpool.Pool, ch *chdb.Conn) *Service {
-	return &Service{ch: ch, read: dbread.New(pgW)}
 }
 
 // Check reports, per table, whether rows remain under f and whether a delete for
