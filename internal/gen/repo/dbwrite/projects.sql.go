@@ -14,7 +14,7 @@ import (
 const createProject = `-- name: CreateProject :one
 insert into projects (display_name, id, org_id, reporting_timezone)
 values ($1, $2, $3, $4)
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_time
 `
 
 type CreateProjectParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionTime,
 	)
 	return i, err
 }
@@ -56,7 +57,7 @@ with check_admin as (
 insert into projects (display_name, id, org_id, reporting_timezone)
 select $1, $2, $3, $4
 where exists (select 1 from check_admin)
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_time
 `
 
 type CreateProjectAsAdminParams struct {
@@ -87,23 +88,90 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionTime,
 	)
 	return i, err
 }
 
-const deleteProject = `-- name: DeleteProject :one
-delete from projects
-where org_id = $1 and id = $2
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+const createProjectDeletion = `-- name: CreateProjectDeletion :exec
+insert into project_deletions (display_name, org_id, project_id, requested_by, status)
+values ($1, $2, $3, $4, 'pending')
 `
 
-type DeleteProjectParams struct {
+type CreateProjectDeletionParams struct {
+	DisplayName string
+	OrgID       pgtype.Text
+	ProjectID   string
+	RequestedBy string
+}
+
+func (q *Queries) CreateProjectDeletion(ctx context.Context, arg CreateProjectDeletionParams) error {
+	_, err := q.db.Exec(ctx, createProjectDeletion,
+		arg.DisplayName,
+		arg.OrgID,
+		arg.ProjectID,
+		arg.RequestedBy,
+	)
+	return err
+}
+
+const deleteApiKeysByProjectID = `-- name: DeleteApiKeysByProjectID :many
+delete from api_keys where project_id = $1 returning token
+`
+
+func (q *Queries) DeleteApiKeysByProjectID(ctx context.Context, projectID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, deleteApiKeysByProjectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var token string
+		if err := rows.Scan(&token); err != nil {
+			return nil, err
+		}
+		items = append(items, token)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteCampaignsByProjectID = `-- name: DeleteCampaignsByProjectID :exec
+delete from campaigns where project_id = $1
+`
+
+func (q *Queries) DeleteCampaignsByProjectID(ctx context.Context, projectID string) error {
+	_, err := q.db.Exec(ctx, deleteCampaignsByProjectID, projectID)
+	return err
+}
+
+const deleteDashboardSharesByProjectID = `-- name: DeleteDashboardSharesByProjectID :exec
+delete from dashboard_shares where project_id = $1
+`
+
+func (q *Queries) DeleteDashboardSharesByProjectID(ctx context.Context, projectID string) error {
+	_, err := q.db.Exec(ctx, deleteDashboardSharesByProjectID, projectID)
+	return err
+}
+
+const getProjectByIDForUpdate = `-- name: GetProjectByIDForUpdate :one
+select create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_time from projects
+where org_id = $1 and id = $2 and deletion_time is null
+for update
+`
+
+type GetProjectByIDForUpdateParams struct {
 	OrgID string
 	ID    string
 }
 
-func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (Project, error) {
-	row := q.db.QueryRow(ctx, deleteProject, arg.OrgID, arg.ID)
+// The delete request's lock. FOR UPDATE, unlike the hide's own row lock, also
+// holds off inserts that reference the project until the request commits.
+func (q *Queries) GetProjectByIDForUpdate(ctx context.Context, arg GetProjectByIDForUpdateParams) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByIDForUpdate, arg.OrgID, arg.ID)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
@@ -113,15 +181,27 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionTime,
 	)
 	return i, err
+}
+
+const hideProject = `-- name: HideProject :exec
+update projects
+set deletion_time = now(), fcm_service_json = null
+where id = $1
+`
+
+func (q *Queries) HideProject(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, hideProject, id)
+	return err
 }
 
 const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
 update projects
 set fcm_service_json = $1
-where org_id = $2 and id = $3
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+where org_id = $2 and id = $3 and deletion_time is null
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_time
 `
 
 type UpdateFCMServiceJSONParams struct {
@@ -141,6 +221,7 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionTime,
 	)
 	return i, err
 }
@@ -149,8 +230,8 @@ const updateProjectMeta = `-- name: UpdateProjectMeta :one
 update projects
 set display_name       = coalesce($1, display_name),
     reporting_timezone = coalesce($2, reporting_timezone)
-where org_id = $3 and id = $4
-returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time
+where org_id = $3 and id = $4 and deletion_time is null
+returning create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_time
 `
 
 type UpdateProjectMetaParams struct {
@@ -179,6 +260,7 @@ func (q *Queries) UpdateProjectMeta(ctx context.Context, arg UpdateProjectMetaPa
 		&i.OrgID,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
+		&i.DeletionTime,
 	)
 	return i, err
 }

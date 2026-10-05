@@ -285,6 +285,21 @@ type Project struct {
 	OrgID             string
 	ReportingTimezone string
 	UpdateTime        pgtype.Timestamptz
+	DeletionTime      pgtype.Timestamptz
+}
+
+type ProjectDeletion struct {
+	DisplayName    string
+	DoneAt         pgtype.Timestamptz
+	Error          string
+	OrgID          pgtype.Text
+	ProjectID      string
+	RequestedAt    pgtype.Timestamptz
+	RequestedBy    string
+	RoundStartedAt pgtype.Timestamptz
+	Rounds         int32
+	Status         string
+	UpdateTime     pgtype.Timestamptz
 }
 
 type RefreshToken struct {

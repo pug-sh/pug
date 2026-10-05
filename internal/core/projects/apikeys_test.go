@@ -228,8 +228,8 @@ func TestDeleteStarterPublicKeyRevokesIt(t *testing.T) {
 	}
 }
 
-// Deleting a project cascades its keys away, so their cache entries — gathered
-// before the row goes — must go too, or a deleted project keeps authenticating.
+// Deleting a project deletes its keys, so their cache entries must go too, or a
+// deleted project keeps authenticating.
 func TestDeleteProjectInvalidatesItsKeys(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -245,7 +245,7 @@ func TestDeleteProjectInvalidatesItsKeys(t *testing.T) {
 		t.Fatalf("resolve before delete: %v", err)
 	}
 
-	if err := svc.DeleteProject(ctx, dbwrite.DeleteProjectParams{OrgID: "org-keys-cascade", ID: projectID}); err != nil {
+	if err := svc.DeleteProject(ctx, "org-keys-cascade", projectID, "customer test"); err != nil {
 		t.Fatalf("DeleteProject: %v", err)
 	}
 

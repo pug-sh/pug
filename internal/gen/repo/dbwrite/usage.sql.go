@@ -14,6 +14,7 @@ import (
 const deleteUnmeteredUsageDaily = `-- name: DeleteUnmeteredUsageDaily :execrows
 delete from usage_daily d
 where d.day >= $1 and d.day < $2
+  and d.project_id in (select id from projects where deletion_time is null)
   and (d.project_id::text, d.day) not in (
     select p.project_id, k.day
     from unnest($3::text[]) with ordinality as p(project_id, n)
@@ -38,6 +39,9 @@ type DeleteUnmeteredUsageDailyParams struct {
 // of seconds and gigabytes of temp spill once a full recompute widens the window
 // to a month. The arrays never contain NULL, so `not in` is exact here, and an
 // empty one still means "delete the whole window" exactly as before.
+//
+// Live projects only: a deleted project's days are the org's record, kept after
+// its events are erased.
 func (q *Queries) DeleteUnmeteredUsageDaily(ctx context.Context, arg DeleteUnmeteredUsageDailyParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteUnmeteredUsageDaily,
 		arg.FromDay,

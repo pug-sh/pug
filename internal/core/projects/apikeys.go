@@ -88,9 +88,8 @@ func (s *Service) DeleteApiKey(ctx context.Context, projectID, id string) error 
 //
 // The error is returned rather than folded into a nil slice: an empty list is a
 // legitimate state (a project whose every key has been revoked), so no caller can
-// tell a failed listing from "no keys" by the slice alone. Each decides what a
-// failure costs — DeleteProject cannot proceed without these, invalidateProject
-// can. Logged + recorded here, at the layer that detects it.
+// tell a failed listing from "no keys" by the slice alone. Logged + recorded here,
+// at the layer that detects it.
 func (s *Service) apiKeyTokens(ctx context.Context, projectID string) ([]string, error) {
 	tokens, err := s.read.GetApiKeyTokensByProjectID(ctx, projectID)
 	if err != nil {

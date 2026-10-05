@@ -20,7 +20,7 @@ var (
 const upsertUsageDaily = `-- name: UpsertUsageDaily :batchexec
 insert into usage_daily (day, event_count, org_id, project_id)
 select $1, $2, p.org_id, $3
-from projects p where p.id = $3
+from projects p where p.id = $3 and p.deletion_time is null
 on conflict (project_id, day) do update
 set event_count = excluded.event_count,
     org_id = excluded.org_id,
@@ -40,9 +40,8 @@ type UpsertUsageDailyParams struct {
 	ProjectID  string
 }
 
-// The org comes from the project row, so a cell whose project is gone from
-// Postgres inserts nothing. That is routine, not a race: deleting a project does
-// not delete its ClickHouse events, so the meter re-reads and re-drops them.
+// The org comes from a live project row, so a cell whose project is being
+// deleted or gone writes nothing, and its stored days stay as they were.
 // Gated on a changed count so a finished day inside the rescan window is not
 // rewritten every tick.
 func (q *Queries) UpsertUsageDaily(ctx context.Context, arg []UpsertUsageDailyParams) *UpsertUsageDailyBatchResults {

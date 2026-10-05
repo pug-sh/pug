@@ -50,14 +50,27 @@ func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID s
 	// assertions assume — an anchor derives from create_time, so an org created
 	// "now" would shift every expected bound with the suite's run date.
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
+	return org.ID, seedProjectInOrg(t, pg, org.ID)
+}
+
+func seedProjectInOrg(t *testing.T, pg *testutil.TestPostgres, orgID string) string {
+	t.Helper()
 	id := xid.New().String()
-	project, err := w.CreateProject(t.Context(), dbwrite.CreateProjectParams{
-		ID: id, OrgID: org.ID, DisplayName: "project-" + id,
+	project, err := dbwrite.New(pg.PgW).CreateProject(t.Context(), dbwrite.CreateProjectParams{
+		ID: id, OrgID: orgID, DisplayName: "project-" + id,
 	})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	return org.ID, project.ID
+	return project.ID
+}
+
+// hideProject marks a project deleted, as the delete request does.
+func hideProject(t *testing.T, pg *testutil.TestPostgres, projectID string) {
+	t.Helper()
+	if err := dbwrite.New(pg.PgW).HideProject(t.Context(), projectID); err != nil {
+		t.Fatalf("hide project: %v", err)
+	}
 }
 
 func countUsageDaily(t *testing.T, pg *testutil.TestPostgres) int {
@@ -633,6 +646,173 @@ func TestIdleEmptyReadStillRefreshesTheOrgPeriod(t *testing.T) {
 	}
 	if got.EventCount != 0 {
 		t.Errorf("period event_count = %d, want 0", got.EventCount)
+	}
+}
+
+// A deleted project's days are its org's usage. The meter neither rewrites nor
+// reconciles them away, whether the project is hidden or its row is already gone.
+func TestMeterFreezesDeletedProjectsDays(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	day1 := time.Date(2026, 6, 18, 0, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, 6, 19, 0, 0, 0, 0, time.UTC)
+
+	orgID, live := seedOrgProject(t, pg)
+	hidden := seedProjectInOrg(t, pg, orgID)
+	gone := seedProjectInOrg(t, pg, orgID)
+	if err := j.service.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: day1, EventCount: 5, ProjectID: hidden},
+		{Day: day2, EventCount: 3, ProjectID: hidden},
+		{Day: day1, EventCount: 7, ProjectID: gone},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+	hideProject(t, pg, hidden)
+	if _, err := pg.PgW.Exec(ctx, "delete from projects where id = $1", gone); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+
+	// The hidden project's events disagree with its day1 cell and miss day2. The
+	// live project's event checks live cells still meter.
+	for _, e := range []struct {
+		project string
+		at      time.Time
+	}{
+		{live, day2.Add(time.Hour)},
+		{hidden, day1.Add(time.Hour)},
+		{hidden, day1.Add(2 * time.Hour)},
+	} {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), e.project, "user-1", "$pageview",
+			uuid.NewString(), nil, nil, e.at)
+	}
+
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter: %v", err)
+	}
+
+	for _, c := range []struct {
+		project string
+		day     time.Time
+		want    int64
+	}{
+		{hidden, day1, 5},
+		{hidden, day2, 3},
+		{gone, day1, 7},
+		{live, day2, 1},
+	} {
+		if got, ok := usageDayCount(t, pg, c.project, c.day); !ok || got != c.want {
+			t.Errorf("cell (%s, %s) = (%d, %t), want (%d, true)", c.project, c.day.Format(time.DateOnly), got, ok, c.want)
+		}
+	}
+	usage, err := j.service.GetPeriodUsage(ctx, orgID, mustPeriodStart(now))
+	if err != nil {
+		t.Fatalf("GetPeriodUsage: %v", err)
+	}
+	if usage.EventCount != 16 {
+		t.Errorf("period event_count = %d, want 16: the org lost a deleted project's usage", usage.EventCount)
+	}
+}
+
+// A deleted project's stored days outlive its events, so they are no evidence of
+// a bad read. With only those stored, an empty read is an idle window.
+func TestEmptyReadOverADeletedProjectsDaysIsIdle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	orgID, projectID := seedOrgProject(t, pg)
+	if err := j.service.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: time.Date(2026, 6, 19, 0, 0, 0, 0, time.UTC), EventCount: 4, ProjectID: projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+	hideProject(t, pg, projectID)
+
+	before, _ := unrefreshedCount(t, reasonUnverifiedRead)
+
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter: %v", err)
+	}
+
+	after, _ := unrefreshedCount(t, reasonUnverifiedRead)
+	if got := after - before; got != 0 {
+		t.Errorf("usage.unrefreshed_total{reason=%s} rose by %d, want 0", reasonUnverifiedRead, got)
+	}
+	if j.unrefreshed {
+		t.Error("j.unrefreshed = true; the pass refreshed no org")
+	}
+	got, err := j.service.GetPeriodUsage(ctx, orgID, mustPeriodStart(now))
+	if err != nil {
+		t.Fatalf("GetPeriodUsage: %v", err)
+	}
+	if !got.Counted || got.EventCount != 4 {
+		t.Errorf("period = (counted %t, %d), want (true, 4)", got.Counted, got.EventCount)
+	}
+}
+
+// A deleted project still counts as known. With its events the only ones in the
+// window, treating it as unknown would freeze every org's stamp.
+func TestDeletedProjectStillCountsAsKnown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	ctx := t.Context()
+
+	j := newJob(t, pg)
+	j.service = j.service.WithClickHouse(ch.Conn)
+
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	day := time.Date(2026, 6, 19, 0, 0, 0, 0, time.UTC)
+	orgID, projectID := seedOrgProject(t, pg)
+	if err := j.service.RecordDailyUsage(ctx, []coreusage.DailyUsage{
+		{Day: day, EventCount: 4, ProjectID: projectID},
+	}); err != nil {
+		t.Fatalf("RecordDailyUsage: %v", err)
+	}
+	hideProject(t, pg, projectID)
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "user-1", "$pageview",
+		uuid.NewString(), nil, nil, day.Add(time.Hour))
+
+	before, _ := unrefreshedCount(t, reasonUnknownProjects)
+
+	if err := j.meter(ctx, now); err != nil {
+		t.Fatalf("meter: %v", err)
+	}
+
+	after, _ := unrefreshedCount(t, reasonUnknownProjects)
+	if got := after - before; got != 0 {
+		t.Errorf("usage.unrefreshed_total{reason=%s} rose by %d, want 0", reasonUnknownProjects, got)
+	}
+	if j.unrefreshed {
+		t.Error("j.unrefreshed = true; the pass refreshed no org")
+	}
+	got, err := j.service.GetPeriodUsage(ctx, orgID, mustPeriodStart(now))
+	if err != nil {
+		t.Fatalf("GetPeriodUsage: %v", err)
+	}
+	if !got.Counted || got.EventCount != 4 {
+		t.Errorf("period = (counted %t, %d), want (true, 4)", got.Counted, got.EventCount)
 	}
 }
 

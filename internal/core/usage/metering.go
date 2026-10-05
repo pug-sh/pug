@@ -92,7 +92,7 @@ func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyU
 const usageBatchChunk = 1000
 
 // RecordDailyUsage upserts metered cells in pipelined batches. A cell whose
-// project is gone from Postgres writes nothing; see UpsertUsageDaily.
+// project is not live writes nothing; see UpsertUsageDaily.
 func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) error {
 	var firstErr error
 	failedChunkStart := -1
@@ -149,9 +149,9 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 	return nil
 }
 
-// CountStoredDays reports how many day cells are stored over [from, to), across
-// every org. The meter uses it to tell a genuinely idle window apart from a
-// ClickHouse read that came back empty when it should not have.
+// CountStoredDays reports how many live projects' day cells are stored over
+// [from, to), across every org. The meter uses it to tell a genuinely idle window
+// apart from a ClickHouse read that came back empty when it should not have.
 func (s *Service) CountStoredDays(ctx context.Context, from, to time.Time) (int64, error) {
 	n, err := s.read.CountUsageDailyInRange(ctx, dbread.CountUsageDailyInRangeParams{
 		FromDay: postgres.NewDate(FloorDayUTC(from)),
@@ -198,13 +198,13 @@ func ProjectIDs(usage []DailyUsage) []string {
 	return out
 }
 
-// DeleteUnmeteredDays drops cells in [from, to) that the pass did not return.
-// Their events are gone (GDPR erasure, a dropped partition), and an upsert-only
-// pass would leave the stale count standing forever.
+// DeleteUnmeteredDays drops live projects' cells in [from, to) that the pass did
+// not return. Their events are gone (GDPR erasure, a dropped partition), and an
+// upsert-only pass would leave the stale count standing forever.
 //
 // An empty usage deletes nothing rather than everything: with no cells to keep,
-// every stored row in the window is "unmetered" and the statement would wipe it.
-// An empty read is a bad read, never a reconcile.
+// every live project's row in the window is "unmetered" and the statement would
+// wipe it. An empty read is a bad read, never a reconcile.
 func (s *Service) DeleteUnmeteredDays(ctx context.Context, usage []DailyUsage, from, to time.Time) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err

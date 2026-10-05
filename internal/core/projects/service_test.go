@@ -210,11 +210,7 @@ func TestProjectsService(t *testing.T) {
 			t.Fatalf("CreateProject (to delete): %v", err)
 		}
 
-		err = svc.DeleteProject(ctx, dbwrite.DeleteProjectParams{
-			ID:    proj.ID,
-			OrgID: org.ID,
-		})
-		if err != nil {
+		if err := svc.DeleteProject(ctx, org.ID, proj.ID, "customer "+customer.ID); err != nil {
 			t.Fatalf("DeleteProject: %v", err)
 		}
 
