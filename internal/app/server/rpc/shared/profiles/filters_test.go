@@ -6,7 +6,7 @@ import (
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
-func TestProfileAutoPropertySummaryExprs_CoalescesNullableColumns(t *testing.T) {
+func TestProfileAutoPropertySummaryExpr_CoalescesNullableColumns(t *testing.T) {
 	tests := map[string]string{
 		"$browser":        "coalesce(activity_summary.latest_browser, '')",
 		"$browserVersion": "coalesce(activity_summary.latest_browser_version, '')",
@@ -19,15 +19,12 @@ func TestProfileAutoPropertySummaryExprs_CoalescesNullableColumns(t *testing.T) 
 	}
 
 	for property, want := range tests {
-		got, numeric, err := profileAutoPropertySummaryExprs(property)
+		got, err := profileAutoPropertySummaryExpr(property)
 		if err != nil {
 			t.Fatalf("%s: unexpected error: %v", property, err)
 		}
 		if got != want {
 			t.Fatalf("%s: expr = %q, want %q", property, got, want)
-		}
-		if numeric != "" {
-			t.Fatalf("%s: numeric expr = %q, want empty", property, numeric)
 		}
 	}
 }

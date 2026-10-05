@@ -48,7 +48,7 @@ func resolveOtelMode() string {
 	return "stdout"
 }
 
-func doSetupWithoutExport(ctx context.Context) (func(context.Context) error, error) {
+func doSetupWithoutExport(ctx context.Context) func(context.Context) error {
 	otel.SetTextMapPropagator(newPropagator())
 	otel.SetTracerProvider(tracenoop.NewTracerProvider())
 	otel.SetMeterProvider(metricnoop.NewMeterProvider())
@@ -57,7 +57,7 @@ func doSetupWithoutExport(ctx context.Context) (func(context.Context) error, err
 	installStdoutLogHandler()
 	slog.InfoContext(ctx, "no OTLP endpoint configured; application logs on stdout (OTLP export off)")
 
-	return func(context.Context) error { return nil }, nil
+	return func(context.Context) error { return nil }
 }
 
 func installStdoutLogHandler() {

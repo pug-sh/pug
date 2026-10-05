@@ -58,35 +58,35 @@ func buildSingleProfileFilterCondition(f *commonv1.PropertyFilter) (chq.Conditio
 	case commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED, commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		return chq.ProfilePropertyCondition(f)
 	case commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
-		stringExpr, numericExpr, err := profileAutoPropertySummaryExprs(f.GetProperty())
+		stringExpr, err := profileAutoPropertySummaryExpr(f.GetProperty())
 		if err != nil {
 			return chq.Condition{}, err
 		}
-		return chq.AutoPropertyConditionForColumns(f, stringExpr, numericExpr)
+		return chq.AutoPropertyConditionForColumns(f, stringExpr, "")
 	default:
 		return chq.Condition{}, fmt.Errorf("unsupported filter source: %v", f.GetSource())
 	}
 }
 
-func profileAutoPropertySummaryExprs(property string) (string, string, error) {
+func profileAutoPropertySummaryExpr(property string) (string, error) {
 	switch property {
 	case "$browser":
-		return "coalesce(activity_summary.latest_browser, '')", "", nil
+		return "coalesce(activity_summary.latest_browser, '')", nil
 	case "$browserVersion":
-		return "coalesce(activity_summary.latest_browser_version, '')", "", nil
+		return "coalesce(activity_summary.latest_browser_version, '')", nil
 	case "$os":
-		return "coalesce(activity_summary.latest_os, '')", "", nil
+		return "coalesce(activity_summary.latest_os, '')", nil
 	case "$osVersion":
-		return "coalesce(activity_summary.latest_os_version, '')", "", nil
+		return "coalesce(activity_summary.latest_os_version, '')", nil
 	case "$device":
-		return "coalesce(activity_summary.latest_device, '')", "", nil
+		return "coalesce(activity_summary.latest_device, '')", nil
 	case "$country":
-		return "coalesce(activity_summary.latest_country, '')", "", nil
+		return "coalesce(activity_summary.latest_country, '')", nil
 	case "$region":
-		return "coalesce(activity_summary.latest_region, '')", "", nil
+		return "coalesce(activity_summary.latest_region, '')", nil
 	case "$city":
-		return "coalesce(activity_summary.latest_city, '')", "", nil
+		return "coalesce(activity_summary.latest_city, '')", nil
 	default:
-		return "", "", fmt.Errorf("unsupported auto property %q for profile list", property)
+		return "", fmt.Errorf("unsupported auto property %q for profile list", property)
 	}
 }
