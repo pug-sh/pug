@@ -126,10 +126,11 @@ Volume is tunable with `--count` (default 500,000 events) and `--batch` (default
 10,000 events per insert). Run it from the repo root; it reads the same `.env`
 as the rest of the CLI.
 
-Two accounts are seeded, both with the password `goodboy`:
+Two accounts are seeded:
 
-- `woof@pug.sh` — org admin
-- `snoop@pug.sh` — read-only viewer
+- `woof@pug.sh` — org admin, password `goodboy`
+- `snoop@pug.sh` — read-only viewer, no password; open `/demo` with
+  `PUG_DEMO_ENABLED=true` to sign in as it
 
 For a live stream of traffic instead of a one-shot backfill, set
 `PUG_DEMO_ENABLED=true`: `./bin/pug dev` then also runs the demo worker. It

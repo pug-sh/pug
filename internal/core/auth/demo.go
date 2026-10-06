@@ -33,15 +33,13 @@ type DemoSession struct {
 
 // DemoSignIn mints a full session for the read-only demo viewer account without
 // credentials, so a visitor landing on the public demo page is authenticated in
-// viewer mode. The session's identity is the seeded snoop@pug.sh customer — a
-// ORG_ROLE_VIEWER member of the demo org — so the existing RBAC makes the
-// resulting principal genuinely read-only; there is no demo-specific
-// authorization path. As defense-in-depth on this credential-less endpoint,
-// resolveDemoProjectID additionally refuses to mint unless the account really is
-// a viewer, so a mis-seed or a later promotion of snoop fails closed rather than
-// handing an anonymous caller a write-capable session. Returns ErrDemoUnavailable
-// when the demo login is disabled, the demo account/project has not been seeded,
-// or the account is not a viewer.
+// viewer mode. The session's identity is the seeded snoop@pug.sh customer. The
+// rpc layer keeps it read-only: it authorizes the account as a viewer in every
+// org and refuses its self-service writes. As defense-in-depth on this
+// credential-less endpoint, resolveDemoProjectID additionally refuses to mint
+// unless the account is a viewer of the demo org, so a mis-seed fails closed.
+// Returns ErrDemoUnavailable when the demo login is disabled, the demo
+// account/project has not been seeded, or the account is not a viewer.
 func (s *Service) DemoSignIn(ctx context.Context) (DemoSession, error) {
 	if !s.demoEnabled {
 		return DemoSession{}, ErrDemoUnavailable
@@ -75,7 +73,7 @@ func (s *Service) DemoSignIn(ctx context.Context) (DemoSession, error) {
 }
 
 // resolveDemoProjectID resolves the demo project the viewer should scope to and
-// verifies the account is genuinely read-only. It takes the viewer's oldest org
+// checks the account is a viewer there. It takes the viewer's oldest org
 // (GetOrgsWithRoleByCustomerID orders by create_time) — the demo seeder makes
 // snoop a member of exactly that one org — checks its membership role is
 // ORG_ROLE_VIEWER, then returns that org's oldest project (GetProjectsByOrgID is

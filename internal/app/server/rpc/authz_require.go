@@ -57,6 +57,11 @@ func requirePermission(
 		// The lookup logs + records non-sentinel failures at source.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
+	// Anyone can sign in as the demo account, so it is a viewer in every org,
+	// whatever role is stored.
+	if isDemoViewer(ctx) {
+		role = coreorgs.RoleViewer
+	}
 
 	ok, err := authorizer.Authorize(role.String(), resource, action)
 	if err != nil {
