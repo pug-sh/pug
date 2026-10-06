@@ -1041,8 +1041,9 @@ viewer floor, so members and viewers cannot see or change these settings. Five
 `OrgGated` entries go in `authz_registry.go` in phase 1, one (`UpdateDomain`) in
 phase 2, and three more in phase 3.
 
-`OrgsService.Create` keeps its `Self` entry. The org creation setting is a rule
-about the caller's email, not a role, so it lives in core next to the create.
+`OrgsService.Create` keeps its `SelfWrite` entry. The org creation setting is
+a rule about the caller's email, not a role, so it lives in core next to the
+create.
 
 The role cache needs no change. It caches only positive results, and auto-join
 only adds members.

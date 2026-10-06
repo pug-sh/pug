@@ -143,6 +143,10 @@ func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtK
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (Session, error) {
+	// DemoSignIn is the demo account's only way in, so PUG_DEMO_ENABLED off locks it.
+	if strings.EqualFold(email, DemoViewerEmail) {
+		return Session{}, ErrInvalidCredentials
+	}
 	// Before the account lookup, so SSO_REQUIRED says nothing about whether one exists.
 	if err := coreorgs.CheckSignInInTx(ctx, dbread.New(s.pgW), email, ""); err != nil {
 		return Session{}, err

@@ -36,9 +36,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/public.dashboards.v1.SharedDashboardsService/Query": authzspec.Public("authorized by share_id"),
 
 	// --- dashboard.orgs.v1.OrgsService ---
-	"/dashboard.orgs.v1.OrgsService/List":                authzspec.Self("returns only the caller's orgs"),
-	"/dashboard.orgs.v1.OrgsService/Create":              authzspec.Self("any authenticated customer may create an org, unless their email's domain restricts it (enforced in core)"),
-	"/dashboard.orgs.v1.OrgsService/Leave":               authzspec.Self("self-service; last-admin/last-member guards live in the service"),
+	"/dashboard.orgs.v1.OrgsService/List":                authzspec.SelfRead("returns only the caller's orgs"),
+	"/dashboard.orgs.v1.OrgsService/Create":              authzspec.SelfWrite("any authenticated customer may create an org, unless their email's domain restricts it (enforced in core)"),
+	"/dashboard.orgs.v1.OrgsService/Leave":               authzspec.SelfWrite("self-service; last-admin/last-member guards live in the service"),
 	"/dashboard.orgs.v1.OrgsService/Get":                 authzspec.OrgGated(authz.ResourceOrg, authz.ActionRead, "non-members are denied identically whether or not the org exists, so existence stays hidden"),
 	"/dashboard.orgs.v1.OrgsService/ListMembers":         authzspec.OrgGated(authz.ResourceMember, authz.ActionRead),
 	"/dashboard.orgs.v1.OrgsService/UpdateDisplayName":   authzspec.OrgGated(authz.ResourceOrg, authz.ActionUpdate),
@@ -95,8 +95,8 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.billing.v1.BillingService/ConfirmCheckout":       authzspec.OrgGated(authz.ResourceBilling, authz.ActionCreate, "admin-only; the other half of starting, and it writes the subscription row"),
 
 	// --- dashboard.customers.v1.CustomersService ---
-	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.Self(),
-	"/dashboard.customers.v1.CustomersService/SetPassword": authzspec.Self(),
+	"/dashboard.customers.v1.CustomersService/GetMe":       authzspec.SelfRead(),
+	"/dashboard.customers.v1.CustomersService/SetPassword": authzspec.SelfWrite(),
 
 	// --- shared.insights.v1.InsightsService ---
 	"/shared.insights.v1.InsightsService/Query":             authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),

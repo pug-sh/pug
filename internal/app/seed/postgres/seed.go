@@ -29,8 +29,8 @@ const (
 
 	// A second demo account with read-only (viewer) access to the same org so the
 	// viewer role can be exercised in the dashboard. Snoop Pugg snoops: looks but
-	// never touches. Reuses testPassword for easy local sign-in. The email is
-	// sourced from coreauth so the seeded account and AuthService.DemoSignIn's
+	// never touches. It has no password: DemoSignIn is its only way in. The email
+	// is sourced from coreauth so the seeded account and AuthService.DemoSignIn's
 	// login target are one constant and cannot drift apart.
 	viewerEmail = coreauth.DemoViewerEmail
 	viewerName  = "Snoop Pugg"
@@ -193,13 +193,12 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, st
 	}
 
 	// Snoop Pugg: a read-only companion on the same org so the viewer experience
-	// is demoable out of the box. Same password as the admin, so signing in to
-	// click around as a viewer is trivial.
+	// is demoable out of the box, through DemoSignIn.
 	viewer, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
 		ID:           xid.New().String(),
 		Email:        viewerEmail,
 		DisplayName:  viewerName,
-		PasswordHash: string(passwordHash),
+		PasswordHash: "",
 		PictureUri:   "",
 	})
 	if err != nil {

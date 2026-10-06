@@ -95,6 +95,17 @@ func TestAuthService(t *testing.T) {
 		}
 	})
 
+	t.Run("SignInWithEmail_demoAccount", func(t *testing.T) {
+		if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+			ID: "cust-demo", Email: auth.DemoViewerEmail, PasswordHash: string(hash),
+		}); err != nil {
+			t.Fatalf("CreateCustomer: %v", err)
+		}
+		if _, err := svc.SignInWithEmail(ctx, auth.DemoViewerEmail, "password123"); !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("err = %v, want ErrInvalidCredentials", err)
+		}
+	})
+
 	t.Run("JWT_structure", func(t *testing.T) {
 		var claims jwt.RegisteredClaims
 		parsed, err := jwt.ParseWithClaims(signinToken, &claims, func(tok *jwt.Token) (any, error) {
