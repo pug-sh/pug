@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	purgecron "github.com/pug-sh/pug/internal/app/cron/purge"
 	usagecron "github.com/pug-sh/pug/internal/app/cron/usage"
 	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
 	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
@@ -187,6 +188,12 @@ var cronUsageCmd = &cobra.Command{
 	Run:   run(usagecron.Run),
 }
 
+var cronPurgeCmd = &cobra.Command{
+	Use:   "purge",
+	Short: "Run a pass erasing deleted projects",
+	Run:   run(purgecron.Run),
+}
+
 var (
 	emailPreviewText bool
 	emailPreviewOut  string
@@ -306,6 +313,7 @@ var devCmd = &cobra.Command{
 		// say so or usage silently reads back as "never metered".
 		fmt.Println(bold + "Jobs:" + reset)
 		fmt.Println("  "+yellow+"Usage metering:"+reset, "not scheduled — run", cyan+"pug cron usage"+reset, "for one pass")
+		fmt.Println("  "+yellow+"Project purge:"+reset, "not scheduled — run", cyan+"pug cron purge"+reset, "for one pass")
 		fmt.Println()
 
 		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
@@ -387,6 +395,7 @@ func init() {
 	workerCmd.AddCommand(complianceCmd)
 
 	cronCmd.AddCommand(cronUsageCmd)
+	cronCmd.AddCommand(cronPurgeCmd)
 	rootCmd.AddCommand(cronCmd)
 
 	rootCmd.AddCommand(billingCmd)

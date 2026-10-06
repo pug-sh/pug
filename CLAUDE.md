@@ -69,6 +69,12 @@ make clickstack
 # it has no basis for. Ingestion never consults it.
 ./bin/pug cron usage
 
+# One pass erasing deleted projects, then exits (docs/architecture/project-deletion.md).
+# Deployed as a k8s CronJob every 5 minutes (image `cron-purge`, cmd/cron/purge),
+# under its own advisory lock and a 3m timeout. Nothing else schedules it: without
+# it a deleted project stays hidden with its data in place.
+./bin/pug cron purge
+
 # Rolling demo-traffic generator. Gated by PUG_DEMO_ENABLED everywhere: when off
 # (default), `pug dev` skips it and the standalone `pug worker demo` idles (stays
 # running but generates nothing, so a k8s Deployment doesn't restart-loop on
