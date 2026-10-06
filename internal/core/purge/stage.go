@@ -3,11 +3,10 @@ package purge
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/pug-sh/pug/internal/deps/telemetry"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -16,22 +15,16 @@ var (
 	ErrLiveProject = errors.New("purge: project is live")
 )
 
-type table struct {
-	name string
-	// Refilled by a refreshable view, so the stage waits for it to empty.
-	rebuilt bool
-}
-
-var tables = []table{
-	{name: "events"},
-	{name: "profiles"},
-	{name: "profile_aliases"},
-	{name: "distinct_id_activity_states"},
-	{name: "dashboard_event_rollup_daily"},
-	{name: "dashboard_session_rollup"},
-	{name: "event_names"},
-	{name: "property_keys_event_buckets"},
-	{name: "property_keys_profile_current", rebuilt: true},
+var tables = []Table{
+	{Name: "events"},
+	{Name: "profiles"},
+	{Name: "profile_aliases"},
+	{Name: "distinct_id_activity_states"},
+	{Name: "dashboard_event_rollup_daily"},
+	{Name: "dashboard_session_rollup"},
+	{Name: "event_names"},
+	{Name: "property_keys_event_buckets"},
+	{Name: "property_keys_profile_current", Rebuilt: true},
 }
 
 // Filter selects the rows a delete removes. Retention would add a time bound.
@@ -39,8 +32,8 @@ type Filter struct {
 	ProjectID string
 }
 
-func (f Filter) where() (string, []any) {
-	return "project_id = ?", []any{f.ProjectID}
+func (f Filter) where() chq.Condition {
+	return chq.Eq("project_id", f.ProjectID)
 }
 
 // Table is one ClickHouse table's state under a filter.
@@ -51,14 +44,15 @@ type Table struct {
 	Deleting bool
 	// The running delete's last failure. ClickHouse retries it on its own.
 	FailReason string
-	Rebuilt    bool
+	// Rebuilt from profiles every 5 minutes, so it is never deleted, only waited on.
+	Rebuilt bool
 }
 
 // Check reports, per table, whether rows remain under f and whether a delete for
 // the project is running.
 func (s *Service) Check(ctx context.Context, f Filter) ([]Table, error) {
 	if f.ProjectID == "" {
-		return nil, s.fail(ctx, "check", f, ErrNoProject)
+		return nil, s.failed(ctx, f.ProjectID, "check", ErrNoProject)
 	}
 	// Deletes before rows: one that finishes in between still reads as running.
 	running, err := s.runningDeletes(ctx, f)
@@ -67,20 +61,17 @@ func (s *Service) Check(ctx context.Context, f Filter) ([]Table, error) {
 	}
 	out := make([]Table, 0, len(tables))
 	for _, t := range tables {
-		hasRows, err := s.hasRows(ctx, t.name, f)
-		if err != nil {
+		if t.HasRows, err = s.hasRows(ctx, t.Name, f); err != nil {
 			return nil, err
 		}
-		reason, deleting := running[t.name]
-		out = append(out, Table{
-			Name: t.name, HasRows: hasRows, Deleting: deleting, FailReason: reason, Rebuilt: t.rebuilt,
-		})
+		t.FailReason, t.Deleting = running[t.Name]
+		out = append(out, t)
 	}
 	return out, nil
 }
 
-// Start queues one delete on each table that still has rows under f and no delete
-// running, and returns the tables it queued. It never waits on ClickHouse.
+// Start queues one delete on each table that still has rows under f, no delete
+// running and no view rebuilding it, and returns the tables it queued. It never waits on ClickHouse.
 func (s *Service) Start(ctx context.Context, f Filter) ([]string, error) {
 	if err := s.refuseLive(ctx, f); err != nil {
 		return nil, err
@@ -89,15 +80,16 @@ func (s *Service) Start(ctx context.Context, f Filter) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	where, args := f.where()
+	where := f.where()
 	var queued []string
 	for _, t := range state {
 		if t.Rebuilt || !t.HasRows || t.Deleting {
 			continue
 		}
-		query := "ALTER TABLE " + t.Name + " DELETE WHERE " + where + " SETTINGS mutations_sync = 0"
-		if err := s.ch.Exec(ctx, query, args...); err != nil {
-			return queued, s.fail(ctx, "queue delete on "+t.Name, f, err)
+		// The builder only writes SELECTs.
+		query := "ALTER TABLE " + t.Name + " DELETE WHERE " + where.SQL() + " SETTINGS mutations_sync = 0"
+		if err := s.ch.Exec(ctx, query, where.Args()...); err != nil {
+			return queued, s.failed(ctx, f.ProjectID, "queue delete on "+t.Name, err)
 		}
 		queued = append(queued, t.Name)
 	}
@@ -106,31 +98,37 @@ func (s *Service) Start(ctx context.Context, f Filter) ([]string, error) {
 
 func (s *Service) refuseLive(ctx context.Context, f Filter) error {
 	if f.ProjectID == "" {
-		return s.fail(ctx, "start", f, ErrNoProject)
+		return s.failed(ctx, f.ProjectID, "start", ErrNoProject)
 	}
 	_, err := s.read.GetProjectByID(ctx, f.ProjectID)
 	switch {
 	case err == nil:
-		return s.fail(ctx, "start", f, ErrLiveProject)
+		return s.failed(ctx, f.ProjectID, "start", ErrLiveProject)
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil
 	default:
-		return s.fail(ctx, "check the project is not live", f, err)
+		return s.failed(ctx, f.ProjectID, "check the project is not live", err)
 	}
 }
 
-// Matched on the project id anywhere in the command, so an erasure running for
-// the project also counts.
-const runningDeletesQuery = `
-SELECT table, latest_fail_reason
-FROM system.mutations
-WHERE database = currentDatabase() AND is_done = 0 AND position(command, ?) > 0
-`
-
 func (s *Service) runningDeletes(ctx context.Context, f Filter) (map[string]string, error) {
-	rows, err := s.ch.Query(ctx, runningDeletesQuery, f.ProjectID)
+	// Matched on the project id anywhere in the command, so an erasure running
+	// for the project also counts.
+	query, args, err := chq.NewQuery().
+		Select("table", "latest_fail_reason").
+		From("system.mutations").
+		Where(
+			chq.RawCond("database = currentDatabase()"),
+			chq.Eq("is_done", 0),
+			chq.RawCond("position(command, ?) > 0", f.ProjectID),
+		).
+		Build()
 	if err != nil {
-		return nil, s.fail(ctx, "read running deletes", f, err)
+		return nil, s.failed(ctx, f.ProjectID, "build the running deletes query", err)
+	}
+	rows, err := s.ch.Query(ctx, query, args...)
+	if err != nil {
+		return nil, s.failed(ctx, f.ProjectID, "read running deletes", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -141,31 +139,30 @@ func (s *Service) runningDeletes(ctx context.Context, f Filter) (map[string]stri
 	for rows.Next() {
 		var name, reason string
 		if err := rows.Scan(&name, &reason); err != nil {
-			return nil, s.fail(ctx, "scan running deletes", f, err)
+			return nil, s.failed(ctx, f.ProjectID, "scan running deletes", err)
 		}
-		if prev, ok := out[name]; !ok || prev == "" {
+		if out[name] == "" {
 			out[name] = reason
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, s.fail(ctx, "read running deletes", f, err)
+		return nil, s.failed(ctx, f.ProjectID, "read running deletes", err)
 	}
 	return out, nil
 }
 
 func (s *Service) hasRows(ctx context.Context, name string, f Filter) (bool, error) {
-	where, args := f.where()
+	query, args, err := chq.NewQuery().
+		With("hit", chq.NewQuery().Select("1").From(name).Where(f.where()).Limit(1)).
+		Select("count()").
+		From("hit").
+		Build()
+	if err != nil {
+		return false, s.failed(ctx, f.ProjectID, "build the row check for "+name, err)
+	}
 	var n uint64
-	query := "SELECT count() FROM (SELECT 1 FROM " + name + " WHERE " + where + " LIMIT 1)"
 	if err := s.ch.QueryRow(ctx, query, args...).Scan(&n); err != nil {
-		return false, s.fail(ctx, "check rows in "+name, f, err)
+		return false, s.failed(ctx, f.ProjectID, "check rows in "+name, err)
 	}
 	return n > 0, nil
-}
-
-func (s *Service) fail(ctx context.Context, op string, f Filter, err error) error {
-	err = fmt.Errorf("purge: %s: %w", op, err)
-	slog.ErrorContext(ctx, "project purge failed", slogx.Error(err), slog.String("project_id", f.ProjectID))
-	telemetry.RecordError(ctx, err)
-	return err
 }

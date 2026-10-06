@@ -8,30 +8,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 )
-
-// uniqExact over raw events, no FINAL — see docs/architecture/usage.md §2.
-//
-// toDate's 'UTC' is explicit because occur_time is DateTime64(3) with no declared
-// zone, so a bare toDate() would cut days on the ClickHouse server's midnight.
-const meterQuery = `
-select project_id, toDate(occur_time, 'UTC') as day, uniqExact(event_id) as event_count
-from events
-where occur_time >= ? and occur_time < ?
-group by project_id, day
-`
-
-const meterProjectQuery = `
-select project_id, toDate(occur_time, 'UTC') as day, uniqExact(event_id) as event_count
-from events
-where project_id = ? and occur_time >= ? and occur_time < ?
-group by project_id, day
-`
 
 // ErrNoMeteringConn is returned when a Service built without ClickHouse meters —
 // the server never does.
@@ -48,18 +31,38 @@ type DailyUsage struct {
 // particular row order. The (project, day) grain lets one pass serve every org's
 // period, and it bounds uniqExact's state.
 func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyUsage, error) {
-	return s.meter(ctx, meterQuery, []any{from.UTC(), to.UTC()}, slog.Time("from", from), slog.Time("to", to))
+	return s.meter(ctx, "", from, to)
 }
 
 // MeterProject is MeterWindow for one project.
 func (s *Service) MeterProject(ctx context.Context, projectID string, from, to time.Time) ([]DailyUsage, error) {
-	return s.meter(ctx, meterProjectQuery, []any{projectID, from.UTC(), to.UTC()},
-		slog.String("project_id", projectID), slog.Time("from", from), slog.Time("to", to))
+	return s.meter(ctx, projectID, from, to)
 }
 
-func (s *Service) meter(ctx context.Context, query string, args []any, attrs ...any) ([]DailyUsage, error) {
+// meter counts with uniqExact over raw events, no FINAL; see
+// docs/architecture/usage.md §2. An empty projectID meters every project.
+func (s *Service) meter(ctx context.Context, projectID string, from, to time.Time) ([]DailyUsage, error) {
 	if s.ch == nil {
 		return nil, ErrNoMeteringConn
+	}
+	attrs := []any{slog.String("project_id", projectID), slog.Time("from", from), slog.Time("to", to)}
+
+	// toDate's 'UTC' is explicit because occur_time is DateTime64(3) with no
+	// declared zone, so a bare toDate() would cut days on the server's midnight.
+	query, args, err := chq.NewQuery().
+		Select("project_id", "toDate(occur_time, 'UTC') AS day", "uniqExact(event_id) AS event_count").
+		From("events").
+		Where(
+			chq.When(projectID != "", chq.Eq("project_id", projectID)),
+			chq.Gte("occur_time", from.UTC()),
+			chq.Lt("occur_time", to.UTC()),
+		).
+		GroupBy("project_id", "day").
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to build the meter query", append([]any{slogx.Error(err)}, attrs...)...)
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 
 	// chdb.Conn.Query records the error on the ClickHouse span already, so this
@@ -346,14 +349,8 @@ func (s *Service) OrgPeriods(ctx context.Context, now time.Time) ([]OrgPeriod, e
 // DefaultRescanDays is the meter's trailing window when PUG_USAGE_RESCAN_DAYS is unset.
 const DefaultRescanDays = 2
 
-// FullRecomputeFrom is the lower bound of the meter's widest pass.
-//
-// It floors at month-to-date, which is what the erasure reconcile needs and what
-// the empty-read guard reads as its evidence window — on the 1st or 2nd that floor
-// is all that keeps a full pass wider than the trailing rescan. Anniversaries only
-// widen it further: on the 3rd, an org anchored on the 10th is still inside a
-// period that began last month, and stopping at the month boundary would re-sum it
-// over a window the pass had not fully read.
+// FullRecomputeFrom is the lower bound of the meter's daily full pass.
+// docs/architecture/usage.md explains both floors.
 func FullRecomputeFrom(now time.Time, rescanDays int, periods []OrgPeriod) time.Time {
 	from := FloorDayUTC(now.AddDate(0, 0, -rescanDays))
 	if monthStart := FloorMonthUTC(now); monthStart.Before(from) {

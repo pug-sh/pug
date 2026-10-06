@@ -1,8 +1,10 @@
 package purge_test
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"maps"
 	"strings"
 	"testing"
@@ -111,6 +113,84 @@ func TestPassErasesADeletedProject(t *testing.T) {
 	}
 }
 
+// A deletion row for a live project erases nothing, and does not hold up
+// another deletion in the same pass.
+func TestPassRefusesALiveProject(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	doomed := f.seedProject(t, "Doomed")
+	f.delete(t, doomed, requestedAt)
+	live := f.seedProject(t, "Live")
+	if _, err := f.pg.PgW.Exec(ctx, `insert into project_deletions
+		(display_name, org_id, project_id, requested_by, status, requested_at)
+		values ('Live', $1, $2, 'test', 'pending', $3)`, f.orgID, live, requestedAt); err != nil {
+		t.Fatalf("insert deletion: %v", err)
+	}
+	// With no ClickHouse rows, the ClickHouse stage is never asked.
+	for _, table := range projectTables(t, f.ch) {
+		if err := f.ch.Conn.Exec(ctx, "ALTER TABLE "+table+" DELETE WHERE project_id = ? SETTINGS mutations_sync = 1", live); err != nil {
+			t.Fatalf("empty %s: %v", table, err)
+		}
+	}
+	livePG := pgCounts(t, f.pg, live)
+
+	if err := f.svc.Pass(ctx, requestedAt.Add(time.Hour)); !errors.Is(err, purge.ErrLiveProject) {
+		t.Fatalf("Pass = %v, want ErrLiveProject", err)
+	}
+	if got := pgCounts(t, f.pg, live); !maps.Equal(got, livePG) {
+		t.Errorf("live project's postgres rows = %v, want %v", got, livePG)
+	}
+	if d := f.deletion(t, live); d.Status == "done" || !strings.Contains(d.Error, "live") {
+		t.Errorf("live project's deletion: status %q, error %q; want not done, with the error", d.Status, d.Error)
+	}
+	if d := f.deletion(t, doomed); d.Status != "deleting" || d.Rounds != 1 {
+		t.Errorf("other deletion: status %q, rounds %d; want deleting, 1", d.Status, d.Rounds)
+	}
+}
+
+func TestPassRecordsAFailingDelete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	doomed := f.seedProject(t, "Doomed")
+	f.delete(t, doomed, requestedAt)
+
+	// Accepted, then fails on every part: kind is not a number.
+	if err := f.ch.Conn.Exec(ctx, "ALTER TABLE events DELETE WHERE project_id = ? AND toUInt32(kind) = 1 SETTINGS mutations_sync = 0", doomed); err != nil {
+		t.Fatalf("queue a failing delete: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = f.ch.Conn.Exec(context.Background(), "KILL MUTATION WHERE database = currentDatabase() AND table = 'events'")
+	})
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var failing uint64
+		if err := f.ch.Conn.QueryRow(ctx, `SELECT count() FROM system.mutations
+			WHERE database = currentDatabase() AND is_done = 0 AND latest_fail_reason != ''`).Scan(&failing); err != nil {
+			t.Fatalf("read mutations: %v", err)
+		}
+		if failing > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the delete never failed")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	f.pass(t, requestedAt.Add(time.Hour))
+	if d := f.deletion(t, doomed); !strings.Contains(d.Error, "delete on events is failing") {
+		t.Errorf("error %q, want the failing delete recorded", d.Error)
+	}
+}
+
 func TestRowsWrittenMidDeleteGetAnotherRound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -183,15 +263,43 @@ func TestWatchReopensADoneDeletion(t *testing.T) {
 	}
 }
 
+// A project with no ClickHouse rows finishes without a round, so its reopen
+// starts round 1.
+func TestReopenWithoutARoundRecordsAnError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	p, err := f.projects.CreateProject(t.Context(), f.orgID, "Empty", "")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	f.delete(t, p.ID, requestedAt)
+	f.pass(t, requestedAt.Add(time.Hour))
+	if d := f.deletion(t, p.ID); d.Status != "done" || d.Rounds != 0 {
+		t.Fatalf("status %q, rounds %d; want done with no round", d.Status, d.Rounds)
+	}
+
+	insertEvent(t, f.ch, p.ID, eventDay)
+	f.pass(t, requestedAt.Add(2*time.Hour))
+	if d := f.deletion(t, p.ID); d.Rounds != 1 || !strings.Contains(d.Error, "rows came back") {
+		t.Errorf("rounds %d, error %q; want round 1, recorded", d.Rounds, d.Error)
+	}
+}
+
 func TestPassFreezesUsageOnce(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	f := newFixture(t)
+	// Anchored on the 25th, the period began May 25, before the 2-day rescan.
+	testutil.SetOrgCreateTime(t, f.pg.PgW, f.orgID, time.Date(2020, 1, 25, 0, 0, 0, 0, time.UTC))
+	earlyDay := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	doomed := f.seedProject(t, "Doomed")
 	insertEvent(t, f.ch, doomed, eventDay.Add(time.Hour))
-	insertEvent(t, f.ch, doomed, eventDay.Add(-23*time.Hour))
+	insertEvent(t, f.ch, doomed, earlyDay.Add(time.Hour))
 	f.delete(t, doomed, requestedAt)
 
 	start := requestedAt.Add(time.Hour)
@@ -203,8 +311,8 @@ func TestPassFreezesUsageOnce(t *testing.T) {
 		t.Fatalf("status %q, want done", d.Status)
 	}
 
-	// The seed stored 1 for eventDay; the pass counted 2 there and 1 the day before.
-	want := map[time.Time]int64{eventDay: 2, eventDay.AddDate(0, 0, -1): 1}
+	// The seed stored 1 for eventDay; the pass counted 2 there and 1 on May 28.
+	want := map[time.Time]int64{eventDay: 2, earlyDay: 1}
 	if got := f.usageDays(t, doomed); !maps.Equal(got, want) {
 		t.Fatalf("frozen days = %v, want %v", got, want)
 	}
@@ -222,7 +330,7 @@ func TestPassFreezesUsageOnce(t *testing.T) {
 	}
 
 	svc := coreusage.NewService(f.pg.PgRO, f.pg.PgW)
-	periodStart := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	periodStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
 	total, err := svc.RefreshPeriodUsage(t.Context(), f.orgID, periodStart, periodStart.AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("RefreshPeriodUsage: %v", err)
@@ -238,13 +346,14 @@ func TestPassFlagsADeletionStuckForADay(t *testing.T) {
 	}
 
 	f := newFixture(t)
+	stopProfileKeys(t, f.ch)
 	doomed := f.seedProject(t, "Doomed")
 	f.delete(t, doomed, requestedAt)
 	start := requestedAt.Add(time.Hour)
 	f.pass(t, start)
 	waitForDeletes(t, f.ch)
 
-	// property_keys_profile_current is never refreshed, so it never empties.
+	// With its view stopped, property_keys_profile_current never empties.
 	f.pass(t, start.Add(23*time.Hour))
 	if d := f.deletion(t, doomed); d.Error != "" {
 		t.Fatalf("under a day: error %q, want none", d.Error)
@@ -252,6 +361,11 @@ func TestPassFlagsADeletionStuckForADay(t *testing.T) {
 	f.pass(t, start.Add(24*time.Hour))
 	if d := f.deletion(t, doomed); d.Status != "deleting" || !strings.Contains(d.Error, "not done") {
 		t.Errorf("a day on: status %q, error %q; want deleting with an error", d.Status, d.Error)
+	}
+	// The batches ran; only the last step is left.
+	counts := pgCounts(t, f.pg, doomed)
+	if counts["profiles"] != 0 || counts["profile_devices"] != 0 || counts["projects"] != 1 {
+		t.Errorf("postgres rows while deleting = %v, want no profiles or devices and the projects row", counts)
 	}
 }
 
@@ -429,15 +543,6 @@ func pgCounts(t *testing.T, pg *testutil.TestPostgres, projectID string) map[str
 			t.Fatalf("count %s: %v", table, err)
 		}
 		out[table] = n
-	}
-	return out
-}
-
-func chCounts(t *testing.T, ch *testutil.TestClickHouse, projectID string) map[string]uint64 {
-	t.Helper()
-	out := map[string]uint64{}
-	for _, table := range projectTables(t, ch) {
-		out[table] = rowCount(t, ch, table, projectID)
 	}
 	return out
 }

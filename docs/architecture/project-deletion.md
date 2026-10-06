@@ -147,8 +147,8 @@ Rules:
 3. **Postgres in batches.** `profile_devices` first, then `profiles`, 5,000 rows
    per statement, each in its own transaction. Devices go first because their
    `profile_id` key is `on delete set null`. Deleting profiles first would
-   rewrite every device row before deleting it. A pass spends at most a few
-   minutes here and continues on the next.
+   rewrite every device row before deleting it. A pass spends at most two
+   minutes, counted from its start, and continues on the next.
 4. **The last step is one delete.**
    `delete from projects where id = ? and deletion_time is not null`. It
    cascades whatever is left: dashboards, tiles, erasure requests, and any row a
@@ -164,7 +164,8 @@ running.
 |---|---|---|
 | yes | yes | wait |
 | yes | no | `ALTER TABLE <t> DELETE WHERE project_id = ?` with `mutations_sync = 0` |
-| no | | the table is done |
+| no | yes | wait |
+| no | no | the table is done |
 
 "Delete running" comes from `system.mutations`, matched on the project id in the
 command. The statement returns as soon as ClickHouse queues it, so a pass never
@@ -172,7 +173,7 @@ waits on ClickHouse.
 
 The stage keeps no state of its own. `system.mutations` and the row counts are
 its state. Any pass can call it any number of times, and it never queues a
-second delete for the same table and project.
+second delete for the same table and project while one is running.
 
 It refuses an empty project id. No code path issues a delete without
 `project_id = ?`. It also refuses a project id that still has a live `projects`
@@ -192,8 +193,9 @@ than about 25 minutes before a delete ends runs out of deliveries and fails. See
 decision 6.
 
 A table that still has rows after its delete finished gets another round.
-Something wrote to it after the delete was queued. A new round starts at most
-once an hour, and each one records an error.
+Something wrote to it after the delete was queued. Each later round starts at
+least an hour after the last one, and records an error. So does a round that
+reopens a `done` deletion.
 
 ## Why one delete per table, not batches
 
@@ -272,7 +274,7 @@ lower a period's count.
    days it has stored. It takes that for a bad read and refreshes no org, every pass, for up
    to a full period.
 3. Before any delete, the job counts the project's events per day one last time,
-   over the meter's full-recompute window. It uses the meter's query, filtered to
+   over its org's current period and the month to date. It uses the meter's query, filtered to
    the project, and stores the result in the same transaction that sets
    `deleting`. This runs once per deletion, because a row never goes back to
    `pending`. A reopen goes from `done` straight to `deleting`. Counting again
@@ -402,7 +404,8 @@ step failed. It records an error when:
 1. a ClickHouse delete reports a failure in `system.mutations`. ClickHouse
    retries it on its own.
 2. a new round starts, because rows came back.
-3. a deletion is still not `done` a day after it started.
+3. a deletion is still not `done` a day after its last round started. The
+   error names the tables it is waiting on.
 
 These all come from the pass, so none fires when the pass never runs. The server
 covers that case. At startup it logs an error while any deletion has been
@@ -410,7 +413,7 @@ covers that case. At startup it logs an error while any deletion has been
 
 ## Phases
 
-Four phases. Phase 2 ships in three parts, so there are six PRs. No screen calls
+Four phases. Phase 2 ships in three parts, and 2a and 2b share one PR. No screen calls
 `Delete` until phase 4, so phases 1 to 3 change nothing a user can see.
 
 | Phase | Ships | Afterwards |
@@ -472,6 +475,7 @@ Tests:
 | Where | Change |
 |---|---|
 | `schema/postgres/queries/write/usage.sql` | a freeze upsert for the job |
+| `schema/postgres/queries/{read,write}/project_deletions.sql` | the job's reads, status updates and batches |
 | `internal/core/usage` | the meter's query, filtered to one project |
 | `internal/core/purge` | the job's steps |
 
@@ -491,6 +495,9 @@ Tests:
    deletion does not count again. Phase 1's tests cover the meter's side.
 6. **Stuck.** A deletion not `done` a day after its last round started records
    an error.
+7. **Live project.** A deletion row for a live project erases nothing, and does
+   not hold up another deletion.
+8. **Failing delete.** A ClickHouse delete that keeps failing is recorded.
 
 ### Phase 2c: the pass
 

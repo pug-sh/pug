@@ -39,7 +39,7 @@ const (
 type Config struct {
 	// Trailing window the meter recomputes each run, absorbing late arrivals.
 	// No envconfig default: an unset var and an explicit 0 both resolve through
-	// rescanDays, so defaultRescanDays stays the single source for the number.
+	// rescanDays, so coreusage.DefaultRescanDays stays the single source.
 	RescanDays int `env:"PUG_USAGE_RESCAN_DAYS"`
 }
 

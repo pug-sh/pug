@@ -45,8 +45,8 @@ func seedClickHouse(t *testing.T, ch *testutil.TestClickHouse, projectID string,
 	}
 }
 
-// projectTables are the tables seedClickHouse fills, read straight from the
-// schema rather than from the purge's own list.
+// projectTables lists every ClickHouse table with a project_id column, views
+// aside, read from the schema rather than the purge's own list.
 func projectTables(t *testing.T, ch *testutil.TestClickHouse) []string {
 	t.Helper()
 	rows, err := ch.Conn.Query(t.Context(), `
@@ -142,4 +142,22 @@ func queuedDeletes(t *testing.T, ch *testutil.TestClickHouse, projectID string) 
 		t.Fatalf("list deletes: %v", err)
 	}
 	return out
+}
+
+func chCounts(t *testing.T, ch *testutil.TestClickHouse, projectID string) map[string]uint64 {
+	t.Helper()
+	out := map[string]uint64{}
+	for _, table := range projectTables(t, ch) {
+		out[table] = rowCount(t, ch, table, projectID)
+	}
+	return out
+}
+
+// The view rebuilds property_keys_profile_current every 5 minutes on its own,
+// which would empty it mid-test.
+func stopProfileKeys(t *testing.T, ch *testutil.TestClickHouse) {
+	t.Helper()
+	if err := ch.Conn.Exec(t.Context(), "SYSTEM STOP VIEW property_keys_profile_current_mv"); err != nil {
+		t.Fatalf("stop view: %v", err)
+	}
 }

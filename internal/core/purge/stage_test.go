@@ -2,6 +2,7 @@ package purge_test
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -14,7 +15,7 @@ import (
 	"github.com/pug-sh/pug/internal/testutil"
 )
 
-// A table added by a migration and missing here would keep a deleted project's
+// A table added by a migration and missing from the purge's list would keep a deleted project's
 // rows forever.
 func TestCheckCoversEveryProjectTable(t *testing.T) {
 	if testing.Short() {
@@ -48,6 +49,7 @@ func TestStartQueuesOneDeletePerTable(t *testing.T) {
 	ch := testutil.SetupClickHouse(t)
 	ctx := t.Context()
 	svc := purge.NewService(pg.PgW, ch.Conn)
+	stopProfileKeys(t, ch)
 
 	// No projects rows, so none of them is live.
 	a := purge.Filter{ProjectID: xid.New().String()}
@@ -57,10 +59,7 @@ func TestStartQueuesOneDeletePerTable(t *testing.T) {
 	for _, id := range []string{a.ProjectID, b.ProjectID, kept} {
 		seedClickHouse(t, ch, id, now)
 	}
-	keptRows := map[string]uint64{}
-	for _, table := range projectTables(t, ch) {
-		keptRows[table] = rowCount(t, ch, table, kept)
-	}
+	keptRows := chCounts(t, ch, kept)
 
 	var deleted []string
 	for _, table := range projectTables(t, ch) {
@@ -119,10 +118,8 @@ func TestStartQueuesOneDeletePerTable(t *testing.T) {
 			}
 		}
 	}
-	for table, want := range keptRows {
-		if got := rowCount(t, ch, table, kept); got != want {
-			t.Errorf("%s: kept project has %d rows, want %d", table, got, want)
-		}
+	if got := chCounts(t, ch, kept); !maps.Equal(got, keptRows) {
+		t.Errorf("kept project's rows = %v, want %v", got, keptRows)
 	}
 }
 

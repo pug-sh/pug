@@ -36,16 +36,20 @@ const (
 )
 
 type erasing struct {
-	projectID       string
-	clickHouseEmpty bool
+	projectID string
+	// ClickHouse tables with rows left or a delete running.
+	waiting []string
 	// The last round's start, or the request.
 	since time.Time
 }
 
-// Pass moves every open deletion forward once. Every deletion's ClickHouse
-// deletes are queued before any Postgres batch runs, so they share one rewrite.
-// Problems the pass only notices are recorded without failing it.
+// Pass moves every open deletion forward once. Every due deletion's ClickHouse
+// deletes are queued before any Postgres batch runs, so ClickHouse can apply
+// them in one rewrite. Problems the pass only notices are recorded without
+// failing it.
 func (s *Service) Pass(ctx context.Context, now time.Time) error {
+	// Started before the ClickHouse step, so the pass fits its caller's timeout.
+	until := time.Now().Add(batchBudget)
 	open, err := s.read.ListOpenProjectDeletions(ctx, postgres.NewTimestamptz(now.Add(-watchFor)))
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list project deletions", slogx.Error(err))
@@ -58,7 +62,8 @@ func (s *Service) Pass(ctx context.Context, now time.Time) error {
 	for _, d := range open {
 		e, ok, err := s.advance(ctx, d, now)
 		if err != nil {
-			errs = append(errs, s.store(ctx, d.ProjectID, err))
+			s.store(ctx, d.ProjectID, err)
+			errs = append(errs, err)
 			continue
 		}
 		if ok {
@@ -66,16 +71,10 @@ func (s *Service) Pass(ctx context.Context, now time.Time) error {
 		}
 	}
 
-	until := time.Now().Add(batchBudget)
 	for _, e := range batched {
-		done, err := s.erasePostgres(ctx, e, now, until)
-		if err != nil {
-			errs = append(errs, s.store(ctx, e.projectID, err))
-			continue
-		}
-		if !done && now.Sub(e.since) >= stuckAfter {
-			s.finding(ctx, e.projectID, fmt.Errorf("purge: deletion not done %s after it started",
-				now.Sub(e.since).Round(time.Minute)))
+		if err := s.erasePostgres(ctx, e, now, until); err != nil {
+			s.store(ctx, e.projectID, err)
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
@@ -97,7 +96,7 @@ func (s *Service) advance(ctx context.Context, d dbread.ProjectDeletion, now tim
 		if err != nil {
 			return erasing{}, false, err
 		}
-		if !hasRows(state) {
+		if !anyRows(state) {
 			return erasing{}, false, nil
 		}
 		if err := s.reopen(ctx, d.ProjectID); err != nil {
@@ -107,10 +106,14 @@ func (s *Service) advance(ctx context.Context, d dbread.ProjectDeletion, now tim
 	default:
 		return erasing{}, false, s.failed(ctx, d.ProjectID, "advance", fmt.Errorf("unknown status %q", d.Status))
 	}
-	return s.eraseClickHouse(ctx, d, now)
+	e, err := s.eraseClickHouse(ctx, d, now)
+	if err != nil {
+		return erasing{}, false, err
+	}
+	return e, true, nil
 }
 
-// begin counts the project's usage one last time and marks it deleting, in one
+// begin stores the project's last usage count and marks it deleting, in one
 // transaction. A reopened deletion goes back to deleting, so this runs once.
 func (s *Service) begin(ctx context.Context, d dbread.ProjectDeletion, now time.Time) error {
 	var usage []coreusage.DailyUsage
@@ -120,35 +123,34 @@ func (s *Service) begin(ctx context.Context, d dbread.ProjectDeletion, now time.
 		if err != nil {
 			return err
 		}
-		from := coreusage.FullRecomputeFrom(now, coreusage.DefaultRescanDays,
-			[]coreusage.OrgPeriod{{OrgID: d.OrgID.String, Start: start}})
+		from := coreusage.FullRecomputeFrom(now, coreusage.DefaultRescanDays, []coreusage.OrgPeriod{{Start: start}})
 		if usage, err = s.usage.MeterProject(ctx, d.ProjectID, from, now); err != nil {
 			return err
 		}
 	}
 
 	return s.inTx(ctx, d.ProjectID, "start", func(w *dbwrite.Queries) error {
-		if d.OrgID.Valid {
-			if err := coreusage.FreezeDailyUsageInTx(ctx, w, d.OrgID.String, d.ProjectID, usage); err != nil {
-				return err
-			}
-		}
-		if _, err := w.StartProjectDeletion(ctx, d.ProjectID); err != nil {
+		n, err := w.StartProjectDeletion(ctx, d.ProjectID)
+		if err != nil {
 			return s.failed(ctx, d.ProjectID, "mark deleting", err)
 		}
-		return nil
+		// Another pass started it, and its deletes may already have run.
+		if n == 0 {
+			return nil
+		}
+		return coreusage.FreezeDailyUsageInTx(ctx, w, d.OrgID.String, d.ProjectID, usage)
 	})
 }
 
 // eraseClickHouse queues the project's ClickHouse deletes. A new round starts at
 // once, then at most once an hour while rows keep coming back.
-func (s *Service) eraseClickHouse(ctx context.Context, d dbread.ProjectDeletion, now time.Time) (erasing, bool, error) {
+func (s *Service) eraseClickHouse(ctx context.Context, d dbread.ProjectDeletion, now time.Time) (erasing, error) {
 	f := Filter{ProjectID: d.ProjectID}
 	state, err := s.Check(ctx, f)
 	if err != nil {
-		return erasing{}, false, err
+		return erasing{}, err
 	}
-	e := erasing{projectID: d.ProjectID, clickHouseEmpty: true, since: d.RequestedAt.Time}
+	e := erasing{projectID: d.ProjectID, since: d.RequestedAt.Time}
 	if d.RoundStartedAt.Valid {
 		e.since = d.RoundStartedAt.Time
 	}
@@ -158,40 +160,54 @@ func (s *Service) eraseClickHouse(ctx context.Context, d dbread.ProjectDeletion,
 			s.finding(ctx, d.ProjectID, fmt.Errorf("purge: delete on %s is failing: %s", t.Name, t.FailReason))
 		}
 		if t.HasRows || t.Deleting {
-			e.clickHouseEmpty = false
+			e.waiting = append(e.waiting, t.Name)
 		}
 		if t.HasRows && !t.Deleting && !t.Rebuilt {
 			leftover = true
 		}
 	}
 	if !leftover || (d.Rounds > 0 && now.Sub(d.RoundStartedAt.Time) < roundEvery) {
-		return e, true, nil
+		return e, nil
 	}
 
 	queued, err := s.Start(ctx, f)
 	if err != nil || len(queued) == 0 {
-		return e, err == nil, err
+		return e, err
 	}
 	if err := s.write.RecordProjectDeletionRound(ctx, dbwrite.RecordProjectDeletionRoundParams{
 		ProjectID:      d.ProjectID,
 		RoundStartedAt: postgres.NewTimestamptz(now),
 	}); err != nil {
-		return erasing{}, false, s.failed(ctx, d.ProjectID, "record a round", err)
+		return erasing{}, s.failed(ctx, d.ProjectID, "record a round", err)
 	}
 	e.since = now
-	if d.Rounds > 0 {
+	if d.Rounds > 0 || d.Status == statusDone {
 		s.finding(ctx, d.ProjectID, fmt.Errorf("purge: rows came back in %s; round %d started",
 			strings.Join(queued, ", "), d.Rounds+1))
 	}
-	return e, true, nil
+	return e, nil
 }
 
 // erasePostgres deletes the project's rows in batches. Once they and ClickHouse
 // are empty, it deletes the projects row and marks the deletion done.
-func (s *Service) erasePostgres(ctx context.Context, e erasing, now, until time.Time) (bool, error) {
+func (s *Service) erasePostgres(ctx context.Context, e erasing, now, until time.Time) error {
+	if err := s.refuseLive(ctx, Filter{ProjectID: e.projectID}); err != nil {
+		return err
+	}
 	empty, err := s.deleteBatches(ctx, e.projectID, until)
-	if err != nil || !empty || !e.clickHouseEmpty {
-		return false, err
+	if err != nil {
+		return err
+	}
+	waiting := e.waiting
+	if !empty {
+		waiting = append(waiting, "postgres")
+	}
+	if len(waiting) > 0 {
+		if now.Sub(e.since) >= stuckAfter {
+			s.finding(ctx, e.projectID, fmt.Errorf("purge: deletion not done %s after its last round started; waiting on %s",
+				now.Sub(e.since).Round(time.Minute), strings.Join(waiting, ", ")))
+		}
+		return nil
 	}
 	err = s.inTx(ctx, e.projectID, "finish", func(w *dbwrite.Queries) error {
 		if _, err := w.DeleteHiddenProject(ctx, e.projectID); err != nil {
@@ -206,10 +222,10 @@ func (s *Service) erasePostgres(ctx context.Context, e erasing, now, until time.
 		return nil
 	})
 	if err != nil {
-		return false, err
+		return err
 	}
 	slog.InfoContext(ctx, "project deletion done", slog.String("project_id", e.projectID))
-	return true, nil
+	return nil
 }
 
 // deleteBatches deletes devices before profiles: their profile_id is on delete
@@ -264,7 +280,9 @@ func (s *Service) inTx(ctx context.Context, projectID, op string, fn func(*dbwri
 	}
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.WarnContext(ctx, "failed to roll back a project deletion step", slogx.Error(err))
+			slog.ErrorContext(ctx, "failed to roll back a project deletion step", slogx.Error(err),
+				slog.String("project_id", projectID), slog.String("op", op))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 	if err := fn(s.write.WithTx(tx)); err != nil {
@@ -276,7 +294,7 @@ func (s *Service) inTx(ctx context.Context, projectID, op string, fn func(*dbwri
 	return nil
 }
 
-func hasRows(state []Table) bool {
+func anyRows(state []Table) bool {
 	for _, t := range state {
 		if t.HasRows {
 			return true
@@ -285,7 +303,6 @@ func hasRows(state []Table) bool {
 	return false
 }
 
-// failed logs and records an error the job detected, and returns it.
 func (s *Service) failed(ctx context.Context, projectID, op string, err error) error {
 	err = fmt.Errorf("purge: %s: %w", op, err)
 	slog.ErrorContext(ctx, "project deletion step failed", slogx.Error(err), slog.String("project_id", projectID))
@@ -297,11 +314,11 @@ func (s *Service) failed(ctx context.Context, projectID, op string, err error) e
 func (s *Service) finding(ctx context.Context, projectID string, err error) {
 	slog.ErrorContext(ctx, "project deletion needs attention", slogx.Error(err), slog.String("project_id", projectID))
 	telemetry.RecordError(ctx, err)
-	_ = s.store(ctx, projectID, err)
+	s.store(ctx, projectID, err)
 }
 
 // store keeps the last problem on the deletion's row, for operators.
-func (s *Service) store(ctx context.Context, projectID string, err error) error {
+func (s *Service) store(ctx context.Context, projectID string, err error) {
 	msg := err.Error()
 	if len(msg) > maxErrorLen {
 		msg = strings.ToValidUTF8(msg[:maxErrorLen], "")
@@ -314,5 +331,4 @@ func (s *Service) store(ctx context.Context, projectID string, err error) error 
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, werr)
 	}
-	return err
 }
