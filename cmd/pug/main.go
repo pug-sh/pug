@@ -309,8 +309,8 @@ var devCmd = &cobra.Command{
 		}
 		fmt.Println()
 
-		// Listed but not started: metering is a CronJob in deploys, so dev has to
-		// say so or usage silently reads back as "never metered".
+		// Listed but not started: both are CronJobs in deploys, so dev has to say so,
+		// or usage reads back as "never metered" and deleted projects keep their data.
 		fmt.Println(bold + "Jobs:" + reset)
 		fmt.Println("  "+yellow+"Usage metering:"+reset, "not scheduled — run", cyan+"pug cron usage"+reset, "for one pass")
 		fmt.Println("  "+yellow+"Project purge:"+reset, "not scheduled — run", cyan+"pug cron purge"+reset, "for one pass")

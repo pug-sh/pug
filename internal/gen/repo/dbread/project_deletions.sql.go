@@ -14,11 +14,13 @@ import (
 const hasStalledProjectDeletions = `-- name: HasStalledProjectDeletions :one
 select exists (
   select 1 from project_deletions
-  where status = 'pending' and requested_at < now() - interval '1 day'
+  where status <> 'done'
+    and coalesce(round_started_at, requested_at) < now() - interval '1 day'
 )
 `
 
-// Nothing has run the purge job in a day.
+// Open a day after the request or the last round started: the pass is not
+// running, or keeps failing.
 func (q *Queries) HasStalledProjectDeletions(ctx context.Context) (bool, error) {
 	row := q.db.QueryRow(ctx, hasStalledProjectDeletions)
 	var exists bool

@@ -21,7 +21,7 @@ func TestWarnStalledDeletions(t *testing.T) {
 		want  string
 	}{
 		{found: false},
-		{found: true, want: "pug cron purge is not running"},
+		{found: true, want: "pug cron purge is scheduled and succeeding"},
 		{err: errors.New("db down"), want: "db down"},
 	} {
 		logs.Reset()

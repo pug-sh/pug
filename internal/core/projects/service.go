@@ -45,7 +45,7 @@ func isUniqueViolationOn(err error, constraint string) bool {
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
-	pgW   *pgxpool.Pool // for the methods that need a tx of their own (CreateProject, CreateProjectAsAdmin, DeleteProject)
+	pgW   *pgxpool.Pool // for the methods that need a tx of their own
 	repo  *Repo
 }
 
@@ -141,10 +141,6 @@ func (s *Service) DeleteProjectByOperator(ctx context.Context, projectID, actor 
 	did, tokens, err := s.deleteByOperatorTx(ctx, projectID, actor)
 	// Even after a failed commit, which may still have landed.
 	s.invalidateTokens(ctx, projectID, tokens...)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to delete project", slogx.Error(err), slog.String("project_id", projectID))
-		telemetry.RecordError(ctx, err)
-	}
 	return did, err
 }
 
@@ -160,9 +156,10 @@ func (s *Service) deleteByOperatorTx(ctx context.Context, projectID, actor strin
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil, fmt.Errorf("lock project: %w", err)
 	}
+	live := err == nil && !project.DeletionTime.Valid
 	did := OperatorDeletionHidden
 	var tokens []string
-	if err == nil && !project.DeletionTime.Valid {
+	if live {
 		tokens, err = hideProjectInTx(ctx, w, project, actor)
 	} else {
 		did, err = queueOrphanInTx(ctx, w, projectID, actor)

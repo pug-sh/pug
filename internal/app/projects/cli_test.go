@@ -98,10 +98,13 @@ func TestDelete(t *testing.T) {
 		}
 	})
 
-	t.Run("a malformed id is refused", func(t *testing.T) {
+	t.Run("a malformed id or a blank actor is refused", func(t *testing.T) {
 		var out strings.Builder
 		if err := cli.Delete(ctx, &out, "abc", "ops/1"); err == nil {
 			t.Fatal("Delete(abc) succeeded")
+		}
+		if err := cli.Delete(ctx, &out, xid.New().String(), " "); err == nil {
+			t.Fatal("Delete with a blank actor succeeded")
 		}
 		var n int
 		if err := pg.PgW.QueryRow(ctx, "select count(*) from project_deletions").Scan(&n); err != nil || n != 2 {

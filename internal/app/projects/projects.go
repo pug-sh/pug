@@ -3,8 +3,10 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
@@ -53,9 +55,14 @@ func (c *CLI) Close(ctx context.Context) {
 // Delete deletes the project as its admin would, or queues an id with no
 // projects row.
 func (c *CLI) Delete(ctx context.Context, out io.Writer, projectID, actor string) error {
-	// A typo would otherwise queue a deletion that matches nothing.
+	// Catches a mangled paste. A well-formed wrong id still queues a deletion
+	// that matches nothing.
 	if _, err := xid.FromString(projectID); err != nil {
 		return fmt.Errorf("%q is not a project id", projectID)
+	}
+	// cobra's required check still lets --actor "" through.
+	if strings.TrimSpace(actor) == "" {
+		return errors.New("--actor must not be blank")
 	}
 	did, err := c.svc.DeleteProjectByOperator(ctx, projectID, actor)
 	if err != nil {
@@ -64,7 +71,7 @@ func (c *CLI) Delete(ctx context.Context, out io.Writer, projectID, actor string
 	var msg string
 	switch did {
 	case coreprojects.OperatorDeletionHidden:
-		msg = "hidden, its keys, share links and push credential revoked, and its data queued for erasure"
+		msg = "hidden, its keys, share links, campaigns and push credential revoked, and its data queued for erasure"
 	case coreprojects.OperatorDeletionQueuedOrphan:
 		msg = "no projects row; queued, so the purge job erases what ClickHouse holds"
 	case coreprojects.OperatorDeletionReopened:

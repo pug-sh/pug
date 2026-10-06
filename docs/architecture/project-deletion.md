@@ -1,6 +1,6 @@
 # Project deletion
 
-> **Status: phases 1 to 3 implemented; phase 3's cleanup in production and phase 4 not yet.** Written 2026-10-05 for review.
+> **Status: phases 1 to 3 implemented; the production CronJob, the orphan cleanup and phase 4 not yet.** Written 2026-10-05 for review.
 
 ## Summary
 
@@ -361,9 +361,12 @@ And it queues projects deleted before this shipped, which left their ClickHouse
 rows behind. For an id with no `projects` row, the command only writes the
 ledger row, and the job erases what ClickHouse holds. That row has no `org_id`,
 so the job skips its usage count. Running the command on an id that already has
-a row changes nothing while the deletion is open, and reopens a `done` one. It
-refuses an id that is not a project id, since a typo would queue a deletion that
-matches nothing.
+a row changes nothing while the deletion is open, and reopens a `done` one. A
+reopen keeps the first requester. It refuses a malformed id, such as a truncated
+paste. A well-formed wrong id still queues a deletion, which matches nothing.
+
+Run it with the server's environment. It clears the API-key cache in the
+server's Redis, and a checkout's `.env` would point it at a local one.
 
 ## Frontend (`../app`)
 
@@ -410,8 +413,9 @@ step failed. It records an error when:
    error names the tables it is waiting on.
 
 These all come from the pass, so none fires when the pass never runs. The server
-covers that case. At startup it logs an error while any deletion has been
-`pending` for over a day.
+covers that case. At startup it logs an error while any deletion is still open a
+day after its request or its last round started. That catches a job that never
+ran, and one that stopped after a deletion's first round.
 
 ## Phases
 
@@ -506,7 +510,7 @@ Tests:
 | Where | Change |
 |---|---|
 | `internal/app/cron/purge`, `cmd/cron/purge` (new) | the pass: lock, root span, timeout, exit code. `cron.JobPurge` joins the lock keys. |
-| `internal/app/server` | a startup check that logs an error for any deletion `pending` over a day |
+| `internal/app/server` | a startup check that logs an error for any deletion stuck over a day |
 | `cmd/pug` | `pug cron purge`. `pug dev` lists it as not scheduled, like `pug cron usage`. |
 | `.github/workflows/release.yaml`, `Makefile` | a `cron-purge` image beside `cron-usage` |
 | `CLAUDE.md` | `pug cron purge` beside `pug cron usage` |
@@ -522,7 +526,8 @@ not this one.
 Tests:
 
 1. **Never scheduled.** A deletion `pending` for over a day makes the server log
-   an error at startup.
+   an error at startup. So does one left `deleting` a day after its last round.
+2. **Failed pass.** A pass that fails exits non-zero.
 
 Until a deletion exists, each pass finds nothing to do. A deletion made through
 the API in phase 1 is erased by the first pass.
@@ -541,13 +546,15 @@ Tests:
 1. **Operator command.** A live project's id is hidden and queued, as by the
    RPC. An id with no `projects` row gets only a ledger row, with no `org_id`,
    and the job skips its usage count. A second run changes nothing while the
-   deletion is open, and reopens a `done` one.
+   deletion is open, and reopens a `done` one. A blank `--actor` is refused.
 
 Then, in production:
 
 1. Find the orphans: project ids in ClickHouse `events` that Postgres does not
    know, found with a `SELECT`.
-2. Queue each with `pug projects delete`.
+2. Queue each with `pug projects delete`, a few dozen at a time. Each open
+   deletion costs about 10 ClickHouse queries a pass, `done` ones included for
+   30 days, and they share the pass's 2-minute budget.
 3. Watch them reach `done`, and time the ClickHouse deletes. Decision 6 assumes
    they take minutes.
 

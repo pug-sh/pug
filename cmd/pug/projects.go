@@ -22,10 +22,12 @@ func newProjectsCmd() *cobra.Command {
 		Use:   "delete <project-id>",
 		Short: "Delete a project without the admin check, or queue an id with no projects row",
 		Long: "Does what an admin's delete does: hides the project, revokes its keys, share\n" +
-			"links and push credential, and queues its data for erasure. An id with no\n" +
-			"projects row, such as a project deleted before deletions were recorded, is\n" +
-			"only queued, so the purge job erases what ClickHouse holds. Running it again\n" +
-			"changes nothing while the deletion is open, and reopens a finished one.",
+			"links, campaigns and push credential, and queues its data for erasure. An id\n" +
+			"with no projects row, such as a project deleted before deletions were\n" +
+			"recorded, is only queued, so the purge job erases what ClickHouse holds.\n" +
+			"Running it again changes nothing while the deletion is open, and reopens a\n" +
+			"finished one. Run it with the server's environment: it clears the API-key\n" +
+			"cache in the server's Redis.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -45,7 +47,7 @@ func newProjectsCmd() *cobra.Command {
 			return cli.Delete(ctx, cmd.OutOrStdout(), args[0], actor)
 		},
 	}
-	del.Flags().String("actor", "", "who is deleting it, recorded on the deletion (e.g. \"praveen/TICKET-1\")")
+	del.Flags().String("actor", "", "who is deleting it, recorded on the deletion it creates (e.g. \"praveen/TICKET-1\")")
 	mustMarkRequired(del, "actor")
 	cmd.AddCommand(del)
 	return cmd
