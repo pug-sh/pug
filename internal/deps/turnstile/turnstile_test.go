@@ -17,7 +17,7 @@ func testVerifier(t *testing.T, h http.HandlerFunc) *Verifier {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	v := New("site-key", "secret-key")
+	v := New(Config{SiteKey: "site-key", SecretKey: "secret-key"})
 	v.url = srv.URL
 	return v
 }
