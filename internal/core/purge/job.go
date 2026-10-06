@@ -231,17 +231,20 @@ func (s *Service) erasePostgres(ctx context.Context, e erasing, now, until time.
 // deleteBatches deletes devices before profiles: their profile_id is on delete
 // set null, so a profile deleted first would rewrite its devices.
 func (s *Service) deleteBatches(ctx context.Context, projectID string, until time.Time) (bool, error) {
+	// Bounds a statement stuck on a row lock too.
+	batchCtx, cancel := context.WithDeadline(ctx, until)
+	defer cancel()
 	batches := []struct {
 		table string
 		run   func() (int64, error)
 	}{
 		{"profile_devices", func() (int64, error) {
-			return s.write.DeleteProfileDevicesBatch(ctx, dbwrite.DeleteProfileDevicesBatchParams{
+			return s.write.DeleteProfileDevicesBatch(batchCtx, dbwrite.DeleteProfileDevicesBatchParams{
 				ProjectID: projectID, RowLimit: batchRows,
 			})
 		}},
 		{"profiles", func() (int64, error) {
-			return s.write.DeleteProfilesBatch(ctx, dbwrite.DeleteProfilesBatchParams{
+			return s.write.DeleteProfilesBatch(batchCtx, dbwrite.DeleteProfilesBatchParams{
 				ProjectID: projectID, RowLimit: batchRows,
 			})
 		}},
@@ -253,6 +256,9 @@ func (s *Service) deleteBatches(ctx context.Context, projectID string, until tim
 			}
 			n, err := b.run()
 			if err != nil {
+				if batchCtx.Err() != nil && ctx.Err() == nil {
+					return false, nil
+				}
 				return false, s.failed(ctx, projectID, "delete a batch of "+b.table, err)
 			}
 			if n < batchRows {
