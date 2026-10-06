@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -36,13 +37,22 @@ type fakeAuthService struct {
 	providers    []coreauth.SignInProvider
 	providersErr error
 	onConnection func(connectionID string)
+	onEmail      func()
 	discovery    coreauth.SignInDiscovery
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
+	if f.onEmail != nil {
+		f.onEmail()
+	}
 	return coreauth.Session{}, f.signInErr
 }
-func (f fakeAuthService) RequestMagicLink(context.Context, string) error { return f.magicLinkErr }
+func (f fakeAuthService) RequestMagicLink(context.Context, string) error {
+	if f.onEmail != nil {
+		f.onEmail()
+	}
+	return f.magicLinkErr
+}
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
 	return f.session, f.completeErr
 }
@@ -683,7 +693,8 @@ func (fakeTurnstile) SiteKey() string { return "site-key" }
 func TestTurnstileGuardsEmailSignIn(t *testing.T) {
 	// The service fails, so a request that reaches it maps to Internal.
 	reached := errors.New("service reached")
-	svc := fakeAuthService{signInErr: reached, magicLinkErr: reached}
+	var ran bool
+	svc := fakeAuthService{signInErr: reached, magicLinkErr: reached, onEmail: func() { ran = true }}
 	rpcs := map[string]func(context.Context, *server, string) error{
 		"SignInWithEmail": func(ctx context.Context, s *server, token string) error {
 			_, err := s.SignInWithEmail(ctx, connect.NewRequest(&authv1.SignInWithEmailRequest{TurnstileToken: proto.String(token)}))
@@ -719,7 +730,11 @@ func TestTurnstileGuardsEmailSignIn(t *testing.T) {
 			if ctx == nil {
 				ctx = t.Context()
 			}
+			ran = false
 			err := call(ctx, &server{service: svc, turnstile: tc.verifier}, tc.token)
+			if ran != (tc.code == connect.CodeInternal) {
+				t.Errorf("%s %s: service ran = %v", name, tc.name, ran)
+			}
 			code, reason := connect.CodeOf(err), apperr.Reason("")
 			if ae, ok := errors.AsType[*apperr.Error](err); ok {
 				code, reason = ae.Code(), ae.Reason()
@@ -739,7 +754,7 @@ func TestGetAuthConfigReturnsTheTurnstileSiteKey(t *testing.T) {
 		verifier turnstileVerifier
 		want     *string
 	}{
-		{verifier: nil, want: nil},
+		{},
 		{verifier: fakeTurnstile{}, want: proto.String("site-key")},
 	} {
 		s := &server{turnstile: tc.verifier}
@@ -747,7 +762,7 @@ func TestGetAuthConfigReturnsTheTurnstileSiteKey(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := resp.Msg.TurnstileSiteKey; (got == nil) != (tc.want == nil) || got != nil && *got != *tc.want {
+		if got := resp.Msg.TurnstileSiteKey; !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("turnstile_site_key = %v, want %v", got, tc.want)
 		}
 	}

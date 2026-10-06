@@ -55,13 +55,8 @@ func TestVerify(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := testVerifier(t, tt.handler).Verify(t.Context(), "token")
-			switch {
-			case tt.ok && err != nil:
-				t.Fatalf("Verify = %v, want nil", err)
-			case tt.rejected && !errors.Is(err, ErrRejected):
-				t.Fatalf("Verify = %v, want ErrRejected", err)
-			case !tt.ok && !tt.rejected && (err == nil || errors.Is(err, ErrRejected)):
-				t.Fatalf("Verify = %v, want a failure that is not ErrRejected", err)
+			if (err == nil) != tt.ok || errors.Is(err, ErrRejected) != tt.rejected {
+				t.Fatalf("Verify = %v, want ok %t, rejected %t", err, tt.ok, tt.rejected)
 			}
 		})
 	}
@@ -94,8 +89,15 @@ func TestVerifyTimesOut(t *testing.T) {
 	v := testVerifier(t, func(http.ResponseWriter, *http.Request) { <-release })
 	t.Cleanup(func() { close(release) })
 	v.client.Timeout = 50 * time.Millisecond
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	if err := v.Verify(t.Context(), "token"); err == nil || errors.Is(err, ErrRejected) {
 		t.Fatalf("Verify = %v, want a failure that is not ErrRejected", err)
+	}
+	if !strings.Contains(logs.String(), "turnstile check failed") {
+		t.Fatalf("timeout not logged: %q", logs.String())
 	}
 }
 
@@ -105,7 +107,7 @@ func TestVerifyLogsOnlyCloudflareFailures(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	v := testVerifier(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) })
+	v := testVerifier(t, answerStatus(http.StatusBadGateway, ""))
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := v.Verify(ctx, "token"); err == nil {
@@ -115,8 +117,11 @@ func TestVerifyLogsOnlyCloudflareFailures(t *testing.T) {
 	if err := refuses.Verify(t.Context(), "token"); !errors.Is(err, ErrRejected) {
 		t.Fatalf("Verify = %v, want ErrRejected", err)
 	}
+	if err := testVerifier(t, answer(`{"success":true}`)).Verify(t.Context(), "token"); err != nil {
+		t.Fatal(err)
+	}
 	if logs.Len() != 0 {
-		t.Fatalf("canceled or refused request logged: %q", logs.String())
+		t.Fatalf("canceled, refused or accepted request logged: %q", logs.String())
 	}
 	if err := v.Verify(t.Context(), "token"); err == nil {
 		t.Fatal("Verify = nil, want a failure")

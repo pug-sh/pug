@@ -15,7 +15,6 @@ type turnstileConfig struct {
 	SecretKey string `env:"PUG_TURNSTILE_SECRET_KEY"`
 }
 
-// newTurnstile returns nil when neither key is set, which turns the check off.
 func newTurnstile(ctx context.Context) (*turnstile.Verifier, error) {
 	var cfg turnstileConfig
 	if err := envconfig.Process(ctx, &cfg); err != nil {

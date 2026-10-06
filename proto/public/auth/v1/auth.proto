@@ -6,7 +6,7 @@ import "buf/validate/validate.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1";
 
 service AuthService {
-  // GetAuthConfig returns the non-secret provider settings the browser needs to
+  // GetAuthConfig returns the non-secret settings the browser needs to
   // render sign-in options and start Authorization Code + PKCE flows.
   rpc GetAuthConfig(GetAuthConfigRequest) returns (GetAuthConfigResponse) {}
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}

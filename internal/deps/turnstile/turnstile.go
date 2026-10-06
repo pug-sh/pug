@@ -47,15 +47,11 @@ func (v *Verifier) Verify(ctx context.Context, token string) error {
 		return ErrRejected
 	}
 	err := v.siteverify(ctx, token)
-	if err == nil || errors.Is(err, ErrRejected) {
-		return err
+	// A caller that went away is not Cloudflare's fault.
+	if err != nil && !errors.Is(err, ErrRejected) && ctx.Err() == nil {
+		slog.ErrorContext(ctx, "turnstile check failed", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 	}
-	// The caller went away, so Cloudflare is not at fault.
-	if ctx.Err() != nil {
-		return err
-	}
-	slog.ErrorContext(ctx, "turnstile check failed", slogx.Error(err))
-	telemetry.RecordError(ctx, err)
 	return err
 }
 

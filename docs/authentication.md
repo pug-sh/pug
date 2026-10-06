@@ -107,13 +107,13 @@ Name the Google entry `"id": "google"` to keep existing Google accounts linked: 
 
 ## Turnstile
 
-Pug can put Cloudflare Turnstile in front of password and magic-link sign-in, so a script can't use them to guess passwords or flood inboxes. It is off by default. To turn it on, create a Turnstile widget in Cloudflare for the dashboard's hostname, then set both of its keys on the server:
+Pug can put Cloudflare Turnstile in front of password and magic-link sign-in, so a script can't easily use them to guess passwords or flood inboxes. It is off by default. To turn it on, create a Turnstile widget in Cloudflare for the dashboard's hostname, then set both of its keys on the server:
 
 ```sh
 PUG_TURNSTILE_SITE_KEY=…
 PUG_TURNSTILE_SECRET_KEY=…
 ```
 
-Setting only one stops the server at startup. The dashboard reads the site key from `GetAuthConfig` and shows the widget. It must be a version that does; an older one sends no token, and every password and magic-link sign-in is refused with `TURNSTILE_FAILED`.
+Setting only one stops the server at startup. The dashboard reads the site key from `GetAuthConfig` and shows the widget. It must be a version that does; an older one sends no token, so every password sign-in and magic-link request is refused with `TURNSTILE_FAILED`. If a current dashboard gets that refusal on every sign-in, check that the widget lists the dashboard's hostname and that both keys come from that widget.
 
-The browser loads the widget from `challenges.cloudflare.com`, and the server calls Cloudflare to check each token, so leave Turnstile off on a server without internet access. While the server can't reach Cloudflare, both sign-ins fail with `TURNSTILE_UNAVAILABLE`. Unset both keys and restart the server to turn the check off.
+The browser loads the widget from `challenges.cloudflare.com`, and the server calls Cloudflare to check each token, so leave Turnstile off on a server without internet access. While the server can't reach Cloudflare, or Cloudflare refuses its secret key, password sign-in and magic-link requests fail with `TURNSTILE_UNAVAILABLE`. Unset both keys and restart the server to turn the check off.
