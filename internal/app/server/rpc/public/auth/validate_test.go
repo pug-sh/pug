@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"strings"
 	"testing"
 
 	"buf.build/go/protovalidate"
@@ -26,6 +27,27 @@ func TestSignInWithEmailRequest_Valid(t *testing.T) {
 	}
 	if err := protovalidate.Validate(req); err != nil {
 		t.Errorf("expected valid, got error: %v", err)
+	}
+}
+
+func TestRequestMagicLinkRequest_Valid(t *testing.T) {
+	req := &authv1.RequestMagicLinkRequest{Email: proto.String("test@example.com")}
+	if err := protovalidate.Validate(req); err != nil {
+		t.Errorf("a request without turnstile_token must stay valid, got error: %v", err)
+	}
+}
+
+func TestTurnstileTokenMaxLen(t *testing.T) {
+	for _, n := range []int{2048, 2049} {
+		token := proto.String(strings.Repeat("a", n))
+		for _, req := range []proto.Message{
+			&authv1.SignInWithEmailRequest{Email: proto.String("test@example.com"), Password: proto.String("password123"), TurnstileToken: token},
+			&authv1.RequestMagicLinkRequest{Email: proto.String("test@example.com"), TurnstileToken: token},
+		} {
+			if err := protovalidate.Validate(req); (err == nil) != (n <= 2048) {
+				t.Errorf("%T with a %d-char token: err = %v", req, n, err)
+			}
+		}
 	}
 }
 

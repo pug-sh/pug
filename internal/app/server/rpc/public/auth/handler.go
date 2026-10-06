@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
@@ -19,6 +20,7 @@ import (
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/deps/turnstile"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 	"github.com/pug-sh/pug/internal/slogx"
 	"google.golang.org/protobuf/proto"
@@ -40,12 +42,19 @@ type authService interface {
 	DemoSignIn(ctx context.Context) (coreauth.DemoSession, error)
 }
 
+type turnstileVerifier interface {
+	Verify(ctx context.Context, token string) error
+	SiteKey() string
+}
+
 type server struct {
 	service  authService
 	oauthCfg coreoauth.Config
+	// Nil turns the Turnstile check off.
+	turnstile turnstileVerifier
 }
 
-func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool, ssoCipher *secret.Cipher, ssoClient *http.Client) (*server, error) {
+func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool, ssoCipher *secret.Cipher, ssoClient *http.Client, verifier *turnstile.Verifier) (*server, error) {
 	oauthCfg, err := coreoauth.LoadConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load oauth config: %w", err)
@@ -57,10 +66,15 @@ func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKe
 		return nil, err
 	}
 
-	return &server{
+	s := &server{
 		service:  service.WithSSOConnections(ssoCipher, ssoClient),
 		oauthCfg: oauthCfg,
-	}, nil
+	}
+	// A nil *Verifier stored in the interface would not compare equal to nil.
+	if verifier != nil {
+		s.turnstile = verifier
+	}
+	return s, nil
 }
 
 // Without this, a half-finished config rollout looks like a healthy boot.
@@ -91,7 +105,28 @@ func (s *server) GetAuthConfig(
 	context.Context,
 	*connect.Request[authv1.GetAuthConfigRequest],
 ) (*connect.Response[authv1.GetAuthConfigResponse], error) {
-	return connect.NewResponse(&authv1.GetAuthConfigResponse{Providers: toRPCProviders(s.oauthCfg.Providers)}), nil
+	resp := &authv1.GetAuthConfigResponse{Providers: toRPCProviders(s.oauthCfg.Providers)}
+	if s.turnstile != nil {
+		resp.TurnstileSiteKey = proto.String(s.turnstile.SiteKey())
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (s *server) checkTurnstile(ctx context.Context, token string) error {
+	if s.turnstile == nil {
+		return nil
+	}
+	err := s.turnstile.Verify(ctx, token)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, turnstile.ErrRejected):
+		return apperr.PermissionDenied(apperr.ReasonTurnstileFailed, "verification failed, try again")
+	case ctx.Err() != nil:
+		return rpc.ConnectCtxErr(ctx.Err())
+	default:
+		return apperr.Unavailable(apperr.ReasonTurnstileUnavailable, "verification is unavailable, try again shortly")
+	}
 }
 
 func toRPCProviders(providers []coreoauth.ProviderConfig) []*authv1.AuthProviderConfig {
@@ -181,6 +216,9 @@ func (s *server) SignInWithEmail(
 	ctx context.Context,
 	req *connect.Request[authv1.SignInWithEmailRequest],
 ) (*connect.Response[authv1.SignInWithEmailResponse], error) {
+	if err := s.checkTurnstile(ctx, req.Msg.GetTurnstileToken()); err != nil {
+		return nil, err
+	}
 	session, err := s.service.SignInWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
 	if err != nil {
 		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeFailedPrecondition); ssoErr != nil {
@@ -201,6 +239,9 @@ func (s *server) RequestMagicLink(
 	ctx context.Context,
 	req *connect.Request[authv1.RequestMagicLinkRequest],
 ) (*connect.Response[authv1.RequestMagicLinkResponse], error) {
+	if err := s.checkTurnstile(ctx, req.Msg.GetTurnstileToken()); err != nil {
+		return nil, err
+	}
 	if err := s.service.RequestMagicLink(ctx, req.Msg.GetEmail()); err != nil {
 		if ssoErr := s.ssoRequiredError(ctx, err, connect.CodeFailedPrecondition); ssoErr != nil {
 			return nil, ssoErr

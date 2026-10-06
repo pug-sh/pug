@@ -62,7 +62,7 @@ const (
 
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
 type AuthServiceClient interface {
-	// GetAuthConfig returns the non-secret provider settings the browser needs to
+	// GetAuthConfig returns the non-secret settings the browser needs to
 	// render sign-in options and start Authorization Code + PKCE flows.
 	GetAuthConfig(context.Context, *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
@@ -215,7 +215,7 @@ func (c *authServiceClient) DiscoverSignIn(ctx context.Context, req *connect.Req
 
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
-	// GetAuthConfig returns the non-secret provider settings the browser needs to
+	// GetAuthConfig returns the non-secret settings the browser needs to
 	// render sign-in options and start Authorization Code + PKCE flows.
 	GetAuthConfig(context.Context, *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)

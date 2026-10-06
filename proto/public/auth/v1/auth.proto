@@ -6,7 +6,7 @@ import "buf/validate/validate.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1";
 
 service AuthService {
-  // GetAuthConfig returns the non-secret provider settings the browser needs to
+  // GetAuthConfig returns the non-secret settings the browser needs to
   // render sign-in options and start Authorization Code + PKCE flows.
   rpc GetAuthConfig(GetAuthConfigRequest) returns (GetAuthConfigResponse) {}
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
@@ -42,6 +42,8 @@ message SignInWithEmailRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_bytes = 72
   ];
+  // Required when GetAuthConfig returns a turnstile_site_key.
+  string turnstile_token = 3 [(buf.validate.field).string.max_len = 2048];
 }
 
 message SignInWithEmailResponse {
@@ -54,6 +56,8 @@ message RequestMagicLinkRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true
   ];
+  // Required when GetAuthConfig returns a turnstile_site_key.
+  string turnstile_token = 2 [(buf.validate.field).string.max_len = 2048];
 }
 
 message RequestMagicLinkResponse {}
@@ -166,6 +170,8 @@ message AuthProviderConfig {
 
 message GetAuthConfigResponse {
   repeated AuthProviderConfig providers = 1;
+  // Set when SignInWithEmail and RequestMagicLink need a turnstile_token.
+  string turnstile_site_key = 2;
 }
 
 message RefreshSessionRequest {
