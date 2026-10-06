@@ -29,6 +29,13 @@ func TestSignInWithEmailRequest_Valid(t *testing.T) {
 	}
 }
 
+func TestRequestMagicLinkRequest_Valid(t *testing.T) {
+	req := &authv1.RequestMagicLinkRequest{Email: proto.String("test@example.com")}
+	if err := protovalidate.Validate(req); err != nil {
+		t.Errorf("a request without turnstile_token must stay valid, got error: %v", err)
+	}
+}
+
 const validCodeVerifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
 
 // The nonce and code_verifier length floors are the constraints that carry

@@ -11,4 +11,6 @@ var (
 	ReasonOAuthProviderUnavailable    = codes.add("OAUTH_PROVIDER_UNAVAILABLE")
 	ReasonSSORequired                 = codes.add("SSO_REQUIRED")
 	ReasonSSOConnectionDomainMismatch = codes.add("SSO_CONNECTION_DOMAIN_MISMATCH")
+	ReasonTurnstileFailed             = codes.add("TURNSTILE_FAILED")
+	ReasonTurnstileUnavailable        = codes.add("TURNSTILE_UNAVAILABLE")
 )

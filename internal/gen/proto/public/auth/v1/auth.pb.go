@@ -73,9 +73,11 @@ type SignInWithEmailRequest struct {
 	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
 	// bcrypt accepts at most 72 bytes; rejecting longer inputs at the
 	// interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
-	Password      *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Password *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	// Required when GetAuthConfig returns a turnstile_site_key.
+	TurnstileToken *string `protobuf:"bytes,3,opt,name=turnstile_token,json=turnstileToken" json:"turnstile_token,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SignInWithEmailRequest) Reset() {
@@ -118,6 +120,13 @@ func (x *SignInWithEmailRequest) GetEmail() string {
 func (x *SignInWithEmailRequest) GetPassword() string {
 	if x != nil && x.Password != nil {
 		return *x.Password
+	}
+	return ""
+}
+
+func (x *SignInWithEmailRequest) GetTurnstileToken() string {
+	if x != nil && x.TurnstileToken != nil {
+		return *x.TurnstileToken
 	}
 	return ""
 }
@@ -175,10 +184,12 @@ func (x *SignInWithEmailResponse) GetRefreshToken() string {
 }
 
 type RequestMagicLinkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	// Required when GetAuthConfig returns a turnstile_site_key.
+	TurnstileToken *string `protobuf:"bytes,2,opt,name=turnstile_token,json=turnstileToken" json:"turnstile_token,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RequestMagicLinkRequest) Reset() {
@@ -214,6 +225,13 @@ func (*RequestMagicLinkRequest) Descriptor() ([]byte, []int) {
 func (x *RequestMagicLinkRequest) GetEmail() string {
 	if x != nil && x.Email != nil {
 		return *x.Email
+	}
+	return ""
+}
+
+func (x *RequestMagicLinkRequest) GetTurnstileToken() string {
+	if x != nil && x.TurnstileToken != nil {
+		return *x.TurnstileToken
 	}
 	return ""
 }
@@ -734,10 +752,12 @@ func (x *AuthProviderConfig) GetConnectionId() string {
 }
 
 type GetAuthConfigResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Providers     []*AuthProviderConfig  `protobuf:"bytes,1,rep,name=providers" json:"providers,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Providers []*AuthProviderConfig  `protobuf:"bytes,1,rep,name=providers" json:"providers,omitempty"`
+	// Set when SignInWithEmail and RequestMagicLink need a turnstile_token.
+	TurnstileSiteKey *string `protobuf:"bytes,2,opt,name=turnstile_site_key,json=turnstileSiteKey" json:"turnstile_site_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetAuthConfigResponse) Reset() {
@@ -775,6 +795,13 @@ func (x *GetAuthConfigResponse) GetProviders() []*AuthProviderConfig {
 		return x.Providers
 	}
 	return nil
+}
+
+func (x *GetAuthConfigResponse) GetTurnstileSiteKey() string {
+	if x != nil && x.TurnstileSiteKey != nil {
+		return *x.TurnstileSiteKey
+	}
+	return ""
 }
 
 type RefreshSessionRequest struct {
@@ -1164,18 +1191,20 @@ var File_public_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x19public/auth/v1/auth.proto\x12\x0epublic.auth.v1\x1a\x1bbuf/validate/validate.proto\"b\n" +
+	"\x19public/auth/v1/auth.proto\x12\x0epublic.auth.v1\x1a\x1bbuf/validate/validate.proto\"\x95\x01\n" +
 	"\x16SignInWithEmailRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12&\n" +
 	"\bpassword\x18\x02 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"T\n" +
+	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\x121\n" +
+	"\x0fturnstile_token\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\x0eturnstileToken\"T\n" +
 	"\x17SignInWithEmailResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\";\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"n\n" +
 	"\x17RequestMagicLinkRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\"\x1a\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x121\n" +
+	"\x0fturnstile_token\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\x0eturnstileToken\"\x1a\n" +
 	"\x18RequestMagicLinkResponse\"q\n" +
 	"\x18CompleteMagicLinkRequest\x12\x1c\n" +
 	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
@@ -1214,9 +1243,10 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
 	"issuer_url\x18\x05 \x01(\tR\tissuerUrl\x12\x16\n" +
 	"\x06scopes\x18\x06 \x03(\tR\x06scopes\x12#\n" +
-	"\rconnection_id\x18\a \x01(\tR\fconnectionId\"Y\n" +
+	"\rconnection_id\x18\a \x01(\tR\fconnectionId\"\x87\x01\n" +
 	"\x15GetAuthConfigResponse\x12@\n" +
-	"\tproviders\x18\x01 \x03(\v2\".public.auth.v1.AuthProviderConfigR\tproviders\"D\n" +
+	"\tproviders\x18\x01 \x03(\v2\".public.auth.v1.AuthProviderConfigR\tproviders\x12,\n" +
+	"\x12turnstile_site_key\x18\x02 \x01(\tR\x10turnstileSiteKey\"D\n" +
 	"\x15RefreshSessionRequest\x12+\n" +
 	"\rrefresh_token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\frefreshToken\"S\n" +
 	"\x16RefreshSessionResponse\x12\x14\n" +

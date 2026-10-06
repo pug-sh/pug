@@ -84,6 +84,10 @@ func start(ctx context.Context, d *deps) error {
 	if sso.cipher == nil {
 		warnStrandedSSOConnections(ctx, queriesRo.HasSSOConnections)
 	}
+	turnstileVerifier, err := newTurnstile(ctx)
+	if err != nil {
+		return err
+	}
 	warnStalledDeletions(ctx, queriesRo.HasStalledProjectDeletions)
 	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap()).WithSSOConnections(sso.cipher, sso.checkIssuer)
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
@@ -118,7 +122,7 @@ func start(ctx context.Context, d *deps) error {
 	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
 
 	// Public
-	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled, sso.cipher, sso.client)
+	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled, sso.cipher, sso.client, turnstileVerifier)
 	if err != nil {
 		return fmt.Errorf("auth server: %w", err)
 	}

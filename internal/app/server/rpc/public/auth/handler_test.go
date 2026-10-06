@@ -12,6 +12,7 @@ import (
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	"github.com/pug-sh/pug/internal/deps/turnstile"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -663,5 +664,104 @@ func TestDiscoverSignInReturnsTheConnection(t *testing.T) {
 	}
 	if p[1].GetId() != "okta" || p[1].ConnectionId != nil {
 		t.Fatalf("config provider = %v", p[1])
+	}
+}
+
+type fakeTurnstile struct {
+	err   error
+	token *string
+}
+
+func (f fakeTurnstile) Verify(_ context.Context, token string) error {
+	if f.token != nil {
+		*f.token = token
+	}
+	return f.err
+}
+func (fakeTurnstile) SiteKey() string { return "site-key" }
+
+func TestTurnstileGuardsEmailSignIn(t *testing.T) {
+	// The service fails, so a request that reaches it maps to Internal.
+	reached := errors.New("service reached")
+	svc := fakeAuthService{signInErr: reached, magicLinkErr: reached}
+	rpcs := map[string]func(context.Context, *server, string) error{
+		"SignInWithEmail": func(ctx context.Context, s *server, token string) error {
+			_, err := s.SignInWithEmail(ctx, connect.NewRequest(&authv1.SignInWithEmailRequest{TurnstileToken: proto.String(token)}))
+			return err
+		},
+		"RequestMagicLink": func(ctx context.Context, s *server, token string) error {
+			_, err := s.RequestMagicLink(ctx, connect.NewRequest(&authv1.RequestMagicLinkRequest{TurnstileToken: proto.String(token)}))
+			return err
+		},
+	}
+	gone, cancel := context.WithCancel(t.Context())
+	cancel()
+	for name, call := range rpcs {
+		var token string
+		cases := []struct {
+			name     string
+			ctx      context.Context
+			token    string
+			verifier turnstileVerifier
+			code     connect.Code
+			reason   apperr.Reason
+		}{
+			{name: "off", token: "tok", code: connect.CodeInternal},
+			{name: "accepted", token: "tok", verifier: fakeTurnstile{token: &token}, code: connect.CodeInternal},
+			{name: "no token", verifier: fakeTurnstile{err: turnstile.ErrRejected}, code: connect.CodePermissionDenied, reason: apperr.ReasonTurnstileFailed},
+			{name: "rejected", token: "tok", verifier: fakeTurnstile{err: turnstile.ErrRejected}, code: connect.CodePermissionDenied, reason: apperr.ReasonTurnstileFailed},
+			{name: "unavailable", token: "tok", verifier: fakeTurnstile{err: errors.New("siteverify down")}, code: connect.CodeUnavailable, reason: apperr.ReasonTurnstileUnavailable},
+			{name: "siteverify timeout", token: "tok", verifier: fakeTurnstile{err: context.DeadlineExceeded}, code: connect.CodeUnavailable, reason: apperr.ReasonTurnstileUnavailable},
+			{name: "caller gone", ctx: gone, token: "tok", verifier: fakeTurnstile{err: context.Canceled}, code: connect.CodeCanceled},
+		}
+		for _, tc := range cases {
+			ctx := tc.ctx
+			if ctx == nil {
+				ctx = t.Context()
+			}
+			err := call(ctx, &server{service: svc, turnstile: tc.verifier}, tc.token)
+			code, reason := connect.CodeOf(err), apperr.Reason("")
+			if ae, ok := errors.AsType[*apperr.Error](err); ok {
+				code, reason = ae.Code(), ae.Reason()
+			}
+			if code != tc.code || reason != tc.reason {
+				t.Errorf("%s %s: err = %v (%v, %q), want %v, %q", name, tc.name, err, code, reason, tc.code, tc.reason)
+			}
+		}
+		if token != "tok" {
+			t.Errorf("%s: verifier got token %q, want the request's", name, token)
+		}
+	}
+}
+
+func TestGetAuthConfigReturnsTheTurnstileSiteKey(t *testing.T) {
+	for _, tc := range []struct {
+		verifier turnstileVerifier
+		want     *string
+	}{
+		{verifier: nil, want: nil},
+		{verifier: fakeTurnstile{}, want: proto.String("site-key")},
+	} {
+		s := &server{turnstile: tc.verifier}
+		resp, err := s.GetAuthConfig(t.Context(), connect.NewRequest(&authv1.GetAuthConfigRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := resp.Msg.TurnstileSiteKey; (got == nil) != (tc.want == nil) || got != nil && *got != *tc.want {
+			t.Errorf("turnstile_site_key = %v, want %v", got, tc.want)
+		}
+	}
+}
+
+func TestNewServerTurnstile(t *testing.T) {
+	t.Setenv("PUG_CONFIG_FILE", "")
+	for _, v := range []*turnstile.Verifier{nil, turnstile.New("site", "secret")} {
+		s, err := NewServer(t.Context(), nil, nil, []byte("key"), nil, false, nil, nil, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if on := s.turnstile != nil; on != (v != nil) {
+			t.Errorf("verifier set %v: check on = %v", v != nil, on)
+		}
 	}
 }
