@@ -106,6 +106,14 @@ make clickstack
 ./bin/pug domains release <org-id> acme.com
 ./bin/pug domains unenforce acme.com
 
+# Operator CLI for project deletion: what an admin's delete does, without the
+# admin check (docs/architecture/project-deletion.md). An id with no projects row,
+# such as a project deleted before deletions were recorded, only gets a
+# project_deletions row with no org, so the purge job erases its ClickHouse rows
+# and counts no usage. Re-running changes nothing while the deletion is open, and
+# reopens a done one.
+./bin/pug projects delete <project-id> --actor <who>
+
 # Operator CLI for the entitlement store — the ONLY writer of
 # billing_entitlements, and the reason that table is usable rather than
 # decorative. Postgres only: no payments provider is contacted and no price is

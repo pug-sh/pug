@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createOrphanProjectDeletion = `-- name: CreateOrphanProjectDeletion :execrows
+insert into project_deletions (project_id, requested_by, status)
+values ($1, $2, 'pending')
+on conflict (project_id) do nothing
+`
+
+type CreateOrphanProjectDeletionParams struct {
+	ProjectID   string
+	RequestedBy string
+}
+
+// For an id with no projects row. No org, so the job skips its usage count.
+func (q *Queries) CreateOrphanProjectDeletion(ctx context.Context, arg CreateOrphanProjectDeletionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createOrphanProjectDeletion, arg.ProjectID, arg.RequestedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createProject = `-- name: CreateProject :one
 insert into projects (display_name, id, org_id, reporting_timezone)
 values ($1, $2, $3, $4)
@@ -155,6 +175,29 @@ delete from dashboard_shares where project_id = $1
 func (q *Queries) DeleteDashboardSharesByProjectID(ctx context.Context, projectID string) error {
 	_, err := q.db.Exec(ctx, deleteDashboardSharesByProjectID, projectID)
 	return err
+}
+
+const getAnyProjectByIDForUpdate = `-- name: GetAnyProjectByIDForUpdate :one
+select create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_time from projects
+where id = $1
+for update
+`
+
+// The operator's lock: by id alone, hidden projects included.
+func (q *Queries) GetAnyProjectByIDForUpdate(ctx context.Context, id string) (Project, error) {
+	row := q.db.QueryRow(ctx, getAnyProjectByIDForUpdate, id)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
+		&i.ReportingTimezone,
+		&i.UpdateTime,
+		&i.DeletionTime,
+	)
+	return i, err
 }
 
 const getProjectByIDForUpdate = `-- name: GetProjectByIDForUpdate :one

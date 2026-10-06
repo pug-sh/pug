@@ -400,6 +400,7 @@ func init() {
 
 	rootCmd.AddCommand(billingCmd)
 	rootCmd.AddCommand(domainsCmd)
+	rootCmd.AddCommand(projectsCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)

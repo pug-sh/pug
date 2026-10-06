@@ -1,6 +1,6 @@
 # Project deletion
 
-> **Status: phases 1 to 2c implemented; 3 and 4 not yet.** Written 2026-10-05 for review.
+> **Status: phases 1 to 3 implemented; phase 3's cleanup in production and phase 4 not yet.** Written 2026-10-05 for review.
 
 ## Summary
 
@@ -361,7 +361,9 @@ And it queues projects deleted before this shipped, which left their ClickHouse
 rows behind. For an id with no `projects` row, the command only writes the
 ledger row, and the job erases what ClickHouse holds. That row has no `org_id`,
 so the job skips its usage count. Running the command on an id that already has
-a row changes nothing while the deletion is open, and reopens a `done` one.
+a row changes nothing while the deletion is open, and reopens a `done` one. It
+refuses an id that is not a project id, since a typo would queue a deletion that
+matches nothing.
 
 ## Frontend (`../app`)
 
@@ -529,6 +531,8 @@ the API in phase 1 is erased by the first pass.
 
 | Where | Change |
 |---|---|
+| `schema/postgres/queries/write/projects.sql` | a lock by id alone, and the ledger row for an id with no `projects` row |
+| `internal/core/projects` | the operator's delete, sharing the request's statements |
 | `internal/app/projects` (new), `cmd/pug` | `pug projects delete`, as in "Operator command" |
 | `CLAUDE.md` | `pug projects delete` beside `pug billing` and `pug domains` |
 
