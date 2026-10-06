@@ -45,7 +45,7 @@ func isUniqueViolationOn(err error, constraint string) bool {
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
-	pgW   *pgxpool.Pool // for the methods that need a tx of their own (CreateProject, CreateProjectAsAdmin, DeleteProject)
+	pgW   *pgxpool.Pool // for the methods that need a tx of their own
 	repo  *Repo
 }
 
@@ -87,31 +87,112 @@ func (s *Service) deleteProjectTx(ctx context.Context, orgID, projectID, request
 	if err != nil {
 		return nil, fmt.Errorf("lock project: %w", err)
 	}
-	if err := w.CreateProjectDeletion(ctx, dbwrite.CreateProjectDeletionParams{
-		DisplayName: project.DisplayName,
-		OrgID:       postgres.NewText(orgID),
-		ProjectID:   projectID,
-		RequestedBy: requestedBy,
-	}); err != nil {
-		return nil, fmt.Errorf("create project deletion: %w", err)
-	}
-	tokens, err := w.DeleteApiKeysByProjectID(ctx, projectID)
+	tokens, err := hideProjectInTx(ctx, w, project, requestedBy)
 	if err != nil {
-		return nil, fmt.Errorf("delete api keys: %w", err)
-	}
-	if err := w.DeleteDashboardSharesByProjectID(ctx, projectID); err != nil {
-		return nil, fmt.Errorf("delete dashboard shares: %w", err)
-	}
-	if err := w.DeleteCampaignsByProjectID(ctx, projectID); err != nil {
-		return nil, fmt.Errorf("delete campaigns: %w", err)
-	}
-	if err := w.HideProject(ctx, projectID); err != nil {
-		return nil, fmt.Errorf("hide project: %w", err)
+		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return tokens, fmt.Errorf("commit delete project: %w", err)
 	}
 	return tokens, nil
+}
+
+// hideProjectInTx runs under the project's row lock and returns the revoked
+// keys' tokens.
+func hideProjectInTx(ctx context.Context, w *dbwrite.Queries, project dbwrite.Project, requestedBy string) ([]string, error) {
+	if err := w.CreateProjectDeletion(ctx, dbwrite.CreateProjectDeletionParams{
+		DisplayName: project.DisplayName,
+		OrgID:       postgres.NewText(project.OrgID),
+		ProjectID:   project.ID,
+		RequestedBy: requestedBy,
+	}); err != nil {
+		return nil, fmt.Errorf("create project deletion: %w", err)
+	}
+	tokens, err := w.DeleteApiKeysByProjectID(ctx, project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("delete api keys: %w", err)
+	}
+	if err := w.DeleteDashboardSharesByProjectID(ctx, project.ID); err != nil {
+		return nil, fmt.Errorf("delete dashboard shares: %w", err)
+	}
+	if err := w.DeleteCampaignsByProjectID(ctx, project.ID); err != nil {
+		return nil, fmt.Errorf("delete campaigns: %w", err)
+	}
+	if err := w.HideProject(ctx, project.ID); err != nil {
+		return nil, fmt.Errorf("hide project: %w", err)
+	}
+	return tokens, nil
+}
+
+// OperatorDeletion is what DeleteProjectByOperator did.
+type OperatorDeletion int
+
+const (
+	OperatorDeletionHidden OperatorDeletion = iota + 1
+	OperatorDeletionQueuedOrphan
+	OperatorDeletionReopened
+	OperatorDeletionUnchanged
+)
+
+// DeleteProjectByOperator is DeleteProject by id alone, for `pug projects
+// delete`. An id with no projects row gets only a ledger row, so the purge job
+// erases what ClickHouse still holds for it.
+func (s *Service) DeleteProjectByOperator(ctx context.Context, projectID, actor string) (OperatorDeletion, error) {
+	did, tokens, err := s.deleteByOperatorTx(ctx, projectID, actor)
+	// Even after a failed commit, which may still have landed.
+	s.invalidateTokens(ctx, projectID, tokens...)
+	return did, err
+}
+
+func (s *Service) deleteByOperatorTx(ctx context.Context, projectID, actor string) (OperatorDeletion, []string, error) {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		return 0, nil, fmt.Errorf("begin operator delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	w := dbwrite.New(tx)
+
+	project, err := w.GetAnyProjectByIDForUpdate(ctx, projectID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil, fmt.Errorf("lock project: %w", err)
+	}
+	live := err == nil && !project.DeletionTime.Valid
+	did := OperatorDeletionHidden
+	var tokens []string
+	if live {
+		tokens, err = hideProjectInTx(ctx, w, project, actor)
+	} else {
+		did, err = queueOrphanInTx(ctx, w, projectID, actor)
+	}
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, tokens, fmt.Errorf("commit operator delete: %w", err)
+	}
+	return did, tokens, nil
+}
+
+// queueOrphanInTx writes the ledger row for an id with no live projects row, or
+// reopens a done one. An open deletion is left alone.
+func queueOrphanInTx(ctx context.Context, w *dbwrite.Queries, projectID, actor string) (OperatorDeletion, error) {
+	n, err := w.CreateOrphanProjectDeletion(ctx, dbwrite.CreateOrphanProjectDeletionParams{
+		ProjectID:   projectID,
+		RequestedBy: actor,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("create project deletion: %w", err)
+	}
+	if n > 0 {
+		return OperatorDeletionQueuedOrphan, nil
+	}
+	if n, err = w.ReopenProjectDeletion(ctx, projectID); err != nil {
+		return 0, fmt.Errorf("reopen project deletion: %w", err)
+	}
+	if n > 0 {
+		return OperatorDeletionReopened, nil
+	}
+	return OperatorDeletionUnchanged, nil
 }
 
 func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, displayName, reportingTimezone string) (dbwrite.Project, error) {

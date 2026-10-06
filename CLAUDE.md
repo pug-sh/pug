@@ -69,6 +69,12 @@ make clickstack
 # it has no basis for. Ingestion never consults it.
 ./bin/pug cron usage
 
+# One pass erasing deleted projects, then exits (docs/architecture/project-deletion.md).
+# Deployed as a k8s CronJob every 5 minutes (image `cron-purge`, cmd/cron/purge),
+# under its own advisory lock and a 3m timeout. Nothing else schedules it: without
+# it a deleted project stays hidden with its data in place.
+./bin/pug cron purge
+
 # Rolling demo-traffic generator. Gated by PUG_DEMO_ENABLED everywhere: when off
 # (default), `pug dev` skips it and the standalone `pug worker demo` idles (stays
 # running but generates nothing, so a k8s Deployment doesn't restart-loop on
@@ -99,6 +105,14 @@ make clickstack
 ./bin/pug domains show acme.com
 ./bin/pug domains release <org-id> acme.com
 ./bin/pug domains unenforce acme.com
+
+# Operator CLI for project deletion: what an admin's delete does, without the
+# admin check (docs/architecture/project-deletion.md). An id with no projects row,
+# such as a project deleted before deletions were recorded, only gets a
+# project_deletions row with no org, so the purge job erases its ClickHouse rows
+# and counts no usage. Re-running changes nothing while the deletion is open, and
+# reopens a done one.
+./bin/pug projects delete <project-id> --actor <who>
 
 # Operator CLI for the entitlement store — the ONLY writer of
 # billing_entitlements, and the reason that table is usable rather than

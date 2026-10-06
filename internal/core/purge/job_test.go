@@ -340,6 +340,40 @@ func TestPassFreezesUsageOnce(t *testing.T) {
 	}
 }
 
+// An id Postgres no longer knows, queued by the operator, has no org to count
+// its usage under.
+func TestPassErasesAnOrphanWithoutCountingIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	orphan := xid.New().String()
+	seedClickHouse(t, f.ch, orphan, eventDay.Add(2*time.Hour))
+	if did, err := f.projects.DeleteProjectByOperator(t.Context(), orphan, "ops"); err != nil || did != projects.OperatorDeletionQueuedOrphan {
+		t.Fatalf("DeleteProjectByOperator = %v, %v; want the orphan queued", did, err)
+	}
+	f.date(t, orphan, requestedAt)
+
+	start := requestedAt.Add(time.Hour)
+	f.pass(t, start)
+	waitForDeletes(t, f.ch)
+	refreshProfileKeys(t, f.ch)
+	f.pass(t, start.Add(5*time.Minute))
+
+	if d := f.deletion(t, orphan); d.Status != "done" || d.Error != "" {
+		t.Fatalf("status %q, error %q; want done with no error", d.Status, d.Error)
+	}
+	for table, n := range chCounts(t, f.ch, orphan) {
+		if n != 0 {
+			t.Errorf("clickhouse %s still holds %d of the orphan's rows", table, n)
+		}
+	}
+	if got := f.usageDays(t, orphan); len(got) != 0 {
+		t.Errorf("usage days = %v, want none", got)
+	}
+}
+
 func TestPassFlagsADeletionStuckForADay(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -450,6 +484,11 @@ func (f *fixture) delete(t *testing.T, projectID string, at time.Time) {
 	if err := f.projects.DeleteProject(t.Context(), f.orgID, projectID, "customer test"); err != nil {
 		t.Fatalf("DeleteProject: %v", err)
 	}
+	f.date(t, projectID, at)
+}
+
+func (f *fixture) date(t *testing.T, projectID string, at time.Time) {
+	t.Helper()
 	if _, err := f.pg.PgW.Exec(t.Context(),
 		"update project_deletions set requested_at = $1 where project_id = $2", at, projectID); err != nil {
 		t.Fatalf("date the deletion: %v", err)

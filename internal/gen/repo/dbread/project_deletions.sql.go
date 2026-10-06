@@ -11,6 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const hasStalledProjectDeletions = `-- name: HasStalledProjectDeletions :one
+select exists (
+  select 1 from project_deletions
+  where status <> 'done'
+    and coalesce(round_started_at, requested_at) < now() - interval '1 day'
+)
+`
+
+// Open a day after the request or the last round started: the pass is not
+// running, or keeps failing.
+func (q *Queries) HasStalledProjectDeletions(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, hasStalledProjectDeletions)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listOpenProjectDeletions = `-- name: ListOpenProjectDeletions :many
 select display_name, done_at, error, org_id, project_id, requested_at, requested_by, round_started_at, rounds, status, update_time from project_deletions
 where status <> 'done' or done_at >= $1

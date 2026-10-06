@@ -238,7 +238,7 @@ func requireActor(cmd *cobra.Command) {
 func mustMarkRequired(cmd *cobra.Command, names ...string) {
 	for _, name := range names {
 		if err := cmd.MarkFlagRequired(name); err != nil {
-			panic(fmt.Sprintf("pug billing: %s has no %s flag: %v", cmd.Name(), name, err))
+			panic(fmt.Sprintf("pug: %s has no %s flag: %v", cmd.Name(), name, err))
 		}
 	}
 }

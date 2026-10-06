@@ -84,6 +84,7 @@ func start(ctx context.Context, d *deps) error {
 	if sso.cipher == nil {
 		warnStrandedSSOConnections(ctx, queriesRo.HasSSOConnections)
 	}
+	warnStalledDeletions(ctx, queriesRo.HasStalledProjectDeletions)
 	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap()).WithSSOConnections(sso.cipher, sso.checkIssuer)
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
 	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
