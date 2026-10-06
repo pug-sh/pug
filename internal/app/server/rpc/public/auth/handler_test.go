@@ -755,7 +755,7 @@ func TestGetAuthConfigReturnsTheTurnstileSiteKey(t *testing.T) {
 
 func TestNewServerTurnstile(t *testing.T) {
 	t.Setenv("PUG_CONFIG_FILE", "")
-	for _, v := range []*turnstile.Verifier{nil, turnstile.New(turnstile.Config{SiteKey: "site", SecretKey: "secret"})} {
+	for _, v := range []*turnstile.Verifier{nil, turnstile.New("site", "secret")} {
 		s, err := NewServer(t.Context(), nil, nil, []byte("key"), nil, false, nil, nil, v)
 		if err != nil {
 			t.Fatal(err)

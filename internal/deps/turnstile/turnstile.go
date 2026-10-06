@@ -28,11 +28,6 @@ var ErrRejected = errors.New("turnstile token rejected")
 
 var visitorCodes = []string{"invalid-input-response", "timeout-or-duplicate"}
 
-type Config struct {
-	SiteKey   string `env:"PUG_TURNSTILE_SITE_KEY"`
-	SecretKey string `env:"PUG_TURNSTILE_SECRET_KEY"`
-}
-
 type Verifier struct {
 	siteKey string
 	secret  string
@@ -40,8 +35,8 @@ type Verifier struct {
 	client  *http.Client
 }
 
-func New(cfg Config) *Verifier {
-	return &Verifier{siteKey: cfg.SiteKey, secret: cfg.SecretKey, url: siteverifyURL, client: httpx.NewClient(timeout)}
+func New(siteKey, secret string) *Verifier {
+	return &Verifier{siteKey: siteKey, secret: secret, url: siteverifyURL, client: httpx.NewClient(timeout)}
 }
 
 func (v *Verifier) SiteKey() string { return v.siteKey }

@@ -10,9 +10,14 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
+type turnstileConfig struct {
+	SiteKey   string `env:"PUG_TURNSTILE_SITE_KEY"`
+	SecretKey string `env:"PUG_TURNSTILE_SECRET_KEY"`
+}
+
 // newTurnstile returns nil when neither key is set, which turns the check off.
 func newTurnstile(ctx context.Context) (*turnstile.Verifier, error) {
-	var cfg turnstile.Config
+	var cfg turnstileConfig
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
 	}
@@ -24,5 +29,5 @@ func newTurnstile(ctx context.Context) (*turnstile.Verifier, error) {
 	if cfg.SiteKey == "" {
 		return nil, nil
 	}
-	return turnstile.New(cfg), nil
+	return turnstile.New(cfg.SiteKey, cfg.SecretKey), nil
 }
