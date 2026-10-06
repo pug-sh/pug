@@ -1,6 +1,6 @@
 # Project deletion
 
-> **Status: phase 1 implemented; phases 2 to 4 not yet.** Written 2026-10-05 for review.
+> **Status: phases 1, 2a and 2b implemented; 2c to 4 not yet.** Written 2026-10-05 for review.
 
 ## Summary
 
@@ -147,8 +147,8 @@ Rules:
 3. **Postgres in batches.** `profile_devices` first, then `profiles`, 5,000 rows
    per statement, each in its own transaction. Devices go first because their
    `profile_id` key is `on delete set null`. Deleting profiles first would
-   rewrite every device row before deleting it. A pass spends at most a few
-   minutes here and continues on the next.
+   rewrite every device row before deleting it. A pass spends at most two
+   minutes, counted from its start, and continues on the next.
 4. **The last step is one delete.**
    `delete from projects where id = ? and deletion_time is not null`. It
    cascades whatever is left: dashboards, tiles, erasure requests, and any row a
@@ -164,7 +164,8 @@ running.
 |---|---|---|
 | yes | yes | wait |
 | yes | no | `ALTER TABLE <t> DELETE WHERE project_id = ?` with `mutations_sync = 0` |
-| no | | the table is done |
+| no | yes | wait |
+| no | no | the table is done |
 
 "Delete running" comes from `system.mutations`, matched on the project id in the
 command. The statement returns as soon as ClickHouse queues it, so a pass never
@@ -172,7 +173,7 @@ waits on ClickHouse.
 
 The stage keeps no state of its own. `system.mutations` and the row counts are
 its state. Any pass can call it any number of times, and it never queues a
-second delete for the same table and project.
+second delete for the same table and project while one is running.
 
 It refuses an empty project id. No code path issues a delete without
 `project_id = ?`. It also refuses a project id that still has a live `projects`
@@ -192,8 +193,9 @@ than about 25 minutes before a delete ends runs out of deliveries and fails. See
 decision 6.
 
 A table that still has rows after its delete finished gets another round.
-Something wrote to it after the delete was queued. A new round starts at most
-once an hour, and each one records an error.
+Something wrote to it after the delete was queued. Each later round starts at
+least an hour after the last one, and records an error. So does a round that
+reopens a `done` deletion.
 
 ## Why one delete per table, not batches
 
@@ -272,7 +274,7 @@ lower a period's count.
    days it has stored. It takes that for a bad read and refreshes no org, every pass, for up
    to a full period.
 3. Before any delete, the job counts the project's events per day one last time,
-   over the meter's full-recompute window. It uses the meter's query, filtered to
+   over its org's current period and the month to date. It uses the meter's query, filtered to
    the project, and stores the result in the same transaction that sets
    `deleting`. This runs once per deletion, because a row never goes back to
    `pending`. A reopen goes from `done` straight to `deleting`. Counting again
@@ -402,7 +404,8 @@ step failed. It records an error when:
 1. a ClickHouse delete reports a failure in `system.mutations`. ClickHouse
    retries it on its own.
 2. a new round starts, because rows came back.
-3. a deletion is still not `done` a day after it started.
+3. a deletion is still not `done` a day after its last round started. The
+   error names the tables it is waiting on.
 
 These all come from the pass, so none fires when the pass never runs. The server
 covers that case. At startup it logs an error while any deletion has been
@@ -410,13 +413,15 @@ covers that case. At startup it logs an error while any deletion has been
 
 ## Phases
 
-Four phases, one PR each. No screen calls `Delete` until phase 4, so phases 1 to
-3 change nothing a user can see.
+Four phases. Phase 2 ships in three parts, and 2a and 2b share one PR. No screen calls
+`Delete` until phase 4, so phases 1 to 3 change nothing a user can see.
 
 | Phase | Ships | Afterwards |
 |---|---|---|
 | 1. Hide on delete | the migration and the request | `Delete` hides the project and keeps its usage. Its data waits in `pending`. |
-| 2. The purge job | `pug cron purge`, its image and its CronJob | pending deletions are erased |
+| 2a. The ClickHouse stage | the ClickHouse deletes | nothing calls them yet |
+| 2b. The job's steps | the usage freeze, the Postgres batches, the last step and the watch | nothing runs them yet |
+| 2c. The pass | `pug cron purge`, its image and its CronJob | pending deletions are erased |
 | 3. Operator command | `pug projects delete` and the orphan cleanup | projects deleted before this shipped are erased too |
 | 4. The button | the delete section in `../app` | admins can delete a project |
 
@@ -451,12 +456,53 @@ Afterwards a deletion hides the project, revokes its keys, links and push
 credential, and keeps its usage. Its data waits in `pending` for phase 2. Only a
 direct API call can get there, since no screen calls `Delete` yet.
 
-### Phase 2: the purge job
+### Phase 2a: the ClickHouse stage
+
+| Where | Change |
+|---|---|
+| `internal/core/purge` (new) | the ClickHouse stage and its table list |
+
+Tests:
+
+1. **Inventory guard.** The stage's tables are every ClickHouse table with a
+   `project_id` column, views aside. A new table cannot be forgotten silently.
+2. **Stage.** At most one queued delete per table and project. Project B's
+   delete is queued while project A's is running. An empty project id, or one
+   with a live `projects` row, is refused.
+
+### Phase 2b: the job's steps
 
 | Where | Change |
 |---|---|
 | `schema/postgres/queries/write/usage.sql` | a freeze upsert for the job |
-| `internal/core/purge` (new) | the ClickHouse stage, its table list, and the job's steps |
+| `schema/postgres/queries/{read,write}/project_deletions.sql` | the job's reads, status updates and batches |
+| `internal/core/usage` | the meter's query, filtered to one project |
+| `internal/core/purge` | the job's steps |
+
+Tests:
+
+1. **Inventory guard.** Every Postgres table with a `project_id` column cascades
+   from `projects`, or is on a short keep list (`usage_daily`,
+   `project_deletions`).
+2. **End to end.** Two projects with rows in every table. Delete one and run
+   passes on a moved clock. The deleted one is gone everywhere. The other is
+   untouched, row for row.
+3. **Late write.** A row inserted mid-delete gets a second round. The deletion
+   then finishes, with an error recorded.
+4. **Watch.** A row inserted after `done` reopens the deletion.
+5. **Usage.** The pass counts the project's days once, before any delete. The
+   frozen days survive the last step and sum into the org's total. A reopened
+   deletion does not count again. Phase 1's tests cover the meter's side.
+6. **Stuck.** A deletion not `done` a day after its last round started records
+   an error.
+7. **Live project.** A deletion row for a live project erases nothing, and does
+   not hold up another deletion.
+8. **Failing delete.** A ClickHouse delete that keeps failing is recorded.
+
+### Phase 2c: the pass
+
+| Where | Change |
+|---|---|
 | `internal/app/cron/purge`, `cmd/cron/purge` (new) | the pass: lock, root span, timeout, exit code. `cron.JobPurge` joins the lock keys. |
 | `internal/app/server` | a startup check that logs an error for any deletion `pending` over a day |
 | `cmd/pug` | `pug cron purge`. `pug dev` lists it as not scheduled, like `pug cron usage`. |
@@ -473,24 +519,7 @@ not this one.
 
 Tests:
 
-1. **Inventory guards.** Every Postgres table with a `project_id` column is
-   handled, or is on a short keep list (`usage_daily`, `project_deletions`). The
-   stage's ClickHouse list matches `tenantTables` in `internal/lint`, minus the
-   `property_keys` view. A new table cannot be forgotten silently.
-2. **End to end.** Two projects with rows in every table. Delete one and run
-   passes on a moved clock. The deleted one is gone everywhere. The other is
-   untouched, row for row.
-3. **Late write.** A row inserted mid-delete gets a second round. The deletion
-   then finishes, with an error recorded.
-4. **Watch.** A row inserted after `done` reopens the deletion.
-5. **Usage.** Frozen days survive the last step. The meter's next pass neither
-   updates nor drops them. The org's total is unchanged. When the deleted
-   project was the only one with events, the next pass refreshes every org as
-   idle. A reopened deletion does not count again.
-6. **Stage.** At most one queued delete per table and project. Project B's
-   delete is queued while project A's is running. An empty project id, or one
-   with a live `projects` row, is refused.
-7. **Never scheduled.** A deletion `pending` for over a day makes the server log
+1. **Never scheduled.** A deletion `pending` for over a day makes the server log
    an error at startup.
 
 Until a deletion exists, each pass finds nothing to do. A deletion made through
@@ -534,7 +563,7 @@ Tests:
    project, or on "No projects yet".
 
 Ship it once phase 3's deletions are `done` and the CronJob has run cleanly
-since phase 2. The `PROJECT_NOT_FOUND` follow-up in "Frontend" can come later.
+since phase 2c. The `PROJECT_NOT_FOUND` follow-up in "Frontend" can come later.
 
 ## Not in this design
 

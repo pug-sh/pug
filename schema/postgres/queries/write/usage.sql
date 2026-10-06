@@ -51,3 +51,13 @@ where d.day >= @from_day and d.day < @to_day
 
 -- name: PruneUsageDaily :execrows
 delete from usage_daily where day < @older_than;
+
+-- name: FreezeUsageDaily :exec
+-- The purge job's last count of a project being deleted, which UpsertUsageDaily
+-- skips. The org comes from the deletion row.
+insert into usage_daily (day, event_count, org_id, project_id)
+select unnest(@days::date[]), unnest(@event_counts::bigint[]), @org_id::text, @project_id::text
+on conflict (project_id, day) do update
+set event_count = excluded.event_count,
+    update_time = now()
+where usage_daily.event_count is distinct from excluded.event_count;

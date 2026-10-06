@@ -8,23 +8,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 )
-
-// uniqExact over raw events, no FINAL — see docs/architecture/usage.md §2.
-//
-// toDate's 'UTC' is explicit because occur_time is DateTime64(3) with no declared
-// zone, so a bare toDate() would cut days on the ClickHouse server's midnight.
-const meterQuery = `
-select project_id, toDate(occur_time, 'UTC') as day, uniqExact(event_id) as event_count
-from events
-where occur_time >= ? and occur_time < ?
-group by project_id, day
-`
 
 // ErrNoMeteringConn is returned when a Service built without ClickHouse meters —
 // the server never does.
@@ -41,16 +31,45 @@ type DailyUsage struct {
 // particular row order. The (project, day) grain lets one pass serve every org's
 // period, and it bounds uniqExact's state.
 func (s *Service) MeterWindow(ctx context.Context, from, to time.Time) ([]DailyUsage, error) {
+	return s.meter(ctx, "", from, to)
+}
+
+// MeterProject is MeterWindow for one project.
+func (s *Service) MeterProject(ctx context.Context, projectID string, from, to time.Time) ([]DailyUsage, error) {
+	return s.meter(ctx, projectID, from, to)
+}
+
+// meter counts with uniqExact over raw events, no FINAL; see
+// docs/architecture/usage.md §2. An empty projectID meters every project.
+func (s *Service) meter(ctx context.Context, projectID string, from, to time.Time) ([]DailyUsage, error) {
 	if s.ch == nil {
 		return nil, ErrNoMeteringConn
+	}
+	attrs := []any{slog.String("project_id", projectID), slog.Time("from", from), slog.Time("to", to)}
+
+	// toDate's 'UTC' is explicit because occur_time is DateTime64(3) with no
+	// declared zone, so a bare toDate() would cut days on the server's midnight.
+	query, args, err := chq.NewQuery().
+		Select("project_id", "toDate(occur_time, 'UTC') AS day", "uniqExact(event_id) AS event_count").
+		From("events").
+		Where(
+			chq.When(projectID != "", chq.Eq("project_id", projectID)),
+			chq.Gte("occur_time", from.UTC()),
+			chq.Lt("occur_time", to.UTC()),
+		).
+		GroupBy("project_id", "day").
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to build the meter query", append([]any{slogx.Error(err)}, attrs...)...)
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 
 	// chdb.Conn.Query records the error on the ClickHouse span already, so this
 	// logs the window it failed over without re-recording it.
-	rows, err := s.ch.Query(ctx, meterQuery, from.UTC(), to.UTC())
+	rows, err := s.ch.Query(ctx, query, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to meter events", slogx.Error(err),
-			slog.Time("from", from), slog.Time("to", to)) // puglint:exempt — chdb.Conn.Query recorded it on the query span
+		slog.ErrorContext(ctx, "failed to meter events", append([]any{slogx.Error(err)}, attrs...)...) // puglint:exempt — chdb.Conn.Query recorded it on the query span
 		return nil, err
 	}
 	defer func() {
@@ -143,6 +162,31 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 		// back and the loop never issued the ones after it.
 		err := fmt.Errorf("usage upsert failed in the chunk starting at cell %d; %d of %d cells unwritten: %w",
 			failedChunkStart, len(usage)-failedChunkStart, len(usage), firstErr)
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	return nil
+}
+
+// FreezeDailyUsageInTx stores the purge job's last count of a project being
+// deleted, which RecordDailyUsage would skip.
+func FreezeDailyUsageInTx(ctx context.Context, w *dbwrite.Queries, orgID, projectID string, usage []DailyUsage) error {
+	if len(usage) == 0 {
+		return nil
+	}
+	days := make([]pgtype.Date, 0, len(usage))
+	counts := make([]int64, 0, len(usage))
+	for _, u := range usage {
+		days = append(days, postgres.NewDate(u.Day))
+		counts = append(counts, u.EventCount)
+	}
+	if err := w.FreezeUsageDaily(ctx, dbwrite.FreezeUsageDailyParams{
+		Days:        days,
+		EventCounts: counts,
+		OrgID:       orgID,
+		ProjectID:   projectID,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to freeze daily usage", slogx.Error(err), slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
@@ -300,6 +344,22 @@ func (s *Service) OrgPeriods(ctx context.Context, now time.Time) ([]OrgPeriod, e
 		out = append(out, OrgPeriod{OrgID: o.ID, Start: start, End: end})
 	}
 	return out, nil
+}
+
+// DefaultRescanDays is the meter's trailing window when PUG_USAGE_RESCAN_DAYS is unset.
+const DefaultRescanDays = 2
+
+// FullRecomputeFrom is the lower bound of the meter's daily full pass.
+// docs/architecture/usage.md explains both floors.
+func FullRecomputeFrom(now time.Time, rescanDays int, periods []OrgPeriod) time.Time {
+	from := FloorDayUTC(now.AddDate(0, 0, -rescanDays))
+	if monthStart := FloorMonthUTC(now); monthStart.Before(from) {
+		from = monthStart
+	}
+	if earliest := EarliestPeriodStart(periods); !earliest.IsZero() && earliest.Before(from) {
+		from = earliest
+	}
+	return from
 }
 
 // EarliestPeriodStart is the oldest window start in a work list, and the lower
