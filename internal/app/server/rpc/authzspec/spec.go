@@ -20,10 +20,9 @@ package authzspec
 
 import "github.com/pug-sh/pug/internal/core/authz"
 
-// kind classifies how a procedure is authorized — documentation for the reader,
-// plus the single runtime bit the interceptor needs (IsRoleGated). The
-// distinctions among the non-gated kinds are carried by which constructor built
-// the Spec; only the role-gated kind is enforced.
+// kind classifies how a procedure is authorized. The interceptor enforces the
+// role-gated kind and refuses the self-write kind for the demo account; the
+// other kinds are documentation.
 type kind int
 
 const (
@@ -32,11 +31,14 @@ const (
 	kindUnset kind = iota
 	// kindPublic: no authentication (the auth service; public share links).
 	kindPublic
-	// kindSelf: authenticated customer operating on their OWN data / orgs; no
-	// org-role gate (e.g. GetMe, List/Create/Leave orgs).
-	kindSelf
+	// kindSelfRead: authenticated customer reading their OWN data / orgs; no
+	// org-role gate (e.g. GetMe, List orgs).
+	kindSelfRead
+	// kindSelfWrite: authenticated customer changing their OWN data / orgs; no
+	// org-role gate (e.g. Create/Leave orgs, SetPassword).
+	kindSelfWrite
 	// kindRoleGated: an org-role gate applies — the interceptor resolves the
-	// caller's role and checks (resource, action). The only enforced kind.
+	// caller's role and checks (resource, action).
 	kindRoleGated
 	// kindProject: project-scoped via x-project-id, with NO org-role gate —
 	// project access is fully established at auth time (Principal.Project is set
@@ -100,9 +102,13 @@ func firstNote(notes []string) string {
 // Public builds a no-auth Spec.
 func Public(notes ...string) Spec { return Spec{kind: kindPublic, note: firstNote(notes)} }
 
-// Self builds a Spec for an authenticated customer acting on their OWN data — no
-// org-role gate.
-func Self(notes ...string) Spec { return Spec{kind: kindSelf, note: firstNote(notes)} }
+// SelfRead builds a Spec for an authenticated customer reading their OWN data —
+// no org-role gate.
+func SelfRead(notes ...string) Spec { return Spec{kind: kindSelfRead, note: firstNote(notes)} }
+
+// SelfWrite builds a Spec for an authenticated customer changing their OWN data —
+// no org-role gate, but refused for the demo account.
+func SelfWrite(notes ...string) Spec { return Spec{kind: kindSelfWrite, note: firstNote(notes)} }
 
 // Project builds a project-scoped, no-role-gate Spec: project access is already
 // established at auth time and the RPC merely echoes it (projects.Get).
@@ -127,9 +133,13 @@ func ProjGated(resource authz.Resource, action authz.Action, notes ...string) Sp
 // zero Spec{}). The registry-completeness test asserts every entry is Defined.
 func (s Spec) Defined() bool { return s.kind != kindUnset }
 
-// IsRoleGated reports whether AuthzInterceptor must enforce this Spec. It is the
-// only runtime distinction; the non-gated kinds differ only as documentation.
+// IsRoleGated reports whether AuthzInterceptor must enforce this Spec's org-role
+// gate.
 func (s Spec) IsRoleGated() bool { return s.kind == kindRoleGated }
+
+// IsSelfWrite reports whether the RPC changes the caller's own data.
+// AuthzInterceptor refuses these RPCs for the demo account.
+func (s Spec) IsSelfWrite() bool { return s.kind == kindSelfWrite }
 
 // Resource is the enforced resource for a role-gated Spec (empty otherwise).
 func (s Spec) Resource() authz.Resource { return s.resource }

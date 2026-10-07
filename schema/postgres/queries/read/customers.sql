@@ -12,3 +12,6 @@ where lower(email) = lower(@email);
 select *
 from customers
 where lower(email) = lower(@email);
+
+-- name: GetCustomerEmailByID :one
+select email from customers where id = @id;

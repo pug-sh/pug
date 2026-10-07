@@ -7,7 +7,31 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const attachOrgDomainsToSSOConnection = `-- name: AttachOrgDomainsToSSOConnection :execrows
+update org_domains
+set sso_connection_id = $1::char(20)
+where org_id = $2 and id = any($3::text[]) and verified_at is not null
+  and (sso_connection_id is null or sso_connection_id = $1::char(20))
+`
+
+type AttachOrgDomainsToSSOConnectionParams struct {
+	SsoConnectionID string
+	OrgID           string
+	Ids             []string
+}
+
+// Skips a domain another connection of the org already signs in.
+func (q *Queries) AttachOrgDomainsToSSOConnection(ctx context.Context, arg AttachOrgDomainsToSSOConnectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, attachOrgDomainsToSSOConnection, arg.SsoConnectionID, arg.OrgID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const autoJoinOrgsByDomain = `-- name: AutoJoinOrgsByDomain :many
 insert into org_members (org_id, customer_id, role, joined_via_domain)
@@ -52,21 +76,19 @@ func (q *Queries) AutoJoinOrgsByDomain(ctx context.Context, arg AutoJoinOrgsByDo
 	return items, nil
 }
 
-const countOrgDomainsByOrgID = `-- name: CountOrgDomainsByOrgID :one
-select count(*) from org_domains where org_id = $1
+const clearOrgDomainsSSOSeen = `-- name: ClearOrgDomainsSSOSeen :exec
+update org_domains set sso_seen_at = null where domain = any($1::text[])
 `
 
-func (q *Queries) CountOrgDomainsByOrgID(ctx context.Context, orgID string) (int64, error) {
-	row := q.db.QueryRow(ctx, countOrgDomainsByOrgID, orgID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+func (q *Queries) ClearOrgDomainsSSOSeen(ctx context.Context, domains []string) error {
+	_, err := q.db.Exec(ctx, clearOrgDomainsSSOSeen, domains)
+	return err
 }
 
 const createOrgDomain = `-- name: CreateOrgDomain :one
 insert into org_domains (id, org_id, domain, verification_token)
 values ($1, $2, $3, $4)
-returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at
+returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at, sso_connection_id
 `
 
 type CreateOrgDomainParams struct {
@@ -95,6 +117,7 @@ func (q *Queries) CreateOrgDomain(ctx context.Context, arg CreateOrgDomainParams
 		&i.VerificationMethod,
 		&i.VerificationToken,
 		&i.VerifiedAt,
+		&i.SsoConnectionID,
 	)
 	return i, err
 }
@@ -116,8 +139,9 @@ func (q *Queries) DeleteOrgDomain(ctx context.Context, arg DeleteOrgDomainParams
 	return result.RowsAffected(), nil
 }
 
-const deleteOrgDomainByOrgIDAndDomain = `-- name: DeleteOrgDomainByOrgIDAndDomain :execrows
+const deleteOrgDomainByOrgIDAndDomain = `-- name: DeleteOrgDomainByOrgIDAndDomain :one
 delete from org_domains where org_id = $1 and domain = $2
+returning sso_connection_id
 `
 
 type DeleteOrgDomainByOrgIDAndDomainParams struct {
@@ -125,116 +149,52 @@ type DeleteOrgDomainByOrgIDAndDomainParams struct {
 	Domain string
 }
 
-func (q *Queries) DeleteOrgDomainByOrgIDAndDomain(ctx context.Context, arg DeleteOrgDomainByOrgIDAndDomainParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteOrgDomainByOrgIDAndDomain, arg.OrgID, arg.Domain)
+func (q *Queries) DeleteOrgDomainByOrgIDAndDomain(ctx context.Context, arg DeleteOrgDomainByOrgIDAndDomainParams) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, deleteOrgDomainByOrgIDAndDomain, arg.OrgID, arg.Domain)
+	var sso_connection_id pgtype.Text
+	err := row.Scan(&sso_connection_id)
+	return sso_connection_id, err
+}
+
+const detachOrgDomainsFromSSOConnection = `-- name: DetachOrgDomainsFromSSOConnection :many
+update org_domains
+set sso_connection_id = null
+where org_id = $1 and sso_connection_id = $2::char(20)
+  and not (id = any($3::text[]))
+returning domain
+`
+
+type DetachOrgDomainsFromSSOConnectionParams struct {
+	OrgID           string
+	SsoConnectionID string
+	KeepIds         []string
+}
+
+func (q *Queries) DetachOrgDomainsFromSSOConnection(ctx context.Context, arg DetachOrgDomainsFromSSOConnectionParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, detachOrgDomainsFromSSOConnection, arg.OrgID, arg.SsoConnectionID, arg.KeepIds)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
-}
-
-const getOrgDomainByID = `-- name: GetOrgDomainByID :one
-select create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at from org_domains where id = $1 and org_id = $2
-`
-
-type GetOrgDomainByIDParams struct {
-	ID    string
-	OrgID string
-}
-
-func (q *Queries) GetOrgDomainByID(ctx context.Context, arg GetOrgDomainByIDParams) (OrgDomain, error) {
-	row := q.db.QueryRow(ctx, getOrgDomainByID, arg.ID, arg.OrgID)
-	var i OrgDomain
-	err := row.Scan(
-		&i.CreateTime,
-		&i.Domain,
-		&i.ID,
-		&i.OrgID,
-		&i.RequireSso,
-		&i.SsoSeenAt,
-		&i.UpdateTime,
-		&i.VerificationMethod,
-		&i.VerificationToken,
-		&i.VerifiedAt,
-	)
-	return i, err
-}
-
-const getOrgDomainByOrgIDAndDomain = `-- name: GetOrgDomainByOrgIDAndDomain :one
-select create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at from org_domains where org_id = $1 and domain = $2
-`
-
-type GetOrgDomainByOrgIDAndDomainParams struct {
-	OrgID  string
-	Domain string
-}
-
-func (q *Queries) GetOrgDomainByOrgIDAndDomain(ctx context.Context, arg GetOrgDomainByOrgIDAndDomainParams) (OrgDomain, error) {
-	row := q.db.QueryRow(ctx, getOrgDomainByOrgIDAndDomain, arg.OrgID, arg.Domain)
-	var i OrgDomain
-	err := row.Scan(
-		&i.CreateTime,
-		&i.Domain,
-		&i.ID,
-		&i.OrgID,
-		&i.RequireSso,
-		&i.SsoSeenAt,
-		&i.UpdateTime,
-		&i.VerificationMethod,
-		&i.VerificationToken,
-		&i.VerifiedAt,
-	)
-	return i, err
-}
-
-const isOrgCreationRestricted = `-- name: IsOrgCreationRestricted :one
-select (
-  exists (
-    select 1 from org_domains d
-    join orgs o on o.id = d.org_id
-    where d.domain = $1 and d.verified_at is not null
-      and not o.members_can_create_orgs
-  )
-  and not exists (
-    select 1 from org_domains d
-    join org_members m on m.org_id = d.org_id
-    where d.domain = $1 and d.verified_at is not null
-      and m.customer_id = $2::char(20) and m.role = 'ORG_ROLE_ADMIN'
-  )
-)::boolean as restricted
-`
-
-type IsOrgCreationRestrictedParams struct {
-	Domain     string
-	CustomerID string
-}
-
-func (q *Queries) IsOrgCreationRestricted(ctx context.Context, arg IsOrgCreationRestrictedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isOrgCreationRestricted, arg.Domain, arg.CustomerID)
-	var restricted bool
-	err := row.Scan(&restricted)
-	return restricted, err
-}
-
-const isSSORequired = `-- name: IsSSORequired :one
-select exists (
-  select 1 from org_domains
-  where domain = $1 and verified_at is not null and require_sso
-)::boolean as required
-`
-
-func (q *Queries) IsSSORequired(ctx context.Context, domain string) (bool, error) {
-	row := q.db.QueryRow(ctx, isSSORequired, domain)
-	var required bool
-	err := row.Scan(&required)
-	return required, err
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var domain string
+		if err := rows.Scan(&domain); err != nil {
+			return nil, err
+		}
+		items = append(items, domain)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markOrgDomainVerifiedByDNS = `-- name: MarkOrgDomainVerifiedByDNS :one
 update org_domains
 set verified_at = now(), verification_method = 'dns'
 where id = $1 and org_id = $2 and verified_at is null
-returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at
+returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at, sso_connection_id
 `
 
 type MarkOrgDomainVerifiedByDNSParams struct {
@@ -256,6 +216,7 @@ func (q *Queries) MarkOrgDomainVerifiedByDNS(ctx context.Context, arg MarkOrgDom
 		&i.VerificationMethod,
 		&i.VerificationToken,
 		&i.VerifiedAt,
+		&i.SsoConnectionID,
 	)
 	return i, err
 }
@@ -288,7 +249,7 @@ update org_domains
 set require_sso = $1
 where id = $2 and org_id = $3
   and (not $1::boolean or (verified_at is not null and sso_seen_at is not null))
-returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at
+returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at, sso_connection_id
 `
 
 type UpdateOrgDomainRequireSSOParams struct {
@@ -312,6 +273,7 @@ func (q *Queries) UpdateOrgDomainRequireSSO(ctx context.Context, arg UpdateOrgDo
 		&i.VerificationMethod,
 		&i.VerificationToken,
 		&i.VerifiedAt,
+		&i.SsoConnectionID,
 	)
 	return i, err
 }
@@ -322,7 +284,7 @@ values ($1, $2, $3, $4, now(), 'operator')
 on conflict (org_id, domain) do update
 set verified_at = coalesce(org_domains.verified_at, now()),
     verification_method = 'operator'
-returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at
+returning create_time, domain, id, org_id, require_sso, sso_seen_at, update_time, verification_method, verification_token, verified_at, sso_connection_id
 `
 
 type UpsertOrgDomainVerifiedByOperatorParams struct {
@@ -351,6 +313,7 @@ func (q *Queries) UpsertOrgDomainVerifiedByOperator(ctx context.Context, arg Ups
 		&i.VerificationMethod,
 		&i.VerificationToken,
 		&i.VerifiedAt,
+		&i.SsoConnectionID,
 	)
 	return i, err
 }

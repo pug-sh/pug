@@ -37,6 +37,8 @@ Pug refuses to create or link an account from an `email` with non-ASCII characte
 
 `name` and `picture` are optional. Pug verifies the ID token's signature, issuer, audience, expiry, `nonce`, and verified-email claim on the server. The external identity is stored as the provider `id` plus the token's `sub`; since each provider is one issuer and client, `sub` is unique within it.
 
+The dashboard fetches the discovery document from the browser, so the issuer must allow cross-origin requests to it. Okta, Entra ID, Auth0 and Google do.
+
 The browser must send a `nonce` on the authorization request and pass the same value to `CompleteOIDCSignIn`; Pug rejects the sign-in if it does not match the ID token's `nonce` claim. Pug does not mint or store the nonce, so that check confirms the token belongs to the request that carried it — the binding to the browser that started the flow comes from PKCE and from the `state` value the browser must generate, store, and re-check on the callback.
 
 Pug requires the `redirect_uri` to use the path `/oauth/callback`, with no query or fragment, over HTTPS except on `localhost`/`127.0.0.1`/`::1`; when the browser sends an `Origin` header it must be same-origin with that URI. The host itself is pinned by the redirect URI you register at the IdP, not by Pug.
@@ -64,11 +66,34 @@ An older Pug refuses to start with `emailDomains` in the file, since unknown fie
 
 ## Requiring SSO
 
-An org admin can require SSO for a domain the org verified. Accounts on that domain then sign in only through a provider that proves it: Google with `hd`, or a provider whose `emailDomains` lists it. Passwords and email links stop working for them. If that provider breaks, for example when its client secret expires, nobody on the domain can sign in to turn the setting off, admins included. Turn it off in every org with:
+An org admin can require SSO for a domain the org verified. Accounts on that domain then sign in only through a provider that proves it: Google with `hd`, a provider whose `emailDomains` lists it, or the org SSO connection that signs it in. Passwords and email links stop working for them. If that provider breaks, for example when its client secret expires, nobody on the domain can sign in to turn the setting off, admins included. Turn it off in every org with:
 
 ```sh
 ./bin/pug domains unenforce acme.com
 ```
+
+## Verifying a domain without DNS
+
+Org admins verify a domain with a TXT record at `_pug-verification.<domain>`, and the server looks it up itself. A server that can't see public DNS never finds the record, so the operator verifies the domain instead:
+
+```sh
+./bin/pug domains verify <org-id> acme.com
+./bin/pug domains show acme.com              # every org that added it
+./bin/pug domains release <org-id> acme.com  # drop one org's claim
+```
+
+The tab shows such a domain as "Verified by your administrator", and setting changes skip its TXT re-check. Admins find the org id under **Settings → Organization**.
+
+## Org SSO connections
+
+Org admins connect their own OIDC provider in the app, under **Settings → SSO & domains**, with no change to `PUG_CONFIG_FILE` (see [`architecture/sso.md`](architecture/sso.md), phase 3). Two settings control it:
+
+- `PUG_SSO_SECRET_KEY` encrypts the connections' client secrets. Generate it with `openssl rand -base64 32`. Empty turns connections off, and the tab tells admins so and names this variable. A domain that then requires SSO only through a connection can't sign in until `pug domains unenforce`; the server logs an error at startup when connections exist. A different key can't read the stored secrets, so connection sign-ins fail until each admin enters the secret again.
+- `PUG_SSO_ALLOW_PRIVATE_ISSUERS=true` lets connections reach issuers on private addresses, and use the environment's proxy. Set it for an identity provider on an internal network, or a server that reaches the internet only through a proxy. Leave it off on a public deployment, so an org admin can't point a connection at internal services.
+
+Connections arrive with migration 022, which needs PostgreSQL 15 or later.
+
+Each connection has its own redirect URI, `/oauth/callback/<connection id>`, which its admin registers with their provider. The tab shows it once the connection is saved.
 
 ## Google
 
@@ -79,3 +104,16 @@ A Google Workspace account's ID token carries an `hd` claim naming its domain, a
 The legacy `PUG_OAUTH_GOOGLE_CLIENT_ID` configuration and Google-specific ID-token endpoint have been removed. This is a breaking change, and the variable is now ignored rather than rejected — an install that upgrades without setting `PUG_CONFIG_FILE` starts cleanly with no external providers and Google sign-in absent — the server logs a startup warning naming the ignored variable.
 
 Name the Google entry `"id": "google"` to keep existing Google accounts linked: that is the value they were already stored under, so they resolve directly with no migration. Under any other id they still sign in — via the verified-email fallback — but pick up a second identity row.
+
+## Turnstile
+
+Pug can put Cloudflare Turnstile in front of password and magic-link sign-in, so a script can't easily use them to guess passwords or flood inboxes. It is off by default. To turn it on, create a Turnstile widget in Cloudflare for the dashboard's hostname, then set both of its keys on the server:
+
+```sh
+PUG_TURNSTILE_SITE_KEY=…
+PUG_TURNSTILE_SECRET_KEY=…
+```
+
+Setting only one stops the server at startup. The dashboard reads the site key from `GetAuthConfig` and shows the widget. It must be a version that does; an older one sends no token, so every password sign-in and magic-link request is refused with `TURNSTILE_FAILED`. If a current dashboard gets that refusal on every sign-in, check that the widget lists the dashboard's hostname and that both keys come from that widget.
+
+The browser loads the widget from `challenges.cloudflare.com`, and the server calls Cloudflare to check each token, so leave Turnstile off on a server without internet access. While the server can't reach Cloudflare, or Cloudflare refuses its secret key, password sign-in and magic-link requests fail with `TURNSTILE_UNAVAILABLE`. Unset both keys and restart the server to turn the check off.

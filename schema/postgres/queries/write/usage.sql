@@ -1,12 +1,11 @@
 -- name: UpsertUsageDaily :batchexec
--- The org comes from the project row, so a cell whose project is gone from
--- Postgres inserts nothing. That is routine, not a race: deleting a project does
--- not delete its ClickHouse events, so the meter re-reads and re-drops them.
+-- The org comes from a live project row, so a cell whose project is being
+-- deleted or gone writes nothing, and its stored days stay as they were.
 -- Gated on a changed count so a finished day inside the rescan window is not
 -- rewritten every tick.
 insert into usage_daily (day, event_count, org_id, project_id)
 select @day, @event_count, p.org_id, @project_id
-from projects p where p.id = @project_id
+from projects p where p.id = @project_id and p.deletion_time is null
 on conflict (project_id, day) do update
 set event_count = excluded.event_count,
     org_id = excluded.org_id,
@@ -38,8 +37,12 @@ returning event_count;
 -- of seconds and gigabytes of temp spill once a full recompute widens the window
 -- to a month. The arrays never contain NULL, so `not in` is exact here, and an
 -- empty one still means "delete the whole window" exactly as before.
+--
+-- Live projects only: a deleted project's days are the org's record, kept after
+-- its events are erased.
 delete from usage_daily d
 where d.day >= @from_day and d.day < @to_day
+  and d.project_id in (select id from projects where deletion_time is null)
   and (d.project_id::text, d.day) not in (
     select p.project_id, k.day
     from unnest(@project_ids::text[]) with ordinality as p(project_id, n)
@@ -48,3 +51,13 @@ where d.day >= @from_day and d.day < @to_day
 
 -- name: PruneUsageDaily :execrows
 delete from usage_daily where day < @older_than;
+
+-- name: FreezeUsageDaily :exec
+-- The purge job's last count of a project being deleted, which UpsertUsageDaily
+-- skips. The org comes from the deletion row.
+insert into usage_daily (day, event_count, org_id, project_id)
+select unnest(@days::date[]), unnest(@event_counts::bigint[]), @org_id::text, @project_id::text
+on conflict (project_id, day) do update
+set event_count = excluded.event_count,
+    update_time = now()
+where usage_daily.event_count is distinct from excluded.event_count;

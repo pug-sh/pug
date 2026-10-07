@@ -212,6 +212,7 @@ type OrgDomain struct {
 	VerificationMethod pgtype.Text
 	VerificationToken  string
 	VerifiedAt         pgtype.Timestamptz
+	SsoConnectionID    pgtype.Text
 }
 
 type OrgEmailProvider struct {
@@ -244,6 +245,17 @@ type OrgMember struct {
 	JoinedViaDomain pgtype.Text
 }
 
+type OrgSsoConnection struct {
+	ClientID               string
+	ClientSecretCiphertext []byte
+	CreateTime             pgtype.Timestamptz
+	ID                     string
+	IssuerUrl              string
+	Label                  string
+	OrgID                  string
+	UpdateTime             pgtype.Timestamptz
+}
+
 type Profile struct {
 	CreateTime   pgtype.Timestamptz
 	DeletionTime pgtype.Timestamptz
@@ -274,6 +286,21 @@ type Project struct {
 	OrgID             string
 	ReportingTimezone string
 	UpdateTime        pgtype.Timestamptz
+	DeletionTime      pgtype.Timestamptz
+}
+
+type ProjectDeletion struct {
+	DisplayName    string
+	DoneAt         pgtype.Timestamptz
+	Error          string
+	OrgID          pgtype.Text
+	ProjectID      string
+	RequestedAt    pgtype.Timestamptz
+	RequestedBy    string
+	RoundStartedAt pgtype.Timestamptz
+	Rounds         int32
+	Status         string
+	UpdateTime     pgtype.Timestamptz
 }
 
 type RefreshToken struct {

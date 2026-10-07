@@ -6,7 +6,7 @@ import "buf/validate/validate.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1";
 
 service AuthService {
-  // GetAuthConfig returns the non-secret provider settings the browser needs to
+  // GetAuthConfig returns the non-secret settings the browser needs to
   // render sign-in options and start Authorization Code + PKCE flows.
   rpc GetAuthConfig(GetAuthConfigRequest) returns (GetAuthConfigResponse) {}
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
@@ -26,6 +26,9 @@ service AuthService {
   // in viewer mode. Gated by PUG_DEMO_ENABLED on the server; returns UNAVAILABLE
   // when disabled or when the demo account has not been seeded.
   rpc DemoSignIn(DemoSignInRequest) returns (DemoSignInResponse) {}
+  // DiscoverSignIn returns the providers that sign in the email's domain and whether
+  // it requires SSO. It never says whether an account exists.
+  rpc DiscoverSignIn(DiscoverSignInRequest) returns (DiscoverSignInResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -39,6 +42,8 @@ message SignInWithEmailRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_bytes = 72
   ];
+  // Required when GetAuthConfig returns a turnstile_site_key.
+  string turnstile_token = 3 [(buf.validate.field).string.max_len = 2048];
 }
 
 message SignInWithEmailResponse {
@@ -51,6 +56,8 @@ message RequestMagicLinkRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true
   ];
+  // Required when GetAuthConfig returns a turnstile_site_key.
+  string turnstile_token = 2 [(buf.validate.field).string.max_len = 2048];
 }
 
 message RequestMagicLinkResponse {}
@@ -74,13 +81,16 @@ message CompleteMagicLinkResponse {
 }
 
 message CompleteOIDCSignInRequest {
-  string provider_id = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string = {
-      max_len: 63
-      pattern: "^[a-z][a-z0-9_-]*$"
-    }
-  ];
+  option (buf.validate.message).cel = {
+    id: "complete_oidc_sign_in.one_provider"
+    message: "set exactly one of provider_id and connection_id"
+    expression: "has(this.provider_id) != has(this.connection_id)"
+  };
+  // A provider from GetAuthConfig.
+  string provider_id = 1 [(buf.validate.field).string = {
+    max_len: 63
+    pattern: "^[a-z][a-z0-9_-]*$"
+  }];
   string code = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).string = {
@@ -115,6 +125,8 @@ message CompleteOIDCSignInRequest {
   // Optional. The token of an invite link that SSO_REQUIRED refused. The invite is
   // accepted only when it was sent to the email of the account signing in.
   string invite_token = 7 [(buf.validate.field).string.max_len = 128];
+  // An org's SSO connection, from AuthProviderConfig.connection_id.
+  string connection_id = 8 [(buf.validate.field).string.len = 20];
 }
 
 // SSORequired is the error detail of SSO_REQUIRED: accounts on the domain sign in
@@ -150,10 +162,16 @@ message AuthProviderConfig {
   string client_id = 4;
   string issuer_url = 5;
   repeated string scopes = 6;
+  // Set for an org's SSO connection, which has no id. Its sign-in sends connection_id and the
+  // redirect_uri /oauth/callback/<connection_id>, without the query it lands with. Refuse a
+  // callback that lands on any other path.
+  string connection_id = 7;
 }
 
 message GetAuthConfigResponse {
   repeated AuthProviderConfig providers = 1;
+  // Set when SignInWithEmail and RequestMagicLink need a turnstile_token.
+  string turnstile_site_key = 2;
 }
 
 message RefreshSessionRequest {
@@ -181,4 +199,20 @@ message DemoSignInResponse {
   // The demo project to scope reads to; the client sends it back as the
   // x-project-id header on subsequent dashboard/insights/profile requests.
   string project_id = 3;
+}
+
+message DiscoverSignInRequest {
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
+}
+
+message DiscoverSignInResponse {
+  string domain = 1;
+  // The domain's connection and the config providers that list it, or Google when
+  // there are none.
+  repeated AuthProviderConfig providers = 2;
+  // Accounts on the domain sign in only through SSO.
+  bool require_sso = 3;
 }

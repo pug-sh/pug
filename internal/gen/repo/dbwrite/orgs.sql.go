@@ -36,24 +36,6 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 	return i, err
 }
 
-const getOrgByID = `-- name: GetOrgByID :one
-select create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs from orgs where id = $1
-`
-
-func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
-	row := q.db.QueryRow(ctx, getOrgByID, id)
-	var i Org
-	err := row.Scan(
-		&i.CreateTime,
-		&i.DisplayName,
-		&i.ID,
-		&i.UpdateTime,
-		&i.AutoJoinRole,
-		&i.MembersCanCreateOrgs,
-	)
-	return i, err
-}
-
 const getOrgByIDForUpdate = `-- name: GetOrgByIDForUpdate :one
 select create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs from orgs where id = $1 for update
 `

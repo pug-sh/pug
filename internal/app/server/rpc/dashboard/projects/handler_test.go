@@ -3,16 +3,21 @@ package projects
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -82,6 +87,12 @@ func assertReason(t *testing.T, err error, want apperr.Reason) {
 // the handler, a seeded customer, and a seeded org backed by that customer as admin.
 func newIntegrationServer(t *testing.T) (*server, dbread.Customer, string) {
 	t.Helper()
+	srv, customer, orgID, _ := newIntegrationServerWithDB(t)
+	return srv, customer, orgID
+}
+
+func newIntegrationServerWithDB(t *testing.T) (*server, dbread.Customer, string, *testutil.TestPostgres) {
+	t.Helper()
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	srv := NewServer(projectsSvc)
@@ -119,7 +130,7 @@ func newIntegrationServer(t *testing.T) (*server, dbread.Customer, string) {
 		t.Fatalf("insert org member: %v", err)
 	}
 
-	return srv, customer, orgID
+	return srv, customer, orgID, db
 }
 
 // ----- Delete: project not found → CodeNotFound + ReasonProjectNotFound ----
@@ -139,6 +150,53 @@ func TestHandler_Delete_ProjectNotFound(t *testing.T) {
 	)
 	assertCode(t, err, connect.CodeNotFound)
 	assertReason(t, err, apperr.ReasonProjectNotFound)
+}
+
+// ----- Delete: a deleted project fails x-project-id auth -----
+
+// The x-project-id lookup skips a deleted project, so a second delete is refused
+// at auth, before any handler runs.
+func TestHandler_Delete_DeletedProjectFailsAuth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	srv, customer, orgID, db := newIntegrationServerWithDB(t)
+	ctx := context.Background()
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId: proto.String(orgID), DisplayName: proto.String("doomed"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	project := dbread.Project{ID: created.Msg.GetProject().GetId(), OrgID: orgID}
+
+	jwtKey := []byte("test-jwt-key")
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Audience:  jwt.ClaimStrings{coreauth.Audience},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		Issuer:    coreauth.Issuer,
+		Subject:   customer.ID,
+	}).SignedString(jwtKey)
+	if err != nil {
+		t.Fatalf("sign JWT: %v", err)
+	}
+	authenticate := func() error {
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set(rpc.HeaderProjectID, project.ID)
+		_, err := rpc.WithJWTAuth(jwtKey, dbread.New(db.PgRO))(ctx, req)
+		return err
+	}
+	if err := authenticate(); err != nil {
+		t.Fatalf("auth before the delete: %v", err)
+	}
+
+	if _, err := srv.Delete(ctxWithCustomerProject(ctx, customer, project), connect.NewRequest(&projectsv1.DeleteRequest{})); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	assertCode(t, authenticate(), connect.CodeUnauthenticated)
 }
 
 // ----- UpdateMeta: project not found → CodeNotFound + ReasonProjectNotFound ----
@@ -359,6 +417,35 @@ func TestHandler_Create_DuplicateNameReturnsAlreadyExists(t *testing.T) {
 			OrgId:       proto.String(orgID),
 			DisplayName: proto.String("my project"),
 		}),
+	)
+	assertCode(t, err, connect.CodeAlreadyExists)
+	assertReason(t, err, apperr.ReasonProjectNameTaken)
+}
+
+// ----- UpdateMeta: renaming onto a taken name → CodeAlreadyExists -----
+
+func TestHandler_UpdateMeta_DuplicateNameReturnsAlreadyExists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	if _, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId: proto.String(orgID), DisplayName: proto.String("taken"),
+	})); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	other, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId: proto.String(orgID), DisplayName: proto.String("other"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, err = srv.UpdateMeta(
+		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: other.Msg.GetProject().GetId(), OrgID: orgID}),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{DisplayName: proto.String("taken")}),
 	)
 	assertCode(t, err, connect.CodeAlreadyExists)
 	assertReason(t, err, apperr.ReasonProjectNameTaken)

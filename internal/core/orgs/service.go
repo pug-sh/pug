@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/email/secret"
 	"github.com/pug-sh/pug/internal/core/emailaction"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/nats"
@@ -112,6 +113,9 @@ type Service struct {
 	// privilege change beyond memberRoleCacheTTL. Optional: nil disables caching.
 	roleCache *goredis.Client
 	resolver  TXTResolver
+
+	ssoCipher   *secret.Cipher
+	checkIssuer IssuerChecker
 }
 
 type JobPublisher interface {
@@ -207,15 +211,16 @@ func (s *Service) CreateOrgWithDefaults(
 		}
 	}()
 
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 	// An unknown customer has no email to restrict; the member insert's FK rejects it.
-	email, err := w.GetCustomerEmailByID(ctx, customerID)
+	email, err := r.GetCustomerEmailByID(ctx, customerID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to get customer email for org create", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return dbwrite.Org{}, err
 	}
-	allowed, err := OrgCreationAllowedInTx(ctx, w, customerID, email)
+	allowed, err := OrgCreationAllowedInTx(ctx, r, customerID, email)
 	if err != nil {
 		return dbwrite.Org{}, err
 	}
@@ -500,7 +505,7 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 	if n == 0 {
 		// Distinguish "member not found" from "last admin blocked": check if
 		// the member still exists. Use write pool to avoid read-replica lag.
-		if _, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		if _, err := dbread.New(s.pgW).GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 			OrgID:      orgID,
 			CustomerID: customerID,
 		}); err != nil {
@@ -558,7 +563,7 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 
 	// 0 rows: either not a member, last admin, or only member. Disambiguate.
 	// Read from write pool to avoid replica lag.
-	raw, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+	raw, err := dbread.New(s.pgW).GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
@@ -693,7 +698,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 	// Counted under the row lock taken above, so concurrent resends can't both
 	// pass the cap.
-	sends, err := w.CountRecentEmailActionTokensByInvitation(ctx, dbwrite.CountRecentEmailActionTokensByInvitationParams{
+	sends, err := dbread.New(tx).CountRecentEmailActionTokensByInvitation(ctx, dbread.CountRecentEmailActionTokensByInvitationParams{
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
 		Purpose:         emailaction.PurposeOrgInvite.String(),
 		Since:           postgres.NewTimestamptz(time.Now().Add(-inviteSendWindow)),
@@ -926,7 +931,7 @@ func (s *Service) UpdateMemberRole(
 		if errors.Is(err, pgx.ErrNoRows) {
 			// No row updated: either the member is absent, or the change would
 			// demote the org's last admin. A read tells the two apart.
-			if _, gerr := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+			if _, gerr := dbread.New(s.pgW).GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 				OrgID:      orgID,
 				CustomerID: customerID,
 			}); gerr != nil {

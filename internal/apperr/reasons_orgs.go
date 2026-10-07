@@ -29,4 +29,13 @@ var (
 	ReasonDomainVerificationFailed = codes.add("DOMAIN_VERIFICATION_FAILED")
 	ReasonDomainLookupFailed       = codes.add("DOMAIN_LOOKUP_FAILED")
 	ReasonDomainSSONotSeen         = codes.add("DOMAIN_SSO_NOT_SEEN")
+
+	ReasonSSOConnectionsDisabled       = codes.add("SSO_CONNECTIONS_DISABLED")
+	ReasonSSOConnectionNotFound        = codes.add("SSO_CONNECTION_NOT_FOUND")
+	ReasonSSOConnectionLimitReached    = codes.add("SSO_CONNECTION_LIMIT_REACHED")
+	ReasonSSOConnectionIssuerInvalid   = codes.add("SSO_CONNECTION_ISSUER_INVALID")
+	ReasonSSOConnectionDiscoveryFailed = codes.add("SSO_CONNECTION_DISCOVERY_FAILED")
+	ReasonSSOConnectionSecretRequired  = codes.add("SSO_CONNECTION_SECRET_REQUIRED")
+	ReasonSSOConnectionInUse           = codes.add("SSO_CONNECTION_IN_USE")
+	ReasonDomainSSOConnectionTaken     = codes.add("DOMAIN_SSO_CONNECTION_TAKEN")
 )

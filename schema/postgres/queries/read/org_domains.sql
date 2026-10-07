@@ -1,3 +1,6 @@
+-- name: GetOrgDomainByID :one
+select * from org_domains where id = @id and org_id = @org_id;
+
 -- name: ListOrgDomainsByOrgID :many
 -- Only a verified claim may learn other orgs' settings for its domain.
 select
@@ -9,6 +12,7 @@ select
   d.verification_method,
   d.require_sso,
   d.sso_seen_at,
+  d.sso_connection_id,
   d.create_time,
   d.update_time,
   (d.verified_at is not null and exists (
@@ -25,7 +29,13 @@ select
       and d2.org_id <> d.org_id
       and d2.verified_at is not null
       and d2.require_sso
-  ))::boolean as sso_required_elsewhere
+  ))::boolean as sso_required_elsewhere,
+  (d.verified_at is not null and exists (
+    select 1 from org_domains d2
+    where d2.domain = d.domain
+      and d2.org_id <> d.org_id
+      and d2.sso_connection_id is not null
+  ))::boolean as sso_connection_elsewhere
 from org_domains d
 where d.org_id = @org_id
 order by d.create_time asc, d.id asc;
@@ -47,3 +57,44 @@ from org_domains d
 join orgs o on o.id = d.org_id
 where d.domain = @domain
 order by d.verified_at asc nulls last, d.create_time asc, d.id asc;
+
+-- name: ListOrgDomainsWithSSOConnection :many
+select id, domain, sso_connection_id from org_domains
+where org_id = @org_id and sso_connection_id is not null
+order by domain;
+
+-- name: ListOrgDomainsByIDs :many
+select * from org_domains where org_id = @org_id and id = any(@ids::text[]);
+
+-- name: IsSSORequired :one
+select exists (
+  select 1 from org_domains
+  where domain = @domain and verified_at is not null and require_sso
+)::boolean as required;
+
+-- name: IsOrgCreationRestricted :one
+select (
+  exists (
+    select 1 from org_domains d
+    join orgs o on o.id = d.org_id
+    where d.domain = @domain and d.verified_at is not null
+      and not o.members_can_create_orgs
+  )
+  and not exists (
+    select 1 from org_domains d
+    join org_members m on m.org_id = d.org_id
+    where d.domain = @domain and d.verified_at is not null
+      and m.customer_id = @customer_id::char(20) and m.role = 'ORG_ROLE_ADMIN'
+  )
+)::boolean as restricted;
+
+-- name: ListSSOConnectionDomains :many
+select domain from org_domains
+where sso_connection_id = @sso_connection_id::char(20) and verified_at is not null
+order by domain;
+
+-- name: GetOrgDomainByOrgIDAndDomain :one
+select * from org_domains where org_id = @org_id and domain = @domain;
+
+-- name: CountOrgDomainsByOrgID :one
+select count(*) from org_domains where org_id = @org_id;

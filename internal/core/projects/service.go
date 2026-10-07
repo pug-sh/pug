@@ -3,12 +3,14 @@ package projects
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -23,12 +25,11 @@ var (
 	ErrProjectNameTaken = errors.New("a project with this name already exists in the org")
 )
 
-// projectNameUnique is the Postgres-auto-generated name of the
-// (org_id, display_name) unique constraint declared in
-// schema/postgres/migrations/005_create_projects.sql:11. Kept narrow on
-// purpose: creating a project also inserts its starter key, so a generic
-// UniqueViolation catch would report an api_keys.token collision as a name
-// conflict.
+// projectNameUnique is the (org_id, display_name) unique index over live
+// projects, schema/postgres/migrations/023_create_project_deletions.sql. Kept
+// narrow on purpose: creating a project also inserts its starter key, so a
+// generic UniqueViolation catch would report an api_keys.token collision as a
+// name conflict.
 const projectNameUnique = "projects_org_id_display_name_key"
 
 // isUniqueViolationOn reports whether err is a Postgres unique-violation
@@ -44,7 +45,7 @@ func isUniqueViolationOn(err error, constraint string) bool {
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
-	pgW   *pgxpool.Pool // for the methods that need a tx of their own (CreateProject, CreateProjectAsAdmin)
+	pgW   *pgxpool.Pool // for the methods that need a tx of their own
 	repo  *Repo
 }
 
@@ -57,27 +58,141 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *Repo) *Service {
 	}
 }
 
-func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) error {
-	// Listed before the delete, and fatal if it fails: the project's api_keys rows
-	// cascade away with it, so this is the only chance to learn the tokens its
-	// cached row is reachable by. Deleting without them would leave every one of the
-	// project's keys authenticating — against a project that no longer exists —
-	// until apiKeyCacheTTL, with no way left to find the cache entries: the tokens
-	// are gone from the DB and are deliberately never logged. Failing here costs
-	// nothing by comparison, since the project is still there to delete on a retry.
-	// (apiKeyTokens logs + records at source.)
-	tokens, err := s.apiKeyTokens(ctx, arg.ID)
+// DeleteProject hides a project and revokes its keys, share links, campaigns and
+// FCM key. Its pending project_deletions row queues the rest for the purge job.
+func (s *Service) DeleteProject(ctx context.Context, orgID, projectID, requestedBy string) error {
+	tokens, err := s.deleteProjectTx(ctx, orgID, projectID, requestedBy)
+	// Even after a failed commit, which may still have landed.
+	s.invalidateTokens(ctx, projectID, tokens...)
+	if err != nil && !errors.Is(err, ErrProjectNotFound) {
+		slog.ErrorContext(ctx, "failed to delete project", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+	}
+	return err
+}
+
+func (s *Service) deleteProjectTx(ctx context.Context, orgID, projectID, requestedBy string) ([]string, error) {
+	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("begin delete project: %w", err)
 	}
-	if _, err := s.write.DeleteProject(ctx, arg); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrProjectNotFound
-		}
-		return err
+	defer func() { _ = tx.Rollback(ctx) }()
+	w := dbwrite.New(tx)
+
+	project, err := w.GetProjectByIDForUpdate(ctx, dbwrite.GetProjectByIDForUpdateParams{OrgID: orgID, ID: projectID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrProjectNotFound
 	}
-	s.invalidateTokens(ctx, arg.ID, tokens...)
-	return nil
+	if err != nil {
+		return nil, fmt.Errorf("lock project: %w", err)
+	}
+	tokens, err := hideProjectInTx(ctx, w, project, requestedBy)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return tokens, fmt.Errorf("commit delete project: %w", err)
+	}
+	return tokens, nil
+}
+
+// hideProjectInTx runs under the project's row lock and returns the revoked
+// keys' tokens.
+func hideProjectInTx(ctx context.Context, w *dbwrite.Queries, project dbwrite.Project, requestedBy string) ([]string, error) {
+	if err := w.CreateProjectDeletion(ctx, dbwrite.CreateProjectDeletionParams{
+		DisplayName: project.DisplayName,
+		OrgID:       postgres.NewText(project.OrgID),
+		ProjectID:   project.ID,
+		RequestedBy: requestedBy,
+	}); err != nil {
+		return nil, fmt.Errorf("create project deletion: %w", err)
+	}
+	tokens, err := w.DeleteApiKeysByProjectID(ctx, project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("delete api keys: %w", err)
+	}
+	if err := w.DeleteDashboardSharesByProjectID(ctx, project.ID); err != nil {
+		return nil, fmt.Errorf("delete dashboard shares: %w", err)
+	}
+	if err := w.DeleteCampaignsByProjectID(ctx, project.ID); err != nil {
+		return nil, fmt.Errorf("delete campaigns: %w", err)
+	}
+	if err := w.HideProject(ctx, project.ID); err != nil {
+		return nil, fmt.Errorf("hide project: %w", err)
+	}
+	return tokens, nil
+}
+
+// OperatorDeletion is what DeleteProjectByOperator did.
+type OperatorDeletion int
+
+const (
+	OperatorDeletionHidden OperatorDeletion = iota + 1
+	OperatorDeletionQueuedOrphan
+	OperatorDeletionReopened
+	OperatorDeletionUnchanged
+)
+
+// DeleteProjectByOperator is DeleteProject by id alone, for `pug projects
+// delete`. An id with no projects row gets only a ledger row, so the purge job
+// erases what ClickHouse still holds for it.
+func (s *Service) DeleteProjectByOperator(ctx context.Context, projectID, actor string) (OperatorDeletion, error) {
+	did, tokens, err := s.deleteByOperatorTx(ctx, projectID, actor)
+	// Even after a failed commit, which may still have landed.
+	s.invalidateTokens(ctx, projectID, tokens...)
+	return did, err
+}
+
+func (s *Service) deleteByOperatorTx(ctx context.Context, projectID, actor string) (OperatorDeletion, []string, error) {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		return 0, nil, fmt.Errorf("begin operator delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	w := dbwrite.New(tx)
+
+	project, err := w.GetAnyProjectByIDForUpdate(ctx, projectID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil, fmt.Errorf("lock project: %w", err)
+	}
+	live := err == nil && !project.DeletionTime.Valid
+	did := OperatorDeletionHidden
+	var tokens []string
+	if live {
+		tokens, err = hideProjectInTx(ctx, w, project, actor)
+	} else {
+		did, err = queueOrphanInTx(ctx, w, projectID, actor)
+	}
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, tokens, fmt.Errorf("commit operator delete: %w", err)
+	}
+	return did, tokens, nil
+}
+
+// queueOrphanInTx writes the ledger row for an id with no live projects row, or
+// reopens a done one. An open deletion is left alone.
+func queueOrphanInTx(ctx context.Context, w *dbwrite.Queries, projectID, actor string) (OperatorDeletion, error) {
+	n, err := w.CreateOrphanProjectDeletion(ctx, dbwrite.CreateOrphanProjectDeletionParams{
+		ProjectID:   projectID,
+		RequestedBy: actor,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("create project deletion: %w", err)
+	}
+	if n > 0 {
+		return OperatorDeletionQueuedOrphan, nil
+	}
+	if n, err = w.ReopenProjectDeletion(ctx, projectID); err != nil {
+		return 0, fmt.Errorf("reopen project deletion: %w", err)
+	}
+	if n > 0 {
+		return OperatorDeletionReopened, nil
+	}
+	return OperatorDeletionUnchanged, nil
 }
 
 func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, displayName, reportingTimezone string) (dbwrite.Project, error) {
@@ -214,6 +329,9 @@ func (s *Service) UpdateProjectMeta(ctx context.Context, arg dbwrite.UpdateProje
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbwrite.Project{}, ErrProjectNotFound
 		}
+		if isUniqueViolationOn(err, projectNameUnique) {
+			return dbwrite.Project{}, ErrProjectNameTaken
+		}
 		return dbwrite.Project{}, err
 	}
 	s.invalidateProject(ctx, project)
@@ -235,15 +353,14 @@ func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFC
 func (s *Service) invalidateProject(ctx context.Context, project dbwrite.Project) {
 	// Detached here as well as inside invalidateTokens: the token listing is part
 	// of this post-commit work, and on the caller's cancelled context it would
-	// fail — invalidating none of the project's keys. Unlike DeleteProject, which
-	// lists before its write, there is nothing to list until the update has landed.
+	// fail — invalidating none of the project's keys.
 	ctx, cancel := detachedInvalidateCtx(ctx)
 	defer cancel()
 
-	// Best-effort, unlike DeleteProject: the update has already committed, so there
-	// is nothing to abort, and the project and its keys are still there to be listed
-	// again. What goes stale here is a cached copy of the project's own metadata,
-	// not a credential's validity. (apiKeyTokens logs + records at source.)
+	// Best-effort: the update has already committed, so there is nothing to abort,
+	// and the project and its keys are still there to be listed again. What goes
+	// stale here is a cached copy of the project's own metadata, not a credential's
+	// validity. (apiKeyTokens logs + records at source.)
 	tokens, err := s.apiKeyTokens(ctx, project.ID)
 	if err != nil {
 		return

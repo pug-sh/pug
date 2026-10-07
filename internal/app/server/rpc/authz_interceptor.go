@@ -4,23 +4,26 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc/authzspec"
 	"github.com/pug-sh/pug/internal/apperr"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/core/authz"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 )
 
-// AuthzInterceptor is the single authorization gate. For every domainRoleGated
+// AuthzInterceptor is the single authorization gate. For every role-gated
 // procedure in permissionRegistry it resolves the caller's org role and enforces
-// the recorded (resource, action) against the shared authz policy. A registered
-// non-gated procedure (public / self / SDK / domainProject) passes through
-// untouched. A procedure with NO registry entry fails CLOSED (CodeInternal): the
-// reflection contract test keeps the registry complete, so an unregistered
-// procedure is a wiring bug — it must never reach a handler authenticated-but-not-
-// authorized just because the service-level startup check sees its service mounted.
+// the recorded (resource, action) against the shared authz policy. Any other
+// registered procedure passes through untouched, except a self-write by the demo
+// account, which anyone can sign in as. A procedure with NO registry entry fails
+// CLOSED (CodeInternal): the reflection contract test keeps the registry
+// complete, so an unregistered procedure is a wiring bug — it must never reach a
+// handler authenticated-but-not-authorized just because the service-level
+// startup check sees its service mounted.
 //
 // There is no per-handler authorization: handlers assume the request reaching
 // them is already authorized. Because TestPermissionRegistryCoversAllProcedures
@@ -49,6 +52,9 @@ func AuthzInterceptor(authorizer *authz.Authorizer, lookup memberRoleLookup) con
 				return nil, err
 			}
 			if !spec.IsRoleGated() {
+				if spec.IsSelfWrite() && isDemoViewer(ctx) {
+					return nil, apperr.PermissionDenied(apperr.ReasonOrgRoleForbidden, "the demo account is read-only")
+				}
 				return next(ctx, req)
 			}
 			if err := authorizeRoleGated(ctx, authorizer, lookup, req, spec); err != nil {
@@ -57,6 +63,13 @@ func AuthzInterceptor(authorizer *authz.Authorizer, lookup memberRoleLookup) con
 			return next(ctx, req)
 		}
 	}
+}
+
+// isDemoViewer keys on the account rather than the session, so every session for
+// it is caught, however it was minted.
+func isDemoViewer(ctx context.Context) bool {
+	p, err := MustGetPrincipalWithCustomer(ctx)
+	return err == nil && strings.EqualFold(p.Customer.Email, coreauth.DemoViewerEmail)
 }
 
 // authorizeRoleGated enforces one domainRoleGated entry. On the API-key path (no
