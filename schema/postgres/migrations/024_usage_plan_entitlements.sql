@@ -9,9 +9,10 @@
 
 -- The new checks below refuse a deal with no product, a product on anything but a
 -- deal, and a slug that is neither a state nor a removed tier. Postgres would name
--- only the constraint, so the rows are named here first. Fix each with `pug billing
--- set` or `clear` and re-run: give a deal its --provider-product, or clear a stray
--- one with --provider-product "".
+-- only the constraint, so the rows are named here first. Fix each with the previous
+-- release's `pug billing set` or `clear` and re-run: give a deal its
+-- --provider-product, or clear a stray one with --provider-product "". This
+-- release's own writes need the column 024 adds, so they fail until it lands.
 -- +goose StatementBegin
 do $$
 declare

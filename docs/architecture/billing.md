@@ -330,12 +330,13 @@ changes a row it **fails**, naming every row it cannot place with its plan and
 product — a `custom` row with no product, a product on any other row, or a slug
 that is neither `free`, `custom` nor a removed tier — rather than guess which half
 is wrong; Postgres alone would name only the constraint. The operator fixes each
-with `pug billing set` and re-runs. It then rewrites a removed tier's row to `free`
-— nothing billed it without a subscription, and its overrides keep resolving on
-free — pins every existing deal to `usage-2026-10`, and appends a history snapshot
-(actor `migration/024`) for every row it changes, so invariant 4 holds for the
-migration too. `Down` reverses the schema; the rewrites, and the snapshots that
-record them, stay. Check a deployed database before it runs.
+with the previous release's `pug billing set` or `clear` and re-runs; this
+release's own writes need the column 024 adds. It then rewrites a removed tier's
+row to `free` — nothing billed it without a subscription, and its overrides keep
+resolving on free — pins every existing deal to `usage-2026-10`, and appends a
+history snapshot (actor `migration/024`) for every row it changes, so invariant 4
+holds for the migration too. `Down` reverses the schema; the rewrites, and the
+snapshots that record them, stay. Check a deployed database before it runs.
 
 ### 5.1 History
 
