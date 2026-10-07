@@ -322,8 +322,8 @@ func TestADeliveryLogsWhatItApplied(t *testing.T) {
 	}
 }
 
-// 023 only adds a column, and its down has to take it away again.
-func TestMigration023RoundTrips(t *testing.T) {
+// 026 only adds a column, and its down has to take it away again.
+func TestMigration026RoundTrips(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -339,19 +339,19 @@ func TestMigration023RoundTrips(t *testing.T) {
 		return n == 1
 	}
 	if !hasColumn() {
-		t.Fatal("023 did not add grace_period_ends_at")
+		t.Fatal("026 did not add grace_period_ends_at")
 	}
 	migrations := testutil.PostgresMigrations(t, pg)
-	if _, err := migrations.DownTo(t.Context(), 22); err != nil {
-		t.Fatalf("migrate down to 022: %v", err)
+	if _, err := migrations.DownTo(t.Context(), 25); err != nil {
+		t.Fatalf("migrate down to 025: %v", err)
 	}
 	if hasColumn() {
-		t.Fatal("023's down left grace_period_ends_at behind")
+		t.Fatal("026's down left grace_period_ends_at behind")
 	}
-	if _, err := migrations.UpTo(t.Context(), 23); err != nil {
-		t.Fatalf("migrate up to 023: %v", err)
+	if _, err := migrations.UpTo(t.Context(), 26); err != nil {
+		t.Fatalf("migrate up to 026: %v", err)
 	}
 	if !hasColumn() {
-		t.Fatal("023 did not add grace_period_ends_at back")
+		t.Fatal("026 did not add grace_period_ends_at back")
 	}
 }
