@@ -20,6 +20,7 @@ linters:
     - sloglint
     - spancheck
     - testifylint
+    - unparam
     - usetesting
 
   settings:
@@ -173,6 +174,7 @@ linters:
         # fully-qualified name, so an unqualified pattern would also match other packages.
         - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
         - github\.com/pug-sh/pug/internal/app/cron/billing\.setupFailed
+        - github\.com/pug-sh/pug/internal/app/cron/purge\.setupFailed
         - github\.com/pug-sh/pug/internal/app/cron/meter\.setupFailed
     gosec:
       excludes:
@@ -228,6 +230,7 @@ linters:
           - contextcheck
           - gosec
           - noctx
+          - unparam
       # Identity is the assertion: a concrete *Error, the un-wrapped error
       # slogx.Error stored, the exact context a callback saw. Wrapping is what
       # they rule out, so it stays scoped to these three packages.

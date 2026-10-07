@@ -4,6 +4,7 @@ select
   om.create_time,
   om.org_id,
   om.role,
+  om.joined_via_domain,
   c.display_name,
   c.email
 from org_members om
@@ -20,6 +21,7 @@ select
   om.create_time,
   om.org_id,
   om.role,
+  om.joined_via_domain,
   c.display_name,
   c.email
 from org_members om

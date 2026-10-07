@@ -63,7 +63,9 @@ Two tables (migration `018_create_usage.sql`):
 
 - **`usage_daily`** — `(project_id, day)` primary key, `org_id` denormalized,
   `event_count`. The grain is what makes one metering pass serve every org, what
-  bounds `uniqExact`'s memory, and what the dashboard charts.
+  bounds `uniqExact`'s memory, and what the dashboard charts. It has no foreign
+  key to `projects` (migration 023): the rows are the org's billing record, so
+  they outlive a deleted project.
 - **`usage_periods`** — `(org_id, period_start)` primary key, plus `event_count`,
   `period_end` and `usage_computed_at`. A pre-summed total so the dashboard's
   per-page-load read is one row rather than a sum over daily rows.
@@ -178,7 +180,7 @@ bounded by something pug ships.
 Under that lock the pass runs two jobs:
 
 - **meter** — re-counts a trailing window (`PUG_USAGE_RESCAN_DAYS`, default 2)
-  to absorb late arrivals, upserts the day cells, drops any cell in the window
+  to absorb late arrivals, upserts the day cells, drops live projects' cells
   ClickHouse no longer returns, then re-sums every org's current period. Once
   every 24h it widens the window (`meterFrom`), catching late arrivals that fell
   outside the trailing rescan. That widening floors at **month-to-date** and then
@@ -199,8 +201,8 @@ Under that lock the pass runs two jobs:
   counts as unmetered and the drop would wipe it. That guard sits in
   `DeleteUnmeteredDays` itself, not only at its caller.
 
-  An empty read is then classified rather than assumed. The pass counts the day
-  cells already stored over the same window:
+  An empty read is then classified rather than assumed. The pass counts the live
+  projects' day cells already stored over the same window:
 
   - **none stored** -- a genuinely idle or brand-new deployment. Warn, refresh
     every org's period as normal (that is what makes an eventless org read as a
@@ -272,9 +274,23 @@ its question — see §7.
 
 Day cells are upserted in pipelined batches of 1000: the meter writes one row per
 project per day, so a serial loop would be thousands of round-trips per pass. The
-upsert resolves `project_id → org_id` **in SQL**, so a project deleted between the
-ClickHouse read and the Postgres write inserts nothing — its events belong to
-nobody.
+upsert resolves `project_id → org_id` **in SQL**, from live projects only, so a
+cell of a deleted project writes nothing.
+
+**The meter only touches live projects' rows.** A project being deleted
+(`projects.deletion_time` set) or already gone keeps the days it had when it was
+deleted ([`project-deletion.md`](project-deletion.md)):
+
+- The upsert neither inserts nor updates its days.
+- The reconcile never drops them, even once its events are erased.
+- The empty-read check counts only live projects' days. Otherwise, once the only
+  project with events is deleted and erased, every pass would read its days as
+  evidence of a bad read and refresh no org.
+
+`CountKnownProjects` still counts a project being deleted, since it is this
+deployment's own. Without that, a deleted project with the only events in the
+window would freeze every org's stamp until the purge erased its events.
+`RefreshUsagePeriod` sums every day the org has, deleted projects' included.
 
 Two conflict branches, gated differently on purpose:
 

@@ -3,6 +3,10 @@ package rpc
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"connectrpc.com/authn"
@@ -12,9 +16,13 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc/authzspec"
 	"github.com/pug-sh/pug/internal/apperr"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	customersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -306,7 +314,7 @@ func TestAuthzInterceptorRegistryEntriesEnforced(t *testing.T) {
 // must be added here, not silently escape the oracle). A trailing pass catches a
 // listed proc that is not a real role-gated entry (a typo or removed RPC).
 // Every other oracle in this file iterates the registry and `continue`s on
-// !IsRoleGated, so downgrading an entry — OrgGated to Self(), say — does not fail
+// !IsRoleGated, so downgrading an entry — OrgGated to SelfRead(), say — does not fail
 // a check, it REMOVES the RPC from every check. Nothing else notices, and the RPC
 // silently becomes callable by any signed-in customer with a caller-supplied
 // org_id.
@@ -326,6 +334,15 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/dashboard.orgs.v1.OrgsService/ListInvitations":                    true,
 		"/dashboard.orgs.v1.OrgsService/RemoveMember":                       true,
 		"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":                   true,
+		"/dashboard.orgs.v1.OrgsService/ListDomains":                        true,
+		"/dashboard.orgs.v1.OrgsService/SetDomainSettings":                  true,
+		"/dashboard.orgs.v1.OrgsService/AddDomain":                          true,
+		"/dashboard.orgs.v1.OrgsService/VerifyDomain":                       true,
+		"/dashboard.orgs.v1.OrgsService/RemoveDomain":                       true,
+		"/dashboard.orgs.v1.OrgsService/UpdateDomain":                       true,
+		"/dashboard.orgs.v1.OrgsService/ListSSOConnections":                 true,
+		"/dashboard.orgs.v1.OrgsService/SetSSOConnection":                   true,
+		"/dashboard.orgs.v1.OrgsService/DeleteSSOConnection":                true,
 		"/dashboard.projects.v1.ProjectsService/BatchGet":                   true,
 		"/dashboard.projects.v1.ProjectsService/Create":                     true,
 		"/dashboard.projects.v1.ProjectsService/Delete":                     true,
@@ -400,6 +417,15 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 		"/dashboard.orgs.v1.OrgsService/ListInvitations":                    true,
 		"/dashboard.orgs.v1.OrgsService/RemoveMember":                       true,
 		"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":                   true,
+		"/dashboard.orgs.v1.OrgsService/ListDomains":                        true,
+		"/dashboard.orgs.v1.OrgsService/SetDomainSettings":                  true,
+		"/dashboard.orgs.v1.OrgsService/AddDomain":                          true,
+		"/dashboard.orgs.v1.OrgsService/VerifyDomain":                       true,
+		"/dashboard.orgs.v1.OrgsService/RemoveDomain":                       true,
+		"/dashboard.orgs.v1.OrgsService/UpdateDomain":                       true,
+		"/dashboard.orgs.v1.OrgsService/ListSSOConnections":                 true,
+		"/dashboard.orgs.v1.OrgsService/SetSSOConnection":                   true,
+		"/dashboard.orgs.v1.OrgsService/DeleteSSOConnection":                true,
 		"/dashboard.projects.v1.ProjectsService/Create":                     true,
 		"/dashboard.projects.v1.ProjectsService/Delete":                     true,
 		"/dashboard.projects.v1.ProjectsService/UpdateMeta":                 true,
@@ -481,5 +507,127 @@ func TestAuthzInterceptorFailsClosedOnUnknownProcedure(t *testing.T) {
 	}
 	if called {
 		t.Fatal("next was called for an unregistered procedure — the interceptor must fail closed")
+	}
+}
+
+// TestSelfWriteRPCs names every RPC that is not role-gated and whether it is a
+// self-write, which AuthzInterceptor refuses for the demo account. A new
+// self-service write registered as SelfRead would otherwise skip that refusal.
+func TestSelfWriteRPCs(t *testing.T) {
+	selfWrite := map[string]bool{
+		"/public.auth.v1.AuthService/SignInWithEmail":          false,
+		"/public.auth.v1.AuthService/RequestMagicLink":         false,
+		"/public.auth.v1.AuthService/CompleteMagicLink":        false,
+		"/public.auth.v1.AuthService/CompleteOIDCSignIn":       false,
+		"/public.auth.v1.AuthService/GetAuthConfig":            false,
+		"/public.auth.v1.AuthService/RefreshSession":           false,
+		"/public.auth.v1.AuthService/SignOut":                  false,
+		"/public.auth.v1.AuthService/DiscoverSignIn":           false,
+		"/public.auth.v1.AuthService/DemoSignIn":               false,
+		"/public.dashboards.v1.SharedDashboardsService/Query":  false,
+		"/dashboard.orgs.v1.OrgsService/List":                  false,
+		"/dashboard.orgs.v1.OrgsService/Create":                true,
+		"/dashboard.orgs.v1.OrgsService/Leave":                 true,
+		"/dashboard.projects.v1.ProjectsService/Get":           false,
+		"/dashboard.customers.v1.CustomersService/GetMe":       false,
+		"/dashboard.customers.v1.CustomersService/SetPassword": true,
+		"/sdk.profiles.v1.ProfilesSDKService/Identify":         false,
+		"/sdk.events.v1.EventsService/BatchCreate":             false,
+	}
+
+	for proc, want := range selfWrite {
+		spec, ok := permissionRegistry[proc]
+		if !ok || spec.IsRoleGated() {
+			t.Errorf("%s: listed but not a non-role-gated registry entry", proc)
+			continue
+		}
+		if spec.IsSelfWrite() != want {
+			t.Errorf("%s: IsSelfWrite = %v, want %v", proc, spec.IsSelfWrite(), want)
+		}
+	}
+
+	for proc, spec := range permissionRegistry {
+		if _, ok := selfWrite[proc]; !ok && !spec.IsRoleGated() {
+			t.Errorf("%s: not role-gated and not listed — add it here, deciding whether it is a self-write", proc)
+		}
+	}
+}
+
+// Anyone can sign in as the demo viewer, so its self-writes are refused; its
+// reads, and everyone else's writes, reach the handler.
+func TestAuthzInterceptorRefusesDemoSelfWrites(t *testing.T) {
+	for _, tc := range []struct {
+		email string
+		demo  bool
+	}{
+		{coreauth.DemoViewerEmail, true},
+		{strings.ToUpper(coreauth.DemoViewerEmail), true},
+		{"someone@example.com", false},
+	} {
+		t.Run(tc.email, func(t *testing.T) {
+			setPrincipal := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+					return next(authn.SetInfo(ctx, &Principal{
+						AuthType: AuthTypeJWT,
+						Customer: &dbread.Customer{ID: "cust-1", Email: tc.email},
+					}), req)
+				}
+			})
+			var reached atomic.Bool
+			record := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+					reached.Store(true)
+					return next(ctx, req)
+				}
+			})
+			opts := connect.WithInterceptors(ErrorInterceptor(), setPrincipal,
+				AuthzInterceptor(mustAuthorizer(t), fakeRoleLookup{err: errors.New("lookup must not be called")}), record)
+			mux := http.NewServeMux()
+			mux.Handle(orgsv1connect.NewOrgsServiceHandler(orgsv1connect.UnimplementedOrgsServiceHandler{}, opts))
+			mux.Handle(customersv1connect.NewCustomersServiceHandler(customersv1connect.UnimplementedCustomersServiceHandler{}, opts))
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+			orgs := orgsv1connect.NewOrgsServiceClient(srv.Client(), srv.URL)
+			customers := customersv1connect.NewCustomersServiceClient(srv.Client(), srv.URL)
+
+			ctx := t.Context()
+			for _, c := range []struct {
+				name  string
+				write bool
+				call  func() error
+			}{
+				{"Create", true, func() error {
+					_, err := orgs.Create(ctx, connect.NewRequest(&orgsv1.CreateRequest{}))
+					return err
+				}},
+				{"Leave", true, func() error {
+					_, err := orgs.Leave(ctx, connect.NewRequest(&orgsv1.LeaveRequest{}))
+					return err
+				}},
+				{"SetPassword", true, func() error {
+					_, err := customers.SetPassword(ctx, connect.NewRequest(&customersv1.SetPasswordRequest{}))
+					return err
+				}},
+				{"List", false, func() error {
+					_, err := orgs.List(ctx, connect.NewRequest(&orgsv1.ListRequest{}))
+					return err
+				}},
+				{"GetMe", false, func() error {
+					_, err := customers.GetMe(ctx, connect.NewRequest(&customersv1.GetMeRequest{}))
+					return err
+				}},
+			} {
+				want := connect.CodeUnimplemented
+				if tc.demo && c.write {
+					want = connect.CodePermissionDenied
+				}
+				if got := connect.CodeOf(c.call()); got != want {
+					t.Errorf("%s: code = %v, want %v", c.name, got, want)
+				}
+				if got := reached.Swap(false); got != (want == connect.CodeUnimplemented) {
+					t.Errorf("%s: handler reached = %v", c.name, got)
+				}
+			}
+		})
 	}
 }

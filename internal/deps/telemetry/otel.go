@@ -54,7 +54,7 @@ func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
 		case "otlp":
 			setupResult, setupErr = doSetupSDK(ctx)
 		default: // "stdout"
-			setupResult, setupErr = doSetupWithoutExport(ctx)
+			setupResult = doSetupWithoutExport(ctx)
 		}
 	})
 	return setupResult, setupErr

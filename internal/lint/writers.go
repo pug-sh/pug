@@ -35,8 +35,7 @@ var mutatedTable = regexp.MustCompile(`(?i)\b(?:insert\s+into|delete\s+from|merg
 // It reads text, not types, so a write it cannot see passes: a method value
 // called later, raw SQL through pgx rather than sqlc, `update only`, a quoted
 // table name, the second table of a truncate. A comment that spells out a call in
-// Go, or a write in a /* */ block of SQL, fails instead. None of these occurs
-// today.
+// Go fails instead. None of these occurs today.
 func checkTableOwners(root string) ([]string, error) {
 	files, err := sqlFiles(root, "schema/postgres/queries/write")
 	if err != nil {

@@ -11,6 +11,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getBillingCheckoutSessionOrgID = `-- name: GetBillingCheckoutSessionOrgID :one
+select org_id from billing_checkout_sessions
+where provider = $1 and ref = $2
+`
+
+type GetBillingCheckoutSessionOrgIDParams struct {
+	Provider string
+	Ref      string
+}
+
+// Attribution: turns a ref that came back on a delivery into the org pug chose
+// when it started the checkout.
+func (q *Queries) GetBillingCheckoutSessionOrgID(ctx context.Context, arg GetBillingCheckoutSessionOrgIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getBillingCheckoutSessionOrgID, arg.Provider, arg.Ref)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
+const getBillingEntitlementProviderProductID = `-- name: GetBillingEntitlementProviderProductID :one
+select provider_product_id from billing_entitlements where org_id = $1
+`
+
+// The product an operator staged this org to buy. It is what lets a payment
+// link's metadata.org_id attribute: buyer-settable on its own, it only counts
+// when an operator has already pointed this org at this product.
+func (q *Queries) GetBillingEntitlementProviderProductID(ctx context.Context, orgID string) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, getBillingEntitlementProviderProductID, orgID)
+	var provider_product_id pgtype.Text
+	err := row.Scan(&provider_product_id)
+	return provider_product_id, err
+}
+
+const getBillingSubscriptionPlanSlug = `-- name: GetBillingSubscriptionPlanSlug :one
+select plan_slug from billing_subscriptions
+where provider = $1 and provider_sub_id = $2
+`
+
+type GetBillingSubscriptionPlanSlugParams struct {
+	Provider      string
+	ProviderSubID string
+}
+
+// Read inside the apply lock so a delivery that ENDS a subscription keeps the
+// stored slug: a product dropped from config must not refuse a cancellation.
+func (q *Queries) GetBillingSubscriptionPlanSlug(ctx context.Context, arg GetBillingSubscriptionPlanSlugParams) (string, error) {
+	row := q.db.QueryRow(ctx, getBillingSubscriptionPlanSlug, arg.Provider, arg.ProviderSubID)
+	var plan_slug string
+	err := row.Scan(&plan_slug)
+	return plan_slug, err
+}
+
 const getLatestBillingSubscription = `-- name: GetLatestBillingSubscription :one
 select create_time, currency, current_period_end, current_period_start, id, org_id, plan_slug, price_cents, provider, provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status, update_time, grace_period_ends_at from billing_subscriptions
 where org_id = $1 and provider = $2
@@ -171,6 +223,40 @@ func (q *Queries) ListBillingEntitlementHistory(ctx context.Context, arg ListBil
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillingSubscriptionOrgsByProviderCustomerID = `-- name: ListBillingSubscriptionOrgsByProviderCustomerID :many
+select distinct org_id from billing_subscriptions
+where provider = $1 and provider_customer_id = $2
+limit 2
+`
+
+type ListBillingSubscriptionOrgsByProviderCustomerIDParams struct {
+	Provider           string
+	ProviderCustomerID string
+}
+
+// Attribution's last resort, once the ref missed and no staged product matched.
+// Two rows is the answer that matters: one buyer purchasing for two orgs shares a
+// provider customer, so the caller rejects the delivery rather than guessing.
+func (q *Queries) ListBillingSubscriptionOrgsByProviderCustomerID(ctx context.Context, arg ListBillingSubscriptionOrgsByProviderCustomerIDParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listBillingSubscriptionOrgsByProviderCustomerID, arg.Provider, arg.ProviderCustomerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

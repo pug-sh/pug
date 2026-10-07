@@ -62,6 +62,8 @@ from dashboard_shares
 where project_id = @project_id and enabled = true;
 
 -- name: GetEnabledDashboardShareByToken :one
-select *
-from dashboard_shares
-where share_token = @share_token and enabled = true;
+-- The join skips a project being deleted, even a share created after its delete.
+select s.*
+from dashboard_shares s
+join projects p on p.id = s.project_id
+where s.share_token = @share_token and s.enabled = true and p.deletion_time is null;

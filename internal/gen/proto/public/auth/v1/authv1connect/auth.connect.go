@@ -55,11 +55,14 @@ const (
 	AuthServiceSignOutProcedure = "/public.auth.v1.AuthService/SignOut"
 	// AuthServiceDemoSignInProcedure is the fully-qualified name of the AuthService's DemoSignIn RPC.
 	AuthServiceDemoSignInProcedure = "/public.auth.v1.AuthService/DemoSignIn"
+	// AuthServiceDiscoverSignInProcedure is the fully-qualified name of the AuthService's
+	// DiscoverSignIn RPC.
+	AuthServiceDiscoverSignInProcedure = "/public.auth.v1.AuthService/DiscoverSignIn"
 )
 
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
 type AuthServiceClient interface {
-	// GetAuthConfig returns the non-secret provider settings the browser needs to
+	// GetAuthConfig returns the non-secret settings the browser needs to
 	// render sign-in options and start Authorization Code + PKCE flows.
 	GetAuthConfig(context.Context, *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
@@ -79,6 +82,9 @@ type AuthServiceClient interface {
 	// in viewer mode. Gated by PUG_DEMO_ENABLED on the server; returns UNAVAILABLE
 	// when disabled or when the demo account has not been seeded.
 	DemoSignIn(context.Context, *connect.Request[v1.DemoSignInRequest]) (*connect.Response[v1.DemoSignInResponse], error)
+	// DiscoverSignIn returns the providers that sign in the email's domain and whether
+	// it requires SSO. It never says whether an account exists.
+	DiscoverSignIn(context.Context, *connect.Request[v1.DiscoverSignInRequest]) (*connect.Response[v1.DiscoverSignInResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the public.auth.v1.AuthService service. By default,
@@ -140,6 +146,12 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("DemoSignIn")),
 			connect.WithClientOptions(opts...),
 		),
+		discoverSignIn: connect.NewClient[v1.DiscoverSignInRequest, v1.DiscoverSignInResponse](
+			httpClient,
+			baseURL+AuthServiceDiscoverSignInProcedure,
+			connect.WithSchema(authServiceMethods.ByName("DiscoverSignIn")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -153,6 +165,7 @@ type authServiceClient struct {
 	refreshSession     *connect.Client[v1.RefreshSessionRequest, v1.RefreshSessionResponse]
 	signOut            *connect.Client[v1.SignOutRequest, v1.SignOutResponse]
 	demoSignIn         *connect.Client[v1.DemoSignInRequest, v1.DemoSignInResponse]
+	discoverSignIn     *connect.Client[v1.DiscoverSignInRequest, v1.DiscoverSignInResponse]
 }
 
 // GetAuthConfig calls public.auth.v1.AuthService.GetAuthConfig.
@@ -195,9 +208,14 @@ func (c *authServiceClient) DemoSignIn(ctx context.Context, req *connect.Request
 	return c.demoSignIn.CallUnary(ctx, req)
 }
 
+// DiscoverSignIn calls public.auth.v1.AuthService.DiscoverSignIn.
+func (c *authServiceClient) DiscoverSignIn(ctx context.Context, req *connect.Request[v1.DiscoverSignInRequest]) (*connect.Response[v1.DiscoverSignInResponse], error) {
+	return c.discoverSignIn.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
-	// GetAuthConfig returns the non-secret provider settings the browser needs to
+	// GetAuthConfig returns the non-secret settings the browser needs to
 	// render sign-in options and start Authorization Code + PKCE flows.
 	GetAuthConfig(context.Context, *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
@@ -217,6 +235,9 @@ type AuthServiceHandler interface {
 	// in viewer mode. Gated by PUG_DEMO_ENABLED on the server; returns UNAVAILABLE
 	// when disabled or when the demo account has not been seeded.
 	DemoSignIn(context.Context, *connect.Request[v1.DemoSignInRequest]) (*connect.Response[v1.DemoSignInResponse], error)
+	// DiscoverSignIn returns the providers that sign in the email's domain and whether
+	// it requires SSO. It never says whether an account exists.
+	DiscoverSignIn(context.Context, *connect.Request[v1.DiscoverSignInRequest]) (*connect.Response[v1.DiscoverSignInResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -274,6 +295,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("DemoSignIn")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceDiscoverSignInHandler := connect.NewUnaryHandler(
+		AuthServiceDiscoverSignInProcedure,
+		svc.DiscoverSignIn,
+		connect.WithSchema(authServiceMethods.ByName("DiscoverSignIn")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/public.auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceGetAuthConfigProcedure:
@@ -292,6 +319,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceSignOutHandler.ServeHTTP(w, r)
 		case AuthServiceDemoSignInProcedure:
 			authServiceDemoSignInHandler.ServeHTTP(w, r)
+		case AuthServiceDiscoverSignInProcedure:
+			authServiceDiscoverSignInHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -331,4 +360,8 @@ func (UnimplementedAuthServiceHandler) SignOut(context.Context, *connect.Request
 
 func (UnimplementedAuthServiceHandler) DemoSignIn(context.Context, *connect.Request[v1.DemoSignInRequest]) (*connect.Response[v1.DemoSignInResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.DemoSignIn is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) DiscoverSignIn(context.Context, *connect.Request[v1.DiscoverSignInRequest]) (*connect.Response[v1.DiscoverSignInResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.DiscoverSignIn is not implemented"))
 }

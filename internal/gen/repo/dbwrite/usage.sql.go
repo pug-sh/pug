@@ -14,6 +14,7 @@ import (
 const deleteUnmeteredUsageDaily = `-- name: DeleteUnmeteredUsageDaily :execrows
 delete from usage_daily d
 where d.day >= $1 and d.day < $2
+  and d.project_id in (select id from projects where deletion_time is null)
   and (d.project_id::text, d.day) not in (
     select p.project_id, k.day
     from unnest($3::text[]) with ordinality as p(project_id, n)
@@ -38,6 +39,9 @@ type DeleteUnmeteredUsageDailyParams struct {
 // of seconds and gigabytes of temp spill once a full recompute widens the window
 // to a month. The arrays never contain NULL, so `not in` is exact here, and an
 // empty one still means "delete the whole window" exactly as before.
+//
+// Live projects only: a deleted project's days are the org's record, kept after
+// its events are erased.
 func (q *Queries) DeleteUnmeteredUsageDaily(ctx context.Context, arg DeleteUnmeteredUsageDailyParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteUnmeteredUsageDaily,
 		arg.FromDay,
@@ -49,6 +53,34 @@ func (q *Queries) DeleteUnmeteredUsageDaily(ctx context.Context, arg DeleteUnmet
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const freezeUsageDaily = `-- name: FreezeUsageDaily :exec
+insert into usage_daily (day, event_count, org_id, project_id)
+select unnest($1::date[]), unnest($2::bigint[]), $3::text, $4::text
+on conflict (project_id, day) do update
+set event_count = excluded.event_count,
+    update_time = now()
+where usage_daily.event_count is distinct from excluded.event_count
+`
+
+type FreezeUsageDailyParams struct {
+	Days        []pgtype.Date
+	EventCounts []int64
+	OrgID       string
+	ProjectID   string
+}
+
+// The purge job's last count of a project being deleted, which UpsertUsageDaily
+// skips. The org comes from the deletion row.
+func (q *Queries) FreezeUsageDaily(ctx context.Context, arg FreezeUsageDailyParams) error {
+	_, err := q.db.Exec(ctx, freezeUsageDaily,
+		arg.Days,
+		arg.EventCounts,
+		arg.OrgID,
+		arg.ProjectID,
+	)
+	return err
 }
 
 const pruneUsageDaily = `-- name: PruneUsageDaily :execrows

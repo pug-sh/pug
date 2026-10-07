@@ -875,7 +875,7 @@ func TestLeaveHappyPath(t *testing.T) {
 		t.Fatalf("Leave: %v", err)
 	}
 
-	if _, err := write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+	if _, err := dbread.New(db.PgW).GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 		OrgID:      org.ID,
 		CustomerID: leaver,
 	}); !errors.Is(err, pgx.ErrNoRows) {

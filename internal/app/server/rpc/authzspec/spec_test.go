@@ -49,7 +49,8 @@ func TestNonGatedBuildersCarryNoTriple(t *testing.T) {
 		spec Spec
 	}{
 		{"Public", Public()},
-		{"Self", Self()},
+		{"SelfRead", SelfRead()},
+		{"SelfWrite", SelfWrite()},
 		{"Project", Project()},
 		{"SDKKey", SDKKey()},
 	} {

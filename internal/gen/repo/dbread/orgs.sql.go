@@ -12,7 +12,7 @@ import (
 )
 
 const getOrgByID = `-- name: GetOrgByID :one
-select create_time, display_name, id, update_time from orgs where id = $1
+select create_time, display_name, id, update_time, auto_join_role, members_can_create_orgs from orgs where id = $1
 `
 
 func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
@@ -23,6 +23,8 @@ func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+		&i.AutoJoinRole,
+		&i.MembersCanCreateOrgs,
 	)
 	return i, err
 }
@@ -61,7 +63,7 @@ func (q *Queries) GetOrgWithRoleByIDAndCustomerID(ctx context.Context, arg GetOr
 }
 
 const getOrgsByCustomerID = `-- name: GetOrgsByCustomerID :many
-select o.create_time, o.display_name, o.id, o.update_time
+select o.create_time, o.display_name, o.id, o.update_time, o.auto_join_role, o.members_can_create_orgs
 from orgs o
 join org_members om on om.org_id = o.id
 where om.customer_id = $1
@@ -82,6 +84,8 @@ func (q *Queries) GetOrgsByCustomerID(ctx context.Context, customerID string) ([
 			&i.DisplayName,
 			&i.ID,
 			&i.UpdateTime,
+			&i.AutoJoinRole,
+			&i.MembersCanCreateOrgs,
 		); err != nil {
 			return nil, err
 		}

@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/apperr"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -93,6 +94,22 @@ func TestRequirePermission(t *testing.T) {
 		}
 		if p == nil || p.Customer == nil || p.Customer.ID != "cust-1" {
 			t.Fatalf("principal = %+v, want customer cust-1", p)
+		}
+	})
+
+	t.Run("demo account is a viewer whatever role is stored", func(t *testing.T) {
+		ctx := authn.SetInfo(context.Background(), &Principal{
+			AuthType: AuthTypeJWT,
+			Customer: &dbread.Customer{ID: "cust-demo", Email: coreauth.DemoViewerEmail},
+		})
+		admin := fakeRoleLookup{role: coreorgs.RoleAdmin}
+		_, err := requirePermission(ctx, authorizer, admin, "org-1", authz.ResourceOrg, authz.ActionUpdate)
+		var ae *apperr.Error
+		if !errors.As(err, &ae) || ae.Reason() != apperr.ReasonOrgRoleForbidden {
+			t.Fatalf("write: want ORG_ROLE_FORBIDDEN, got %v", err)
+		}
+		if _, err := requirePermission(ctx, authorizer, admin, "org-1", authz.ResourceOrg, authz.ActionRead); err != nil {
+			t.Fatalf("read: unexpected error: %v", err)
 		}
 	})
 
