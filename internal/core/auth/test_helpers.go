@@ -33,5 +33,6 @@ func NewServiceWithOAuthForTest(
 		jwtKey:    jwtKey,
 		publisher: publisher,
 		oauth:     oauthSvc,
+		oauthCfg:  oauthCfg,
 	}
 }

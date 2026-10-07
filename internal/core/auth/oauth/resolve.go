@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -27,7 +29,7 @@ type resolveResult struct {
 }
 
 // FinalizeFunc runs in the same transaction as identity resolution (org provisioning, verify, etc.).
-type FinalizeFunc func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error
+type FinalizeFunc func(ctx context.Context, r *dbread.Queries, w *dbwrite.Queries, customerID string, createdNew bool) error
 
 // WithIdentityTx finds-or-creates the customer for a verified identity and runs
 // finalize in the same transaction as identity resolution on the common path. On
@@ -84,7 +86,7 @@ func resolveAndFinalizeInTx(ctx context.Context, pool *pgxpool.Pool, provider Pr
 	if finalize != nil {
 		// finalize errors are recorded by finalize itself (coreorgs at its detect
 		// site; the oauth callback for FinalizeVerifiedCustomer), so return bare.
-		if err := finalize(ctx, w, result.CustomerID, result.CreatedNew); err != nil {
+		if err := finalize(ctx, r, w, result.CustomerID, result.CreatedNew); err != nil {
 			return resolveResult{}, err
 		}
 	}
@@ -110,8 +112,9 @@ func finalizeExistingCustomer(ctx context.Context, pool *pgxpool.Pool, customerI
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
-	if err := finalize(ctx, w, customerID, false); err != nil {
+	if err := finalize(ctx, r, w, customerID, false); err != nil {
 		return resolveResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -164,7 +167,7 @@ func linkByEmailAndFinalize(ctx context.Context, pool *pgxpool.Pool, provider Pr
 	}
 
 	if finalize != nil {
-		if err := finalize(ctx, w, customer.ID, false); err != nil {
+		if err := finalize(ctx, r, w, customer.ID, false); err != nil {
 			return resolveResult{}, err
 		}
 	}
@@ -211,6 +214,11 @@ func resolveIdentityWithQueries(ctx context.Context, r *dbread.Queries, w *dbwri
 		return resolveResult{}, err
 	}
 
+	// Only email lookups need this: lower() folds some runes into ASCII (the Kelvin sign into k).
+	if strings.ContainsFunc(ident.Email(), func(r rune) bool { return r >= utf8.RuneSelf }) {
+		slog.WarnContext(ctx, "oidc sign-in refused: non-ASCII email", slog.String("provider", string(provider)))
+		return resolveResult{}, ErrNonASCIIEmail
+	}
 	if customer, err := r.GetCustomerByEmail(ctx, ident.Email()); err == nil {
 		if err := createIdentity(ctx, w, customer.ID, provider, ident.Subject()); err != nil {
 			return resolveResult{}, err

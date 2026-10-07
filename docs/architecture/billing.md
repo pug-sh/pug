@@ -224,21 +224,21 @@ product keeps that pin. Moving a deal onto new terms is a new product pasted wit
 What stays editable: `DisplayName`, because renaming a plan changes nothing anyone
 bought. What this costs: a catalog that only grows, and slugs that carry a date.
 
-The one deletion so far is 021's: `trial`, `starter`, `growth` and `scale` left
+The one deletion so far is 024's: `trial`, `starter`, `growth` and `scale` left
 outright rather than retiring, because no subscription on any of them was ever
-live, so nothing could still hold one — and 021 moved every row naming one to
+live, so nothing could still hold one — and 024 moved every row naming one to
 `free` (§5).
 
 ## 5. Storage
 
 Migrations `019_create_billing_entitlements.sql`, `020_create_billing_payments.sql`
-(the product column) and `021_usage_plan_entitlements.sql` (usage billing): the
+(the product column) and `024_usage_plan_entitlements.sql` (usage billing): the
 entitlement itself, and the history behind it (§5.1). The entitlement is a 1:1
 extension of `orgs`, so the org id is the primary key rather than a `char(20)` xid
 of its own — one row per org is then structural rather than a constraint somebody
 has to remember to add.
 
-The table as it stands after 021, abridged — the `<> ''` checks on its text
+The table as it stands after 024, abridged — the `<> ''` checks on its text
 columns are left out:
 
 ```sql
@@ -248,7 +248,7 @@ create table billing_entitlements (
   anchor_day smallint
     constraint billing_entitlements_anchor_day_check
       check (anchor_day between 1 and 31),
-  -- The catalog plan a deal splits over, pinned when its product is set (021).
+  -- The catalog plan a deal splits over, pinned when its product is set (024).
   base_plan_slug varchar(50),
   contract_ends_at timestamptz,
   create_time timestamptz not null default now(),
@@ -270,21 +270,21 @@ create table billing_entitlements (
     constraint billing_entitlements_retention_check
       check (retention_days_override > 0),
   update_time timestamptz not null default now(),
-  -- A deal's price is its product (021). Enforced here rather than in the CLI:
+  -- A deal's price is its product (024). Enforced here rather than in the CLI:
   -- the row is what every read trusts.
   constraint billing_entitlements_custom_needs_product
     check ((plan_slug = 'custom') = (provider_product_id is not null)),
-  -- A deal splits over the plan its product was made against (021).
+  -- A deal splits over the plan its product was made against (024).
   constraint billing_entitlements_custom_needs_base_plan
     check ((plan_slug = 'custom') = (base_plan_slug is not null)),
-  -- States do not change on a reprice, so this is no second catalog (021).
+  -- States do not change on a reprice, so this is no second catalog (024).
   constraint billing_entitlements_plan_slug_state_check
     check (plan_slug in ('free', 'custom'))
 );
 ```
 
 - **`plan_slug`** — `free` or `custom`, the only two slugs `SetPlan` writes (§8),
-  and since 021 the only two the column takes (`plan_slug_state_check`). The row
+  and since 024 the only two the column takes (`plan_slug_state_check`). The row
   never grants a plan: a usage plan is held only through a subscription (§6), so
   the slug records what an operator staged — a comp on `free`, or a deal on
   `custom` that is waiting for its subscription or covered by one. The check is no
@@ -323,7 +323,7 @@ create table billing_entitlements (
   has nothing to distinguish yet, the third has no use when `org_id` is unique.
 
 019 seeds nothing and backfills nothing: every org that existed got its correct
-entitlement from invariant 2 the moment the code deployed. 021 rests on one
+entitlement from invariant 2 the moment the code deployed. 024 rests on one
 premise: the fixed-price tiers (`trial`, `starter`, `growth`, `scale`) leave the
 catalog outright rather than retiring, because no subscription on any of them was
 ever live, so nothing can still hold one — the one deletion §4.2 allows. Before it
@@ -334,7 +334,7 @@ is wrong; Postgres alone would name only the constraint. The operator fixes each
 with `pug billing set` and re-runs. It then rewrites a removed tier's row to `free`
 — nothing billed it without a subscription, and its overrides keep resolving on
 free — pins every existing deal to `usage-2026-10`, and appends a history snapshot
-(actor `migration/021`) for every row it changes, so invariant 4 holds for the
+(actor `migration/024`) for every row it changes, so invariant 4 holds for the
 migration too. `Down` reverses the schema; the rewrites, and the snapshots that
 record them, stay. Check a deployed database before it runs.
 
@@ -362,7 +362,7 @@ create table billing_entitlement_history (
   plan_slug varchar(50),
   provider_product_id text,
   retention_days_override bigint,
-  -- Kept by 021 for snapshots recorded while the trial ran; nothing writes it now.
+  -- Kept by 024 for snapshots recorded while the trial ran; nothing writes it now.
   trial_ends_at timestamptz
 );
 
@@ -377,7 +377,7 @@ create index billing_entitlement_history_org_idx
 - **`actor` is required.** Every mutating command takes `--actor` and cobra
   refuses the command without it. The payments side never writes this table —
   it writes `billing_subscriptions` ([`payments.md`](payments.md) §6) — so every
-  actor is a person, bar 021's `migration/021` (§5). It is stated rather than
+  actor is a person, bar 024's `migration/024` (§5). It is stated rather than
   detected because these commands run from a pod, where the OS user is the
   image's uid and reads the same for every operator. An unattributed change to a
   commercial agreement is barely better than no record, so there is no default
@@ -386,11 +386,11 @@ create index billing_entitlement_history_org_idx
   org; the history must not, because "what were they on when they left" is
   precisely a question asked after deletion — in a refund dispute, most often.
 - **A snapshot is kept as it was written.** The table carries the row's own
-  checks, so a snapshot is one a live row could have held — but 021 added
+  checks, so a snapshot is one a live row could have held — but 024 added
   `custom_needs_product` and `custom_needs_base_plan` here `not valid`, so a deal
   recorded before usage billing, with an events override and no product or pin,
   stays as it was. The rules bind new rows only, and the state check is not here
-  at all: a snapshot may name a tier the catalog has since lost. 021 kept
+  at all: a snapshot may name a tier the catalog has since lost. 024 kept
   `trial_ends_at` for the same reason, and `show --history` prints it as
   `trial-ends=`.
 - **Append-only by convention, and nothing in the codebase updates or deletes
@@ -839,11 +839,11 @@ table is a plain unit test.
   transaction, `clear` included; a failed write appends nothing; the history
   survives its org being deleted. The last of those is the one a foreign key
   would quietly break, so it is a test rather than a comment.
-- **Migration 021** — stepped back to 020 with `testutil.PostgresMigrations` and
+- **Migration 024** — stepped back to 023 with `testutil.PostgresMigrations` and
   seeded in the old shape: it names every row it cannot place and applies
-  nothing (`TestMigration021NamesEveryRowItCannotPlace`), and records every row
+  nothing (`TestMigration024NamesEveryRowItCannotPlace`), and records every row
   it rewrites while the history keeps a trial's end
-  (`TestMigration021RecordsWhatItRewrites`).
+  (`TestMigration024RecordsWhatItRewrites`).
 - **Catalog** (§4, §4.2) — `TestCatalogIsPinned` pins every plan's `FreeEvents`,
   `TierUpTo`, `RetentionDays` and `Retired`, so editing a sold plan fails CI and
   the fix is to mint a new slug. It is the only guard against a one-line

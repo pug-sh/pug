@@ -39,3 +39,13 @@ func (q *Queries) CreateCustomerIdentity(ctx context.Context, arg CreateCustomer
 	)
 	return i, err
 }
+
+const deleteSSOConnectionIdentities = `-- name: DeleteSSOConnectionIdentities :exec
+delete from customer_identities where provider = $1 and provider like 'conn:%'
+`
+
+// Only a connection's (conn:<id>) rows, so a config provider id can't unlink everyone.
+func (q *Queries) DeleteSSOConnectionIdentities(ctx context.Context, provider string) error {
+	_, err := q.db.Exec(ctx, deleteSSOConnectionIdentities, provider)
+	return err
+}

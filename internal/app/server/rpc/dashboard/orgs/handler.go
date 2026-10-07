@@ -56,7 +56,13 @@ func (s *server) List(
 			Role:        toRPCRole(roleFromDBJoinRow(ctx, r.Role)).Enum(),
 		})
 	}
-	return connect.NewResponse(&orgsv1.ListResponse{Orgs: result}), nil
+
+	// A UI hint only; Create enforces the rule. A failed check must not fail the list.
+	canCreate, err := s.service.OrgCreationAllowed(ctx, principal.Customer.ID, principal.Customer.Email)
+	if err != nil {
+		canCreate = true
+	}
+	return connect.NewResponse(&orgsv1.ListResponse{Orgs: result, CanCreateOrg: proto.Bool(canCreate)}), nil
 }
 
 func (s *server) Get(
@@ -123,11 +129,12 @@ func (s *server) ListMembers(
 	result := make([]*orgsv1.OrgMember, 0, len(members))
 	for _, m := range members {
 		result = append(result, &orgsv1.OrgMember{
-			CustomerId:  proto.String(m.CustomerID),
-			DisplayName: proto.String(m.DisplayName),
-			Email:       proto.String(m.Email),
-			OrgId:       proto.String(m.OrgID),
-			Role:        toRPCRole(roleFromDBJoinRow(ctx, m.Role)).Enum(),
+			CustomerId:      proto.String(m.CustomerID),
+			DisplayName:     proto.String(m.DisplayName),
+			Email:           proto.String(m.Email),
+			OrgId:           proto.String(m.OrgID),
+			Role:            toRPCRole(roleFromDBJoinRow(ctx, m.Role)).Enum(),
+			JoinedViaDomain: optionalString(m.JoinedViaDomain),
 		})
 	}
 
@@ -284,6 +291,9 @@ func (s *server) Create(
 	// by the protovalidate interceptor on CreateRequest before this handler runs.
 	org, err := s.service.CreateOrgWithDefaults(ctx, principal.Customer.ID, req.Msg.GetDisplayName())
 	if err != nil {
+		if errors.Is(err, coreorgs.ErrOrgCreationRestricted) {
+			return nil, apperr.PermissionDenied(apperr.ReasonOrgCreationRestricted, "your company doesn't allow creating new orgs")
+		}
 		// Defense-in-depth: the default-project insert into a brand-new org
 		// cannot collide on (org_id, display_name) under current code, but if
 		// a future change ever surfaces ErrProjectNameTaken to this handler
@@ -372,11 +382,12 @@ func (s *server) UpdateMemberRole(
 
 	return connect.NewResponse(&orgsv1.UpdateMemberRoleResponse{
 		Member: &orgsv1.OrgMember{
-			CustomerId:  proto.String(row.CustomerID),
-			DisplayName: proto.String(row.DisplayName),
-			Email:       proto.String(row.Email),
-			OrgId:       proto.String(row.OrgID),
-			Role:        toRPCRole(roleFromDBJoinRow(ctx, row.Role)).Enum(),
+			CustomerId:      proto.String(row.CustomerID),
+			DisplayName:     proto.String(row.DisplayName),
+			Email:           proto.String(row.Email),
+			OrgId:           proto.String(row.OrgID),
+			Role:            toRPCRole(roleFromDBJoinRow(ctx, row.Role)).Enum(),
+			JoinedViaDomain: optionalString(row.JoinedViaDomain),
 		},
 	}), nil
 }

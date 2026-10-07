@@ -151,3 +151,38 @@ func TestResendInviteRequest_InvitationIDRequired(t *testing.T) {
 		t.Error("expected validation error for missing invitation_id, got nil")
 	}
 }
+
+// An allow-list, so a role added to OrgRole later can't become an auto-join role.
+func TestSetDomainSettingsRequest_AutoJoinRoles(t *testing.T) {
+	for v := range orgsv1.OrgRole_name {
+		role := orgsv1.OrgRole(v)
+		req := &orgsv1.SetDomainSettingsRequest{
+			OrgId:                proto.String("org-1"),
+			AutoJoinRole:         role.Enum(),
+			MembersCanCreateOrgs: proto.Bool(true),
+		}
+		allowed := role == orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED || role == orgsv1.OrgRole_ORG_ROLE_MEMBER || role == orgsv1.OrgRole_ORG_ROLE_VIEWER
+		if err := protovalidate.Validate(req); (err == nil) != allowed {
+			t.Errorf("%s: err = %v, want allowed = %v", role, err, allowed)
+		}
+	}
+}
+
+func TestSetDomainSettingsRequest_MembersCanCreateOrgsRequired(t *testing.T) {
+	req := &orgsv1.SetDomainSettingsRequest{OrgId: proto.String("org-1")}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Error("expected validation error for missing members_can_create_orgs, got nil")
+	}
+}
+
+// An omitted require_sso must not read as false and silently turn Require SSO off.
+func TestUpdateDomainRequest_RequireSSORequired(t *testing.T) {
+	req := &orgsv1.UpdateDomainRequest{OrgId: proto.String("org-1"), DomainId: proto.String("d-1")}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Error("expected validation error for missing require_sso, got nil")
+	}
+	req.RequireSso = proto.Bool(false)
+	if err := protovalidate.Validate(req); err != nil {
+		t.Errorf("explicit false: %v", err)
+	}
+}

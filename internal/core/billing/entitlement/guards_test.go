@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -421,7 +422,7 @@ func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		lockErr = f.svc.WithOrgLock(ctx, f.orgID, func(_ *dbwrite.Queries, cur entitlement.Record) error {
+		lockErr = f.svc.WithOrgLock(ctx, f.orgID, func(_ *dbread.Queries, _ *dbwrite.Queries, cur entitlement.Record) error {
 			got = cur
 			return nil
 		})
@@ -451,7 +452,7 @@ func TestWithOrgLockHandsOverNoRowAsTheZeroRecord(t *testing.T) {
 	for name, orgID := range map[string]string{"no row": f.orgID, "no such org": "o_does_not_exist"} {
 		t.Run(name, func(t *testing.T) {
 			called := false
-			err := f.svc.WithOrgLock(t.Context(), orgID, func(_ *dbwrite.Queries, cur entitlement.Record) error {
+			err := f.svc.WithOrgLock(t.Context(), orgID, func(_ *dbread.Queries, _ *dbwrite.Queries, cur entitlement.Record) error {
 				called = true
 				if cur.Present || cur.PlanSlug != "" {
 					t.Errorf("record = %+v, want the zero Record", cur)
@@ -477,7 +478,7 @@ func TestWithOrgLockCommitsOnlyWhenFnSucceeds(t *testing.T) {
 
 	f := newFixture(t)
 	refused := errors.New("refused after writing")
-	err := f.svc.WithOrgLock(t.Context(), f.orgID, func(w *dbwrite.Queries, _ entitlement.Record) error {
+	err := f.svc.WithOrgLock(t.Context(), f.orgID, func(_ *dbread.Queries, w *dbwrite.Queries, _ entitlement.Record) error {
 		if _, err := w.UpsertBillingEntitlement(t.Context(), dbwrite.UpsertBillingEntitlementParams{
 			OrgID:    f.orgID,
 			PlanSlug: entitlement.SlugFree,
@@ -530,14 +531,14 @@ func TestWithOrgLockReleasesTheLockWhenFnFails(t *testing.T) {
 	}
 
 	refused := errors.New("refused")
-	err = svc.WithOrgLock(t.Context(), f.orgID, func(*dbwrite.Queries, entitlement.Record) error { return refused })
+	err = svc.WithOrgLock(t.Context(), f.orgID, func(*dbread.Queries, *dbwrite.Queries, entitlement.Record) error { return refused })
 	if !errors.Is(err, refused) {
 		t.Fatalf("err = %v, want fn's own error back", err)
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	if err := svc.WithOrgLock(ctx, f.orgID, func(*dbwrite.Queries, entitlement.Record) error { return nil }); err != nil {
+	if err := svc.WithOrgLock(ctx, f.orgID, func(*dbread.Queries, *dbwrite.Queries, entitlement.Record) error { return nil }); err != nil {
 		t.Fatalf("taking the org lock after fn failed: %v; the refused call still holds it", err)
 	}
 }

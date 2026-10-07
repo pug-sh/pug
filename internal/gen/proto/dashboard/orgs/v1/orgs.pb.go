@@ -123,6 +123,105 @@ func (InvitationStatus) EnumDescriptor() ([]byte, []int) {
 	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{1}
 }
 
+type DomainStatus int32
+
+const (
+	DomainStatus_DOMAIN_STATUS_UNSPECIFIED DomainStatus = 0
+	DomainStatus_DOMAIN_STATUS_PENDING     DomainStatus = 1
+	DomainStatus_DOMAIN_STATUS_VERIFIED    DomainStatus = 2
+)
+
+// Enum value maps for DomainStatus.
+var (
+	DomainStatus_name = map[int32]string{
+		0: "DOMAIN_STATUS_UNSPECIFIED",
+		1: "DOMAIN_STATUS_PENDING",
+		2: "DOMAIN_STATUS_VERIFIED",
+	}
+	DomainStatus_value = map[string]int32{
+		"DOMAIN_STATUS_UNSPECIFIED": 0,
+		"DOMAIN_STATUS_PENDING":     1,
+		"DOMAIN_STATUS_VERIFIED":    2,
+	}
+)
+
+func (x DomainStatus) Enum() *DomainStatus {
+	p := new(DomainStatus)
+	*p = x
+	return p
+}
+
+func (x DomainStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DomainStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_dashboard_orgs_v1_orgs_proto_enumTypes[2].Descriptor()
+}
+
+func (DomainStatus) Type() protoreflect.EnumType {
+	return &file_dashboard_orgs_v1_orgs_proto_enumTypes[2]
+}
+
+func (x DomainStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DomainStatus.Descriptor instead.
+func (DomainStatus) EnumDescriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{2}
+}
+
+type DomainVerificationMethod int32
+
+const (
+	DomainVerificationMethod_DOMAIN_VERIFICATION_METHOD_UNSPECIFIED DomainVerificationMethod = 0
+	DomainVerificationMethod_DOMAIN_VERIFICATION_METHOD_DNS         DomainVerificationMethod = 1
+	// Marked verified by the server's operator with `pug domains verify`.
+	DomainVerificationMethod_DOMAIN_VERIFICATION_METHOD_OPERATOR DomainVerificationMethod = 2
+)
+
+// Enum value maps for DomainVerificationMethod.
+var (
+	DomainVerificationMethod_name = map[int32]string{
+		0: "DOMAIN_VERIFICATION_METHOD_UNSPECIFIED",
+		1: "DOMAIN_VERIFICATION_METHOD_DNS",
+		2: "DOMAIN_VERIFICATION_METHOD_OPERATOR",
+	}
+	DomainVerificationMethod_value = map[string]int32{
+		"DOMAIN_VERIFICATION_METHOD_UNSPECIFIED": 0,
+		"DOMAIN_VERIFICATION_METHOD_DNS":         1,
+		"DOMAIN_VERIFICATION_METHOD_OPERATOR":    2,
+	}
+)
+
+func (x DomainVerificationMethod) Enum() *DomainVerificationMethod {
+	p := new(DomainVerificationMethod)
+	*p = x
+	return p
+}
+
+func (x DomainVerificationMethod) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DomainVerificationMethod) Descriptor() protoreflect.EnumDescriptor {
+	return file_dashboard_orgs_v1_orgs_proto_enumTypes[3].Descriptor()
+}
+
+func (DomainVerificationMethod) Type() protoreflect.EnumType {
+	return &file_dashboard_orgs_v1_orgs_proto_enumTypes[3]
+}
+
+func (x DomainVerificationMethod) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DomainVerificationMethod.Descriptor instead.
+func (DomainVerificationMethod) EnumDescriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{3}
+}
+
 type Org struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
@@ -184,14 +283,16 @@ func (x *Org) GetRole() OrgRole {
 }
 
 type OrgMember struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CustomerId    *string                `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
-	DisplayName   *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	Email         *string                `protobuf:"bytes,3,opt,name=email" json:"email,omitempty"`
-	OrgId         *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	Role          *OrgRole               `protobuf:"varint,5,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	CustomerId  *string                `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
+	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	Email       *string                `protobuf:"bytes,3,opt,name=email" json:"email,omitempty"`
+	OrgId       *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	Role        *OrgRole               `protobuf:"varint,5,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
+	// The verified domain the member auto-joined through; empty otherwise.
+	JoinedViaDomain *string `protobuf:"bytes,6,opt,name=joined_via_domain,json=joinedViaDomain" json:"joined_via_domain,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *OrgMember) Reset() {
@@ -257,6 +358,13 @@ func (x *OrgMember) GetRole() OrgRole {
 		return *x.Role
 	}
 	return OrgRole_ORG_ROLE_UNSPECIFIED
+}
+
+func (x *OrgMember) GetJoinedViaDomain() string {
+	if x != nil && x.JoinedViaDomain != nil {
+		return *x.JoinedViaDomain
+	}
+	return ""
 }
 
 type OrgInvitation struct {
@@ -380,8 +488,10 @@ func (*ListRequest) Descriptor() ([]byte, []int) {
 }
 
 type ListResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Orgs          []*Org                 `protobuf:"bytes,1,rep,name=orgs" json:"orgs,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Orgs  []*Org                 `protobuf:"bytes,1,rep,name=orgs" json:"orgs,omitempty"`
+	// False when the caller's email domain restricts org creation.
+	CanCreateOrg  *bool `protobuf:"varint,2,opt,name=can_create_org,json=canCreateOrg" json:"can_create_org,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -421,6 +531,13 @@ func (x *ListResponse) GetOrgs() []*Org {
 		return x.Orgs
 	}
 	return nil
+}
+
+func (x *ListResponse) GetCanCreateOrg() bool {
+	if x != nil && x.CanCreateOrg != nil {
+		return *x.CanCreateOrg
+	}
+	return false
 }
 
 type GetRequest struct {
@@ -1432,6 +1549,1245 @@ func (x *UpdateMemberRoleResponse) GetMember() *OrgMember {
 	return nil
 }
 
+type OrgDomain struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Id     *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Domain *string                `protobuf:"bytes,2,opt,name=domain" json:"domain,omitempty"`
+	Status *DomainStatus          `protobuf:"varint,3,opt,name=status,enum=dashboard.orgs.v1.DomainStatus" json:"status,omitempty"`
+	// UNSPECIFIED while pending.
+	VerificationMethod *DomainVerificationMethod `protobuf:"varint,4,opt,name=verification_method,json=verificationMethod,enum=dashboard.orgs.v1.DomainVerificationMethod" json:"verification_method,omitempty"`
+	// The TXT record that proves the domain, e.g. _pug-verification.acme.com.
+	TxtRecordName  *string `protobuf:"bytes,5,opt,name=txt_record_name,json=txtRecordName" json:"txt_record_name,omitempty"`
+	TxtRecordValue *string `protobuf:"bytes,6,opt,name=txt_record_value,json=txtRecordValue" json:"txt_record_value,omitempty"`
+	// RFC 3339; empty while pending.
+	VerifiedAt *string `protobuf:"bytes,7,opt,name=verified_at,json=verifiedAt" json:"verified_at,omitempty"`
+	// True when another org that verified this domain turned org creation off.
+	// Set only by ListDomains, and only on a verified domain.
+	OrgCreationRestrictedElsewhere *bool `protobuf:"varint,8,opt,name=org_creation_restricted_elsewhere,json=orgCreationRestrictedElsewhere" json:"org_creation_restricted_elsewhere,omitempty"`
+	// Accounts on the domain may sign in only through SSO.
+	RequireSso *bool `protobuf:"varint,9,opt,name=require_sso,json=requireSso" json:"require_sso,omitempty"`
+	// Someone has signed in through SSO with an account on the domain since it was verified,
+	// and since an SSO connection last dropped it or changed issuer. Require SSO can't be
+	// turned on before that.
+	SsoSeen *bool `protobuf:"varint,10,opt,name=sso_seen,json=ssoSeen" json:"sso_seen,omitempty"`
+	// True when another org that verified this domain requires SSO for it.
+	// Set only by ListDomains, and only on a verified domain.
+	SsoRequiredElsewhere *bool `protobuf:"varint,11,opt,name=sso_required_elsewhere,json=ssoRequiredElsewhere" json:"sso_required_elsewhere,omitempty"`
+	// The org's SSO connection that signs the domain in; empty when none does.
+	SsoConnectionId *string `protobuf:"bytes,12,opt,name=sso_connection_id,json=ssoConnectionId" json:"sso_connection_id,omitempty"`
+	// True when another org's SSO connection signs the domain in.
+	// Set only by ListDomains, and only on a verified domain.
+	SsoConnectionElsewhere *bool `protobuf:"varint,13,opt,name=sso_connection_elsewhere,json=ssoConnectionElsewhere" json:"sso_connection_elsewhere,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *OrgDomain) Reset() {
+	*x = OrgDomain{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrgDomain) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrgDomain) ProtoMessage() {}
+
+func (x *OrgDomain) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrgDomain.ProtoReflect.Descriptor instead.
+func (*OrgDomain) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *OrgDomain) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *OrgDomain) GetDomain() string {
+	if x != nil && x.Domain != nil {
+		return *x.Domain
+	}
+	return ""
+}
+
+func (x *OrgDomain) GetStatus() DomainStatus {
+	if x != nil && x.Status != nil {
+		return *x.Status
+	}
+	return DomainStatus_DOMAIN_STATUS_UNSPECIFIED
+}
+
+func (x *OrgDomain) GetVerificationMethod() DomainVerificationMethod {
+	if x != nil && x.VerificationMethod != nil {
+		return *x.VerificationMethod
+	}
+	return DomainVerificationMethod_DOMAIN_VERIFICATION_METHOD_UNSPECIFIED
+}
+
+func (x *OrgDomain) GetTxtRecordName() string {
+	if x != nil && x.TxtRecordName != nil {
+		return *x.TxtRecordName
+	}
+	return ""
+}
+
+func (x *OrgDomain) GetTxtRecordValue() string {
+	if x != nil && x.TxtRecordValue != nil {
+		return *x.TxtRecordValue
+	}
+	return ""
+}
+
+func (x *OrgDomain) GetVerifiedAt() string {
+	if x != nil && x.VerifiedAt != nil {
+		return *x.VerifiedAt
+	}
+	return ""
+}
+
+func (x *OrgDomain) GetOrgCreationRestrictedElsewhere() bool {
+	if x != nil && x.OrgCreationRestrictedElsewhere != nil {
+		return *x.OrgCreationRestrictedElsewhere
+	}
+	return false
+}
+
+func (x *OrgDomain) GetRequireSso() bool {
+	if x != nil && x.RequireSso != nil {
+		return *x.RequireSso
+	}
+	return false
+}
+
+func (x *OrgDomain) GetSsoSeen() bool {
+	if x != nil && x.SsoSeen != nil {
+		return *x.SsoSeen
+	}
+	return false
+}
+
+func (x *OrgDomain) GetSsoRequiredElsewhere() bool {
+	if x != nil && x.SsoRequiredElsewhere != nil {
+		return *x.SsoRequiredElsewhere
+	}
+	return false
+}
+
+func (x *OrgDomain) GetSsoConnectionId() string {
+	if x != nil && x.SsoConnectionId != nil {
+		return *x.SsoConnectionId
+	}
+	return ""
+}
+
+func (x *OrgDomain) GetSsoConnectionElsewhere() bool {
+	if x != nil && x.SsoConnectionElsewhere != nil {
+		return *x.SsoConnectionElsewhere
+	}
+	return false
+}
+
+type DomainSettings struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The role auto-join grants; UNSPECIFIED means auto-join is off.
+	AutoJoinRole         *OrgRole `protobuf:"varint,1,opt,name=auto_join_role,json=autoJoinRole,enum=dashboard.orgs.v1.OrgRole" json:"auto_join_role,omitempty"`
+	MembersCanCreateOrgs *bool    `protobuf:"varint,2,opt,name=members_can_create_orgs,json=membersCanCreateOrgs" json:"members_can_create_orgs,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *DomainSettings) Reset() {
+	*x = DomainSettings{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DomainSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DomainSettings) ProtoMessage() {}
+
+func (x *DomainSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DomainSettings.ProtoReflect.Descriptor instead.
+func (*DomainSettings) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *DomainSettings) GetAutoJoinRole() OrgRole {
+	if x != nil && x.AutoJoinRole != nil {
+		return *x.AutoJoinRole
+	}
+	return OrgRole_ORG_ROLE_UNSPECIFIED
+}
+
+func (x *DomainSettings) GetMembersCanCreateOrgs() bool {
+	if x != nil && x.MembersCanCreateOrgs != nil {
+		return *x.MembersCanCreateOrgs
+	}
+	return false
+}
+
+type ListDomainsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDomainsRequest) Reset() {
+	*x = ListDomainsRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDomainsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDomainsRequest) ProtoMessage() {}
+
+func (x *ListDomainsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDomainsRequest.ProtoReflect.Descriptor instead.
+func (*ListDomainsRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ListDomainsRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+type ListDomainsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *DomainSettings        `protobuf:"bytes,1,opt,name=settings" json:"settings,omitempty"`
+	Domains       []*OrgDomain           `protobuf:"bytes,2,rep,name=domains" json:"domains,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDomainsResponse) Reset() {
+	*x = ListDomainsResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDomainsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDomainsResponse) ProtoMessage() {}
+
+func (x *ListDomainsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDomainsResponse.ProtoReflect.Descriptor instead.
+func (*ListDomainsResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ListDomainsResponse) GetSettings() *DomainSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+func (x *ListDomainsResponse) GetDomains() []*OrgDomain {
+	if x != nil {
+		return x.Domains
+	}
+	return nil
+}
+
+type SetDomainSettingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	// UNSPECIFIED turns auto-join off. Otherwise member or viewer: never admin, nor any OrgRole value added later.
+	AutoJoinRole *OrgRole `protobuf:"varint,2,opt,name=auto_join_role,json=autoJoinRole,enum=dashboard.orgs.v1.OrgRole" json:"auto_join_role,omitempty"`
+	// Required so an omitted field can't silently turn org creation off.
+	MembersCanCreateOrgs *bool `protobuf:"varint,3,opt,name=members_can_create_orgs,json=membersCanCreateOrgs" json:"members_can_create_orgs,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *SetDomainSettingsRequest) Reset() {
+	*x = SetDomainSettingsRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetDomainSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetDomainSettingsRequest) ProtoMessage() {}
+
+func (x *SetDomainSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetDomainSettingsRequest.ProtoReflect.Descriptor instead.
+func (*SetDomainSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *SetDomainSettingsRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *SetDomainSettingsRequest) GetAutoJoinRole() OrgRole {
+	if x != nil && x.AutoJoinRole != nil {
+		return *x.AutoJoinRole
+	}
+	return OrgRole_ORG_ROLE_UNSPECIFIED
+}
+
+func (x *SetDomainSettingsRequest) GetMembersCanCreateOrgs() bool {
+	if x != nil && x.MembersCanCreateOrgs != nil {
+		return *x.MembersCanCreateOrgs
+	}
+	return false
+}
+
+type SetDomainSettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *DomainSettings        `protobuf:"bytes,1,opt,name=settings" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetDomainSettingsResponse) Reset() {
+	*x = SetDomainSettingsResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetDomainSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetDomainSettingsResponse) ProtoMessage() {}
+
+func (x *SetDomainSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetDomainSettingsResponse.ProtoReflect.Descriptor instead.
+func (*SetDomainSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SetDomainSettingsResponse) GetSettings() *DomainSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type AddDomainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	Domain        *string                `protobuf:"bytes,2,opt,name=domain" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddDomainRequest) Reset() {
+	*x = AddDomainRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddDomainRequest) ProtoMessage() {}
+
+func (x *AddDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddDomainRequest.ProtoReflect.Descriptor instead.
+func (*AddDomainRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *AddDomainRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *AddDomainRequest) GetDomain() string {
+	if x != nil && x.Domain != nil {
+		return *x.Domain
+	}
+	return ""
+}
+
+type AddDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Domain        *OrgDomain             `protobuf:"bytes,1,opt,name=domain" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddDomainResponse) Reset() {
+	*x = AddDomainResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddDomainResponse) ProtoMessage() {}
+
+func (x *AddDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddDomainResponse.ProtoReflect.Descriptor instead.
+func (*AddDomainResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *AddDomainResponse) GetDomain() *OrgDomain {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+type VerifyDomainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	DomainId      *string                `protobuf:"bytes,2,opt,name=domain_id,json=domainId" json:"domain_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyDomainRequest) Reset() {
+	*x = VerifyDomainRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyDomainRequest) ProtoMessage() {}
+
+func (x *VerifyDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyDomainRequest.ProtoReflect.Descriptor instead.
+func (*VerifyDomainRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *VerifyDomainRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *VerifyDomainRequest) GetDomainId() string {
+	if x != nil && x.DomainId != nil {
+		return *x.DomainId
+	}
+	return ""
+}
+
+type VerifyDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Domain        *OrgDomain             `protobuf:"bytes,1,opt,name=domain" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyDomainResponse) Reset() {
+	*x = VerifyDomainResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyDomainResponse) ProtoMessage() {}
+
+func (x *VerifyDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyDomainResponse.ProtoReflect.Descriptor instead.
+func (*VerifyDomainResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *VerifyDomainResponse) GetDomain() *OrgDomain {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+type RemoveDomainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	DomainId      *string                `protobuf:"bytes,2,opt,name=domain_id,json=domainId" json:"domain_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveDomainRequest) Reset() {
+	*x = RemoveDomainRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveDomainRequest) ProtoMessage() {}
+
+func (x *RemoveDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveDomainRequest.ProtoReflect.Descriptor instead.
+func (*RemoveDomainRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *RemoveDomainRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *RemoveDomainRequest) GetDomainId() string {
+	if x != nil && x.DomainId != nil {
+		return *x.DomainId
+	}
+	return ""
+}
+
+type RemoveDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveDomainResponse) Reset() {
+	*x = RemoveDomainResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveDomainResponse) ProtoMessage() {}
+
+func (x *RemoveDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveDomainResponse.ProtoReflect.Descriptor instead.
+func (*RemoveDomainResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{38}
+}
+
+type UpdateDomainRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OrgId    *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	DomainId *string                `protobuf:"bytes,2,opt,name=domain_id,json=domainId" json:"domain_id,omitempty"`
+	// Required so an omitted field can't silently turn Require SSO off.
+	RequireSso    *bool `protobuf:"varint,3,opt,name=require_sso,json=requireSso" json:"require_sso,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDomainRequest) Reset() {
+	*x = UpdateDomainRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDomainRequest) ProtoMessage() {}
+
+func (x *UpdateDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDomainRequest.ProtoReflect.Descriptor instead.
+func (*UpdateDomainRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *UpdateDomainRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *UpdateDomainRequest) GetDomainId() string {
+	if x != nil && x.DomainId != nil {
+		return *x.DomainId
+	}
+	return ""
+}
+
+func (x *UpdateDomainRequest) GetRequireSso() bool {
+	if x != nil && x.RequireSso != nil {
+		return *x.RequireSso
+	}
+	return false
+}
+
+type UpdateDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Domain        *OrgDomain             `protobuf:"bytes,1,opt,name=domain" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDomainResponse) Reset() {
+	*x = UpdateDomainResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDomainResponse) ProtoMessage() {}
+
+func (x *UpdateDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDomainResponse.ProtoReflect.Descriptor instead.
+func (*UpdateDomainResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *UpdateDomainResponse) GetDomain() *OrgDomain {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+type SSOConnection struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	// The sign-in button's label.
+	Label         *string                `protobuf:"bytes,2,opt,name=label" json:"label,omitempty"`
+	IssuerUrl     *string                `protobuf:"bytes,3,opt,name=issuer_url,json=issuerUrl" json:"issuer_url,omitempty"`
+	ClientId      *string                `protobuf:"bytes,4,opt,name=client_id,json=clientId" json:"client_id,omitempty"`
+	Domains       []*SSOConnectionDomain `protobuf:"bytes,5,rep,name=domains" json:"domains,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSOConnection) Reset() {
+	*x = SSOConnection{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSOConnection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSOConnection) ProtoMessage() {}
+
+func (x *SSOConnection) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSOConnection.ProtoReflect.Descriptor instead.
+func (*SSOConnection) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *SSOConnection) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetLabel() string {
+	if x != nil && x.Label != nil {
+		return *x.Label
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetIssuerUrl() string {
+	if x != nil && x.IssuerUrl != nil {
+		return *x.IssuerUrl
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetClientId() string {
+	if x != nil && x.ClientId != nil {
+		return *x.ClientId
+	}
+	return ""
+}
+
+func (x *SSOConnection) GetDomains() []*SSOConnectionDomain {
+	if x != nil {
+		return x.Domains
+	}
+	return nil
+}
+
+type SSOConnectionDomain struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Domain        *string                `protobuf:"bytes,2,opt,name=domain" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSOConnectionDomain) Reset() {
+	*x = SSOConnectionDomain{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSOConnectionDomain) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSOConnectionDomain) ProtoMessage() {}
+
+func (x *SSOConnectionDomain) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSOConnectionDomain.ProtoReflect.Descriptor instead.
+func (*SSOConnectionDomain) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *SSOConnectionDomain) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *SSOConnectionDomain) GetDomain() string {
+	if x != nil && x.Domain != nil {
+		return *x.Domain
+	}
+	return ""
+}
+
+type ListSSOConnectionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSSOConnectionsRequest) Reset() {
+	*x = ListSSOConnectionsRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSSOConnectionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSSOConnectionsRequest) ProtoMessage() {}
+
+func (x *ListSSOConnectionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSSOConnectionsRequest.ProtoReflect.Descriptor instead.
+func (*ListSSOConnectionsRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *ListSSOConnectionsRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+type ListSSOConnectionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connections   []*SSOConnection       `protobuf:"bytes,1,rep,name=connections" json:"connections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSSOConnectionsResponse) Reset() {
+	*x = ListSSOConnectionsResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSSOConnectionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSSOConnectionsResponse) ProtoMessage() {}
+
+func (x *ListSSOConnectionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSSOConnectionsResponse.ProtoReflect.Descriptor instead.
+func (*ListSSOConnectionsResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ListSSOConnectionsResponse) GetConnections() []*SSOConnection {
+	if x != nil {
+		return x.Connections
+	}
+	return nil
+}
+
+type SetSSOConnectionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	// Unset creates a connection.
+	ConnectionId *string `protobuf:"bytes,2,opt,name=connection_id,json=connectionId" json:"connection_id,omitempty"`
+	Label        *string `protobuf:"bytes,3,opt,name=label" json:"label,omitempty"`
+	IssuerUrl    *string `protobuf:"bytes,4,opt,name=issuer_url,json=issuerUrl" json:"issuer_url,omitempty"`
+	ClientId     *string `protobuf:"bytes,5,opt,name=client_id,json=clientId" json:"client_id,omitempty"`
+	// Empty keeps the stored secret, unless the issuer or client id changes or the server's key
+	// can't read it.
+	ClientSecret *string `protobuf:"bytes,6,opt,name=client_secret,json=clientSecret" json:"client_secret,omitempty"`
+	// The org's verified domains the connection signs in.
+	DomainIds     []string `protobuf:"bytes,7,rep,name=domain_ids,json=domainIds" json:"domain_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSSOConnectionRequest) Reset() {
+	*x = SetSSOConnectionRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSSOConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSSOConnectionRequest) ProtoMessage() {}
+
+func (x *SetSSOConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSSOConnectionRequest.ProtoReflect.Descriptor instead.
+func (*SetSSOConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *SetSSOConnectionRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetConnectionId() string {
+	if x != nil && x.ConnectionId != nil {
+		return *x.ConnectionId
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetLabel() string {
+	if x != nil && x.Label != nil {
+		return *x.Label
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetIssuerUrl() string {
+	if x != nil && x.IssuerUrl != nil {
+		return *x.IssuerUrl
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetClientId() string {
+	if x != nil && x.ClientId != nil {
+		return *x.ClientId
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetClientSecret() string {
+	if x != nil && x.ClientSecret != nil {
+		return *x.ClientSecret
+	}
+	return ""
+}
+
+func (x *SetSSOConnectionRequest) GetDomainIds() []string {
+	if x != nil {
+		return x.DomainIds
+	}
+	return nil
+}
+
+type SetSSOConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *SSOConnection         `protobuf:"bytes,1,opt,name=connection" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSSOConnectionResponse) Reset() {
+	*x = SetSSOConnectionResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSSOConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSSOConnectionResponse) ProtoMessage() {}
+
+func (x *SetSSOConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSSOConnectionResponse.ProtoReflect.Descriptor instead.
+func (*SetSSOConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *SetSSOConnectionResponse) GetConnection() *SSOConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type DeleteSSOConnectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	ConnectionId  *string                `protobuf:"bytes,2,opt,name=connection_id,json=connectionId" json:"connection_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSSOConnectionRequest) Reset() {
+	*x = DeleteSSOConnectionRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSSOConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSSOConnectionRequest) ProtoMessage() {}
+
+func (x *DeleteSSOConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSSOConnectionRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSSOConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *DeleteSSOConnectionRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *DeleteSSOConnectionRequest) GetConnectionId() string {
+	if x != nil && x.ConnectionId != nil {
+		return *x.ConnectionId
+	}
+	return ""
+}
+
+type DeleteSSOConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSSOConnectionResponse) Reset() {
+	*x = DeleteSSOConnectionResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSSOConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSSOConnectionResponse) ProtoMessage() {}
+
+func (x *DeleteSSOConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSSOConnectionResponse.ProtoReflect.Descriptor instead.
+func (*DeleteSSOConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{48}
+}
+
 var File_dashboard_orgs_v1_orgs_proto protoreflect.FileDescriptor
 
 const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
@@ -1440,14 +2796,15 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x03Org\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12.\n" +
-	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xac\x01\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xd8\x01\n" +
 	"\tOrgMember\x12\x1f\n" +
 	"\vcustomer_id\x18\x01 \x01(\tR\n" +
 	"customerId\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05email\x18\x03 \x01(\tR\x05email\x12\x15\n" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12.\n" +
-	"\x04role\x18\x05 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xd8\x01\n" +
+	"\x04role\x18\x05 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\x12*\n" +
+	"\x11joined_via_domain\x18\x06 \x01(\tR\x0fjoinedViaDomain\"\xd8\x01\n" +
 	"\rOrgInvitation\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1d\n" +
 	"\n" +
@@ -1456,9 +2813,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12;\n" +
 	"\x06status\x18\x05 \x01(\x0e2#.dashboard.orgs.v1.InvitationStatusR\x06status\x12.\n" +
 	"\x04role\x18\x06 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\r\n" +
-	"\vListRequest\":\n" +
+	"\vListRequest\"`\n" +
 	"\fListResponse\x12*\n" +
-	"\x04orgs\x18\x01 \x03(\v2\x16.dashboard.orgs.v1.OrgR\x04orgs\"+\n" +
+	"\x04orgs\x18\x01 \x03(\v2\x16.dashboard.orgs.v1.OrgR\x04orgs\x12$\n" +
+	"\x0ecan_create_org\x18\x02 \x01(\bR\fcanCreateOrg\"+\n" +
 	"\n" +
 	"GetRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"7\n" +
@@ -1518,7 +2876,96 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x04role\"P\n" +
 	"\x18UpdateMemberRoleResponse\x124\n" +
-	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member*a\n" +
+	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member\"\xe0\x04\n" +
+	"\tOrgDomain\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\x127\n" +
+	"\x06status\x18\x03 \x01(\x0e2\x1f.dashboard.orgs.v1.DomainStatusR\x06status\x12\\\n" +
+	"\x13verification_method\x18\x04 \x01(\x0e2+.dashboard.orgs.v1.DomainVerificationMethodR\x12verificationMethod\x12&\n" +
+	"\x0ftxt_record_name\x18\x05 \x01(\tR\rtxtRecordName\x12(\n" +
+	"\x10txt_record_value\x18\x06 \x01(\tR\x0etxtRecordValue\x12\x1f\n" +
+	"\vverified_at\x18\a \x01(\tR\n" +
+	"verifiedAt\x12I\n" +
+	"!org_creation_restricted_elsewhere\x18\b \x01(\bR\x1eorgCreationRestrictedElsewhere\x12\x1f\n" +
+	"\vrequire_sso\x18\t \x01(\bR\n" +
+	"requireSso\x12\x19\n" +
+	"\bsso_seen\x18\n" +
+	" \x01(\bR\assoSeen\x124\n" +
+	"\x16sso_required_elsewhere\x18\v \x01(\bR\x14ssoRequiredElsewhere\x12*\n" +
+	"\x11sso_connection_id\x18\f \x01(\tR\x0fssoConnectionId\x128\n" +
+	"\x18sso_connection_elsewhere\x18\r \x01(\bR\x16ssoConnectionElsewhere\"\x89\x01\n" +
+	"\x0eDomainSettings\x12@\n" +
+	"\x0eauto_join_role\x18\x01 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\fautoJoinRole\x125\n" +
+	"\x17members_can_create_orgs\x18\x02 \x01(\bR\x14membersCanCreateOrgs\"3\n" +
+	"\x12ListDomainsRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"\x8c\x01\n" +
+	"\x13ListDomainsResponse\x12=\n" +
+	"\bsettings\x18\x01 \x01(\v2!.dashboard.orgs.v1.DomainSettingsR\bsettings\x126\n" +
+	"\adomains\x18\x02 \x03(\v2\x1c.dashboard.orgs.v1.OrgDomainR\adomains\"\xc8\x01\n" +
+	"\x18SetDomainSettingsRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12N\n" +
+	"\x0eauto_join_role\x18\x02 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\f\xbaH\t\x82\x01\x06\x18\x00\x18\x02\x18\x03R\fautoJoinRole\x12=\n" +
+	"\x17members_can_create_orgs\x18\x03 \x01(\bB\x06\xbaH\x03\xc8\x01\x01R\x14membersCanCreateOrgs\"Z\n" +
+	"\x19SetDomainSettingsResponse\x12=\n" +
+	"\bsettings\x18\x01 \x01(\v2!.dashboard.orgs.v1.DomainSettingsR\bsettings\"U\n" +
+	"\x10AddDomainRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12\"\n" +
+	"\x06domain\x18\x02 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02h\x01R\x06domain\"I\n" +
+	"\x11AddDomainResponse\x124\n" +
+	"\x06domain\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgDomainR\x06domain\"Y\n" +
+	"\x13VerifyDomainRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12#\n" +
+	"\tdomain_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bdomainId\"L\n" +
+	"\x14VerifyDomainResponse\x124\n" +
+	"\x06domain\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgDomainR\x06domain\"Y\n" +
+	"\x13RemoveDomainRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12#\n" +
+	"\tdomain_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bdomainId\"\x16\n" +
+	"\x14RemoveDomainResponse\"\x82\x01\n" +
+	"\x13UpdateDomainRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12#\n" +
+	"\tdomain_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bdomainId\x12'\n" +
+	"\vrequire_sso\x18\x03 \x01(\bB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"requireSso\"L\n" +
+	"\x14UpdateDomainResponse\x124\n" +
+	"\x06domain\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgDomainR\x06domain\"\xb3\x01\n" +
+	"\rSSOConnection\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1d\n" +
+	"\n" +
+	"issuer_url\x18\x03 \x01(\tR\tissuerUrl\x12\x1b\n" +
+	"\tclient_id\x18\x04 \x01(\tR\bclientId\x12@\n" +
+	"\adomains\x18\x05 \x03(\v2&.dashboard.orgs.v1.SSOConnectionDomainR\adomains\"=\n" +
+	"\x13SSOConnectionDomain\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\":\n" +
+	"\x19ListSSOConnectionsRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"`\n" +
+	"\x1aListSSOConnectionsResponse\x12B\n" +
+	"\vconnections\x18\x01 \x03(\v2 .dashboard.orgs.v1.SSOConnectionR\vconnections\"\xd3\x03\n" +
+	"\x17SetSSOConnectionRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12-\n" +
+	"\rconnection_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\fconnectionId\x12\"\n" +
+	"\x05label\x18\x03 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x10\x01\x18@R\x05label\x12-\n" +
+	"\n" +
+	"issuer_url\x18\x04 \x01(\tB\x0e\xbaH\v\xc8\x01\x01r\x06\x18\x80\x10\x88\x01\x01R\tissuerUrl\x12*\n" +
+	"\tclient_id\x18\x05 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\xff\x01R\bclientId\x12-\n" +
+	"\rclient_secret\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\fclientSecret\x12)\n" +
+	"\n" +
+	"domain_ids\x18\a \x03(\tB\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x10\n" +
+	"R\tdomainIds:\x90\x01\xbaH\x8c\x01\x1a\x89\x01\n" +
+	"\"set_sso_connection.secret_required\x12.client_secret is required for a new connection\x1a3has(this.connection_id) || this.client_secret != ''\"\\\n" +
+	"\x18SetSSOConnectionResponse\x12@\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2 .dashboard.orgs.v1.SSOConnectionR\n" +
+	"connection\"h\n" +
+	"\x1aDeleteSSOConnectionRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12+\n" +
+	"\rconnection_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\fconnectionId\"\x1d\n" +
+	"\x1bDeleteSSOConnectionResponse*a\n" +
 	"\aOrgRole\x12\x18\n" +
 	"\x14ORG_ROLE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eORG_ROLE_ADMIN\x10\x01\x12\x13\n" +
@@ -1527,7 +2974,15 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x10InvitationStatus\x12!\n" +
 	"\x1dINVITATION_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19INVITATION_STATUS_PENDING\x10\x01\x12\x1e\n" +
-	"\x1aINVITATION_STATUS_ACCEPTED\x10\x022\xf8\b\n" +
+	"\x1aINVITATION_STATUS_ACCEPTED\x10\x02*d\n" +
+	"\fDomainStatus\x12\x1d\n" +
+	"\x19DOMAIN_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15DOMAIN_STATUS_PENDING\x10\x01\x12\x1a\n" +
+	"\x16DOMAIN_STATUS_VERIFIED\x10\x02*\x93\x01\n" +
+	"\x18DomainVerificationMethod\x12*\n" +
+	"&DOMAIN_VERIFICATION_METHOD_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eDOMAIN_VERIFICATION_METHOD_DNS\x10\x01\x12'\n" +
+	"#DOMAIN_VERIFICATION_METHOD_OPERATOR\x10\x022\xa9\x10\n" +
 	"\vOrgsService\x12I\n" +
 	"\x04List\x12\x1e.dashboard.orgs.v1.ListRequest\x1a\x1f.dashboard.orgs.v1.ListResponse\"\x00\x12F\n" +
 	"\x03Get\x12\x1d.dashboard.orgs.v1.GetRequest\x1a\x1e.dashboard.orgs.v1.GetResponse\"\x00\x12p\n" +
@@ -1540,7 +2995,16 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00\x12O\n" +
 	"\x06Create\x12 .dashboard.orgs.v1.CreateRequest\x1a!.dashboard.orgs.v1.CreateResponse\"\x00\x12L\n" +
 	"\x05Leave\x12\x1f.dashboard.orgs.v1.LeaveRequest\x1a .dashboard.orgs.v1.LeaveResponse\"\x00\x12m\n" +
-	"\x10UpdateMemberRole\x12*.dashboard.orgs.v1.UpdateMemberRoleRequest\x1a+.dashboard.orgs.v1.UpdateMemberRoleResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
+	"\x10UpdateMemberRole\x12*.dashboard.orgs.v1.UpdateMemberRoleRequest\x1a+.dashboard.orgs.v1.UpdateMemberRoleResponse\"\x00\x12^\n" +
+	"\vListDomains\x12%.dashboard.orgs.v1.ListDomainsRequest\x1a&.dashboard.orgs.v1.ListDomainsResponse\"\x00\x12p\n" +
+	"\x11SetDomainSettings\x12+.dashboard.orgs.v1.SetDomainSettingsRequest\x1a,.dashboard.orgs.v1.SetDomainSettingsResponse\"\x00\x12X\n" +
+	"\tAddDomain\x12#.dashboard.orgs.v1.AddDomainRequest\x1a$.dashboard.orgs.v1.AddDomainResponse\"\x00\x12a\n" +
+	"\fVerifyDomain\x12&.dashboard.orgs.v1.VerifyDomainRequest\x1a'.dashboard.orgs.v1.VerifyDomainResponse\"\x00\x12a\n" +
+	"\fRemoveDomain\x12&.dashboard.orgs.v1.RemoveDomainRequest\x1a'.dashboard.orgs.v1.RemoveDomainResponse\"\x00\x12a\n" +
+	"\fUpdateDomain\x12&.dashboard.orgs.v1.UpdateDomainRequest\x1a'.dashboard.orgs.v1.UpdateDomainResponse\"\x00\x12s\n" +
+	"\x12ListSSOConnections\x12,.dashboard.orgs.v1.ListSSOConnectionsRequest\x1a-.dashboard.orgs.v1.ListSSOConnectionsResponse\"\x00\x12m\n" +
+	"\x10SetSSOConnection\x12*.dashboard.orgs.v1.SetSSOConnectionRequest\x1a+.dashboard.orgs.v1.SetSSOConnectionResponse\"\x00\x12v\n" +
+	"\x13DeleteSSOConnection\x12-.dashboard.orgs.v1.DeleteSSOConnectionRequest\x1a..dashboard.orgs.v1.DeleteSSOConnectionResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_orgs_v1_orgs_proto_rawDescOnce sync.Once
@@ -1554,84 +3018,139 @@ func file_dashboard_orgs_v1_orgs_proto_rawDescGZIP() []byte {
 	return file_dashboard_orgs_v1_orgs_proto_rawDescData
 }
 
-var file_dashboard_orgs_v1_orgs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_dashboard_orgs_v1_orgs_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
-	(OrgRole)(0),                      // 0: dashboard.orgs.v1.OrgRole
-	(InvitationStatus)(0),             // 1: dashboard.orgs.v1.InvitationStatus
-	(*Org)(nil),                       // 2: dashboard.orgs.v1.Org
-	(*OrgMember)(nil),                 // 3: dashboard.orgs.v1.OrgMember
-	(*OrgInvitation)(nil),             // 4: dashboard.orgs.v1.OrgInvitation
-	(*ListRequest)(nil),               // 5: dashboard.orgs.v1.ListRequest
-	(*ListResponse)(nil),              // 6: dashboard.orgs.v1.ListResponse
-	(*GetRequest)(nil),                // 7: dashboard.orgs.v1.GetRequest
-	(*GetResponse)(nil),               // 8: dashboard.orgs.v1.GetResponse
-	(*UpdateDisplayNameRequest)(nil),  // 9: dashboard.orgs.v1.UpdateDisplayNameRequest
-	(*UpdateDisplayNameResponse)(nil), // 10: dashboard.orgs.v1.UpdateDisplayNameResponse
-	(*ListMembersRequest)(nil),        // 11: dashboard.orgs.v1.ListMembersRequest
-	(*ListMembersResponse)(nil),       // 12: dashboard.orgs.v1.ListMembersResponse
-	(*RemoveMemberRequest)(nil),       // 13: dashboard.orgs.v1.RemoveMemberRequest
-	(*RemoveMemberResponse)(nil),      // 14: dashboard.orgs.v1.RemoveMemberResponse
-	(*InviteMemberRequest)(nil),       // 15: dashboard.orgs.v1.InviteMemberRequest
-	(*InviteMemberResponse)(nil),      // 16: dashboard.orgs.v1.InviteMemberResponse
-	(*ResendInviteRequest)(nil),       // 17: dashboard.orgs.v1.ResendInviteRequest
-	(*ResendInviteResponse)(nil),      // 18: dashboard.orgs.v1.ResendInviteResponse
-	(*RevokeInviteRequest)(nil),       // 19: dashboard.orgs.v1.RevokeInviteRequest
-	(*RevokeInviteResponse)(nil),      // 20: dashboard.orgs.v1.RevokeInviteResponse
-	(*ListInvitationsRequest)(nil),    // 21: dashboard.orgs.v1.ListInvitationsRequest
-	(*ListInvitationsResponse)(nil),   // 22: dashboard.orgs.v1.ListInvitationsResponse
-	(*CreateRequest)(nil),             // 23: dashboard.orgs.v1.CreateRequest
-	(*CreateResponse)(nil),            // 24: dashboard.orgs.v1.CreateResponse
-	(*LeaveRequest)(nil),              // 25: dashboard.orgs.v1.LeaveRequest
-	(*LeaveResponse)(nil),             // 26: dashboard.orgs.v1.LeaveResponse
-	(*UpdateMemberRoleRequest)(nil),   // 27: dashboard.orgs.v1.UpdateMemberRoleRequest
-	(*UpdateMemberRoleResponse)(nil),  // 28: dashboard.orgs.v1.UpdateMemberRoleResponse
+	(OrgRole)(0),                        // 0: dashboard.orgs.v1.OrgRole
+	(InvitationStatus)(0),               // 1: dashboard.orgs.v1.InvitationStatus
+	(DomainStatus)(0),                   // 2: dashboard.orgs.v1.DomainStatus
+	(DomainVerificationMethod)(0),       // 3: dashboard.orgs.v1.DomainVerificationMethod
+	(*Org)(nil),                         // 4: dashboard.orgs.v1.Org
+	(*OrgMember)(nil),                   // 5: dashboard.orgs.v1.OrgMember
+	(*OrgInvitation)(nil),               // 6: dashboard.orgs.v1.OrgInvitation
+	(*ListRequest)(nil),                 // 7: dashboard.orgs.v1.ListRequest
+	(*ListResponse)(nil),                // 8: dashboard.orgs.v1.ListResponse
+	(*GetRequest)(nil),                  // 9: dashboard.orgs.v1.GetRequest
+	(*GetResponse)(nil),                 // 10: dashboard.orgs.v1.GetResponse
+	(*UpdateDisplayNameRequest)(nil),    // 11: dashboard.orgs.v1.UpdateDisplayNameRequest
+	(*UpdateDisplayNameResponse)(nil),   // 12: dashboard.orgs.v1.UpdateDisplayNameResponse
+	(*ListMembersRequest)(nil),          // 13: dashboard.orgs.v1.ListMembersRequest
+	(*ListMembersResponse)(nil),         // 14: dashboard.orgs.v1.ListMembersResponse
+	(*RemoveMemberRequest)(nil),         // 15: dashboard.orgs.v1.RemoveMemberRequest
+	(*RemoveMemberResponse)(nil),        // 16: dashboard.orgs.v1.RemoveMemberResponse
+	(*InviteMemberRequest)(nil),         // 17: dashboard.orgs.v1.InviteMemberRequest
+	(*InviteMemberResponse)(nil),        // 18: dashboard.orgs.v1.InviteMemberResponse
+	(*ResendInviteRequest)(nil),         // 19: dashboard.orgs.v1.ResendInviteRequest
+	(*ResendInviteResponse)(nil),        // 20: dashboard.orgs.v1.ResendInviteResponse
+	(*RevokeInviteRequest)(nil),         // 21: dashboard.orgs.v1.RevokeInviteRequest
+	(*RevokeInviteResponse)(nil),        // 22: dashboard.orgs.v1.RevokeInviteResponse
+	(*ListInvitationsRequest)(nil),      // 23: dashboard.orgs.v1.ListInvitationsRequest
+	(*ListInvitationsResponse)(nil),     // 24: dashboard.orgs.v1.ListInvitationsResponse
+	(*CreateRequest)(nil),               // 25: dashboard.orgs.v1.CreateRequest
+	(*CreateResponse)(nil),              // 26: dashboard.orgs.v1.CreateResponse
+	(*LeaveRequest)(nil),                // 27: dashboard.orgs.v1.LeaveRequest
+	(*LeaveResponse)(nil),               // 28: dashboard.orgs.v1.LeaveResponse
+	(*UpdateMemberRoleRequest)(nil),     // 29: dashboard.orgs.v1.UpdateMemberRoleRequest
+	(*UpdateMemberRoleResponse)(nil),    // 30: dashboard.orgs.v1.UpdateMemberRoleResponse
+	(*OrgDomain)(nil),                   // 31: dashboard.orgs.v1.OrgDomain
+	(*DomainSettings)(nil),              // 32: dashboard.orgs.v1.DomainSettings
+	(*ListDomainsRequest)(nil),          // 33: dashboard.orgs.v1.ListDomainsRequest
+	(*ListDomainsResponse)(nil),         // 34: dashboard.orgs.v1.ListDomainsResponse
+	(*SetDomainSettingsRequest)(nil),    // 35: dashboard.orgs.v1.SetDomainSettingsRequest
+	(*SetDomainSettingsResponse)(nil),   // 36: dashboard.orgs.v1.SetDomainSettingsResponse
+	(*AddDomainRequest)(nil),            // 37: dashboard.orgs.v1.AddDomainRequest
+	(*AddDomainResponse)(nil),           // 38: dashboard.orgs.v1.AddDomainResponse
+	(*VerifyDomainRequest)(nil),         // 39: dashboard.orgs.v1.VerifyDomainRequest
+	(*VerifyDomainResponse)(nil),        // 40: dashboard.orgs.v1.VerifyDomainResponse
+	(*RemoveDomainRequest)(nil),         // 41: dashboard.orgs.v1.RemoveDomainRequest
+	(*RemoveDomainResponse)(nil),        // 42: dashboard.orgs.v1.RemoveDomainResponse
+	(*UpdateDomainRequest)(nil),         // 43: dashboard.orgs.v1.UpdateDomainRequest
+	(*UpdateDomainResponse)(nil),        // 44: dashboard.orgs.v1.UpdateDomainResponse
+	(*SSOConnection)(nil),               // 45: dashboard.orgs.v1.SSOConnection
+	(*SSOConnectionDomain)(nil),         // 46: dashboard.orgs.v1.SSOConnectionDomain
+	(*ListSSOConnectionsRequest)(nil),   // 47: dashboard.orgs.v1.ListSSOConnectionsRequest
+	(*ListSSOConnectionsResponse)(nil),  // 48: dashboard.orgs.v1.ListSSOConnectionsResponse
+	(*SetSSOConnectionRequest)(nil),     // 49: dashboard.orgs.v1.SetSSOConnectionRequest
+	(*SetSSOConnectionResponse)(nil),    // 50: dashboard.orgs.v1.SetSSOConnectionResponse
+	(*DeleteSSOConnectionRequest)(nil),  // 51: dashboard.orgs.v1.DeleteSSOConnectionRequest
+	(*DeleteSSOConnectionResponse)(nil), // 52: dashboard.orgs.v1.DeleteSSOConnectionResponse
 }
 var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	0,  // 0: dashboard.orgs.v1.Org.role:type_name -> dashboard.orgs.v1.OrgRole
 	0,  // 1: dashboard.orgs.v1.OrgMember.role:type_name -> dashboard.orgs.v1.OrgRole
 	1,  // 2: dashboard.orgs.v1.OrgInvitation.status:type_name -> dashboard.orgs.v1.InvitationStatus
 	0,  // 3: dashboard.orgs.v1.OrgInvitation.role:type_name -> dashboard.orgs.v1.OrgRole
-	2,  // 4: dashboard.orgs.v1.ListResponse.orgs:type_name -> dashboard.orgs.v1.Org
-	2,  // 5: dashboard.orgs.v1.GetResponse.org:type_name -> dashboard.orgs.v1.Org
-	2,  // 6: dashboard.orgs.v1.UpdateDisplayNameResponse.org:type_name -> dashboard.orgs.v1.Org
-	3,  // 7: dashboard.orgs.v1.ListMembersResponse.members:type_name -> dashboard.orgs.v1.OrgMember
+	4,  // 4: dashboard.orgs.v1.ListResponse.orgs:type_name -> dashboard.orgs.v1.Org
+	4,  // 5: dashboard.orgs.v1.GetResponse.org:type_name -> dashboard.orgs.v1.Org
+	4,  // 6: dashboard.orgs.v1.UpdateDisplayNameResponse.org:type_name -> dashboard.orgs.v1.Org
+	5,  // 7: dashboard.orgs.v1.ListMembersResponse.members:type_name -> dashboard.orgs.v1.OrgMember
 	0,  // 8: dashboard.orgs.v1.InviteMemberRequest.role:type_name -> dashboard.orgs.v1.OrgRole
-	4,  // 9: dashboard.orgs.v1.InviteMemberResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
-	4,  // 10: dashboard.orgs.v1.ResendInviteResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
-	4,  // 11: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
-	2,  // 12: dashboard.orgs.v1.CreateResponse.org:type_name -> dashboard.orgs.v1.Org
+	6,  // 9: dashboard.orgs.v1.InviteMemberResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
+	6,  // 10: dashboard.orgs.v1.ResendInviteResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
+	6,  // 11: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
+	4,  // 12: dashboard.orgs.v1.CreateResponse.org:type_name -> dashboard.orgs.v1.Org
 	0,  // 13: dashboard.orgs.v1.UpdateMemberRoleRequest.role:type_name -> dashboard.orgs.v1.OrgRole
-	3,  // 14: dashboard.orgs.v1.UpdateMemberRoleResponse.member:type_name -> dashboard.orgs.v1.OrgMember
-	5,  // 15: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
-	7,  // 16: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
-	9,  // 17: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
-	11, // 18: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
-	13, // 19: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
-	15, // 20: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
-	17, // 21: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
-	19, // 22: dashboard.orgs.v1.OrgsService.RevokeInvite:input_type -> dashboard.orgs.v1.RevokeInviteRequest
-	21, // 23: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
-	23, // 24: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
-	25, // 25: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
-	27, // 26: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
-	6,  // 27: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
-	8,  // 28: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
-	10, // 29: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
-	12, // 30: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
-	14, // 31: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
-	16, // 32: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
-	18, // 33: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
-	20, // 34: dashboard.orgs.v1.OrgsService.RevokeInvite:output_type -> dashboard.orgs.v1.RevokeInviteResponse
-	22, // 35: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
-	24, // 36: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
-	26, // 37: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
-	28, // 38: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
-	27, // [27:39] is the sub-list for method output_type
-	15, // [15:27] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	5,  // 14: dashboard.orgs.v1.UpdateMemberRoleResponse.member:type_name -> dashboard.orgs.v1.OrgMember
+	2,  // 15: dashboard.orgs.v1.OrgDomain.status:type_name -> dashboard.orgs.v1.DomainStatus
+	3,  // 16: dashboard.orgs.v1.OrgDomain.verification_method:type_name -> dashboard.orgs.v1.DomainVerificationMethod
+	0,  // 17: dashboard.orgs.v1.DomainSettings.auto_join_role:type_name -> dashboard.orgs.v1.OrgRole
+	32, // 18: dashboard.orgs.v1.ListDomainsResponse.settings:type_name -> dashboard.orgs.v1.DomainSettings
+	31, // 19: dashboard.orgs.v1.ListDomainsResponse.domains:type_name -> dashboard.orgs.v1.OrgDomain
+	0,  // 20: dashboard.orgs.v1.SetDomainSettingsRequest.auto_join_role:type_name -> dashboard.orgs.v1.OrgRole
+	32, // 21: dashboard.orgs.v1.SetDomainSettingsResponse.settings:type_name -> dashboard.orgs.v1.DomainSettings
+	31, // 22: dashboard.orgs.v1.AddDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
+	31, // 23: dashboard.orgs.v1.VerifyDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
+	31, // 24: dashboard.orgs.v1.UpdateDomainResponse.domain:type_name -> dashboard.orgs.v1.OrgDomain
+	46, // 25: dashboard.orgs.v1.SSOConnection.domains:type_name -> dashboard.orgs.v1.SSOConnectionDomain
+	45, // 26: dashboard.orgs.v1.ListSSOConnectionsResponse.connections:type_name -> dashboard.orgs.v1.SSOConnection
+	45, // 27: dashboard.orgs.v1.SetSSOConnectionResponse.connection:type_name -> dashboard.orgs.v1.SSOConnection
+	7,  // 28: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
+	9,  // 29: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
+	11, // 30: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
+	13, // 31: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
+	15, // 32: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
+	17, // 33: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
+	19, // 34: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
+	21, // 35: dashboard.orgs.v1.OrgsService.RevokeInvite:input_type -> dashboard.orgs.v1.RevokeInviteRequest
+	23, // 36: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
+	25, // 37: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
+	27, // 38: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
+	29, // 39: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
+	33, // 40: dashboard.orgs.v1.OrgsService.ListDomains:input_type -> dashboard.orgs.v1.ListDomainsRequest
+	35, // 41: dashboard.orgs.v1.OrgsService.SetDomainSettings:input_type -> dashboard.orgs.v1.SetDomainSettingsRequest
+	37, // 42: dashboard.orgs.v1.OrgsService.AddDomain:input_type -> dashboard.orgs.v1.AddDomainRequest
+	39, // 43: dashboard.orgs.v1.OrgsService.VerifyDomain:input_type -> dashboard.orgs.v1.VerifyDomainRequest
+	41, // 44: dashboard.orgs.v1.OrgsService.RemoveDomain:input_type -> dashboard.orgs.v1.RemoveDomainRequest
+	43, // 45: dashboard.orgs.v1.OrgsService.UpdateDomain:input_type -> dashboard.orgs.v1.UpdateDomainRequest
+	47, // 46: dashboard.orgs.v1.OrgsService.ListSSOConnections:input_type -> dashboard.orgs.v1.ListSSOConnectionsRequest
+	49, // 47: dashboard.orgs.v1.OrgsService.SetSSOConnection:input_type -> dashboard.orgs.v1.SetSSOConnectionRequest
+	51, // 48: dashboard.orgs.v1.OrgsService.DeleteSSOConnection:input_type -> dashboard.orgs.v1.DeleteSSOConnectionRequest
+	8,  // 49: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
+	10, // 50: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
+	12, // 51: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
+	14, // 52: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
+	16, // 53: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
+	18, // 54: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
+	20, // 55: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
+	22, // 56: dashboard.orgs.v1.OrgsService.RevokeInvite:output_type -> dashboard.orgs.v1.RevokeInviteResponse
+	24, // 57: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
+	26, // 58: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
+	28, // 59: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
+	30, // 60: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
+	34, // 61: dashboard.orgs.v1.OrgsService.ListDomains:output_type -> dashboard.orgs.v1.ListDomainsResponse
+	36, // 62: dashboard.orgs.v1.OrgsService.SetDomainSettings:output_type -> dashboard.orgs.v1.SetDomainSettingsResponse
+	38, // 63: dashboard.orgs.v1.OrgsService.AddDomain:output_type -> dashboard.orgs.v1.AddDomainResponse
+	40, // 64: dashboard.orgs.v1.OrgsService.VerifyDomain:output_type -> dashboard.orgs.v1.VerifyDomainResponse
+	42, // 65: dashboard.orgs.v1.OrgsService.RemoveDomain:output_type -> dashboard.orgs.v1.RemoveDomainResponse
+	44, // 66: dashboard.orgs.v1.OrgsService.UpdateDomain:output_type -> dashboard.orgs.v1.UpdateDomainResponse
+	48, // 67: dashboard.orgs.v1.OrgsService.ListSSOConnections:output_type -> dashboard.orgs.v1.ListSSOConnectionsResponse
+	50, // 68: dashboard.orgs.v1.OrgsService.SetSSOConnection:output_type -> dashboard.orgs.v1.SetSSOConnectionResponse
+	52, // 69: dashboard.orgs.v1.OrgsService.DeleteSSOConnection:output_type -> dashboard.orgs.v1.DeleteSSOConnectionResponse
+	49, // [49:70] is the sub-list for method output_type
+	28, // [28:49] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_orgs_v1_orgs_proto_init() }
@@ -1644,8 +3163,8 @@ func file_dashboard_orgs_v1_orgs_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_orgs_v1_orgs_proto_rawDesc), len(file_dashboard_orgs_v1_orgs_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   27,
+			NumEnums:      4,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -64,6 +64,31 @@ const (
 	// OrgsServiceUpdateMemberRoleProcedure is the fully-qualified name of the OrgsService's
 	// UpdateMemberRole RPC.
 	OrgsServiceUpdateMemberRoleProcedure = "/dashboard.orgs.v1.OrgsService/UpdateMemberRole"
+	// OrgsServiceListDomainsProcedure is the fully-qualified name of the OrgsService's ListDomains RPC.
+	OrgsServiceListDomainsProcedure = "/dashboard.orgs.v1.OrgsService/ListDomains"
+	// OrgsServiceSetDomainSettingsProcedure is the fully-qualified name of the OrgsService's
+	// SetDomainSettings RPC.
+	OrgsServiceSetDomainSettingsProcedure = "/dashboard.orgs.v1.OrgsService/SetDomainSettings"
+	// OrgsServiceAddDomainProcedure is the fully-qualified name of the OrgsService's AddDomain RPC.
+	OrgsServiceAddDomainProcedure = "/dashboard.orgs.v1.OrgsService/AddDomain"
+	// OrgsServiceVerifyDomainProcedure is the fully-qualified name of the OrgsService's VerifyDomain
+	// RPC.
+	OrgsServiceVerifyDomainProcedure = "/dashboard.orgs.v1.OrgsService/VerifyDomain"
+	// OrgsServiceRemoveDomainProcedure is the fully-qualified name of the OrgsService's RemoveDomain
+	// RPC.
+	OrgsServiceRemoveDomainProcedure = "/dashboard.orgs.v1.OrgsService/RemoveDomain"
+	// OrgsServiceUpdateDomainProcedure is the fully-qualified name of the OrgsService's UpdateDomain
+	// RPC.
+	OrgsServiceUpdateDomainProcedure = "/dashboard.orgs.v1.OrgsService/UpdateDomain"
+	// OrgsServiceListSSOConnectionsProcedure is the fully-qualified name of the OrgsService's
+	// ListSSOConnections RPC.
+	OrgsServiceListSSOConnectionsProcedure = "/dashboard.orgs.v1.OrgsService/ListSSOConnections"
+	// OrgsServiceSetSSOConnectionProcedure is the fully-qualified name of the OrgsService's
+	// SetSSOConnection RPC.
+	OrgsServiceSetSSOConnectionProcedure = "/dashboard.orgs.v1.OrgsService/SetSSOConnection"
+	// OrgsServiceDeleteSSOConnectionProcedure is the fully-qualified name of the OrgsService's
+	// DeleteSSOConnection RPC.
+	OrgsServiceDeleteSSOConnectionProcedure = "/dashboard.orgs.v1.OrgsService/DeleteSSOConnection"
 )
 
 // OrgsServiceClient is a client for the dashboard.orgs.v1.OrgsService service.
@@ -80,6 +105,30 @@ type OrgsServiceClient interface {
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
 	UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error)
+	// ListDomains returns the org's domain settings and its domains.
+	ListDomains(context.Context, *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error)
+	// SetDomainSettings replaces both settings. Turning auto-join on or up to Member,
+	// or org creation off, needs a verified domain and re-checks the org's DNS records.
+	SetDomainSettings(context.Context, *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error)
+	// AddDomain adds a pending domain, or returns the org's existing one.
+	AddDomain(context.Context, *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error)
+	// VerifyDomain checks a pending domain's TXT record now. A verified one is returned as is.
+	VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error)
+	// RemoveDomain drops the org's claim. Members who joined through it stay. It is refused
+	// while the domain requires SSO and this org's connection signs it in.
+	RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error)
+	// UpdateDomain turns Require SSO on or off for this org's claim. Turning it on needs a
+	// verified domain that someone signed in to through SSO, and re-checks its DNS record.
+	UpdateDomain(context.Context, *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error)
+	// ListSSOConnections returns the org's SSO connections, without their secrets.
+	ListSSOConnections(context.Context, *connect.Request[v1.ListSSOConnectionsRequest]) (*connect.Response[v1.ListSSOConnectionsResponse], error)
+	// SetSSOConnection creates a connection, or updates the one connection_id names. New domains
+	// and a new issuer re-check TXT. A new issuer or client id needs the secret again, and a new
+	// issuer unlinks accounts. A domain can't be taken off while any org requires SSO for it.
+	SetSSOConnection(context.Context, *connect.Request[v1.SetSSOConnectionRequest]) (*connect.Response[v1.SetSSOConnectionResponse], error)
+	// DeleteSSOConnection unlinks the connection's accounts. It is refused while any org
+	// requires SSO for one of its domains.
+	DeleteSSOConnection(context.Context, *connect.Request[v1.DeleteSSOConnectionRequest]) (*connect.Response[v1.DeleteSSOConnectionResponse], error)
 }
 
 // NewOrgsServiceClient constructs a client for the dashboard.orgs.v1.OrgsService service. By
@@ -165,23 +214,86 @@ func NewOrgsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(orgsServiceMethods.ByName("UpdateMemberRole")),
 			connect.WithClientOptions(opts...),
 		),
+		listDomains: connect.NewClient[v1.ListDomainsRequest, v1.ListDomainsResponse](
+			httpClient,
+			baseURL+OrgsServiceListDomainsProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("ListDomains")),
+			connect.WithClientOptions(opts...),
+		),
+		setDomainSettings: connect.NewClient[v1.SetDomainSettingsRequest, v1.SetDomainSettingsResponse](
+			httpClient,
+			baseURL+OrgsServiceSetDomainSettingsProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("SetDomainSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		addDomain: connect.NewClient[v1.AddDomainRequest, v1.AddDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceAddDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("AddDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		verifyDomain: connect.NewClient[v1.VerifyDomainRequest, v1.VerifyDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceVerifyDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("VerifyDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		removeDomain: connect.NewClient[v1.RemoveDomainRequest, v1.RemoveDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceRemoveDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("RemoveDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		updateDomain: connect.NewClient[v1.UpdateDomainRequest, v1.UpdateDomainResponse](
+			httpClient,
+			baseURL+OrgsServiceUpdateDomainProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("UpdateDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		listSSOConnections: connect.NewClient[v1.ListSSOConnectionsRequest, v1.ListSSOConnectionsResponse](
+			httpClient,
+			baseURL+OrgsServiceListSSOConnectionsProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("ListSSOConnections")),
+			connect.WithClientOptions(opts...),
+		),
+		setSSOConnection: connect.NewClient[v1.SetSSOConnectionRequest, v1.SetSSOConnectionResponse](
+			httpClient,
+			baseURL+OrgsServiceSetSSOConnectionProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("SetSSOConnection")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteSSOConnection: connect.NewClient[v1.DeleteSSOConnectionRequest, v1.DeleteSSOConnectionResponse](
+			httpClient,
+			baseURL+OrgsServiceDeleteSSOConnectionProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("DeleteSSOConnection")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // orgsServiceClient implements OrgsServiceClient.
 type orgsServiceClient struct {
-	list              *connect.Client[v1.ListRequest, v1.ListResponse]
-	get               *connect.Client[v1.GetRequest, v1.GetResponse]
-	updateDisplayName *connect.Client[v1.UpdateDisplayNameRequest, v1.UpdateDisplayNameResponse]
-	listMembers       *connect.Client[v1.ListMembersRequest, v1.ListMembersResponse]
-	removeMember      *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
-	inviteMember      *connect.Client[v1.InviteMemberRequest, v1.InviteMemberResponse]
-	resendInvite      *connect.Client[v1.ResendInviteRequest, v1.ResendInviteResponse]
-	revokeInvite      *connect.Client[v1.RevokeInviteRequest, v1.RevokeInviteResponse]
-	listInvitations   *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
-	create            *connect.Client[v1.CreateRequest, v1.CreateResponse]
-	leave             *connect.Client[v1.LeaveRequest, v1.LeaveResponse]
-	updateMemberRole  *connect.Client[v1.UpdateMemberRoleRequest, v1.UpdateMemberRoleResponse]
+	list                *connect.Client[v1.ListRequest, v1.ListResponse]
+	get                 *connect.Client[v1.GetRequest, v1.GetResponse]
+	updateDisplayName   *connect.Client[v1.UpdateDisplayNameRequest, v1.UpdateDisplayNameResponse]
+	listMembers         *connect.Client[v1.ListMembersRequest, v1.ListMembersResponse]
+	removeMember        *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
+	inviteMember        *connect.Client[v1.InviteMemberRequest, v1.InviteMemberResponse]
+	resendInvite        *connect.Client[v1.ResendInviteRequest, v1.ResendInviteResponse]
+	revokeInvite        *connect.Client[v1.RevokeInviteRequest, v1.RevokeInviteResponse]
+	listInvitations     *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
+	create              *connect.Client[v1.CreateRequest, v1.CreateResponse]
+	leave               *connect.Client[v1.LeaveRequest, v1.LeaveResponse]
+	updateMemberRole    *connect.Client[v1.UpdateMemberRoleRequest, v1.UpdateMemberRoleResponse]
+	listDomains         *connect.Client[v1.ListDomainsRequest, v1.ListDomainsResponse]
+	setDomainSettings   *connect.Client[v1.SetDomainSettingsRequest, v1.SetDomainSettingsResponse]
+	addDomain           *connect.Client[v1.AddDomainRequest, v1.AddDomainResponse]
+	verifyDomain        *connect.Client[v1.VerifyDomainRequest, v1.VerifyDomainResponse]
+	removeDomain        *connect.Client[v1.RemoveDomainRequest, v1.RemoveDomainResponse]
+	updateDomain        *connect.Client[v1.UpdateDomainRequest, v1.UpdateDomainResponse]
+	listSSOConnections  *connect.Client[v1.ListSSOConnectionsRequest, v1.ListSSOConnectionsResponse]
+	setSSOConnection    *connect.Client[v1.SetSSOConnectionRequest, v1.SetSSOConnectionResponse]
+	deleteSSOConnection *connect.Client[v1.DeleteSSOConnectionRequest, v1.DeleteSSOConnectionResponse]
 }
 
 // List calls dashboard.orgs.v1.OrgsService.List.
@@ -244,6 +356,51 @@ func (c *orgsServiceClient) UpdateMemberRole(ctx context.Context, req *connect.R
 	return c.updateMemberRole.CallUnary(ctx, req)
 }
 
+// ListDomains calls dashboard.orgs.v1.OrgsService.ListDomains.
+func (c *orgsServiceClient) ListDomains(ctx context.Context, req *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error) {
+	return c.listDomains.CallUnary(ctx, req)
+}
+
+// SetDomainSettings calls dashboard.orgs.v1.OrgsService.SetDomainSettings.
+func (c *orgsServiceClient) SetDomainSettings(ctx context.Context, req *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error) {
+	return c.setDomainSettings.CallUnary(ctx, req)
+}
+
+// AddDomain calls dashboard.orgs.v1.OrgsService.AddDomain.
+func (c *orgsServiceClient) AddDomain(ctx context.Context, req *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error) {
+	return c.addDomain.CallUnary(ctx, req)
+}
+
+// VerifyDomain calls dashboard.orgs.v1.OrgsService.VerifyDomain.
+func (c *orgsServiceClient) VerifyDomain(ctx context.Context, req *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error) {
+	return c.verifyDomain.CallUnary(ctx, req)
+}
+
+// RemoveDomain calls dashboard.orgs.v1.OrgsService.RemoveDomain.
+func (c *orgsServiceClient) RemoveDomain(ctx context.Context, req *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error) {
+	return c.removeDomain.CallUnary(ctx, req)
+}
+
+// UpdateDomain calls dashboard.orgs.v1.OrgsService.UpdateDomain.
+func (c *orgsServiceClient) UpdateDomain(ctx context.Context, req *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error) {
+	return c.updateDomain.CallUnary(ctx, req)
+}
+
+// ListSSOConnections calls dashboard.orgs.v1.OrgsService.ListSSOConnections.
+func (c *orgsServiceClient) ListSSOConnections(ctx context.Context, req *connect.Request[v1.ListSSOConnectionsRequest]) (*connect.Response[v1.ListSSOConnectionsResponse], error) {
+	return c.listSSOConnections.CallUnary(ctx, req)
+}
+
+// SetSSOConnection calls dashboard.orgs.v1.OrgsService.SetSSOConnection.
+func (c *orgsServiceClient) SetSSOConnection(ctx context.Context, req *connect.Request[v1.SetSSOConnectionRequest]) (*connect.Response[v1.SetSSOConnectionResponse], error) {
+	return c.setSSOConnection.CallUnary(ctx, req)
+}
+
+// DeleteSSOConnection calls dashboard.orgs.v1.OrgsService.DeleteSSOConnection.
+func (c *orgsServiceClient) DeleteSSOConnection(ctx context.Context, req *connect.Request[v1.DeleteSSOConnectionRequest]) (*connect.Response[v1.DeleteSSOConnectionResponse], error) {
+	return c.deleteSSOConnection.CallUnary(ctx, req)
+}
+
 // OrgsServiceHandler is an implementation of the dashboard.orgs.v1.OrgsService service.
 type OrgsServiceHandler interface {
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
@@ -258,6 +415,30 @@ type OrgsServiceHandler interface {
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
 	UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error)
+	// ListDomains returns the org's domain settings and its domains.
+	ListDomains(context.Context, *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error)
+	// SetDomainSettings replaces both settings. Turning auto-join on or up to Member,
+	// or org creation off, needs a verified domain and re-checks the org's DNS records.
+	SetDomainSettings(context.Context, *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error)
+	// AddDomain adds a pending domain, or returns the org's existing one.
+	AddDomain(context.Context, *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error)
+	// VerifyDomain checks a pending domain's TXT record now. A verified one is returned as is.
+	VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error)
+	// RemoveDomain drops the org's claim. Members who joined through it stay. It is refused
+	// while the domain requires SSO and this org's connection signs it in.
+	RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error)
+	// UpdateDomain turns Require SSO on or off for this org's claim. Turning it on needs a
+	// verified domain that someone signed in to through SSO, and re-checks its DNS record.
+	UpdateDomain(context.Context, *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error)
+	// ListSSOConnections returns the org's SSO connections, without their secrets.
+	ListSSOConnections(context.Context, *connect.Request[v1.ListSSOConnectionsRequest]) (*connect.Response[v1.ListSSOConnectionsResponse], error)
+	// SetSSOConnection creates a connection, or updates the one connection_id names. New domains
+	// and a new issuer re-check TXT. A new issuer or client id needs the secret again, and a new
+	// issuer unlinks accounts. A domain can't be taken off while any org requires SSO for it.
+	SetSSOConnection(context.Context, *connect.Request[v1.SetSSOConnectionRequest]) (*connect.Response[v1.SetSSOConnectionResponse], error)
+	// DeleteSSOConnection unlinks the connection's accounts. It is refused while any org
+	// requires SSO for one of its domains.
+	DeleteSSOConnection(context.Context, *connect.Request[v1.DeleteSSOConnectionRequest]) (*connect.Response[v1.DeleteSSOConnectionResponse], error)
 }
 
 // NewOrgsServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -339,6 +520,60 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(orgsServiceMethods.ByName("UpdateMemberRole")),
 		connect.WithHandlerOptions(opts...),
 	)
+	orgsServiceListDomainsHandler := connect.NewUnaryHandler(
+		OrgsServiceListDomainsProcedure,
+		svc.ListDomains,
+		connect.WithSchema(orgsServiceMethods.ByName("ListDomains")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceSetDomainSettingsHandler := connect.NewUnaryHandler(
+		OrgsServiceSetDomainSettingsProcedure,
+		svc.SetDomainSettings,
+		connect.WithSchema(orgsServiceMethods.ByName("SetDomainSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceAddDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceAddDomainProcedure,
+		svc.AddDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("AddDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceVerifyDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceVerifyDomainProcedure,
+		svc.VerifyDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("VerifyDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceRemoveDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceRemoveDomainProcedure,
+		svc.RemoveDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("RemoveDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceUpdateDomainHandler := connect.NewUnaryHandler(
+		OrgsServiceUpdateDomainProcedure,
+		svc.UpdateDomain,
+		connect.WithSchema(orgsServiceMethods.ByName("UpdateDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceListSSOConnectionsHandler := connect.NewUnaryHandler(
+		OrgsServiceListSSOConnectionsProcedure,
+		svc.ListSSOConnections,
+		connect.WithSchema(orgsServiceMethods.ByName("ListSSOConnections")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceSetSSOConnectionHandler := connect.NewUnaryHandler(
+		OrgsServiceSetSSOConnectionProcedure,
+		svc.SetSSOConnection,
+		connect.WithSchema(orgsServiceMethods.ByName("SetSSOConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceDeleteSSOConnectionHandler := connect.NewUnaryHandler(
+		OrgsServiceDeleteSSOConnectionProcedure,
+		svc.DeleteSSOConnection,
+		connect.WithSchema(orgsServiceMethods.ByName("DeleteSSOConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.orgs.v1.OrgsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case OrgsServiceListProcedure:
@@ -365,6 +600,24 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 			orgsServiceLeaveHandler.ServeHTTP(w, r)
 		case OrgsServiceUpdateMemberRoleProcedure:
 			orgsServiceUpdateMemberRoleHandler.ServeHTTP(w, r)
+		case OrgsServiceListDomainsProcedure:
+			orgsServiceListDomainsHandler.ServeHTTP(w, r)
+		case OrgsServiceSetDomainSettingsProcedure:
+			orgsServiceSetDomainSettingsHandler.ServeHTTP(w, r)
+		case OrgsServiceAddDomainProcedure:
+			orgsServiceAddDomainHandler.ServeHTTP(w, r)
+		case OrgsServiceVerifyDomainProcedure:
+			orgsServiceVerifyDomainHandler.ServeHTTP(w, r)
+		case OrgsServiceRemoveDomainProcedure:
+			orgsServiceRemoveDomainHandler.ServeHTTP(w, r)
+		case OrgsServiceUpdateDomainProcedure:
+			orgsServiceUpdateDomainHandler.ServeHTTP(w, r)
+		case OrgsServiceListSSOConnectionsProcedure:
+			orgsServiceListSSOConnectionsHandler.ServeHTTP(w, r)
+		case OrgsServiceSetSSOConnectionProcedure:
+			orgsServiceSetSSOConnectionHandler.ServeHTTP(w, r)
+		case OrgsServiceDeleteSSOConnectionProcedure:
+			orgsServiceDeleteSSOConnectionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -420,4 +673,40 @@ func (UnimplementedOrgsServiceHandler) Leave(context.Context, *connect.Request[v
 
 func (UnimplementedOrgsServiceHandler) UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.UpdateMemberRole is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) ListDomains(context.Context, *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.ListDomains is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) SetDomainSettings(context.Context, *connect.Request[v1.SetDomainSettingsRequest]) (*connect.Response[v1.SetDomainSettingsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.SetDomainSettings is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) AddDomain(context.Context, *connect.Request[v1.AddDomainRequest]) (*connect.Response[v1.AddDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.AddDomain is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) VerifyDomain(context.Context, *connect.Request[v1.VerifyDomainRequest]) (*connect.Response[v1.VerifyDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.VerifyDomain is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) RemoveDomain(context.Context, *connect.Request[v1.RemoveDomainRequest]) (*connect.Response[v1.RemoveDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.RemoveDomain is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) UpdateDomain(context.Context, *connect.Request[v1.UpdateDomainRequest]) (*connect.Response[v1.UpdateDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.UpdateDomain is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) ListSSOConnections(context.Context, *connect.Request[v1.ListSSOConnectionsRequest]) (*connect.Response[v1.ListSSOConnectionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.ListSSOConnections is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) SetSSOConnection(context.Context, *connect.Request[v1.SetSSOConnectionRequest]) (*connect.Response[v1.SetSSOConnectionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.SetSSOConnection is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) DeleteSSOConnection(context.Context, *connect.Request[v1.DeleteSSOConnectionRequest]) (*connect.Response[v1.DeleteSSOConnectionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.DeleteSSOConnection is not implemented"))
 }

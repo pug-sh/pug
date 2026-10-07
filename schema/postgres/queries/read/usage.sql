@@ -13,11 +13,14 @@ select usage_computed_at from usage_periods
 where org_id = @org_id order by usage_computed_at desc limit 1;
 
 -- name: CountUsageDailyInRange :one
--- Whether the meter has stored anything over a window, across every org. An
+-- Whether live projects have days stored over a window, across every org. An
 -- empty ClickHouse read while this is non-zero is a contradiction an idle
 -- deployment cannot produce, which is what lets the pass tell "nothing to count"
 -- apart from "counted nothing" -- see docs/architecture/usage.md section 4.
-select count(*) from usage_daily where day >= @from_day and day < @to_day;
+-- Live projects only: a deleted project's days stay stored after its events go.
+select count(*) from usage_daily
+where day >= @from_day and day < @to_day
+  and project_id in (select id from projects where deletion_time is null);
 
 -- name: ListUsageDailyByOrgID :many
 -- Bounded by @row_limit: the request's 400-day cap bounds the span, but a row is

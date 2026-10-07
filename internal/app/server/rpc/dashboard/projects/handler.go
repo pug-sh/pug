@@ -194,7 +194,8 @@ func (s *server) DeleteApiKey(
 	return connect.NewResponse(&projectsv1.DeleteApiKeyResponse{}), nil
 }
 
-// Delete removes the project specified by x-project-id header.
+// Delete hides the project specified by x-project-id header, revokes its keys and
+// queues its data for erasure.
 func (s *server) Delete(
 	ctx context.Context,
 	_ *connect.Request[projectsv1.DeleteRequest],
@@ -207,18 +208,15 @@ func (s *server) Delete(
 	if err != nil {
 		return nil, err
 	}
-
-	wParams := dbwrite.DeleteProjectParams{
-		OrgID: principal.Project.OrgID,
-		ID:    principal.Project.ID,
+	if _, err := rpc.MustGetPrincipalWithCustomer(ctx); err != nil {
+		return nil, err
 	}
+	project := principal.Project
 
-	if err := s.service.DeleteProject(ctx, wParams); err != nil {
+	if err := s.service.DeleteProject(ctx, project.OrgID, project.ID, "customer "+principal.Customer.ID); err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
-			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", principal.Project.ID))
+			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", project.ID))
 		}
-		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("org_id", principal.Project.OrgID), slog.String("id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -265,6 +263,9 @@ func (s *server) UpdateMeta(
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", wParams.ID))
+		}
+		if errors.Is(err, projects.ErrProjectNameTaken) {
+			return nil, apperr.AlreadyExists(apperr.ReasonProjectNameTaken, "a project with this name already exists")
 		}
 		slog.ErrorContext(ctx, "failed to update project meta", slogx.Error(err), slog.String("project_id", wParams.ID))
 		telemetry.RecordError(ctx, err)

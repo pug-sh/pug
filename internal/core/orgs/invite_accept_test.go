@@ -7,6 +7,7 @@ import (
 
 	orgs "github.com/pug-sh/pug/internal/core/orgs"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -40,10 +41,14 @@ func TestApplyInviteAcceptanceInTx(t *testing.T) {
 		t.Fatalf("CreateCustomer invitee: %v", err)
 	}
 
-	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); err != nil {
+	orgID, err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID)
+	if err != nil {
 		t.Fatalf("ApplyInviteAcceptanceInTx: %v", err)
 	}
-	role, err := write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{OrgID: org.ID, CustomerID: invitee.ID})
+	if orgID != org.ID {
+		t.Fatalf("joined org = %q, want %q", orgID, org.ID)
+	}
+	role, err := dbread.New(db.PgW).GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{OrgID: org.ID, CustomerID: invitee.ID})
 	if err != nil || role != orgs.RoleMember.String() {
 		t.Fatalf("member role = %q err=%v, want MEMBER", role, err)
 	}
@@ -53,7 +58,7 @@ func TestApplyInviteAcceptanceInTx(t *testing.T) {
 	}
 
 	// Re-applying the now-ACCEPTED invitation → ErrInviteNotPending.
-	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrInviteNotPending) {
+	if _, err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrInviteNotPending) {
 		t.Fatalf("second apply err = %v, want ErrInviteNotPending", err)
 	}
 }
@@ -92,7 +97,7 @@ func TestApplyInviteAcceptanceInTx_AlreadyMember(t *testing.T) {
 		t.Fatalf("CreateOrgMember invitee: %v", err)
 	}
 
-	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrAlreadyMember) {
+	if _, err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrAlreadyMember) {
 		t.Fatalf("apply err = %v, want ErrAlreadyMember", err)
 	}
 
@@ -119,7 +124,7 @@ func TestApplyInviteAcceptanceInTx_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
-	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, "no-such-invitation", invitee.ID); !errors.Is(err, orgs.ErrInviteNotFound) {
+	if _, err := orgs.ApplyInviteAcceptanceInTx(ctx, write, "no-such-invitation", invitee.ID); !errors.Is(err, orgs.ErrInviteNotFound) {
 		t.Fatalf("err = %v, want ErrInviteNotFound", err)
 	}
 }
@@ -158,7 +163,7 @@ func TestApplyInviteAcceptanceInTx_Expired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCustomer invitee: %v", err)
 	}
-	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrInviteExpired) {
+	if _, err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrInviteExpired) {
 		t.Fatalf("err = %v, want ErrInviteExpired", err)
 	}
 }

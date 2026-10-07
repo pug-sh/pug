@@ -242,7 +242,7 @@ func TestCompleteMagicLink_InviteJoinsOrgWithRole(t *testing.T) {
 	if err != nil || len(orgsForCust) != 1 || orgsForCust[0].ID != org.ID {
 		t.Fatalf("orgs = %+v err=%v, want exactly the invited org %s", orgsForCust, err, org.ID)
 	}
-	role, err := write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{OrgID: org.ID, CustomerID: cust.ID})
+	role, err := read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{OrgID: org.ID, CustomerID: cust.ID})
 	if err != nil || role != coreorgs.RoleAdmin.String() {
 		t.Fatalf("role = %q err=%v, want ADMIN", role, err)
 	}
