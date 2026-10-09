@@ -43,6 +43,7 @@ func TestOf(t *testing.T) {
 		{"bob@Acme.com", "acme.com"},
 		{"weird@name@acme.io", "acme.io"},
 		{"no-at-sign", ""},
+		{"acme.com", ""},
 		{"bob@localhost", ""},
 		{"bob@", ""},
 		{"eve@Key.com", ""},
