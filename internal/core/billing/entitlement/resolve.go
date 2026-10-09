@@ -66,8 +66,9 @@ type Entitlement struct {
 	// off, or a subscription resolving to a plan the catalog no longer knows. Never
 	// render it as zero.
 	IncludedEvents *int64
-	// How far back this org's history stays queryable. nil means NO BOUND — billing
-	// off, or an unresolvable plan. Never render it as zero.
+	// How long this org's event history is kept (docs/architecture/data-retention.md).
+	// nil means NO BOUND — no override, and billing off with no PUG_RETENTION_DAYS or
+	// an unknown plan. Never render it as zero.
 	RetentionDays *int64
 	// TierUpTo is the tier layout this org's usage is split by. nil when nothing
 	// splits it: billing off, free (nothing bills it), or an unknown plan. Empty is a
@@ -102,7 +103,7 @@ type Entitlement struct {
 
 // Resolve is the whole rule set, as a pure function. sub is separate from Record
 // because their writers differ.
-func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time, billingEnabled bool) Entitlement {
+func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Time, cfg billing.Config) Entitlement {
 	// An absent row means every field is meaningless, not just the plan: without
 	// this, a caller that forgot Present would still have its anchor day honoured.
 	if !rec.Present {
@@ -118,13 +119,14 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	// window summed are the same one. Independent of every branch below: a plan
 	// changes what an org may send, never when its month turns over.
 	start, end := coreusage.PeriodFor(now, coreusage.AnchorDay(orgCreateTime, rec.AnchorDay))
-	ent := Entitlement{PeriodStart: start, PeriodEnd: end, BillingEnabled: billingEnabled}
+	ent := Entitlement{PeriodStart: start, PeriodEnd: end, BillingEnabled: cfg.Enabled}
 
 	// Off means a self-hosted install, which has no allowance at all: the switch fails
 	// OPEN on the number, so no banner can fire even if a client forgets to check the
 	// flag. Safe precisely because the number enforces nothing.
-	if !billingEnabled {
+	if !cfg.Enabled {
 		ent.Slug, ent.DisplayName, ent.Status = SlugFree, FreeDisplayName, StatusFree
+		ent.RetentionDays = retentionDays(rec, nil, cfg)
 		return ent
 	}
 	if sub != nil {
@@ -146,7 +148,22 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	if resolved {
 		applyOverrides(&ent, rec, sub, now)
 	}
+	ent.RetentionDays = retentionDays(rec, ent.RetentionDays, cfg)
 	return ent
+}
+
+// retentionDays is the first set of: the org's override, ungated by deal, contract
+// or switch; the resolved plan's with billing on; PUG_RETENTION_DAYS with it off.
+func retentionDays(rec Record, planDays *int64, cfg billing.Config) *int64 {
+	switch {
+	case rec.RetentionDaysOverride > 0:
+		return i64(rec.RetentionDaysOverride)
+	case cfg.Enabled:
+		return planDays
+	case cfg.RetentionDays > 0:
+		return i64(cfg.RetentionDays)
+	}
+	return nil
 }
 
 // resolvePlan fills in the plan: a live subscription's, or the current plan's
@@ -159,6 +176,7 @@ func resolvePlan(ent *Entitlement, rec Record, sub *Subscription) bool {
 		fromPlan(ent, SlugFree, FreeDisplayName, CurrentPlan(), StatusFree)
 		// Nothing bills a free org, so nothing splits its usage.
 		ent.TierUpTo, ent.TierPlanSlug = nil, ""
+		ent.RetentionDays = i64(freeRetentionDays)
 		return true
 	case sub.PlanSlug == SlugCustom:
 		// A deal is priced by its own product over the plan pinned on its row, which a
@@ -209,8 +227,8 @@ func ContractEndExclusive(lastDay time.Time) time.Time {
 	return time.Date(y, m, d+1, 0, 0, 0, 0, time.UTC)
 }
 
-// applyOverrides patches the negotiated fields over the resolved plan, last, so
-// the deal's numbers win over the catalog's. Each override is independent.
+// applyOverrides patches the negotiated allowance and name over the resolved plan,
+// last, so the deal's numbers win over the catalog's. Each override is independent.
 func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Time) {
 	liveDeal := sub != nil && sub.PlanSlug == SlugCustom
 	switch {
@@ -229,10 +247,6 @@ func applyOverrides(ent *Entitlement, rec Record, sub *Subscription, now time.Ti
 	if rec.IncludedEventsOverride > 0 {
 		v := rec.IncludedEventsOverride
 		ent.IncludedEvents = &v
-	}
-	if rec.RetentionDaysOverride > 0 {
-		v := rec.RetentionDaysOverride
-		ent.RetentionDays = &v
 	}
 	if rec.DisplayNameOverride != "" {
 		ent.DisplayName = rec.DisplayNameOverride

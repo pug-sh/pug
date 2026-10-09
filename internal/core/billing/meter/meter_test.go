@@ -64,7 +64,7 @@ func setup(t *testing.T) *fixture {
 		t.Skip("skipping integration test")
 	}
 	pg := testutil.SetupPostgres(t)
-	ents, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	ents, err := entitlement.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true})
 	if err != nil {
 		t.Fatalf("entitlement service: %v", err)
 	}

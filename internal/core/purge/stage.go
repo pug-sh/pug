@@ -27,7 +27,7 @@ var tables = []Table{
 	{Name: "property_keys_profile_current", Rebuilt: true},
 }
 
-// Filter selects the rows a delete removes. Retention would add a time bound.
+// Filter selects the rows a delete removes.
 type Filter struct {
 	ProjectID string
 }

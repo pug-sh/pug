@@ -31,7 +31,7 @@ func newFixture(t *testing.T) *fixture {
 	pg := testutil.SetupPostgres(t)
 
 	orgID := dbwriteOrg(t, pg)
-	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true})
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/apperr"
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/core/billing/meter"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
@@ -35,7 +36,7 @@ func TestNewServerRejectsANilService(t *testing.T) {
 // handler's entitlement service is the one the subscription service was built over.
 func TestNewServerReadsEntitlementsOffTheSubscriptionService(t *testing.T) {
 	// Construction never touches the pools, so no database is needed.
-	entitlements, err := entitlement.NewService(nil, nil, true)
+	entitlements, err := entitlement.NewService(nil, nil, corebilling.Config{Enabled: true})
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}

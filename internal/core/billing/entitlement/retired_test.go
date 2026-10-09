@@ -49,7 +49,7 @@ func TestRetiredPlanIsStillHeldByItsSubscribers(t *testing.T) {
 	withRetiredPlan(t)
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	sub := &Subscription{PlanSlug: retiredPlan.Slug, Status: billing.SubStatusActive}
-	ent := Resolve(now.AddDate(0, -3, 0), Record{}, sub, now, true)
+	ent := Resolve(now.AddDate(0, -3, 0), Record{}, sub, now, billing.Config{Enabled: true})
 	if ent.Status != StatusActive || ent.Slug != retiredPlan.Slug {
 		t.Fatalf("resolved %s/%s, want ACTIVE on the retired plan", ent.Status, ent.Slug)
 	}
@@ -75,7 +75,7 @@ func TestARepriceDoesNotResplitALiveDeal(t *testing.T) {
 		BasePlanSlug: retiredPlan.Slug,
 	}
 	sub := &Subscription{PlanSlug: SlugCustom, Status: billing.SubStatusActive}
-	ent := Resolve(now.AddDate(0, -3, 0), rec, sub, now, true)
+	ent := Resolve(now.AddDate(0, -3, 0), rec, sub, now, billing.Config{Enabled: true})
 	if ent.Status != StatusActive || ent.Slug != SlugCustom {
 		t.Fatalf("resolved %s/%s, want ACTIVE/custom", ent.Status, ent.Slug)
 	}
@@ -114,7 +114,7 @@ func TestADealKeepsItsPinUntilItsProductChanges(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	pg := testutil.SetupPostgres(t)
-	svc, err := NewService(pg.PgRO, pg.PgW, true)
+	svc, err := NewService(pg.PgRO, pg.PgW, billing.Config{Enabled: true})
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

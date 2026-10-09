@@ -198,8 +198,9 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 }
 
 // `--until ""` is how an operator ENDS a deal, so it clears the overrides the
-// contract gated exactly as omitting the flag does. It reaches the service as a
-// non-nil pointer to the zero time — the one input that looks like a date.
+// contract gated exactly as omitting the flag does — not retention, which it never
+// gated. It reaches the service as a non-nil pointer to the zero time — the one
+// input that looks like a date.
 func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -228,9 +229,11 @@ func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("downgrade: %v", err)
 	}
-	if dropped.IncludedEventsOverride != 0 || dropped.RetentionDaysOverride != 0 ||
-		dropped.DisplayNameOverride != "" || dropped.ProviderProductID != "" {
-		t.Errorf("overrides after an explicit --until \"\" = %+v, want them all cleared", dropped)
+	if dropped.IncludedEventsOverride != 0 || dropped.DisplayNameOverride != "" || dropped.ProviderProductID != "" {
+		t.Errorf("overrides after an explicit --until \"\" = %+v, want them cleared", dropped)
+	}
+	if dropped.RetentionDaysOverride != 3650 {
+		t.Errorf("retention override = %d after an explicit --until \"\", want 3650 kept", dropped.RetentionDaysOverride)
 	}
 	if !dropped.ContractEndsAt.IsZero() {
 		t.Errorf("contract_ends_at = %v, want it cleared", dropped.ContractEndsAt)
@@ -525,7 +528,7 @@ func TestWithOrgLockReleasesTheLockWhenFnFails(t *testing.T) {
 			t.Error("a connection never came back to the pool: WithOrgLock left a transaction open")
 		}
 	})
-	svc, err := entitlement.NewService(f.pg.PgRO, pool, true)
+	svc, err := entitlement.NewService(f.pg.PgRO, pool, billingOn)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -565,7 +568,7 @@ func TestSetPlanGuardTakesNoSecondConnection(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("stage the deal: %v", err)
 	}
-	svc, err := entitlement.NewService(f.pg.PgRO, pool, true)
+	svc, err := entitlement.NewService(f.pg.PgRO, pool, billingOn)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}

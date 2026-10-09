@@ -25,10 +25,10 @@ func newBillingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "billing",
 		Short: "Set and inspect org billing entitlements",
-		Long: "Operator commands for the entitlement store — an org's free allowance and any\n" +
-			"negotiated deal. Postgres only: no payments provider is contacted, and no price is\n" +
-			"ever written here. Every write is attributed to --actor and appended to\n" +
-			"the org's history in the same transaction.",
+		Long: "Operator commands for the entitlement store — an org's free allowance, its\n" +
+			"retention and any negotiated deal. Postgres only: no payments provider is\n" +
+			"contacted, and no price is ever written here. Every write is attributed to\n" +
+			"--actor and appended to the org's history in the same transaction.",
 	}
 
 	for _, c := range []*cobra.Command{
@@ -69,8 +69,10 @@ func newBillingSetCmd() *cobra.Command {
 			"override flag leaves the stored value alone — the common re-set is a renewal\n" +
 			"on terms that have not changed — and passing its empty value (--events 0,\n" +
 			"--retention-days 0, --name \"\", --anchor-day 0, --until \"\") clears it back\n" +
-			"to the plan's. A deal refuses --events 0: pass --events 1 to bill from the\n" +
+			"to the default. A deal refuses --events 0: pass --events 1 to bill from the\n" +
 			"first event.\n\n" +
+			"--retention-days applies on its own: billing on or off, with or without a deal,\n" +
+			"and past --until. Only --retention-days 0 or `clear` removes it.\n\n" +
 			"--until is INCLUSIVE of the date given: --until 2026-12-31 runs the terms\n" +
 			"through all of 31 December, and `show` prints the stored instant, which is\n" +
 			"therefore the 1st.",
@@ -91,7 +93,7 @@ func newBillingSetCmd() *cobra.Command {
 	}
 	cmd.Flags().String("plan", "", "free, or custom for a negotiated deal")
 	cmd.Flags().Int64("events", 0, "negotiated monthly free allowance; 0 clears the override, except on a deal")
-	cmd.Flags().Int64("retention-days", 0, "negotiated days of event history kept; 0 clears the override")
+	cmd.Flags().Int64("retention-days", 0, "days of event history this org keeps, billing on or off; 0 clears the override")
 	cmd.Flags().String("name", "", "display name shown to the org; empty clears the override")
 	cmd.Flags().Int("anchor-day", 0, "day of month the usage period turns over (1-31); 0 clears the override")
 	cmd.Flags().String("until", "", "last day the deal runs, YYYY-MM-DD and inclusive; empty clears it")

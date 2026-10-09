@@ -51,7 +51,7 @@ func New(ctx context.Context) (*CLI, error) {
 
 	// Entitlement only: this CLI never talks to a provider, so there is no subscription
 	// service to build.
-	svc, err := entitlement.NewService(pgRO, pgW, billingCfg.Enabled)
+	svc, err := entitlement.NewService(pgRO, pgW, billingCfg)
 	if err != nil {
 		pgRO.Close()
 		pgW.Close()

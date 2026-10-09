@@ -401,8 +401,9 @@ type GetBillingStatusResponse struct {
 	// Whether a checkout would open at all -- billing on, a provider configured, and
 	// a product to check out against. Per plan it is PlanOption.purchasable.
 	Purchasable *bool `protobuf:"varint,11,opt,name=purchasable" json:"purchasable,omitempty"`
-	// Days of event history the plan promises. ABSENT means NO BOUND and is never
-	// zero. Nothing in pug deletes on this number today.
+	// Days of event history this org keeps: its own override, else its plan's or
+	// free's with billing on, or the deployment's default with it off. ABSENT means
+	// NO BOUND and is never zero. Nothing in pug deletes on this number today.
 	RetentionDays *wrapperspb.Int64Value `protobuf:"bytes,13,opt,name=retention_days,json=retentionDays" json:"retention_days,omitempty"`
 	// Whether a portal session would open: this org has a customer at the provider,
 	// which only a checkout leaves behind. Not implied by subscription_status.

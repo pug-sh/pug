@@ -72,7 +72,7 @@ func (p stubProvider) FetchCheckoutOutcome(context.Context, string) (corebilling
 func newService(t *testing.T, provider corebilling.PaymentProvider) (*subscription.Service, *testutil.TestPostgres) {
 	t.Helper()
 	pg := testutil.SetupPostgres(t)
-	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true})
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}

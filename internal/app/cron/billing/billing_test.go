@@ -24,7 +24,7 @@ func TestMain(m *testing.M) { testutil.Main(m) }
 // no-provider shape, where Reconcile is a no-op and only the prune runs.
 func newSvc(t *testing.T, pg *testutil.TestPostgres, payments *corebilling.Payments) *subscription.Service {
 	t.Helper()
-	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true})
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}

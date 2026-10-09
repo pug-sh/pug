@@ -24,7 +24,7 @@ var (
 func offerService(t *testing.T, billingEnabled bool, products map[string]string) *Service {
 	t.Helper()
 	// Construction touches neither pool, and offers reads neither.
-	entitlements, err := entitlement.NewService(nil, nil, billingEnabled)
+	entitlements, err := entitlement.NewService(nil, nil, billing.Config{Enabled: billingEnabled})
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}

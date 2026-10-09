@@ -116,7 +116,7 @@ func (failingProvider) FetchCheckoutOutcome(context.Context, string) (corebillin
 
 func newFailingServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
-	return newServerWith(t, pg, true, &corebilling.Payments{
+	return newServerWith(t, pg, corebilling.Config{Enabled: true}, &corebilling.Payments{
 		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      failingProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
@@ -173,7 +173,7 @@ func TestProviderFailuresAreInternalAndSayNothing(t *testing.T) {
 // id — the deploy variable is missing. Nothing is purchasable.
 func newProductlessServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
-	return newServerWith(t, pg, true, &corebilling.Payments{
+	return newServerWith(t, pg, corebilling.Config{Enabled: true}, &corebilling.Payments{
 		Provider:  stubProvider{},
 		ReturnURL: "https://app.example/settings/billing",
 	})
@@ -181,7 +181,7 @@ func newProductlessServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 
 func newPayingServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
 	t.Helper()
-	return newServerWith(t, pg, billingEnabled, &corebilling.Payments{
+	return newServerWith(t, pg, corebilling.Config{Enabled: billingEnabled}, &corebilling.Payments{
 		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      stubProvider{},
 		ReturnURL:     "https://app.example/settings/billing",
@@ -194,7 +194,7 @@ func TestCheckoutPrefillsTheBuyer(t *testing.T) {
 	}
 	pg := testutil.SetupPostgres(t)
 	var in corebilling.CheckoutInput
-	srv := newServerWith(t, pg, true, &corebilling.Payments{
+	srv := newServerWith(t, pg, corebilling.Config{Enabled: true}, &corebilling.Payments{
 		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      stubProvider{in: &in},
 		ReturnURL:     "https://app.example/settings/billing",
@@ -248,7 +248,7 @@ func TestPurchasableAgreesWithCheckout(t *testing.T) {
 		// renewals, is the same case; the catalog has none, so
 		// TestARetiredPlanIsNeverOffered covers it in the subscription package.
 		{"only a plan off sale has a product", func() *Server {
-			return newServerWith(t, pg, true, &corebilling.Payments{
+			return newServerWith(t, pg, corebilling.Config{Enabled: true}, &corebilling.Payments{
 				ProductBySlug: map[string]string{entitlement.SlugFree: "prod_free"},
 				Provider:      stubProvider{},
 				ReturnURL:     "https://app.example/settings/billing",
@@ -355,7 +355,7 @@ func TestCheckoutRefusesWhatCannotBeSold(t *testing.T) {
 	pg := testutil.SetupPostgres(t)
 	orgID := seedOrg(t, pg, time.Now().AddDate(0, -6, 0))
 	var in corebilling.CheckoutInput
-	srv := newServerWith(t, pg, true, &corebilling.Payments{
+	srv := newServerWith(t, pg, corebilling.Config{Enabled: true}, &corebilling.Payments{
 		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      stubProvider{in: &in},
 		ReturnURL:     "https://app.example/settings/billing",
@@ -685,7 +685,7 @@ func (c confirmStub) FetchCheckoutOutcome(context.Context, string) (corebilling.
 
 func newConfirmingServer(t *testing.T, pg *testutil.TestPostgres, provider corebilling.PaymentProvider) *Server {
 	t.Helper()
-	return newServerWith(t, pg, true, &corebilling.Payments{
+	return newServerWith(t, pg, corebilling.Config{Enabled: true}, &corebilling.Payments{
 		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",

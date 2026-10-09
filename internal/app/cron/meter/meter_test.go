@@ -110,7 +110,7 @@ func TestVerifyCatalogHoldsEachProductToItsPlan(t *testing.T) {
 
 func newService(t *testing.T, pg *testutil.TestPostgres) *coremeter.Service {
 	t.Helper()
-	ents, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	ents, err := entitlement.NewService(pg.PgRO, pg.PgW, corebilling.Config{Enabled: true})
 	if err != nil {
 		t.Fatalf("entitlement service: %v", err)
 	}

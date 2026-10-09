@@ -25,8 +25,9 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	if ent.BillingEnabled {
 		row(w, "billing", "enabled")
 	} else {
-		// Said in full because every field below it is the disabled answer, not this
-		// org's: with the switch off every org resolves free with no allowance at all.
+		// Said in full because every field below it but retention is the disabled
+		// answer, not this org's: with the switch off every org resolves free with no
+		// allowance at all.
 		row(w, "billing", "DISABLED (PUG_BILLING_ENABLED) — every org resolves with no allowance")
 	}
 
