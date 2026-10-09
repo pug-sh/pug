@@ -410,6 +410,8 @@ type GetBillingStatusResponse struct {
 	// Every tier of the live subscription's current period, zeros included, as last
 	// stated to the provider. Empty with no live subscription, until the period's
 	// first statement, and for a period split by a plan pug no longer knows.
+	// The latest statement may not have been acknowledged yet. The next pass resends
+	// it, except past the period's end, so it can lead the provider by one pass.
 	TierUsage []*TierUsage `protobuf:"bytes,14,rep,name=tier_usage,json=tierUsage" json:"tier_usage,omitempty"`
 	// When tier_usage was stated. Absent whenever tier_usage is empty.
 	TierUsageAsOf *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=tier_usage_as_of,json=tierUsageAsOf" json:"tier_usage_as_of,omitempty"`
