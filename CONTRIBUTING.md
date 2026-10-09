@@ -21,7 +21,7 @@ features, and questions.
 
 ## Development setup
 
-**Prerequisites:** [Go 1.26+](https://go.dev/dl/) and Docker (with Docker
+**Prerequisites:** [Go 1.27+](https://go.dev/dl/) and Docker (with Docker
 Compose) for the local infrastructure.
 
 ```bash

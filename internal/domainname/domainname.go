@@ -38,11 +38,11 @@ func Normalize(raw string) (string, error) {
 
 // Of returns the normalized domain of an email address, or "" when it has none.
 func Of(email string) string {
-	at := strings.LastIndexByte(email, '@')
-	if at < 0 {
+	_, after, ok := strings.CutLast(email, "@")
+	if !ok {
 		return ""
 	}
-	d, err := Normalize(email[at+1:])
+	d, err := Normalize(after)
 	if err != nil {
 		return ""
 	}

@@ -201,9 +201,9 @@ linters:
         text: G304|G122
         linters:
           - gosec
-      # The seeders want reproducible fake traffic, not unpredictability — the
-      # PCG streams are seeded on purpose so a rerun replays the same demo data.
-      - path: ^internal/app/seed/
+      # The seeders and demo worker want fake traffic, not unpredictability — the
+      # seeders' PCG streams are seeded on purpose so a rerun replays the same data.
+      - path: ^internal/app/(seed|workers/demo)/
         text: G404
         linters:
           - gosec
