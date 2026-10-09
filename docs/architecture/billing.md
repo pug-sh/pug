@@ -12,9 +12,12 @@ port and its vocabulary, `entitlement` is what this document describes, and
 > **Status: implemented**, except where §14 records a divergence. **Revised
 > 2026-09-27 for usage billing:** the fixed-price tiers and the trial are gone.
 > The catalog is one usage plan of quantities — a free allowance and tier
-> boundaries — and every rate lives on the provider's product. The code is the
-> authority; this document explains why it is shaped the way it is. This is the
-> first billing slice (§11); checkout is [`payments.md`](payments.md).
+> boundaries — and every rate lives on the provider's product. **Revised
+> 2026-10-10 for retention** ([`data-retention.md`](data-retention.md) phase 1):
+> free keeps a year, a subscriber its plan's five, and the override applies on
+> its own. The code is the authority; this document explains why it is shaped the
+> way it is. This is the first billing slice (§11); checkout is
+> [`payments.md`](payments.md).
 
 Usage metering answers *how many events did this org send*. This slice answers
 the other half — *how much of that is free, and how the rest splits into tiers* —
@@ -80,7 +83,7 @@ Four properties everything below preserves.
 | Entitlement state | **Derived, never stored** | A `status` column is a second source of truth that can disagree with the rows beside it, and keeping it honest costs a worker. |
 | Quota window | **Billing anniversary**, anchored to `orgs.create_time` | An org's month runs from the day it signed up. The alternative — a calendar month — is one line of code cheaper but resets everyone on the 1st regardless of when they signed up. §6.1. |
 | Anchor representation | **Day-of-month integer, UTC midnight** | The meter's period sum is exact only for midnight-aligned windows. An anchor stored as an instant would silently drop a partial day from the total while leaving it in the daily series. §6.1. |
-| Retention | **A day count on the plan, plus a per-org override** (§4) | How long history is kept is a term of the agreement like the allowance, so it sits beside it, is pinned immutable (§4.2) and is negotiable per deal. Days, not months: whatever eventually enforces this will subtract from `now`, and `AddDate` normalises `Feb 31` into March. Nothing subtracts today and nothing deletes — §13. |
+| Retention | **A day count on the plan, a year on free, plus a per-org override that applies on its own** (§4, §6) | How long history is kept is a term of the agreement like the allowance, so it sits beside it, is pinned immutable (§4.2) and is negotiable per org. Days, not months: whatever eventually enforces this will subtract from `now`, and `AddDate` normalises `Feb 31` into March. Nothing deletes on it yet — [`data-retention.md`](data-retention.md). |
 | Unpaid orgs | **The free allowance, no trial** | Every org without a subscription gets the current plan's allowance, and a banner beyond it. No row, no provider object, no card. |
 | Allowance audience | **Every org member** | Reads sit on the viewer floor, exactly like `ResourceUsage`: the person who notices the limit is rarely the admin. |
 | Enforcement | **None** | Invariant 1. |
@@ -96,7 +99,7 @@ for the layout a subscription on a catalog slug is split by. A deal's layout is
 
 | slug | name | free events / month | tier upper bounds | retention |
 |---|---|---|---|---|
-| `usage-2026-10` | Pay as you go | 100,000 | 2M · 15M · 50M · 100M · 250M · unbounded | 365 days |
+| `usage-2026-10` | Pay as you go | 100,000 | 2M · 15M · 50M · 100M · 250M · unbounded | 1,825 days |
 
 **The numbers are placeholders.** The commercial split is not decided. Each number
 is a named constant in `plans.go`, so setting it is a one-line change there, the
@@ -111,13 +114,14 @@ expectation.
   meter per tier and each tier's rate ([`payments.md`](payments.md) §4.1), and an
   hourly pass states each subscriber's per-tier counts to it (§4.2 there).
 - **`free` and `custom` are states, not catalog entries.** `free` is an org with no
-  live subscription: the current plan's allowance and retention, a banner beyond
-  it, never a bill — so no tier layout either. `custom` is a negotiated deal
+  live subscription: the current plan's allowance, a year of history, a banner
+  beyond it, never a bill — so no tier layout either. `custom` is a negotiated deal
   (§4.1), split over its base plan's tiers at its own product's rates.
   `PlanBySlug` and `TiersFor` know neither.
-- **`RetentionDays`** is how long the plan keeps history, in days at
-  `RetentionYearDays` (365) flat per year. Nothing prunes on it (§13): it is a
-  number pug renders, and every deployment over-delivers by keeping everything.
+- **`RetentionDays`** is how long a subscriber's history is kept, in days at
+  `RetentionYearDays` (365) flat per year: five years on the current plan. A free
+  org keeps one (`freeRetentionDays`). Both are placeholders, and nothing deletes
+  on either yet (§13).
 - **`Retired`** marks a plan that is never sold again. It stays in the catalog
   forever so its subscribers, and every deal pinned to it, keep resolving on its
   own numbers (§4.2); `OnSale` is `!Retired`, and checkout refuses a retired plan.
@@ -156,7 +160,8 @@ its id ([`payments.md`](payments.md) §5). The row carries what pug owns:
 | Display name | `display_name_override` | "Custom" |
 
 Term is `contract_ends_at`, and the paperwork lives in `note`. Nothing about a
-deal needs a deploy or a catalog entry.
+deal needs a deploy or a catalog entry. The retention override is the one that
+outlives the deal: it applies on its own (§6).
 
 **A deal is exactly a product and a base plan.** `custom_needs_product` holds
 `(plan_slug = 'custom') = (provider_product_id is not null)`: a deal's price is its
@@ -264,8 +269,8 @@ create table billing_entitlements (
   plan_slug varchar(50) not null,
   -- The provider product a deal is bought against (020).
   provider_product_id text,
-  -- How far back this org's events stay queryable. NULL means the plan's own
-  -- retention. Nothing deletes on it (section 13).
+  -- How long this org's events are kept. NULL means its default length
+  -- (section 6). Nothing deletes on it yet (section 13).
   retention_days_override bigint
     constraint billing_entitlements_retention_check
       check (retention_days_override > 0),
@@ -295,14 +300,14 @@ create table billing_entitlements (
   day-of-month integer rather than a date or an instant so that a period can only
   ever start at UTC midnight, which is what the meter's sum requires.
 - **`contract_ends_at`** — when the row's negotiated terms lapse: past it the
-  overrides stop applying (§6), except under the live custom subscription they
-  describe. NULL means open-ended. It is the end of the *deal*, deliberately not
+  allowance and name overrides stop applying (§6), except under the live custom
+  subscription they describe. NULL means open-ended. It is the end of the *deal*, deliberately not
   the end of a usage period — an annual contract ending in March does not make
   March's usage period a year long. Keeping the two apart is why `anchor_day`
   exists as its own column rather than being read off whichever date happens to
   be nearby.
 - **The `*_override` columns** — a deal's or a comp's allowance, retention and
-  name (§4.1). NULL means "use the plan's" in each case. `included_events_override`
+  name (§4.1). NULL means the default in each case (§6). `included_events_override`
   and `retention_days_override` are checked `> 0` because 0 would read as an
   allowance or a retention of zero rather than as "no override", and because
   "unlimited" is deliberately not expressible here. A zero retention would be the
@@ -400,7 +405,7 @@ create index billing_entitlement_history_org_idx
 
 ## 6. Resolution
 
-`entitlement.Resolve(orgCreateTime, rec, sub, now, billingEnabled)` is a pure
+`entitlement.Resolve(orgCreateTime, rec, sub, now, cfg)` is a pure
 function returning the resolved `Entitlement` — slug, display name, status, the
 free allowance `IncludedEvents`, `RetentionDays`, the tier layout `TierUpTo`, the
 contract date and the period bounds, plus the live subscription's status, period
@@ -411,17 +416,17 @@ something the package looks up because it is the default quota anchor (§6.1).
 
 In order:
 
-1. **Billing disabled** (§9) → status `FREE`, plan `free`, and no allowance,
-   retention or tiers. A self-hosted install has no allowance at all, so no
-   banner can fire even if a client forgets to check the flag. The switch fails
-   *open* on the number because the number enforces nothing.
-2. **No live subscription** → `FREE` on the current plan's allowance and
-   retention, whatever the row says, and no tiers: nothing bills a free org, so
+1. **Billing disabled** (§9) → status `FREE`, plan `free`, and no allowance or
+   tiers. A self-hosted install has no allowance at all, so no banner can fire
+   even if a client forgets to check the flag. The switch fails *open* on the
+   number because the number enforces nothing.
+2. **No live subscription** → `FREE` on the current plan's allowance and a year
+   of history, whatever the row says, and no tiers: nothing bills a free org, so
    nothing splits its usage. Derived, never materialized: a read must not
    write a row. The row never grants a plan on its own, because without a
    subscription nothing bills: a comp is a bigger allowance on free, and a
    `custom` row still waiting for its subscription resolves plain free — free's
-   name, allowance and retention — while its terms wait on the row.
+   name and allowance — while its terms wait on the row.
 3. **A live `custom` subscription** → `ACTIVE` as "Custom", on its base plan's
    allowance, retention and tiers: the plan pinned on its row (§4.1), retired or
    not, whichever plan is current. A deal is priced by its own product over the
@@ -435,9 +440,16 @@ A subscription is live while it is `active` or `past_due`
 lapse" is a question support asks — but never consulted.
 
 Then each present override replaces the corresponding field of the resolved plan
-(§4.1) — allowance, retention and display name — patching whatever steps 2–4
-produced. A deal survives a catalog reprice untouched because step 3 reads its
-pin, not the current plan (§4.2).
+(§4.1) — allowance and display name — patching whatever steps 2–4 produced. A
+deal survives a catalog reprice untouched because step 3 reads its pin, not the
+current plan (§4.2).
+
+**Retention resolves on its own** ([`data-retention.md`](data-retention.md)). The
+length is the first of these that is set: `retention_days_override`, which no
+switch, deal, subscription or contract gates; with billing on, the plan steps 3–4
+resolved (five years on the current plan) or free's year; with billing off,
+`PUG_RETENTION_DAYS` (§9). With none set there is no bound, and nothing deletes
+on it yet. The gates below are the allowance's and the name's, never retention's.
 
 **A deal's terms are held only through its own subscription.** A `custom` row's
 overrides apply only while a live custom subscription exists: staged and not yet
@@ -468,9 +480,9 @@ An **unknown slug on a live subscription** — only reachable if a slug is remov
 from Go while a subscription still names it — resolves `ACTIVE` under that slug,
 with no allowance, retention or tiers. A live deal whose pin names a plan the
 catalog does not know resolves the same way, as "Custom". No override patches
-either: an allowance with nothing to split it by is exactly the guess this
-avoids. `Resolve` stays pure, so the log happens in `Service.GetEntitlement`,
-which has a ctx to attach it to; it is a `WarnContext` and deliberately **not** a
+either, bar retention's: an allowance with nothing to split it by is exactly the
+guess this avoids. `Resolve` stays pure, so the log happens in
+`Service.GetEntitlement`, which has a ctx to attach it to; it is a `WarnContext` and deliberately **not** a
 `telemetry.RecordError`, which would record an exception on every dashboard load
 for as long as the drift lasts. Failing to the free allowance would tell a paying
 customer they are over their limit; failing to "no allowance" is a silent banner
@@ -636,9 +648,9 @@ every rate lives on the provider's product.
   truthiness.
 - **`retention_days` is absent-able on the same terms**, and is the same
   `Int64Value` wrapper for the same reason — absent is *no bound*, and "0 days of
-  history" is the one thing it must never say. It states what the plan promises,
-  not what has been deleted: nothing prunes on it (§13), so a client must not
-  render it as "data older than this is gone".
+  history" is the one thing it must never say. It states the org's length (§6),
+  billing on or off, not what has been deleted: nothing deletes on it yet (§13),
+  so a client must not render it as "data older than this is gone".
 - **Removed fields are reserved, not deleted.** `trial_ends_at` (5) on the
   response, and `price_cents` and `currency` (3, 4) on both `Plan` and
   `PlanOption`, are reserved by name and number, so no later field can reuse
@@ -692,7 +704,7 @@ through a subscription (§6), so its slug is refused (`ErrPlanNotAssignable`)
 rather than stored as a plan nothing bills. `SetPlan` and the CLI read the two
 from one list, `entitlement.AssignableSlugs()`.
 
-Three rules the flags do not spell out:
+Four rules the flags do not spell out:
 
 - **`--until` is inclusive of the date given.** The resolver's comparison is
   half-open, so `ContractEndExclusive` — beside that comparison, not in the CLI —
@@ -703,6 +715,9 @@ Three rules the flags do not spell out:
   overrides the contract gated and the product: the terms belonged to the deal,
   and a product left behind would keep offering a buy button for it. With a real
   `--until` it is a comp, and keeps the overrides it is given.
+- **`--retention-days` outlives a deal.** The contract never gated it (§6), so
+  `free` keeps it. Only `--retention-days 0` or `clear` removes it, so an operator
+  ending a deal clears it by hand.
 - **A deal's base plan is pinned, never passed.** `set` writes `base_plan_slug`
   itself (§4.1): the current plan on a new deal and whenever the product changes,
   the stored pin on a renewal with the same product, and nothing once the row
@@ -723,7 +738,7 @@ There is no `--price`: what the deal is charged lives on its product (§4.1), an
 `--events`, `--retention-days`, `--name` and `--anchor-day` write the override
 columns; omitting one on a re-`set` leaves the stored value alone, and passing
 the empty value (`--events 0`, `--retention-days 0`, `--name ""`,
-`--anchor-day 0`) clears it back to the plan's — except `--events 0` on a deal,
+`--anchor-day 0`) clears it back to the default — except `--events 0` on a deal,
 which is refused (§4.1). Leaving them alone is the right default because the
 common re-`set` is a renewal — a new `--until` on terms that have not changed —
 and a flag that silently reverted a customer's negotiated allowance to a catalog
@@ -778,6 +793,7 @@ refusal is a non-zero exit with the reason on stderr and no usage block.
 | Var | Default | Meaning |
 |---|---|---|
 | `PUG_BILLING_ENABLED` | `false` | The single switch. Off ⇒ `billing_enabled=false` and no allowance anywhere (§6). Set it on every pod of a billed deployment. |
+| `PUG_RETENTION_DAYS` | unset | Every org's length with billing off, below its own override (§6). Unset or `0` keeps everything; a negative fails startup. Ignored with billing on. |
 
 It follows `PUG_DEMO_ENABLED` exactly: `envconfig` on the server, which rejects
 a malformed bool outright. There is no worker and no CLI gate — `pug billing`
@@ -797,23 +813,26 @@ table is a plain unit test.
   a cancelled one supplies nothing, and a custom one splits over its base plan's
   tiers; a staged deal resolves plain free, and a deal's terms never ride onto a
   usage plan bought instead; a contract past `contract_ends_at` drops its
-  overrides with no sweep having run, except under the live deal it describes;
-  each override patches only its own field; a reprice leaves a live deal on its
-  pinned plan (`TestARepriceDoesNotResplitALiveDeal`), which a renewal on the
-  same product keeps and a new product moves
+  allowance and name overrides with no sweep having run, except under the live
+  deal it describes; each override patches only its own field; a reprice leaves
+  a live deal on its pinned plan (`TestARepriceDoesNotResplitALiveDeal`), which a
+  renewal on the same product keeps and a new product moves
   (`TestADealKeepsItsPinUntilItsProductChanges`); an unknown subscription slug
-  keeps its name with no allowance, retention or tiers, even under a comp, and a
-  deal pinned to an unknown plan resolves the same; billing disabled resolves to
-  no allowance regardless of the row or the subscription.
-- **Retention** — the plan resolves its own value; a negotiated
-  `retention_days_override` wins and lapses with its contract; an unknown plan —
-  a subscription's slug or a deal's pin — and a disabled deployment both report
-  *no bound* rather than a year, which is the same fail-open direction the
-  allowance takes.
+  keeps its name with no allowance or tiers, even under a comp, and no retention
+  but an override, and a deal pinned to an unknown plan resolves the same;
+  billing disabled resolves to no allowance regardless of the row or the
+  subscription.
+- **Retention** — a live subscription resolves its plan's and every other
+  status free's year; `retention_days_override` wins on free, past its contract,
+  on a staged deal, beside a usage plan, on an unknown plan and with billing off;
+  `PUG_RETENTION_DAYS` applies only with billing off; an unknown plan, and billing
+  off with no default, report *no bound* rather than a year, the allowance's
+  fail-open direction.
 - **The free corners**, which is where a comp lives: `free` without `--until`
-  ends a deal's contract, overrides and product; `free` with a date is a comp and
-  keeps them; and a comp's `contract_ends_at` still expires them, so a
-  time-boxed pilot lapses like any other deal.
+  ends a deal's contract, allowance and name overrides and product, keeping its
+  retention; `free` with a date is a comp and keeps them; and a comp's
+  `contract_ends_at` still expires them, so a time-boxed pilot lapses like any
+  other deal.
 - **Window** — the period `Resolve` reports and the period the meter sums are the
   same half-open window for the same clock and anchor. This is the assertion that
   keeps the two halves of "X of Y" honest, and it is the one that matters most in
@@ -895,15 +914,11 @@ rewrites what this one stores.
    - **Annual terms.** Standard, and it interacts with §6.1: an annual contract
      renews yearly while the usage period stays monthly, so `contract_ends_at`
      and the anchor do different jobs and both are needed.
-3. **Retention enforcement** — the prune that makes §4's number more than a
-   promise. It is deliberately its own slice because it is the first thing in
-   this subsystem that would *destroy* customer data, and three things have to be
-   decided in it rather than discovered after: what a downgrade or a lapse does
-   to history already stored (proposed: a grace period and a notice, never an
-   immediate delete — §12), whether the bound is a ClickHouse TTL or a job that
-   can be halted, and what stops a resolution bug from deleting on a wrong
-   number. Until it exists pug keeps everything, which over-delivers on every
-   plan.
+3. **Retention enforcement** — designed in [`data-retention.md`](data-retention.md):
+   its own daily job deletes whole months past each org's length, and a shorter
+   length waits 30 days first. Its phase 1, the length every org resolves (§6),
+   shipped; until the deletes ship pug keeps everything, which over-delivers on
+   every plan.
 4. **Payment ledger**: invoices, recorded manual payments, refunds and
    chargebacks, on a separate admin-only resource — amounts and invoice
    references do not belong on the viewer floor the allowance banner sits on. A
@@ -935,11 +950,11 @@ so its schema is not the target.
 - **A moved anchor truncates one period.** An `--anchor-day` change cuts the
   org's current window short once, and that month's number will look small next
   to its neighbours.
-- **A lapse or a downgrade shortens retention retroactively.** A 10-year deal
-  that ends resolves to the current plan's 365 days the same instant its
-  allowance drops, so the *stated* bound moves across years of already-stored history at
-  once. Harmless while nothing prunes; it is the specific reason enforcement
-  (§11.3) needs a grace period rather than a nightly delete.
+- **Stopping paying shortens retention retroactively.** A subscriber whose
+  subscription ends resolves free's year the same instant, so the *stated* bound
+  moves across years of already-stored history at once. Harmless while nothing
+  deletes; it is why the deletes design waits for an operator and then 30 days
+  ([`data-retention.md`](data-retention.md)).
 - **A retention "year" is 365 days flat**, so a 7-year term is ~1.7 days short of
   seven calendar years. Deliberate: the alternative is calendar arithmetic whose
   normalisation moves the boundary the wrong way, and the error is invisible next
@@ -961,12 +976,12 @@ every project on a schedule, and is noted in [`usage.md`](usage.md). It does not
 need an allowance to be useful: "any org over N events/day" catches the same
 traffic and works for custom deals too.
 
-**Nothing enforces retention.** The plan's `RetentionDays` is a term with no
-prune behind it: no ClickHouse TTL, no delete job, no query clamp, and no path
-that reads the number for anything but rendering it. Invariant 1 keeps billing
-out of *ingestion*; deletion is the larger promise, so it is §11.3's own slice
-rather than a switch flipped here. The consequence is stated plainly: a customer
-on a 1-year plan can still query year-old data, and pug pays to store it.
+**Nothing enforces retention yet.** Every org resolves a length (§6), but
+nothing deletes on it: no ClickHouse TTL, no delete job, no query clamp, and no
+path that reads the number for anything but rendering it. Invariant 1 keeps
+billing out of *ingestion*; deletion is the larger promise, so it is §11.3's own
+slice rather than a switch flipped here. Until it ships a free org can still
+query year-old data, and pug pays to store it.
 
 **Billing an org with no subscription.** Past the free allowance it sees a
 banner and nothing else: no event is refused and nothing is invoiced. Usage

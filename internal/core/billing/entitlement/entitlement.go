@@ -3,6 +3,7 @@ package entitlement
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -57,28 +59,29 @@ var (
 type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
-	// billingEnabled mirrors PUG_BILLING_ENABLED. Off is a self-hosted install,
-	// where every org resolves with no allowance at all.
-	billingEnabled bool
+	cfg  billing.Config
 }
 
 // NewService checks the catalog at wiring time: CurrentPlan would otherwise panic
 // inside Resolve on a request, once per dashboard load.
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Service, error) {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, cfg billing.Config) (*Service, error) {
 	if err := validateCatalog(catalog); err != nil {
 		return nil, err
 	}
+	if cfg.RetentionDays < 0 {
+		return nil, fmt.Errorf("billing: PUG_RETENTION_DAYS is %d; want a day count, or 0 to keep everything", cfg.RetentionDays)
+	}
 	return &Service{
-		read:           dbread.New(pgRO),
-		pgW:            pgW,
-		billingEnabled: billingEnabled,
+		read: dbread.New(pgRO),
+		pgW:  pgW,
+		cfg:  cfg,
 	}, nil
 }
 
 // BillingEnabled is the switch this service resolves under. The subscription package
 // reads it from here rather than holding a copy: two copies can disagree, and one
 // response would then report billing off beside a working buy button.
-func (s *Service) BillingEnabled() bool { return s.billingEnabled }
+func (s *Service) BillingEnabled() bool { return s.cfg.Enabled }
 
 // GetEntitlement resolves what the org may send right now.
 func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Time) (Entitlement, error) {
@@ -95,7 +98,7 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 	// Only when billing is on: with it off every org resolves free regardless, so the
 	// read is a query per dashboard load that cannot change it.
 	var sub *Subscription
-	if s.billingEnabled {
+	if s.cfg.Enabled {
 		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
 			return Entitlement{}, err
 		}
@@ -114,7 +117,7 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 			}
 		}
 	}
-	return Resolve(row.OrgCreateTime.Time, rec, sub, now, s.billingEnabled), nil
+	return Resolve(row.OrgCreateTime.Time, rec, sub, now, s.cfg), nil
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the
@@ -469,10 +472,10 @@ func applyChange(cur Record, c Change) Record {
 
 	if next.PlanSlug == SlugFree && (c.ContractEndsAt == nil || c.ContractEndsAt.IsZero()) {
 		// The contract belongs to the deal, so free ends it and the overrides it gated.
-		// A real date here is a comped grant and keeps them.
+		// A real date here is a comped grant and keeps them. Retention's is ungated,
+		// so it stays until --retention-days 0 or a clear.
 		next.ContractEndsAt = time.Time{}
 		next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
-		next.RetentionDaysOverride = orKeep(c.RetentionDays, 0)
 		next.DisplayNameOverride = orKeep(c.DisplayName, "")
 		// Dropped with them: a product id left behind would keep offering a buy button
 		// for the deal that just ended.

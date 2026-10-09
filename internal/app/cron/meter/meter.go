@@ -160,7 +160,7 @@ func Run(ctx context.Context) error {
 			fmt.Errorf("billing is on and %d orgs hold a live subscription, but no provider that meters usage is configured", live))
 	}
 
-	entitlements, err := entitlement.NewService(pgRO, pgW, true)
+	entitlements, err := entitlement.NewService(pgRO, pgW, billingCfg)
 	if err != nil {
 		return setupFailed(ctx, "entitlement service", err)
 	}

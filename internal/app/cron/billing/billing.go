@@ -85,7 +85,7 @@ func Run(ctx context.Context) error {
 	}
 	defer pgW.Close()
 
-	entitlements, err := entitlement.NewService(pgRO, pgW, billingCfg.Enabled)
+	entitlements, err := entitlement.NewService(pgRO, pgW, billingCfg)
 	if err != nil {
 		return setupFailed(ctx, "entitlement service", err)
 	}

@@ -19,7 +19,7 @@ func liveSub(slug string) *entitlement.Subscription {
 
 // Somebody is paying for this, so it outranks everything beneath it.
 func TestSubscriptionSuppliesThePlan(t *testing.T) {
-	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub(entitlement.SlugUsage), later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub(entitlement.SlugUsage), later, billingOn)
 	if ent.Status != entitlement.StatusActive {
 		t.Errorf("status = %s, want ACTIVE", ent.Status)
 	}
@@ -40,7 +40,7 @@ func TestSubscriptionSuppliesThePlan(t *testing.T) {
 // The subscription decides the plan: the row only ever names free or a deal.
 func TestSubscriptionOutranksTheRow(t *testing.T) {
 	rec := entitlement.Record{Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_deal"}
-	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, billingOn)
 	if ent.Slug != entitlement.SlugUsage {
 		t.Errorf("slug = %q, want %s (the subscription's, not the row's)", ent.Slug, entitlement.SlugUsage)
 	}
@@ -50,7 +50,7 @@ func TestSubscriptionOutranksTheRow(t *testing.T) {
 func TestPastDueKeepsTheQuota(t *testing.T) {
 	sub := liveSub(entitlement.SlugUsage)
 	sub.Status = corebilling.SubStatusPastDue
-	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, billingOn)
 	if ent.Slug != entitlement.SlugUsage {
 		t.Errorf("slug = %q, want %s — a failed card must not degrade the plan", ent.Slug, entitlement.SlugUsage)
 	}
@@ -69,7 +69,7 @@ func TestOnlyAPastDueSubscriptionCarriesItsGraceDeadline(t *testing.T) {
 	} {
 		sub := liveSub(entitlement.SlugUsage)
 		sub.Status, sub.GracePeriodEndsAt = status, deadline
-		ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
+		ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, billingOn)
 		if !ent.SubGracePeriodEndsAt.Equal(want) {
 			t.Errorf("%s: grace deadline = %s, want %s", status, ent.SubGracePeriodEndsAt, want)
 		}
@@ -84,7 +84,7 @@ func TestNotLiveSubscriptionSuppliesNothing(t *testing.T) {
 		}
 		sub := liveSub(entitlement.SlugUsage)
 		sub.Status = status
-		ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
+		ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, billingOn)
 		if ent.Slug != entitlement.SlugFree {
 			t.Errorf("%s subscription resolved to %q, want free", status, ent.Slug)
 		}
@@ -102,7 +102,7 @@ func TestCancelledSubscriptionFallsBackToTheComp(t *testing.T) {
 		Present: true, PlanSlug: entitlement.SlugFree,
 		IncludedEventsOverride: 5_000_000, ContractEndsAt: later.AddDate(0, 1, 0),
 	}
-	ent := entitlement.Resolve(created, rec, sub, later, true)
+	ent := entitlement.Resolve(created, rec, sub, later, billingOn)
 	if ent.Status != entitlement.StatusFree || quota(t, ent) != 5_000_000 {
 		t.Errorf("resolved %s with %d, want FREE with the comp's 5000000 beneath a dead subscription",
 			ent.Status, quota(t, ent))
@@ -118,7 +118,7 @@ func TestCustomSubscriptionTakesItsQuotaFromTheRow(t *testing.T) {
 		DisplayNameOverride:    "Acme Enterprise",
 		ProviderProductID:      "prod_acme",
 	}
-	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugCustom), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugCustom), later, billingOn)
 	if got := quota(t, ent); got != 5_000_000 {
 		t.Errorf("allowance = %d, want 5000000", got)
 	}
@@ -136,13 +136,13 @@ func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 		IncludedEventsOverride: 5_000_000,
 		ContractEndsAt:         later.AddDate(0, 0, -1),
 	}
-	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugCustom), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugCustom), later, billingOn)
 	if got := quota(t, ent); got != 5_000_000 {
 		t.Errorf("allowance = %d, want 5000000 — the customer is still being charged", got)
 	}
 
 	// With nothing being charged, the deal's terms are gone with it.
-	lapsed := entitlement.Resolve(created, rec, nil, later, true)
+	lapsed := entitlement.Resolve(created, rec, nil, later, billingOn)
 	if lapsed.Slug != entitlement.SlugFree || quota(t, lapsed) != freeEvents() {
 		t.Errorf("with no subscription: %s on %d, want free on %d", lapsed.Slug, quota(t, lapsed), freeEvents())
 	}
@@ -155,10 +155,9 @@ func TestAStagedDealIsPlainFree(t *testing.T) {
 		Present: true, PlanSlug: entitlement.SlugCustom, ProviderProductID: "prod_acme",
 		BasePlanSlug:           entitlement.SlugUsage,
 		IncludedEventsOverride: 5_000_000,
-		RetentionDaysOverride:  2555,
 		DisplayNameOverride:    "Acme Enterprise",
 	}
-	ent := entitlement.Resolve(created, rec, nil, later, true)
+	ent := entitlement.Resolve(created, rec, nil, later, billingOn)
 	if ent.Status != entitlement.StatusFree || ent.DisplayName != entitlement.FreeDisplayName ||
 		quota(t, ent) != freeEvents() || retention(t, ent) != freeRetention() {
 		t.Errorf("resolved %s %q on %v / %v, want plain free", ent.Status, ent.DisplayName, str(ent.IncludedEvents), str(ent.RetentionDays))
@@ -176,7 +175,7 @@ func TestADealsTermsDoNotRideOnAPublicPlan(t *testing.T) {
 		DisplayNameOverride:    "Acme Enterprise",
 		ContractEndsAt:         later.AddDate(1, 0, 0),
 	}
-	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, billingOn)
 	if got := quota(t, ent); got != freeEvents() {
 		t.Errorf("allowance = %d, want the usage plan's %d", got, freeEvents())
 	}
@@ -195,7 +194,7 @@ func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
 		DisplayNameOverride:    "Acme Pilot",
 		ContractEndsAt:         later.AddDate(0, 0, -1),
 	}
-	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, true)
+	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, billingOn)
 	if got := quota(t, ent); got != freeEvents() {
 		t.Errorf("allowance = %d, want %d — the pilot's grant lapsed", got, freeEvents())
 	}
@@ -207,7 +206,7 @@ func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
 // A slug the catalog no longer knows keeps its own name and no allowance. Resolving
 // it to the free allowance would tell a paying customer they are over it.
 func TestSubscriptionOnAnUnknownSlugKeepsItsName(t *testing.T) {
-	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub("growth-v0"), later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub("growth-v0"), later, billingOn)
 	if ent.Slug != "growth-v0" {
 		t.Errorf("slug = %q, want growth-v0", ent.Slug)
 	}
@@ -224,7 +223,7 @@ func TestSubscriptionOnAnUnknownSlugKeepsItsName(t *testing.T) {
 
 // Billing off is the self-hosted shape: no allowance, and no subscription consulted.
 func TestSubscriptionIgnoredWhenBillingIsOff(t *testing.T) {
-	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub(entitlement.SlugUsage), later, false)
+	ent := entitlement.Resolve(created, entitlement.Record{}, liveSub(entitlement.SlugUsage), later, billingOff)
 	if ent.Slug != entitlement.SlugFree || ent.IncludedEvents != nil {
 		t.Errorf("slug = %q allowance = %v, want free with none", ent.Slug, ent.IncludedEvents)
 	}
@@ -239,7 +238,7 @@ func TestSubscriptionPeriodIsNotTheQuotaWindow(t *testing.T) {
 	sub := liveSub(entitlement.SlugUsage)
 	sub.CurrentPeriodStart = time.Date(2026, 5, 28, 9, 30, 0, 0, time.UTC)
 	sub.CurrentPeriodEnd = time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
-	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
+	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, billingOn)
 	if ent.PeriodEnd.Equal(ent.SubPeriodEnd) {
 		t.Fatal("quota window end equals the billing date; they are different questions")
 	}

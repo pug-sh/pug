@@ -35,9 +35,9 @@ func seedOrg(t *testing.T, pg *testutil.TestPostgres, createdAt time.Time) strin
 // newServerWith wires the pair as the server does: the subscription service over an
 // entitlement service, which the handler reads back off it. A nil payments is the
 // no-provider shape.
-func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool, payments *corebilling.Payments) *Server {
+func newServerWith(t *testing.T, pg *testutil.TestPostgres, cfg corebilling.Config, payments *corebilling.Payments) *Server {
 	t.Helper()
-	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, billingEnabled)
+	entitlements, err := entitlement.NewService(pg.PgRO, pg.PgW, cfg)
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
@@ -46,7 +46,7 @@ func newServerWith(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool,
 
 func newServer(t *testing.T, pg *testutil.TestPostgres, billingEnabled bool) *Server {
 	t.Helper()
-	return newServerWith(t, pg, billingEnabled, nil)
+	return newServerWith(t, pg, corebilling.Config{Enabled: billingEnabled}, nil)
 }
 
 func getStatus(t *testing.T, srv *Server, orgID string) *billingv1.GetBillingStatusResponse {
@@ -80,8 +80,13 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 			"that does not exist", off.GetIncludedEvents().GetValue())
 	}
 	if off.GetRetentionDays() != nil {
-		t.Errorf("retention_days = %d with billing off, want ABSENT — a self-hosted install "+
-			"bounds nothing", off.GetRetentionDays().GetValue())
+		t.Errorf("retention_days = %d with billing off, want ABSENT — with no PUG_RETENTION_DAYS "+
+			"a self-hosted install bounds nothing", off.GetRetentionDays().GetValue())
+	}
+	withDefault := getStatus(t, newServerWith(t, pg, corebilling.Config{RetentionDays: 90}, nil), orgID)
+	if withDefault.GetRetentionDays().GetValue() != 90 || withDefault.GetIncludedEvents() != nil {
+		t.Errorf("billing off with PUG_RETENTION_DAYS=90: retention_days %v, included_events %v; want 90 and ABSENT",
+			withDefault.GetRetentionDays(), withDefault.GetIncludedEvents())
 	}
 	if off.GetPeriodStart() == nil || off.GetPeriodEnd() == nil {
 		t.Error("period bounds are missing; usage is metered whether or not billing is on")
@@ -98,7 +103,7 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 		t.Errorf("included_events = %d, want the current allowance", on.GetIncludedEvents().GetValue())
 	}
 	if on.GetRetentionDays().GetValue() != entitlement.RetentionYearDays {
-		t.Errorf("retention_days = %d, want the current plan's %d",
+		t.Errorf("retention_days = %d, want free's year, %d",
 			on.GetRetentionDays().GetValue(), entitlement.RetentionYearDays)
 	}
 	if on.GetStatus() != billingv1.BillingStatus_BILLING_STATUS_FREE {

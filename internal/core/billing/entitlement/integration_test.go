@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -36,7 +37,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC))
 
-	svc, err := entitlement.NewService(pg.PgRO, pg.PgW, true)
+	svc, err := entitlement.NewService(pg.PgRO, pg.PgW, billingOn)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -175,8 +176,8 @@ func TestSetPlanRoundTrips(t *testing.T) {
 	}
 }
 
-// A deal's retention is stored beside its quota and resolves the same way, which
-// is the whole reason it is a column rather than prose in the note.
+// A deal's retention is stored beside its quota, which is the whole reason it is a
+// column rather than prose in the note.
 func TestNegotiatedRetentionRoundTrips(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -260,6 +261,86 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 	if cleared.IncludedEventsOverride != 5_000_000 || cleared.DisplayNameOverride != "" || cleared.RetentionDaysOverride != 0 {
 		t.Errorf("after clearing retention and name: %d/%q/%d, want 5000000/\"\"/0",
 			cleared.IncludedEventsOverride, cleared.DisplayNameOverride, cleared.RetentionDaysOverride)
+	}
+}
+
+// The retention override outlives a deal: free without --until keeps it, and only
+// --retention-days 0 or a clear removes it.
+func TestDowngradeToFreeKeepsTheRetentionOverride(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug:          entitlement.SlugCustom,
+		ProviderProductID: new("prod_deal"),
+		IncludedEvents:    new(int64(5_000_000)),
+		RetentionDays:     new(int64(2_555)),
+	}); err != nil {
+		t.Fatalf("set the deal: %v", err)
+	}
+
+	free, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree})
+	if err != nil {
+		t.Fatalf("downgrade: %v", err)
+	}
+	if free.RetentionDaysOverride != 2_555 || free.IncludedEventsOverride != 0 {
+		t.Errorf("after the downgrade: retention %d, events %d; want 2555 kept and the allowance ended",
+			free.RetentionDaysOverride, free.IncludedEventsOverride)
+	}
+	ent, err := f.svc.GetEntitlement(ctx, f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.RetentionDays == nil || *ent.RetentionDays != 2_555 {
+		t.Errorf("resolved retention = %v, want the override's 2555", ent.RetentionDays)
+	}
+
+	cleared, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug: entitlement.SlugFree, RetentionDays: new(int64(0)),
+	})
+	if err != nil {
+		t.Fatalf("clear the retention: %v", err)
+	}
+	if cleared.RetentionDaysOverride != 0 {
+		t.Errorf("retention override = %d after --retention-days 0, want it cleared", cleared.RetentionDaysOverride)
+	}
+}
+
+// With billing off the stored override still applies, and PUG_RETENTION_DAYS is the
+// length of every org without one.
+func TestRetentionResolvesWithBillingOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	f := newFixture(t)
+	ctx := t.Context()
+	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, corebilling.Config{RetentionDays: 90})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	ent, err := off.GetEntitlement(ctx, f.orgID, time.Now())
+	if err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.RetentionDays == nil || *ent.RetentionDays != 90 || ent.IncludedEvents != nil {
+		t.Errorf("billing off: retention %v, allowance %v; want PUG_RETENTION_DAYS's 90 and no allowance",
+			ent.RetentionDays, ent.IncludedEvents)
+	}
+
+	if _, err := off.SetPlan(ctx, f.orgID, actor, entitlement.Change{
+		PlanSlug: entitlement.SlugFree, RetentionDays: new(int64(30)),
+	}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+	if ent, err = off.GetEntitlement(ctx, f.orgID, time.Now()); err != nil {
+		t.Fatalf("GetEntitlement: %v", err)
+	}
+	if ent.RetentionDays == nil || *ent.RetentionDays != 30 {
+		t.Errorf("billing off with an override: retention %v, want the override's 30", ent.RetentionDays)
 	}
 }
 

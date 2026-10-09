@@ -203,7 +203,7 @@ comes back every time somebody wants a price on a page.
 |---|---|---|
 | How much of what it sends is free? | `included_events` | pug — the catalog's allowance, or the org's override |
 | How is the rest split into tiers? | `TierUpTo` | pug — the catalog; a deal splits over its pinned base plan's |
-| How long is its history kept? | `retention_days` | pug — catalog, or the org's override |
+| How long is its history kept? | `retention_days` | pug — the org's override, else its plan's or free's ([`data-retention.md`](data-retention.md)) |
 | What does each tier cost, and the fee? | the rates | Dodo — the product's meters and fixed price (§4.1) |
 | What does this org pay? | the amount | Dodo — the subscription, mirrored read-only |
 
@@ -605,7 +605,7 @@ The order, most specific first:
 3. Overrides from the entitlement row apply on top of either, which is what
    gives a `custom` subscription its negotiated allowance, retention and name. A
    deal's apply only under its own live custom subscription, so a staged deal is
-   plain free until it is bought.
+   plain free until it is bought — bar retention's, which applies on its own.
 
 The whole rule, with billing switched off and the contract gate, is
 [`billing.md`](billing.md) §6.

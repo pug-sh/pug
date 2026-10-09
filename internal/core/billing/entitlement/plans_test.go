@@ -21,7 +21,7 @@ func TestCatalogIsPinned(t *testing.T) {
 		entitlement.SlugUsage: {
 			free:      100_000,
 			tierUpTo:  []int64{2_000_000, 15_000_000, 50_000_000, 100_000_000, 250_000_000},
-			retention: 365,
+			retention: 1_825,
 		},
 	}
 	plans := entitlement.Plans()

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
@@ -46,7 +47,7 @@ func TestNewServiceRefusesACatalogWithNothingOnSale(t *testing.T) {
 	t.Cleanup(func() { catalog = original })
 	catalog = []Plan{withRetired(original[0])}
 	// Construction never touches the pools, so nil reaches the check.
-	if _, err := NewService(nil, nil, true); err == nil {
+	if _, err := NewService(nil, nil, billing.Config{Enabled: true}); err == nil {
 		t.Fatal("NewService accepted a catalog with no plan on sale")
 	}
 }

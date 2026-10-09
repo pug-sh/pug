@@ -291,33 +291,12 @@ stopped returning them. That reconcile exists for GDPR erasure.
 The usage page already labels an id it cannot name "Unknown project (id…)".
 "Deleted project" would read better, as a copy change.
 
-## Reuse for retention
+## Retention
 
-Retention is not designed here. It can reuse two pieces of this design.
+Retention has its own design, [data-retention.md](data-retention.md). It runs as
+its own daily job, not inside this pass.
 
-1. **The ClickHouse stage.** Project deletion passes `project_id = ?`. Retention
-   would pass `project_id = ? and <time column> < ?`, over the tables that have
-   one.
-2. **The pass.** `pug cron purge` can run retention as a second task, held to
-   once a day through `cron_state`, the way `pug cron usage` holds its prune.
-
-What retention still has to decide:
-
-| Table | Can it be cut by time? |
-|---|---|
-| `events` | yes, by `occur_time` |
-| `dashboard_event_rollup_daily` | yes, by `day` |
-| `property_keys_event_buckets` | yes, by `bucket_time` |
-| `profiles`, `profile_aliases` | no. They hold current identity, not history. |
-| `distinct_id_activity_states`, `dashboard_session_rollup`, `event_names` | no. They hold merged states, so they need a rebuild or a rule of their own. |
-| `property_keys_profile_current` | rebuilds itself |
-
-Two more facts for that design. Retention can differ per org, so one month's
-partition mixes rows with different deadlines. Dropping partitions does not
-work; deletes do. And retention cut-offs sit far outside the meter's window, so
-retention never changes a counted period.
-
-GDPR erasure could move onto the stage too. It still blocks on
+GDPR erasure could move onto the ClickHouse stage. It still blocks on
 `mutations_sync = 1`, which is what decision 6 is about.
 
 ## Schema
@@ -578,7 +557,7 @@ since phase 2c. The `PROJECT_NOT_FOUND` follow-up in "Frontend" can come later.
 
 ## Not in this design
 
-1. Retention. See "Reuse for retention".
+1. Retention. See [data-retention.md](data-retention.md).
 2. Restoring a deleted project.
 3. Deleting an org or an account. Neither exists.
 4. Removing a project's NATS copies. That needs the project id in subjects.

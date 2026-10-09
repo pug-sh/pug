@@ -19,7 +19,7 @@ func noProviderCases(t *testing.T) (*fixture, map[string]*subscription.Service) 
 	unconfigured := subscription.NewService(f.pg.PgRO, f.pg.PgW, nil, f.entitlements)
 	// A provider wired and the switch off, which means an entitlement service built
 	// off, as the server builds it.
-	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, false)
+	off, err := entitlement.NewService(f.pg.PgRO, f.pg.PgW, corebilling.Config{})
 	if err != nil {
 		t.Fatalf("new entitlement service: %v", err)
 	}
