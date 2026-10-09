@@ -8,7 +8,7 @@ import (
 
 // Plan is a usage plan: what pug counts and how it splits a period's events into
 // tiers — never what it charges. Every rate lives on the provider's product, one
-// meter per tier (docs/architecture/payments.md §4). Go rather than
+// meter per tier (docs/architecture/payments.md §4.1). Go rather than
 // rows, so a change to what a plan includes goes through review and deploy.
 type Plan struct {
 	Slug        string
@@ -27,8 +27,9 @@ type Plan struct {
 }
 
 // Tiers is how many tiers the plan splits into, and so how many meters its
-// provider product must attach — by hand: nothing checks the product against it
-// (payments.md §4).
+// provider product must attach — by hand. The meter binary checks every catalog
+// product against it before stating anything, and reconcile every live deal's
+// (payments.md §4.1).
 func (p Plan) Tiers() int { return len(p.TierUpTo) + 1 }
 
 // OnSale reports whether checkout may offer the plan: every plan until it retires.
@@ -141,9 +142,9 @@ func copyPlan(p Plan) Plan {
 	return p
 }
 
-// validateCatalog checks what Resolve relies on, and the usage meter will, at wiring
-// time rather than on a request: a plan on sale, no plan named like a state, and every plan's
-// bounds strictly rising above its allowance.
+// validateCatalog checks what Resolve and the billing meter rely on, at wiring time
+// rather than on a request: a plan on sale, no plan named like a state, and every
+// plan's bounds strictly rising above its allowance.
 func validateCatalog(plans []Plan) error {
 	seen := map[string]bool{}
 	onSale := false

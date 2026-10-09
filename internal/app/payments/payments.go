@@ -1,7 +1,7 @@
 // Package payments builds the configured merchant of record. It is the one place
-// PUG_BILLING_PROVIDER is dispatched, so the server and the reconcile pass cannot
-// resolve the same variable differently, and it is where a second provider gets
-// wired in beside the first.
+// PUG_BILLING_PROVIDER is dispatched, so the server, the reconcile pass and the
+// meter pass cannot resolve the same variable differently, and it is where a
+// second provider gets wired in beside the first.
 //
 // It sits in app/ rather than deps/ because it is wiring, not infrastructure: a
 // deps package may see core only to implement one of its ports, and this
@@ -23,7 +23,7 @@ import (
 
 // ErrNoAPIKey is a provider named with no credentials behind it. Returned rather
 // than decided here: the server degrades to "no buy button", while for the
-// reconcile pass it is a misconfigured CronJob that must not exit 0.
+// reconcile and meter passes it is a misconfigured CronJob that must not exit 0.
 var ErrNoAPIKey = errors.New("payments: provider named but no API key configured")
 
 // New builds the named provider's wiring, or (nil, nil) when the name is empty --
@@ -59,5 +59,6 @@ func New(ctx context.Context, providerName string) (*corebilling.Payments, error
 	return &corebilling.Payments{
 		ProductBySlug: products,
 		Provider:      client,
+		Usage:         client,
 	}, nil
 }

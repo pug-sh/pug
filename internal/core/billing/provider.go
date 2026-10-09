@@ -1,13 +1,14 @@
 // Package billing is the seam between pug and a merchant of record: the
-// PaymentProvider port, the vocabulary a delivery is normalized into, and the
-// wiring that names a provider, beside Config, the PUG_BILLING_ENABLED switch
-// every billing binary reads. It does no I/O, and its only rules are the
-// vocabulary's own, such as past_due counting as live; that is what lets the
-// payment adapter in internal/deps import it and nothing else in core, which
-// depguard holds it to.
+// PaymentProvider and UsageMeter ports, the vocabulary a delivery is normalized
+// into, and the wiring that names a provider, beside Config, the
+// PUG_BILLING_ENABLED switch every billing binary reads. It does no I/O, and its
+// only rules are the vocabulary's own, such as past_due counting as live; that is
+// what lets the payment adapter in internal/deps import it and nothing else in
+// core, which depguard holds it to.
 //
 // What an org is entitled to send lives in ./entitlement; the subscription lifecycle
-// that buys it lives in ./subscription.
+// that buys it lives in ./subscription; the pass that states usage to the provider's
+// meters lives in ./meter.
 package billing
 
 import (
@@ -28,11 +29,16 @@ var (
 	// ErrSubscriptionNotFound is a subscription the provider no longer knows: a
 	// finding for the reconcile pass, not a read failure worth retrying every run.
 	ErrSubscriptionNotFound = errors.New("billing: the provider does not know this subscription")
+	// ErrMeteringMisconfigured is VerifyMetering having read the provider and found it
+	// would bill a statement wrongly. Kept apart from a failed read, or an outage
+	// reports every product it could not reach as misconfigured.
+	ErrMeteringMisconfigured = errors.New("billing: the provider's metering is misconfigured")
 )
 
-// PaymentProvider is the whole seam between pug and a merchant of record: nothing
-// else in this slice imports a provider package. The payload is deliberately not
-// abstracted — a common payload schema across providers cannot be maintained.
+// PaymentProvider is the seam's money half; UsageMeter, below, is its metering
+// half. Nothing else in this slice imports a provider package. The payload is
+// deliberately not abstracted — a common payload schema across providers cannot be
+// maintained.
 type PaymentProvider interface {
 	WebhookVerifier
 
@@ -160,9 +166,9 @@ const (
 
 // Live reports whether the subscription supplies a plan. past_due is live on
 // purpose: the card failed, the entitlement did not. The same set is hardcoded in
-// three queries and in the one-live index, pinned by
-// TestTheLiveStatusSetAgreesBetweenGoAndSQL, TestPastDueCountsAsBilled and
-// TestPastDueHoldsTheOneLiveSlot.
+// six queries and in the one-live index, pinned by
+// TestTheLiveStatusSetAgreesBetweenGoAndSQL, TestTheMetersLiveStatusSetAgreesWithGo,
+// TestPastDueCountsAsBilled and TestPastDueHoldsTheOneLiveSlot.
 func (s SubStatus) Live() bool {
 	switch s {
 	case SubStatusActive, SubStatusPastDue:
@@ -204,6 +210,8 @@ const Currency = "USD"
 // Payments is the provider wiring. Nil means no provider, which is legal.
 type Payments struct {
 	Provider PaymentProvider
+	// Usage is the provider's metering half, nil when it has none.
+	Usage UsageMeter
 	// ProductBySlug is the only product mapping. The webhook needs the inverse and
 	// scans for it: a stored second map could disagree, and a slug that maps one way
 	// takes money and then rejects the delivery.
@@ -221,3 +229,35 @@ func (p *Payments) Configured() bool { return p != nil && p.Provider != nil }
 // provider credentials, or billing switched off. Returned by subscription, never by an
 // adapter.
 var ErrNoProvider = errors.New("billing: no payments provider is configured")
+
+// UsageStatement is one org's per-tier event counts for its current provider
+// period, as the meter pass states them. TierEvents[k] is tier k+1's count.
+type UsageStatement struct {
+	CustomerID string
+	EventID    string
+	At         time.Time
+	TierEvents []int64
+}
+
+// MinFixedFeeCents is the least fixed fee a usage product may carry: the provider
+// refuses a payment under $1.00, so a product without it cannot collect a quiet
+// month. A check, not a price — the fee lives on the product.
+const MinFixedFeeCents = 100
+
+// UsageMeter is the half of a provider that bills usage: pug states counts and the
+// provider holds the rates. Kept apart from PaymentProvider so a provider that
+// cannot meter, and every test fake of one, need not grow it.
+type UsageMeter interface {
+	// IngestUsage states a customer's per-tier counts for the current period. Each
+	// tier's meter aggregates by max, so a repeated statement is inert and a lost
+	// one is superseded by the next. Nil only once the provider holds the
+	// statement: a request it accepted and then dropped is an error, or the meter
+	// acknowledges a statement that never landed.
+	IngestUsage(ctx context.Context, s UsageStatement) error
+	// VerifyMetering checks the provider bills what IngestUsage states: a max meter
+	// per tier, attached to every given product with no free threshold of its own
+	// and no other meter beside them, on a fixed fee of at least MinFixedFeeCents.
+	// Read-only. A finding wraps ErrMeteringMisconfigured and says what is wrong, for
+	// an operator; any other error is a read that failed.
+	VerifyMetering(ctx context.Context, tiers int, productIDs []string) error
+}

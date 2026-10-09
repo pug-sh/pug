@@ -58,6 +58,14 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) string {
 	return org.ID
 }
 
+// svcWithMeter is a service whose provider also meters usage.
+func (f *fixture) svcWithMeter(t *testing.T, provider corebilling.PaymentProvider, meter corebilling.UsageMeter) *subscription.Service {
+	t.Helper()
+	return subscription.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
+		Provider: provider, ProductBySlug: map[string]string{}, Usage: meter,
+	}, f.entitlements)
+}
+
 // svcWithProvider builds the paid service against provider, sharing the fixture's
 // pools and entitlement service, so a test that swaps the provider still sees the
 // rows it seeded.

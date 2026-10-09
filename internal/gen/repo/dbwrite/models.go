@@ -58,6 +58,24 @@ type BillingEntitlementHistory struct {
 	BasePlanSlug           pgtype.Text
 }
 
+type BillingMeterPeriod struct {
+	Acked              bool
+	Allowance          int64
+	CarryEvents        []int64
+	CreateTime         pgtype.Timestamptz
+	OrgID              string
+	OwnEvents          []int64
+	PeriodStart        pgtype.Timestamptz
+	PlanSlug           string
+	ProviderCustomerID string
+	ProviderSubID      string
+	StatedAt           pgtype.Timestamptz
+	SummedThrough      pgtype.Date
+	UpdateTime         pgtype.Timestamptz
+	WindowEnd          pgtype.Date
+	WindowStart        pgtype.Date
+}
+
 type BillingSubscription struct {
 	CreateTime         pgtype.Timestamptz
 	Currency           string

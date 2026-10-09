@@ -73,6 +73,10 @@ type Entitlement struct {
 	// splits it: billing off, free (nothing bills it), or an unknown plan. Empty is a
 	// plan of one unbounded tier.
 	TierUpTo []int64
+	// TierPlanSlug is the catalog plan TierUpTo comes from: a subscriber's own plan,
+	// or a deal's base plan. Empty exactly when TierUpTo is nil. What a record of the
+	// split keeps, since TiersFor answers it and "custom" names no layout.
+	TierPlanSlug string
 
 	ContractEndsAt time.Time
 	PeriodStart    time.Time
@@ -81,10 +85,15 @@ type Entitlement struct {
 	BillingEnabled bool
 
 	// The live provider subscription, if any; an empty SubStatus means none. These
-	// describe the MONEY: SubPeriodEnd is when the provider bills, not PeriodEnd.
+	// describe the MONEY: SubPeriodStart and SubPeriodEnd bound the period the
+	// provider bills, not PeriodStart and PeriodEnd. ProviderSubID names the
+	// subscription the rest describe, which a caller that read it separately checks
+	// it is still talking about.
 	SubStatus          billing.SubStatus
+	SubPeriodStart     time.Time
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
+	ProviderSubID      string
 }
 
 // Resolve is the whole rule set, as a pure function. sub is separate from Record
@@ -116,8 +125,10 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	}
 	if sub != nil {
 		ent.SubStatus = sub.Status
+		ent.SubPeriodStart = sub.CurrentPeriodStart
 		ent.SubPeriodEnd = sub.CurrentPeriodEnd
 		ent.ProviderCustomerID = sub.ProviderCustomerID
+		ent.ProviderSubID = sub.ProviderSubID
 	}
 	resolved := resolvePlan(&ent, rec, sub)
 	// Stays once past, where it answers "when did this lapse" rather than "when will
@@ -138,7 +149,7 @@ func resolvePlan(ent *Entitlement, rec Record, sub *Subscription) bool {
 	case sub == nil:
 		fromPlan(ent, SlugFree, FreeDisplayName, CurrentPlan(), StatusFree)
 		// Nothing bills a free org, so nothing splits its usage.
-		ent.TierUpTo = nil
+		ent.TierUpTo, ent.TierPlanSlug = nil, ""
 		return true
 	case sub.PlanSlug == SlugCustom:
 		// A deal is priced by its own product over the plan pinned on its row, which a
@@ -155,8 +166,8 @@ func resolvePlan(ent *Entitlement, rec Record, sub *Subscription) bool {
 			return true
 		}
 		// The catalog dropped a slug a paying org still holds. Keep its name with no
-		// allowance and no tiers: no banner can fire, and the usage meter is to report
-		// the org rather than guess a split. GetEntitlement logs it.
+		// allowance and no tiers: no banner can fire, and the billing meter is to
+		// report the org rather than guess a split. GetEntitlement logs it.
 		ent.Slug, ent.DisplayName, ent.Status = sub.PlanSlug, sub.PlanSlug, StatusActive
 		return false
 	}
@@ -167,7 +178,7 @@ func fromPlan(ent *Entitlement, slug, name string, p Plan, status Status) {
 	ent.IncludedEvents, ent.RetentionDays = i64(p.FreeEvents), i64(p.RetentionDays)
 	// Never nil for a plan: nil is "nothing splits it", and a plan with no bounds is
 	// one unbounded tier.
-	ent.TierUpTo = append([]int64{}, p.TierUpTo...)
+	ent.TierUpTo, ent.TierPlanSlug = append([]int64{}, p.TierUpTo...), p.Slug
 }
 
 // contractLapsed reports a deal whose end date has passed; a zero date is

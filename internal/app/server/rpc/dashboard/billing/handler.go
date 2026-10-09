@@ -14,6 +14,7 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/meter"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	billingv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1"
 )
@@ -23,16 +24,20 @@ import (
 type Server struct {
 	entitlements  *entitlement.Service
 	subscriptions *subscription.Service
+	meters        *meter.Reader
 }
 
 // NewServer reads the entitlement service off subscriptions rather than taking one
 // beside it. GetBillingStatus reports billing_enabled from one and purchasable from
 // the other, so a pair wired apart would contradict itself in a single response.
-func NewServer(subscriptions *subscription.Service) *Server {
+func NewServer(subscriptions *subscription.Service, meters *meter.Reader) *Server {
 	if subscriptions == nil {
 		panic("billing: subscription service is nil")
 	}
-	return &Server{entitlements: subscriptions.Entitlements(), subscriptions: subscriptions}
+	if meters == nil {
+		panic("billing: meter reader is nil")
+	}
+	return &Server{entitlements: subscriptions.Entitlements(), subscriptions: subscriptions, meters: meters}
 }
 
 func (s *Server) GetBillingStatus(
@@ -89,7 +94,42 @@ func (s *Server) GetBillingStatus(
 	if !ent.ContractEndsAt.IsZero() {
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
 	}
+	// Each tier's count as last stated to the provider. Quantities only: the rates
+	// live on the provider's product.
+	if ent.SubStatus.Live() && !ent.SubPeriodStart.IsZero() {
+		stated, ok, err := s.meters.Stated(ctx, orgID, ent.SubPeriodStart)
+		if err != nil {
+			return nil, internalErr()
+		}
+		if tiers, known := tierUsage(stated); ok && known {
+			resp.TierUsage = tiers
+			resp.TierUsageAsOf = timestamppb.New(stated.AsOf)
+		}
+	}
 	return connect.NewResponse(resp), nil
+}
+
+// tierUsage pairs each stated count with its tier's bounds, under the plan and the
+// allowance the period was split by — the bounds meter.Split used. False for a plan
+// the catalog no longer knows: bounds taken from any other would misdescribe what
+// the provider bills.
+func tierUsage(stated meter.Stated) ([]*billingv1.TierUsage, bool) {
+	bounds, ok := entitlement.TiersFor(stated.PlanSlug)
+	if !ok || len(bounds)+1 != len(stated.Tiers) {
+		return nil, false
+	}
+	out := make([]*billingv1.TierUsage, len(stated.Tiers))
+	var prev int64
+	for k, n := range stated.Tiers {
+		tier := &billingv1.TierUsage{FromEvents: proto.Int64(max(prev, stated.Allowance)), Events: proto.Int64(n)}
+		// The last tier is unbounded, so its bound stays absent rather than 0.
+		if k < len(bounds) {
+			tier.UpToEvents = wrapperspb.Int64(bounds[k])
+			prev = bounds[k]
+		}
+		out[k] = tier
+	}
+	return out, true
 }
 
 // The service logs and records at source, so the handler only translates.

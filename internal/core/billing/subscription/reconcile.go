@@ -46,8 +46,9 @@ type ReconcileReport struct {
 	// A live subscription against a product nothing maps to: a deploy is missing a
 	// product key, or an operator created a product without pasting its id.
 	UnmappedProduct int
-	// Rows the pass could not settle: a failed read or write, or a read that
-	// decoded to nothing. The only counter the CronJob fails on.
+	// Rows the pass could not settle: a failed read or write, a read that decoded
+	// to nothing, or a live deal's product the provider could not be asked about.
+	// The only counter the CronJob fails on.
 	Unreadable int
 	// A live subscription pug cannot apply: an unsold currency, no status, no
 	// customer, or a negative price. Counted rather than skipped, or the pass
@@ -62,6 +63,11 @@ type ReconcileReport struct {
 	// Deliveries that never settled: every retry failed, so nothing recorded a
 	// reason. The one outcome no other counter can represent.
 	Stranded int
+	// A live deal whose product does not bill every tier as the meter states it — a
+	// missing meter bills that tier at zero — or that is pinned to a plan the catalog
+	// does not know. A finding for an operator, who fixes the product in the
+	// provider's dashboard; a check that could not reach the provider is Unreadable.
+	MisconfiguredDeals int
 }
 
 // Reconcile is the backstop for the one thing the inbox cannot cover: a webhook
@@ -119,6 +125,26 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 
+	// A deal's product is built by hand, one per deal, so the meter's startup check —
+	// which covers the catalog's products — cannot see it.
+	if s.payments.Usage != nil {
+		deals, err := s.read.ListLiveCustomDealProducts(ctx, provider.Name())
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to list live deal products", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return report, err
+		}
+		for _, deal := range deals {
+			if err := ctx.Err(); err != nil {
+				slog.ErrorContext(ctx, "billing reconcile pass was cut short checking deals", slogx.Error(err),
+					slog.Int("checked", report.Checked))
+				telemetry.RecordError(ctx, err)
+				return report, err
+			}
+			s.checkDealMetering(ctx, deal, &report)
+		}
+	}
+
 	// The whole retention window, not since the last pass: a rejection is a person's
 	// to act on, so it is re-reported every run until the payload ages out.
 	rejected, err := s.read.ListRecentRejectedBillingWebhookDeliveries(ctx,
@@ -157,8 +183,38 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 		slog.Int("untracked", report.Untracked), slog.Int("entitled_unbilled", report.EntitledUnbilled),
 		slog.Int("unmapped_product", report.UnmappedProduct), slog.Int("unreadable", report.Unreadable),
 		slog.Int("two_live", report.TwoLive), slog.Int("rejected", report.Rejected),
-		slog.Int("stranded", report.Stranded), slog.Int("unapplicable", report.Unapplicable))
+		slog.Int("stranded", report.Stranded), slog.Int("unapplicable", report.Unapplicable),
+		slog.Int("misconfigured_deals", report.MisconfiguredDeals))
 	return report, nil
+}
+
+// checkDealMetering checks one live deal's product against the plan the deal is
+// pinned to: its product was made for that layout, which a reprice does not move.
+// A finding is counted for a person; a product the provider could not be asked
+// about is a read that failed, which fails the pass, or an outage would report
+// every live deal misconfigured and exit 0.
+func (s *Service) checkDealMetering(ctx context.Context, deal dbread.ListLiveCustomDealProductsRow, report *ReconcileReport) {
+	plan, ok := entitlement.PlanBySlug(deal.BasePlanSlug)
+	var err error
+	if ok {
+		err = s.payments.Usage.VerifyMetering(ctx, plan.Tiers(), []string{deal.ProviderProductID})
+	} else {
+		err = fmt.Errorf("%w: the deal is pinned to %q, which the catalog does not know",
+			billing.ErrMeteringMisconfigured, deal.BasePlanSlug)
+	}
+	switch {
+	case err == nil:
+	case errors.Is(err, billing.ErrMeteringMisconfigured):
+		report.MisconfiguredDeals++
+		slog.ErrorContext(ctx, "a live deal's product does not bill every tier", slogx.Error(err),
+			slog.String("org_id", deal.OrgID), slog.String("provider_product_id", deal.ProviderProductID))
+		telemetry.RecordError(ctx, err)
+	default:
+		report.Unreadable++
+		slog.ErrorContext(ctx, "failed to check a live deal's product with the provider", slogx.Error(err),
+			slog.String("org_id", deal.OrgID), slog.String("provider_product_id", deal.ProviderProductID))
+		telemetry.RecordError(ctx, err)
+	}
 }
 
 // reconcileOne re-reads one subscription and applies it. Errors are counted and

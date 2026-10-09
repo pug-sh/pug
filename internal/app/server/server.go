@@ -32,6 +32,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/webhook"
 	"github.com/pug-sh/pug/internal/cookieless"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
+	"github.com/pug-sh/pug/internal/core/billing/meter"
 	"github.com/pug-sh/pug/internal/core/billing/subscription"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
@@ -177,7 +178,7 @@ func start(ctx context.Context, d *deps) error {
 	// having no quota, with nothing failing. Same for a missing provider key.
 	slog.InfoContext(ctx, "billing", slog.Bool("enabled", d.billingEnabled), slog.String("provider", provider))
 	billingPath, billingHandler := billingv1connect.NewBillingServiceHandler(
-		billingrpc.NewServer(subscriptionSvc), handlerOpts)
+		billingrpc.NewServer(subscriptionSvc, meter.NewReader(dbread.New(d.pgW))), handlerOpts)
 
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(

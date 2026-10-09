@@ -32,8 +32,8 @@ func TestSubscriptionSuppliesThePlan(t *testing.T) {
 	if ent.SubStatus != corebilling.SubStatusActive {
 		t.Errorf("sub_status = %q, want active", ent.SubStatus)
 	}
-	if ent.ProviderCustomerID != "cus_1" {
-		t.Errorf("provider_customer_id = %q, want cus_1", ent.ProviderCustomerID)
+	if ent.ProviderCustomerID != "cus_1" || ent.ProviderSubID != "sub_1" {
+		t.Errorf("provider ids = %q / %q, want cus_1 / sub_1", ent.ProviderCustomerID, ent.ProviderSubID)
 	}
 }
 
@@ -220,12 +220,16 @@ func TestSubscriptionIgnoredWhenBillingIsOff(t *testing.T) {
 // the provider bills. They are different questions and must not be conflated.
 func TestSubscriptionPeriodIsNotTheQuotaWindow(t *testing.T) {
 	sub := liveSub(entitlement.SlugUsage)
+	sub.CurrentPeriodStart = time.Date(2026, 5, 28, 9, 30, 0, 0, time.UTC)
 	sub.CurrentPeriodEnd = time.Date(2026, 6, 28, 9, 30, 0, 0, time.UTC)
 	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
 	if ent.PeriodEnd.Equal(ent.SubPeriodEnd) {
 		t.Fatal("quota window end equals the billing date; they are different questions")
 	}
-	if !ent.SubPeriodEnd.Equal(sub.CurrentPeriodEnd) {
-		t.Errorf("sub_period_end = %s, want %s", ent.SubPeriodEnd, sub.CurrentPeriodEnd)
+	// The start is what the stated tiers are looked up by, so it must be the
+	// provider's period and not the quota window's.
+	if !ent.SubPeriodStart.Equal(sub.CurrentPeriodStart) || !ent.SubPeriodEnd.Equal(sub.CurrentPeriodEnd) {
+		t.Errorf("sub period = [%s, %s), want [%s, %s)",
+			ent.SubPeriodStart, ent.SubPeriodEnd, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 	}
 }

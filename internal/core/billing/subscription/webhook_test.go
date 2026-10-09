@@ -159,6 +159,49 @@ func TestTheLiveStatusSetAgreesBetweenGoAndSQL(t *testing.T) {
 	}
 }
 
+// The meter's work lists hardcode the live set as well. Dropping past_due from one
+// would stop metering an org in dunning, or stop checking its deal's product, or
+// call a deployment with only such orgs idle, with every test above still green.
+func TestTheMetersLiveStatusSetAgreesWithGo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	for _, status := range corebilling.AllSubStatuses() {
+		t.Run(string(status), func(t *testing.T) {
+			f := newFixture(t)
+			if _, err := f.pg.PgW.Exec(t.Context(),
+				`insert into billing_entitlements (org_id, plan_slug, provider_product_id, base_plan_slug)
+				 values ($1, 'custom', 'prod_deal', $2)`, f.orgID, entitlement.SlugUsage); err != nil {
+				t.Fatalf("seed deal: %v", err)
+			}
+			seedSubscription(t, f, "sub00000000000000070", entitlement.SlugCustom, string(status))
+
+			read := dbread.New(f.pg.PgW)
+			metered, err := read.ListLiveBillingSubscriptionsForMeter(t.Context(), fakeProviderName)
+			if err != nil {
+				t.Fatalf("ListLiveBillingSubscriptionsForMeter: %v", err)
+			}
+			deals, err := read.ListLiveCustomDealProducts(t.Context(), fakeProviderName)
+			if err != nil {
+				t.Fatalf("ListLiveCustomDealProducts: %v", err)
+			}
+			live, err := read.CountLiveBillingSubscriptions(t.Context())
+			if err != nil {
+				t.Fatalf("CountLiveBillingSubscriptions: %v", err)
+			}
+			for query, got := range map[string]bool{
+				"ListLiveBillingSubscriptionsForMeter": len(metered) == 1,
+				"ListLiveCustomDealProducts":           len(deals) == 1,
+				"CountLiveBillingSubscriptions":        live == 1,
+			} {
+				if got != status.Live() {
+					t.Errorf("status %q: %s finds it = %v, but Live() = %v", status, query, got, status.Live())
+				}
+			}
+		})
+	}
+}
+
 // past_due sits in 020's one-live index, not only in Live(). Every other collision
 // test pairs two active rows, so dropping past_due from that predicate would let an
 // org hold a second live subscription with nothing failing.
