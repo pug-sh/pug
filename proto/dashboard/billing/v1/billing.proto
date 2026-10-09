@@ -60,8 +60,9 @@ enum SubscriptionStatus {
   // No live subscription: free, comped, or no provider configured.
   SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
   SUBSCRIPTION_STATUS_ACTIVE = 1;
-  // The card failed and the provider is retrying. The entitlement is UNCHANGED:
-  // worth a banner, never a block.
+  // The card failed. The entitlement is UNCHANGED: worth a banner, never a block.
+  // Inside a grace period, grace_period_ends_at is when the provider stops waiting
+  // and holds or cancels the subscription; a hold stays PAST_DUE.
   SUBSCRIPTION_STATUS_PAST_DUE = 2;
   SUBSCRIPTION_STATUS_PAUSED = 3;
   SUBSCRIPTION_STATUS_CANCELLED = 4;
@@ -121,6 +122,12 @@ message GetBillingStatusResponse {
   // When the provider bills next: the MONEY's period, not the usage period above.
   // Absent when there is no live subscription.
   google.protobuf.Timestamp current_period_end = 10;
+  // When the provider stops waiting for the failed card -- the banner's "update
+  // your card by". Past it the provider holds the subscription (still PAST_DUE,
+  // this field then absent) or cancels it, and this can read as past until pug sees
+  // which. Set only beside PAST_DUE; absent with no grace window open: none
+  // configured, or one already ended in a hold.
+  google.protobuf.Timestamp grace_period_ends_at = 16;
   // Whether a checkout would open at all -- billing on, a provider configured, and
   // a product to check out against. Per plan it is PlanOption.purchasable.
   bool purchasable = 11;

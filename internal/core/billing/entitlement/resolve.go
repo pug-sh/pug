@@ -94,6 +94,10 @@ type Entitlement struct {
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
 	ProviderSubID      string
+	// When the provider's grace window for the failed card ends — the banner's
+	// "update your card by". Set only beside past_due, and can be past until the
+	// window's end lands; zero with no window open.
+	SubGracePeriodEndsAt time.Time
 }
 
 // Resolve is the whole rule set, as a pure function. sub is separate from Record
@@ -129,6 +133,11 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 		ent.SubPeriodEnd = sub.CurrentPeriodEnd
 		ent.ProviderCustomerID = sub.ProviderCustomerID
 		ent.ProviderSubID = sub.ProviderSubID
+		// Only a failing card has a window to date. Beside any other status a stored
+		// deadline is stale, and must not tell a paying customer to fix their card.
+		if sub.Status == billing.SubStatusPastDue {
+			ent.SubGracePeriodEndsAt = sub.GracePeriodEndsAt
+		}
 	}
 	resolved := resolvePlan(&ent, rec, sub)
 	// Stays once past, where it answers "when did this lapse" rather than "when will

@@ -248,6 +248,38 @@ func TestSubscriptionLine(t *testing.T) {
 			t.Errorf("subscription line %q is missing %q", full, want)
 		}
 	}
+
+	// The date the banner shows, for a support question about it.
+	grace := subscription(entitlement.Entitlement{
+		SubStatus:            corebilling.SubStatusPastDue,
+		SubGracePeriodEndsAt: time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC),
+	})
+	if !strings.Contains(grace, "grace ends 2026-07-04T00:00:00Z") {
+		t.Errorf("subscription line %q does not date the grace window", grace)
+	}
+}
+
+// pug's past_due holds the provider's past_due and on_hold alike, and only the
+// provider's word, beside the deadline it sent, tells an operator which a banner is.
+func TestReportShowsWhatTheProviderSaid(t *testing.T) {
+	ent := entitlement.Entitlement{Slug: "free", DisplayName: "Free", Status: entitlement.StatusFree}
+	held := dbread.BillingSubscription{
+		Currency: "USD", OrgID: "o_2f9k", PlanSlug: entitlement.SlugUsage, PriceCents: 2000,
+		Provider: "dodo", ProviderSubID: "sub_held", Status: "past_due", ProviderStatus: "on_hold",
+	}
+	inWindow := held
+	inWindow.ProviderSubID, inWindow.ProviderStatus = "sub_window", "past_due"
+	inWindow.GracePeriodEndsAt = pgtype.Timestamptz{Time: time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC), Valid: true}
+
+	out := renderWithSubs(t, ent, entitlement.Record{}, []dbread.BillingSubscription{inWindow, held}, nil)
+	for _, want := range []string{"provider status past_due", "grace ends 2026-07-04T00:00:00Z", "provider status on_hold"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("SUBSCRIPTIONS section is missing %q:\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, "grace ends"); n != 1 {
+		t.Errorf("%d grace deadlines printed, want only the dated window's:\n%s", n, out)
+	}
 }
 
 // The resolved entitlement nils a non-live subscription and resolves nothing while

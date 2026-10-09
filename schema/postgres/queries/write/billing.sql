@@ -75,18 +75,27 @@ where coalesce(processed_at, received_at) < @older_than;
 -- a payload ARRIVED, so this orders a delivery that overtakes another. org_id is
 -- never updated: attribution is decided once, on first sight.
 insert into billing_subscriptions (
-  currency, current_period_end, current_period_start, id, org_id, plan_slug,
-  price_cents, provider, provider_customer_id, provider_status, provider_sub_id,
-  provider_updated_at, status
+  currency, current_period_end, current_period_start, id, org_id, grace_period_ends_at,
+  plan_slug, price_cents, provider, provider_customer_id, provider_status,
+  provider_sub_id, provider_updated_at, status
 ) values (
-  @currency, @current_period_end, @current_period_start, @id, @org_id, @plan_slug,
-  @price_cents, @provider, @provider_customer_id, @provider_status, @provider_sub_id,
-  @provider_updated_at, @status
+  @currency, @current_period_end, @current_period_start, @id, @org_id, @grace_period_ends_at,
+  @plan_slug, @price_cents, @provider, @provider_customer_id, @provider_status,
+  @provider_sub_id, @provider_updated_at, @status
 )
 on conflict (provider, provider_sub_id) do update
 set currency = excluded.currency,
     current_period_end = excluded.current_period_end,
     current_period_start = excluded.current_period_start,
+    -- Only a delivery carries the grace deadline, and reconcile re-reads every
+    -- subscription each pass: a write that cannot see it keeps the stored one while
+    -- the subscription stays past_due, rather than erase it, and clears it otherwise.
+    -- A read that can tell the window has closed, as in a hold, says so and clears it.
+    grace_period_ends_at = case
+      when @grace_period_ends_at_known::boolean then excluded.grace_period_ends_at
+      when excluded.status = 'past_due' then billing_subscriptions.grace_period_ends_at
+      else null
+    end,
     plan_slug = excluded.plan_slug,
     price_cents = excluded.price_cents,
     provider_customer_id = excluded.provider_customer_id,
@@ -99,6 +108,17 @@ set currency = excluded.currency,
 where billing_subscriptions.provider_updated_at < excluded.provider_updated_at
    or (billing_subscriptions.provider_updated_at = excluded.provider_updated_at
        and billing_subscriptions.status in ('active', 'past_due'));
+
+-- name: FillBillingSubscriptionGracePeriodEndsAt :execrows
+-- A delivery the CAS refused, held back while a reconcile pass stamped the row,
+-- still carries the one thing no read can see. It dates a window the row has no date
+-- for, while the provider still reports the state it was sent in: never over a
+-- stored deadline, and never one already past, which a retry from an earlier window
+-- would carry.
+update billing_subscriptions set grace_period_ends_at = @grace_period_ends_at
+where provider = @provider and provider_sub_id = @provider_sub_id
+  and status = 'past_due' and provider_status = @provider_status
+  and grace_period_ends_at is null and @grace_period_ends_at::timestamptz > now();
 
 -- name: CreateBillingCheckoutSession :exec
 -- Written before the provider is called, because the ref has to be in the
