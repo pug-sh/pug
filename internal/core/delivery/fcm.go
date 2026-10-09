@@ -138,7 +138,8 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 			"campaign_id": campaign.ID,
 			"project_id":  campaign.ProjectID,
 		},
-		Token: device.Token.String,
+		// Fid is a Firebase Installation ID, not the registration token devices store.
+		Token: device.Token.String, //nolint:staticcheck
 	}
 
 	// Send the message

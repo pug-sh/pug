@@ -132,8 +132,8 @@ func importName(file *ast.File, path string) (string, bool) {
 			}
 			return imp.Name.Name, true
 		}
-		if i := strings.LastIndex(p, "/"); i >= 0 {
-			return p[i+1:], true
+		if _, after, ok := strings.CutLast(p, "/"); ok {
+			return after, true
 		}
 		return p, true
 	}

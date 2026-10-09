@@ -63,8 +63,8 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 
 	cancelled := subEvent(f.orgID, "sub00000000000000010", "prod_u", corebilling.SubStatusCancelled)
 	provider := &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
-		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000010": cancelled},
+		name:   fakeProviderName,
+		remote: map[string]corebilling.SubscriptionEvent{"sub00000000000000010": cancelled},
 	}
 	svc := f.svcWithProvider(t, provider)
 
@@ -163,7 +163,7 @@ func TestReconcileCountsUnreadableSubscriptions(t *testing.T) {
 	f, _ := newPaidFixture(t)
 	seedLiveSubscription(t, f, "sub00000000000000011", entitlement.SlugUsage)
 
-	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}, fail: true})
+	svc := f.svcWithProvider(t, &fetchProvider{name: fakeProviderName, fail: true})
 	report, err := svc.Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile returned an error; one unreadable row must not abandon the pass: %v", err)
@@ -184,8 +184,8 @@ func TestReconcileReportsAnUnmappedProduct(t *testing.T) {
 
 	orphan := subEvent(f.orgID, "sub00000000000000012", "prod_nobody_knows", corebilling.SubStatusActive)
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
-		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000012": orphan},
+		name:   fakeProviderName,
+		remote: map[string]corebilling.SubscriptionEvent{"sub00000000000000012": orphan},
 	})
 
 	report, err := svc.Reconcile(t.Context(), time.Now())
@@ -292,8 +292,8 @@ func TestReconcileCountsASubscriptionItCannotStore(t *testing.T) {
 	broken := subEvent(f.orgID, "sub00000000000000013", "prod_u", corebilling.SubStatusActive)
 	broken.ProviderCustomerID = ""
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
-		remote:       map[string]corebilling.SubscriptionEvent{"sub00000000000000013": broken},
+		name:   fakeProviderName,
+		remote: map[string]corebilling.SubscriptionEvent{"sub00000000000000013": broken},
 	})
 
 	report, err := svc.Reconcile(t.Context(), time.Now())
@@ -316,7 +316,7 @@ func TestReconcileCountsAnUndecodableSubscriptionAsUnreadable(t *testing.T) {
 	seedLiveSubscription(t, f, "sub00000000000000011", entitlement.SlugUsage)
 
 	// An empty remote map: the fetch succeeds and yields a zero event.
-	svc := f.svcWithProvider(t, &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}})
+	svc := f.svcWithProvider(t, &fetchProvider{name: fakeProviderName})
 	report, err := svc.Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
@@ -404,7 +404,7 @@ func TestReconcileWalksPastThePageBoundary(t *testing.T) {
 		t.Fatalf("seed subscriptions: %v", err)
 	}
 
-	provider := &fetchProvider{fakeProvider: fakeProvider{name: fakeProviderName}}
+	provider := &fetchProvider{name: fakeProviderName}
 	report, err := f.svcWithProvider(t, provider).Reconcile(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
@@ -424,8 +424,8 @@ func TestReconcileCountsASubscriptionTheProviderDoesNotKnow(t *testing.T) {
 	seedLiveSubscription(t, f, "sub00000000000000040", entitlement.SlugUsage)
 
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
-		fetchErr:     fmt.Errorf("%w: sub00000000000000040", corebilling.ErrSubscriptionNotFound),
+		name:     fakeProviderName,
+		fetchErr: fmt.Errorf("%w: sub00000000000000040", corebilling.ErrSubscriptionNotFound),
 	})
 	report, err := svc.Reconcile(t.Context(), time.Now())
 	if err != nil {
@@ -450,7 +450,7 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 	revived := subEvent(f.orgID, "sub00000000000000050", "prod_u", corebilling.SubStatusActive)
 	current := subEvent(f.orgID, "sub00000000000000051", "prod_u", corebilling.SubStatusActive)
 	svc := f.svcWithProvider(t, &fetchProvider{
-		fakeProvider: fakeProvider{name: fakeProviderName},
+		name: fakeProviderName,
 		remote: map[string]corebilling.SubscriptionEvent{
 			"sub00000000000000050": revived,
 			"sub00000000000000051": current,
@@ -504,7 +504,7 @@ func TestReconcileStopsOnACancelledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	provider := &cancellingProvider{fakeProvider: fakeProvider{name: fakeProviderName}, cancel: cancel}
+	provider := &cancellingProvider{name: fakeProviderName, cancel: cancel}
 
 	report, err := f.svcWithProvider(t, provider).Reconcile(ctx, time.Now())
 	if !errors.Is(err, context.Canceled) {
