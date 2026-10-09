@@ -28,6 +28,9 @@ type Subscription struct {
 
 	CurrentPeriodStart time.Time
 	CurrentPeriodEnd   time.Time
+	// The grace deadline the last delivery reported; zero for none. It can be past: it
+	// stays until a write says the window closed.
+	GracePeriodEndsAt time.Time
 }
 
 // liveSubscription reads the one row that can supply a plan. No row is the
@@ -76,6 +79,7 @@ func subscriptionFromRow(row dbread.BillingSubscription) (Subscription, bool) {
 		Currency:           row.Currency,
 		CurrentPeriodEnd:   row.CurrentPeriodEnd.Time,
 		CurrentPeriodStart: row.CurrentPeriodStart.Time,
+		GracePeriodEndsAt:  row.GracePeriodEndsAt.Time,
 		PlanSlug:           row.PlanSlug,
 		PriceCents:         row.PriceCents,
 		ProviderCustomerID: row.ProviderCustomerID,

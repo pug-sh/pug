@@ -59,6 +59,23 @@ func TestPastDueKeepsTheQuota(t *testing.T) {
 	}
 }
 
+// The banner dates a failing card. A deadline beside any other status is stale or
+// wrong, and a paying customer must never be told to update a card that works.
+func TestOnlyAPastDueSubscriptionCarriesItsGraceDeadline(t *testing.T) {
+	deadline := later.AddDate(0, 0, 3)
+	for status, want := range map[corebilling.SubStatus]time.Time{
+		corebilling.SubStatusPastDue: deadline,
+		corebilling.SubStatusActive:  {},
+	} {
+		sub := liveSub(entitlement.SlugUsage)
+		sub.Status, sub.GracePeriodEndsAt = status, deadline
+		ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
+		if !ent.SubGracePeriodEndsAt.Equal(want) {
+			t.Errorf("%s: grace deadline = %s, want %s", status, ent.SubGracePeriodEndsAt, want)
+		}
+	}
+}
+
 // Every not-live status supplies nothing and the org falls to what is beneath.
 func TestNotLiveSubscriptionSuppliesNothing(t *testing.T) {
 	for _, status := range corebilling.AllSubStatuses() {
