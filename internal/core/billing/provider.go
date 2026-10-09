@@ -90,7 +90,7 @@ type SubscriptionEvent struct {
 	ProviderSubID      string
 	ProviderCustomerID string
 	// ProductID is the provider's product. It is what resolves a plan slug — from
-	// config for a catalog tier, from the org's row for a negotiated deal.
+	// config for a catalog plan, from the org's row for a negotiated deal.
 	ProductID string
 	// OrgID is metadata.org_id, which a buyer can set on a static payment link. It
 	// attributes only beside a ProductID an operator staged, and cross-checks a confirm.

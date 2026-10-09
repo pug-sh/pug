@@ -298,7 +298,7 @@ var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be ap
 // reconcile and confirm — so they cannot disagree about what "newer" means. It
 // maps and writes inside the entitlement service's WithOrgLock, against the org's
 // row as read under that lock: a `billing clear` between the mapping and the write
-// would otherwise strand a live custom subscription on the free floor, which is
+// would otherwise store a live custom subscription with no row behind it, which is
 // what Clear's own guard exists to prevent. 0 applied is the CAS refusing an
 // older read.
 func (s *Service) applySubscription(
@@ -321,7 +321,7 @@ func (s *Service) applySubscription(
 		planSlug, err := s.planForProduct(event.ProductID, rec)
 		if err != nil {
 			// A product only has to resolve to GRANT a plan. Refusing a cancellation whose
-			// product left the config would strand the org on a tier it stopped paying for.
+			// product left the config would strand the org on a plan it stopped paying for.
 			if event.Status.Live() || !errors.Is(err, ErrNotPurchasable) {
 				return err
 			}

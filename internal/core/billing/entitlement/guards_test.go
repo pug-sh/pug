@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -25,7 +26,7 @@ func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	// plausible day and report success.
 	for _, day := range []int{32, 65537, -1} {
 		_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-			PlanSlug:  "growth",
+			PlanSlug:  entitlement.SlugFree,
 			AnchorDay: new(day),
 		})
 		if !errors.Is(err, entitlement.ErrAnchorDayRange) {
@@ -34,74 +35,9 @@ func TestAnchorDayOutOfRangeIsRefused(t *testing.T) {
 	}
 }
 
-func TestExtendTrialIsRefusedOnAGrantedPlan(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug: "growth",
-	}); err != nil {
-		t.Fatalf("set growth: %v", err)
-	}
-
-	// A granted plan resolves ahead of any trial date, so the write would store a
-	// date that changes nothing and still print as a success.
-	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, time.Now())
-	if !errors.Is(err, entitlement.ErrTrialOnGrantedPlan) {
-		t.Errorf("err = %v, want ErrTrialOnGrantedPlan", err)
-	}
-}
-
-// A slug the catalog has dropped resolves free without ever consulting a trial
-// date, so extending one would store a date that changes nothing — the same
-// silent success the guard above exists to prevent.
-func TestExtendTrialIsRefusedOnAnUnknownPlan(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	// Past SetPlan, which rejects the slug: only a catalog removal produces this.
-	if _, err := f.pg.PgW.Exec(t.Context(),
-		"insert into billing_entitlements (org_id, plan_slug) values ($1, 'growth-v0')", f.orgID); err != nil {
-		t.Fatalf("seed an unknown slug: %v", err)
-	}
-
-	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, time.Now())
-	if !errors.Is(err, entitlement.ErrTrialOnGrantedPlan) {
-		t.Errorf("err = %v, want ErrTrialOnGrantedPlan", err)
-	}
-}
-
-// "Extend" is measured from now, so a small --days on a trial with longer to run
-// would shorten it. The fixture org is long past its derived trial, so this sets
-// a live one first.
-func TestExtendTrialWillNotShortenOne(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	now := time.Now()
-	if _, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, now); err != nil {
-		t.Fatalf("extend to 30 days: %v", err)
-	}
-
-	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 3, now)
-	if !errors.Is(err, entitlement.ErrTrialNotExtended) {
-		t.Errorf("err = %v, want ErrTrialNotExtended; a 3-day extend cut a 30-day trial", err)
-	}
-
-	if _, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 400, now); !errors.Is(err, entitlement.ErrTrialDaysRange) {
-		t.Errorf("err = %v, want ErrTrialDaysRange", err)
-	}
-}
-
-// The contract belongs to the granted plan, so a downgrade must not leave a
+// The contract belongs to the deal, so a downgrade must not leave a
 // future date behind for a dashboard to render as "your Free plan ends...".
-func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
+func TestDowngradeToFreeClearsTheContract(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -109,10 +45,11 @@ func TestDowngradeToAFloorPlanClearsTheContract(t *testing.T) {
 	f := newFixture(t)
 	until := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:       "growth",
-		ContractEndsAt: new(until),
+		PlanSlug:          entitlement.SlugCustom,
+		ProviderProductID: new("prod_deal"),
+		ContractEndsAt:    new(until),
 	}); err != nil {
-		t.Fatalf("set growth: %v", err)
+		t.Fatalf("set the deal: %v", err)
 	}
 
 	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree})
@@ -159,20 +96,20 @@ func TestStoredRecordShowsAnOverrideThatIsNotInForce(t *testing.T) {
 	f := newFixture(t)
 	lapsed := time.Now().Add(-time.Hour)
 	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:       "scale",
+		PlanSlug:       entitlement.SlugFree,
 		IncludedEvents: new(int64(5_000_000)),
 		ContractEndsAt: new(lapsed),
 		Note:           new("annual wire, INV-123"),
 	}); err != nil {
-		t.Fatalf("set scale: %v", err)
+		t.Fatalf("set the comp: %v", err)
 	}
 
 	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if got := ent.IncludedEvents; got == nil || *got != 10_000 {
-		t.Errorf("resolved quota = %v, want the free floor after the contract lapsed", got)
+	if got := ent.IncludedEvents; got == nil || *got != entitlement.CurrentPlan().FreeEvents {
+		t.Errorf("resolved quota = %v, want the current allowance after the comp lapsed", got)
 	}
 
 	// The override the resolved answer hides is the one that carries onto the next
@@ -199,7 +136,7 @@ func TestAFailedHistoryAppendRollsBackTheChange(t *testing.T) {
 
 	f := newFixture(t)
 	_, err := f.svc.SetPlan(t.Context(), f.orgID, strings.Repeat("x", 200), entitlement.Change{
-		PlanSlug: "growth",
+		PlanSlug: entitlement.SlugFree,
 	})
 	if err == nil {
 		t.Fatal("SetPlan with an over-long actor: err = nil, want the history insert to fail")
@@ -215,45 +152,6 @@ func TestAFailedHistoryAppendRollsBackTheChange(t *testing.T) {
 	}
 }
 
-// The mirror of the contract clear: converting a trial to a paid tier must drop
-// the stored trial date, or a later downgrade to free resurrects it and the org
-// resolves TRIALING on the trial's much larger quota.
-func TestConvertingATrialToAPaidPlanClearsTheTrialDate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	if _, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 90, time.Now()); err != nil {
-		t.Fatalf("extend trial: %v", err)
-	}
-
-	converted, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"})
-	if err != nil {
-		t.Fatalf("convert to growth: %v", err)
-	}
-	if !converted.TrialEndsAt.IsZero() {
-		t.Errorf("trial_ends_at = %s after converting to growth, want it cleared", converted.TrialEndsAt)
-	}
-
-	// The date must stay gone through a later downgrade, which is where a stale
-	// one would actually bite.
-	back, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree})
-	if err != nil {
-		t.Fatalf("downgrade: %v", err)
-	}
-	if !back.TrialEndsAt.IsZero() {
-		t.Fatalf("trial_ends_at = %s after downgrading, want it cleared", back.TrialEndsAt)
-	}
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
-	if err != nil {
-		t.Fatalf("GetEntitlement: %v", err)
-	}
-	if ent.Status != entitlement.StatusFree {
-		t.Errorf("status = %s, want FREE; a stale trial date restored a trial quota", ent.Status)
-	}
-}
-
 // Clear takes the same org lock mutate does. Without it a concurrent SetPlan can
 // insert between the delete and the commit, leaving a stored entitlement whose
 // newest history entry says it was cleared.
@@ -263,8 +161,8 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 	}
 
 	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
-		t.Fatalf("set growth: %v", err)
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree}); err != nil {
+		t.Fatalf("set free: %v", err)
 	}
 
 	tx, err := f.pg.PgW.Begin(t.Context())
@@ -312,7 +210,7 @@ func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	until := time.Now().AddDate(0, 1, 0)
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
-		PlanSlug:          "growth",
+		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    new(int64(5_000_000)),
 		RetentionDays:     new(int64(3650)),
 		DisplayName:       new("Acme Enterprise"),
@@ -339,9 +237,9 @@ func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	}
 }
 
-// The mirror of the case above: a floor plan WITH a date is a comped grant, and
-// its overrides are the whole point of it.
-func TestAFloorPlanWithAContractKeepsItsOverrides(t *testing.T) {
+// The mirror of the case above: free WITH a date is a comp, and its overrides are
+// the whole point of it.
+func TestFreeWithAContractKeepsItsOverrides(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -367,7 +265,7 @@ func TestAFloorPlanWithAContractKeepsItsOverrides(t *testing.T) {
 // take the overrides with it — otherwise the deal a lapse would have ended
 // becomes permanent, and "downgrade to free" leaves a larger quota than doing
 // nothing at all.
-func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
+func TestDowngradeToFreeEndsTheOverrides(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -378,7 +276,7 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 	until := now.AddDate(0, 1, 0)
 
 	if _, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
-		PlanSlug:          "growth",
+		PlanSlug:          entitlement.SlugCustom,
 		IncludedEvents:    new(int64(5_000_000)),
 		DisplayName:       new("Acme Enterprise"),
 		ContractEndsAt:    new(until),
@@ -400,14 +298,14 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
-	if got := ent.IncludedEvents; got == nil || *got != 10_000 {
-		t.Errorf("quota five years after the downgrade = %v, want the free floor's 10000", got)
+	if got := ent.IncludedEvents; got == nil || *got != entitlement.CurrentPlan().FreeEvents {
+		t.Errorf("quota five years after the downgrade = %v, want the current allowance", got)
 	}
 	if ent.DisplayName != "Free" {
-		t.Errorf("display name = %q, want the free floor's, not the deal's", ent.DisplayName)
+		t.Errorf("display name = %q, want Free, not the deal's", ent.DisplayName)
 	}
 
-	// A comped grant on the floor names its own terms, and those survive.
+	// A comp on free names its own terms, and those survive.
 	pilot, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:       entitlement.SlugFree,
 		IncludedEvents: new(int64(5_000_000)),
@@ -421,30 +319,6 @@ func TestDowngradeToAFloorPlanEndsTheOverrides(t *testing.T) {
 	}
 }
 
-// The other way to store a trial date that resolves to nothing: the trial branch
-// is gated on the contract, so a lapsed one swallows the extension exactly as a
-// granted plan would.
-func TestExtendTrialIsRefusedOnALapsedContract(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	f := newFixture(t)
-	now := time.Now()
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:       entitlement.SlugFree,
-		IncludedEvents: new(int64(5_000_000)),
-		ContractEndsAt: new(now.Add(-time.Hour)),
-	}); err != nil {
-		t.Fatalf("set an ended pilot: %v", err)
-	}
-
-	_, err := f.svc.ExtendTrial(t.Context(), f.orgID, actor, 30, now)
-	if !errors.Is(err, entitlement.ErrTrialOnLapsedContract) {
-		t.Errorf("err = %v, want ErrTrialOnLapsedContract", err)
-	}
-}
-
 // An operator's display name is free text, and varchar(150) would otherwise
 // surface as a raw SQLSTATE logged as a pug fault.
 func TestOverLongDisplayNameIsRefused(t *testing.T) {
@@ -454,7 +328,7 @@ func TestOverLongDisplayNameIsRefused(t *testing.T) {
 
 	f := newFixture(t)
 	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:    "growth",
+		PlanSlug:    entitlement.SlugFree,
 		DisplayName: new(strings.Repeat("x", entitlement.MaxDisplayNameLen+1)),
 	})
 	if !errors.Is(err, entitlement.ErrDisplayNameLong) {
@@ -463,7 +337,7 @@ func TestOverLongDisplayNameIsRefused(t *testing.T) {
 
 	// varchar(150) bounds characters, so a multi-byte name at the limit fits.
 	rec, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug:    "growth",
+		PlanSlug:    entitlement.SlugFree,
 		DisplayName: new(strings.Repeat("\u00e9", entitlement.MaxDisplayNameLen)),
 	})
 	if err != nil {
@@ -496,7 +370,7 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, setErr = f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"})
+		_, setErr = f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree})
 	}()
 
 	testutil.WaitForAdvisoryLockWaiter(t, f.pg.PgRO, done)
@@ -518,7 +392,7 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 // The lock must come before the read. `for update` locks nothing while the org has
 // no row, so a read taken first would see an operator's uncommitted first grant as
 // no row at all, and a subscription writer would map a paid deal against that —
-// consuming the delivery and leaving the org on the free floor.
+// consuming the delivery and leaving the org on free.
 func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -538,8 +412,8 @@ func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
 		t.Fatalf("lock: %v", err)
 	}
 	if _, err := grant.Exec(ctx,
-		`insert into billing_entitlements (org_id, plan_slug, included_events_override, provider_product_id)
-		 values ($1, 'custom', 5000000, 'prod_acme')`, f.orgID); err != nil {
+		`insert into billing_entitlements (org_id, plan_slug, included_events_override, provider_product_id, base_plan_slug)
+		 values ($1, 'custom', 5000000, 'prod_acme', $2)`, f.orgID, entitlement.SlugUsage); err != nil {
 		t.Fatalf("stage the grant: %v", err)
 	}
 
@@ -607,7 +481,7 @@ func TestWithOrgLockCommitsOnlyWhenFnSucceeds(t *testing.T) {
 	err := f.svc.WithOrgLock(t.Context(), f.orgID, func(_ *dbread.Queries, w *dbwrite.Queries, _ entitlement.Record) error {
 		if _, err := w.UpsertBillingEntitlement(t.Context(), dbwrite.UpsertBillingEntitlementParams{
 			OrgID:    f.orgID,
-			PlanSlug: "growth",
+			PlanSlug: entitlement.SlugFree,
 		}); err != nil {
 			t.Fatalf("upsert: %v", err)
 		}
@@ -685,6 +559,12 @@ func TestSetPlanGuardTakesNoSecondConnection(t *testing.T) {
 	}
 	defer pool.Close()
 
+	// A staged deal, so leaving it runs the guard's read inside the tx.
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
+		PlanSlug: entitlement.SlugCustom, ProviderProductID: new("prod_deal"),
+	}); err != nil {
+		t.Fatalf("stage the deal: %v", err)
+	}
 	svc, err := entitlement.NewService(f.pg.PgRO, pool, true)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -692,7 +572,7 @@ func TestSetPlanGuardTakesNoSecondConnection(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	if _, err := svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree}); err != nil {
 		t.Fatalf("SetPlan on a one-connection pool: %v", err)
 	}
 }
@@ -708,42 +588,37 @@ func TestNegativeOverridesAreRefused(t *testing.T) {
 	negative := int64(-1)
 
 	_, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug: "growth", IncludedEvents: &negative,
+		PlanSlug: entitlement.SlugFree, IncludedEvents: &negative,
 	})
 	if !errors.Is(err, entitlement.ErrQuotaNegative) {
 		t.Errorf("err = %v, want ErrQuotaNegative", err)
 	}
 	_, err = f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{
-		PlanSlug: "growth", RetentionDays: &negative,
+		PlanSlug: entitlement.SlugFree, RetentionDays: &negative,
 	})
 	if !errors.Is(err, entitlement.ErrRetentionNegative) {
 		t.Errorf("err = %v, want ErrRetentionNegative", err)
 	}
 }
 
-// Rows outlive a tier dropped from the Go catalog, so failing the read would take
-// the dashboard down for whoever holds it.
-func TestAnEntitlementNamingAnUnknownPlanStillReads(t *testing.T) {
+// The row holds a state, never a plan: a usage plan is held only through a
+// subscription, and a removed tier has nowhere to live. The database refuses both,
+// below the service.
+func TestAnEntitlementHoldsOnlyAState(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	f := newFixture(t)
-	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: "growth"}); err != nil {
+	if _, err := f.svc.SetPlan(t.Context(), f.orgID, actor, entitlement.Change{PlanSlug: entitlement.SlugFree}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	// Straight to the column: no writer would store this.
-	if _, err := f.pg.PgW.Exec(t.Context(),
-		`update billing_entitlements set plan_slug = 'growth-v9' where org_id = $1`, f.orgID); err != nil {
-		t.Fatalf("rewrite the slug: %v", err)
-	}
-
-	ent, err := f.svc.GetEntitlement(t.Context(), f.orgID, time.Now())
-	if err != nil {
-		t.Fatalf("GetEntitlement on a slug the catalog dropped: %v", err)
-	}
-	// Fails open: "free, 10,000" would tell a paying customer they are over.
-	if ent.IncludedEvents != nil {
-		t.Errorf("included_events = %d, want absent", *ent.IncludedEvents)
+	for _, slug := range []string{entitlement.SlugUsage, "growth"} {
+		_, err := f.pg.PgW.Exec(t.Context(),
+			`update billing_entitlements set plan_slug = $2 where org_id = $1`, f.orgID, slug)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.ConstraintName != "billing_entitlements_plan_slug_state_check" {
+			t.Errorf("storing %q: err = %v, want the plan_slug_state_check constraint", slug, err)
+		}
 	}
 }

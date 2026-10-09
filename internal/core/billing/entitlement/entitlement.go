@@ -3,8 +3,8 @@ package entitlement
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -22,32 +22,28 @@ import (
 
 var (
 	ErrOrgNotFound = errors.New("billing: org not found")
-	// ErrPlanNotFound is a slug the catalog does not have. Distinct from
-	// ErrPlanRetired, which is a slug it has but will not hand to a new org.
+	// ErrPlanNotFound is a slug that is neither a state nor a catalog plan.
 	ErrPlanNotFound = errors.New("billing: plan not found")
-	ErrPlanRetired  = errors.New("billing: plan is retired and cannot be newly assigned")
-	// ErrTrialNotSettable guards the one slug that means nothing without a date.
-	ErrTrialNotSettable = errors.New("billing: use extend-trial to put an org on the trial plan")
-	ErrCustomNeedsQuota = errors.New("billing: a custom plan or a provider product requires an events override")
-	// ErrClearWouldStrandSubscription refuses to drop the quota a live custom
-	// subscription resolves from — by clearing the row or by falling back to a floor.
+	// ErrPlanNotAssignable is a catalog plan given to `pug billing set`: a usage plan
+	// is held only through a subscription, so a grant of one would bill nothing.
+	ErrPlanNotAssignable = errors.New("billing: a usage plan is held through a subscription; set free or custom")
+	// ErrCustomNeedsProduct is a deal with nothing to buy: its price is its product.
+	ErrCustomNeedsProduct = errors.New("billing: a custom plan requires a provider product; pass --provider-product")
+	// ErrProductNeedsCustom is a product on anything but a deal, which would offer a
+	// buy button for no deal at all.
+	ErrProductNeedsCustom = errors.New(`billing: a provider product belongs to a deal; pass --plan custom, or clear it with --provider-product ""`)
+	// ErrClearWouldStrandSubscription refuses to leave custom, or clear the row,
+	// while a live custom subscription maps its renewals through the row's product.
 	ErrClearWouldStrandSubscription = errors.New("billing: this org has a live custom subscription; cancel it with the provider first")
 	ErrAnchorDayRange               = errors.New("billing: anchor day must be between 1 and 31")
-	ErrQuotaNegative                = errors.New("billing: the events override must be positive")
-	ErrRetentionNegative            = errors.New("billing: the retention override must be positive")
-	ErrDisplayNameLong              = errors.New("billing: the display name override is too long")
-	// ErrTrialNotExtended guards a date that would move the org's trial end
-	// backwards, which "extend" must never do.
-	ErrTrialNotExtended = errors.New("billing: that trial end is not later than the current one")
-	ErrTrialDaysRange   = errors.New("billing: trial extension must be between 1 and 365 days")
-	// ErrTrialOnGrantedPlan guards a trial date that would resolve to nothing: a
-	// granted plan wins over it, so the write would look like it worked.
-	ErrTrialOnGrantedPlan = errors.New("billing: clear the granted plan before extending a trial")
-	// ErrTrialOnLapsedContract guards the same empty write reached the other way:
-	// a lapsed contract expires the trial branch too.
-	ErrTrialOnLapsedContract = errors.New("billing: clear the lapsed contract before extending a trial")
+	// ErrDealAllowanceZero is --events 0 on a deal, which would clear the override and
+	// fall back to its plan's allowance — the opposite of "bill from the first event".
+	ErrDealAllowanceZero = errors.New("billing: --events 0 on a deal falls back to its plan's free allowance; pass --events 1 to bill from the first event, or the allowance itself")
+	ErrQuotaNegative     = errors.New("billing: the events override must be positive")
+	ErrRetentionNegative = errors.New("billing: the retention override must be positive")
+	ErrDisplayNameLong   = errors.New("billing: the display name override is too long")
 	// ErrNoEntitlement is a clear that found nothing stored. The org is already on
-	// the derived floors, but nothing was deleted.
+	// the free allowance, but nothing was deleted.
 	ErrNoEntitlement = errors.New("billing: no entitlement stored for this org")
 	// ErrActorRequired guards the history's only attribution: the column rejects
 	// only the empty string, so a blank actor would store as unattributed.
@@ -62,17 +58,15 @@ type Service struct {
 	read *dbread.Queries
 	pgW  *pgxpool.Pool // every mutation runs in a tx of its own, alongside its history append
 	// billingEnabled mirrors PUG_BILLING_ENABLED. Off is a self-hosted install,
-	// where every org resolves with no quota at all.
+	// where every org resolves with no allowance at all.
 	billingEnabled bool
 }
 
-// NewService checks the floors at wiring time: mustPlan would otherwise panic
+// NewService checks the catalog at wiring time: CurrentPlan would otherwise panic
 // inside Resolve on a request, once per dashboard load.
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, billingEnabled bool) (*Service, error) {
-	for _, slug := range []string{SlugFree, SlugTrial} {
-		if _, ok := PlanBySlug(slug); !ok {
-			return nil, fmt.Errorf("billing: catalog is missing the floor plan %q", slug)
-		}
+	if err := validateCatalog(catalog); err != nil {
+		return nil, err
 	}
 	return &Service{
 		read:           dbread.New(pgRO),
@@ -98,27 +92,33 @@ func (s *Service) GetEntitlement(ctx context.Context, orgID string, now time.Tim
 		return Entitlement{}, err
 	}
 	rec := recordFromRow(row)
-	// Here rather than in Resolve, which is pure and has no ctx. A warning, not an
-	// error: only an operator can clear it, and every load would record one.
-	if rec.Present {
-		if _, known := PlanBySlug(rec.PlanSlug); !known {
-			slog.WarnContext(ctx, "entitlement names a plan the catalog does not know",
-				slog.String("org_id", orgID), slog.String("plan_slug", rec.PlanSlug))
-		}
-	}
-	// Only when billing is on: with it off every org resolves to the free floor
-	// regardless, so the read is a query per dashboard load that cannot change it.
+	// Only when billing is on: with it off every org resolves free regardless, so the
+	// read is a query per dashboard load that cannot change it.
 	var sub *Subscription
 	if s.billingEnabled {
 		if sub, err = s.liveSubscription(ctx, orgID); err != nil {
 			return Entitlement{}, err
+		}
+		// Here rather than in Resolve, which is pure and has no ctx. A warning, not an
+		// error: only an operator can fix it, and every load would record one. A deal
+		// resolves through the plan pinned on its row.
+		if sub != nil {
+			slug := sub.PlanSlug
+			if slug == SlugCustom {
+				slug = rec.BasePlanSlug
+			}
+			if _, known := PlanBySlug(slug); !known {
+				slog.WarnContext(ctx, "live subscription resolves to a plan the catalog does not know",
+					slog.String("org_id", orgID), slog.String("plan_slug", sub.PlanSlug),
+					slog.String("base_plan_slug", rec.BasePlanSlug))
+			}
 		}
 	}
 	return Resolve(row.OrgCreateTime.Time, rec, sub, now, s.billingEnabled), nil
 }
 
 // StoredRecord is the row as stored. `pug billing show` prints it beside the
-// resolved entitlement, where a lapsed deal's quota is invisible, and the
+// resolved entitlement, where a lapsed deal's allowance is invisible, and the
 // dashboard and subscription read it as well, chiefly for a deal's product id.
 func (s *Service) StoredRecord(ctx context.Context, orgID string) (Record, error) {
 	// The write pool, as liveSubscription reads: ConfirmCheckout maps a paid checkout
@@ -145,12 +145,12 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 	rec := Record{
 		Present:             true,
 		AnchorDay:           postgres.Int2ToInt(row.AnchorDay),
+		BasePlanSlug:        row.BasePlanSlug.String,
 		ContractEndsAt:      row.ContractEndsAt.Time,
 		DisplayNameOverride: row.DisplayNameOverride.String,
 		Note:                row.Note.String,
 		PlanSlug:            row.PlanSlug.String,
 		ProviderProductID:   row.ProviderProductID.String,
-		TrialEndsAt:         row.TrialEndsAt.Time,
 	}
 	if row.IncludedEventsOverride.Valid {
 		rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
@@ -187,18 +187,25 @@ func orKeep[T any](v *T, current T) T {
 	return *v
 }
 
-// SetPlan grants a plan, merging the change over whatever is stored. Returns the
-// row as it now stands.
+// AssignableSlugs is what SetPlan stores: the two states. A usage plan is held only
+// through a subscription, so it is never one of them.
+func AssignableSlugs() []string { return []string{SlugFree, SlugCustom} }
+
+// SetPlan puts an org on free or on a deal, merging the change over whatever is
+// stored. A usage plan is held only through a subscription, so it is never set
+// here. Returns the row as it now stands.
 func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Change) (Record, error) {
-	plan, ok := PlanBySlug(change.PlanSlug)
-	if !ok {
+	if !slices.Contains(AssignableSlugs(), change.PlanSlug) {
+		if _, ok := PlanBySlug(change.PlanSlug); ok {
+			return Record{}, ErrPlanNotAssignable
+		}
 		return Record{}, ErrPlanNotFound
-	}
-	if plan.Slug == SlugTrial {
-		return Record{}, ErrTrialNotSettable
 	}
 	if strings.TrimSpace(actor) == "" {
 		return Record{}, ErrActorRequired
+	}
+	if change.PlanSlug == SlugCustom && change.IncludedEvents != nil && *change.IncludedEvents == 0 {
+		return Record{}, ErrDealAllowanceZero
 	}
 
 	tx, w, cur, err := s.beginLocked(ctx, orgID)
@@ -208,19 +215,18 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	next := applyChange(cur, change)
-	// A retired tier keeps its existing holders but is never handed to somebody
-	// new, so this is checked against what the org held BEFORE the change.
-	if plan.Retired && cur.PlanSlug != plan.Slug {
-		return Record{}, ErrPlanRetired
+	// A deal's price is its product, and a product names a deal and nothing else —
+	// the rule the custom_needs_product constraint holds too, said as a sentence.
+	if next.PlanSlug == SlugCustom && next.ProviderProductID == "" {
+		return Record{}, ErrCustomNeedsProduct
 	}
-	// The product id resolves a checkout to the custom tier, so it needs the same
-	// quota the custom slug does — or the org buys the deal and resolves free.
-	if (next.PlanSlug == SlugCustom || next.ProviderProductID != "") && next.IncludedEventsOverride <= 0 {
-		return Record{}, ErrCustomNeedsQuota
+	if next.PlanSlug != SlugCustom && next.ProviderProductID != "" {
+		return Record{}, ErrProductNeedsCustom
 	}
-	// The stranding Clear refuses, reached by a floor plan instead. Through the tx,
-	// as Clear reads it: off the pool this waits on a connection it is holding.
-	if next.IncludedEventsOverride <= 0 {
+	// A live custom subscription maps its renewals through this row's product, so
+	// leaving custom under one, or swapping the product, strands it. Through the tx, as
+	// Clear reads it: off the pool this waits on a connection it is holding.
+	if cur.PlanSlug == SlugCustom && (next.PlanSlug != SlugCustom || next.ProviderProductID != cur.ProviderProductID) {
 		sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
 		if err != nil {
 			return Record{}, err
@@ -247,58 +253,8 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	return s.storeRecord(ctx, tx, w, orgID, actor, next)
 }
 
-// ExtendTrial moves the org's trial end to days from now, which is the only thing
-// that puts a trial_ends_at on the row: every other trial is derived from org age.
-func (s *Service) ExtendTrial(ctx context.Context, orgID, actor string, days int, now time.Time) (Record, error) {
-	if days <= 0 || days > MaxTrialDays {
-		return Record{}, ErrTrialDaysRange
-	}
-	if strings.TrimSpace(actor) == "" {
-		return Record{}, ErrActorRequired
-	}
-
-	tx, w, cur, err := s.beginLocked(ctx, orgID)
-	if err != nil {
-		return Record{}, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// The trial being extended is usually the derived one, which the locked row
-	// cannot see. Through the tx: a lagging replica would report ErrOrgNotFound.
-	orgCreateTime, err := orgCreateTime(ctx, dbread.New(tx), orgID)
-	if err != nil {
-		return Record{}, err
-	}
-	// A granted plan resolves ahead of any trial date, so the write would change
-	// nothing and still print as a success. An unknown slug counts as granted.
-	if cur.Present {
-		if plan, ok := PlanBySlug(cur.PlanSlug); !ok || !plan.isFloor() {
-			return Record{}, ErrTrialOnGrantedPlan
-		}
-		// A lapsed contract expires the trial branch too, so the date would be just
-		// as empty — a comped pilot that has ended needs a fresh grant, not a trial.
-		if contractLapsed(cur, now) {
-			return Record{}, ErrTrialOnLapsedContract
-		}
-	}
-	next := cur
-	next.Present = true
-	next.TrialEndsAt = now.AddDate(0, 0, days).UTC().Truncate(time.Second)
-	// "Extend" is measured from now, so a small --days on a trial with longer to
-	// run would shorten it. Refuse rather than silently cut it short.
-	if !next.TrialEndsAt.After(trialEnd(orgCreateTime, cur)) {
-		return Record{}, ErrTrialNotExtended
-	}
-	// An org with no row has no plan either, and plan_slug is NOT NULL. The
-	// floor is the honest value: extending a trial grants no tier.
-	if next.PlanSlug == "" {
-		next.PlanSlug = SlugFree
-	}
-	return s.storeRecord(ctx, tx, w, orgID, actor, next)
-}
-
-// Clear deletes the row, returning the org to the derived floors. Recorded in
-// the history as a snapshot with no values.
+// Clear deletes the row, returning the org to the free allowance. Recorded in the
+// history as a snapshot with no values.
 func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	if strings.TrimSpace(actor) == "" {
 		return ErrActorRequired
@@ -315,9 +271,10 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 	if err := lockOrg(ctx, w, orgID); err != nil {
 		return err
 	}
-	// A live custom subscription resolves its quota from the row this deletes, so
-	// clearing it drops an org that is still being charged to the free floor. Under
-	// the lock, which a subscription writer takes before it maps its product.
+	// A live custom subscription takes its negotiated terms from the row this deletes,
+	// and maps its renewals through the row's product, so clearing it strands a deal
+	// that is still being charged. Under the lock, which a subscription writer takes
+	// before it maps its product.
 	sub, err := readLiveSubscription(ctx, dbread.New(tx), orgID)
 	if err != nil {
 		return err
@@ -364,8 +321,8 @@ func (s *Service) Clear(ctx context.Context, orgID, actor string) error {
 // exist reads the same way.
 //
 // fn decides from cur and reaches the database only through r and w. It must not call
-// back into this service: SetPlan, ExtendTrial, Clear and WithOrgLock would queue
-// for this lock on a second connection until their context gave up, a wait
+// back into this service: SetPlan, Clear and WithOrgLock would queue for this
+// lock on a second connection until their context gave up, a wait
 // Postgres never reports as a deadlock because this transaction is idle, not
 // waiting; and GetEntitlement or StoredRecord would take a second pool connection
 // while this one is held. fn's error comes back unlogged, where a failure to
@@ -383,10 +340,10 @@ func (s *Service) WithOrgLock(ctx context.Context, orgID string, fn func(r *dbre
 	return s.commit(ctx, tx, orgID)
 }
 
-// beginLocked opens the locked transaction SetPlan, ExtendTrial and WithOrgLock
-// run in and hands back the row as it stands. Clear takes the same lock without
-// the read, since it deletes the row rather than merging onto it. The caller owns
-// the rollback.
+// beginLocked opens the locked transaction SetPlan and WithOrgLock run in and
+// hands back the row as it stands. Clear takes the same lock without the read,
+// since it deletes the row rather than merging onto it. The caller owns the
+// rollback.
 func (s *Service) beginLocked(ctx context.Context, orgID string) (pgx.Tx, *dbwrite.Queries, Record, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
@@ -476,33 +433,18 @@ func (s *Service) commit(ctx context.Context, tx pgx.Tx, orgID string) error {
 	return nil
 }
 
-// orgCreateTime reads the org's age, which is what the derived trial is measured
-// from.
-func orgCreateTime(ctx context.Context, r *dbread.Queries, orgID string) (time.Time, error) {
-	org, err := r.GetOrgByID(ctx, orgID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return time.Time{}, ErrOrgNotFound
-		}
-		slog.ErrorContext(ctx, "failed to read the org create time", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return time.Time{}, err
-	}
-	return org.CreateTime.Time, nil
-}
-
 // recordFromWriteRow maps the writer-side row, which GetBillingEntitlementForUpdate
 // and UpsertBillingEntitlement both return.
 func recordFromWriteRow(row dbwrite.BillingEntitlement) Record {
 	rec := Record{
 		Present:             true,
 		AnchorDay:           postgres.Int2ToInt(row.AnchorDay),
+		BasePlanSlug:        row.BasePlanSlug.String,
 		ContractEndsAt:      row.ContractEndsAt.Time,
 		DisplayNameOverride: row.DisplayNameOverride.String,
 		Note:                row.Note,
 		PlanSlug:            row.PlanSlug,
 		ProviderProductID:   row.ProviderProductID.String,
-		TrialEndsAt:         row.TrialEndsAt.Time,
 	}
 	if row.IncludedEventsOverride.Valid {
 		rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
@@ -525,22 +467,26 @@ func applyChange(cur Record, c Change) Record {
 	next.Note = orKeep(c.Note, cur.Note)
 	next.ProviderProductID = orKeep(c.ProviderProductID, cur.ProviderProductID)
 
-	if plan, ok := PlanBySlug(next.PlanSlug); ok {
-		if !plan.isFloor() {
-			// Converting to a paid tier ends the trial, or the state depends on which
-			// of two dates the resolver consults first.
-			next.TrialEndsAt = time.Time{}
-		} else if c.ContractEndsAt == nil || c.ContractEndsAt.IsZero() {
-			// The contract belongs to the granted plan, so a floor tier ends it and the
-			// overrides it gated. A real date here is a comped grant and keeps them.
-			next.ContractEndsAt = time.Time{}
-			next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
-			next.RetentionDaysOverride = orKeep(c.RetentionDays, 0)
-			next.DisplayNameOverride = orKeep(c.DisplayName, "")
-			// Dropped with them: a product id left behind would keep offering a buy
-			// button for the deal that just ended.
-			next.ProviderProductID = orKeep(c.ProviderProductID, "")
-		}
+	if next.PlanSlug == SlugFree && (c.ContractEndsAt == nil || c.ContractEndsAt.IsZero()) {
+		// The contract belongs to the deal, so free ends it and the overrides it gated.
+		// A real date here is a comped grant and keeps them.
+		next.ContractEndsAt = time.Time{}
+		next.IncludedEventsOverride = orKeep(c.IncludedEvents, 0)
+		next.RetentionDaysOverride = orKeep(c.RetentionDays, 0)
+		next.DisplayNameOverride = orKeep(c.DisplayName, "")
+		// Dropped with them: a product id left behind would keep offering a buy button
+		// for the deal that just ended.
+		next.ProviderProductID = orKeep(c.ProviderProductID, "")
+	}
+
+	// A product carries one meter per tier of the plan it was made against, so the pin
+	// is taken with the product: a new deal or a new product is made against the
+	// current plan, and a renewal on the same product keeps its own.
+	switch {
+	case next.PlanSlug != SlugCustom:
+		next.BasePlanSlug = ""
+	case cur.PlanSlug != SlugCustom || next.ProviderProductID != cur.ProviderProductID || cur.BasePlanSlug == "":
+		next.BasePlanSlug = CurrentPlan().Slug
 	}
 	return next
 }
@@ -548,6 +494,7 @@ func applyChange(cur Record, c Change) Record {
 func upsertParams(orgID string, rec Record) dbwrite.UpsertBillingEntitlementParams {
 	return dbwrite.UpsertBillingEntitlementParams{
 		AnchorDay:              postgres.NewOptionalInt2(rec.AnchorDay),
+		BasePlanSlug:           postgres.NewOptionalText(rec.BasePlanSlug),
 		ContractEndsAt:         postgres.NewOptionalTimestamptz(rec.ContractEndsAt),
 		DisplayNameOverride:    postgres.NewOptionalText(rec.DisplayNameOverride),
 		IncludedEventsOverride: postgres.NewOptionalInt8(rec.IncludedEventsOverride),
@@ -556,7 +503,6 @@ func upsertParams(orgID string, rec Record) dbwrite.UpsertBillingEntitlementPara
 		PlanSlug:               rec.PlanSlug,
 		ProviderProductID:      postgres.NewOptionalText(rec.ProviderProductID),
 		RetentionDaysOverride:  postgres.NewOptionalInt8(rec.RetentionDaysOverride),
-		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 }
 
@@ -564,6 +510,7 @@ func appendHistory(ctx context.Context, w *dbwrite.Queries, orgID, actor string,
 	params := dbwrite.InsertBillingEntitlementHistoryParams{
 		Actor:                  actor,
 		AnchorDay:              postgres.NewOptionalInt2(rec.AnchorDay),
+		BasePlanSlug:           postgres.NewOptionalText(rec.BasePlanSlug),
 		ContractEndsAt:         postgres.NewOptionalTimestamptz(rec.ContractEndsAt),
 		DisplayNameOverride:    postgres.NewOptionalText(rec.DisplayNameOverride),
 		ID:                     xid.New().String(),
@@ -573,7 +520,6 @@ func appendHistory(ctx context.Context, w *dbwrite.Queries, orgID, actor string,
 		PlanSlug:               postgres.NewOptionalText(rec.PlanSlug),
 		ProviderProductID:      postgres.NewOptionalText(rec.ProviderProductID),
 		RetentionDaysOverride:  postgres.NewOptionalInt8(rec.RetentionDaysOverride),
-		TrialEndsAt:            postgres.NewOptionalTimestamptz(rec.TrialEndsAt),
 	}
 	if err := w.InsertBillingEntitlementHistory(ctx, params); err != nil {
 		slog.ErrorContext(ctx, "failed to append the entitlement history", slogx.Error(err),
@@ -589,6 +535,9 @@ type HistoryEntry struct {
 	Actor     string
 	ChangedAt time.Time
 	Record    Record
+	// When the trial ended, on a snapshot written before usage billing removed it.
+	// History keeps what was true then; nothing writes it now.
+	TrialEndsAt time.Time
 }
 
 // MaxHistoryRows caps one History read. An entitlement changes a handful of
@@ -612,12 +561,12 @@ func (s *Service) History(ctx context.Context, orgID string) ([]HistoryEntry, er
 		rec := Record{
 			Present:             row.PlanSlug.Valid,
 			AnchorDay:           postgres.Int2ToInt(row.AnchorDay),
+			BasePlanSlug:        row.BasePlanSlug.String,
 			ContractEndsAt:      row.ContractEndsAt.Time,
 			DisplayNameOverride: row.DisplayNameOverride.String,
 			Note:                row.Note,
 			PlanSlug:            row.PlanSlug.String,
 			ProviderProductID:   row.ProviderProductID.String,
-			TrialEndsAt:         row.TrialEndsAt.Time,
 		}
 		if row.IncludedEventsOverride.Valid {
 			rec.IncludedEventsOverride = row.IncludedEventsOverride.Int64
@@ -625,7 +574,9 @@ func (s *Service) History(ctx context.Context, orgID string) ([]HistoryEntry, er
 		if row.RetentionDaysOverride.Valid {
 			rec.RetentionDaysOverride = row.RetentionDaysOverride.Int64
 		}
-		out = append(out, HistoryEntry{Actor: row.Actor, ChangedAt: row.ChangedAt.Time, Record: rec})
+		out = append(out, HistoryEntry{
+			Actor: row.Actor, ChangedAt: row.ChangedAt.Time, Record: rec, TrialEndsAt: row.TrialEndsAt.Time,
+		})
 	}
 	return out, nil
 }

@@ -17,7 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/xid"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -308,12 +308,10 @@ func migrate(ctx context.Context, connStr string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		return errors.New("unable to determine source file path")
+	dir, err := postgresMigrationsDir()
+	if err != nil {
+		return err
 	}
-	dir := filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "postgres", "migrations")
-
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS(dir))
 	if err != nil {
 		return err
@@ -321,4 +319,31 @@ func migrate(ctx context.Context, connStr string) error {
 
 	_, err = provider.Up(ctx)
 	return err
+}
+
+func postgresMigrationsDir() (string, error) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("unable to determine source file path")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "postgres", "migrations"), nil
+}
+
+// PostgresMigrations steps one test database through the migrations SetupPostgres
+// applied, for a test of a migration's data rewrite: the database arrives fully
+// migrated, so step it down, seed rows in the older shape, then apply the next one.
+func PostgresMigrations(t *testing.T, pg *TestPostgres) *goose.Provider {
+	t.Helper()
+	dir, err := postgresMigrationsDir()
+	if err != nil {
+		t.Fatalf("testutil: %v", err)
+	}
+	// Over the test's own pool: closing this handle leaves the pool open.
+	db := stdlib.OpenDBFromPool(pg.PgW)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS(dir))
+	if err != nil {
+		t.Fatalf("testutil: goose provider: %v", err)
+	}
+	return provider
 }

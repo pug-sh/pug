@@ -66,15 +66,14 @@ func (s *Server) GetBillingStatus(
 		Plan: &billingv1.Plan{
 			Slug:        proto.String(ent.Slug),
 			DisplayName: proto.String(ent.DisplayName),
-			Currency:    proto.String(ent.Currency),
-			PriceCents:  int64Value(ent.PriceCents),
 		},
 		PeriodEnd:   timestamppb.New(ent.PeriodEnd),
 		PeriodStart: timestamppb.New(ent.PeriodStart),
 		Status:      statusToRPC(ent.Status).Enum(),
 	}
-	// Absent means NO quota, which a disabled deployment and an unresolvable plan both
-	// report. A zero would tell every org on a self-hosted install it is over.
+	// The free allowance. Absent means NONE, which a disabled deployment and an
+	// unresolvable plan both report. A zero would tell every org on a self-hosted
+	// install it is over.
 	resp.IncludedEvents = int64Value(ent.IncludedEvents)
 	// Absent means no bound, never zero: nothing prunes on this number, so a 0
 	// would promise a deletion that has not happened and cannot.
@@ -86,9 +85,6 @@ func (s *Server) GetBillingStatus(
 	resp.Manageable = proto.Bool(s.subscriptions.Manageable(ctx, orgID))
 	if !ent.SubPeriodEnd.IsZero() {
 		resp.CurrentPeriodEnd = timestamppb.New(ent.SubPeriodEnd)
-	}
-	if !ent.TrialEndsAt.IsZero() {
-		resp.TrialEndsAt = timestamppb.New(ent.TrialEndsAt)
 	}
 	if !ent.ContractEndsAt.IsZero() {
 		resp.ContractEndsAt = timestamppb.New(ent.ContractEndsAt)
@@ -102,8 +98,8 @@ func internalErr() error {
 }
 
 // int64Value keeps an absent number absent on the wire: protoc-gen-es renders an
-// edition-2023 singular scalar as a non-optional bigint, so "no quota" would land
-// in the dashboard as a quota of zero.
+// edition-2023 singular scalar as a non-optional bigint, so "no allowance" would
+// land in the dashboard as an allowance of zero.
 func int64Value(v *int64) *wrapperspb.Int64Value {
 	if v == nil {
 		return nil
@@ -233,8 +229,9 @@ func (s *Server) CreatePortalSession(
 	}), nil
 }
 
-// ListPlans returns the tiers this deployment sells. Never a product id: the
-// dashboard renders a buy button from `purchasable` alone.
+// ListPlans returns what this deployment sells the org: the plans on sale, and its
+// own deal. Never a product id: the dashboard renders a buy button from
+// `purchasable` alone.
 func (s *Server) ListPlans(
 	ctx context.Context,
 	req *connect.Request[billingv1.ListPlansRequest],
@@ -255,10 +252,8 @@ func (s *Server) ListPlans(
 	plans := make([]*billingv1.PlanOption, 0, len(options))
 	for _, opt := range options {
 		plans = append(plans, &billingv1.PlanOption{
-			Currency:       proto.String(opt.Currency),
 			DisplayName:    proto.String(opt.DisplayName),
 			IncludedEvents: int64Value(opt.IncludedEvents),
-			PriceCents:     int64Value(opt.PriceCents),
 			Purchasable:    proto.Bool(opt.Purchasable),
 			RetentionDays:  int64Value(opt.RetentionDays),
 			Slug:           proto.String(opt.Slug),
@@ -295,8 +290,6 @@ func checkoutErr(err error, orgID, planSlug string) error {
 
 func statusToRPC(s entitlement.Status) billingv1.BillingStatus {
 	switch s {
-	case entitlement.StatusTrialing:
-		return billingv1.BillingStatus_BILLING_STATUS_TRIALING
 	case entitlement.StatusActive:
 		return billingv1.BillingStatus_BILLING_STATUS_ACTIVE
 	case entitlement.StatusFree:

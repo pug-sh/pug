@@ -157,8 +157,9 @@ func start(ctx context.Context, d *deps) error {
 	usagePath, usageHandler := usagev1connect.NewUsageServiceHandler(
 		usage.NewServer(coreusage.NewService(d.pgRo, d.pgW)), handlerOpts)
 
-	// Postgres only: an entitlement is a row plus the clock, and the quota it
-	// carries enforces nothing, so no ingestion or ClickHouse path is involved.
+	// Postgres only: an entitlement is a row, a subscription and the clock, and the
+	// allowance it carries enforces nothing, so no ingestion or ClickHouse path is
+	// involved.
 	entitlementSvc, err := entitlement.NewService(d.pgRo, d.pgW, d.billingEnabled)
 	if err != nil {
 		return fmt.Errorf("entitlement service: %w", err)

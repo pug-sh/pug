@@ -43,8 +43,8 @@ func newFixture(t *testing.T) *fixture {
 	}
 }
 
-// dbwriteOrg creates a backdated org, so a test asserting a granted plan is not
-// also fighting a live trial window.
+// dbwriteOrg creates an org backdated to a fixed date, so the anchor and every
+// period derived from it do not depend on the day the suite runs.
 func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) string {
 	t.Helper()
 	org, err := dbwrite.New(pg.PgW).CreateOrg(t.Context(), dbwrite.CreateOrgParams{
@@ -64,7 +64,7 @@ func dbwriteOrg(t *testing.T, pg *testutil.TestPostgres) string {
 func (f *fixture) svcWithProvider(t *testing.T, provider corebilling.PaymentProvider) *subscription.Service {
 	t.Helper()
 	return subscription.NewService(f.pg.PgRO, f.pg.PgW, &corebilling.Payments{
-		ProductBySlug: map[string]string{"growth": "prod_growth", "scale": "prod_scale"},
+		ProductBySlug: map[string]string{entitlement.SlugUsage: "prod_u"},
 		Provider:      provider,
 		ReturnURL:     "https://app.example/settings/billing",
 	}, f.entitlements)

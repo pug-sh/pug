@@ -40,7 +40,7 @@ const (
 	// spike is rarely the admin. The meter writes it, no RPC does.
 	ResourceUsage Resource = "usage"
 
-	// ResourceBilling is an org's entitlement — its plan, quota and period — and the
+	// ResourceBilling is an org's entitlement — its plan, allowance and period — and the
 	// checkout and portal sessions that buy one. Reads are on the viewer floor beside
 	// ResourceUsage; create is admin-only and mints a session, never an entitlement.
 	ResourceBilling Resource = "billing"

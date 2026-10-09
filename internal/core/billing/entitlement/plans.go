@@ -1,78 +1,96 @@
 package entitlement
 
-// Plan is a catalog tier. The catalog is Go rather than rows so a change to what
-// a tier costs or includes goes through review and deploy.
+import (
+	"errors"
+	"fmt"
+	"slices"
+)
+
+// Plan is a usage plan: what pug counts and how it splits a period's events into
+// tiers — never what it charges. Every rate lives on the provider's product, one
+// meter per tier (docs/architecture/payments.md §4). Go rather than
+// rows, so a change to what a plan includes goes through review and deploy.
 type Plan struct {
 	Slug        string
 	DisplayName string
-	// ISO 4217. PriceCents is minor units of THIS currency, and minor units are not
-	// always hundredths (JPY has none, KWD has three).
-	Currency string
-	// nil means there is no price to show — the custom tier, whose price lives in
-	// the payments provider. Distinct from 0, which is a real price (the floors).
-	PriceCents *int64
-	// nil means the tier carries no quota of its own, again only the custom tier.
-	// Never a sentinel: a number that reads as a quota invites arithmetic that
-	// produces "0 events remaining".
-	IncludedEvents *int64
-	// How far back the tier's history stays queryable; nil means no bound at all.
-	RetentionDays *int64
-	// A retired tier still resolves for existing holders but is never granted to a
-	// new org, so repricing cannot go on handing out the superseded numbers.
+	// FreeEvents is the monthly allowance: never reported to the provider, so never
+	// billed. It sits below TierUpTo[0].
+	FreeEvents int64
+	// TierUpTo is each tier's exclusive upper bound, strictly increasing. The last
+	// tier is unbounded and not listed, so a plan has len(TierUpTo)+1 tiers — and its
+	// provider product one meter per tier.
+	TierUpTo []int64
+	// How far back the plan's history stays queryable. Rendered, never enforced.
+	RetentionDays int64
+	// A retired plan still resolves for the orgs on it but is never sold again.
 	Retired bool
 }
 
+// Tiers is how many tiers the plan splits into, and so how many meters its
+// provider product must attach — by hand: nothing checks the product against it
+// (payments.md §4).
+func (p Plan) Tiers() int { return len(p.TierUpTo) + 1 }
+
+// OnSale reports whether checkout may offer the plan: every plan until it retires.
+func (p Plan) OnSale() bool { return !p.Retired }
+
 const (
-	SlugFree   = "free"
-	SlugTrial  = "trial"
+	// SlugFree is an org with no live subscription: the current plan's allowance, a
+	// banner beyond it, and never a bill. A state, not a catalog entry.
+	SlugFree = "free"
+	// SlugCustom is a negotiated deal: its own provider product at its own rates,
+	// split over the tiers of the plan pinned on its row (Record.BasePlanSlug). A
+	// state, not a catalog entry.
 	SlugCustom = "custom"
+	// SlugUsage is the plan on sale. Repricing mints a new slug and retires this one,
+	// which keeps resolving for the orgs already on it.
+	SlugUsage = "usage-2026-10"
+)
+
+// Display names of the two states, which have no catalog entry to carry one.
+const (
+	FreeDisplayName   = "Free"
+	CustomDisplayName = "Custom"
 )
 
 // RetentionYearDays is a flat 365 days, so a leap year cannot shorten a term
 // somebody bought.
 const RetentionYearDays = 365
 
-// TrialDays is measured from orgs.create_time — the trial is the org's age, not
-// stored state, so nothing is written at signup.
-const TrialDays = 14
+// PLACEHOLDERS: the commercial split is not decided yet. Each number is one
+// constant, so setting it is a one-line change here plus the matching meters on the
+// provider's product, and TestCatalogIsPinned's expectation. Once the plan is sold
+// they are fixed (see catalog).
+const (
+	placeholderFreeEvents    = 100_000
+	placeholderTier1UpTo     = 2_000_000
+	placeholderTier2UpTo     = 15_000_000
+	placeholderTier3UpTo     = 50_000_000
+	placeholderTier4UpTo     = 100_000_000
+	placeholderTier5UpTo     = 250_000_000
+	placeholderRetentionDays = RetentionYearDays
+)
 
-// MaxTrialDays caps one extend-trial. Past this the operator wants a comped plan,
-// which has a price and a record.
-const MaxTrialDays = 365
-
-// catalog is every tier pug has ever sold, newest last.
-//
-// A tier's Currency, PriceCents, IncludedEvents and RetentionDays are fixed once
-// any org holds it; repricing mints a new slug (growth-v2) and retires the old.
-// TestCatalogIsPinned carries the reasoning and is the guard.
+// catalog is every usage plan pug has ever sold, newest last. Once any org holds a
+// plan its FreeEvents, TierUpTo and RetentionDays are fixed: the tiers must match the
+// meters on its provider product (and on every deal pinned to it), and an edit
+// would re-split every existing subscription silently. Repricing mints a new slug
+// and retires the old.
 var catalog = []Plan{
-	{Slug: SlugFree, DisplayName: "Free", Currency: "USD", PriceCents: i64(0),
-		IncludedEvents: i64(10_000), RetentionDays: i64(RetentionYearDays)},
-	{Slug: SlugTrial, DisplayName: "Trial", Currency: "USD", PriceCents: i64(0),
-		IncludedEvents: i64(500_000), RetentionDays: i64(RetentionYearDays)},
-	{Slug: "starter", DisplayName: "Starter", Currency: "USD", PriceCents: i64(1_000),
-		IncludedEvents: i64(100_000), RetentionDays: i64(RetentionYearDays)},
-	{Slug: "growth", DisplayName: "Growth", Currency: "USD", PriceCents: i64(2_000),
-		IncludedEvents: i64(500_000), RetentionDays: i64(3 * RetentionYearDays)},
-	{Slug: "scale", DisplayName: "Scale", Currency: "USD", PriceCents: i64(3_000),
-		IncludedEvents: i64(1_000_000), RetentionDays: i64(7 * RetentionYearDays)},
-	// A negotiated deal supplies all three from the org's row, where a constraint
-	// makes the quota mandatory.
-	{Slug: SlugCustom, DisplayName: "Custom", Currency: "USD"},
+	{
+		Slug:        SlugUsage,
+		DisplayName: "Pay as you go",
+		FreeEvents:  placeholderFreeEvents,
+		TierUpTo: []int64{
+			placeholderTier1UpTo, placeholderTier2UpTo, placeholderTier3UpTo,
+			placeholderTier4UpTo, placeholderTier5UpTo,
+		},
+		RetentionDays: placeholderRetentionDays,
+	},
 }
 
-// mustPlan is for the floors only, inside the pure Resolve path, which has no
-// error to return. NewService checks they exist at wiring time.
-func mustPlan(slug string) Plan {
-	p, ok := PlanBySlug(slug)
-	if !ok {
-		panic("billing: catalog is missing the floor plan " + slug)
-	}
-	return p
-}
-
-// Plans returns the catalog in display order, retired tiers included. A grant
-// path must filter on Retired.
+// Plans returns the catalog in order, retired plans included; a sale path filters on
+// OnSale.
 func Plans() []Plan {
 	out := make([]Plan, 0, len(catalog))
 	for _, p := range catalog {
@@ -81,8 +99,8 @@ func Plans() []Plan {
 	return out
 }
 
-// PlanBySlug reports false for a slug the catalog no longer knows, which the
-// caller must treat as "no quota" rather than as free — see Resolve.
+// PlanBySlug reports false for free and custom, which are states rather than plans,
+// and for a slug the catalog no longer knows.
 func PlanBySlug(slug string) (Plan, bool) {
 	for _, p := range catalog {
 		if p.Slug == slug {
@@ -92,36 +110,66 @@ func PlanBySlug(slug string) (Plan, bool) {
 	return Plan{}, false
 }
 
-// copyPlan detaches the pointer fields, without which a caller writing through
-// a returned *int64 would reprice the catalog for the whole process.
+// CurrentPlan is the newest plan on sale: what an org with no subscription is
+// measured against, and what a deal is pinned to when its product is set.
+// NewService checks one exists, so this cannot panic after wiring.
+func CurrentPlan() Plan {
+	for _, p := range slices.Backward(catalog) {
+		if p.OnSale() {
+			return copyPlan(p)
+		}
+	}
+	panic("billing: the catalog has no plan on sale")
+}
+
+// TiersFor is the tier layout a subscription on the catalog plan slug is split by.
+// A deal splits over its own base plan, which only its row names, so its layout is
+// TiersFor(Record.BasePlanSlug). False for anything else, free and custom included:
+// nothing can split those by slug alone.
+func TiersFor(slug string) ([]int64, bool) {
+	p, ok := PlanBySlug(slug)
+	if !ok {
+		return nil, false
+	}
+	return p.TierUpTo, true
+}
+
+// copyPlan detaches the tier slice, without which a caller writing through a
+// returned plan would re-split the catalog for the whole process.
 func copyPlan(p Plan) Plan {
-	if p.PriceCents != nil {
-		p.PriceCents = i64(*p.PriceCents)
-	}
-	if p.IncludedEvents != nil {
-		p.IncludedEvents = i64(*p.IncludedEvents)
-	}
-	if p.RetentionDays != nil {
-		p.RetentionDays = i64(*p.RetentionDays)
-	}
+	p.TierUpTo = slices.Clone(p.TierUpTo)
 	return p
 }
 
-// isFloor reports the two tiers every org falls back to, which are never sold. SQL
-// hard-codes the same pair for the reconcile pass's unbilled walk, and
-// TestTheFloorSlugsAgreeBetweenGoAndSQL pins the two together.
-func (p Plan) isFloor() bool {
-	return p.Slug == SlugFree || p.Slug == SlugTrial
-}
-
-// OnSale reports whether checkout may offer the tier at all: never a floor, which
-// every org holds for nothing, and never a retired tier, which stays only for the
-// orgs already on it. Derived rather than stored, because one stored flag for
-// both granting and selling once made every custom deal impossible (§14 of
-// docs/architecture/billing.md). Whether a deployment has a product to sell the
-// tier against is checkout's question, not the catalog's.
-func (p Plan) OnSale() bool {
-	return !p.isFloor() && !p.Retired
+// validateCatalog checks what Resolve relies on, and the usage meter will, at wiring
+// time rather than on a request: a plan on sale, no plan named like a state, and every plan's
+// bounds strictly rising above its allowance.
+func validateCatalog(plans []Plan) error {
+	seen := map[string]bool{}
+	onSale := false
+	for _, p := range plans {
+		switch {
+		case p.Slug == "" || p.Slug == SlugFree || p.Slug == SlugCustom:
+			return fmt.Errorf("billing: catalog plan %q uses a reserved slug", p.Slug)
+		case seen[p.Slug]:
+			return fmt.Errorf("billing: catalog lists %q twice", p.Slug)
+		case p.FreeEvents < 0 || p.RetentionDays <= 0:
+			return fmt.Errorf("billing: catalog plan %q has a negative allowance or no retention", p.Slug)
+		}
+		seen[p.Slug] = true
+		prev := p.FreeEvents
+		for _, bound := range p.TierUpTo {
+			if bound <= prev {
+				return fmt.Errorf("billing: catalog plan %q's tier bounds must rise above its allowance", p.Slug)
+			}
+			prev = bound
+		}
+		onSale = onSale || p.OnSale()
+	}
+	if !onSale {
+		return errors.New("billing: the catalog has no plan on sale")
+	}
+	return nil
 }
 
 func i64(v int64) *int64 { return &v }

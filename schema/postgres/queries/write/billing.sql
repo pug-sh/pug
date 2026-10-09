@@ -11,24 +11,24 @@ select * from billing_entitlements where org_id = @org_id for update;
 -- Full replace, never coalesce: the caller has already merged its change over
 -- the locked row.
 insert into billing_entitlements (
-  anchor_day, contract_ends_at, display_name_override,
+  anchor_day, base_plan_slug, contract_ends_at, display_name_override,
   included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  retention_days_override
 ) values (
-  @anchor_day, @contract_ends_at, @display_name_override,
+  @anchor_day, @base_plan_slug, @contract_ends_at, @display_name_override,
   @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
-  @retention_days_override, @trial_ends_at
+  @retention_days_override
 )
 on conflict (org_id) do update
 set anchor_day = excluded.anchor_day,
+    base_plan_slug = excluded.base_plan_slug,
     contract_ends_at = excluded.contract_ends_at,
     display_name_override = excluded.display_name_override,
     included_events_override = excluded.included_events_override,
     note = excluded.note,
     plan_slug = excluded.plan_slug,
     provider_product_id = excluded.provider_product_id,
-    retention_days_override = excluded.retention_days_override,
-    trial_ends_at = excluded.trial_ends_at
+    retention_days_override = excluded.retention_days_override
 returning *;
 
 -- name: DeleteBillingEntitlement :execrows
@@ -36,13 +36,13 @@ delete from billing_entitlements where org_id = @org_id;
 
 -- name: InsertBillingEntitlementHistory :exec
 insert into billing_entitlement_history (
-  actor, anchor_day, contract_ends_at, display_name_override,
+  actor, anchor_day, base_plan_slug, contract_ends_at, display_name_override,
   id, included_events_override, note, org_id, plan_slug, provider_product_id,
-  retention_days_override, trial_ends_at
+  retention_days_override
 ) values (
-  @actor, @anchor_day, @contract_ends_at, @display_name_override,
+  @actor, @anchor_day, @base_plan_slug, @contract_ends_at, @display_name_override,
   @id, @included_events_override, @note, @org_id, @plan_slug, @provider_product_id,
-  @retention_days_override, @trial_ends_at
+  @retention_days_override
 );
 
 -- name: InsertBillingWebhookDelivery :one
