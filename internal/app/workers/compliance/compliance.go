@@ -25,10 +25,10 @@ import (
 
 // The compliance worker hosts the slow, low-volume GDPR/DPDP jobs that share a
 // long-timeout consumer profile, distinct from the millisecond hot-path workers.
-// Erasure (§4.1) is the first tenant; the genuinely-async retention/TTL purge
-// (§4.5) adds a sibling consumer in StartWorker. Data-subject export (§4.2)
-// deliberately does NOT join here — it needs no async job and stays out of the
-// worker. The heavy ClickHouse mutations run here, never inline in an RPC.
+// Erasure (§4.1) is its one tenant; retention runs as `pug cron retention`.
+// Data-subject export (§4.2) deliberately does NOT join here — it needs no async
+// job and stays out of the worker. The heavy ClickHouse mutations run here,
+// never inline in an RPC.
 
 func Run(ctx context.Context) error {
 	closeOtel, err := telemetry.SetupSDK(ctx)
@@ -74,9 +74,8 @@ func Run(ctx context.Context) error {
 func StartWorker(ctx context.Context, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
 	svc := coreprofiles.NewService(pgW, ch, natsClient)
 
-	// One process, one consumer per compliance job. Retention (§4.5) slots in as an
-	// additional g.Go(...) consumer here. Export (§4.2) stays out of the worker per
-	// 4.2 decision 2 — it needs no async job.
+	// One process, one consumer per compliance job. Export (§4.2) stays out of the
+	// worker per 4.2 decision 2 — it needs no async job.
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return runEraseConsumer(ctx, svc, natsClient) })
 	return g.Wait()

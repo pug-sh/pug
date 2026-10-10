@@ -1,7 +1,8 @@
 # Data retention
 
-> **Status: phase 1 implemented** (2026-10-10): every org resolves a length, and
-> nothing deletes on it. Phases 2 and 3 are design, not yet implemented.
+> **Status: phases 1 and 2 implemented** (2026-10-10): every org resolves a
+> length, and `pug cron retention` tracks it and logs the deletes it would make.
+> Nothing deletes until phase 3 turns on `PUG_RETENTION_ENABLED`.
 
 ## Summary
 
@@ -9,8 +10,8 @@ Every org has a retention: how long its event history is kept. Once a day, a
 new job, `pug cron retention`, deletes history older than that, a whole month at
 a time.
 
-Today nothing deletes. Every org resolves a length (phase 1), which
-`GetBillingStatus` and `pug billing show` report.
+Today nothing deletes: the job ships switched off and only logs. Every org
+resolves a length, which `GetBillingStatus` and `pug billing show` report.
 
 Free orgs keep 1 year and paying orgs 5 years. Production runs with billing off,
 so nothing goes there until billing is turned on, unless an org is given its
@@ -25,8 +26,8 @@ An org's length is the first of these that is set:
 2. With billing on, 5 years for a paying org and 1 year for a free one. Both are
    placeholders.
 3. `PUG_RETENTION_DAYS`, the default with billing off. Unset keeps everything.
-   The server, `pug billing`, the billing crons and later the job read it, so
-   set it on each.
+   The server, `pug billing`, the billing crons and `pug cron retention` read
+   it, so set it on each.
 
 Paying means a live subscription, `active` or `past_due`, a deal included.
 Every other status counts as free. An org that stops paying reports 1 year at
@@ -88,7 +89,8 @@ Profiles, aliases, devices, usage rows, dashboards and ledgers stay.
 The cut is the first day of the month that holds `now − length`. It is never
 later than the first day of the previous month. `now − length` uses `AddDate`:
 a `time.Duration` overflows past 106,751 days, and a huge length typed to mean
-forever would then cut last month.
+forever would then cut last month. `AddDate` wraps too, near the largest length,
+so the length is checked first: one reaching back before 1970 cuts nothing.
 
 | Length | Run on | Cut |
 |---|---|---|
@@ -117,8 +119,8 @@ lock, timeout and image, like `pug cron usage`. The logic lives in
 It is not part of `pug cron purge`. Project deletion runs every 5 minutes on a
 3-minute budget and reads no billing. Retention runs daily and reads billing.
 One pass would mix their budgets, config and exit codes, and suspending one
-would stop both. The two can run at the same time: each checks
-`system.mutations` before it queues a delete.
+would stop both. The two can run at the same time. Retention skips a table with
+any delete unfinished; purge skips one only while a delete names its project.
 
 Each run:
 
@@ -135,7 +137,8 @@ touch, as in project deletion. A statement holds at most 1,000 project ids,
 which keeps it far under ClickHouse's 256 KiB query limit. A table never holds
 more than one run's deletes, far below ClickHouse's limit of 1,000 unfinished.
 A late event dated before a cut goes the next day. A failed run exits non-zero,
-and the next day's run retries.
+and the next day's run retries. A failing delete fails every run until it is
+killed: ClickHouse retries it forever, and its table waits behind it.
 
 A ClickHouse TTL can't do this: it can't follow a per-org length that changes,
 wait, or dry-run.
@@ -164,8 +167,8 @@ The wait needs one new table, `retention_state`. The job writes it, and so does
 
 A longer or equal length replaces `days` at once and clears the rest. A new
 shorter length starts a wait, and replaces `days` after 30 days unchanged. A
-drop to the free length, for an org whose subscriptions are none of them live,
-starts no wait: the job records it with a null `pending_since`, and the expire
+drop to the free length, for an org that had a subscription that didn't fail
+and has none live, starts no wait: the job records it with a null `pending_since`, and the expire
 sets that to now. An org with no row counts as none, so its first length waits
 too. The table updates even with the switch
 off, so turning the switch on starts no new waits.
@@ -177,6 +180,9 @@ off, so turning the switch on starts no new waits.
 | Default | 1 year free, 5 years paying | `PUG_RETENTION_DAYS`. Unset keeps everything. |
 | An org's own length | `pug billing set --retention-days` | the same |
 | `pug cron retention` | a daily CronJob | the operator schedules it daily |
+
+Replicated tables refuse the three key cuts, whose deletes hold a subquery,
+unless `allow_nondeterministic_mutations` is on for pug's ClickHouse user.
 
 ## Costs
 

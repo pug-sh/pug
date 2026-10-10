@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	purgecron "github.com/pug-sh/pug/internal/app/cron/purge"
+	retentioncron "github.com/pug-sh/pug/internal/app/cron/retention"
 	usagecron "github.com/pug-sh/pug/internal/app/cron/usage"
 	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
 	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
@@ -153,7 +154,7 @@ var profileUpsertCmd = &cobra.Command{
 
 var complianceCmd = &cobra.Command{
 	Use:   "compliance",
-	Short: "Start the compliance worker (GDPR/DPDP erasure, export, retention)",
+	Short: "Start the compliance worker (GDPR/DPDP erasure)",
 	Run:   run(compliance.Run),
 }
 
@@ -192,6 +193,12 @@ var cronPurgeCmd = &cobra.Command{
 	Use:   "purge",
 	Short: "Run a pass erasing deleted projects",
 	Run:   run(purgecron.Run),
+}
+
+var cronRetentionCmd = &cobra.Command{
+	Use:   "retention",
+	Short: "Run a pass deleting event history past each org's retention",
+	Run:   run(retentioncron.Run),
 }
 
 var (
@@ -309,11 +316,12 @@ var devCmd = &cobra.Command{
 		}
 		fmt.Println()
 
-		// Listed but not started: both are CronJobs in deploys, so dev has to say so,
+		// Listed but not started: all are CronJobs in deploys, so dev has to say so,
 		// or usage reads back as "never metered" and deleted projects keep their data.
 		fmt.Println(bold + "Jobs:" + reset)
 		fmt.Println("  "+yellow+"Usage metering:"+reset, "not scheduled — run", cyan+"pug cron usage"+reset, "for one pass")
 		fmt.Println("  "+yellow+"Project purge:"+reset, "not scheduled — run", cyan+"pug cron purge"+reset, "for one pass")
+		fmt.Println("  "+yellow+"Retention:"+reset, "not scheduled — run", cyan+"pug cron retention"+reset, "for one pass")
 		fmt.Println()
 
 		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
@@ -396,11 +404,13 @@ func init() {
 
 	cronCmd.AddCommand(cronUsageCmd)
 	cronCmd.AddCommand(cronPurgeCmd)
+	cronCmd.AddCommand(cronRetentionCmd)
 	rootCmd.AddCommand(cronCmd)
 
 	rootCmd.AddCommand(billingCmd)
 	rootCmd.AddCommand(domainsCmd)
 	rootCmd.AddCommand(projectsCmd)
+	rootCmd.AddCommand(retentionCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)

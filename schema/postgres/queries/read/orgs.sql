@@ -20,3 +20,6 @@ select o.id, o.display_name, o.create_time, o.update_time, m.role
 from orgs o
 join org_members m on m.org_id = o.id
 where o.id = @org_id and m.customer_id = @customer_id;
+
+-- name: ListOrgIDs :many
+select id from orgs order by id;

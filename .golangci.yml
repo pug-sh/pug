@@ -175,6 +175,7 @@ linters:
         - github\.com/pug-sh/pug/internal/app/cron/usage\.setupFailed
         - github\.com/pug-sh/pug/internal/app/cron/billing\.setupFailed
         - github\.com/pug-sh/pug/internal/app/cron/purge\.setupFailed
+        - github\.com/pug-sh/pug/internal/app/cron/retention\.setupFailed
         - github\.com/pug-sh/pug/internal/app/cron/meter\.setupFailed
     gosec:
       excludes:

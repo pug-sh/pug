@@ -20,7 +20,7 @@ type Plan struct {
 	// tier is unbounded and not listed, so a plan has len(TierUpTo)+1 tiers — and its
 	// provider product one meter per tier.
 	TierUpTo []int64
-	// How long a subscriber's history is kept. Nothing deletes on it yet.
+	// How long a subscriber's history is kept (docs/architecture/data-retention.md).
 	RetentionDays int64
 	// A retired plan still resolves for the orgs on it but is never sold again.
 	Retired bool

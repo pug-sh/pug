@@ -21,6 +21,7 @@ var tableOwners = map[string]string{
 	"billing_webhook_deliveries":  "internal/core/billing/subscription",
 	"billing_checkout_sessions":   "internal/core/billing/subscription",
 	"billing_meter_periods":       "internal/core/billing/meter",
+	"retention_state":             "internal/core/retention",
 }
 
 // mutatedTable captures the table a mutating statement targets, schema prefix

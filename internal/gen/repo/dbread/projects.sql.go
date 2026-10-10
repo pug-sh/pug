@@ -140,3 +140,33 @@ func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Proje
 	}
 	return items, nil
 }
+
+const listLiveProjects = `-- name: ListLiveProjects :many
+select id, org_id from projects where deletion_time is null order by id
+`
+
+type ListLiveProjectsRow struct {
+	ID    string
+	OrgID string
+}
+
+// Every project retention cuts, with the org whose length it follows.
+func (q *Queries) ListLiveProjects(ctx context.Context) ([]ListLiveProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listLiveProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveProjectsRow
+	for rows.Next() {
+		var i ListLiveProjectsRow
+		if err := rows.Scan(&i.ID, &i.OrgID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
