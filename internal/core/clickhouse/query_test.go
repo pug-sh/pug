@@ -76,6 +76,26 @@ func TestConditionConstructors(t *testing.T) {
 		}
 	})
 
+	t.Run("In", func(t *testing.T) {
+		sql, args := build(t, chq.NewQuery().Select("1").From("e").Where(chq.In("kind", []string{"a", "b"})))
+		if want := "SELECT 1\nFROM e\nWHERE kind IN (?, ?)"; sql != want {
+			t.Errorf("sql: got %q want %q", sql, want)
+		}
+		if diff := cmp.Diff([]any{"a", "b"}, args); diff != "" {
+			t.Errorf("args: %s", diff)
+		}
+	})
+
+	t.Run("In with no values matches nothing", func(t *testing.T) {
+		sql, args := build(t, chq.NewQuery().Select("1").From("e").Where(chq.And(chq.In("kind", nil), chq.Eq("x", 1))))
+		if want := "SELECT 1\nFROM e\nWHERE (0 AND x = ?)"; sql != want {
+			t.Errorf("sql: got %q want %q", sql, want)
+		}
+		if diff := cmp.Diff([]any{1}, args); diff != "" {
+			t.Errorf("args: %s", diff)
+		}
+	})
+
 	t.Run("RawCond", func(t *testing.T) {
 		sql, args := build(t, chq.NewQuery().Select("1").From("e").Where(chq.RawCond("kind IN (?, ?)", "a", "b")))
 		if want := "SELECT 1\nFROM e\nWHERE kind IN (?, ?)"; sql != want {

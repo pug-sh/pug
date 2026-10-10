@@ -76,6 +76,9 @@ select * from billing_entitlements where org_id = @org_id for update;
 
 -- name: WriteAheadBillingMeterPeriod :exec
 insert into billing_meter_periods (org_id) values (@org_id);
+
+-- name: UpsertRetentionState :exec
+insert into retention_state (org_id) values (@org_id);
 `
 
 func TestChecksDetectViolations(t *testing.T) {

@@ -83,7 +83,7 @@ Four properties everything below preserves.
 | Entitlement state | **Derived, never stored** | A `status` column is a second source of truth that can disagree with the rows beside it, and keeping it honest costs a worker. |
 | Quota window | **Billing anniversary**, anchored to `orgs.create_time` | An org's month runs from the day it signed up. The alternative — a calendar month — is one line of code cheaper but resets everyone on the 1st regardless of when they signed up. §6.1. |
 | Anchor representation | **Day-of-month integer, UTC midnight** | The meter's period sum is exact only for midnight-aligned windows. An anchor stored as an instant would silently drop a partial day from the total while leaving it in the daily series. §6.1. |
-| Retention | **A day count on the plan, a year on free, plus a per-org override that applies on its own** (§4, §6) | How long history is kept is a term of the agreement like the allowance, so it sits beside it, is pinned immutable (§4.2) and is negotiable per org. Days, not months: whatever eventually enforces this will subtract from `now`, and `AddDate` normalises `Feb 31` into March. Nothing deletes on it yet — [`data-retention.md`](data-retention.md). |
+| Retention | **A day count on the plan, a year on free, plus a per-org override that applies on its own** (§4, §6) | How long history is kept is a term of the agreement like the allowance, so it sits beside it, is pinned immutable (§4.2) and is negotiable per org. Days, not months: `pug cron retention` subtracts them from `now`, and `AddDate` normalises `Feb 31` into March. It deletes on them once switched on — [`data-retention.md`](data-retention.md). |
 | Unpaid orgs | **The free allowance, no trial** | Every org without a subscription gets the current plan's allowance, and a banner beyond it. No row, no provider object, no card. |
 | Allowance audience | **Every org member** | Reads sit on the viewer floor, exactly like `ResourceUsage`: the person who notices the limit is rarely the admin. |
 | Enforcement | **None** | Invariant 1. |
@@ -121,7 +121,7 @@ expectation.
 - **`RetentionDays`** is how long a subscriber's history is kept, in days at
   `RetentionYearDays` (365) flat per year: five years on the current plan. A free
   org keeps one (`freeRetentionDays`). Both are placeholders, and nothing deletes
-  on either yet (§13).
+  on either until retention is switched on (§13).
 - **`Retired`** marks a plan that is never sold again. It stays in the catalog
   forever so its subscribers, and every deal pinned to it, keep resolving on its
   own numbers (§4.2); `OnSale` is `!Retired`, and checkout refuses a retired plan.
@@ -270,7 +270,7 @@ create table billing_entitlements (
   -- The provider product a deal is bought against (020).
   provider_product_id text,
   -- How long this org's events are kept. NULL means its default length
-  -- (section 6). Nothing deletes on it yet (section 13).
+  -- (section 6). Nothing deletes on it until retention is switched on (section 13).
   retention_days_override bigint
     constraint billing_entitlements_retention_check
       check (retention_days_override > 0),
@@ -448,8 +448,9 @@ current plan (§4.2).
 length is the first of these that is set: `retention_days_override`, which no
 switch, deal, subscription or contract gates; with billing on, the plan steps 3–4
 resolved (five years on the current plan) or free's year; with billing off,
-`PUG_RETENTION_DAYS` (§9). With none set there is no bound, and nothing deletes
-on it yet. The gates below are the allowance's and the name's, never retention's.
+`PUG_RETENTION_DAYS` (§9). With none set there is no bound, so nothing is
+deleted; a set length deletes only once retention is switched on (§13). The
+gates below are the allowance's and the name's, never retention's.
 
 **A deal's terms are held only through its own subscription.** A `custom` row's
 overrides apply only while a live custom subscription exists: staged and not yet
@@ -649,8 +650,9 @@ every rate lives on the provider's product.
 - **`retention_days` is absent-able on the same terms**, and is the same
   `Int64Value` wrapper for the same reason — absent is *no bound*, and "0 days of
   history" is the one thing it must never say. It states the org's length (§6),
-  billing on or off, not what has been deleted: nothing deletes on it yet (§13),
-  so a client must not render it as "data older than this is gone".
+  billing on or off, not what has been deleted: deletes on it are off by default
+  and lag it when on (§13), so a client must not render it as "data older than
+  this is gone".
 - **Removed fields are reserved, not deleted.** `trial_ends_at` (5) on the
   response, and `price_cents` and `currency` (3, 4) on both `Plan` and
   `PlanOption`, are reserved by name and number, so no later field can reuse
@@ -976,12 +978,13 @@ every project on a schedule, and is noted in [`usage.md`](usage.md). It does not
 need an allowance to be useful: "any org over N events/day" catches the same
 traffic and works for custom deals too.
 
-**Nothing enforces retention yet.** Every org resolves a length (§6), but
-nothing deletes on it: no ClickHouse TTL, no delete job, no query clamp, and no
-path that reads the number for anything but rendering it. Invariant 1 keeps
-billing out of *ingestion*; deletion is the larger promise, so it is §11.3's own
-slice rather than a switch flipped here. Until it ships a free org can still
-query year-old data, and pug pays to store it.
+**Retention deletes only once switched on.** Every org resolves a length (§6),
+and `pug cron retention` deletes on it, but it ships with `PUG_RETENTION_ENABLED`
+off and only logs what it would delete ([`data-retention.md`](data-retention.md)).
+There is no ClickHouse TTL and no query clamp. Invariant 1 keeps billing out of
+*ingestion*; deletion is the larger promise, so it is its own job rather than a
+switch flipped here. Until it is on, a free org can still query year-old data,
+and pug pays to store it.
 
 **Billing an org with no subscription.** Past the free allowance it sees a
 banner and nothing else: no event is refused and nothing is invoiced. Usage

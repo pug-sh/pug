@@ -27,3 +27,6 @@ from projects p
 join api_keys k on k.project_id = p.id
 where k.token = @token and k.kind = 'public' and p.deletion_time is null;
 
+-- name: ListLiveProjects :many
+-- Every project retention cuts, with the org whose length it follows.
+select id, org_id from projects where deletion_time is null order by id;

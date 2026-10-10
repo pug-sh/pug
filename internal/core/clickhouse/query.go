@@ -58,6 +58,19 @@ func Lt(col string, val any) Condition {
 	return Condition{sql: col + " < ?", args: []any{val}}
 }
 
+// In returns a condition: col IN (?, ...). No vals matches nothing: a zero
+// Condition would be dropped by And and match everything.
+func In(col string, vals []string) Condition {
+	if len(vals) == 0 {
+		return Condition{sql: "0"}
+	}
+	args := make([]any, len(vals))
+	for i, v := range vals {
+		args[i] = v
+	}
+	return Condition{sql: col + " IN (" + strings.Repeat("?, ", len(vals)-1) + "?)", args: args}
+}
+
 // RawCond wraps a raw SQL clause and its args into a Condition.
 func RawCond(sql string, args ...any) Condition {
 	return Condition{sql: sql, args: args}

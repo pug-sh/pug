@@ -133,7 +133,8 @@ message GetBillingStatusResponse {
   bool purchasable = 11;
   // Days of event history this org keeps: its own override, else its plan's or
   // free's with billing on, or the deployment's default with it off. ABSENT means
-  // NO BOUND and is never zero. Nothing in pug deletes on this number today.
+  // NO BOUND and is never zero. A length, not what has been deleted: deletes on it
+  // are off by default and lag it when on.
   google.protobuf.Int64Value retention_days = 13;
   // Whether a portal session would open: this org has a customer at the provider,
   // which only a checkout leaves behind. Not implied by subscription_status.

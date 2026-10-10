@@ -334,6 +334,15 @@ type RefreshToken struct {
 	ProvenDomain pgtype.Text
 }
 
+type RetentionState struct {
+	Days         pgtype.Int8
+	ExpiredBy    pgtype.Text
+	OrgID        string
+	PendingDays  pgtype.Int8
+	PendingSince pgtype.Timestamptz
+	UpdateTime   pgtype.Timestamptz
+}
+
 type UsageDaily struct {
 	Day        pgtype.Date
 	EventCount int64
