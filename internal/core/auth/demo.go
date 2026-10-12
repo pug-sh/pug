@@ -14,7 +14,7 @@ import (
 // DemoViewerEmail is the email of the seeded read-only demo account ("Snoop
 // Pugg"). DemoSignIn mints a viewer session for this customer, and the demo
 // seeder (internal/app/seed/postgres) provisions it as an ORG_ROLE_VIEWER member
-// of the demo org — this const is the single source of truth shared by both, so
+// of the demo org; this const is the single source of truth shared by both, so
 // the login target and the seeded account can never drift apart.
 const DemoViewerEmail = "snoop@pug.sh"
 
@@ -48,7 +48,7 @@ func (s *Service) DemoSignIn(ctx context.Context) (DemoSession, error) {
 	customer, err := s.read.GetCustomerByEmail(ctx, DemoViewerEmail)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Login is enabled but the account is not seeded — unavailable, not
+			// Login is enabled but the account is not seeded: unavailable, not
 			// internal; the operator just needs to run the demo seed/worker.
 			slog.WarnContext(ctx, "demo sign-in enabled but demo viewer account not seeded", slog.String("email", DemoViewerEmail))
 			return DemoSession{}, ErrDemoUnavailable
@@ -74,8 +74,8 @@ func (s *Service) DemoSignIn(ctx context.Context) (DemoSession, error) {
 
 // resolveDemoProjectID resolves the demo project the viewer should scope to and
 // checks the account is a viewer there. It takes the viewer's oldest org
-// (GetOrgsWithRoleByCustomerID orders by create_time) — the demo seeder makes
-// snoop a member of exactly that one org — checks its membership role is
+// (GetOrgsWithRoleByCustomerID orders by create_time) (the demo seeder makes
+// snoop a member of exactly that one org), checks its membership role is
 // ORG_ROLE_VIEWER, then returns that org's oldest project (GetProjectsByOrgID is
 // likewise create_time-ordered, so it deterministically matches the seeder's
 // resolveProject). A missing org/project, or a non-viewer role, means the demo
@@ -99,7 +99,7 @@ func (s *Service) resolveDemoProjectID(ctx context.Context, customerID string) (
 	role, err := coreorgs.ParseRole(orgs[0].Role)
 	if err != nil {
 		// An unrecognized stored role is corrupted data, not an expected business
-		// state — record it at the detecting layer so it's tracked distinctly from
+		// state; record it at the detecting layer so it's tracked distinctly from
 		// a valid-but-non-viewer account. Still fail closed.
 		slog.ErrorContext(ctx, "demo sign-in: demo account has an unrecognized stored role; refusing to mint",
 			slogx.Error(err), slog.String("org_id", orgs[0].ID), slog.String("role", orgs[0].Role))

@@ -12,7 +12,7 @@ import (
 // chain. TestPromotedColumnListsInLockstep compares only LENGTHS, but every
 // promoted column is string-ish to ClickHouse, so swapping two of them
 // type-checks, inserts without error, and silently files each value under the
-// other's column — and since EventsInsertPromotedColumns drives the read path
+// other's column, and since EventsInsertPromotedColumns drives the read path
 // too, both directions rotate together and stay self-consistent-but-wrong.
 //
 // Each promoted string key is fed the NAME OF THE COLUMN it must reach, so
@@ -54,7 +54,7 @@ func TestPromotedColumnOrderPinned(t *testing.T) {
 			continue // bot_score / verified_bot / mobile / bot are not string columns
 		}
 		if s != col {
-			t.Errorf("column %q (slot %d) receives the value belonging to column %q — the property→field→slot chain is crossed", col, i, s)
+			t.Errorf("column %q (slot %d) receives the value belonging to column %q: the property→field→slot chain is crossed", col, i, s)
 		}
 	}
 }
@@ -63,7 +63,7 @@ func TestPromotedColumnOrderPinned(t *testing.T) {
 // derive from promotedAutoColumns instead of restating it. Str is the single
 // link from a table row to its PromotedAutoRow field, so a PromotedString
 // entry without one would split back out of auto_properties (the key is in
-// promotedAutoByProperty) and then write nowhere — the value lost from both
+// promotedAutoByProperty) and then write nowhere: the value lost from both
 // the map and the column, silently, on the ingest path.
 func TestPromotedStringColumnsHaveAccessors(t *testing.T) {
 	var row PromotedAutoRow
@@ -91,7 +91,7 @@ func TestPromotedStringColumnsHaveAccessors(t *testing.T) {
 // TestPromotedNonRollupKeysMapToTheirColumns pins the four promoted string
 // keys that have NO rollup dimension. The rollup-backed twenty are pinned to their
 // columns by TestMigration012PromotedDimExprsMatch via the MV text; these four
-// are not, yet mergePromotedAutoDimensions injects them into the filter picker —
+// are not, yet mergePromotedAutoDimensions injects them into the filter picker,
 // so a wrong Property→Column mapping would make every filter and breakdown on
 // them read another column's data with nothing objecting.
 func TestPromotedNonRollupKeysMapToTheirColumns(t *testing.T) {

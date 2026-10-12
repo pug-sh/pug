@@ -17,13 +17,13 @@ import (
 )
 
 // TestDbwriteShareToDbread_FieldParity fails the build if the read/write
-// dashboard_shares structs drift in field count — a forgotten field in
+// dashboard_shares structs drift in field count: a forgotten field in
 // dbwriteShareToDbread compiles cleanly but silently zeroes a column.
 func TestDbwriteShareToDbread_FieldParity(t *testing.T) {
 	r := reflect.TypeFor[dbread.DashboardShare]().NumField()
 	w := reflect.TypeFor[dbwrite.DashboardShare]().NumField()
 	if r != w {
-		t.Fatalf("dbread.DashboardShare has %d fields, dbwrite has %d — keep dbwriteShareToDbread in sync", r, w)
+		t.Fatalf("dbread.DashboardShare has %d fields, dbwrite has %d; keep dbwriteShareToDbread in sync", r, w)
 	}
 }
 
@@ -60,7 +60,7 @@ func countShares(t *testing.T, ctx context.Context, db *testutil.TestPostgres, d
 // TestSetShare_ProjectScoped directly pins the project_id predicate in
 // UpsertDashboardShare: a caller in another project must not be able to create
 // or toggle a share for a dashboard they don't own, and no row may be written.
-// This is the tenant-isolation guard the review flagged (C2) — a regression
+// This is the tenant-isolation guard the review flagged (C2): a regression
 // dropping the predicate would let one tenant share another's dashboard.
 func TestSetShare_ProjectScoped(t *testing.T) {
 	if testing.Short() {

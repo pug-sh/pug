@@ -28,7 +28,7 @@ const (
 // oneof.required option below.
 //
 // Lists, objects, and other compound types are intentionally not included
-// in this iteration — only the five primitive types supported by the
+// in this iteration: only the five primitive types supported by the
 // ClickHouse Variant storage target. New variants can be added later as
 // additive oneof entries (wire-compatible).
 type PropertyValue struct {
@@ -135,13 +135,13 @@ type PropertyValue_StringValue struct {
 	// Cap property string values at 1024 Unicode codepoints. Large blobs
 	// (logs, raw payloads, serialized JSON) should be hashed or referenced
 	// upstream rather than embedded as a property value. Note: max_len
-	// counts codepoints, not bytes — multi-byte UTF-8 (emoji, CJK) can
+	// counts codepoints, not bytes; multi-byte UTF-8 (emoji, CJK) can
 	// exceed 1 KiB on the wire at this limit. Switch to max_bytes if a
 	// hard byte cap is required. Values exceeding the limit are rejected
 	// at the validate interceptor with CodeInvalidArgument (not truncated).
 	//
 	// Empty-string note: the filter expression cannot distinguish a
-	// custom_properties value of "" from an absent key — both project to ''
+	// custom_properties value of "" from an absent key; both project to ''
 	// in propertyExpr (filters.go), so EQUALS '' and IS_NOT_SET match
 	// identically. If the empty case is meaningful, encode it differently
 	// (e.g. a sentinel value) on the producer side.

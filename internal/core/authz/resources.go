@@ -4,24 +4,24 @@
 // Casbin enforcer. Role ASSIGNMENT (who has which role in which org) stays in
 // Postgres (org_members) and is resolved fresh per request by the caller, who
 // passes the resolved role into Authorize. Casbin therefore answers only one
-// question: "may this role perform this action on this resource?" — there is no
+// question: "may this role perform this action on this resource?"; there is no
 // Casbin<->DB sync and no distributed cache invalidation to get wrong.
 //
 // The model and policy are plain Go (no .conf / .csv / go:embed): both are
 // reviewed like code and change only on deploy.
 package authz
 
-// Resource identifies a protected resource type — the Casbin object. A resource
+// Resource identifies a protected resource type, the Casbin object. A resource
 // is declared here only when a real served RPC needs it; speculative/roadmap
 // resources are intentionally absent (add them when the feature actually lands).
 type Resource string
 
-// Action identifies an operation on a resource — the Casbin action.
+// Action identifies an operation on a resource, the Casbin action.
 //
 // Today the only actions are the four CRUD verbs, granted in bulk by the "manage"
 // authoring helper (see policy.go). Any future non-CRUD action (e.g. erase for
-// GDPR/DPDP, export, send) must be added here and granted explicitly — never
-// folded into manage — so "manage X" can never silently confer it.
+// GDPR/DPDP, export, send) must be added here and granted explicitly, never
+// folded into manage, so "manage X" can never silently confer it.
 type Action string
 
 const (
@@ -40,7 +40,7 @@ const (
 	// spike is rarely the admin. The meter writes it, no RPC does.
 	ResourceUsage Resource = "usage"
 
-	// ResourceBilling is an org's entitlement — its plan, allowance and period — and the
+	// ResourceBilling is an org's entitlement (its plan, allowance and period) and the
 	// checkout and portal sessions that buy one. Reads are on the viewer floor beside
 	// ResourceUsage; create is admin-only and mints a session, never an entitlement.
 	ResourceBilling Resource = "billing"
@@ -48,7 +48,7 @@ const (
 	// ResourceAPIKey is a project's API keys, so its org resolves from the
 	// x-project-id project like the project-data resources below. Minting a
 	// credential for a whole project is an administrative act, so create/delete sit
-	// with admin while every role reads. There is deliberately no update action —
+	// with admin while every role reads. There is deliberately no update action:
 	// a key is created and revoked, never edited.
 	ResourceAPIKey Resource = "api_key"
 

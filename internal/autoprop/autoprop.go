@@ -1,7 +1,7 @@
 // Package autoprop provides server-controlled typed enrichment for
 // auto-property values. Maps each known auto-property key to its expected
-// typed PropertyValue / Variant slot — bot scores → Int64, lat/long →
-// Float64, verified-bot/mobile/bot → Bool — so downstream Variant columns get
+// typed PropertyValue / Variant slot (bot scores → Int64, lat/long →
+// Float64, verified-bot/mobile/bot → Bool) so downstream Variant columns get
 // correctly-typed slots and the dashboard's filter UI surfaces the right
 // type per property.
 //
@@ -95,7 +95,7 @@ func PropertyValue(ctx context.Context, projectID, key, value string) *commonv1.
 // from (attribution.Derive). Reports false when the value is absent or holds
 // no slot. It is the inverse direction of PropertyValue and lives beside it
 // for the same reason: two copies would drift silently, and these two callers
-// must not disagree — the SDK handler derives $channel/$pathname from this
+// must not disagree; the SDK handler derives $channel/$pathname from this
 // string while the storage layer files that same value into a promoted
 // column, so a divergence would mean a row whose derived columns describe a
 // value the row does not contain.

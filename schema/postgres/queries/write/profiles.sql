@@ -22,7 +22,7 @@ where profile_id = @source_id and project_id = @project_id;
 
 -- name: RegisterProfile :one
 -- Used only by event ingestion for anonymous profiles. The (id, project_id) conflict
--- target is not partial — it matches soft-deleted rows too. This is acceptable because
+-- target is not partial: it matches soft-deleted rows too. This is acceptable because
 -- xid-generated IDs never collide, and this query is not used for identified profiles.
 insert into profiles (properties, id, project_id)
 values (coalesce(@properties::jsonb, '{}'), @id, @project_id)

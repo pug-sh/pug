@@ -60,7 +60,7 @@ message Event {
   };
   // Holds at BOTH validation stages: at the SDK boundary a cookieless event
   // arrives with empty identity, and in the worker's envelope re-validation it
-  // carries the server-derived identity — either way this rule passes, while a
+  // carries the server-derived identity; either way this rule passes, while a
   // non-cookieless event without identity fails at both stages.
   option (buf.validate.message).cel = {
     id: "event.identity_required_unless_cookieless"
@@ -85,7 +85,7 @@ message Event {
   }];
   google.protobuf.Timestamp occur_time = 6 [(buf.validate.field).required = true];
   // A UUID whenever set; omit entirely in cookieless mode (an explicit "" is
-  // also rejected — set fields must satisfy the uuid rule).
+  // also rejected: set fields must satisfy the uuid rule).
   string session_id = 7 [(buf.validate.field).string.uuid = true];
   // Cookieless (no-consent) mode: the client stores nothing on the device and
   // sends no identity; the ingest server derives an ephemeral daily-rotating

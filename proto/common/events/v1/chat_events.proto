@@ -22,7 +22,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 //   call_type:         "audio", "video", "screen_share"
 //   attachment_type:   "image", "video", "audio", "file", "link", "sticker"
 //
-// chat_typing_started and chat_typing_stopped have no member_id field — the
+// chat_typing_started and chat_typing_stopped have no member_id field: the
 // typer is the SDK's distinct_id on the wrapping Event. Do not add member_id
 // "for clarity"; consumers can join on distinct_id when needed.
 
@@ -227,7 +227,7 @@ message ChatCallRecordingStartedProperties {
   string call_id = 2 [(buf.validate.field).required = true];
 }
 
-// mute_duration is optional — populate when the mute is time-bounded
+// mute_duration is optional: populate when the mute is time-bounded
 // (e.g. "mute for 1h"); leave unset for indefinite mutes.
 message ChatMemberMutedProperties {
   option (common.events.v1.kind) = "chat_member_muted";

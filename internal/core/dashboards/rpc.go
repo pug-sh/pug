@@ -36,7 +36,7 @@ func RenderedDashboardToRPC(ctx context.Context, rd RenderedDashboard) *dashboar
 // renderedTileToRPC encodes one rendered tile. If the stored tile row can't be
 // decoded by TileToRPC (corrupt payload / cross-deploy schema drift), it records
 // the data-integrity error server-side and degrades to a structural tile carrying an
-// error_message outcome — a corrupt tile must not fail the whole QueryDashboard, the
+// error_message outcome: a corrupt tile must not fail the whole QueryDashboard, the
 // same per-tile contract renderInsightTile upholds at execution time.
 func renderedTileToRPC(ctx context.Context, rt RenderedTile) *dashboardsv1.RenderedTile {
 	tileMsg, err := TileToRPC(ctx, rt.Tile)
@@ -67,7 +67,7 @@ func renderedTileToRPC(ctx context.Context, rt RenderedTile) *dashboardsv1.Rende
 }
 
 // StructuralTileToRPC builds a tile message with identity, timestamps, and (best
-// effort) position but no content oneof — for the degraded path where the content
+// effort) position but no content oneof, for the degraded path where the content
 // payload can't be decoded. The primary error is already recorded by the caller;
 // a secondary position decode failure is a distinct corruption and gets its own
 // log line so we don't lose the signal.
@@ -119,7 +119,7 @@ func TileToRPC(ctx context.Context, tile dbread.DashboardTile) (*dashboardsv1.Da
 // decoding failures (data corruption / schema drift). On the QueryDashboard
 // path, renderedTileToRPC catches the error and degrades to a per-tile
 // error_message; on Get / Update / Upsert / List, the error fails the whole
-// response — callers wrap it with the failing tile id.
+// response. Callers wrap it with the failing tile id.
 func setTileCustomization(ctx context.Context, msg *dashboardsv1.DashboardTile, compare string, thresholds []byte, header, visualization, position map[string]any) error {
 	msg.Compare = ComparePeriodFromDB(ctx, compare).Enum()
 
@@ -157,7 +157,7 @@ func setTileCustomization(ctx context.Context, msg *dashboardsv1.DashboardTile, 
 // verifying the dashboard_tiles_kind_payload CHECK invariants. The CHECK
 // constraint guarantees the appropriate payload column is non-NULL for each
 // kind, so the missing-payload branches only trip on data corruption or
-// manual DB tinkering — but failing loudly is safer than encoding garbage.
+// manual DB tinkering, but failing loudly is safer than encoding garbage.
 func SetTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind TileKind, insightQuery map[string]any, markdownBody string, markdownValid bool) error {
 	switch kind {
 	case TileKindInsight:

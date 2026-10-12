@@ -16,7 +16,7 @@ import (
 // An auth rejection is written OUTSIDE the Connect interceptor chain. With
 // WithCorrelationID mounted outside the authn middleware and authn errors built
 // via unauthenticated(), the client still receives ErrorInfo (reason) and
-// RequestInfo (error_id) — the same structured envelope as handler errors.
+// RequestInfo (error_id): the same structured envelope as handler errors.
 func TestAuthRejectionCarriesErrorDetails(t *testing.T) {
 	authMW := authn.NewMiddleware(func(ctx context.Context, _ *http.Request) (any, error) {
 		return nil, unauthenticated(ctx, "no token")

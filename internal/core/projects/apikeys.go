@@ -83,7 +83,7 @@ func (s *Service) DeleteApiKey(ctx context.Context, projectID, id string) error 
 	return nil
 }
 
-// apiKeyTokens lists the tokens of a project's keys — every value its cached row
+// apiKeyTokens lists the tokens of a project's keys: every value its cached row
 // is reachable by.
 //
 // The error is returned rather than folded into a nil slice: an empty list is a
@@ -103,7 +103,7 @@ func (s *Service) apiKeyTokens(ctx context.Context, projectID string) ([]string,
 
 // invalidateCacheTimeout bounds the detached invalidation below: a Redis
 // round-trip per token, plus the token listing on the invalidateProject path.
-// Generous for that — the budget exists so a wedged Redis cannot pin the
+// Generous for that: the budget exists so a wedged Redis cannot pin the
 // goroutine forever, and the alternative to finishing is a revoked key that keeps
 // authenticating.
 const invalidateCacheTimeout = 5 * time.Second
@@ -112,7 +112,7 @@ const invalidateCacheTimeout = 5 * time.Second
 // on. The write it follows has already committed, so the invalidation must not
 // inherit the caller's cancellation: an admin who revokes a key and closes the
 // tab would otherwise leave it cached until apiKeyCacheTTL while the RPC reported
-// success — and their retry would report "not found", which reads as "already
+// success, and their retry would report "not found", which reads as "already
 // revoked". Mirrors the WithoutCancel behind deps/nats.worker's DLQ publish, for
 // the same reason.
 func detachedInvalidateCtx(ctx context.Context) (context.Context, context.CancelFunc) {

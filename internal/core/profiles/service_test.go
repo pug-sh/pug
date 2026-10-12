@@ -80,7 +80,7 @@ func TestProfilesList_NoDoubleCountWhenIDEqualsExternalID(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	projectID := "proj-1"
 
-	// Same value for id and external_id — a common SDK convention. identity_union's
+	// Same value for id and external_id, a common SDK convention. identity_union's
 	// arrayDistinct must prevent the state from being merged twice.
 	id := "u-shared"
 	if err := ch.Conn.Exec(ctx,

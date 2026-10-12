@@ -231,7 +231,7 @@ func TestComputeFunnelTiming_MismatchedArraysReturnsError(t *testing.T) {
 
 // TestComputeFunnelTiming_NegativeWindowReturnsError pins the windowSec < 0 guard.
 // Protovalidate enforces gte: 1s for RPC callers, but workers/scripts/tests bypass
-// the interceptor — without this guard, a negative windowSec would produce a negative
+// the interceptor; without this guard, a negative windowSec would produce a negative
 // windowDur and silently disable the conversion-window check (windowDur > 0 → false).
 func TestComputeFunnelTiming_NegativeWindowReturnsError(t *testing.T) {
 	if _, err := insights.ComputeFunnelTiming(ctx, "", nil, []string{"a"}, -1, 0); err == nil {
@@ -309,7 +309,7 @@ func TestComputeFunnelTiming_SameKindSteps(t *testing.T) {
 	// multiIf short-circuits on the first matching arm and tags every event
 	// as the earlier step. If multiIf could tag the second occurrence as
 	// step 1, the Go walk's `step_match == matched` check would advance the
-	// funnel — but multiIf never produces a step-1 tag here, so step 1
+	// funnel, but multiIf never produces a step-1 tag here, so step 1
 	// never matches.
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	t1 := t0.Add(1 * time.Hour)
@@ -558,7 +558,7 @@ func TestComputeFunnelTiming_NoConvertersStepHasZeroDistribution(t *testing.T) {
 
 // TestComputeFunnelTiming_MidFunnelZeroConvertersHasZeroDistribution verifies that an
 // intermediate (non-final) step with zero converters produces a non-nil Timing with an
-// 8-element zero-filled Distribution — same contract as the last step. Guards against
+// 8-element zero-filled Distribution, same contract as the last step. Guards against
 // step-position-dependent regressions that might handle the final step specially.
 func TestComputeFunnelTiming_MidFunnelZeroConvertersHasZeroDistribution(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
@@ -592,7 +592,7 @@ func TestComputeFunnelTiming_MidFunnelZeroConvertersHasZeroDistribution(t *testi
 
 // TestComputeFunnelTiming_WindowTruncationPerBreakdownIsolatesTiming verifies that when
 // the conversion window truncates some users in each breakdown group, the per-series
-// timing stats reflect only that group's non-truncated users — no cross-series leak.
+// timing stats reflect only that group's non-truncated users, no cross-series leak.
 func TestComputeFunnelTiming_WindowTruncationPerBreakdownIsolatesTiming(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	windowSec := int64(60) // 1-minute window
@@ -649,14 +649,14 @@ func TestComputeFunnelTiming_WindowTruncationPerBreakdownIsolatesTiming(t *testi
 		t.Errorf("DE step 1 median: got %v, want 50s", deStep1.Timing.Median)
 	}
 
-	// Sanity: stats must differ — equality would suggest cross-series pollution.
+	// Sanity: stats must differ; equality would suggest cross-series pollution.
 	if usStep1.Timing.Avg == deStep1.Timing.Avg {
 		t.Errorf("US and DE avg must differ; both = %v (cross-series leak?)", usStep1.Timing.Avg)
 	}
 }
 
 // TestComputeFunnelTiming_PerBreakdownTimingConvergence verifies that median, p95, and
-// the distribution histogram are computed independently per breakdown series — i.e. that
+// the distribution histogram are computed independently per breakdown series, i.e. that
 // stats do not pool across breakdown keys. Without per-series aggregation, the US median
 // (which uses sub-second deltas) would be polluted by the DE deltas (multi-hour deltas)
 // or vice versa, and the regression would not show in the count-or-avg-only assertions
@@ -708,7 +708,7 @@ func TestComputeFunnelTiming_PerBreakdownTimingConvergence(t *testing.T) {
 		}
 	}
 
-	// DE: 3 deltas — odd length, median is middle = 1200
+	// DE: 3 deltas, odd length, median is middle = 1200
 	if deStep1.Timing.Median != 1200*time.Second {
 		t.Errorf("DE median: got %v, want 1200s", deStep1.Timing.Median)
 	}
@@ -724,7 +724,7 @@ func TestComputeFunnelTiming_PerBreakdownTimingConvergence(t *testing.T) {
 		}
 	}
 
-	// Sanity: the medians MUST differ — that's the regression a pooled aggregation would hide.
+	// Sanity: the medians MUST differ; that's the regression a pooled aggregation would hide.
 	if usStep1.Timing.Median == deStep1.Timing.Median {
 		t.Errorf("series medians should differ; got both = %v (stats pooled across breakdowns?)", usStep1.Timing.Median)
 	}
@@ -732,7 +732,7 @@ func TestComputeFunnelTiming_PerBreakdownTimingConvergence(t *testing.T) {
 
 // TestComputeFunnelTiming_WindowTruncationExcludesFromTiming verifies that a user truncated
 // at step N by the conversion window does not contribute to step N's median, p95, or
-// distribution — only to step N-1's. Without this, the timing fields would silently include
+// distribution, only to step N-1's. Without this, the timing fields would silently include
 // or exclude users inconsistently with the count.
 func TestComputeFunnelTiming_WindowTruncationExcludesFromTiming(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)

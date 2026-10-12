@@ -13,7 +13,7 @@ import (
 // newCacheRaceRepo builds a Repo with no DB handle: these tests drive the cache
 // path directly through the same helpers GetProjectBy*ApiKey uses, so no query
 // ever runs. Internal rather than in projects_test because the interleaving being
-// pinned is only reachable one call at a time — the exported lookup does observe,
+// pinned is only reachable one call at a time: the exported lookup does observe,
 // read and populate in a single hop, with nowhere to land a revocation in between.
 func newCacheRaceRepo(t *testing.T) (*Repo, *testutil.TestRedis) {
 	t.Helper()
@@ -27,7 +27,7 @@ func newCacheRaceRepo(t *testing.T) (*Repo, *testutil.TestRedis) {
 // invalidates it, and only then does the lookup write its now-stale row back.
 //
 // Without the generation CAS that write lands and the revoked key keeps
-// authenticating from cache until apiKeyCacheTTL — the failure the generation
+// authenticating from cache until apiKeyCacheTTL: the failure the generation
 // counter exists to prevent, and the likely one, since a key is revoked precisely
 // when it is in active use.
 func TestCacheProjectSkipsPopulateAfterConcurrentInvalidation(t *testing.T) {
@@ -122,7 +122,7 @@ func TestPopulateSkippedWhenOutageHidGenerationAndInvalidation(t *testing.T) {
 	observedGen, canPopulate := down.observeKeyGen(ctx, token)
 
 	// 2. The revocation lands in that window, but its INCR is swallowed by the same
-	//    outage — modelled by the counter simply never being written.
+	//    outage, modelled by the counter simply never being written.
 
 	// 3. Redis is healthy again by the time the lookup would populate. The caller's
 	//    guard is the only thing that can decline the write here, because the value

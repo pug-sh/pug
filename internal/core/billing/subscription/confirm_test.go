@@ -26,7 +26,7 @@ func storedSubscriptions(t *testing.T, f *fixture) int {
 }
 
 // The whole point: a buyer comes back and the plan is theirs with no delivery
-// having arrived — the only path that works with no reachable webhook URL.
+// having arrived, the only path that works with no reachable webhook URL.
 func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -47,7 +47,7 @@ func TestConfirmCheckoutAppliesASettledCheckout(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugUsage {
-		t.Errorf("slug = %q, want the usage plan — the confirmed checkout did not reach the entitlement", ent.Slug)
+		t.Errorf("slug = %q, want the usage plan: the confirmed checkout did not reach the entitlement", ent.Slug)
 	}
 	if ent.SubStatus != corebilling.SubStatusActive {
 		t.Errorf("sub status = %q, want active", ent.SubStatus)
@@ -231,7 +231,7 @@ func TestConfirmCheckoutConfirmsWhenTheWebhookLandedFirst(t *testing.T) {
 		t.Fatal("confirmed = false after the webhook already applied the same subscription")
 	}
 	if n := storedSubscriptions(t, f); n != 1 {
-		t.Errorf("stored %d subscription rows, want 1 — the confirm duplicated the webhook's", n)
+		t.Errorf("stored %d subscription rows, want 1: the confirm duplicated the webhook's", n)
 	}
 }
 
@@ -242,7 +242,7 @@ func TestConfirmCheckoutRefusesASecondLiveSubscription(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	f, provider := newPaidFixture(t)
-	// A live subscription the org already holds — a cancellation that never
+	// A live subscription the org already holds: a cancellation that never
 	// arrived, which is the deployment this whole path exists for.
 	provider.event = subEvent(f.orgID, "sub00000000000000027", "prod_u", corebilling.SubStatusActive)
 	if err := f.svc.HandleDelivery(t.Context(), delivery("wh_live", time.Now())); err != nil {
@@ -425,6 +425,6 @@ func TestClearCannotStrandAConfirmInFlight(t *testing.T) {
 		t.Error("confirmed = true for a subscription that was never written")
 	}
 	if n := storedSubscriptions(t, f); n != 0 {
-		t.Errorf("stored %d subscriptions, want 0 — a custom subscription maps through its row's product", n)
+		t.Errorf("stored %d subscriptions, want 0: a custom subscription maps through its row's product", n)
 	}
 }

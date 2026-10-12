@@ -81,7 +81,7 @@ func TestEventValidation_TwoStageContract(t *testing.T) {
 				return e
 			}()}}, "session_id"},
 		// The two-stage pin: the post-resolution shape must pass the internal
-		// envelope but fail the SDK boundary — that asymmetry is the design.
+		// envelope but fail the SDK boundary; that asymmetry is the design.
 		{"envelope_resolved_cookieless_ok",
 			&eventsv1.EventBatch{ProjectId: proto.String("p1"),
 				Events: []*eventsv1.Event{resolvedCookielessEvent()}}, ""},

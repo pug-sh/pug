@@ -27,7 +27,7 @@ import (
 // long-timeout consumer profile, distinct from the millisecond hot-path workers.
 // Erasure (§4.1) is the first tenant; the genuinely-async retention/TTL purge
 // (§4.5) adds a sibling consumer in StartWorker. Data-subject export (§4.2)
-// deliberately does NOT join here — it needs no async job and stays out of the
+// deliberately does NOT join here: it needs no async job and stays out of the
 // worker. The heavy ClickHouse mutations run here, never inline in an RPC.
 
 func Run(ctx context.Context) error {
@@ -76,7 +76,7 @@ func StartWorker(ctx context.Context, pgW *pgxpool.Pool, ch driver.Conn, natsCli
 
 	// One process, one consumer per compliance job. Retention (§4.5) slots in as an
 	// additional g.Go(...) consumer here. Export (§4.2) stays out of the worker per
-	// 4.2 decision 2 — it needs no async job.
+	// 4.2 decision 2: it needs no async job.
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return runEraseConsumer(ctx, svc, natsClient) })
 	return g.Wait()
@@ -154,7 +154,7 @@ func handleErase(ctx context.Context, svc erasureExecutor, data []byte, lastDeli
 
 	if err := svc.ExecuteErasure(ctx, msg.GetProjectId(), msg.GetRequestId()); err != nil {
 		// A missing request row is unrecoverable and there is no row to mark
-		// failed — route straight to the DLQ instead of retrying forever.
+		// failed; route straight to the DLQ instead of retrying forever.
 		if errors.Is(err, coreprofiles.ErrDeletionRequestNotFound) {
 			return permanentEraseError(err, msg)
 		}
@@ -167,7 +167,7 @@ func handleErase(ctx context.Context, svc erasureExecutor, data []byte, lastDeli
 		// Transient PG/CH failure: return for Nak/retry. Frozen identifiers keep
 		// the retry correct even after events are deleted. On the final delivery
 		// the framework dead-letters this message and never retries it, so record
-		// the failure on the ledger row now — otherwise the DSAR audit trail is
+		// the failure on the ledger row now; otherwise the DSAR audit trail is
 		// stuck at 'processing' forever.
 		if lastDelivery {
 			markEraseFailed(ctx, svc, msg, err)
@@ -195,6 +195,6 @@ func markEraseFailed(ctx context.Context, svc erasureExecutor, msg *workercompli
 		slog.ErrorContext(ctx, "could not mark erasure failed before dead-lettering",
 			slog.String("request_id", msg.GetRequestId()),
 			slog.String("project_id", msg.GetProjectId()),
-			slogx.Error(err)) // puglint:exempt — MarkErasureFailed recorded this write failure
+			slogx.Error(err)) // puglint:exempt (MarkErasureFailed recorded this write failure)
 	}
 }

@@ -39,12 +39,12 @@ const (
 
 	// pgPoolMaxConns caps each pool's backends. pgxpool otherwise defaults
 	// MaxConns to max(4, NumCPU), so on a many-core machine a test's two pools
-	// alone could approach the server's max_connections of 100 — which every test
+	// alone could approach the server's max_connections of 100, which every test
 	// in the package now shares rather than getting a server of its own.
 	//
 	// It is a ceiling, not a reservation: MinConns is 0, so a pool holds only what
-	// it uses. 8 is the suite's widest fan-out — internal/core/auth's refresh and
-	// magic-link races each run 8 goroutines through one pool — so all of them
+	// it uses. 8 is the suite's widest fan-out (internal/core/auth's refresh and
+	// magic-link races each run 8 goroutines through one pool), so all of them
 	// reach the database together instead of queueing in Acquire for a connection,
 	// which is the overlap those tests exist to create. Raise it alongside any
 	// test that fans out wider.
@@ -125,7 +125,7 @@ func plainDSN(base *url.URL, db string) string {
 // Handing it to a plain pgx connection announces itself: pgx forwards a key it
 // does not recognize to the server as a runtime parameter, so pool_max_conns
 // fails the connection outright (SQLSTATE 42704) rather than being ignored. The
-// reverse — a plainDSN reaching pgxpool.New — is the quiet one: the pool builds
+// reverse, a plainDSN reaching pgxpool.New, is the quiet one: the pool builds
 // fine and falls back to its max(4, NumCPU) default, which is the cap's entire
 // reason for existing, and nothing says so.
 func poolDSN(base *url.URL, db string) string {
@@ -151,7 +151,7 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 	t.Helper()
 	// Scoped to the test: t.Context is cancelled just before this test's cleanups
 	// run, so a test that times out stops waiting on its own database too. The
-	// shared container and the cleanup below deliberately do not use it — see
+	// shared container and the cleanup below deliberately do not use it; see
 	// startPostgres and the t.Cleanup body.
 	ctx := t.Context()
 
@@ -179,8 +179,8 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 		// Background, not t.Context: the test's context is already cancelled by
 		// the time cleanups run, so the drop would never be sent and the database
 		// would linger in the shared container for the rest of the package. The
-		// timeout backstops a wedged connection hanging the drop — and with it the
-		// rest of the sequential package — until go test -timeout (cleanupDropTimeout).
+		// timeout backstops a wedged connection hanging the drop, and with it the
+		// rest of the sequential package, until go test -timeout (cleanupDropTimeout).
 		//
 		// force: pgxpool releases connections asynchronously, and a backend that
 		// outlives the pool holds the database open against a plain drop.
@@ -246,8 +246,8 @@ func startPostgres() (_ *sharedPostgres, err error) {
 		return nil, fmt.Errorf("parse connection string: %w", err)
 	}
 	// Migrations run against the template exactly once; every test database is a
-	// copy of the result. This is also the only connection the template ever takes
-	// — see sealTemplate, which closes it to any other.
+	// copy of the result. This is also the only connection the template ever takes;
+	// see sealTemplate, which closes it to any other.
 	if err = migrate(ctx, plainDSN(base, pgTemplateDB)); err != nil {
 		return nil, fmt.Errorf("migrate template: %w", err)
 	}
@@ -275,7 +275,7 @@ func startPostgres() (_ *sharedPostgres, err error) {
 
 // sealTemplate locks the template down once it is migrated. CREATE DATABASE ...
 // TEMPLATE fails outright while any session is attached to the source (SQLSTATE
-// 55006), and migrate above is the only thing that ever connects to it — the
+// 55006), and migrate above is the only thing that ever connects to it: the
 // readiness probe waits on a log line and a listening port, never opening a
 // session.
 //

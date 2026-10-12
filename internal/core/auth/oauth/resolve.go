@@ -47,7 +47,7 @@ func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, ident *Identity, fi
 		return "", false, err
 	}
 
-	// Concurrent signup: email row was created in another tx — link and finalize in a fresh tx.
+	// Concurrent signup: email row was created in another tx; link and finalize in a fresh tx.
 	linked, linkErr := linkByEmailAndFinalize(ctx, pool, provider, ident, finalize)
 	if linkErr != nil {
 		return "", false, linkErr
@@ -189,7 +189,7 @@ func lookupByProviderSubject(ctx context.Context, pool *pgxpool.Pool, provider P
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The race "winner" should have written the identity row; its absence
-			// is a genuine integrity anomaly, not an expected branch — record it.
+			// is a genuine integrity anomaly, not an expected branch. Record it.
 			slog.ErrorContext(ctx, "oauth identity race lost with no linked row",
 				slog.String("provider", string(provider)), slog.String("subject", subject))
 			telemetry.RecordError(ctx, ErrIdentityResolutionFailed)

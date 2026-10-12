@@ -47,7 +47,7 @@ func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID s
 		t.Fatalf("create org: %v", err)
 	}
 	// Backdated to the 1st so the org's quota window is the calendar month these
-	// assertions assume — an anchor derives from create_time, so an org created
+	// assertions assume: an anchor derives from create_time, so an org created
 	// "now" would shift every expected bound with the suite's run date.
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	return org.ID, seedProjectInOrg(t, pg, org.ID)
@@ -103,7 +103,7 @@ func usageDayCount(t *testing.T, pg *testutil.TestPostgres, projectID string, da
 // day, so that day's stored count silently becomes a function of what time the
 // CronJob happened to fire.
 //
-// Tests place their events straddling the boundary for that reason — an event
+// Tests place their events straddling the boundary for that reason: an event
 // well inside the window cannot tell the two apart.
 func TestMeterCountsTheWholeBoundaryDay(t *testing.T) {
 	if testing.Short() {
@@ -147,7 +147,7 @@ func TestMeterCountsTheWholeBoundaryDay(t *testing.T) {
 		t.Fatal("no cell stored for the boundary day")
 	}
 	if got != 2 {
-		t.Errorf("boundary day = %d, want 2 — the window starts mid-day instead of at UTC midnight", got)
+		t.Errorf("boundary day = %d, want 2: the window starts mid-day instead of at UTC midnight", got)
 	}
 	if _, ok := usageDayCount(t, pg, projectID, boundary.AddDate(0, 0, -1)); ok {
 		t.Error("metered the day before the window")
@@ -182,7 +182,7 @@ func TestMeterRefusesToReconcileWhenNoProjectIsKnown(t *testing.T) {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
-	// Events for a project id Postgres does not know — the other environment.
+	// Events for a project id Postgres does not know: the other environment.
 	stranger := xid.New().String()
 	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), stranger, "user-1", "$pageview",
 		uuid.NewString(), nil, nil, now.Add(-time.Hour))
@@ -207,7 +207,7 @@ func TestMeterRefusesToReconcileWhenNoProjectIsKnown(t *testing.T) {
 	}
 
 	if got, ok := usageDayCount(t, pg, projectID, day); !ok || got != 42 {
-		t.Errorf("stored cell = (%d, %t), want (42, true) — the pass reconciled against a foreign ClickHouse", got, ok)
+		t.Errorf("stored cell = (%d, %t), want (42, true): the pass reconciled against a foreign ClickHouse", got, ok)
 	}
 	usage, err := j.service.GetPeriodUsage(ctx, orgID, mustPeriodStart(now))
 	if err != nil {
@@ -290,7 +290,7 @@ func TestRunSucceedsWhenAnotherHolderHasTheLock(t *testing.T) {
 	}
 }
 
-// The lock is transaction-scoped, so it has to be gone once the pass returns —
+// The lock is transaction-scoped, so it has to be gone once the pass returns;
 // a session-scoped one would ride a pooled connection back and wedge later passes.
 func TestLockIsReleasedAfterThePass(t *testing.T) {
 	if testing.Short() {
@@ -336,7 +336,7 @@ func TestFullRecomputeIsGatedOnCronState(t *testing.T) {
 	j.rescanDays = 1
 
 	// Fixed so the assertions do not depend on today's day-of-month: mid-June, with
-	// an event early in the same month — inside the full window, outside the rescan.
+	// an event early in the same month, inside the full window, outside the rescan.
 	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
 	old := time.Date(2026, 6, 5, 9, 0, 0, 0, time.UTC)
 
@@ -377,7 +377,7 @@ func TestFullRecomputeIsGatedOnCronState(t *testing.T) {
 // An empty read *over days pug has already counted* is treated as a bad read, not
 // as an emptied window: the stored days stand, and the gate stays open so the next
 // pass retries the wide window instead of waiting out the interval. The accepted
-// cost is a genuinely emptied window keeping a stale count — see usage.md §8.
+// cost is a genuinely emptied window keeping a stale count; see usage.md §8.
 //
 // The scope matters: with nothing stored the same empty read is treated as idle
 // and every period is refreshed as normal, which
@@ -454,7 +454,7 @@ func TestPruneIsGatedOnCronState(t *testing.T) {
 		t.Fatalf("gated prune deleted rows: %d remain, want 2", n)
 	}
 
-	// Past the interval, the same call does the work — and only the work.
+	// Past the interval, the same call does the work, and only the work.
 	if err := j.state.MarkRun(ctx, taskPrune, now.Add(-25*time.Hour)); err != nil {
 		t.Fatalf("MarkRun: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestDeletedProjectStillCountsAsKnown(t *testing.T) {
 // exercised it. A negative window puts `from` in the future: every read comes back
 // empty and the pass meters nothing, quietly, forever.
 // rescanDays is tested in isolation below, which cannot catch a typo'd struct tag
-// or a Run that forgets to route the config through the clamp — both of which
+// or a Run that forgets to route the config through the clamp, both of which
 // silently disable the documented .env knob, or ship a negative window that meters
 // nothing forever.
 func TestConfigReadsTheDocumentedEnvVar(t *testing.T) {

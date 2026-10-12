@@ -47,7 +47,7 @@ type TileContent interface {
 }
 
 // InsightTile is the insight-kind variant of TileContent. Spec is a shared
-// pointer; callers must not mutate it after constructing the tile — Encode
+// pointer; callers must not mutate it after constructing the tile: Encode
 // snapshots it via protojson before any DB write. The time window and
 // granularity live on the dashboard, not the tile.
 type InsightTile struct {
@@ -74,7 +74,7 @@ func (i InsightTile) Encode() (EncodedTileContent, error) {
 }
 
 // Encode translates the markdown payload to the DB-shaped tuple. Empty body
-// is preserved verbatim — pgtype.Text{Valid: true, String: ""} is distinct
+// is preserved verbatim: pgtype.Text{Valid: true, String: ""} is distinct
 // from SQL NULL, which is what the CHECK constraint requires for kind = 2.
 func (m MarkdownTile) Encode() (EncodedTileContent, error) {
 	return EncodedTileContent{Kind: TileKindMarkdown, MarkdownBody: pgtype.Text{String: m.Body, Valid: true}}, nil
@@ -91,8 +91,8 @@ type EncodedTileContent struct {
 
 // DashboardWithTiles bundles a dashboard with its ordered tiles and optional
 // share. Invariant: Share is non-nil only when the dashboard is publicly shared
-// (the share row is enabled); a nil Share means private — never shared OR sharing
-// disabled. Producers must establish this via enabledShare, never by attaching a
+// (the share row is enabled); a nil Share means private (never shared OR sharing
+// disabled). Producers must establish this via enabledShare, never by attaching a
 // raw share row, because the RPC encoder treats Share != nil as "shared".
 type DashboardWithTiles struct {
 	Dashboard dbread.Dashboard
@@ -103,7 +103,7 @@ type DashboardWithTiles struct {
 // recordServiceError logs + records a service-layer error at the layer that detects
 // it (per telemetry.md), then returns it unchanged so handlers map the status. It
 // is the single chokepoint for the service's DB error paths. A client context
-// cancellation/deadline is returned unchanged but NOT logged or recorded — a
+// cancellation/deadline is returned unchanged but NOT logged or recorded: a
 // disconnected or timed-out caller would otherwise manufacture error-rate noise
 // (mirrors the insights executor's recordQueryError).
 func recordServiceError(ctx context.Context, msg string, err error, attrs ...any) error {
@@ -210,8 +210,8 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 
 	// The share is supplementary metadata; a transient dashboard_shares read
 	// failure must not fail the whole dashboard read. lookupShare has already
-	// logged+recorded any real error, so degrade to a private view (Share = nil)
-	// — except for client cancellation/deadline, which should surface.
+	// logged+recorded any real error, so degrade to a private view (Share = nil),
+	// except for client cancellation/deadline, which should surface.
 	share, err := lookupShare(ctx, s.read, dashboardID)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -251,7 +251,7 @@ type UpdateDashboardInput struct {
 // reflects the current share), while a non-nil value enables/disables it.
 func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID string, in UpdateDashboardInput) (result DashboardWithTiles, retErr error) {
 	// One transaction so the metadata write and the share toggle commit (or roll
-	// back) together — consistent with the Upsert path's atomicity. Without it, a
+	// back) together, consistent with the Upsert path's atomicity. Without it, a
 	// share-write failure after the metadata write lands would leave the rename
 	// applied but the toggle dropped while the client sees an error.
 	tx, err := s.pgW.Begin(ctx)
@@ -411,7 +411,7 @@ func MapToSpecMessage(data map[string]any) (*insightsv1.InsightQuerySpec, error)
 
 // normalizedDashboardDefaultTimeRange returns the preset unchanged for a known
 // value, defaulting unknown/UNSPECIFIED to LAST_30_DAYS. Mirrors
-// normalizedDashboardGranularity — no parallel enum, so nothing to keep in sync.
+// normalizedDashboardGranularity: no parallel enum, so nothing to keep in sync.
 func normalizedDashboardDefaultTimeRange(tr commonv1.TimeRangePreset) commonv1.TimeRangePreset {
 	switch tr {
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR,
@@ -431,7 +431,7 @@ func normalizedDashboardDefaultTimeRange(tr commonv1.TimeRangePreset) commonv1.T
 
 // dashboardDefaultTimeRangeDBName stores the preset as its proto enum name,
 // normalizing unknown/UNSPECIFIED to LAST_30_DAYS. Self-normalizing and thus
-// safe to call directly — mirrors dashboardGranularityDBName.
+// safe to call directly. Mirrors dashboardGranularityDBName.
 func dashboardDefaultTimeRangeDBName(tr commonv1.TimeRangePreset) string {
 	return normalizedDashboardDefaultTimeRange(tr).String()
 }

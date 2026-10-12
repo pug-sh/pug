@@ -247,7 +247,7 @@ func (q *Query) Limit(n int64) *Query {
 // Apply only to the outermost query. The Pug builder rejects SETTINGS on any
 // non-outermost query (CTE sub-query, UNION branch, or any future nesting form);
 // calling WithQueryCache on such a query causes the outer Build() to panic.
-// Repeated calls overwrite the previous TTL — the SETTINGS clause always contains
+// Repeated calls overwrite the previous TTL: the SETTINGS clause always contains
 // exactly one (use_query_cache, query_cache_ttl) pair.
 //
 // Panics if ttlSeconds is not positive.
@@ -274,7 +274,7 @@ func (q *Query) DisableTopKDynamicFiltering() *Query {
 // Use on queries whose GROUP BY or ORDER BY cardinality is data-dependent and
 // unbounded (e.g. grouping by an arbitrary property or by user), so a
 // high-cardinality dimension degrades to a slower spilling query instead of
-// failing at the memory limit. Apply only to the outermost query — same
+// failing at the memory limit. Apply only to the outermost query: same
 // SETTINGS placement rule as WithQueryCache.
 //
 // Panics if thresholdBytes is not positive (0 would silently disable spilling,
@@ -289,7 +289,7 @@ func (q *Query) WithSpillThreshold(thresholdBytes int) *Query {
 }
 
 // With adds a named CTE. The sub-query's args are emitted before the main query's args.
-// Panics if sub is nil — pass a non-nil *Query or guard with a nil check before calling.
+// Panics if sub is nil. Pass a non-nil *Query or guard with a nil check before calling.
 //
 // The sub-query is held by reference; do not mutate it after passing it here. In
 // particular, calling sub.WithQueryCache(...) after With() will cause this query's
@@ -311,7 +311,7 @@ func (q *Query) Build() (string, []any, error) {
 	// CTEs
 	for i, c := range q.ctes {
 		if len(c.sub.settings) > 0 {
-			panic(fmt.Sprintf("clickhouse: cte %q: SETTINGS is only allowed on the outermost query — call WithQueryCache on the outer query, not the CTE sub-query", c.name))
+			panic(fmt.Sprintf("clickhouse: cte %q: SETTINGS is only allowed on the outermost query; call WithQueryCache on the outer query, not the CTE sub-query", c.name))
 		}
 		subSQL, subArgs, err := c.sub.Build()
 		if err != nil {
@@ -409,7 +409,7 @@ type UnionQuery struct {
 }
 
 // UnionAll creates a new UnionQuery from the given queries.
-// Panics if any query is nil — pass non-nil *Query values or guard with a nil check before calling.
+// Panics if any query is nil. Pass non-nil *Query values or guard with a nil check before calling.
 //
 // Each query is held by reference; do not mutate one after passing it here. In particular,
 // calling q.WithQueryCache(...) on an inner query after UnionAll() will cause Build() to panic,
@@ -433,7 +433,7 @@ func (u *UnionQuery) OrderBy(exprs ...string) *UnionQuery {
 //
 // Apply only to the outermost UnionQuery. The Pug builder rejects SETTINGS on any
 // non-outermost query; calling WithQueryCache on a Query passed to UnionAll(...) causes
-// the outer Build() to panic. Repeated calls overwrite the previous TTL — the SETTINGS
+// the outer Build() to panic. Repeated calls overwrite the previous TTL: the SETTINGS
 // clause always contains exactly one (use_query_cache, query_cache_ttl) pair.
 //
 // Panics if ttlSeconds is not positive.
@@ -456,7 +456,7 @@ func (u *UnionQuery) Build() (string, []any, error) {
 	var args []any
 	for i, q := range u.queries {
 		if len(q.settings) > 0 {
-			panic(fmt.Sprintf("clickhouse: query %d: SETTINGS is only allowed on the outermost UnionQuery — call WithQueryCache on the UnionQuery, not the inner Query", i))
+			panic(fmt.Sprintf("clickhouse: query %d: SETTINGS is only allowed on the outermost UnionQuery; call WithQueryCache on the UnionQuery, not the inner Query", i))
 		}
 		sql, qArgs, err := q.Build()
 		if err != nil {

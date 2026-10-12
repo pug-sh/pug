@@ -30,7 +30,7 @@ func journeyByName(defs []journeyDef, name string) journeyDef {
 	panic("seed: unknown journey " + name)
 }
 
-// First-session journeys: not part of the random rotation — forced when a
+// First-session journeys: not part of the random rotation; forced when a
 // session lands within firstSessionWindow of the user's join, so signup and
 // install events coincide with cohort entry.
 var webSignupJourney = journeyDef{name: "signup", steps: []step{

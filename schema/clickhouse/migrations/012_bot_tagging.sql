@@ -2,10 +2,10 @@
 
 -- Bot tagging (docs/architecture/bot-detection.md): ingest sets bot/bot_reason
 -- on automated web-SDK traffic, and both rollups gain a `bot` key column the
--- migration-011 way (joins ORDER BY in the same ALTER, no DEFAULT — code 36) so
+-- migration-011 way (joins ORDER BY in the same ALTER, no DEFAULT (code 36)) so
 -- a later toggle can exclude on the fast path: WHERE bot = 0 on the event
 -- rollup, but session-level (HAVING max(bot) = 0 after the merge) on the
--- session rollup — its key is per event, so a session whose events straddle
+-- session rollup. Its key is per event, so a session whose events straddle
 -- bot=0/1 sits in two rows and a row predicate would return half a session.
 -- Nothing was tagged before this, so pre-012 rows reading bot = 0 is exact and
 -- there is no backfill. Keep in sync with internal/core/clickhouse/promoted_auto.go.
@@ -157,7 +157,7 @@ GROUP BY project_id, kind, session_id, bot;
 
 -- Restore the 011 event-rollup and 010 session-rollup MV queries, then drop the
 -- events columns. The rollup `bot` key columns cannot be dropped (sorting key);
--- new rows take the type default 0 — fine for dev.
+-- new rows take the type default 0, fine for dev.
 
 ALTER TABLE dashboard_event_rollup_daily_mv MODIFY QUERY
 SELECT

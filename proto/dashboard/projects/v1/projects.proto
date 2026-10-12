@@ -89,7 +89,7 @@ message ApiKey {
   string display_name = 2;
   string id = 3;
   ApiKeyKind kind = 4;
-  // Full value for a public key; empty for a private key — use `masked` to
+  // Full value for a public key; empty for a private key. Use `masked` to
   // identify one of those.
   string key = 5;
   // Fixed-format hint ("prv_...3f9c") to tell a project's keys apart.
@@ -116,7 +116,7 @@ message CreateApiKeyRequest {
 
 message CreateApiKeyResponse {
   ApiKey api_key = 1;
-  // The full key. For a private key this is the only time it is ever returned —
+  // The full key. For a private key this is the only time it is ever returned:
   // it is unrecoverable afterwards.
   string key = 2;
 }
@@ -139,7 +139,7 @@ message UpdateMetaRequest {
   ];
   // IANA timezone (e.g. "Asia/Kolkata") aligning insight/dashboard bucket
   // boundaries to the project's calendar. Empty = UTC. Unlike creation, a malformed
-  // value is rejected (CodeInvalidArgument) rather than coerced — this is an
+  // value is rejected (CodeInvalidArgument) rather than coerced: this is an
   // explicit settings action.
   string reporting_timezone = 2 [(buf.validate.field).string = {
     max_len: 64

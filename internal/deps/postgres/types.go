@@ -18,8 +18,8 @@ func NewOptionalText(s string) pgtype.Text {
 
 // NewNullableText maps a presence-tracked optional string to pgtype.Text for
 // partial-update queries. A nil pointer becomes SQL NULL (Valid:false) so a
-// coalesce(param, column) preserves the existing column value; a non-nil pointer —
-// EVEN an empty string — becomes a present value (Valid:true) that overwrites it.
+// coalesce(param, column) preserves the existing column value; a non-nil pointer,
+// EVEN an empty string, becomes a present value (Valid:true) that overwrites it.
 // That is what lets a caller distinguish "field omitted" from "field set to empty".
 func NewNullableText(s *string) pgtype.Text {
 	if s == nil {
@@ -44,7 +44,7 @@ func NewOptionalTimestamptz(t time.Time) pgtype.Timestamptz {
 }
 
 // NewOptionalInt2 stores 0 as NULL, for a column whose check constraint puts 0
-// outside its range — so zero is "no value" rather than a value. Panics instead
+// outside its range, so zero is "no value" rather than a value. Panics instead
 // of narrowing: a wrapped value lands back inside the range the check enforces.
 func NewOptionalInt2(v int) pgtype.Int2 {
 	if int(int16(v)) != v {

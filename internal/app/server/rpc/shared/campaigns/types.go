@@ -11,7 +11,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
-// wToRPCMsg and roToRPCMsg must be kept in sync — they convert
+// wToRPCMsg and roToRPCMsg must be kept in sync: they convert
 // the write and read models to the same proto message.
 func wToRPCMsg(c dbwrite.Campaign) (*campaignsv1.Campaign, error) {
 	notificationData, err := json.Marshal(c.NotificationData)

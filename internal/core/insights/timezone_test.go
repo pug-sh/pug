@@ -33,7 +33,7 @@ func TestBucketExpr_NonUTCWrapsInToTimeZone(t *testing.T) {
 	}
 }
 
-// Every granularity wraps the column in toTimeZone() the same way — the point of the
+// Every granularity wraps the column in toTimeZone() the same way: the point of the
 // uniform template is that week/month/hour/minute all truncate in-zone with no
 // per-function special casing.
 func TestBucketExpr_NonUTCWrapsEveryGranularity(t *testing.T) {

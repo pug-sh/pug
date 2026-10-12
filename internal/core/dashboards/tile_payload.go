@@ -17,7 +17,7 @@ import (
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 )
 
-// TilePayload is the canonical input for a tile write — everything stored on a
+// TilePayload is the canonical input for a tile write: everything stored on a
 // dashboard_tiles row except identity (id) and timestamps. UpsertDashboard
 // accepts this. Encode() produces the (DB columns, payload_hash) tuple.
 type TilePayload struct {
@@ -104,7 +104,7 @@ func (p TilePayload) Encode() (EncodedTilePayload, error) {
 // form: zero-valued nested messages (header, visualization, position) collapse
 // to nil. messageToMap maps both nil and &Empty{} to `{}` for storage, and the
 // read path returns nil for an empty map, so a client echoing back what Get
-// returned computes the same hash that was stored — preserving the no-op
+// returned computes the same hash that was stored, preserving the no-op
 // short-circuit. Hashing each nested message whole (rather than field-by-field)
 // also means new sub-fields are covered automatically.
 func computeTilePayloadHash(p TilePayload, viewMode dashboardsv1.DashboardTileViewMode, compare dashboardsv1.ComparePeriod) ([]byte, error) {
@@ -212,7 +212,7 @@ var unknownEnumSeen sync.Map
 // LogUnknownEnumOnce emits a single WARN per (enumType, column, value)
 // combination for the lifetime of the process. Used by FromDB-style normalizers
 // in this package and in the handler package when an unknown name is read from
-// a DB column that should hold a proto enum name — typically the symptom of a
+// a DB column that should hold a proto enum name, typically the symptom of a
 // proto rename / cross-deploy schema drift. ctx is threaded through to
 // telemetry so the error is recorded on the originating request's span and the
 // log line carries request correlation.
@@ -278,7 +278,7 @@ func UnmarshalThresholds(data []byte) ([]*dashboardsv1.ThresholdRule, error) {
 // messageToMap protojson-marshals msg, then unmarshals as map[string]any so
 // the resulting value can be stored in a jsonb column via sqlc's default
 // mapping. Nil input (or a typed-nil pointer wrapped in the interface) maps
-// to an empty map — every NOT NULL jsonb column needs a non-nil value.
+// to an empty map: every NOT NULL jsonb column needs a non-nil value.
 func messageToMap(msg proto.Message) (map[string]any, error) {
 	if msg == nil {
 		return map[string]any{}, nil
@@ -312,7 +312,7 @@ func MapToMessage(data map[string]any, dst proto.Message) error {
 
 // MapStoredMessage decodes a stored jsonb message column into dst like
 // MapToMessage, but additionally surfaces schema drift: when a non-empty stored
-// map decodes to a zero-valued message (every key was discarded as unknown —
+// map decodes to a zero-valued message (every key was discarded as unknown,
 // the symptom of a proto field rename or cross-deploy drift on a message
 // column), it logs once per column. Decode uses DiscardUnknown, so without this
 // such drift would silently zero the field on read; this is the message-column
@@ -328,7 +328,7 @@ func MapStoredMessage(ctx context.Context, column string, data map[string]any, d
 }
 
 // emptyDecodeSeen dedups MapStoredMessage's drift warning so a drifted column
-// doesn't fire on every dashboard read for the process lifetime — same
+// doesn't fire on every dashboard read for the process lifetime, same
 // rationale as unknownEnumSeen.
 var emptyDecodeSeen sync.Map
 

@@ -54,7 +54,7 @@ type UpsertTileInput struct {
 //
 // Returns the post-state dashboard with tiles in **request order** so the
 // client can map server-assigned ids back to its draft. The reload happens
-// after commit (not inside the tx) — a concurrent DeleteDashboard between
+// after commit (not inside the tx): a concurrent DeleteDashboard between
 // commit and reload is observable as ErrDashboardNotFound and is logged
 // distinctly so operators can tell it apart from a never-existed 404.
 func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID string, in UpsertDashboardInput) (result DashboardWithTiles, retErr error) {
@@ -69,7 +69,7 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 			continue
 		}
 		if _, dup := seenIDs[t.ID]; dup {
-			// Client-input validation error — log at WARN and return the sentinel
+			// Client-input validation error: log at WARN and return the sentinel
 			// without recordServiceError, so a buggy client doesn't manufacture
 			// error-rate noise. Mirrors the "tile id not on dashboard" branch.
 			slog.WarnContext(ctx, "upsert rejected: duplicate tile id in request",
@@ -109,7 +109,7 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
 			// Capture the function-level error so the rollback warning is
-			// triageable on its own — without this, an operator seeing the
+			// triageable on its own: without this, an operator seeing the
 			// rollback log has to correlate by trace id to find the original
 			// failure.
 			attrs := []any{slogx.Error(rbErr),
@@ -161,7 +161,7 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 	// finalIDs[i] is the post-write id of the i-th request tile. Pre-assign new
 	// ids for empty-id tiles (inserts) and validate that populated ids exist
 	// before we touch any rows, so a swap-replace (drop tile A and insert a new
-	// tile reusing A's display_name) doesn't trip the partial unique index —
+	// tile reusing A's display_name) doesn't trip the partial unique index:
 	// DELETE runs before INSERT/UPDATE below.
 	finalIDs := make([]string, len(in.Tiles))
 	for i, tile := range in.Tiles {
@@ -216,7 +216,7 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 				PayloadHash:   enc.PayloadHash,
 			}); err != nil {
 				// CreateDashboardTile is `INSERT ... SELECT ... FROM dashboards d
-				// WHERE d.id = $X AND d.project_id = $Y` — zero rows when the
+				// WHERE d.id = $X AND d.project_id = $Y`: zero rows when the
 				// dashboard row was deleted concurrent with this tx. Surface as
 				// 404 rather than CodeInternal. The row lock acquired upfront
 				// makes this very unlikely but not impossible (lock acquired
@@ -289,7 +289,7 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 		// GetDashboard already records / classifies the error. ErrDashboardNotFound
 		// shouldn't happen here (we just upserted into the same dashboard) but a
 		// concurrent DeleteDashboard could race. The write is already committed,
-		// so the client will see 404 for a write that did succeed — log a
+		// so the client will see 404 for a write that did succeed; log a
 		// distinct WARN so operators can tell this apart from a genuine "never
 		// existed" 404 in incident triage.
 		if errors.Is(err, ErrDashboardNotFound) {

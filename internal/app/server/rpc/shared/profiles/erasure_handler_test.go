@@ -38,7 +38,7 @@ func TestGetDeletionRequest_Unauthenticated(t *testing.T) {
 }
 
 // toDeletionRequestResponse is the controller's proof-of-fulfilment payload, so
-// every field — including the FAILED status enum and the error reason — must map.
+// every field, including the FAILED status enum and the error reason, must map.
 func TestToDeletionRequestResponse_MapsAllFields(t *testing.T) {
 	requestedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	completedAt := time.Date(2026, 1, 2, 3, 5, 0, 0, time.UTC)
@@ -130,7 +130,7 @@ func TestDeleteDataSubject_RecordsRequestAndIsReadable(t *testing.T) {
 	projectID := seedProject(t, ctx, pg)
 	s := NewServer(coreprofiles.NewService(pg.PgW, nil, natsClient))
 
-	// Erase by external_id with no profile row — must still record the request.
+	// Erase by external_id with no profile row: must still record the request.
 	const externalID = "ghost@example.com"
 	resp, err := s.DeleteDataSubject(authCtx(projectID),
 		connect.NewRequest(&profilesv1.DeleteDataSubjectRequest{ExternalId: proto.String(externalID)}))

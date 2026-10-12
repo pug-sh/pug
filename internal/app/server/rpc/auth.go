@@ -57,8 +57,8 @@ func maskKey(key string) string {
 }
 
 // NormalizeBearerAPIKey ensures a private API key presented as an
-// `Authorization: Bearer prv_...` credential — the only header form many MCP
-// clients can send — is also readable from the x-api-key header the API-key auth
+// `Authorization: Bearer prv_...` credential, the only header form many MCP
+// clients can send, is also readable from the x-api-key header the API-key auth
 // funcs expect. It returns the effective *private* key, or "" if the request
 // carries none. This keeps the "Bearer" scheme string and the private-key prefix
 // owned solely by package rpc.
@@ -66,7 +66,7 @@ func maskKey(key string) string {
 // It MUTATES req.Header in place when it promotes a Bearer token: that side effect
 // is the whole mechanism by which the downstream WithPrivateKeyAuth sees the key.
 //
-// x-api-key, if present, always wins — a Bearer must never be able to override an
+// x-api-key, if present, always wins: a Bearer must never be able to override an
 // explicit x-api-key, or anything that can inject an Authorization header (a proxy,
 // a misconfigured gateway) could swap the caller onto a different project's key.
 // Otherwise the Bearer scheme is matched case-insensitively (RFC 9110 §11.1, via
@@ -74,7 +74,7 @@ func maskKey(key string) string {
 //
 // Either way the key is returned only when it carries the private-key prefix. A
 // public key is extractable from client apps, so it must never become the effective
-// credential — callers stash this value in the request context and later re-inject
+// credential: callers stash this value in the request context and later re-inject
 // it as the credential on in-process calls, and it fails closed at the auth boundary
 // regardless. A non-private or absent credential is left in place, untouched, for
 // that boundary to reject.
@@ -123,7 +123,7 @@ func resolvePrivateKeyPrincipal(ctx context.Context, repo projectKeyLookup, apiK
 // only translates errors).
 //
 // InvalidateProjectKeys is required as a structural marker so the sqlc-generated
-// *dbread.Queries cannot accidentally satisfy this interface — its presence ensures
+// *dbread.Queries cannot accidentally satisfy this interface: its presence ensures
 // callers wire a repo that respects the log-at-source contract.
 type projectKeyLookup interface {
 	GetProjectByPublicApiKey(ctx context.Context, key string) (dbread.Project, error)
@@ -144,7 +144,7 @@ type ProjectKeyLookup = projectKeyLookup
 // (every failure returns an error_id). authn serializes *connect.Error details
 // via connect.NewErrorWriter, so the client receives them.
 func unauthenticated(ctx context.Context, msg string) error {
-	cerr := connect.NewError(connect.CodeUnauthenticated, errors.New(msg)) // apperr:exempt — must be a *connect.Error: authn writes it outside the interceptor chain, so an *apperr.Error would not be translated
+	cerr := connect.NewError(connect.CodeUnauthenticated, errors.New(msg)) // apperr:exempt (must be a *connect.Error: authn writes it outside the interceptor chain, so an *apperr.Error would not be translated)
 	attachDetails(ctx, cerr, apperr.ReasonUnauthenticated)
 	return cerr
 }
@@ -153,7 +153,7 @@ func unauthenticated(ctx context.Context, msg string) error {
 // or api_key query parameter (fallback for beacon requests).
 // Accepts both public (pub_) and private (prv_) keys. Public keys are accepted
 // via header or query parameter; private keys are header-only.
-// Unlike WithDualAuth, there is no JWT fallback — Customer is always nil.
+// Unlike WithDualAuth, there is no JWT fallback: Customer is always nil.
 func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)

@@ -21,7 +21,7 @@ import (
 )
 
 // Authorization (project-role gating) is enforced centrally by
-// rpc.AuthzInterceptor from the permission registry, before any handler runs —
+// rpc.AuthzInterceptor from the permission registry, before any handler runs:
 // project lifecycle writes are admin-only, BatchGet is member+, all resolved
 // from the registry. Create additionally has a race-safe admin check in its CTE.
 type server struct {
@@ -133,7 +133,7 @@ func (s *server) ListApiKeys(
 }
 
 // CreateApiKey mints a key for the project specified by the x-project-id header.
-// The response carries the key in full — for a private key that is the only time
+// The response carries the key in full: for a private key that is the only time
 // it exists outside the caller, since only its digest is stored.
 func (s *server) CreateApiKey(
 	ctx context.Context,
@@ -240,7 +240,7 @@ func (s *server) UpdateMeta(
 	}
 
 	// Partial update: each field is presence-tracked (edition 2023). A nil pointer
-	// means "leave unchanged" — NewNullableText emits SQL NULL and the query's
+	// means "leave unchanged": NewNullableText emits SQL NULL and the query's
 	// coalesce(...) preserves the stored value. reporting_timezone is validated and
 	// normalized only when the client actually sent it; a present "" resets to UTC.
 	var tz *string

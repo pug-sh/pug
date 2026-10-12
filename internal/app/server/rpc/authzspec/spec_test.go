@@ -7,7 +7,7 @@ import (
 )
 
 // TestGatedBuildersSetFullTriple pins that the two role-gated constructors set
-// IsRoleGated + the (resource, action, orgSource) triple the interceptor reads —
+// IsRoleGated + the (resource, action, orgSource) triple the interceptor reads;
 // this is the runtime half of the compile-enforced invariant.
 func TestGatedBuildersSetFullTriple(t *testing.T) {
 	t.Run("OrgGated resolves from the message", func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestGatedBuildersSetFullTriple(t *testing.T) {
 }
 
 // TestNonGatedBuildersCarryNoTriple pins that the non-gated constructors are
-// Defined but never role-gated and never carry a (resource, action, orgSource) —
+// Defined but never role-gated and never carry a (resource, action, orgSource):
 // the property the unexported fields make impossible to violate from outside.
 func TestNonGatedBuildersCarryNoTriple(t *testing.T) {
 	for _, tc := range []struct {
@@ -72,7 +72,7 @@ func TestNonGatedBuildersCarryNoTriple(t *testing.T) {
 }
 
 // TestZeroSpecIsNotDefined pins that the one literal expressible outside this
-// package, Spec{}, is rejected by Defined() (and is not role-gated) — closing the
+// package, Spec{}, is rejected by Defined() (and is not role-gated), closing the
 // bare-literal residual the registry-completeness test guards against.
 func TestZeroSpecIsNotDefined(t *testing.T) {
 	var s Spec

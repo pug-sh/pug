@@ -83,7 +83,7 @@ func TestCreateApiKeyRequest_DisplayNameBounds(t *testing.T) {
 		t.Fatal("display_name over 150 chars should fail max_len")
 	}
 
-	// A label is optional — an unnamed key is fine.
+	// A label is optional: an unnamed key is fine.
 	req.DisplayName = nil
 	if err := protovalidate.Validate(req); err != nil {
 		t.Fatalf("omitted display_name should be valid: %v", err)

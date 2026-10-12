@@ -23,13 +23,13 @@ const totalDimName = "$__total__"
 
 // othersBucket is the breakdown value carrying everything outside a series' top
 // N. Emitted by the rollup SQL and by applyTrendsTopN, read back by
-// fillMultiEventTrendZeros — all three must agree.
+// fillMultiEventTrendZeros; all three must agree.
 const othersBucket = "$others"
 
 // Event-rollup dimensions, grouped by the migration that introduced them.
 // Each group freezes when its migration ships: it names exactly what that
-// migration's ARRAY JOIN — and, for an extension, its DELETE + delta backfill
-// — carries, so a dim may never move between groups and re-inserting an older
+// migration's ARRAY JOIN (and, for an extension, its DELETE + delta backfill)
+// carries, so a dim may never move between groups and re-inserting an older
 // group's dim would double its cnt (see 009's header). A future migration
 // adds a group and extends the union below; it never appends to one of these.
 var (
@@ -92,8 +92,8 @@ func rollupAggExpr(agg insightsv1.AggregationType) (string, bool) {
 // is retained permanently. The drift equals the pipeline's redelivery rate
 // (monotonic, never self-correcting). UNIQUE_USERS is immune
 // (uniqState on distinct_id is idempotent). This is an accepted, bounded
-// inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
-// pinned by TestIntegration/rollup_duplicate_overcount_documented.
+// inaccuracy for dashboard visualization (see docs/architecture/clickhouse.md;
+// pinned by TestIntegration/rollup_duplicate_overcount_documented).
 func canUseEventRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granularity) bool {
 	//exhaustive:ignore an insight type the rollup cannot serve falls back to the raw builder
 	switch spec.GetInsightType() {
@@ -163,7 +163,7 @@ func startOfDayUTC(t time.Time) time.Time {
 // no partial-day truncation, so the day-keyed rollup returns the same event set as
 // the raw instant filter (occur_time >= from AND occur_time < to).
 //
-// `from` must be midnight UTC — a mid-day `from` strands the events before it on the
+// `from` must be midnight UTC: a mid-day `from` strands the events before it on the
 // day the rollup would include in full. `to` is fine when it is midnight UTC, or
 // when it is now/future: the rollup widens the final day to its end, but that
 // trailing slice lies at/after `now` and holds no events. A past, mid-day `to` (e.g.
@@ -196,7 +196,7 @@ func rollupBreakdownLimit(limit int32) int64 {
 // Breakdown top-N bucketing happens in SQL (a per-event top_vals_<i> CTE +
 // $others); the returned TrendsQuery carries breakdownLimit=0 so GroupSeries does
 // not re-bucket. Because the SQL is then the sole arbiter of top-N membership, it
-// must reproduce applyTrendsTopN exactly — see the top_grain_<i>/top_vals_<i>
+// must reproduce applyTrendsTopN exactly; see the top_grain_<i>/top_vals_<i>
 // construction for the three axes that have to match. Caller must have checked
 // canUseEventRollup.
 func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
@@ -207,7 +207,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 	// Bucket the Date column through the SAME granularity function the raw path
 	// uses (over toDateTime(day)) so week/month boundaries are byte-identical.
 	// (Named bucketSQL, not bucketExpr, to avoid shadowing the package-level
-	// bucketExpr helper — this UTC-only rollup path deliberately does not call it.)
+	// bucketExpr helper; this UTC-only rollup path deliberately does not call it.)
 	bucketSQL := fmt.Sprintf("%s(toDateTime(day))", granFn)
 
 	spec := req.GetSpec()
@@ -241,14 +241,14 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 	//   scope      one global top-N over OR'd kinds, not per-kind
 	//   population events[0]'s cookieless predicate applied to every branch, so
 	//              reordering `events` changed which values the top-N named
-	//   metric     first sum(cnt) — raw event volume — so a UNIQUE_USERS series
+	//   metric     first sum(cnt), raw event volume, so a UNIQUE_USERS series
 	//              ranked its breakdown by page views; then the event's own metric
 	//              but evaluated ONCE OVER THE WHOLE WINDOW, which still differs
 	//              from raw whenever the metric is not additive across buckets
 	//
 	// That last one is why the grain CTE exists. applyTrendsTopN accumulates
 	// `entry.total += r.Value` bucket by bucket, so for UNIQUE_USERS it ranks by
-	// the sum of daily uniques — NOT the window-wide unique, which is smaller
+	// the sum of daily uniques, NOT the window-wide unique, which is smaller
 	// whenever a user is active on more than one day. Ranking a two-day US
 	// (u1,u2 both days: raw 4, window 2) against a one-day GB (g1,g2,g3: raw 3,
 	// window 3) inverts the order and the two paths name opposite values.
@@ -495,7 +495,7 @@ func segmentationQueryForExecution(req *insightsv1.QueryRequest, projectID strin
 // canUseTopKRollup reports whether a top-K query can be served from the
 // dimensional rollup: PROPERTY dimension on a materialized dim or EVENT_KIND
 // dimension (the rollup's $__total__ rows carry per-kind totals), a
-// rollup-expressible metric (TOTAL/UNIQUE_USERS/PER_USER_AVG — numeric
+// rollup-expressible metric (TOTAL/UNIQUE_USERS/PER_USER_AVG; numeric
 // property metrics need raw per-event values), no filter groups, and at most a
 // kind-only scope (the rollup is keyed by kind; per-event property filters
 // need raw events). The USER dimension always needs raw events (identity
@@ -540,7 +540,7 @@ func canUseTopKRollup(spec *insightsv1.InsightQuerySpec) bool {
 // buildTopKFromRollup builds the top-K query against the dimensional rollup,
 // preserving the raw shape's contract exactly: top_vals CTE with the same
 // DESC/value-ASC tie-break, $others re-aggregation, is_others flag, and row
-// ordering. Two passes over the rollup are fine — it is pre-aggregated and
+// ordering. Two passes over the rollup are fine: it is pre-aggregated and
 // tiny relative to events. Caller must have checked canUseTopKRollup.
 //
 // WithSpillThreshold is deliberately omitted here (unlike the raw

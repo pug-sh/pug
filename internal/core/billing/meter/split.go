@@ -1,7 +1,7 @@
 // Package meter states each org's usage to the provider's meters. It splits a
 // period's metered events across the plan's tiers, carries what a period ended
-// short into the next, and writes ahead to billing_meter_periods — the only writer
-// of that table — so the ledger never understates what the provider holds. It
+// short into the next, and writes ahead to billing_meter_periods (the only writer
+// of that table) so the ledger never understates what the provider holds. It
 // prices nothing: every rate lives on the provider's product.
 package meter
 

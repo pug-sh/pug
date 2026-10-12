@@ -56,7 +56,7 @@ func TestCreateApiKey(t *testing.T) {
 		if created.Key.DisplayName != "CI" {
 			t.Errorf("DisplayName = %q, want %q", created.Key.DisplayName, "CI")
 		}
-		// The stored token is the digest — the key itself must be nowhere in the row.
+		// The stored token is the digest; the key itself must be nowhere in the row.
 		if created.Key.Token == created.RawKey {
 			t.Error("private key stored in plaintext")
 		}
@@ -123,7 +123,7 @@ func TestDeleteApiKey(t *testing.T) {
 			t.Fatalf("CreateApiKey: %v", err)
 		}
 
-		// Warm the cache — a delete that only removed the row would still
+		// Warm the cache: a delete that only removed the row would still
 		// authenticate for as long as the entry lives.
 		if _, err := repo.GetProjectByPrivateApiKey(ctx, created.RawKey); err != nil {
 			t.Fatalf("resolve before delete: %v", err)
@@ -138,7 +138,7 @@ func TestDeleteApiKey(t *testing.T) {
 		}
 
 		if rd.Client.Exists(ctx, cacheKey).Val() != 0 {
-			t.Error("deleted key still cached — it would keep authenticating until the TTL")
+			t.Error("deleted key still cached: it would keep authenticating until the TTL")
 		}
 		if _, err := repo.GetProjectByPrivateApiKey(ctx, created.RawKey); err == nil {
 			t.Error("deleted key still resolves to its project")
@@ -222,7 +222,7 @@ func TestDeleteStarterPublicKeyRevokesIt(t *testing.T) {
 	}
 
 	// The api_keys row is the only place the key exists, so deleting it is the whole
-	// revocation — nothing else resolves it.
+	// revocation: nothing else resolves it.
 	if _, err := repo.GetProjectByPublicApiKey(ctx, pubKey); err == nil {
 		t.Error("revoked starter public key still resolves")
 	}

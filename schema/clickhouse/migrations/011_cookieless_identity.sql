@@ -2,23 +2,23 @@
 
 -- Cookieless visitor identity (docs/architecture/ingestion.md): ingest derives
 -- daily-rotating ids prefixed 'cookieless-' for no-consent visitors. The
--- prefix in distinct_id is the single source of truth — no flag column on
+-- prefix in distinct_id is the single source of truth: no flag column on
 -- events that could disagree with the id. Two MV changes keep those ids out of
 -- identity surfaces; the literal must equal cookieless.IDPrefix
 -- (TestMigration011CookielessPrefixMatchesGo).
 --
---   1. distinct_id_activity_states_mv: WHERE NOT startsWith(...) — a
+--   1. distinct_id_activity_states_mv: WHERE NOT startsWith(...); a
 --      cookieless id must never mint a derived anonymous person (each daily
 --      rotation would create a ghost). MODIFY QUERY, never DROP->CREATE (a
 --      gap would silently lose activity for events inserted in between).
 --   2. dashboard_event_rollup_daily: a `cookieless` key column computed from
 --      the prefix, so user-count reads exclude with WHERE cookieless = 0
 --      while TOTAL reads (no predicate) keep counting all traffic. The column
---      joins the ORDER BY in the same ALTER that adds it — the only position
---      ClickHouse allows for a new key column — and deliberately carries NO
+--      joins the ORDER BY in the same ALTER that adds it (the only position
+--      ClickHouse allows for a new key column) and deliberately carries NO
 --      DEFAULT expression: ClickHouse forbids defaulted columns in a new
 --      sorting key (code 36), and the bare UInt8 makes existing rows read the
---      type default 0, which is historically exact — no cookieless rows
+--      type default 0, which is historically exact; no cookieless rows
 --      predate this migration, so THERE IS NOTHING TO BACKFILL (unlike
 --      008-010).
 --
@@ -28,7 +28,7 @@
 --      The reserved-prefix rule (batch.distinct_id_reserved_prefix) ships in
 --      the same branch as this migration, so (b) went UNENFORCED for all
 --      prior history. Such a row reads cookieless=0 here while the raw path
---      excludes it by prefix — a silent rollup/raw parity break, bounded to
+--      excludes it by prefix, a silent rollup/raw parity break, bounded to
 --      tenants who happened to pick this prefix. Before relying on parity for
 --      an existing deployment, check:
 --        SELECT count() FROM events
@@ -104,7 +104,7 @@ GROUP BY project_id, day, kind, dim_name, dim_value, cookieless;
 
 -- Restore the 005 activity MV (no WHERE) and the 009 rollup MV query. The
 -- cookieless key column cannot be dropped (it is part of the sorting key);
--- after this Down, the MV stops emitting it and new rows take the type default 0 —
+-- after this Down, the MV stops emitting it and new rows take the type default 0,
 -- fine for dev, where down migrations run against disposable databases.
 
 ALTER TABLE distinct_id_activity_states_mv MODIFY QUERY

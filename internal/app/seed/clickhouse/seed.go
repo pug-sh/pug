@@ -56,7 +56,7 @@ func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[str
 			out[k] = chcol.NewVariantWithType(x, "Int64")
 		case float64:
 			// ClickHouse Float64 carries nan/inf natively, so keep the Float64
-			// slot — coercing to String would flip the column type per-value. No
+			// slot: coercing to String would flip the column type per-value. No
 			// current generator formula produces a non-finite float; warn once
 			// per key so a future one that does surfaces instead of silently
 			// storing nan.
@@ -221,7 +221,7 @@ func InsertLiveEvent(ctx context.Context, ch driver.Conn, projectID string, e Li
 	return nil
 }
 
-// LiveProfile is the payload for InsertLiveProfile — the direct-write
+// LiveProfile is the payload for InsertLiveProfile: the direct-write
 // counterpart of a backfilled profile row. Named fields make the create/update
 // times and the id/external-id strings harder to mis-order at the call site
 // (they don't prevent a same-typed swap, but they kill positional transposition).
@@ -233,7 +233,7 @@ type LiveProfile struct {
 	UpdateTime time.Time
 }
 
-// InsertLiveProfile writes a single profile straight into ClickHouse — the
+// InsertLiveProfile writes a single profile straight into ClickHouse: the
 // direct-write counterpart of CopyProfilesToClickHouse, without Postgres. The
 // demo worker uses it to create a profile the first time it emits live events
 // for a user, so a profile only ever exists for a user that has events.
@@ -272,7 +272,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 		if len(sess) == 0 {
 			// Defensive: every journey has ≥1 step and botSession emits ≥2, so a
 			// session is never empty today. Guard anyway so a future zero-step
-			// journey can't spin this loop forever — the ctx cancellation check
+			// journey can't spin this loop forever: the ctx cancellation check
 			// lives one level up in backfillEvents.
 			break
 		}
@@ -299,7 +299,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 			inserted++
 		}
 		// Record the human user behind this session so the caller seeds a profile
-		// for them — but only if at least one of their events was actually
+		// for them, but only if at least one of their events was actually
 		// appended (a session truncated to zero rows at the batch cap must not
 		// count it as active). recordActiveUser ignores bot ids.
 		if inserted > before {

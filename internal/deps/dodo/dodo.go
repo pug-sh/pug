@@ -26,7 +26,7 @@ const (
 )
 
 // One stalled connection must not eat a dashboard request's budget, nor the
-// reconcile pass's 30m — which one hung read could otherwise spend entirely.
+// reconcile pass's 30m, which one hung read could otherwise spend entirely.
 const requestTimeout = 10 * time.Second
 
 // Config is the provider's own credentials, under its own prefix rather than a
@@ -46,7 +46,7 @@ var _ corebilling.PaymentProvider = (*Client)(nil)
 
 // New returns nil when no API key is configured: billing with no provider
 // credentials is a supported mode, where only the buy button is missing. The
-// webhook secret is needed on top of a key — no key means no client, so no route.
+// webhook secret is needed on top of a key: no key means no client, so no route.
 func New(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return nil, nil
@@ -104,7 +104,7 @@ func (c *Client) CreateCheckoutSession(
 		req.ReturnURL = dodopayments.F(in.ReturnURL)
 	}
 	// USD needs both: selection is on by default, and billing_currency is ignored while
-	// adaptive pricing is off — alone the flag would just lock in the detected locale.
+	// adaptive pricing is off; alone the flag would just lock in the detected locale.
 	req.BillingCurrency = dodopayments.F(dodopayments.CurrencyUsd)
 	req.FeatureFlags = dodopayments.F(dodopayments.CheckoutSessionFlagsParam{
 		AllowCurrencySelection: dodopayments.F(false),
@@ -112,7 +112,7 @@ func (c *Client) CreateCheckoutSession(
 		AllowDiscountCode: dodopayments.F(false),
 		// Defaults on, and a phone number buys an analytics upgrade nothing.
 		AllowPhoneNumberCollection: dodopayments.F(false),
-		// Pre-filled from the account and otherwise frozen for the session — but the name
+		// Pre-filled from the account and otherwise frozen for the session, but the name
 		// can be a stale OIDC claim and the receipt often wants accounts payable, and
 		// attribution rides the metadata ref rather than either of these.
 		AllowCustomerEditingEmail: dodopayments.F(true),

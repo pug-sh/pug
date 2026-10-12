@@ -26,7 +26,7 @@ var errConflict = errors.New("conflict")
 
 // errNoRuns is an empty run list, which is not a missing resource: a contributor
 // can comment /sign before the checker has ever run. Kept apart from errNotFound
-// so a 404 — a renamed workflow file — cannot be reported as "the first one will
+// so a 404, a renamed workflow file, cannot be reported as "the first one will
 // pass" on a check that will never run.
 var errNoRuns = errors.New("no run yet")
 
@@ -90,7 +90,7 @@ func (c *client) get(ctx context.Context, endpoint, accept string) ([]byte, http
 }
 
 // signaturesPath is the one place the file's location is written down. The gate
-// reads it two ways — raw for a decision, with metadata for a write — and a
+// reads it two ways (raw for a decision, with metadata for a write), and a
 // disagreement between them would read one file and overwrite another.
 const signaturesPath = "tools/cla/signatures.json"
 
@@ -154,8 +154,8 @@ func noreplyEmail(p Principal) string {
 	return fmt.Sprintf("%d+%s@users.noreply.github.com", p.ID, p.Login)
 }
 
-// marshalSignatureFile reproduces the file's on-disk shape — two-space indent,
-// trailing newline — so a signature recorded by /sign leaves no reformatting diff
+// marshalSignatureFile reproduces the file's on-disk shape (two-space indent,
+// trailing newline) so a signature recorded by /sign leaves no reformatting diff
 // against one added by hand, and the next hand-edit does not rewrite the file.
 func marshalSignatureFile(f *SignatureFile) ([]byte, error) {
 	b, err := json.MarshalIndent(f, "", "  ")
@@ -285,7 +285,7 @@ func listPaged[T any](ctx context.Context, c *client, endpoint, what string) ([]
 }
 
 // mergeBase is the commit the pull request actually branched from. It is not in
-// the event payload — base.sha there is the base branch tip, which moves.
+// the event payload: base.sha there is the base branch tip, which moves.
 func (c *client) mergeBase(ctx context.Context, base, head string) (string, error) {
 	endpoint := fmt.Sprintf("%s/repos/%s/compare/%s...%s",
 		c.baseURL, c.repo, url.PathEscape(base), url.PathEscape(head))

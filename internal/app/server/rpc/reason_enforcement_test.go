@@ -19,7 +19,7 @@ func f() error { return connect.NewError(connect.CodeNotFound, nil) }`
 
 const fixtureExempt = `package h
 import "connectrpc.com/connect"
-func f() error { return connect.NewError(connect.CodeNotFound, nil) // apperr:exempt — legacy
+func f() error { return connect.NewError(connect.CodeNotFound, nil) // apperr:exempt (legacy)
 }`
 
 const fixtureAllowedInternal = `package h
@@ -44,7 +44,7 @@ func scanSource(t *testing.T, src string) []finding {
 	return scanFile(fset, file)
 }
 
-// Aliased imports must not defeat the scanners — they are the sole enforcement,
+// Aliased imports must not defeat the scanners: they are the sole enforcement,
 // so matching on the literal package name "connect"/"apperr" would be a hole.
 func TestScanSource_aliasedImports(t *testing.T) {
 	const aliasedRaw = `package h
@@ -273,7 +273,7 @@ func f() error { return apperr.NotFound(apperr.ReasonProfileNotFound, "x") }`
 
 const fixtureGenericExempt = `package h
 import "github.com/pug-sh/pug/internal/apperr"
-func f() error { return apperr.AlreadyExists(apperr.ReasonAlreadyExists, "x") // apperr:exempt — legacy
+func f() error { return apperr.AlreadyExists(apperr.ReasonAlreadyExists, "x") // apperr:exempt (legacy)
 }`
 
 func TestScanGenericReasons(t *testing.T) {

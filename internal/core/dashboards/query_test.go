@@ -249,7 +249,7 @@ func TestResolveDashboardTimeRangePreset_NonUTCAlignsToLocalMidnight(t *testing.
 		t.Errorf("from = %v, want %v (local midnight in Asia/Kolkata)", from.UTC(), want)
 	}
 
-	// It must NOT be midnight UTC — that was the bug.
+	// It must NOT be midnight UTC; that was the bug.
 	if from.UTC().Hour() == 0 && from.UTC().Minute() == 0 {
 		t.Error("from aligned to midnight UTC, want local midnight")
 	}
@@ -289,7 +289,7 @@ func TestResolveEffectiveWindow_FallsBackToDashboardDefault(t *testing.T) {
 // The project's reporting_timezone (threaded as DashboardQueryOverrides.Timezone)
 // must align the resolved default-preset window to local midnight, confirming the
 // overrides.Timezone → tzx.Load → preset wiring. Asia/Kolkata is UTC+05:30, so local
-// midnight lands at 18:30 UTC the previous day — not midnight UTC.
+// midnight lands at 18:30 UTC the previous day, not midnight UTC.
 func TestResolveEffectiveWindow_AppliesProjectTimezone(t *testing.T) {
 	if _, err := time.LoadLocation("Asia/Kolkata"); err != nil {
 		t.Skipf("tz data unavailable: %v", err)
@@ -484,7 +484,7 @@ func TestRenderDashboard_PropagatesDeadlineExceeded(t *testing.T) {
 func TestRenderDashboard_MixedOutcomes(t *testing.T) {
 	// One render with three insight tiles exercising every per-tile path at once:
 	// a missing-query tile, an invalid-spec tile (segmentation + breakdown violates
-	// the proto CEL at the per-tile re-validation), and a healthy tile — interleaved
+	// the proto CEL at the per-tile re-validation), and a healthy tile, interleaved
 	// with markdown. Order is preserved and no tile poisons another.
 	okSpec := &insightsv1.InsightQuerySpec{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
@@ -581,7 +581,7 @@ func TestRenderDashboard_EmptyDashboard(t *testing.T) {
 
 func TestRenderDashboard_PartialSuccessIsolatesFailure(t *testing.T) {
 	// One tile fails (missing query) while a sibling succeeds with a real Result in
-	// the same render — proves per-tile isolation doesn't poison healthy siblings.
+	// the same render. Proves per-tile isolation doesn't poison healthy siblings.
 	// Guards partial-success isolation.
 	spec := &insightsv1.InsightQuerySpec{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),

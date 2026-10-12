@@ -13,7 +13,7 @@ import (
 // table's Variant declaration to match the case label in
 // variantTypeToPropertyValueType. Changing the migration's precision (e.g. to
 // DateTime64(6)) without updating the Go switch silently demotes every
-// timestamp property to PROPERTY_VALUE_TYPE_OTHER — this test fails loud
+// timestamp property to PROPERTY_VALUE_TYPE_OTHER; this test fails loud
 // instead of waiting for the dashboard to go blind.
 func TestMigration001VariantPrecision(t *testing.T) {
 	const path = "../../../schema/clickhouse/migrations/001_create_events_table.sql"
@@ -30,7 +30,7 @@ func TestMigration001VariantPrecision(t *testing.T) {
 	// and variantTypeToPropertyValueType (read side, in this package).
 	const wantVariant = "Variant(String, Int64, Float64, Bool, DateTime64(3))"
 	if !strings.Contains(got, wantVariant) {
-		t.Errorf("migration 001 must contain %q — propertyValueToVariant and variantTypeToPropertyValueType are pinned to this slot order/precision", wantVariant)
+		t.Errorf("migration 001 must contain %q: propertyValueToVariant and variantTypeToPropertyValueType are pinned to this slot order/precision", wantVariant)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestMigration001VariantSlotsCoveredByGoSwitch(t *testing.T) {
 		got := variantTypeToPropertyValueType(slot)
 		if got == commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED ||
 			got == commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER {
-			t.Errorf("migration slot %q maps to %v — add a case to variantTypeToPropertyValueType", slot, got)
+			t.Errorf("migration slot %q maps to %v; add a case to variantTypeToPropertyValueType", slot, got)
 		}
 	}
 }
@@ -104,7 +104,7 @@ func TestPropertyValueTypeReverseCoverage(t *testing.T) {
 		if exempt[pvt] || covered[pvt] {
 			continue
 		}
-		t.Errorf("PropertyValueType %s is not produced by any input to variantTypeToPropertyValueType — add a case in service.go or extend the inputs list above", name)
+		t.Errorf("PropertyValueType %s is not produced by any input to variantTypeToPropertyValueType; add a case in service.go or extend the inputs list above", name)
 	}
 }
 
@@ -130,7 +130,7 @@ func TestMigration003JSONShape(t *testing.T) {
 
 	re := regexp.MustCompile(`JSON\s*\(\s*max_dynamic_paths\s*=\s*1000\s*\)`)
 	if !re.MatchString(got) {
-		t.Errorf("migration 003 must contain JSON(max_dynamic_paths = 1000) — ProfilePropertyExpr semantics depend on the spill threshold")
+		t.Errorf("migration 003 must contain JSON(max_dynamic_paths = 1000): ProfilePropertyExpr semantics depend on the spill threshold")
 	}
 }
 

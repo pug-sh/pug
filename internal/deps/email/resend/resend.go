@@ -51,7 +51,7 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	sent, err := p.client.Emails.SendWithOptions(ctx, params, options)
 	if err != nil {
 		wrappedErr := fmt.Errorf("resend send email: %w", err)
-		// A 409 is never a plain replay — replaying a key with an identical
+		// A 409 is never a plain replay: replaying a key with an identical
 		// payload returns the original 200. It is one of two conflicts, and
 		// only the concurrent one clears on a retry.
 		if status.get() == http.StatusConflict {
@@ -79,7 +79,7 @@ type responseStatusContextKey struct{}
 
 // Resend's two 409 error codes. The SDK models the `name` field only for
 // 400/422 (InvalidRequestError); every other status falls through to
-// DefaultError, which keeps `message` alone — hence errorNameFromBody.
+// DefaultError, which keeps `message` alone. Hence errorNameFromBody.
 const (
 	errNameConcurrentIdempotentRequests = "concurrent_idempotent_requests"
 	errNameInvalidIdempotentRequest     = "invalid_idempotent_request"
@@ -92,7 +92,7 @@ const maxErrorBodyPeek = 64 << 10
 // responseStatus carries the HTTP status code and Resend error code from the
 // RoundTrip goroutine back to the caller. The Resend SDK does the request on a
 // callee goroutine and the read happens after the SDK returns, so
-// happens-before is established in practice — but a future SDK refactor could
+// happens-before is established in practice, but a future SDK refactor could
 // break that assumption, so we guard the fields with a mutex.
 type responseStatus struct {
 	mu      sync.Mutex

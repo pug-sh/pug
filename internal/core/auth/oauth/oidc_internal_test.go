@@ -209,8 +209,8 @@ func TestOIDCVerifyIDToken(t *testing.T) {
 		}
 	})
 
-	// Each check must reject on its own — a stray SkipIssuerCheck would pass every
-	// other test here — and stay unclassified so Service logs it.
+	// Each check must reject on its own (a stray SkipIssuerCheck would pass every
+	// other test here) and stay unclassified so Service logs it.
 	otherKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)

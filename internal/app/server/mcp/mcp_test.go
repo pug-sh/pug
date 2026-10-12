@@ -40,7 +40,7 @@ const testPrivateKey = "prv_testkey"
 // a malformed one.
 var testJWTKey = []byte("test-jwt-key")
 
-// signDashboardJWT mints a real dashboard access token — the exact shape
+// signDashboardJWT mints a real dashboard access token, the exact shape
 // WithJWTAuth accepts. /mcp must refuse it: MCP clients hold a static credential,
 // so an expiring access token is useless there, and admitting JWTs would widen the
 // endpoint from project-scoped to customer-scoped.
@@ -61,7 +61,7 @@ func signDashboardJWT(t *testing.T) string {
 
 // curatedToolNames is the pinned public contract: exactly the tools /mcp exposes.
 // Kept as a literal (deliberately NOT derived from toolPolicy) so an accidental
-// edit to the policy table is caught here — a derived list would pass tautologically.
+// edit to the policy table is caught here: a derived list would pass tautologically.
 var curatedToolNames = []string{
 	"explore_events",
 	"get_activity_feed",
@@ -141,7 +141,7 @@ func (s *stubProfiles) Get(ctx context.Context, req *connect.Request[profilesv1.
 	_, s.sawDeadline = ctx.Deadline()
 	if s.getPanic {
 		// Stands in for a latent nil deref / nil-map write / out-of-range index in a
-		// real handler — the class of bug an LLM's arbitrary-but-schema-valid arguments
+		// real handler, the class of bug an LLM's arbitrary-but-schema-valid arguments
 		// are most likely to find. Reached through /mcp it unwinds on a go-sdk jsonrpc2
 		// goroutine that net/http's per-connection recover does not cover, so without
 		// containment it kills the process.
@@ -196,7 +196,7 @@ func newTestServer(t *testing.T) testDeps {
 
 	mux := http.NewServeMux()
 	// The shared services keep dual auth (private key OR dashboard JWT), exactly as
-	// in production — which is what gives the /mcp JWT-rejection test its teeth: the
+	// in production, which is what gives the /mcp JWT-rejection test its teeth: the
 	// same JWT that these handlers would accept must still be refused at /mcp.
 	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, nil, repo))
 
@@ -209,7 +209,7 @@ func newTestServer(t *testing.T) testDeps {
 
 	// Identical to the production call in server.start. Mount builds the handler and
 	// the private-key-only auth boundary itself, so the harness cannot wire /mcp
-	// differently than production does — the bug that let an earlier version of this
+	// differently than production does: the bug that let an earlier version of this
 	// suite stay green with the endpoint pointed at WithDualAuth.
 	if err := Mount(mux, mux, repo); err != nil {
 		t.Fatalf("Mount: %v", err)
@@ -306,7 +306,7 @@ func TestE2E_GetProfileHappyPath(t *testing.T) {
 func TestE2E_GetProfileReturnsBody(t *testing.T) {
 	deps := newTestServer(t)
 	// A populated response must round-trip through the loopback responseRecorder
-	// and the generated forwarder into readable MCP tool text — the adapter's
+	// and the generated forwarder into readable MCP tool text: the adapter's
 	// whole job. The empty-response happy path can't catch a dropped body/header.
 	deps.profiles.getResp = &profilesv1.GetResponse{
 		Profile: &profilesv1.Profile{
@@ -358,7 +358,7 @@ func TestE2E_GetProfileHandlerErrorSurfaces(t *testing.T) {
 // TestE2E_HandlerPanicSurfacesAsToolError is the regression guard for the
 // loopback's worst failure mode. A handler panic on the ordinary Connect path is
 // contained by net/http's per-connection recover, but a tool call runs the
-// handler on a go-sdk jsonrpc2 goroutine that recover never reaches — so an
+// handler on a go-sdk jsonrpc2 goroutine that recover never reaches, so an
 // escaping panic took down the whole process (every tenant), remotely triggerable
 // by any private-key holder. The panic must surface as a tool error and the
 // process must live.
@@ -391,7 +391,7 @@ func TestE2E_HandlerPanicSurfacesAsToolError(t *testing.T) {
 //
 // It is also the only place the sanitisation on this layer can be pinned.
 // TestE2E_HandlerPanicSurfacesAsToolError panics *inside* a handler, so
-// RecoverHandlerPanic contains it first and the recover here never runs — that test
+// RecoverHandlerPanic contains it first and the recover here never runs; that test
 // guards a path which is already safe. Only a panic from outside the Connect chain
 // reaches the error Do builds, and runtime.HandleError renders that error straight
 // into the tool text the model reads.
@@ -492,7 +492,7 @@ func TestE2E_UnauthorizedRawPOST(t *testing.T) {
 		{"public key", pogrpc.HeaderAPIKey, "pub_something"},
 		{"unknown private key", pogrpc.HeaderAPIKey, "prv_unknown"},
 		{"non-prv bearer", "Authorization", "Bearer pub_something"},
-		// A valid dashboard JWT — one the shared Connect services would accept —
+		// A valid dashboard JWT, one the shared Connect services would accept,
 		// must still be refused at /mcp. Mount builds WithPrivateKeyAuth itself, so
 		// there is no wiring in which this endpoint admits a JWT.
 		{"valid dashboard jwt", "Authorization", "Bearer " + signDashboardJWT(t)},
@@ -521,7 +521,7 @@ func TestE2E_UnauthorizedRawPOST(t *testing.T) {
 
 // TestE2E_TrailingSlashServed pins both spellings of the endpoint. Go 1.22's
 // ServeMux exact-matches a pattern with no trailing slash, and the subtree
-// redirect only fires the other way, so "/mcp/" would 404 — an opaque failure for
+// redirect only fires the other way, so "/mcp/" would 404: an opaque failure for
 // anyone who pastes the URL with a slash or sits behind an ingress that appends
 // one. MCP clients POST byte-for-byte what they are configured with.
 func TestE2E_TrailingSlashServed(t *testing.T) {
@@ -565,7 +565,7 @@ func TestRegisterToolsPinsCuratedSurface(t *testing.T) {
 // TestRenamerRejectsUnknownTool exercises the FAILURE direction of the drift
 // guard: a generated tool with no policy row must make registration error (and
 // must NOT reach the inner server). This is the case a codegen change that adds a
-// new shared RPC hits — it must fail startup, not ship unnamed.
+// new shared RPC hits: it must fail startup, not ship unnamed.
 func TestRenamerRejectsUnknownTool(t *testing.T) {
 	rec := &recordingServer{}
 	err := registerRenamed(rec, func(srv mcpruntime.MCPServer) {
@@ -601,7 +601,7 @@ func TestRenamerRejectsStaleEntry(t *testing.T) {
 
 // TestRenamerRejectsHiddenToolReachingRegistration is the belt-and-braces guard.
 // keepTool already withholds hidden tools, so this state is unreachable in
-// production — which is exactly why it must fail loudly if it ever happens: a
+// production, which is exactly why it must fail loudly if it ever happens: a
 // regressed filter must not silently hand GDPR erasure to an LLM agent.
 func TestRenamerRejectsHiddenToolReachingRegistration(t *testing.T) {
 	rec := &recordingServer{}
@@ -623,7 +623,7 @@ func TestRenamerRejectsHiddenToolReachingRegistration(t *testing.T) {
 // TestRenamerRejectsCuratedNameCollision guards a failure the old rename table was
 // blind to: two generated tools mapping to one curated name. checkComplete saw no
 // stale entry and no unnamed tool, while the go-sdk's feature set silently REPLACED
-// the first registration with the second — quietly dropping a tool from the surface.
+// the first registration with the second, quietly dropping a tool from the surface.
 func TestRenamerRejectsCuratedNameCollision(t *testing.T) {
 	rec := &recordingServer{}
 	// Two real generated tools, both forced through the same curated name.
@@ -763,7 +763,7 @@ func TestE2E_ToolCallContextIsBounded(t *testing.T) {
 
 // TestLoopbackFailsLoudWithoutAPIKey covers the wiring-bug path. /mcp is
 // private-key-only and withAPIKeyPassthrough stashes the key outside the authn
-// boundary, so every request that reaches a tool handler provably carries one —
+// boundary, so every request that reaches a tool handler provably carries one;
 // key == "" is unreachable in production and therefore means the endpoint was
 // mounted wrong. It must say so, not silently omit the header and let the inner
 // auth answer with a 401 that (being outside the interceptor chain) logs nothing

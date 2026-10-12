@@ -340,8 +340,8 @@ func TestSSORequiredWithAConnection(t *testing.T) {
 }
 
 func TestCompleteOIDCRejectsMismatchedRedirectOrigin(t *testing.T) {
-	// onOIDC fails the test so a refactor that validated *after* the exchange —
-	// minting a session for an attacker-controlled redirect — can't stay green.
+	// onOIDC fails the test so a refactor that validated *after* the exchange,
+	// minting a session for an attacker-controlled redirect, can't stay green.
 	s := &server{service: fakeAuthService{onOIDC: func(coreoauth.ProviderName, coreoauth.AuthorizationCode) {
 		t.Fatal("service must not be called for a rejected redirect URI")
 	}}}
@@ -445,7 +445,7 @@ func TestCompleteOIDCUnverifiedEmailMapping(t *testing.T) {
 }
 
 // TestRefreshSessionInvalidTokenMapping pins that an invalid/expired/revoked/reused
-// refresh token maps to Unauthenticated / ReasonInvalidToken — deliberately
+// refresh token maps to Unauthenticated / ReasonInvalidToken, deliberately
 // DIFFERENT from CompleteMagicLink (which maps the same sentinel to InvalidArgument),
 // because the FE's 401 handler is what clears the session on a failed refresh.
 func TestRefreshSessionInvalidTokenMapping(t *testing.T) {
@@ -519,8 +519,8 @@ func TestSignOut(t *testing.T) {
 }
 
 // TestDemoSignInUnavailableMapping pins that the demo login being off/unseeded
-// (ErrDemoUnavailable) maps to CodeUnavailable — not Unauthenticated, since there
-// are no credentials to be wrong — without leaking the sentinel string.
+// (ErrDemoUnavailable) maps to CodeUnavailable (not Unauthenticated, since there
+// are no credentials to be wrong) without leaking the sentinel string.
 func TestDemoSignInUnavailableMapping(t *testing.T) {
 	s := &server{service: fakeAuthService{demoErr: coreauth.ErrDemoUnavailable}}
 

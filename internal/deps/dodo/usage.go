@@ -63,8 +63,8 @@ func (c *Client) IngestUsage(ctx context.Context, s corebilling.UsageStatement) 
 
 // VerifyMetering reads the provider's meters and each product and checks them
 // against what IngestUsage sends. A missing meter would bill its tier at zero, a
-// free threshold would apply pug's allowance twice, and any other meter attached —
-// a sum over a tier's key, or a key past the plan's last tier — would bill what pug
+// free threshold would apply pug's allowance twice, and any other meter attached
+// (a sum over a tier's key, or a key past the plan's last tier) would bill what pug
 // never meant, all silently.
 func (c *Client) VerifyMetering(ctx context.Context, tiers int, productIDs []string) error {
 	byKey := map[string]string{}

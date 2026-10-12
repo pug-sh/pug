@@ -119,7 +119,7 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	}
 
 	// After w.Close() succeeded the server has queued the message (250 OK).
-	// A Quit() error here is a connection teardown issue — the email IS sent.
+	// A Quit() error here is a connection teardown issue: the email IS sent.
 	// Returning it would cause NATS to retry and the recipient to get a duplicate.
 	// Log at Warn so a teardown spike is at least visible to ops.
 	if qerr := c.Quit(); qerr != nil {

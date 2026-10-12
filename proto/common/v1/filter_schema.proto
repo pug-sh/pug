@@ -65,7 +65,7 @@ message GetFilterSchemaRequest {
   ];
 }
 
-// GetFilterSchemaResponse mirrors the shared request shape — same reason.
+// GetFilterSchemaResponse mirrors the shared request shape (same reason).
 message GetFilterSchemaResponse {
   repeated EventNameMeta events = 1;
   repeated PropertyKeyMeta auto_property_keys = 2;

@@ -11,7 +11,7 @@ import (
 // are raw strings here (to keep this package decoupled from the orgs domain), so
 // this guards against a typo or drift between the policy and org_members.role /
 // the orgs.Role consts. If this fails, a role in the policy could never match a
-// role resolved from the DB — silently denying or (worse) a stale grant.
+// role resolved from the DB, silently denying or (worse) a stale grant.
 func TestPolicyRoleStringsMatchOrgRoles(t *testing.T) {
 	seen := map[string]struct{}{}
 	for _, rule := range policyRules {
@@ -54,7 +54,7 @@ func TestPolicyResourcesAndActionsAreKnown(t *testing.T) {
 // TestEveryDeclaredResourceIsGranted is the forward complement of the test above:
 // it catches a Resource const that is declared but never granted to any role. A
 // resource missing from the policy is not a compile error and not caught by the
-// "known" check (which only validates rules that exist) — every check against it
+// "known" check (which only validates rules that exist): every check against it
 // would just fail closed and SILENTLY, denying a real feature with no signal. If
 // a resource is intentionally not yet granted, add it to the policy (even read-
 // only) or remove the const; do not silence this test.

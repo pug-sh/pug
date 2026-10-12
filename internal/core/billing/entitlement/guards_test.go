@@ -199,7 +199,7 @@ func TestClearTakesTheOrgLock(t *testing.T) {
 
 // `--until ""` is how an operator ENDS a deal, so it clears the overrides the
 // contract gated exactly as omitting the flag does. It reaches the service as a
-// non-nil pointer to the zero time — the one input that looks like a date.
+// non-nil pointer to the zero time, the one input that looks like a date.
 func TestClearingTheContractExplicitlyEndsTheOverrides(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -262,7 +262,7 @@ func TestFreeWithAContractKeepsItsOverrides(t *testing.T) {
 }
 
 // The contract is what expires an override, so clearing it on a downgrade has to
-// take the overrides with it — otherwise the deal a lapse would have ended
+// take the overrides with it; otherwise the deal a lapse would have ended
 // becomes permanent, and "downgrade to free" leaves a larger quota than doing
 // nothing at all.
 func TestDowngradeToFreeEndsTheOverrides(t *testing.T) {
@@ -391,7 +391,7 @@ func TestSetPlanTakesTheOrgLock(t *testing.T) {
 
 // The lock must come before the read. `for update` locks nothing while the org has
 // no row, so a read taken first would see an operator's uncommitted first grant as
-// no row at all, and a subscription writer would map a paid deal against that —
+// no row at all, and a subscription writer would map a paid deal against that,
 // consuming the delivery and leaving the org on free.
 func TestWithOrgLockReadsOnlyOnceItHoldsTheLock(t *testing.T) {
 	if testing.Short() {

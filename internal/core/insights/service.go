@@ -94,25 +94,25 @@ func normalizeAllowedTypes(in []commonv1.PropertyValueType) []commonv1.PropertyV
 // promotedAutoDimValueType is the variant type name reported for every
 // injected promoted breakdown dimension. All injected keys are string-typed
 // events columns (String / LowCardinality(String)), so they surface as string
-// properties. (Typed injection for the bool/numeric promoted columns —
-// $mobile, $bot_score, $verified_bot — would need per-key value types and
+// properties. (Typed injection for the bool/numeric promoted columns
+// ($mobile, $bot_score, $verified_bot) would need per-key value types and
 // remains out of scope.)
 const promotedAutoDimValueType = "String"
 
 // mergePromotedAutoDimensions injects every promoted STRING column's property
 // key (clickhouse.PromotedStringAutoProperties) into the discovered
 // auto-property keys. These keys live in dedicated events columns, not the
-// auto_properties map — ingest strips them — so the property_keys MV never
+// auto_properties map (ingest strips them) so the property_keys MV never
 // observes them; without this they are missing from the filter/breakdown
 // picker even though the query engine fully supports them. Counts and
 // last-seen come from the event rollup where the key is a rollup dimension.
 // $url/$referrer/$pageTitle are promoted but deliberately not rolled up (too
 // high-cardinality), so for them the frozen pre-promotion property_keys entry
-// is the only count that will ever exist and is preferred over reporting zero
-// — it stops growing once ingest starts stripping the key, but it still ranks
+// is the only count that will ever exist and is preferred over reporting zero;
+// it stops growing once ingest starts stripping the key, but it still ranks
 // the property where a user expects to find it. Every other key reports 0
-// when the rollup has no row for it — whether the project hasn't collected it
-// yet or the rollup query degraded — so discovery never depends on the rollup
+// when the rollup has no row for it, whether the project hasn't collected it
+// yet or the rollup query degraded, so discovery never depends on the rollup
 // being populated or healthy, and a blip never publishes a count nothing
 // measured. The combined list is re-sorted by count so the busiest properties
 // stay on top.
@@ -136,7 +136,7 @@ func mergePromotedAutoDimensions(discovered, rollup []AggregateKeyMeta) []Aggreg
 			continue
 		}
 		// Keep that frozen count only where the rollup has no dimension to
-		// supply a live one — there the miss is permanent, so this is the only
+		// supply a live one: there the miss is permanent, so this is the only
 		// count that will ever exist. For a real rollup dim a missing row
 		// instead means "no rows yet" or "the rollup query degraded", and both
 		// must report 0 rather than publish a count nothing measured (the
@@ -159,7 +159,7 @@ func mergePromotedAutoDimensions(discovered, rollup []AggregateKeyMeta) []Aggreg
 
 	slices.SortStableFunc(out, func(a, b AggregateKeyMeta) int {
 		// Count descending (busiest first), then key ascending as a stable,
-		// deterministic tie-break — see executor.go for the same idiom.
+		// deterministic tie-break; see executor.go for the same idiom.
 		if c := cmp.Compare(b.Count, a.Count); c != 0 {
 			return c
 		}
@@ -286,7 +286,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 			// (migration 006 not yet applied) or transiently unavailable. Unlike
 			// the foundational event_names / property_keys fetches, a rollup
 			// failure must NOT fail the whole schema: degrade to count-0
-			// dimensions — mergePromotedAutoDimensions still lists every dim — so
+			// dimensions (mergePromotedAutoDimensions still lists every dim) so
 			// the picker stays populated. QueryAggregateKeys already logs+records
 			// non-context query failures, so this is only a disposition line, not a
 			// second RecordError; swallowing keeps egCtx alive for the sibling
@@ -366,8 +366,8 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		ProfilePropertyKeys: toPropKeyMetas(profilePropKeys),
 	}
 
-	// A degraded schema — promoted dimensions served at count 0 because the rollup
-	// fast-path was unavailable — must not be cached. Caching it would freeze the
+	// A degraded schema (promoted dimensions served at count 0 because the rollup
+	// fast-path was unavailable) must not be cached. Caching it would freeze the
 	// count-0 dims for the full schemaCacheTTL, amplifying a transient rollup blip
 	// into minutes of stale zeros (and a corrupted count-sort order) for every
 	// reader of this project. Skip the write and recompute next request, which

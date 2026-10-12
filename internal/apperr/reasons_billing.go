@@ -9,7 +9,7 @@ var (
 
 	// Confirmation reasons; confirmErr owns which of these answer a checkout whose
 	// money is already in. PRODUCT_UNMAPPED and NOT_PURCHASABLE above translate the
-	// same sentinel — one after money moved, one before.
+	// same sentinel: one after money moved, one before.
 	ReasonBillingCheckoutNotForOrg        = codes.add("BILLING_CHECKOUT_NOT_FOR_ORG")
 	ReasonBillingCurrencyUnsupported      = codes.add("BILLING_CURRENCY_UNSUPPORTED")
 	ReasonBillingProductUnmapped          = codes.add("BILLING_PRODUCT_UNMAPPED")

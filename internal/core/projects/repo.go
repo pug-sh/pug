@@ -19,7 +19,7 @@ const (
 	publicKeyCachePrefix  = "project:pubkey:"
 	// apiKeyCacheTTL bounds how long a revoked key keeps authenticating if its
 	// invalidation is lost (Redis down, pod killed between the delete and the
-	// DEL). It is purely a backstop — not the consistency mechanism: under normal
+	// DEL). It is purely a backstop, not the consistency mechanism: under normal
 	// operation the generation-guarded invalidation on every revocation takes
 	// effect immediately. Keep it short enough that a leaked key the owner has
 	// revoked cannot outlive the incident.
@@ -37,7 +37,7 @@ const (
 	apiKeyGenCachePrefix = "project:keygen:"
 	// apiKeyGenCacheTTL bounds growth of the generation counters (one extra Redis
 	// key per cached token). It only needs to outlive a single lookup's
-	// observe→DB-read→populate window — two indexed reads — so an hour is vast
+	// observe→DB-read→populate window, two indexed reads, so an hour is vast
 	// headroom while still letting the counters for revoked keys expire instead of
 	// leaking forever.
 	apiKeyGenCacheTTL = time.Hour
@@ -93,7 +93,7 @@ func NewRepo(queries *dbread.Queries, cache *goredis.Client) *Repo {
 }
 
 func (r *Repo) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey string) (dbread.Project, error) {
-	// Private keys are stored hashed, so the digest — never the key itself — is
+	// Private keys are stored hashed, so the digest, never the key itself, is
 	// what reaches the DB and what the cache entry is keyed by: a dump of either
 	// hands an attacker no working credential.
 	token := hashKey(privateApiKey)
@@ -105,12 +105,12 @@ func (r *Repo) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey stri
 
 	// Observed before the DB read so the populate below can detect a revocation
 	// that lands during it. An unreadable counter is no baseline at all, so the
-	// populate is skipped rather than risked — see observeKeyGen.
+	// populate is skipped rather than risked; see observeKeyGen.
 	observedGen, canPopulate := r.observeKeyGen(ctx, token)
 
 	project, err := r.queries.GetProjectByPrivateApiKey(ctx, token)
 	if err != nil {
-		// pgx.ErrNoRows is the expected "invalid API key" miss — caller translates to authn error.
+		// pgx.ErrNoRows is the expected "invalid API key" miss; caller translates to authn error.
 		// Real DB failures (connection, timeout, etc.) log + record at source.
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.ErrorContext(ctx, "failed to query project by private api key", slogx.Error(err))
@@ -135,7 +135,7 @@ func (r *Repo) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string
 		return project, nil
 	}
 
-	// Observed before the DB read — see GetProjectByPrivateApiKey.
+	// Observed before the DB read; see GetProjectByPrivateApiKey.
 	observedGen, canPopulate := r.observeKeyGen(ctx, token)
 
 	project, err := r.queries.GetProjectByPublicApiKey(ctx, publicApiKey)
@@ -171,7 +171,7 @@ func (r *Repo) InvalidateProjectKeys(ctx context.Context, projectID string, toke
 			apiKeyGenCacheTTL.Milliseconds(),
 		).Err(); err != nil {
 			// ERROR, not WARN: this is the one project-cache failure with a security
-			// consequence — a revoked key keeps authenticating until apiKeyCacheTTL.
+			// consequence; a revoked key keeps authenticating until apiKeyCacheTTL.
 			// Read/populate failures stay WARN (they self-heal by falling through to
 			// Postgres). The remaining tokens are still attempted: each guards a
 			// different key, and a failure on one says nothing about the next.
@@ -191,12 +191,12 @@ func (r *Repo) InvalidateProjectKeys(ctx context.Context, projectID string, toke
 //
 // An absent counter is a real baseline ("", true): the token has never been
 // invalidated, and apiKeyPopulateScript is meant to match "" against a still-absent
-// counter and cache the row. A failed read is emphatically not that — it is
-// "unknown" — and must not borrow the same "" that means absent, because the CAS
+// counter and cache the row. A failed read is emphatically not that (it is
+// "unknown") and must not borrow the same "" that means absent, because the CAS
 // cannot tell the two apart and would treat the unknown as a match. If the Redis
 // blip that failed this read also swallowed a concurrent DeleteApiKey's INCR, the
 // counter stays absent, the compare passes on recovery, and the reader writes the
-// *revoked* key back into a clean cache for apiKeyCacheTTL — the exact resurrection
+// *revoked* key back into a clean cache for apiKeyCacheTTL: the exact resurrection
 // the generation counter exists to prevent, and worse than a lost invalidation,
 // which at least leaves nothing behind to authenticate with.
 //
@@ -239,7 +239,7 @@ func (r *Repo) cachedProject(ctx context.Context, cacheKey string) (dbread.Proje
 }
 
 // cacheProject stores project under cacheKey, but only if token's generation is
-// still observedGen — the CAS that keeps a lookup racing a concurrent revocation
+// still observedGen: the CAS that keeps a lookup racing a concurrent revocation
 // from writing the revoked key back (see apiKeyPopulateScript). Best-effort: a
 // skip or a failure costs the next lookup a DB round-trip, never a stale row.
 func (r *Repo) cacheProject(ctx context.Context, cacheKey, token, observedGen string, project dbread.Project) {

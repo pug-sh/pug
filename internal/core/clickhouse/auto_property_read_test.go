@@ -76,7 +76,7 @@ func TestPromotedAutoKindExhaustiveness(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			proj := clickhouse.AutoPropertyProjectionFor(key, "")
 			if proj.StringSQL == "" {
-				t.Errorf("AutoPropertyProjectionFor(%q).StringSQL empty — missing kind branch in promotedAutoStringSQL", key)
+				t.Errorf("AutoPropertyProjectionFor(%q).StringSQL empty: missing kind branch in promotedAutoStringSQL", key)
 			}
 			dv, ok := clickhouse.AutoPropertyDistinctValuesFor(key)
 			if !ok {
@@ -84,7 +84,7 @@ func TestPromotedAutoKindExhaustiveness(t *testing.T) {
 				return
 			}
 			if dv.SelectExpr == "" {
-				t.Errorf("AutoPropertyDistinctValuesFor(%q).SelectExpr empty — missing kind branch in promotedAutoDistinctValues", key)
+				t.Errorf("AutoPropertyDistinctValuesFor(%q).SelectExpr empty: missing kind branch in promotedAutoDistinctValues", key)
 			}
 		})
 	}

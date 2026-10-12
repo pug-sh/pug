@@ -8,7 +8,7 @@ import (
 // Sized off measured batches: a full 1000-event batch is ~1 MiB, a fat one ~4 MiB.
 const MaxRequestBytes = 8 << 20
 
-// Generous on purpose — dropping real events costs more than holding a connection.
+// Generous on purpose: dropping real events costs more than holding a connection.
 const bodyReadTimeout = 2 * time.Minute
 
 // WithRequestLimits caps the request body and how long a client may take to upload

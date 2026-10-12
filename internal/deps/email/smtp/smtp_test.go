@@ -15,7 +15,7 @@ import (
 )
 
 // fakeSMTPServer answers a minimal SMTP conversation and captures the bytes
-// after DATA. Does NOT implement STARTTLS — Provider tests pass UseTLS:false.
+// after DATA. Does NOT implement STARTTLS; Provider tests pass UseTLS:false.
 // dropOnQuit drops the connection when the client sends QUIT instead of
 // responding 221 (used to exercise the swallowed-Quit-error branch in smtp.go).
 // hangAfterGreeting sends the 220 greeting then stops responding (used to
@@ -226,7 +226,7 @@ func TestSMTPProviderSanitizesHeaders(t *testing.T) {
 }
 
 // TestSMTPProviderSwallowsQuitError pins smtp.go:108. After w.Close() returns
-// nil the server has already 250-OK'd the DATA — the email is sent. A
+// nil the server has already 250-OK'd the DATA: the email is sent. A
 // flaky/slow server that fails to ack the subsequent QUIT must NOT cause Send
 // to return an error, because NATS would redeliver and the recipient would
 // see a duplicate. Without this test, a future refactor that did
@@ -259,7 +259,7 @@ func TestSMTPProviderSwallowsQuitError(t *testing.T) {
 // TestSMTPProviderRespectsContextCancellation pins the watchdog goroutine in
 // smtp.Send that tears down the underlying conn when ctx is cancelled. The
 // fake sends the 220 greeting (so netsmtp.NewClient returns) and then hangs
-// on the EHLO reply — the watchdog must close the conn so Send returns
+// on the EHLO reply; the watchdog must close the conn so Send returns
 // promptly rather than pinning a worker past the NATS ProcessingTimeout.
 func TestSMTPProviderRespectsContextCancellation(t *testing.T) {
 	srv := newFakeSMTPServer(t, withHangAfterGreeting())
@@ -282,7 +282,7 @@ func TestSMTPProviderRespectsContextCancellation(t *testing.T) {
 		t.Fatal("expected error when server never greets")
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("Send was pinned past ctx cancel — elapsed %v", elapsed)
+		t.Fatalf("Send was pinned past ctx cancel, elapsed %v", elapsed)
 	}
 }
 
@@ -313,7 +313,7 @@ func TestSMTPProviderRespectsContextCancellationBeforeGreeting(t *testing.T) {
 		t.Fatal("expected error when server never sends greeting")
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("Send pinned past ctx cancel before greeting — elapsed %v", elapsed)
+		t.Fatalf("Send pinned past ctx cancel before greeting, elapsed %v", elapsed)
 	}
 }
 

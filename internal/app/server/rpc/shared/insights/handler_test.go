@@ -144,7 +144,7 @@ func TestQuery_InvalidBuildError(t *testing.T) {
 		Spec: &insightsv1.InsightQuerySpec{
 			InsightType: &insightType,
 			// A filter group with no filters triggers "group must contain at least one filter"
-			// inside buildSingleFilterGroupCondition — this exercises the slog.WarnContext +
+			// inside buildSingleFilterGroupCondition; this exercises the slog.WarnContext +
 			// apperr.Invalid(ReasonInvalidInsightQuery, ...) path.
 			FilterGroups: []*insightsv1.FilterGroup{{}},
 		},

@@ -25,8 +25,8 @@ func apiKeyFromContext(ctx context.Context) string {
 // withAPIKeyPassthrough is the outermost /mcp middleware. It normalises a
 // `Authorization: Bearer prv_...` credential (the only header form many MCP
 // clients can send) into the x-api-key header that the WithPrivateKeyAuth authn
-// func expects — via rpc.NormalizeBearerAPIKey, which owns the Bearer scheme and
-// private-key vocabulary — and stashes the resolved private key in the request
+// func expects (via rpc.NormalizeBearerAPIKey, which owns the Bearer scheme and
+// private-key vocabulary) and stashes the resolved private key in the request
 // context for the loopback client to re-inject on each inner tool call.
 //
 // A request that already carries x-api-key is left untouched but still has its
@@ -42,8 +42,8 @@ func withAPIKeyPassthrough(next http.Handler) http.Handler {
 }
 
 // Mount installs the read-only /mcp endpoint on mux. It is the single entry point
-// for the whole subsystem — it builds the tool handler, constructs the auth
-// boundary, and assembles the middleware sandwich — and server.start and the test
+// for the whole subsystem (it builds the tool handler, constructs the auth
+// boundary, and assembles the middleware sandwich), and server.start and the test
 // harness both go through it, so the endpoint cannot be wired one way in
 // production and another in tests.
 //
@@ -55,12 +55,12 @@ func withAPIKeyPassthrough(next http.Handler) http.Handler {
 // a dashboard JWT (MCP clients hold a static credential, so an expiring access
 // token is useless there, and a JWT would widen the endpoint from project- to
 // customer-scoped) or a public key (extractable from client apps). An earlier
-// shape took an authn.AuthFunc, which let the test harness pass its own — so the
+// shape took an authn.AuthFunc, which let the test harness pass its own, so the
 // suite stayed green even when the endpoint was pointed at WithDualAuth.
 //
 // It returns an error if the generated tool set has drifted from the curated
 // policy table, so a codegen change that adds or renames a shared RPC fails server
-// startup rather than silently shipping an unnamed or missing tool — the same
+// startup rather than silently shipping an unnamed or missing tool: the same
 // fail-fast culture as the authz registry.
 //
 // Both "/mcp" and "/mcp/" are registered: Go 1.22's ServeMux exact-matches a

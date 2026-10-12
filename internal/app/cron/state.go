@@ -15,7 +15,7 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// State is one job's slice of cron_state — every pass is a fresh process, so a
+// State is one job's slice of cron_state: every pass is a fresh process, so a
 // job holding some work to daily has nowhere else to keep that timestamp. The job
 // name is prefixed onto every key, so two jobs cannot collide on a task name.
 type State struct {
@@ -44,7 +44,7 @@ func (s *State) LastRun(ctx context.Context, task Task) (time.Time, error) {
 	return row.LastRunAt.Time, nil
 }
 
-// MarkRun records a completed task. Call it only on success — a failed task that
+// MarkRun records a completed task. Call it only on success: a failed task that
 // stamped itself would not be retried until its interval came round again.
 func (s *State) MarkRun(ctx context.Context, task Task, at time.Time) error {
 	err := s.write.MarkCronRun(ctx, dbwrite.MarkCronRunParams{

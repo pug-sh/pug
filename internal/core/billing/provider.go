@@ -37,7 +37,7 @@ var (
 
 // PaymentProvider is the seam's money half; UsageMeter, below, is its metering
 // half. Nothing else in this slice imports a provider package. The payload is
-// deliberately not abstracted — a common payload schema across providers cannot be
+// deliberately not abstracted: a common payload schema across providers cannot be
 // maintained.
 type PaymentProvider interface {
 	WebhookVerifier
@@ -63,7 +63,7 @@ type PaymentProvider interface {
 // mount at and a signature to check, and nothing that moves money.
 type WebhookVerifier interface {
 	// Name is the provider's slug, stored on every row it produces and the path
-	// segment its webhook mounts at — changing it orphans stored rows.
+	// segment its webhook mounts at; changing it orphans stored rows.
 	Name() string
 
 	// Verify authenticates a raw delivery, taking the exact bytes because every
@@ -95,7 +95,7 @@ type Delivery struct {
 type SubscriptionEvent struct {
 	ProviderSubID      string
 	ProviderCustomerID string
-	// ProductID is the provider's product. It is what resolves a plan slug — from
+	// ProductID is the provider's product. It is what resolves a plan slug: from
 	// config for a catalog plan, from the org's row for a negotiated deal.
 	ProductID string
 	// OrgID is metadata.org_id, which a buyer can set on a static payment link. It
@@ -118,8 +118,8 @@ type SubscriptionEvent struct {
 
 	// GracePeriodEndsAt is read only when GracePeriodEndsAtKnown: it is then when the
 	// provider's grace window for a failed card ends, zero for no window. Known is
-	// false when the source cannot see the deadline — a read API that does not return
-	// it — and the write then decides whether to keep the stored one.
+	// false when the source cannot see the deadline (a read API that does not return
+	// it), and the write then decides whether to keep the stored one.
 	GracePeriodEndsAt      time.Time
 	GracePeriodEndsAtKnown bool
 	// GracePeriodEndsAtIssue says why the adapter set aside a deadline the delivery
@@ -143,7 +143,7 @@ type CheckoutInput struct {
 	// CustomerEmail pre-fills the provider's form. Never the identity: a person can
 	// admin two orgs, and a shared customer would misattribute a delivery.
 	CustomerEmail string
-	// CustomerName pre-fills the same form and is often empty — a magic-link signup
+	// CustomerName pre-fills the same form and is often empty: a magic-link signup
 	// stores no name. Only an OIDC claim supplies one.
 	CustomerName string
 	// Theme is the palette the checkout renders in, so an overlay opened from the
@@ -201,7 +201,7 @@ func AllSubStatuses() []SubStatus {
 }
 
 // ParseSubStatus narrows a stored word back to the vocabulary. An unrecognized
-// value is not live, which is the safe direction — see SubStatus.
+// value is not live, which is the safe direction (see SubStatus).
 func ParseSubStatus(v string) (SubStatus, bool) {
 	switch s := SubStatus(v); s {
 	case SubStatusActive, SubStatusPastDue, SubStatusPaused,
@@ -252,7 +252,7 @@ type UsageStatement struct {
 
 // MinFixedFeeCents is the least fixed fee a usage product may carry: the provider
 // refuses a payment under $1.00, so a product without it cannot collect a quiet
-// month. A check, not a price — the fee lives on the product.
+// month. A check, not a price: the fee lives on the product.
 const MinFixedFeeCents = 100
 
 // UsageMeter is the half of a provider that bills usage: pug states counts and the

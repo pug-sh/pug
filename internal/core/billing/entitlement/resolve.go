@@ -1,7 +1,7 @@
 // Package entitlement answers what an org is entitled to: the usage-plan catalog,
 // the stored row, the live subscription the subscription package writes, and the
 // resolution of the three against the clock, where a live subscription outranks the
-// row. It counts nothing — consumption is internal/core/usage's job — and prices
+// row. It counts nothing (consumption is internal/core/usage's job) and prices
 // nothing: every rate lives on the provider's product.
 //
 // An allowance drives a banner and never a rejected event, so a wrong row costs a
@@ -30,7 +30,7 @@ const (
 // assert it covers them: a status added here and missed there ships as UNSPECIFIED.
 func AllStatuses() []Status { return []Status{StatusActive, StatusFree} }
 
-// Record is the stored entitlement row. Absent for almost every org — the normal
+// Record is the stored entitlement row. Absent for almost every org: the normal
 // state, not a defect.
 type Record struct {
 	Present bool
@@ -62,11 +62,11 @@ type Entitlement struct {
 	Status      Status
 
 	// IncludedEvents is the free allowance: events below it are never billed, and past
-	// it an org with no subscription sees a banner. nil means NONE — billing switched
+	// it an org with no subscription sees a banner. nil means NONE: billing switched
 	// off, or a subscription resolving to a plan the catalog no longer knows. Never
 	// render it as zero.
 	IncludedEvents *int64
-	// How far back this org's history stays queryable. nil means NO BOUND — billing
+	// How far back this org's history stays queryable. nil means NO BOUND: billing
 	// off, or an unresolvable plan. Never render it as zero.
 	RetentionDays *int64
 	// TierUpTo is the tier layout this org's usage is split by. nil when nothing
@@ -94,7 +94,7 @@ type Entitlement struct {
 	SubPeriodEnd       time.Time
 	ProviderCustomerID string
 	ProviderSubID      string
-	// When the provider's grace window for the failed card ends — the banner's
+	// When the provider's grace window for the failed card ends: the banner's
 	// "update your card by". Set only beside past_due, and can be past until the
 	// window's end lands; zero with no window open.
 	SubGracePeriodEndsAt time.Time
@@ -108,8 +108,8 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 	if !rec.Present {
 		rec = Record{}
 	}
-	// Only a live subscription supplies anything. A cancelled row is kept — "when
-	// did this lapse" is a question support asks — but it is not consulted here.
+	// Only a live subscription supplies anything. A cancelled row is kept ("when
+	// did this lapse" is a question support asks), but it is not consulted here.
 	if sub != nil && !sub.Status.Live() {
 		sub = nil
 	}
@@ -150,7 +150,7 @@ func Resolve(orgCreateTime time.Time, rec Record, sub *Subscription, now time.Ti
 }
 
 // resolvePlan fills in the plan: a live subscription's, or the current plan's
-// allowance on free. The row never supplies a plan on its own — without a
+// allowance on free. The row never supplies a plan on its own: without a
 // subscription nothing bills, so a comp is an override on free, not a grant.
 // False is a plan the catalog does not know, which has nothing to patch.
 func resolvePlan(ent *Entitlement, rec Record, sub *Subscription) bool {
@@ -197,8 +197,8 @@ func contractLapsed(rec Record, now time.Time) bool {
 	return !rec.ContractEndsAt.IsZero() && !now.Before(rec.ContractEndsAt)
 }
 
-// ContractEndExclusive converts the last day a deal is meant to run — what an
-// operator types — into the instant to store. The comparison above is half-open,
+// ContractEndExclusive converts the last day a deal is meant to run, what an
+// operator types, into the instant to store. The comparison above is half-open,
 // so storing that day's midnight would lapse the terms at the start of it. The
 // date is read in lastDay's own location, so a picker in any zone means the day
 // it displayed. The boundary itself is UTC midnight, like every window in this

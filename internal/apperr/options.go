@@ -14,7 +14,7 @@ func Detail(msg proto.Message) Option {
 }
 
 // Resource attaches a google.rpc.ResourceInfo (which resource was missing/duplicated).
-// Each call appends a distinct ResourceInfo — it is intentionally not coalesced,
+// Each call appends a distinct ResourceInfo; it is intentionally not coalesced,
 // since two calls describe two different resources.
 func Resource(resourceType, name string) Option {
 	return func(s *detailSink) {

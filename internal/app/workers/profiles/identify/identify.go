@@ -111,7 +111,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		traits = map[string]any{}
 	}
 
-	// Upsert the identified profile — creates if new, merges traits if exists
+	// Upsert the identified profile: creates if new, merges traits if exists
 	// (new traits overwrite existing keys via jsonb_shallow_merge).
 	profile, err := w.Write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         xid.New().String(),
@@ -128,7 +128,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	}
 
 	// Assign device to this profile. The SDK sends device_id on first identify
-	// and on account switch (external_id changed) — not on every call.
+	// and on account switch (external_id changed), not on every call.
 	// Handles first-time linking (NULL → profile) and account switching (old → new).
 	if deviceID := msg.GetDeviceId(); deviceID != "" {
 		linked, err := w.Write.LinkDeviceToProfile(ctx, dbwrite.LinkDeviceToProfileParams{
@@ -152,7 +152,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		}
 	}
 
-	// No anonymous ID — just a trait update (and optional device link).
+	// No anonymous ID: just a trait update (and optional device link).
 	if anonymousID == "" {
 		return publishUpsert(ctx, natsClient, profile.ID, projectID, profile.ExternalID.String, profile.Properties, false, profile.CreateTime.Time, profile.UpdateTime.Time)
 	}
@@ -166,7 +166,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	// Proceeding would attempt to merge a profile into itself:
 	// MergeProfileProperties would be a no-op, but SoftDeleteProfileByIDAndProjectID
 	// would soft-delete the very profile we just upserted. This happens when the SDK
-	// re-identifies a profile that was already identified — the upsert returned
+	// re-identifies a profile that was already identified: the upsert returned
 	// the existing row whose ID matches the anonymous_id sent by the client.
 	if anonymousID == target.ID {
 		return publishUpsert(ctx, natsClient, target.ID, projectID, target.ExternalID.String, target.Properties, false, target.CreateTime.Time, target.UpdateTime.Time)
@@ -234,7 +234,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				// but the upsert worker handles that idempotently.
 				return publishUpsert(ctx, natsClient, target.ID, projectID, target.ExternalID.String, target.Properties, false, target.CreateTime.Time, target.UpdateTime.Time)
 			}
-			// Source (anonymous) is gone — expected on retry after a prior committed
+			// Source (anonymous) is gone, expected on retry after a prior committed
 			// merge. Proceed with the pre-upsert target snapshot; device reassignment
 			// and delete are idempotent no-ops when the source is already gone.
 			slog.WarnContext(ctx, "anonymous profile missing during merge (expected on retry)",
@@ -294,7 +294,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	// create_time and update_time because the anonymous profile was never fetched
 	// and the soft-delete query returns only a row count. ReplacingMergeTree uses insert_time
 	// (set at CH write time via DEFAULT now64(3)) for version ordering, so
-	// these values don't affect dedup — they are purely informational.
+	// these values don't affect dedup; they are purely informational.
 	anonDeleteData, err := buildUpsertData(ctx, anonymousID, projectID, "", nil, true, time.Now(), time.Now())
 	if err != nil {
 		return err
@@ -427,7 +427,7 @@ func buildAliasData(ctx context.Context, anonymousID, targetID, externalID, proj
 
 // publishUpsert builds and publishes a profile state to the upsert NATS subject for
 // ClickHouse sync. When isDeleted is true, the message acts as a soft-delete
-// marker — the upsert worker writes the row with is_deleted=1, and queries
+// marker: the upsert worker writes the row with is_deleted=1, and queries
 // must filter on is_deleted=0.
 func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any, isDeleted bool, createTime, updateTime time.Time) error {
 	data, err := buildUpsertData(ctx, profileID, projectID, externalID, properties, isDeleted, createTime, updateTime)

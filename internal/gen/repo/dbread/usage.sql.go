@@ -56,7 +56,7 @@ select usage_computed_at from usage_periods
 where org_id = $1 order by usage_computed_at desc limit 1
 `
 
-// Fallback stamp for a period the meter has not reached yet — at a rollover the
+// Fallback stamp for a period the meter has not reached yet: at a rollover the
 // current period has no row, which is not the same as never having metered.
 //
 // Ordered by the stamp, not by period_start: an anchor_day change (or a row left

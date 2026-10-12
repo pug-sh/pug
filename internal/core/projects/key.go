@@ -49,7 +49,7 @@ func newPublicKey() (string, error) {
 
 // hashKey returns the sha256 hex digest a private key is stored and looked up
 // by, mirroring coreauth.hashToken. Migration 017 backfills the same digest with
-// encode(sha256(convert_to(key, 'UTF8')), 'hex') — the two must agree, or keys
+// encode(sha256(convert_to(key, 'UTF8')), 'hex'). The two must agree, or keys
 // that predate the api_keys table stop authenticating.
 func hashKey(key string) string {
 	sum := sha256.Sum256([]byte(key))
@@ -61,8 +61,8 @@ func hashKey(key string) string {
 // settings page can show it again; a private key survives only as its digest.
 //
 // Minting and the token rule are one switch on purpose. Split apart, a kind could
-// be mintable while falling through to "store it whole" — which for a secret means
-// storing plaintext — so the pairing makes that state unrepresentable rather than
+// be mintable while falling through to "store it whole", which for a secret means
+// storing plaintext, so the pairing makes that state unrepresentable rather than
 // merely absent. That is also why the generators below it stay unexported: this is
 // the only way to mint a key, so no caller can reach a raw private key without the
 // digest rule that goes with it. Fails closed on an unrecognized kind rather than

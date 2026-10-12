@@ -11,7 +11,7 @@ import (
 )
 
 // TODO: For self-hosting, move stream/consumer initialization to app startup instead of a
-// separate migrate command. This reduces setup friction — users currently need JetStream
+// separate migrate command. This reduces setup friction: users currently need JetStream
 // enabled with specific storage limits, and the 50GB-per-stream defaults break local setups.
 // Consider: auto-create on startup, unified `pug migrate` for all DBs, env-aware defaults.
 
@@ -68,7 +68,7 @@ func (n *initializer) run(ctx context.Context) error {
 
 // checkReplicaSupport runs before any stream is touched. A standalone server
 // rejects a replicated stream *create* but silently accepts an update of an
-// existing single-replica stream, then fails to recreate it on its next restart —
+// existing single-replica stream, then fails to recreate it on its next restart,
 // so a misconfigured single-node install would deploy green and lose every stream
 // hours later.
 func checkReplicaSupport(replicas int, clusterName string) error {

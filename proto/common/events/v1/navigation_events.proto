@@ -9,7 +9,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // Navigation events.
 //
 // These messages define typed properties for common navigation event kinds.
-// They do not change the Event wire format — SDKs serialize fields into
+// They do not change the Event wire format: SDKs serialize fields into
 // Event.custom_properties (map<string, string>) before sending.
 
 // Web page navigation. Use screen_view for native mobile screens.
@@ -17,7 +17,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // Page URL, title, referrer, and UTM parameters are provided by SDK-injected
 // auto-properties ($url, $pageTitle, $referrer, $utmSource, $utmMedium,
 // $utmCampaign, $utmTerm, $utmContent) on every event. SDK authors:
-// do not add these as typed fields here — let the auto-property pipeline
+// do not add these as typed fields here; let the auto-property pipeline
 // supply them so they stay consistent across all event kinds.
 message PageViewProperties {
   option (common.events.v1.kind) = "page_view";

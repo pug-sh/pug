@@ -19,7 +19,7 @@ var osFamilyNames = map[string]string{
 }
 
 // linuxFamilies are ua-parser OS families that navigator.userAgentData collapses to
-// "Linux". Chrome OS is intentionally excluded — the SDK reports it as its own platform.
+// "Linux". Chrome OS is intentionally excluded: the SDK reports it as its own platform.
 var linuxFamilies = map[string]bool{
 	"Ubuntu":     true,
 	"Debian":     true,

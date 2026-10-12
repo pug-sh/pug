@@ -110,7 +110,7 @@ func TestMeteringCountsDistinctEventsOnce(t *testing.T) {
 }
 
 // Pins the day boundary against a future edit. It cannot catch the server-timezone
-// hazard the query's explicit toDate(_, 'UTC') guards — the test container runs
+// hazard the query's explicit toDate(_, 'UTC') guards: the test container runs
 // UTC, where bare and explicit toDate agree.
 func TestMeteringCutsDaysAtUTCMidnight(t *testing.T) {
 	if testing.Short() {
@@ -255,7 +255,7 @@ func TestRefreshPeriodUsageStoresTheSingleRowRead(t *testing.T) {
 	insertEvent(t, ch.Conn, f.projectID, uuid.NewString(), now.Add(-2*time.Hour))
 
 	// Before the meter runs there is no row, which reads as zero usage rather than
-	// an error — the org has simply not been counted yet. The zero stamp is what
+	// an error: the org has simply not been counted yet. The zero stamp is what
 	// tells the dashboard the difference.
 	start, end := coreusage.PeriodFor(now, 1)
 	usage, err := svc.GetPeriodUsage(ctx, f.orgID, start)
@@ -295,7 +295,7 @@ func TestRefreshPeriodUsageStoresTheSingleRowRead(t *testing.T) {
 	}
 }
 
-// MeterWindow is global — no project or org filter — and RecordDailyUsage resolves
+// MeterWindow is global, no project or org filter, and RecordDailyUsage resolves
 // project->org in SQL. Two orgs metered in one pass must not bleed into each
 // other's period sum.
 func TestMeteringKeepsTwoOrgsApart(t *testing.T) {
@@ -395,7 +395,7 @@ func TestListDailyUsageReturnsThePerProjectSeries(t *testing.T) {
 }
 
 // The meter is driven from orgs, not from usage rows, so an org that has never
-// sent an event still gets a period row — the dashboard then reads a metered zero
+// sent an event still gets a period row; the dashboard then reads a metered zero
 // with a real timestamp rather than "never metered".
 func TestOrgPeriodsCoversAnOrgWithNoEvents(t *testing.T) {
 	if testing.Short() {
@@ -456,7 +456,7 @@ func TestDeleteUnmeteredDaysDropsCellsWithNoEventsLeft(t *testing.T) {
 		t.Fatalf("RecordDailyUsage: %v", err)
 	}
 
-	// A re-meter of [erased, kept] that now sees only `kept` — `erased` was emptied.
+	// A re-meter of [erased, kept] that now sees only `kept`: `erased` was emptied.
 	remetered := []coreusage.DailyUsage{{Day: kept, EventCount: 6, ProjectID: f.projectID}}
 	dropped, err := f.svc.DeleteUnmeteredDays(ctx, remetered, erased, kept.AddDate(0, 0, 1))
 	if err != nil {
@@ -473,7 +473,7 @@ func TestDeleteUnmeteredDaysDropsCellsWithNoEventsLeft(t *testing.T) {
 	if len(daily) != 2 {
 		t.Fatalf("got %d cells, want 2: %+v", len(daily), daily)
 	}
-	// The cell before the window is untouched — a pass only reconciles what it met.
+	// The cell before the window is untouched: a pass only reconciles what it met.
 	if !daily[0].Day.Equal(outside) || !daily[1].Day.Equal(kept) {
 		t.Errorf("wrong cells survived: %+v", daily)
 	}
@@ -535,7 +535,7 @@ func TestDeleteUnmeteredDaysPairsProjectsWithTheirOwnDays(t *testing.T) {
 }
 
 // A month rollover leaves the new period rowless until the next pass. That is a
-// metered org with nothing counted yet, not an unmetered one — reporting it as
+// metered org with nothing counted yet, not an unmetered one: reporting it as
 // "never metered" would blank every dashboard on the 1st.
 func TestPeriodNotYetMeteredKeepsTheLastStamp(t *testing.T) {
 	if testing.Short() {
@@ -676,7 +676,7 @@ func TestMeterWindowWithoutClickHouse(t *testing.T) {
 }
 
 // Each of these answers with a zero or an empty slice on success, so a swallowed
-// error is indistinguishable from "nothing to report" — the pass would go on to
+// error is indistinguishable from "nothing to report": the pass would go on to
 // stamp usage_computed_at over counts it never wrote.
 func TestUsageCallsSurfaceFailuresRatherThanEmptyAnswers(t *testing.T) {
 	if testing.Short() {
@@ -722,7 +722,7 @@ func TestUsageCallsSurfaceFailuresRatherThanEmptyAnswers(t *testing.T) {
 
 // Both halves matter. A prune that deletes nothing leaves the table growing
 // forever; a prune that deletes too much silently destroys the counts the whole
-// feature exists to report, and "pruned == 1" alone cannot tell the two apart —
+// feature exists to report, and "pruned == 1" alone cannot tell the two apart:
 // `where day < $1 or true` satisfies it just as well when the only row seeded is
 // already past the boundary.
 func TestPruneUsageDropsOldDaysAndKeepsRecentOnes(t *testing.T) {
@@ -756,7 +756,7 @@ func TestPruneUsageDropsOldDaysAndKeepsRecentOnes(t *testing.T) {
 		t.Fatalf("ListDailyUsage: %v", err)
 	}
 	if len(kept) != 1 {
-		t.Fatalf("in-retention rows = %d, want 1 — the prune took a day it should have kept", len(kept))
+		t.Fatalf("in-retention rows = %d, want 1; the prune took a day it should have kept", len(kept))
 	}
 	if !kept[0].Day.Equal(recent) || kept[0].EventCount != 11 {
 		t.Errorf("kept %s = %d, want %s = 11", kept[0].Day, kept[0].EventCount, recent)
@@ -764,7 +764,7 @@ func TestPruneUsageDropsOldDaysAndKeepsRecentOnes(t *testing.T) {
 }
 
 // RecordDailyUsage batches in chunks of 1000, and every other test here uses a
-// handful of cells — so the chunk-boundary slice and the loop that advances past
+// handful of cells, so the chunk-boundary slice and the loop that advances past
 // it have never run. A deployment with a few thousand projects hits both on its
 // first full recompute.
 func TestRecordDailyUsageSpansMultipleBatchChunks(t *testing.T) {

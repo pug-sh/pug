@@ -423,8 +423,8 @@ func TestLatestWorkflowRunAndRerun(t *testing.T) {
 	}
 }
 
-// No run yet is an ordinary outcome — a contributor can comment /sign before the
-// checker has ever run — so it must not read as an API failure. It is kept apart
+// No run yet is an ordinary outcome (a contributor can comment /sign before the
+// checker has ever run), so it must not read as an API failure. It is kept apart
 // from errNotFound because a 404 here means the workflow file was renamed, and
 // reporting that as "the first check will pass" promises a run that never comes.
 func TestLatestWorkflowRunReportsNoRunAsNoRuns(t *testing.T) {

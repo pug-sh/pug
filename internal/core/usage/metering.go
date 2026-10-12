@@ -16,7 +16,7 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// ErrNoMeteringConn is returned when a Service built without ClickHouse meters —
+// ErrNoMeteringConn is returned when a Service built without ClickHouse meters;
 // the server never does.
 var ErrNoMeteringConn = errors.New("usage: no clickhouse connection for metering")
 
@@ -69,7 +69,7 @@ func (s *Service) meter(ctx context.Context, projectID string, from, to time.Tim
 	// logs the window it failed over without re-recording it.
 	rows, err := s.ch.Query(ctx, query, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to meter events", append([]any{slogx.Error(err)}, attrs...)...) // puglint:exempt — chdb.Conn.Query recorded it on the query span
+		slog.ErrorContext(ctx, "failed to meter events", append([]any{slogx.Error(err)}, attrs...)...) // puglint:exempt (chdb.Conn.Query recorded it on the query span)
 		return nil, err
 	}
 	defer func() {
@@ -100,13 +100,13 @@ func (s *Service) meter(ctx context.Context, projectID string, from, to time.Tim
 	}
 	// Recorded on the ClickHouse span by tracedRows.Err; log only.
 	if err := rows.Err(); err != nil {
-		slog.ErrorContext(ctx, "failed while iterating metered usage", slogx.Error(err)) // puglint:exempt — tracedRows.Err recorded it on the ClickHouse span
+		slog.ErrorContext(ctx, "failed while iterating metered usage", slogx.Error(err)) // puglint:exempt (tracedRows.Err recorded it on the ClickHouse span)
 		return nil, err
 	}
 	return out, nil
 }
 
-// Bounds the pgx batch, not the buffer — MeterWindow has already materialized
+// Bounds the pgx batch, not the buffer: MeterWindow has already materialized
 // every cell by the time this runs.
 const usageBatchChunk = 1000
 
@@ -141,7 +141,7 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 			failedChunkStart = start
 			slog.ErrorContext(ctx, "failed to upsert daily usage", slogx.Error(err),
 				slog.String("project_id", chunk[i].ProjectID),
-				slog.Time("day", chunk[i].Day)) // puglint:exempt — otelpgx records it on the batch span
+				slog.Time("day", chunk[i].Day)) // puglint:exempt (otelpgx records it on the batch span)
 		})
 		// Exec's generated body closes the batch but throws Close's error away, and
 		// the trailing Sync/ReadyForQuery is read there rather than by any Exec. A
@@ -154,7 +154,7 @@ func (s *Service) RecordDailyUsage(ctx context.Context, usage []DailyUsage) erro
 			firstErr = closeErr
 			failedChunkStart = start
 			slog.ErrorContext(ctx, "daily usage batch failed at close", slogx.Error(closeErr),
-				slog.Int("chunk_start", start), slog.Int("chunk_size", len(chunk))) // puglint:exempt — otelpgx records it on the batch span
+				slog.Int("chunk_start", start), slog.Int("chunk_size", len(chunk))) // puglint:exempt (otelpgx records it on the batch span)
 		}
 	}
 	if firstErr != nil {
@@ -211,7 +211,7 @@ func (s *Service) CountStoredDays(ctx context.Context, from, to time.Time) (int6
 
 // CountKnownProjects reports how many of the given project ids exist in Postgres.
 // The meter uses it to tell a routine deleted project apart from a Postgres that
-// does not know the projects ClickHouse is reporting at all — the second would
+// does not know the projects ClickHouse is reporting at all: the second would
 // otherwise reconcile every stored cell away and stamp every org with a zero,
 // because an unknown project's upsert writes nothing and reports success.
 func (s *Service) CountKnownProjects(ctx context.Context, projectIDs []string) (int64, error) {
@@ -284,7 +284,7 @@ func (s *Service) DeleteUnmeteredDays(ctx context.Context, usage []DailyUsage, f
 // it falls in the period containing its own UTC midnight.
 //
 // That is why both bounds use CeilDayUTC where every other call site pairs
-// Floor/Ceil, and it is exact only while periods start at midnight — which is
+// Floor/Ceil, and it is exact only while periods start at midnight, which is
 // why PeriodFor takes a day-of-month rather than an instant. An anchor carrying
 // a time of day would make Ceil silently drop the first partial day from this
 // sum while ListDailyUsage's Floor keeps it in the series, and the two would
@@ -327,7 +327,7 @@ type OrgPeriod struct {
 // reads as a metered zero.
 //
 // The windows are per-org because quotas run on a billing anniversary, so unlike
-// a calendar month they do not all start on the same day — and an org whose anchor
+// a calendar month they do not all start on the same day, and an org whose anchor
 // day is still ahead in the month is inside a period that began in the previous
 // one, which is why a full pass widens its rescan to the earliest of them.
 func (s *Service) OrgPeriods(ctx context.Context, now time.Time) ([]OrgPeriod, error) {

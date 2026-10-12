@@ -25,7 +25,7 @@ func roToRPCMsg(p dbread.Project) *projectsv1.Project {
 // wToRPCMsg converts a write model to RPC message. dbread.Project and
 // dbwrite.Project are the same projects row generated twice, so the conversion
 // costs nothing and there is one mapper to keep correct rather than two to keep
-// in sync — were sqlc ever to make them differ, this stops compiling.
+// in sync; were sqlc ever to make them differ, this stops compiling.
 func wToRPCMsg(p dbwrite.Project) *projectsv1.Project {
 	return roToRPCMsg(dbread.Project(p))
 }
@@ -76,7 +76,7 @@ func apiKeyToRPCMsg(k dbread.ApiKey) *projectsv1.ApiKey {
 
 // createdApiKeyToRPCMsg maps a freshly created key, reusing the read mapper the
 // same way wToRPCMsg does: dbread.ApiKey and dbwrite.ApiKey are the same api_keys
-// row generated twice, so the conversion costs nothing — and were sqlc ever to
+// row generated twice, so the conversion costs nothing, and were sqlc ever to
 // make them differ, this stops compiling rather than drifting. The raw *private*
 // key rides in CreateApiKeyResponse.Key, never in the message; a public key's
 // token is its raw value, so apiKeyToRPCMsg does echo that one back in Key.

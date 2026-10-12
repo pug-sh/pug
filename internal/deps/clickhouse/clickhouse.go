@@ -109,7 +109,7 @@ func (c *Conn) PrepareBatch(ctx context.Context, query string, opts ...chdriver.
 	return &tracedBatch{Batch: batch, span: span}, nil
 }
 
-// QueryFormat and InsertFormat are HTTP-only — a native DSN gets
+// QueryFormat and InsertFormat are HTTP-only: a native DSN gets
 // ErrFormatNativeUnsupported before the pool is touched. QueryFormat's span
 // ends on the stream's Close, since a mid-stream failure surfaces from Read.
 func (c *Conn) QueryFormat(ctx context.Context, format string, query string, args ...any) (io.ReadCloser, error) {
@@ -215,8 +215,8 @@ type tracedBatch struct {
 	ended    bool
 }
 
-// Finalizers routinely run twice — a failed Send then a deferred Abort, which
-// returns the meaningless ErrBatchAlreadySent — so first error wins.
+// Finalizers routinely run twice (a failed Send then a deferred Abort, which
+// returns the meaningless ErrBatchAlreadySent), so first error wins.
 func (b *tracedBatch) record(err error) {
 	if err == nil || b.recorded || b.ended {
 		return
@@ -235,7 +235,7 @@ func (b *tracedBatch) finish(err error) {
 }
 
 // Append looks per-row but is batch-fatal, and the Abort that follows reports
-// nil — without recording here a failed insert would close green.
+// nil: without recording here a failed insert would close green.
 func (b *tracedBatch) Append(v ...any) error {
 	err := b.Batch.Append(v...)
 	b.record(err)
@@ -273,7 +273,7 @@ func (b *tracedBatch) Close() error {
 	return err
 }
 
-// AbortUnsent finalizes a batch no path sent — an abandoned batch holds its
+// AbortUnsent finalizes a batch no path sent: an abandoned batch holds its
 // pooled connection and never ends its span. A failed Send still finalizes the
 // batch driver-side, so gate on IsSent or the abort logs ErrBatchAlreadySent.
 func AbortUnsent(ctx context.Context, batch chdriver.Batch, attrs ...slog.Attr) {

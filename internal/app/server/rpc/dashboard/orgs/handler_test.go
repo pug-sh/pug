@@ -182,7 +182,7 @@ func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	// Inline the member's customer row so we can assert display_name and email
-	// flow into the joined UpdateMemberRole response — the seedRawCustomer
+	// flow into the joined UpdateMemberRole response: the seedRawCustomer
 	// helper hardcodes display_name to "" which would mask the joined-field bug.
 	memberID := xid.New().String()
 	memberEmail := "promoted-" + memberID + "@example.com"
@@ -242,7 +242,7 @@ func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
 }
 
 // TestUpdateMemberRoleHandlerLastAdminDemoteRejected: the sole admin cannot
-// demote themselves to a non-admin role — the handler surfaces ErrLastAdmin as
+// demote themselves to a non-admin role; the handler surfaces ErrLastAdmin as
 // FailedPrecondition(CANNOT_DEMOTE_LAST_ADMIN). With a second admin present the
 // same demotion is allowed (see TestUpdateMemberRoleHandlerDemoteCoAdmin).
 func TestUpdateMemberRoleHandlerLastAdminDemoteRejected(t *testing.T) {
@@ -427,7 +427,7 @@ func TestInviteMemberHandlerAcceptsViewerRole(t *testing.T) {
 }
 
 // InviteMember with the role field omitted (UNSPECIFIED on the wire) must default
-// to ORG_ROLE_MEMBER via inviteRoleFromProto — not be rejected. This is the whole
+// to ORG_ROLE_MEMBER via inviteRoleFromProto, not be rejected. This is the whole
 // reason inviteRoleFromProto differs from roleFromProto.
 func TestInviteMemberHandlerDefaultsOmittedRoleToMember(t *testing.T) {
 	if testing.Short() {
@@ -523,8 +523,8 @@ func TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound(t *testing.T) {
 // TestGetHandlerReturnsMemberRoleForActualMember pins that Get returns the
 // CALLER's role, not the org owner's role. Without this, a regression that
 // joined to the wrong row (e.g. always returning the admin's role) would pass
-// TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound — which only exercises
-// the admin path — but silently mis-report role for member callers.
+// TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound, which only exercises
+// the admin path, but silently mis-report role for member callers.
 func TestGetHandlerReturnsMemberRoleForActualMember(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -704,7 +704,7 @@ func TestListHandlerRoleFieldPerOrg(t *testing.T) {
 // TestLeaveHandlerSoloAdminReturnsFailedPrecondition pins the precedence
 // rule from service.go:360-363: an admin who is also the only member of
 // their org is blocked with ErrLastAdmin (not ErrLastMember). The handler
-// maps both to CodeFailedPrecondition but with verb-specific messages —
+// maps both to CodeFailedPrecondition but with verb-specific messages;
 // this test confirms the "cannot leave as the last admin" message wins
 // when both guards would fire.
 func TestLeaveHandlerSoloAdminReturnsFailedPrecondition(t *testing.T) {
@@ -736,7 +736,7 @@ func TestLeaveHandlerSoloAdminReturnsFailedPrecondition(t *testing.T) {
 	if ae.Reason() != apperr.ReasonCannotRemoveLastAdmin {
 		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonCannotRemoveLastAdmin)
 	}
-	// Pin the verb-specific message — confirms ErrLastAdmin precedence won,
+	// Pin the verb-specific message: confirms ErrLastAdmin precedence won,
 	// not ErrLastMember. A regression that swapped the precedence would
 	// surface "cannot leave as the only member" here.
 	if got, want := ae.Message(), "cannot leave as the last admin"; got != want {
@@ -968,7 +968,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	t.Helper()
 	db := testutil.SetupPostgres(t)
 	write := dbwrite.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil) // publisher nil — handler tests don't need NATS round-trip
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil) // publisher nil: handler tests don't need NATS round-trip
 	ctx := context.Background()
 
 	adminID := xid.New().String()

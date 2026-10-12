@@ -338,7 +338,7 @@ type LockDashboardByIDAndProjectIDParams struct {
 	ProjectID string
 }
 
-// Acquires a row lock on the dashboard for the duration of the calling tx —
+// Acquires a row lock on the dashboard for the duration of the calling tx,
 // used by Upsert to serialize concurrent edits to the same dashboard so the
 // documented last-write-wins contract holds (two interleaved transactions
 // without the lock can both insert and commit their own tile, producing a

@@ -99,7 +99,7 @@ func TestOutcomeLabel(t *testing.T) {
 }
 
 // The DLQ metric must actually be emitted from handleMessage on each routing path
-// with the right (disposition, outcome) pair — it is the only machine-readable
+// with the right (disposition, outcome) pair: it is the only machine-readable
 // signal for dead-letter routing and data loss, so end-to-end emission is pinned,
 // not just the label helper.
 func TestDLQMetricEmission(t *testing.T) {

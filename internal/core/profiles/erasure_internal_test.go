@@ -19,7 +19,7 @@ import (
 // TestFreezeIdentifiers_EmptyRequestRefuses pins the DSAR-correctness guard: a
 // request that resolves to no external_id and no profile must fail with
 // ErrNoErasableIdentifiers rather than freeze an empty set and let the worker
-// mark it 'completed' — a completed erasure that deleted nothing would silently
+// mark it 'completed'; a completed erasure that deleted nothing would silently
 // misreport fulfilment. A unit test (no infra): an all-empty request never
 // reaches ClickHouse, so resolveDistinctIDs returns empty and the guard fires.
 func TestFreezeIdentifiers_EmptyRequestRefuses(t *testing.T) {
@@ -100,7 +100,7 @@ func TestErasure_FrozenIdentifiersSurviveEventDeletion(t *testing.T) {
 
 	svc := NewService(pg.PgW, ch.Conn, natsClient)
 
-	// Frozen request, no deletes yet — the state after pass 1 froze identifiers
+	// Frozen request, no deletes yet: the state after pass 1 froze identifiers
 	// but then crashed mid-erase.
 	requestID := xid.New().String()
 	if _, err := svc.write.CreateComplianceRequest(ctx, dbwrite.CreateComplianceRequestParams{
@@ -355,7 +355,7 @@ func TestErasure_MarkErasureFailedPersistsState(t *testing.T) {
 
 // TestErasure_FreezeGuardAbortsOnMissingRow pins finding C3: if the freeze UPDATE
 // matches 0 rows (the ledger row vanished), freezeIdentifiers must abort with
-// ErrComplianceRequestVanished BEFORE any destructive delete — the complement of
+// ErrComplianceRequestVanished BEFORE any destructive delete, the complement of
 // the no-identifiers guard. Here the request row is never created, so the freeze
 // write affects 0 rows.
 func TestErasure_FreezeGuardAbortsOnMissingRow(t *testing.T) {

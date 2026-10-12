@@ -1,6 +1,6 @@
 -- +goose Up
 -- External identity providers (Google, GitHub, Microsoft, …). provider values
--- are enforced in Go (ProviderName); no DB check constraint — intentional.
+-- are enforced in Go (ProviderName); no DB check constraint, intentional.
 -- The unique constraint is named explicitly so Go code (oauth.resolve) can
 -- reference a chosen name rather than a Postgres-derived one.
 create table customer_identities (

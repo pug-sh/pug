@@ -15,7 +15,7 @@ import (
 // under a curated MCP name, or hidden with a recorded reason. The fields are
 // unexported and the only constructors are expose and hide, so the invariants
 // "exposed XOR hidden" and "exposed implies a non-empty curated name" hold BY
-// CONSTRUCTION rather than by test — the same idiom as authzspec.Spec.
+// CONSTRUCTION rather than by test: the same idiom as authzspec.Spec.
 type toolDisposition struct {
 	curated string // non-empty iff exposed
 	reason  string // non-empty iff hidden
@@ -38,7 +38,7 @@ func (d toolDisposition) exposed() bool { return d.curated != "" }
 // all rejected at server startup by renamer/checkComplete.
 //
 // Hidden tools are filtered out before registration (see keepTool) AND rejected by
-// the renamer if a filter regression ever let one through — so the GDPR erasure
+// the renamer if a filter regression ever let one through, so the GDPR erasure
 // RPCs cannot reach an LLM agent even if the filter breaks.
 var toolPolicy = map[string]toolDisposition{
 	// insights
@@ -94,7 +94,7 @@ type renamer struct {
 
 // registerRenamed runs register against a rename-wrapping MCPServer and returns
 // the accumulated drift error. The *renamer never escapes this function, so a
-// caller CANNOT register tools and then forget the completeness check — which
+// caller CANNOT register tools and then forget the completeness check, which
 // would silently drop every tool the policy does not name (AddTool returns without
 // registering) and boot a green server with a hole in its tool surface.
 func registerRenamed(inner mcpruntime.MCPServer, register func(mcpruntime.MCPServer)) error {
@@ -138,7 +138,7 @@ func (r *renamer) AddTool(tool mcpruntime.Tool, handler mcpruntime.ToolHandler) 
 // checkComplete reports any exposed policy entry that no generated tool matched (a
 // stale row, left behind after an RPC is removed upstream), plus every error
 // AddTool accumulated. Hidden entries are never registered by design, so they are
-// exempt from the staleness check — a hidden row that goes stale is caught at
+// exempt from the staleness check; a hidden row that goes stale is caught at
 // compile time instead, since the keys are the generated Tool vars.
 func (r *renamer) checkComplete() error {
 	if len(r.errs) > 0 {

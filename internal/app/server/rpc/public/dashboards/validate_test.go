@@ -13,7 +13,7 @@ import (
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
-// These pin the protovalidate constraints on the unauthenticated request — the
+// These pin the protovalidate constraints on the unauthenticated request: the
 // input-validation boundary for a public endpoint, where a CEL typo fails open.
 
 func TestSharedQueryRequest_RequiresShareID(t *testing.T) {

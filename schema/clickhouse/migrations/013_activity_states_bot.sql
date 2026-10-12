@@ -11,7 +11,7 @@
 --
 -- NOT backfilled, deliberately. 012 shipped tagging (v0.0.19) without keying
 -- this table, so rows the MV wrote between that deploy and this one aggregated
--- without `bot` and read as 0 afterwards — a crawler active in that window
+-- without `bot` and read as 0 afterwards: a crawler active in that window
 -- keeps listing as a person. AggregatingMergeTree never rewrites states, so the
 -- window is permanent; it is ~1 day of traffic and accepted rather than rebuilt.
 -- Do not "fix" it with an additive INSERT..SELECT: the window's events would
@@ -49,7 +49,7 @@ GROUP BY project_id, distinct_id, bot;
 
 -- +goose Down
 
--- Restore the 011 activity MV query. DEV ONLY — do not run this in production.
+-- Restore the 011 activity MV query. DEV ONLY: do not run this in production.
 -- The `bot` key column cannot be dropped (it is part of the sorting key), so
 -- `states.bot = 0` keeps resolving and every read keeps returning 200 while the
 -- MV stops emitting `bot` and new rows take the type default 0. Bot exclusion on

@@ -247,7 +247,7 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 		t.Errorf("anchor day after a renewal = %d, want it preserved", rec.AnchorDay)
 	}
 
-	// And an explicit clear really clears — and clears only what it names. (A deal's
+	// And an explicit clear really clears, and clears only what it names. (A deal's
 	// allowance is not clearable: see TestADealsAllowanceIsNotClearedToTheDefault.)
 	cleared, err := f.svc.SetPlan(ctx, f.orgID, actor, entitlement.Change{
 		PlanSlug:      entitlement.SlugCustom,
@@ -264,8 +264,8 @@ func TestReSetKeepsUnmentionedOverrides(t *testing.T) {
 }
 
 // The database is the guard, not the CLI: the row is what every read trusts. A
-// deal's price is its product, so a deal without one — or a product without a
-// deal — is refused below the service too.
+// deal's price is its product, so a deal without one, or a product without a
+// deal, is refused below the service too.
 func TestCustomPlanRequiresAProduct(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -308,7 +308,7 @@ func TestCustomPlanRequiresAProduct(t *testing.T) {
 }
 
 // A catalog plan is held only through a subscription, so the service refuses to
-// set one — but its slug must still fit the columns that store it:
+// set one, but its slug must still fit the columns that store it:
 // billing_subscriptions.plan_slug and a deal's base_plan_slug carry no check
 // constraint, so this is what catches a slug outgrowing varchar(50).
 func TestEveryCatalogSlugIsStorableButNotAssignable(t *testing.T) {
@@ -326,7 +326,7 @@ func TestEveryCatalogSlugIsStorableButNotAssignable(t *testing.T) {
 			   provider_customer_id, provider_status, provider_sub_id, provider_updated_at, status)
 			 values ('USD', $1, $2, $3, 100, 'dodo', 'cus_1', 'expired', $4, now(), 'expired')`,
 			xid.New().String(), f.orgID, plan.Slug, "sub_"+plan.Slug); err != nil {
-			t.Errorf("%s: %v — this catalog slug is not storable", plan.Slug, err)
+			t.Errorf("%s: %v; this catalog slug is not storable", plan.Slug, err)
 		}
 	}
 	for _, change := range []entitlement.Change{
@@ -339,7 +339,7 @@ func TestEveryCatalogSlugIsStorableButNotAssignable(t *testing.T) {
 	}
 }
 
-// An operator must be able to stage a deal for an org that has never held one —
+// An operator must be able to stage a deal for an org that has never held one:
 // that is what a negotiated deal IS. Staged is not held: until its subscription
 // lands, the org stays plain free and the terms wait on its row.
 func TestCustomPlanIsGrantableToAnyOrg(t *testing.T) {
@@ -666,7 +666,7 @@ func TestADealIsPinnedWhenItsProductIsSet(t *testing.T) {
 }
 
 // `--events 0` clears an override, which on a deal falls back to its plan's
-// allowance — the opposite of "bill from the first event", the natural reading.
+// allowance, the opposite of "bill from the first event", the natural reading.
 func TestADealsAllowanceIsNotClearedToTheDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

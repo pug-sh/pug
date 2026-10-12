@@ -99,8 +99,8 @@ var errDeclined = errors.New("declined")
 // request's own signature file and onBase the base branch's; a signature in
 // either one already covers this version. version is the one in force.
 //
-// More than one reason can be true at once — a bot that is not a principal and
-// has somehow signed hits three — so the order of the checks is the order of the
+// More than one reason can be true at once (a bot that is not a principal and
+// has somehow signed hits three), so the order of the checks is the order of the
 // contributor's experience: whichever fires first is the only message they read.
 //
 // Returns nil to accept.
@@ -112,7 +112,7 @@ func maySign(commenter Principal, people []Principal, head, onBase *SignatureFil
 	}
 	// Before principal-hood, deliberately. Someone who signed on an earlier pull
 	// request and comments /sign on a colleague's would otherwise be told they
-	// have no work here — true, and it sends them hunting for a problem they do
+	// have no work here: true, and it sends them hunting for a problem they do
 	// not have. Both files are searched at the version in force, never at their
 	// own: onBase can declare a different one mid-bump.
 	if head.signedAt(commenter.ID, version) || onBase.signedAt(commenter.ID, version) {
@@ -133,7 +133,7 @@ const putRetries = 1
 
 // rerunFailed is advice, not an apology: the signature is committed either way, so
 // what the contributor needs is the one action that gets their check re-run.
-const rerunFailed = "\n\nThe CLA check could not be re-run automatically — push any commit, or ask a maintainer to re-run it."
+const rerunFailed = "\n\nThe CLA check could not be re-run automatically. Push any commit, or ask a maintainer to re-run it."
 
 // stillRed is the same advice for someone whose signature was already on file: a
 // repeat /sign is usually an attempt to clear a check that never got re-run.
@@ -151,7 +151,7 @@ type signer struct {
 func (s *signer) sign(ctx context.Context) error {
 	err := s.record(ctx)
 	if err != nil && !errors.Is(err, errDeclined) {
-		s.reply(ctx, fmt.Sprintf("@%s — `/sign` could not be recorded: %s", s.cfg.commenter.Login, err))
+		s.reply(ctx, fmt.Sprintf("@%s, `/sign` could not be recorded: %s", s.cfg.commenter.Login, err))
 	}
 	return err
 }
@@ -254,7 +254,7 @@ func (s *signer) reply(ctx context.Context, body string) {
 // agreeing with it. The re-run is best-effort: the signature is committed either
 // way, and failing here would report a signing that happened as one that did not.
 func (s *signer) confirm(ctx context.Context, pr PullRequest, version string) error {
-	body := fmt.Sprintf("Signed CLA **%s** for @%s — recorded in `%s` on `%s`. Thanks!",
+	body := fmt.Sprintf("Signed CLA **%s** for @%s, recorded in `%s` on `%s`. Thanks!",
 		version, s.cfg.commenter.Login, signaturesPath, pr.Base.Ref)
 
 	switch run, err := s.gh.latestWorkflowRun(ctx, signWorkflowFile, pr.Head.SHA); {
@@ -281,7 +281,7 @@ func (s *signer) confirm(ctx context.Context, pr PullRequest, version string) er
 // the run says so and exits green. Every other reason fails the job, which is the
 // only place an operator can see that a /sign was refused.
 func (s *signer) decline(ctx context.Context, reason error) error {
-	body := fmt.Sprintf("@%s — %s.", s.cfg.commenter.Login, reason)
+	body := fmt.Sprintf("@%s, %s.", s.cfg.commenter.Login, reason)
 	settled := errors.Is(reason, errAlreadySigned)
 	if settled {
 		body += stillRed

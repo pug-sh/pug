@@ -24,7 +24,7 @@ type Claims struct {
 }
 
 // Identity is a verified IdP identity. It can only be constructed via
-// NewVerifiedIdentity, which guarantees a present, provider-verified email — so
+// NewVerifiedIdentity, which guarantees a present, provider-verified email, so
 // the resolver and provisioning never need to re-check EmailVerified. The fields
 // are unexported precisely so an unverified identity is unrepresentable.
 type Identity struct {

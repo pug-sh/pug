@@ -43,7 +43,7 @@ func TestCheckReplicaSupport(t *testing.T) {
 const probeStreamName = "migrate-replica-probe"
 
 // TestReplicaGuardAgainstStandalone drives the real Run against the package's
-// NATS container, which is standalone — the shape the guard exists for.
+// NATS container, which is standalone: the shape the guard exists for.
 func TestReplicaGuardAgainstStandalone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

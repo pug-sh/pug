@@ -13,7 +13,7 @@ join org_members om on om.org_id = p.org_id
 where p.id = @id and om.customer_id = @customer_id and p.deletion_time is null;
 
 -- name: GetProjectByPrivateApiKey :one
--- @token is the sha256 hex of the presented prv_ key — private keys are stored
+-- @token is the sha256 hex of the presented prv_ key: private keys are stored
 -- hashed, so the caller hashes before looking up (see core/projects.hashKey).
 select p.*
 from projects p
@@ -21,7 +21,7 @@ join api_keys k on k.project_id = p.id
 where k.token = @token and k.kind = 'private' and p.deletion_time is null;
 
 -- name: GetProjectByPublicApiKey :one
--- @token is the pub_ key itself — public keys are stored plaintext.
+-- @token is the pub_ key itself: public keys are stored plaintext.
 select p.*
 from projects p
 join api_keys k on k.project_id = p.id

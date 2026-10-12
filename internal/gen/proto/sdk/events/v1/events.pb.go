@@ -150,7 +150,7 @@ type Event struct {
 	Kind      *string                `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
 	OccurTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
 	// A UUID whenever set; omit entirely in cookieless mode (an explicit "" is
-	// also rejected — set fields must satisfy the uuid rule).
+	// also rejected: set fields must satisfy the uuid rule).
 	SessionId *string `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	// Cookieless (no-consent) mode: the client stores nothing on the device and
 	// sends no identity; the ingest server derives an ephemeral daily-rotating

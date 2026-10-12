@@ -37,7 +37,7 @@ func TestUnsignedReportFillsInTheContributorsEntry(t *testing.T) {
 }
 
 // The block is one entry for the contributor to append, so it has to parse as a
-// signature — and appending it must be the whole of what the gate wants back.
+// signature, and appending it must be the whole of what the gate wants back.
 func TestUnsignedReportEmitsAnAppendableEntry(t *testing.T) {
 	head := file(sig("alice", 1))
 	r := unsignedReport(reportCfg(), head, []Principal{{ID: 42, Login: "carol", Type: "User"}}, nil, fixedNow)

@@ -25,8 +25,8 @@ func mustVerified(t *testing.T, c coreoauth.Claims) *coreoauth.Identity {
 	return id
 }
 
-// Pre-existing Google rows were written as ("google", bare sub) — the same shape
-// this code now writes — so they must resolve directly rather than falling
+// Pre-existing Google rows were written as ("google", bare sub), the same shape
+// this code now writes, so they must resolve directly rather than falling
 // through to the email match and picking up a duplicate identity row.
 func TestWithIdentityTx_ResolvesIdentityStoredBeforeGenericOIDC(t *testing.T) {
 	if testing.Short() {

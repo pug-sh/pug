@@ -101,7 +101,7 @@ func TestLoggingInterceptor_UnauthenticatedError(t *testing.T) {
 }
 
 // isClientError must classify a raw *apperr.Error by its Code(), not via
-// connect.CodeOf (which returns Unknown for apperr — it has a Code field, not a
+// connect.CodeOf (which returns Unknown for apperr: it has a Code field, not a
 // Code() method that satisfies Connect's coder interface). This keeps log levels
 // correct even if LoggingInterceptor ever runs inside ErrorInterceptor.
 func TestIsClientError_apperr(t *testing.T) {
@@ -118,7 +118,7 @@ func TestIsClientError_apperr(t *testing.T) {
 
 // Client-driven cancellations and deadline expirations must classify as client
 // errors (WARN), not server errors. connect.CodeOf returns Unknown for a raw
-// context error, so isClientError matches them via errors.Is — including a wrapped
+// context error, so isClientError matches them via errors.Is, including a wrapped
 // context error, which is what sanitizeError's ctx.Err() branch can surface.
 func TestIsClientError_contextErrors(t *testing.T) {
 	for _, err := range []error{

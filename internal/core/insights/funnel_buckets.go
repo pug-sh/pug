@@ -15,7 +15,7 @@ type funnelBucket struct {
 
 // funnelTimingBuckets defines the 8 fixed buckets for funnel conversion-time histograms.
 // Each upper bound is exclusive. Last bucket is open-ended; upper is a math.MaxInt64
-// sentinel — the openEnded flag short-circuits classification first, but the sentinel
+// sentinel: the openEnded flag short-circuits classification first, but the sentinel
 // also keeps "v >= upper" false for any plausible finite duration, so a future caller
 // that forgets the flag still terminates correctly.
 var funnelTimingBuckets = []funnelBucket{

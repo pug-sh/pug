@@ -109,7 +109,7 @@ func TestHandler_Upsert_InsertUpdateDeleteRoundTrip(t *testing.T) {
 					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("after")},
 				},
 			},
-			// New (empty id) — placed second so request order is observable.
+			// New (empty id): placed second so request order is observable.
 			{
 				DisplayName: proto.String("brand new"),
 				Content: &dashboardsv1.DashboardTileInput_Markdown{
@@ -175,7 +175,7 @@ func TestHandler_Upsert_InsertUpdateDeleteRoundTrip(t *testing.T) {
 }
 
 // TestHandler_Upsert_HashShortCircuit verifies that an Upsert whose tile
-// payload matches the stored hash does NOT bump the tile's update_time —
+// payload matches the stored hash does NOT bump the tile's update_time:
 // the SQL WHERE payload_hash <> $1 should match zero rows.
 func TestHandler_Upsert_HashShortCircuit(t *testing.T) {
 	if testing.Short() {
@@ -216,7 +216,7 @@ func TestHandler_Upsert_HashShortCircuit(t *testing.T) {
 	t1 := resp1.Msg.GetDashboard().GetTiles()[0].GetUpdateTime().AsTime()
 
 	// Second Upsert with identical payload should be a no-op at the row level.
-	// Build a fresh request rather than reusing the same pointer — defensive
+	// Build a fresh request rather than reusing the same pointer, defensive
 	// against future Connect versions that might mutate the message.
 	resp2, err := s.Upsert(authCtx(projectID), connect.NewRequest(buildReq()))
 	if err != nil {
@@ -308,7 +308,7 @@ func TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime(t *testing.T) {
 		Id:          proto.String(dash.ID),
 		DisplayName: proto.String("Board"),
 		Tiles: []*dashboardsv1.DashboardTileInput{
-			// Identical payload — hash matches stored, no UPDATE.
+			// Identical payload: hash matches stored, no UPDATE.
 			{
 				Id:          proto.String(idStable),
 				DisplayName: proto.String("stable"),
@@ -316,7 +316,7 @@ func TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime(t *testing.T) {
 					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("still")},
 				},
 			},
-			// New body — hash differs, UPDATE fires.
+			// New body: hash differs, UPDATE fires.
 			{
 				Id:          proto.String(idChanged),
 				DisplayName: proto.String("changed"),
@@ -367,7 +367,7 @@ func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
 
 	// Keep both seeded tiles in the request (alpha gets a body change so its
 	// update is observable on rollback). The third slot is a new tile claiming
-	// alpha's name — collides with the kept alpha row mid-tx.
+	// alpha's name; collides with the kept alpha row mid-tx.
 	_, err = s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
 		Id:          proto.String(dash.ID),
 		DisplayName: proto.String("Board"),
@@ -419,7 +419,7 @@ func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
 }
 
 // TestHandler_Upsert_KpiUnspecifiedComparePersists pins that KPI tiles don't
-// require a compare period — COMPARE_PERIOD_UNSPECIFIED must round-trip rather
+// require a compare period: COMPARE_PERIOD_UNSPECIFIED must round-trip rather
 // than being rejected or normalized away into something else.
 func TestHandler_Upsert_KpiUnspecifiedComparePersists(t *testing.T) {
 	if testing.Short() {
@@ -525,8 +525,8 @@ func TestHandler_Upsert_CrossProjectIsolation(t *testing.T) {
 }
 
 // TestHandler_Upsert_TileCustomizationRoundTrip pins that every per-tile
-// customization field — Compare (non-default), Thresholds (populated), Header
-// (populated), Visualization (populated), Position (populated) — survives
+// customization field (Compare (non-default), Thresholds (populated), Header
+// (populated), Visualization (populated), Position (populated)) survives
 // Upsert→Postgres→Get with byte-identical content. This is the headline feature
 // of the PR and the only test that exercises non-zero values across the whole
 // pipeline.
@@ -641,7 +641,7 @@ func TestHandler_Upsert_TileCustomizationRoundTrip(t *testing.T) {
 // TestHandler_Upsert_CaseInsensitiveDisplayNameConflict pins that the partial
 // unique index on `lower(display_name)` is honored. If a future migration
 // drops the `lower()` wrapper, "Notes" and "notes" would no longer collide and
-// this test would break — surfacing the regression at CI.
+// this test would break, surfacing the regression at CI.
 func TestHandler_Upsert_CaseInsensitiveDisplayNameConflict(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -721,7 +721,7 @@ func TestHandler_Upsert_RenameIntoExistingConflict(t *testing.T) {
 }
 
 // TestHandler_Upsert_TileKindSwap pins that an existing markdown tile can be
-// updated in place to an insight tile (and vice-versa) — the
+// updated in place to an insight tile (and vice-versa): the
 // dashboard_tiles_kind_payload CHECK constraint must allow both directions.
 // If a future SQL refactor leaves a stale insight_query / markdown_body
 // alongside the new kind, this test surfaces the violation.
@@ -901,7 +901,7 @@ func TestHandler_Upsert_InsightSpecUpdate(t *testing.T) {
 	tileID := resp1.Msg.GetDashboard().GetTiles()[0].GetId()
 	t1 := resp1.Msg.GetDashboard().GetTiles()[0].GetUpdateTime().AsTime()
 
-	// Re-upsert with a different event kind — hash must change, update_time
+	// Re-upsert with a different event kind: hash must change, update_time
 	// must bump, returned spec must reflect the new event.
 	updated := build("purchase")
 	updated.Id = proto.String(tileID)
@@ -926,7 +926,7 @@ func TestHandler_Upsert_InsightSpecUpdate(t *testing.T) {
 // TestHandler_Upsert_DuplicateTileID pins the batch-level guard that rejects
 // two tiles sharing a non-empty id in one request. Without this rejection the
 // loop would silently run UPDATE twice (last-write-wins) and the response
-// would include the same tile object twice — protovalidate can't express the
+// would include the same tile object twice; protovalidate can't express the
 // cross-element check on a repeated field.
 func TestHandler_Upsert_DuplicateTileID(t *testing.T) {
 	if testing.Short() {
@@ -965,7 +965,7 @@ func TestHandler_Upsert_DuplicateTileID(t *testing.T) {
 	assertCode(t, err, connect.CodeInvalidArgument)
 	assertReason(t, err, apperr.ReasonInvalidTileContent)
 
-	// Original tile must still have its pre-Upsert body — the rejection ran
+	// Original tile must still have its pre-Upsert body: the rejection ran
 	// before any DB write.
 	getResp, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
 		Id: proto.String(dash.ID),
@@ -979,7 +979,7 @@ func TestHandler_Upsert_DuplicateTileID(t *testing.T) {
 }
 
 // TestHandler_Upsert_LastWriteWins pins the documented contract (CLAUDE.md
-// "Dashboards" — last-write-wins, no optimistic locking) by running two
+// "Dashboards": last-write-wins, no optimistic locking) by running two
 // concurrent Upserts against the same dashboard and asserting both succeed
 // and the final stored state matches *one* of the two inputs verbatim (not
 // a merge / interleave). Postgres row locks serialize the transactions
@@ -1043,7 +1043,7 @@ func TestHandler_Upsert_LastWriteWins(t *testing.T) {
 		t.Fatalf("final tile count = %d, want 1 (each Upsert sends one tile, last-write-wins)", len(dashGot.GetTiles()))
 	}
 	tile := dashGot.GetTiles()[0]
-	// Final state must be one of the two inputs in full — no merging.
+	// Final state must be one of the two inputs in full, no merging.
 	for _, label := range []string{"A", "B"} {
 		if dashGot.GetDisplayName() == "Board "+label &&
 			tile.GetDisplayName() == "tile-"+label &&
@@ -1059,7 +1059,7 @@ func TestHandler_Upsert_LastWriteWins(t *testing.T) {
 // invariant for positioned tiles: a tile sent with only some GridPosition fields
 // (W/H set, X/Y unset), fetched, then re-upserted verbatim must NOT bump
 // update_time. The hash function and storage round-trip must agree on the
-// presence semantics of the position message — protojson omits the unset X/Y on
+// presence semantics of the position message: protojson omits the unset X/Y on
 // both the store and the read, so the echoed tile hashes identically.
 func TestHandler_Upsert_PositionRoundTripHashStable(t *testing.T) {
 	if testing.Short() {
@@ -1074,7 +1074,7 @@ func TestHandler_Upsert_PositionRoundTripHashStable(t *testing.T) {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
 
-	// Seed a position that sets only W/H (X/Y unset, nil) — a realistic FE shape.
+	// Seed a position that sets only W/H (X/Y unset, nil), a realistic FE shape.
 	// The hash + storage round-trip must treat the echoed-back tile as
 	// byte-identical so the no-op short-circuit holds.
 	initialResp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{

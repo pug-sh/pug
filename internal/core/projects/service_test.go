@@ -23,7 +23,7 @@ func TestProjectsService(t *testing.T) {
 	svc := projects.NewService(db.PgRO, db.PgW, nil)
 	ctx := context.Background()
 
-	// Create a customer and org — projects belong to orgs, and membership
+	// Create a customer and org: projects belong to orgs, and membership
 	// checks require a customer in org_members.
 	write := dbwrite.New(db.PgW)
 	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
@@ -73,8 +73,8 @@ func TestProjectsService(t *testing.T) {
 		if proj.OrgID != org.ID {
 			t.Errorf("OrgID = %q, want %q", proj.OrgID, org.ID)
 		}
-		// The project comes with its public key as a real api_keys row — the only
-		// place a key lives — and with no private key at all: one is created
+		// The project comes with its public key as a real api_keys row, the only
+		// place a key lives, and with no private key at all: one is created
 		// explicitly or not at all.
 		keys, err := svc.ListApiKeys(ctx, proj.ID)
 		if err != nil {
@@ -223,7 +223,7 @@ func TestProjectsService(t *testing.T) {
 }
 
 // TestCreateProjectAsAdmin pins the race-safe admin gate that lives in the
-// CreateProjectAsAdmin SQL CTE — the authoritative check behind projects.Create
+// CreateProjectAsAdmin SQL CTE, the authoritative check behind projects.Create
 // (the AuthzInterceptor is the coarse pre-check; this CTE is the atomic one). Only
 // an org ADMIN may create a project: a member, a viewer, and a non-member each get
 // ErrAdminRequired (no row inserted), and the admin succeeds.
@@ -274,7 +274,7 @@ func TestCreateProjectAsAdmin(t *testing.T) {
 				t.Fatalf("want ErrAdminRequired, got %v", err)
 			}
 			// The CTE must skip the INSERT on a failed admin check. The denial
-			// cases all run before the admin succeeds, so the org stays empty —
+			// cases all run before the admin succeeds, so the org stays empty;
 			// confirm no row leaked through.
 			if projs, err := svc.GetProjectsByOrgID(ctx, org.ID); err != nil {
 				t.Fatalf("GetProjectsByOrgID: %v", err)

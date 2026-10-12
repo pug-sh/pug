@@ -24,7 +24,7 @@ var sessionNamespace = uuid.MustParse("5a1e8e1e-7d5a-4f3b-9c2e-0c00c1e55e55")
 // DegradeNone means the returned id is fully stitched.
 //
 // It exists because the bool it replaced could not say WHY. Every degrade path
-// here is a Redis failure, and the failures need different responses — a
+// here is a Redis failure, and the failures need different responses: a
 // syntax error (Redis < 7.0 rejecting SET NX GET) is a permanent deployment
 // fault, a timeout is transient, and a write-only failure (OOM, READONLY
 // replica) leaves reads working so nothing else looks wrong. An operator
@@ -36,19 +36,19 @@ const (
 	// DegradeGetFailed: the session key could not be read.
 	DegradeGetFailed DegradeReason = "get_failed"
 	// DegradeMintFailed: the SET NX GET that mints a session failed. On Redis
-	// < 7.0 this is `ERR syntax error` on EVERY event — NX and GET were only
-	// permitted together from 7.0 — and the key is never created, so it repeats
+	// < 7.0 this is `ERR syntax error` on EVERY event (NX and GET were only
+	// permitted together from 7.0), and the key is never created, so it repeats
 	// forever while the salt path keeps working.
 	DegradeMintFailed DegradeReason = "mint_failed"
 	// DegradeWriteFailed: the session could not be persisted after minting.
 	DegradeWriteFailed DegradeReason = "write_failed"
 	// DegradeSlideFailed: the session is correct but its last-activity watermark
 	// could not advance. Distinct from the others because the returned id is
-	// still the right one — only the state behind it is stale.
+	// still the right one: only the state behind it is stale.
 	DegradeSlideFailed DegradeReason = "slide_failed"
 	// DegradeCorruptState: a session key held a value this package could not
-	// parse. Unlike its siblings this is not a Redis *failure* — the read
-	// succeeded — which is exactly why it needs its own reason: an unparseable
+	// parse. Unlike its siblings this is not a Redis *failure* (the read
+	// succeeded), which is exactly why it needs its own reason: an unparseable
 	// value takes the same mint path as an ordinary inactivity expiry, so without
 	// it the two are indistinguishable and mass re-minting looks like healthy
 	// traffic. dashboard_session_rollup is keyed by session_id (migration 007),
@@ -61,7 +61,7 @@ const (
 
 // SessionID returns the stitched session for one cookieless visitor event:
 // reuse the Redis-held session while the gap from its last activity is within
-// sessionInactivity (computed on event time — the Redis TTL is garbage
+// sessionInactivity (computed on event time; the Redis TTL is garbage
 // collection, not session semantics), else mint.
 //
 // The returned id is ALWAYS usable. A non-empty DegradeReason means it is the
@@ -71,7 +71,7 @@ const (
 //
 // Two pods resolving the same visitor concurrently can race the mint; SETNX+GET
 // adopts the winner when the loser observes it, and the residual last-write-wins
-// overlap splits at most one session — bounded, accepted.
+// overlap splits at most one session: bounded, accepted.
 func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID string, day Day, occur time.Time) (string, DegradeReason) {
 	key := sessKeyPrefix + projectID + ":" + distinctID
 
@@ -88,7 +88,7 @@ func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID string, 
 		case ok && withinInactivity(occur, last):
 			return sid, r.slideSession(ctx, key, sid, last, occur)
 		case !ok:
-			// Stored but unparseable — NOT an expiry. Both mint below; only this
+			// Stored but unparseable, NOT an expiry. Both mint below; only this
 			// one is a fault, so it must not inherit the expiry's silence.
 			corrupt = true
 			r.reportCorruptState(ctx, key, val)
@@ -122,13 +122,13 @@ func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID string, 
 		return sid, r.slideSession(ctx, key, sid, last, occur)
 	}
 	// The event falls outside the stored session's window, so it gets its own
-	// session — but the DIRECTION decides whether it may become the new watermark.
+	// session, but the DIRECTION decides whether it may become the new watermark.
 	// A backward event (late flush, replayed batch, backfill) that recorded its own
 	// time would rewind last-activity, and every subsequent event already stitched
 	// to the live session would then measure against the rewound mark and re-mint:
 	// two events with the same occur_time end up in different sessions. This is the
 	// same monotonicity slideSession enforces at its own write; the two writes must
-	// agree — TestSessionID_OutOfOrderDoesNotFragment pins this one,
+	// agree: TestSessionID_OutOfOrderDoesNotFragment pins this one,
 	// TestSessionID_InWindowOutOfOrderKeepsOneSession pins slideSession's.
 	if _, last, ok := parseSession(prior); ok && !occur.After(last) {
 		return r.staleSessionID(distinctID, day, occur), DegradeNone
@@ -151,12 +151,12 @@ func corruptOrNone(corrupt bool) DegradeReason {
 // handler only labels its counter.
 //
 // The value itself is deliberately NOT logged. It is unbounded, and a corrupt key
-// fires for every event belonging to that visitor until it is overwritten — the
+// fires for every event belonging to that visitor until it is overwritten; the
 // byte length is enough to tell a truncated write from a foreign encoding without
 // putting arbitrary Redis contents into the log pipeline.
 func (r *Resolver) reportCorruptState(ctx context.Context, key, val string) {
 	// Throttled: one key self-heals on the next event, but the cause is rarely
-	// one key — an encoding change mid-rolling-deploy makes every visitor's
+	// one key; an encoding change mid-rolling-deploy makes every visitor's
 	// stored session unparseable at once.
 	if !r.shouldReportDegrade(DegradeCorruptState) {
 		return
@@ -170,7 +170,7 @@ func (r *Resolver) reportCorruptState(ctx context.Context, key, val string) {
 // degrade records a Redis failure and returns the coarse day fallback.
 //
 // This package detects these errors, so per the telemetry convention it is the
-// layer that must log and record them — the handler only labels its counter.
+// layer that must log and record them; the handler only labels its counter.
 // Returning just a reason would throw away the underlying error string, which is
 // the one thing that distinguishes a permanent deployment fault from a blip.
 func (r *Resolver) degrade(ctx context.Context, reason DegradeReason, err error, distinctID string, day Day) (string, DegradeReason) {
@@ -183,8 +183,8 @@ func (r *Resolver) degrade(ctx context.Context, reason DegradeReason, err error,
 }
 
 // degradeLogInterval bounds how often one repeating degrade reason is logged.
-// Sized for "a human reading logs during an incident", not for sampling fidelity
-// — the per-event counter is the alerting signal and is never throttled.
+// Sized for "a human reading logs during an incident", not for sampling fidelity:
+// the per-event counter is the alerting signal and is never throttled.
 const degradeLogInterval = time.Minute
 
 // shouldReportDegrade reports whether this occurrence of reason should be logged
@@ -193,7 +193,7 @@ const degradeLogInterval = time.Minute
 // The FIRST occurrence of any reason always reports, so a fault is never silent
 // at onset, and the map is keyed by reason so an ongoing get_failed cannot mask a
 // newly appearing write_failed. Throttling only the log keeps the convention
-// intact: this package still detects, logs and records — just not once per event
+// intact: this package still detects, logs and records, just not once per event
 // for a fault that by construction affects all of them.
 func (r *Resolver) shouldReportDegrade(reason DegradeReason) bool {
 	now := r.now()
@@ -207,20 +207,20 @@ func (r *Resolver) shouldReportDegrade(reason DegradeReason) bool {
 }
 
 // staleSessionID names the session for an event that arrived after the visitor
-// had already moved on — it landed more than sessionInactivity BEFORE the stored
+// had already moved on: it landed more than sessionInactivity BEFORE the stored
 // last-activity, so it cannot join the live session and must not disturb it.
 //
 // No Redis state is written for these events, so this return value is the only
 // thing binding two stranded events together. It groups them by the
 // sessionInactivity-sized window occur falls in: two stranded events a minute
-// apart share a session, two an hour apart do not — the same rule the live path
+// apart share a session, two an hour apart do not (the same rule the live path
 // applies, just computed from occur alone because there is no watermark to
-// measure against.
+// measure against).
 //
 // Determinism is the load-bearing property, not the grouping. BatchCreate is
 // client-retryable and dashboard_session_rollup is keyed by session_id
 // (migration 007), so a random id per call would write a fresh session row on
-// every retry of the same batch — permanently inflating session counts with no
+// every retry of the same batch, permanently inflating session counts with no
 // way to reconcile after the fact. Hashing occur's window instead makes a
 // replayed batch resolve to the ids it resolved to the first time.
 //
@@ -236,9 +236,9 @@ func (r *Resolver) staleSessionID(distinctID string, day Day, occur time.Time) s
 // slideSession advances last-activity, and only ever forwards: a backward write
 // would rewind the watermark and re-split the session on the next event.
 //
-// A failed slide is not cosmetic. Reads and writes fail independently — under
+// A failed slide is not cosmetic. Reads and writes fail independently (under
 // `maxmemory` with noeviction, or against a read-only replica after failover,
-// GET keeps serving while SET is refused — so the stitch path looks healthy
+// GET keeps serving while SET is refused), so the stitch path looks healthy
 // while the watermark freezes. Every later event then measures its gap from the
 // frozen mark and eventually mints, splitting one visit repeatedly. Report it.
 func (r *Resolver) slideSession(ctx context.Context, key, sid string, last, occur time.Time) DegradeReason {

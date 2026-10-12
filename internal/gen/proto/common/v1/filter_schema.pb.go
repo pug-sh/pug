@@ -334,7 +334,7 @@ func (x *GetFilterSchemaRequest) GetAllowedTypes() []PropertyValueType {
 	return nil
 }
 
-// GetFilterSchemaResponse mirrors the shared request shape — same reason.
+// GetFilterSchemaResponse mirrors the shared request shape (same reason).
 type GetFilterSchemaResponse struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Events              []*EventNameMeta       `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`

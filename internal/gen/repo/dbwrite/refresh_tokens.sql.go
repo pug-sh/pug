@@ -102,7 +102,7 @@ for update
 // Locks the row FOR UPDATE so concurrent refreshes of the same token serialize:
 // the first to commit consumes it, and the rest re-read consumed_at set and fall
 // into the reuse-detection path. Unlike the email-action lookup, this does NOT
-// filter on consumed_at/revoked_at — the caller MUST see an already-consumed or
+// filter on consumed_at/revoked_at: the caller MUST see an already-consumed or
 // revoked row to detect token replay and decide invalidity in Go.
 func (q *Queries) GetRefreshTokenByHashForUpdate(ctx context.Context, tokenHash string) (RefreshToken, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenByHashForUpdate, tokenHash)

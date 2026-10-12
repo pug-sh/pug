@@ -50,9 +50,9 @@ const (
 // InsightsServiceClient is a client for the shared.insights.v1.InsightsService service.
 type InsightsServiceClient interface {
 	// Query runs a product-analytics insight over the project's events and returns
-	// the computed result. A single call covers every insight type — trends,
+	// the computed result. A single call covers every insight type: trends,
 	// segmentation, funnel, retention, user flow (Sankey), top-K and map (a metric
-	// per country, returned as top_k rows keyed by ISO alpha-2) — chosen by the
+	// per country, returned as top_k rows keyed by ISO alpha-2), chosen by the
 	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
 	// others). Map, user flow, top-K and session each carry their own sub-message
 	// (spec.map / spec.user_flow / spec.top_k / spec.session) and take no events or
@@ -64,7 +64,7 @@ type InsightsServiceClient interface {
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	// SegmentUsers returns a paginated page of the distinct ids of the users who
-	// performed a given set of events (with optional filters) in a time range — the
+	// performed a given set of events (with optional filters) in a time range: the
 	// "who" behind a number on a chart. Not exposed as an MCP tool while the
 	// drill-down insight is still WIP; see toolPolicy in
 	// internal/app/server/mcp/rename.go.
@@ -154,9 +154,9 @@ func (c *insightsServiceClient) GetPropertyValues(ctx context.Context, req *conn
 // InsightsServiceHandler is an implementation of the shared.insights.v1.InsightsService service.
 type InsightsServiceHandler interface {
 	// Query runs a product-analytics insight over the project's events and returns
-	// the computed result. A single call covers every insight type — trends,
+	// the computed result. A single call covers every insight type: trends,
 	// segmentation, funnel, retention, user flow (Sankey), top-K and map (a metric
-	// per country, returned as top_k rows keyed by ISO alpha-2) — chosen by the
+	// per country, returned as top_k rows keyed by ISO alpha-2), chosen by the
 	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
 	// others). Map, user flow, top-K and session each carry their own sub-message
 	// (spec.map / spec.user_flow / spec.top_k / spec.session) and take no events or
@@ -168,7 +168,7 @@ type InsightsServiceHandler interface {
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	// SegmentUsers returns a paginated page of the distinct ids of the users who
-	// performed a given set of events (with optional filters) in a time range — the
+	// performed a given set of events (with optional filters) in a time range: the
 	// "who" behind a number on a chart. Not exposed as an MCP tool while the
 	// drill-down insight is still WIP; see toolPolicy in
 	// internal/app/server/mcp/rename.go.

@@ -39,7 +39,7 @@ func TestCloudflareProvider_Locate(t *testing.T) {
 			Location{},
 		},
 		{
-			"partial — country only",
+			"partial: country only",
 			http.Header{"Cf-Ipcountry": {"DE"}},
 			Location{PropCountry: "DE"},
 		},
@@ -54,7 +54,7 @@ func TestCloudflareProvider_Locate(t *testing.T) {
 			Location{},
 		},
 		{
-			"ip header ignored — timezone only",
+			"ip header ignored, timezone only",
 			http.Header{"Cf-Connecting-Ip": {"8.8.8.8"}, "Cf-Timezone": {"Europe/Berlin"}},
 			Location{PropTimezone: "Europe/Berlin"},
 		},

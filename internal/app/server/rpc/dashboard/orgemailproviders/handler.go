@@ -23,7 +23,7 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// Authorization (admin-only — email_provider is an admin resource in the policy)
+// Authorization (admin-only: email_provider is an admin resource in the policy)
 // is enforced centrally by rpc.AuthzInterceptor from the permission registry,
 // before any handler runs.
 type server struct {
@@ -78,7 +78,7 @@ func (s *server) Get(ctx context.Context, req *connect.Request[orgemailproviders
 		// Decrypt failure usually means PUG_EMAIL_PROVIDER_SECRET_KEY was
 		// rotated without re-encrypting rows. The admin can self-recover
 		// by re-saving the provider config (which re-encrypts under the
-		// current key) — surface a typed code rather than a generic 500.
+		// current key); surface a typed code rather than a generic 500.
 		return nil, apperr.FailedPrecondition(apperr.ReasonEmailProviderDecryptFailed,
 			"email provider secret cannot be decrypted with the current key; please re-save the provider config")
 	}
@@ -235,7 +235,7 @@ func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprov
 }
 
 // classifySendTestError converts a raw resolver/provider error into a
-// client-safe message for the SendTest response body — this only sanitises what
+// client-safe message for the SendTest response body; this only sanitises what
 // the admin sees in the dashboard. (Logging is handled by the caller: permanent
 // resolver errors at their source, non-permanent render/send errors in
 // SendTest.) Internal package paths like "secret:" or "email:" are stripped so

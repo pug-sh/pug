@@ -15,7 +15,7 @@ func day(t time.Time) time.Time {
 
 // windowFor derives the window of the period [periodStart, periodEnd). An org's
 // windows are contiguous and never overlap: a period already stated keeps the start
-// it was first given, and a new one starts where the days it follows end — or at
+// it was first given, and a new one starts where the days it follows end, or at
 // its own start day, after a gap. prev is those days (see period.daysFor): the whole
 // previous window across a renewal, and only the part summed while it was live
 // across a change of subscription. Every UTC day is therefore stated at most once,
@@ -38,8 +38,8 @@ func windowFor(periodStart, periodEnd time.Time, stated, prev *Window) Window {
 }
 
 // through is where the window's metered days end as of now: tomorrow's midnight, so
-// today's partial count is included, but never past End — the renewal day belongs to
-// the next window — nor before Start, for a window that has not begun.
+// today's partial count is included, but never past End (the renewal day belongs to
+// the next window) nor before Start, for a window that has not begun.
 func (w Window) through(now time.Time) time.Time {
 	t := day(now).AddDate(0, 0, 1)
 	if t.After(w.End) {

@@ -377,7 +377,7 @@ type Dashboard struct {
 	// Dashboard-level time window applied to every insight tile at render time.
 	DefaultTimeRange   *v1.TimeRangePreset `protobuf:"varint,8,opt,name=default_time_range,json=defaultTimeRange,enum=common.v1.TimeRangePreset" json:"default_time_range,omitempty"`
 	DefaultGranularity *v11.Granularity    `protobuf:"varint,9,opt,name=default_granularity,json=defaultGranularity,enum=shared.insights.v1.Granularity" json:"default_granularity,omitempty"`
-	// share_id is the crypto-random public share token — treat it as a secret
+	// share_id is the crypto-random public share token; treat it as a secret
 	// (anyone with it can read the dashboard via SharedDashboardsService). Set
 	// only while public sharing is enabled; empty when the dashboard has never
 	// been shared OR sharing is currently disabled.
@@ -820,7 +820,7 @@ func (x *ThresholdRule) GetTone() ThresholdRule_Tone {
 // TileHeader customizes the tile's header rendering. All fields are optional.
 type TileHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Short label rendered in the tile header — typically a single grapheme
+	// Short label rendered in the tile header, typically a single grapheme
 	// cluster (one emoji or character). Capped at 8 bytes, so multi-codepoint
 	// emoji (flags, ZWJ-joined family sequences) may not fit; the FE should
 	// fall back to no icon when the client-side grapheme count exceeds 1.
@@ -1432,7 +1432,7 @@ type DashboardsServiceUpdateRequest struct {
 	// Public sharing toggle, presence-aware (edition-2023 explicit presence):
 	// OMIT to leave the current sharing state unchanged, true to enable, false to
 	// disable. A client doing a partial update (e.g. renaming) should not send
-	// this field unless it intends to change sharing — sending false disables an
+	// this field unless it intends to change sharing: sending false disables an
 	// active share.
 	IsPublic      *bool `protobuf:"varint,6,opt,name=is_public,json=isPublic" json:"is_public,omitempty"`
 	unknownFields protoimpl.UnknownFields

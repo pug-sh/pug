@@ -35,8 +35,8 @@ type Task string
 
 // Job is a scheduled job's identity, carrying both halves of it: the
 // advisory-lock key that makes its passes mutually exclusive, and the cron_state
-// prefix its task timestamps live under. They used to travel separately — a typed
-// key and a bare string handed to NewState — with nothing tying them together, so
+// prefix its task timestamps live under. They used to travel separately (a typed
+// key and a bare string handed to NewState) with nothing tying them together, so
 // a job could take one job's lock while stamping another's state. Passing the Job
 // itself makes that unrepresentable.
 type Job struct {

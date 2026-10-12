@@ -510,7 +510,7 @@ type ApiKey struct {
 	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	Id          *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
 	Kind        *ApiKeyKind            `protobuf:"varint,4,opt,name=kind,enum=dashboard.projects.v1.ApiKeyKind" json:"kind,omitempty"`
-	// Full value for a public key; empty for a private key — use `masked` to
+	// Full value for a public key; empty for a private key. Use `masked` to
 	// identify one of those.
 	Key *string `protobuf:"bytes,5,opt,name=key" json:"key,omitempty"`
 	// Fixed-format hint ("prv_...3f9c") to tell a project's keys apart.
@@ -727,7 +727,7 @@ func (x *CreateApiKeyRequest) GetDisplayName() string {
 type CreateApiKeyResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	ApiKey *ApiKey                `protobuf:"bytes,1,opt,name=api_key,json=apiKey" json:"api_key,omitempty"`
-	// The full key. For a private key this is the only time it is ever returned —
+	// The full key. For a private key this is the only time it is ever returned:
 	// it is unrecoverable afterwards.
 	Key           *string `protobuf:"bytes,2,opt,name=key" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -868,7 +868,7 @@ type UpdateMetaRequest struct {
 	DisplayName *string `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	// IANA timezone (e.g. "Asia/Kolkata") aligning insight/dashboard bucket
 	// boundaries to the project's calendar. Empty = UTC. Unlike creation, a malformed
-	// value is rejected (CodeInvalidArgument) rather than coerced — this is an
+	// value is rejected (CodeInvalidArgument) rather than coerced: this is an
 	// explicit settings action.
 	ReportingTimezone *string `protobuf:"bytes,2,opt,name=reporting_timezone,json=reportingTimezone" json:"reporting_timezone,omitempty"`
 	unknownFields     protoimpl.UnknownFields

@@ -14,7 +14,7 @@ import (
 )
 
 // none is what an absent value prints as. Never a zero: absent means no allowance
-// and no bound on history — "0 days of history" worst of all.
+// and no bound on history, "0 days of history" worst of all.
 const none = "(none)"
 
 func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec entitlement.Record, subs []dbread.BillingSubscription, history []entitlement.HistoryEntry) error {
@@ -27,7 +27,7 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	} else {
 		// Said in full because every field below it is the disabled answer, not this
 		// org's: with the switch off every org resolves free with no allowance at all.
-		row(w, "billing", "DISABLED (PUG_BILLING_ENABLED) — every org resolves with no allowance")
+		row(w, "billing", "DISABLED (PUG_BILLING_ENABLED): every org resolves with no allowance")
 	}
 
 	section(w, "RESOLVED", "")
@@ -41,7 +41,7 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	row(w, "  subscription", subscription(ent))
 
 	if !rec.Present {
-		section(w, "STORED", "(no row — free, unless a subscription says otherwise)")
+		section(w, "STORED", "(no row: free, unless a subscription says otherwise)")
 	} else {
 		section(w, "STORED", "")
 		row(w, "  plan slug", rec.PlanSlug)
@@ -65,7 +65,7 @@ func writeReport(out io.Writer, org dbread.Org, ent entitlement.Entitlement, rec
 	}
 
 	// nil is "--history was not asked for"; empty is "asked for, and nothing is
-	// recorded" — which has to say so rather than print no section at all.
+	// recorded", which has to say so rather than print no section at all.
 	if history != nil {
 		if len(history) == 0 {
 			section(w, "HISTORY", "(no recorded changes)")
@@ -210,7 +210,7 @@ func retention(v *int64) string {
 }
 
 // tiers renders how an org's usage is split: where its allowance ends and each
-// tier's upper bound, by the meter's rule — a tier starts where the allowance ends,
+// tier's upper bound, by the meter's rule; a tier starts where the allowance ends,
 // so one whose bound the allowance passes bills nothing and is not listed.
 // Quantities only: the rates live on the provider's product.
 func tiers(allowance *int64, upTo []int64) string {

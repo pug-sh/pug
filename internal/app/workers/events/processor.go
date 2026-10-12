@@ -112,7 +112,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			telemetry.RecordError(ctx, err)
 			// Append builds the batch in memory and only fails on encode-time
 			// errors (Variant slot mismatch, type drift, oversized buffer).
-			// Retry will not fix these — DLQ on first delivery.
+			// Retry will not fix these; DLQ on first delivery.
 			return natsworker.NewPermanentError(err).
 				With("worker", "events").
 				With("project_id", batch.GetProjectId()).

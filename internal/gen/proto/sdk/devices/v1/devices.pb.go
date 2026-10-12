@@ -27,9 +27,9 @@ type SubscribeRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	DeviceId *string                `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	Platform *string                `protobuf:"bytes,2,opt,name=platform" json:"platform,omitempty"`
-	// Optional — when provided, links the device to a profile.
+	// Optional: when provided, links the device to a profile.
 	ProfileExternalId *string `protobuf:"bytes,3,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
-	// Optional — alternative to profile_external_id for linking.
+	// Optional: alternative to profile_external_id for linking.
 	ProfileId     *string          `protobuf:"bytes,4,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
 	Token         *string          `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
 	Properties    *structpb.Struct `protobuf:"bytes,6,opt,name=properties" json:"properties,omitempty"`

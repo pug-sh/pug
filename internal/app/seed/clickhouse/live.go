@@ -80,7 +80,7 @@ func toLiveEvents(sess []event) []LiveEvent {
 
 // TrafficFactor returns the relative traffic intensity at t, following the
 // same diurnal and weekly shape the batch seeder uses (on a UTC clock, as a
-// store-wide aggregate) plus episode multipliers — so live traffic spikes
+// store-wide aggregate) plus episode multipliers, so live traffic spikes
 // during promo weeks too. Range is (0, ~1.45]: 1.0 is the normal busiest
 // hour, above 1.0 means an episode is running. The demo worker multiplies
 // its peak session rate by this factor.

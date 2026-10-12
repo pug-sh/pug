@@ -35,7 +35,7 @@ func roDashboardToRPC(ctx context.Context, dashboard coredashboards.DashboardWit
 		DefaultGranularity: coredashboards.DashboardGranularityFromDB(ctx, dashboard.Dashboard.DefaultGranularity).Enum(),
 	}
 	// Share is non-nil only when enabled (DashboardWithTiles invariant), so a
-	// presence check is sufficient — no need to re-check Enabled here.
+	// presence check is sufficient, no need to re-check Enabled here.
 	if dashboard.Share != nil {
 		out.ShareId = proto.String(dashboard.Share.ShareToken)
 	}
@@ -43,7 +43,7 @@ func roDashboardToRPC(ctx context.Context, dashboard coredashboards.DashboardWit
 }
 
 // wDashboardToRPC encodes a freshly-created dashboard. The Tiles slice is
-// intentionally absent — a brand-new dashboard has no tiles.
+// intentionally absent: a brand-new dashboard has no tiles.
 func wDashboardToRPC(ctx context.Context, dashboard dbwrite.Dashboard) *dashboardsv1.Dashboard {
 	return &dashboardsv1.Dashboard{
 		Id:                 proto.String(dashboard.ID),

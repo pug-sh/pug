@@ -65,7 +65,7 @@ func TestIngestUsageWrapsAFailure(t *testing.T) {
 }
 
 // A 2xx is not proof the event is held: Dodo answers ingested_count 0 for an event
-// it refused — one stamped by a clock running fast, say — and for a repeat it
+// it refused (one stamped by a clock running fast, say) and for a repeat it
 // ignored, which it holds already. Only reading the event back tells them apart.
 func TestIngestUsageConfirmsAnEventItDidNotIngest(t *testing.T) {
 	statement := corebilling.UsageStatement{CustomerID: "cus_1", EventID: "pug_abc", At: time.Now(), TierEvents: []int64{1}}

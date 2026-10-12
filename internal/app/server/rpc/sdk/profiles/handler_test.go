@@ -19,7 +19,7 @@ import (
 )
 
 // spyJetStream captures Publish calls. Embedding the interface lets the struct
-// satisfy jetstream.JetStream; only Publish is safe to call — other methods
+// satisfy jetstream.JetStream; only Publish is safe to call: other methods
 // panic on the nil embedded value, which is fine for tests.
 type spyJetStream struct {
 	jetstream.JetStream
@@ -108,7 +108,7 @@ func TestIdentify_StripsClientSuppliedIP(t *testing.T) {
 	srv := NewServer(spy)
 
 	// An untrusted SDK caller injects $ip into traits. It must never be
-	// persisted onto the profile — the handler strips it while keeping
+	// persisted onto the profile: the handler strips it while keeping
 	// legitimate (non-reserved) traits.
 	traits, _ := structpb.NewStruct(map[string]any{
 		"$ip":  "203.0.113.7",
@@ -146,8 +146,8 @@ func TestIdentify_NilTraitsIsSafe(t *testing.T) {
 	spy := &spyJetStream{}
 	srv := NewServer(spy)
 
-	// Traits unset (nil Struct). The $ip strip dereferences GetTraits().GetFields()
-	// — a nil map — so this pins the handler comment's "safe no-op" claim: no panic,
+	// Traits unset (nil Struct). The $ip strip dereferences GetTraits().GetFields(),
+	// a nil map, so this pins the handler comment's "safe no-op" claim: no panic,
 	// and the identify still publishes.
 	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
 		ExternalId: proto.String("user-7"),

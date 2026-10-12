@@ -38,8 +38,8 @@ func NewParser() (*Parser, error) {
 // Parse extracts browser, OS, and device properties from the User-Agent request
 // header using ua-parser, normalizing names and versions to match the web SDK's
 // navigator.userAgentData shape (e.g. "Google Chrome", "macOS"). It is the server-side
-// fallback for browsers that do not expose navigator.userAgentData — Firefox, Safari,
-// and all iOS browsers — which send no Client Hints; for Chromium browsers the SDK
+// fallback for browsers that do not expose navigator.userAgentData (Firefox, Safari,
+// and all iOS browsers) which send no Client Hints; for Chromium browsers the SDK
 // supplies these properties directly and they take precedence during enrichment.
 // Returns nil if the receiver is nil, the User-Agent header is absent, or the
 // user-agent string cannot be meaningfully parsed.

@@ -130,7 +130,7 @@ func TestAReadKeepsTheGraceDeadlineWhileTheWindowIsOpen(t *testing.T) {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if report.Applied != 1 {
-		t.Fatalf("applied = %d, want 1 — the read has to land for this to test anything", report.Applied)
+		t.Fatalf("applied = %d, want 1: the read has to land for this to test anything", report.Applied)
 	}
 	if got := graceDeadline(t, f, "sub_grace"); got == nil || !got.Equal(deadline) {
 		t.Errorf("grace_period_ends_at = %v after a read, want %s kept", got, deadline)
@@ -138,7 +138,7 @@ func TestAReadKeepsTheGraceDeadlineWhileTheWindowIsOpen(t *testing.T) {
 }
 
 // Outside the provider's grace window there is no deadline. A delivery says so, and
-// so does a read in any state but the window's own — a hold included, where pug's
+// so does a read in any state but the window's own, a hold included, where pug's
 // status stays past_due. A read that can tell nothing still clears it once the
 // subscription stops showing past_due.
 func TestTheGraceDeadlineClearsOnceTheWindowCloses(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 
 // HandleDelivery stores one verified delivery and applies it, returning only once
 // the row is durable. Everything unapplicable is stored, marked processed and NOT
-// retried — the provider retries and fixes none of it. A body it cannot DECODE is retried.
+// retried: the provider retries and fixes none of it. A body it cannot DECODE is retried.
 //
 // It stores, attributes and maps under this service's own provider, the one whose
 // Verifier the mounted route checked the delivery with.
@@ -180,7 +180,7 @@ func fillGraceDeadline(
 //
 // metadata.org_id is never enough on its own. Static payment links let the buyer
 // set metadata_* from the URL, so an org id in a payload names an org rather than
-// proving one — it counts only alongside a product an operator staged.
+// proving one; it counts only alongside a product an operator staged.
 func (s *Service) attributeDelivery(ctx context.Context, provider billing.PaymentProvider, event billing.SubscriptionEvent) (string, error) {
 	// Every read here goes through the WRITE pool: a lagging replica would report "no
 	// such org" for an org that just checked out, rejecting the delivery permanently.
@@ -199,7 +199,7 @@ func (s *Service) attributeDelivery(ctx context.Context, provider billing.Paymen
 		}
 	}
 	// metadata.org_id, but only for the product an operator already staged this org
-	// to buy — the negotiated-deal payment link. Buyer-settable metadata alone
+	// to buy: the negotiated-deal payment link. Buyer-settable metadata alone
 	// names an org; paired with a staged product it can only buy what was staged.
 	if event.OrgID != "" && event.ProductID != "" {
 		staged, err := r.GetBillingEntitlementProviderProductID(ctx, event.OrgID)
@@ -229,7 +229,7 @@ func (s *Service) attributeDelivery(ctx context.Context, provider billing.Paymen
 	return "", errUnattributable
 }
 
-// finishDelivery marks the row processed — for an applied delivery and every
+// finishDelivery marks the row processed, for an applied delivery and every
 // unapplicable one, so no row is left looking like an attempt that died.
 func (s *Service) finishDelivery(ctx context.Context, provider billing.PaymentProvider, d billing.Delivery, reason string) error {
 	n, err := s.write().MarkBillingWebhookDeliveryProcessed(ctx, dbwrite.MarkBillingWebhookDeliveryProcessedParams{
@@ -336,8 +336,8 @@ var ErrTwoLiveSubscriptions = errors.New("billing: this org already has a live s
 // reported as a skip, or a pass counts neither an apply nor a finding.
 var ErrSubscriptionUnapplicable = errors.New("billing: subscription cannot be applied")
 
-// applySubscription is the one writer behind all three paths — webhook,
-// reconcile and confirm — so they cannot disagree about what "newer" means. It
+// applySubscription is the one writer behind all three paths (webhook,
+// reconcile and confirm) so they cannot disagree about what "newer" means. It
 // maps and writes inside the entitlement service's WithOrgLock, against the org's
 // row as read under that lock: a `billing clear` between the mapping and the write
 // would otherwise store a live custom subscription with no row behind it, which is

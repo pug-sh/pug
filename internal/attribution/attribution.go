@@ -3,11 +3,11 @@
 // $hostname), referrer domain with self-referral and auth-intermediary
 // blanking ($referrerDomain), UTM completion from the URL query string,
 // screen-size formatting ($screenSize), locale casing normalization ($locale),
-// and marketing-channel classification ($channel — see channel.go for the
+// and marketing-channel classification ($channel; see channel.go for the
 // normative taxonomy).
 //
 // The package is a stdlib-only leaf so the SDK ingest handler,
-// internal/core/clickhouse, and the demo seeder can all import it — demo data
+// internal/core/clickhouse, and the demo seeder can all import it: demo data
 // and production traffic classify identically because they run the same
 // Derive.
 //
@@ -21,7 +21,7 @@
 // That is not the same as full client isolation: $referrerDomain is derived
 // from Input.Referrer against Input.URL's host, and when no $url is present it
 // falls back to the client-sent Input.Hostname as the self-referral comparand
-// (see Derive) — a URL-less event can therefore self-blank its own referrer.
+// (see Derive); a URL-less event can therefore self-blank its own referrer.
 // That is an accepted, documented tradeoff (a tenant degrading only its own
 // analytics), not a general guarantee that no client value reaches these keys.
 package attribution
@@ -79,7 +79,7 @@ type Input struct {
 }
 
 // serverOnlyKeys are the keys Derive always computes itself. They have no
-// Input field, so a client-sent copy cannot influence derivation — but it
+// Input field, so a client-sent copy cannot influence derivation, but it
 // would survive untouched into storage, because the write side never clears a
 // key. StripServerOnly removes them, mirroring the bot enrichers' strip.
 var serverOnlyKeys = [...]string{PropReferrerDomain, PropChannel}
@@ -87,7 +87,7 @@ var serverOnlyKeys = [...]string{PropReferrerDomain, PropChannel}
 // StripServerOnly deletes every server-only key from a caller's client-sent
 // property map. Ingest paths must call it before applying Output; owning the
 // deletion here rather than exporting the key list keeps the policy
-// unreachable from outside — a caller cannot strip a stale subset, and no
+// unreachable from outside: a caller cannot strip a stale subset, and no
 // importer can rewrite the list out from under the paths that depend on it.
 // Generic over the value type because the SDK handler holds
 // map[string]*eventsv1.PropertyValue and the seeder map[string]any.
@@ -113,7 +113,7 @@ type Source interface {
 
 // InputFrom assembles an Input by reading every key Derive consults. The SDK
 // ingest handler and the demo seeder both go through it so neither can drift
-// into feeding Derive a different set of inputs than the other — the promise
+// into feeding Derive a different set of inputs than the other: the promise
 // that demo data and production traffic classify identically is only worth
 // anything if the inputs match, not just the derivation.
 func InputFrom(src Source) Input {
@@ -159,7 +159,7 @@ func (o Output) Pairs() [11]struct{ Key, Value string } {
 }
 
 // Output holds the effective values after derivation. Empty string means "no
-// value" — for promoted columns that is exactly what gets stored, so callers
+// value": for promoted columns that is exactly what gets stored, so callers
 // can skip writing empty outputs.
 type Output struct {
 	Pathname       string
@@ -178,12 +178,12 @@ type Output struct {
 // Derive computes the effective web-analytics properties for one event.
 //
 // URL rules: $pathname/$hostname/UTM completion derive only from a parseable
-// http(s) URL with a non-empty host — garbage input fabricates nothing (no
+// http(s) URL with a non-empty host; garbage input fabricates nothing (no
 // synthetic "/"). $channel likewise derives only when such a URL is present,
 // so non-web events (no $url) carry no channel rather than a misleading
 // "Direct". The referrer accepts any scheme with a host (android-app://…
 // classifies as Referral); a referrer that was sent but resolves to no host
-// classifies as Unassigned — never Direct, which would hide it in the one
+// classifies as Unassigned, never Direct, which would hide it in the one
 // bucket that is expected to be large. $url itself is never mutated, and the
 // path is not normalized (case/trailing-slash normalization is lossy).
 func Derive(in Input) Output {
@@ -195,8 +195,8 @@ func Derive(in Input) Output {
 	if out.Pathname == "" && pageURL != nil {
 		// Path, not EscapedPath: the decoded form is the one migration 008's
 		// SQL mirror can reproduce (decodeURLComponent(path(url))). Go's
-		// escaping rules for a path — preserving sub-delims and ":@" while
-		// percent-encoding non-ASCII — have no ClickHouse equivalent, so
+		// escaping rules for a path (preserving sub-delims and ":@" while
+		// percent-encoding non-ASCII) have no ClickHouse equivalent, so
 		// EscapedPath would store "/caf%C3%A9" live against the mirror's
 		// "/café" and split one page into two permanent rollup dim_values.
 		// The cost is that an encoded "%2F" stops being distinguishable from
@@ -218,8 +218,8 @@ func Derive(in Input) Output {
 	out.UTMCampaign = in.UTMCampaign
 	out.UTMTerm = in.UTMTerm
 	out.UTMContent = in.UTMContent
-	// Query() parses and allocates every parameter — gclid, session tokens,
-	// the lot — to read five keys, so it is skipped when there is nothing to
+	// Query() parses and allocates every parameter (gclid, session tokens,
+	// the lot) to read five keys, so it is skipped when there is nothing to
 	// read or nothing left to fill. The common pageview has neither: no query
 	// string at all, or an SDK that already sent its UTMs.
 	if pageURL != nil && pageURL.RawQuery != "" && (out.UTMSource == "" || out.UTMMedium == "" ||
@@ -234,14 +234,14 @@ func Derive(in Input) Output {
 
 	// Self-referral compares against the URL's host, NOT out.Hostname: the
 	// latter echoes a client-sent $hostname, which would let a client steer
-	// the server-only $referrerDomain/$channel — sending a $hostname that
+	// the server-only $referrerDomain/$channel; sending a $hostname that
 	// disagrees with $url defeats blanking and fills the Referrers panel with
 	// the tenant's own domain, and sending the referrer's own host suppresses
 	// a real acquisition channel as Direct. The client value is still the
 	// stored $hostname (derive-if-absent, so SDKs keep logical hostnames); it
 	// only stops deciding the rule. With no URL there is no server-known host,
 	// so the client's is the only signal available and self-blanking still
-	// works off it — $channel is gated on pageURL anyway, so nothing
+	// works off it; $channel is gated on pageURL anyway, so nothing
 	// classifiable depends on it.
 	ownHost := pageHost
 	if pageURL == nil {
@@ -298,8 +298,8 @@ func completeUTM(dst *string, q url.Values, param string) {
 	}
 }
 
-// referrerDomain extracts the referrer's host — any scheme qualifies as long
-// as a host is present — lowercased, with one leading "www." stripped, and
+// referrerDomain extracts the referrer's host (any scheme qualifies as long
+// as a host is present), lowercased, with one leading "www." stripped, and
 // blanked either when it equals the event's own hostname after the same "www."
 // strip (a self-referral) or when it is an authIntermediaryHosts entry (an
 // OAuth bounce). Subdomains are deliberately NOT collapsed to a
@@ -309,7 +309,7 @@ func completeUTM(dst *string, q url.Values, param string) {
 // unresolved reports a referrer that WAS sent but yielded no host, which the
 // empty domain alone cannot express. url.Parse reads a schemeless string as a
 // path, so "www.google.com/search" and a bare "google.com" both parse without
-// error into no host — indistinguishable from "no referrer at all" unless it
+// error into no host, indistinguishable from "no referrer at all" unless it
 // is flagged here, and silently booking real referred traffic as Direct is
 // invisible precisely because Direct is expected to be large. Both blanks are
 // resolved, NOT unresolved: they are deliberate and must keep classifying as
@@ -364,7 +364,7 @@ func stripOneWWW(host string) string {
 
 // NormalizeLocale canonicalizes a BCP-47-ish tag's casing and separator
 // ("en-us" → "en-US", "zh_hans_cn" → "zh-Hans-CN") so language dimensions
-// don't fragment on case variants — rollup rows are permanent, so this must
+// don't fragment on case variants; rollup rows are permanent, so this must
 // happen before storage. Re-casing follows the BCP 47 convention by subtag
 // length (2-letter region upper, 4-letter script title, everything else
 // lower); subtags are never reordered, validated, or dropped. Numeric region

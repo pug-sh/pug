@@ -64,7 +64,7 @@ join api_keys k on k.project_id = p.id
 where k.token = $1 and k.kind = 'private' and p.deletion_time is null
 `
 
-// @token is the sha256 hex of the presented prv_ key — private keys are stored
+// @token is the sha256 hex of the presented prv_ key: private keys are stored
 // hashed, so the caller hashes before looking up (see core/projects.hashKey).
 func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, token string) (Project, error) {
 	row := q.db.QueryRow(ctx, getProjectByPrivateApiKey, token)
@@ -89,7 +89,7 @@ join api_keys k on k.project_id = p.id
 where k.token = $1 and k.kind = 'public' and p.deletion_time is null
 `
 
-// @token is the pub_ key itself — public keys are stored plaintext.
+// @token is the pub_ key itself: public keys are stored plaintext.
 func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, token string) (Project, error) {
 	row := q.db.QueryRow(ctx, getProjectByPublicApiKey, token)
 	var i Project

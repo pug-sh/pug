@@ -35,7 +35,7 @@ func TestParse(t *testing.T) {
 		want Properties
 	}{
 		{
-			name: "chrome desktop — browser and os, no device",
+			name: "chrome desktop: browser and os, no device",
 			ua:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
 			want: Properties{
 				PropBrowser:        "Google Chrome",
@@ -46,7 +46,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "iphone safari — browser normalized to Safari, mobile true",
+			name: "iphone safari: browser normalized to Safari, mobile true",
 			ua:   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
 			want: Properties{
 				PropBrowser:        "Safari",
@@ -58,7 +58,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "ipad safari — tablet is not mobile, browser Safari",
+			name: "ipad safari: tablet is not mobile, browser Safari",
 			ua:   "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
 			want: Properties{
 				PropBrowser:        "Safari",
@@ -70,7 +70,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "android chrome — browser, os, and device",
+			name: "android chrome: browser, os, and device",
 			ua:   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
 			want: Properties{
 				PropBrowser:        "Google Chrome",
@@ -82,7 +82,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "firefox on ubuntu — distro folded to Linux",
+			name: "firefox on ubuntu: distro folded to Linux",
 			ua:   "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
 			want: Properties{
 				PropBrowser:        "Firefox",
@@ -92,7 +92,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "chrome os — not folded to Linux",
+			name: "chrome os: not folded to Linux",
 			ua:   "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 			want: Properties{
 				PropBrowser:        "Google Chrome",
@@ -103,7 +103,7 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "googlebot — browser and device (Spider)",
+			name: "googlebot: browser and device (Spider)",
 			ua:   "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
 			want: Properties{
 				PropBrowser:        "Googlebot",
@@ -113,17 +113,17 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "empty header — returns nil",
+			name: "empty header: returns nil",
 			ua:   "",
 			want: nil,
 		},
 		{
-			name: "garbage string — returns nil (all Other)",
+			name: "garbage string: returns nil (all Other)",
 			ua:   "not-a-real-user-agent",
 			want: nil,
 		},
 		{
-			name: "curl — browser only, no os or device",
+			name: "curl: browser only, no os or device",
 			ua:   "curl/8.1.2",
 			want: Properties{
 				PropBrowser:        "curl",

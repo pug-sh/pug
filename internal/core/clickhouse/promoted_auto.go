@@ -31,7 +31,7 @@ const (
 // makes this table authoritative for the write path rather than merely
 // parallel to it: splitting, merging back, and the filter picker all derive
 // from it, so a new promoted string column is one row here plus one struct
-// field — not a case in each of several hand-written switches, where the one
+// field, not a case in each of several hand-written switches, where the one
 // that gets forgotten decides which surface silently loses the value. Nil for
 // the non-string kinds, which have no single string field to address.
 type PromotedAutoColumn struct {
@@ -88,7 +88,7 @@ func init() {
 // PromotedColumnFor returns the events column an auto-property is promoted
 // into. promotedAutoColumns is the authoritative property↔column mapping, so
 // callers that need a column name derive it here rather than restating the
-// pairs — the rollup migrations name their per-dimension artifacts after this
+// pairs: the rollup migrations name their per-dimension artifacts after this
 // column (dashboard_session_rollup's entry_<column>_state), and a second copy
 // of the mapping is a drift source with no compile-time link back.
 func PromotedColumnFor(property string) (string, bool) {
@@ -102,7 +102,7 @@ func PromotedColumnFor(property string) (string, bool) {
 // PromotedStringAutoProperties returns the canonical property keys of every
 // PromotedString events column, in declaration order. Ingest strips these
 // keys from the auto_properties map, so the property_keys discovery MV never
-// observes them — the filter-schema picker injects this list to keep them
+// observes them; the filter-schema picker injects this list to keep them
 // discoverable (insights.mergePromotedAutoDimensions).
 func PromotedStringAutoProperties() []string {
 	out := make([]string, 0, len(promotedAutoColumns))
@@ -341,7 +341,7 @@ func applyPromotedPropertyValue(row *PromotedAutoRow, col PromotedAutoColumn, pv
 }
 
 // setPromotedString writes a value into the row field col addresses. A
-// PromotedString column with no Str accessor is unrepresentable in practice —
+// PromotedString column with no Str accessor is unrepresentable in practice:
 // TestPromotedStringColumnsHaveAccessors rejects the table entry rather than
 // letting the write silently vanish here, which is what the hand-written
 // switch this replaced did on a forgotten case.

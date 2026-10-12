@@ -92,7 +92,7 @@ func (r *healthRegistry) startServer(ctx context.Context) {
 		slog.InfoContext(ctx, "worker health endpoints listening",
 			slog.String("addr", addr), slog.String("liveness", "/healthz"), slog.String("readiness", "/readyz"))
 		// Bind failure is non-fatal: a port collision (a stale worker process, or a
-		// misconfigured PUG_WORKER_HEALTH_ADDR — each standalone worker binary needs
+		// misconfigured PUG_WORKER_HEALTH_ADDR; each standalone worker binary needs
 		// its own port) must not take down message processing. Correctness is
 		// unaffected; only probe visibility is lost, so it is logged at Error and
 		// recorded to make the lost visibility alertable rather than silent.

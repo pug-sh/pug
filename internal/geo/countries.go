@@ -4,7 +4,7 @@ import "strings"
 
 // countryCodes is the ISO 3166-1 alpha-2 set: the 249 officially assigned codes
 // plus XK, the user-assigned code Cloudflare returns for Kosovo. Hardcoded
-// rather than embedded — the list changes every few years, and a build-time
+// rather than embedded: the list changes every few years, and a build-time
 // literal keeps the lookup allocation-free.
 const countryCodes = "" +
 	"AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ " +

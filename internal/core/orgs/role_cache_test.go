@@ -78,7 +78,7 @@ func TestGetMemberRoleCaching(t *testing.T) {
 		}
 
 		// Change the role out-of-band (no service invalidation); the cached value
-		// must shadow the DB until invalidated/expired — proving it is served from
+		// must shadow the DB until invalidated/expired, proving it is served from
 		// cache, not re-read.
 		if _, err := w.UpdateOrgMemberRole(ctx, dbwrite.UpdateOrgMemberRoleParams{
 			OrgID:      orgID,
@@ -107,7 +107,7 @@ func TestGetMemberRoleCaching(t *testing.T) {
 	t.Run("freshly added member is visible immediately (positive-only: no stale negative)", func(t *testing.T) {
 		// Pins the property the un-invalidated add paths (invite acceptance, org
 		// creation, the cross-package auth provisioning path) rely on: a non-member
-		// lookup caches nothing, so adding a member needs no invalidation — the new
+		// lookup caches nothing, so adding a member needs no invalidation; the new
 		// role is visible on the very next lookup. A regression that cached
 		// non-membership would silently lock out every freshly-invited/provisioned
 		// user until TTL; this catches it.
@@ -132,7 +132,7 @@ func TestGetMemberRoleCaching(t *testing.T) {
 			t.Fatalf("add member: %v", err)
 		}
 		if role, err := svc.GetMemberRole(ctx, orgID, newcomer); err != nil || role != RoleMember {
-			t.Fatalf("post-add GetMemberRole = (%q, %v), want (MEMBER, nil) — stale negative cached?", role, err)
+			t.Fatalf("post-add GetMemberRole = (%q, %v), want (MEMBER, nil); stale negative cached?", role, err)
 		}
 	})
 
@@ -171,7 +171,7 @@ func TestGetMemberRoleCaching(t *testing.T) {
 
 	t.Run("Leave invalidates the cache", func(t *testing.T) {
 		// Org has a fresh admin (freshOrg) plus this member, so the member is
-		// neither the last admin nor the last member — Leave succeeds and must
+		// neither the last admin nor the last member; Leave succeeds and must
 		// invalidate the cached role. Leave gates the invalidation behind its
 		// `n == 1` success branch, so this guards that wiring specifically.
 		orgID, _ := freshOrg(t)
@@ -226,7 +226,7 @@ func TestMemberRoleCachePopulateRaceGuard(t *testing.T) {
 	roleKey := memberRoleCacheKey(org.ID, member)
 	genKey := memberRoleGenCacheKey(org.ID, member)
 
-	// Slow reader: observe the generation, then "read" role=ADMIN — exactly the
+	// Slow reader: observe the generation, then "read" role=ADMIN, exactly the
 	// state captured just before a populate.
 	observedGen := rd.Client.Get(ctx, genKey).Val() // "" while the counter is absent
 
@@ -257,7 +257,7 @@ func TestMemberRoleCachePopulateRaceGuard(t *testing.T) {
 }
 
 // TestGetMemberRoleCorruptCacheSelfHeals pins the cache-read recovery branch: a
-// cached value outside the recognized role set must NOT be trusted — GetMemberRole
+// cached value outside the recognized role set must NOT be trusted; GetMemberRole
 // drops it and falls through to Postgres, returning the real role (and re-caching
 // the valid value). Guards against a poisoned/format-drifted cache silently
 // fabricating or denying a role.
@@ -285,7 +285,7 @@ func TestGetMemberRoleCorruptCacheSelfHeals(t *testing.T) {
 
 	role, err := svc.GetMemberRole(ctx, org.ID, adminID)
 	if err != nil || role != RoleAdmin {
-		t.Fatalf("GetMemberRole = (%q, %v), want (ADMIN, nil) — corrupt cache not self-healed", role, err)
+		t.Fatalf("GetMemberRole = (%q, %v), want (ADMIN, nil); corrupt cache not self-healed", role, err)
 	}
 	// The bad entry must have been dropped and then repopulated with the valid role.
 	if got := rd.Client.Get(ctx, memberRoleCacheKey(org.ID, adminID)).Val(); got != RoleAdmin.String() {

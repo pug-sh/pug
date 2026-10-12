@@ -8,7 +8,7 @@ import (
 
 // TestAssertServedServicesMatch exercises the runtime AUTHZ CONTRACT check used
 // by start(): the mounted RPC-service set must equal the authz permission
-// registry. It runs in short mode (no infra) — it only exercises the pure
+// registry. It runs in short mode (no infra): it only exercises the pure
 // comparison against pogrpc.ServedServiceNames().
 func TestAssertServedServicesMatch(t *testing.T) {
 	names := pogrpc.ServedServiceNames()

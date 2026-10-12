@@ -38,7 +38,7 @@ import (
 // created (invitation row committed) but the subsequent NATS publish errors.
 // Operators should alert on a non-zero rate: it means admins see an
 // "invitation sent" 200 response for invites whose emails were never queued.
-// The {kind} attribute lets ops bucket failures by payload type — for this
+// The {kind} attribute lets ops bucket failures by payload type; for this
 // package the only emitted kind is "org_member_invite".
 //
 // Lives in its own package (separate from auth.emailPublishFailureCounter)
@@ -77,7 +77,7 @@ var (
 	// org with zero admins (removal, leaving, or demotion to a non-admin role).
 	// In Leave, this also takes precedence over ErrLastMember when the caller is
 	// an admin who is also the sole member of the org. Handlers build their own
-	// client-facing message (different wording for remove vs leave vs demote) —
+	// client-facing message (different wording for remove vs leave vs demote);
 	// never pass this sentinel directly into connect.NewError, as the neutral
 	// phrasing here is not a substitute for the verb-specific message.
 	ErrLastAdmin      = errors.New("blocked: last admin of org")
@@ -93,7 +93,7 @@ const (
 	// inviteSendWindow, counting the original send. A trailing window rather
 	// than a lifetime total because nothing can clear a spent lifetime cap: an
 	// expired invitation stays PENDING, the partial unique index blocks a fresh
-	// invite for the same (org, email), and there is no revoke RPC — so the
+	// invite for the same (org, email), and there is no revoke RPC, so the
 	// address would be permanently uninvitable to that org.
 	maxInviteSendsPerWindow = 10
 	inviteSendWindow        = 24 * time.Hour
@@ -125,8 +125,8 @@ type JobPublisher interface {
 // InviteDispatch bundles a persisted invitation with the raw (unhashed) token
 // it was issued under. The token hash lives in email_action_tokens; the raw
 // form is returned so a caller could surface the invite link without re-reading
-// the DB. No RPC handler reads RawToken today — the invite email receives the
-// token directly at publish time — so it is currently consumed only by tests.
+// the DB. No RPC handler reads RawToken today (the invite email receives the
+// token directly at publish time), so it is currently consumed only by tests.
 type InviteDispatch struct {
 	Invitation dbwrite.OrgInvitation
 	RawToken   string
@@ -279,7 +279,7 @@ func (s *Service) ListMembers(ctx context.Context, orgID string) ([]dbread.GetOr
 
 // GetMember returns one member with the joined customer fields (display_name,
 // email). Reads from the write pool so callers may chain this after a write
-// without risking replica lag — used by UpdateMemberRole to populate the
+// without risking replica lag. Used by UpdateMemberRole to populate the
 // response with the same shape as ListMembers.
 func (s *Service) GetMember(ctx context.Context, orgID, customerID string) (dbread.GetOrgMemberByOrgIDAndCustomerIDRow, error) {
 	row, err := dbread.New(s.pgW).GetOrgMemberByOrgIDAndCustomerID(ctx, dbread.GetOrgMemberByOrgIDAndCustomerIDParams{
@@ -303,8 +303,8 @@ const (
 	// entries. memberRoleCacheTTL bounds staleness if an invalidation is ever lost
 	// (e.g. a Redis blip); under normal operation the explicit, generation-guarded
 	// invalidation on every member removal / role change makes a privilege change
-	// take effect immediately. It is purely a backstop — not the consistency
-	// mechanism — so it is deliberately short: it caps the worst-case window in
+	// take effect immediately. It is purely a backstop, not the consistency
+	// mechanism, so it is deliberately short: it caps the worst-case window in
 	// which a removed or demoted member retains elevated access after a lost
 	// invalidation, at the cost of at most one indexed org_members PK read per key
 	// per TTL on the steady path.
@@ -320,8 +320,8 @@ const (
 	memberRoleGenCachePrefix = "org:member_role_gen:"
 	// memberRoleGenCacheTTL bounds growth of the generation counters (one extra
 	// Redis key per cached member). It only needs to outlive a single
-	// GetMemberRole's observe→DB-read→populate window — an indexed PK lookup is
-	// sub-millisecond — so an hour is vast headroom while still letting the
+	// GetMemberRole's observe→DB-read→populate window (an indexed PK lookup is
+	// sub-millisecond), so an hour is vast headroom while still letting the
 	// counters for churned members expire instead of leaking forever.
 	memberRoleGenCacheTTL = time.Hour
 )
@@ -338,9 +338,9 @@ var (
 	// memberRolePopulateScript writes the role value (KEYS[1]) only when the
 	// member's generation counter (KEYS[2]) still equals the value the caller
 	// observed before its DB read (ARGV[2]; "" means the counter was absent). This
-	// closes the cache-aside race: a reader that read a now-stale role — because a
+	// closes the cache-aside race: a reader that read a now-stale role (because a
 	// concurrent UpdateMemberRole/RemoveMemberSafe/Leave committed and invalidated
-	// after the read — finds the generation bumped and skips the write, so it can
+	// after the read) finds the generation bumped and skips the write, so it can
 	// never resurrect the stale role after invalidation. ARGV[1]=role,
 	// ARGV[3]=value TTL in seconds.
 	memberRolePopulateScript = goredis.NewScript(`
@@ -367,13 +367,13 @@ return 1
 )
 
 // GetMemberRole returns the calling customer's role for the given org. The
-// raw value is parsed through ParseRole so callers receive a validated Role —
+// raw value is parsed through ParseRole so callers receive a validated Role:
 // values that drift outside the recognized set surface as errors at this
 // boundary rather than silently flowing through equality checks.
 //
 // When a role cache is wired (NewServiceWithRoleCache) a hit is served from Redis. Caching
 // is POSITIVE-ONLY: a non-member (ErrMemberNotFound) is never cached, so a
-// freshly-added member (org create, invite acceptance — including the
+// freshly-added member (org create, invite acceptance, including the
 // cross-package auth provisioning path) is visible on its next request with no
 // cross-package invalidation. Removals and role changes invalidate the entry
 // explicitly (see invalidateMemberRole).
@@ -389,7 +389,7 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 	// observedGen is the member's cache generation captured before the DB read; ""
 	// means the counter is absent (never invalidated), a valid baseline the
 	// populate CAS matches against. It stays "" when caching is disabled or the
-	// read fails, which only makes the later populate skip — never go stale.
+	// read fails, which only makes the later populate skip, never go stale.
 	var observedGen string
 
 	if s.roleCache != nil {
@@ -399,7 +399,7 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 			if role, perr := ParseRole(cached); perr == nil {
 				return role, nil
 			}
-			// Corrupt/drifted cached value — drop it and fall through to the DB.
+			// Corrupt/drifted cached value: drop it and fall through to the DB.
 			slog.WarnContext(ctx, "corrupt member-role cache entry; deleting",
 				slog.String("cache_key", cacheKey))
 			if derr := s.roleCache.Del(ctx, cacheKey).Err(); derr != nil {
@@ -407,7 +407,7 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 					slogx.Error(derr), slog.String("cache_key", cacheKey))
 			}
 		case errors.Is(err, goredis.Nil):
-			// Cache miss — fall through to the DB.
+			// Cache miss: fall through to the DB.
 		default:
 			slog.WarnContext(ctx, "failed to read member-role cache",
 				slogx.Error(err), slog.String("cache_key", cacheKey))
@@ -448,7 +448,7 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 	if s.roleCache != nil {
 		// CAS populate: write only if no invalidation bumped the generation since
 		// observedGen was captured. A skip (stale generation) or error just means
-		// the next read re-queries Postgres — never a stale cached role.
+		// the next read re-queries Postgres, never a stale cached role.
 		if err := memberRolePopulateScript.Run(ctx, s.roleCache,
 			[]string{cacheKey, genKey},
 			role.String(), observedGen, int(memberRoleCacheTTL.Seconds()),
@@ -479,7 +479,7 @@ func (s *Service) invalidateMemberRole(ctx context.Context, orgID, customerID st
 		memberRoleGenCacheTTL.Milliseconds(),
 	).Err(); err != nil {
 		// ERROR, not WARN: this is the one cache failure with a security
-		// consequence — a stale (positive) role can outlive a removal/role change
+		// consequence; a stale (positive) role can outlive a removal/role change
 		// until memberRoleCacheTTL. Read/populate failures stay WARN (they self-heal
 		// by falling through to Postgres).
 		slog.ErrorContext(ctx, "failed to invalidate member-role cache",
@@ -537,11 +537,11 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 // non-transactional read on org_members determines the cause. If a concurrent
 // RemoveMember (or another Leave) lands between the CTE rejection and the
 // disambig read, the caller may see ErrMemberNotFound instead of the rejection
-// reason that originally fired. The reverse cannot happen — a row that exists
+// reason that originally fired. The reverse cannot happen: a row that exists
 // at disambig time was either there throughout or re-inserted, and an
 // in-flight removal cannot produce a ghost ErrLastAdmin / ErrLastMember. The
 // caller's atomicity invariant ("either removed or definitely still a member")
-// is preserved either way — only the error code on the rejection path is racy.
+// is preserved either way; only the error code on the rejection path is racy.
 func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 	n, err := s.write.DeleteOrgMemberIfNotLastAdminAndNotLastMember(
 		ctx,
@@ -743,12 +743,12 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 	if n == 0 {
 		// Zero rows is benign in two cases: the invitation aged past inviteTTL
 		// while staying PENDING (the prior token's expires_at is now in the past,
-		// so the `expires_at > now()` filter on InvalidateActive skips it — see the
+		// so the `expires_at > now()` filter on InvalidateActive skips it; see the
 		// resurrect-expired-invite flow in TestResendInviteExtendsExpiresAt), or a
 		// concurrent magic-link acceptance (CompleteMagicLink) raced ahead and
 		// consumed the prior token (the row lock on org_invitations serializes them
 		// but a marked-consumed row is still filtered out here). A genuine invariant
-		// violation — PENDING invitation with no token ever issued — would also land
+		// violation, PENDING invitation with no token ever issued, would also land
 		// here. Surface for investigation without failing the resend; the
 		// freshly-issued token below restores the invariant in every case.
 		slog.WarnContext(ctx, "resend invalidated no prior invite tokens",
@@ -772,7 +772,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 // RevokeInvite withdraws a pending invitation: the row is deleted and its
 // email_action_tokens cascade away, so links already in the invitee's inbox stop
-// resolving. Deleting rather than flipping status is what frees the address —
+// resolving. Deleting rather than flipping status is what frees the address:
 // org_invitations_org_email_pending would otherwise keep blocking a fresh invite
 // (at a corrected address spelling, or a different role) forever, since an
 // expired invitation stays PENDING.
@@ -897,8 +897,8 @@ func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvi
 	}
 }
 
-// UpdateMemberRole sets a member's role to newRole. Any role may be assigned —
-// promotion or demotion — with one exception: the org's last admin cannot be
+// UpdateMemberRole sets a member's role to newRole. Any role may be assigned,
+// promotion or demotion, with one exception: the org's last admin cannot be
 // demoted to a non-admin role (returns ErrLastAdmin), preserving the "every org
 // has at least one admin" invariant. Returns ErrMemberNotFound if the target is
 // not a member of the org.
@@ -962,7 +962,7 @@ func (s *Service) GetOrgsWithRole(ctx context.Context, customerID string) ([]dbr
 
 // GetOrgWithRole returns a single org plus the caller's role. Returns
 // ErrOrgNotFound when there is no org-and-membership for the (org_id, customer_id)
-// pair — does not distinguish "no such org" from "not a member".
+// pair; does not distinguish "no such org" from "not a member".
 func (s *Service) GetOrgWithRole(ctx context.Context, orgID, customerID string) (dbread.GetOrgWithRoleByIDAndCustomerIDRow, error) {
 	row, err := s.read.GetOrgWithRoleByIDAndCustomerID(ctx, dbread.GetOrgWithRoleByIDAndCustomerIDParams{
 		OrgID:      orgID,

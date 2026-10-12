@@ -30,7 +30,7 @@ func newCheckoutRef() (string, error) {
 }
 
 var (
-	// ErrNotPurchasable is a plan with no product to check out against — a catalog
+	// ErrNotPurchasable is a plan with no product to check out against: a catalog
 	// plan with no product configured, one off sale, or a deal whose product id nobody
 	// pasted on yet.
 	ErrNotPurchasable = errors.New("billing: this plan has no product to check out against")
@@ -40,7 +40,7 @@ var (
 	// currency would be stored as a USD figure it never was.
 	ErrCurrencyNotSupported = errors.New("billing: only USD subscriptions are supported")
 	// ErrCheckoutNotForOrg is a session id whose subscription names a different org
-	// or none, or carries no ref pug minted for this org — the guard that makes a
+	// or none, or carries no ref pug minted for this org: the guard that makes a
 	// client-supplied session id safe to act on.
 	ErrCheckoutNotForOrg = errors.New("billing: this checkout does not belong to this org")
 )
@@ -230,7 +230,7 @@ type PlanOption struct {
 	// The plan's free allowance. nil for a deal: its terms are the org's entitlement
 	// once bought, its base plan's unless its row overrides them.
 	IncludedEvents *int64
-	// nil for a deal again — never a zero.
+	// nil for a deal again, never a zero.
 	RetentionDays *int64
 
 	Purchasable bool
@@ -302,7 +302,7 @@ func i64(v int64) *int64 { return &v }
 
 // ConfirmCheckout verifies one checkout against the provider and writes its
 // subscription through the same CAS the webhook uses. false, nil means the
-// provider has no subscription yet — the buyer beat their own payment home.
+// provider has no subscription yet: the buyer beat their own payment home.
 func (s *Service) ConfirmCheckout(ctx context.Context, orgID, sessionID string, now time.Time) (bool, error) {
 	if !s.takesMoney() {
 		return false, billing.ErrNoProvider

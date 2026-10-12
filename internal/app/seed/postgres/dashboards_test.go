@@ -84,8 +84,8 @@ func TestDemoDashboardTilesValidate(t *testing.T) {
 
 // TestDemoDashboardTileLayout pins the hand-authored tile geometry against the
 // dashboard FE's 72-column fine grid. The seed was originally authored for a
-// 12-column grid, which squished every board into the leftmost 1/6 and — because
-// the FE clamps any sub-minimum height UP (grid.tsx Math.max(pos.h, minH)) —
+// 12-column grid, which squished every board into the leftmost 1/6 and, because
+// the FE clamps any sub-minimum height UP (grid.tsx Math.max(pos.h, minH)),
 // cascaded the tiles into an overlapping pile.
 // This guards against that whole class of regression: every tile must carry a
 // fully-specified position, sit within the 72-col width at >= the FE's min tile
@@ -161,7 +161,7 @@ func TestDemoDashboardTileLayout(t *testing.T) {
 }
 
 // TestDemoDashboardTilesEncode pins that every tile also survives the storage
-// encode path (the (columns, payload_hash) projection Upsert persists) — the
+// encode path (the (columns, payload_hash) projection Upsert persists), the
 // step SeedDemoDashboards relies on. Catches a tile that validates as a query
 // but can't be marshaled for storage.
 func TestDemoDashboardTilesEncode(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 )
 
 // Plan is a usage plan: what pug counts and how it splits a period's events into
-// tiers — never what it charges. Every rate lives on the provider's product, one
+// tiers, never what it charges. Every rate lives on the provider's product, one
 // meter per tier (docs/architecture/payments.md §4.1). Go rather than
 // rows, so a change to what a plan includes goes through review and deploy.
 type Plan struct {
@@ -17,7 +17,7 @@ type Plan struct {
 	// billed. It sits below TierUpTo[0].
 	FreeEvents int64
 	// TierUpTo is each tier's exclusive upper bound, strictly increasing. The last
-	// tier is unbounded and not listed, so a plan has len(TierUpTo)+1 tiers — and its
+	// tier is unbounded and not listed, so a plan has len(TierUpTo)+1 tiers, and its
 	// provider product one meter per tier.
 	TierUpTo []int64
 	// How far back the plan's history stays queryable. Rendered, never enforced.
@@ -27,7 +27,7 @@ type Plan struct {
 }
 
 // Tiers is how many tiers the plan splits into, and so how many meters its
-// provider product must attach — by hand. The meter binary checks every catalog
+// provider product must attach, by hand. The meter binary checks every catalog
 // product against it before stating anything, and reconcile every live deal's
 // (payments.md §4.1).
 func (p Plan) Tiers() int { return len(p.TierUpTo) + 1 }

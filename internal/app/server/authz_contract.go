@@ -8,13 +8,13 @@ import (
 
 // assertServedServicesMatch verifies the set of RPC services mounted by start()
 // exactly matches the authz permission registry (pogrpc.ServedServiceNames). A
-// mismatch is a wiring bug — a service mounted without an authz decision, or an
-// authz decision with no mounted service — so start() fails fast rather than
+// mismatch is a wiring bug (a service mounted without an authz decision, or an
+// authz decision with no mounted service), so start() fails fast rather than
 // serve an unauthorized (or dead) route.
 //
 // This is the SERVICE-level half of the "no RPC ships without an authz decision"
-// contract (mounted ⊆⊇ registry). The PROCEDURE-level half — registry ⊆⊇ generated
-// procedures — is rpc.AssertRegistryMatchesServedProcedures, which start() runs
+// contract (mounted ⊆⊇ registry). The PROCEDURE-level half (registry ⊆⊇ generated
+// procedures) is rpc.AssertRegistryMatchesServedProcedures, which start() runs
 // right after this and which rpc.TestPermissionRegistryCoversAllProcedures also
 // asserts in CI. Together they close the loop: a service can't be mounted without
 // an authz decision, and a method can't be served without one either.

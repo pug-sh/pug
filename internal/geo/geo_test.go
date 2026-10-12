@@ -34,7 +34,7 @@ func TestClientIP(t *testing.T) {
 			"3.3.3.3",
 		},
 		{
-			"X-Forwarded-For comma-separated — takes first",
+			"X-Forwarded-For comma-separated, takes first",
 			http.Header{"X-Forwarded-For": {"3.3.3.3, 4.4.4.4, 5.5.5.5"}},
 			"3.3.3.3",
 		},
@@ -64,7 +64,7 @@ func TestClientIP(t *testing.T) {
 // This became load-bearing when cookieless identity made ClientIP's output an
 // HMAC input. The hash frames its fields as project ‖ 0x00 ‖ ip ‖ 0x00 ‖ ua,
 // which is only injective while no field before the last can contain the
-// separator — so an unvalidated ip is what would make it ambiguous. Parsing also
+// separator, so an unvalidated ip is what would make it ambiguous. Parsing also
 // canonicalises, so two spellings of one address (an IPv6 in short vs expanded
 // form, or with a zone) cannot hash to two different visitors.
 func TestClientIP_ValidatesAddresses(t *testing.T) {
@@ -101,7 +101,7 @@ func TestClientIP_ValidatesAddresses(t *testing.T) {
 // TestClientIPWithSource pins which header an address came from.
 //
 // ClientIP alone cannot distinguish "no proxy header was sent" from "a proxy
-// header was sent and rejected" — both return "". That difference matters more
+// header was sent and rejected": both return "". That difference matters more
 // here than anywhere else the IP is used, because the caller falls back to the
 // connection peer, which behind a proxy is the SAME address for every visitor.
 // A tenant whose ingress prepends a non-IP token (several emit `unknown` in the
@@ -109,7 +109,7 @@ func TestClientIP_ValidatesAddresses(t *testing.T) {
 // silently collapses their entire cookieless population onto one identity per
 // (peer, UA) per day. Sessions are keyed on distinct_id, and session metrics never
 // exclude cookieless traffic, so sessions/bounce-rate/AVG_EVENTS_PER_SESSION
-// corrupt with no toggle that could mask or explain it — at a 200 response.
+// corrupt with no toggle that could mask or explain it, at a 200 response.
 //
 // Returning the source lets the caller count it, which is what turns a silent
 // downgrade into an alertable one.
@@ -139,7 +139,7 @@ func TestClientIPWithSource(t *testing.T) {
 				t.Errorf("ip = %q, want %q", ip, c.wantIP)
 			}
 			if source != c.wantSource {
-				t.Errorf("source = %q, want %q — a rejected header must not look like an absent one",
+				t.Errorf("source = %q, want %q; a rejected header must not look like an absent one",
 					source, c.wantSource)
 			}
 		})

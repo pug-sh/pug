@@ -75,12 +75,12 @@ func TestGetBillingStatusOmitsTheQuotaWhenBillingIsOff(t *testing.T) {
 		t.Error("billing_enabled is true with the switch off")
 	}
 	if off.GetIncludedEvents() != nil {
-		t.Errorf("included_events = %d with billing off, want ABSENT — a bare scalar would reach "+
+		t.Errorf("included_events = %d with billing off, want ABSENT: a bare scalar would reach "+
 			"the dashboard as 0, telling every org on a self-hosted install it is over a limit "+
 			"that does not exist", off.GetIncludedEvents().GetValue())
 	}
 	if off.GetRetentionDays() != nil {
-		t.Errorf("retention_days = %d with billing off, want ABSENT — a self-hosted install "+
+		t.Errorf("retention_days = %d with billing off, want ABSENT: a self-hosted install "+
 			"bounds nothing", off.GetRetentionDays().GetValue())
 	}
 	if off.GetPeriodStart() == nil || off.GetPeriodEnd() == nil {
@@ -167,7 +167,7 @@ func TestSubStatusToRPCCoversEveryStoredStatus(t *testing.T) {
 		t.Errorf("the table covers %d statuses, the column permits %d", len(want), len(corebilling.AllSubStatuses()))
 	}
 	// A provider state pug has no word for is stored verbatim and reports
-	// UNSPECIFIED — the same "not live" resolution gives it.
+	// UNSPECIFIED: the same "not live" resolution gives it.
 	if got := subStatusToRPC("some_state_the_provider_added"); got != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED {
 		t.Errorf("an unmapped status = %s, want UNSPECIFIED", got)
 	}
@@ -232,8 +232,8 @@ func TestGetBillingStatusReportsTheStatedTiers(t *testing.T) {
 		t.Error("tier_usage_as_of must be set with tier_usage")
 	}
 
-	// A deal allowing more than the first bound starts tier 1 at its allowance — the
-	// one it was split under — so tier 1 holds nothing rather than a range that runs
+	// A deal allowing more than the first bound starts tier 1 at its allowance, the
+	// one it was split under, so tier 1 holds nothing rather than a range that runs
 	// backwards.
 	seedLedger(entitlement.SlugUsage, 5_000_000)
 	got = getStatus(t, srv, orgID).GetTierUsage()
@@ -250,7 +250,7 @@ func TestGetBillingStatusReportsTheStatedTiers(t *testing.T) {
 }
 
 // The banner's "update your card by" date: set inside the provider's grace period,
-// and absent — never a zero timestamp — outside it.
+// and absent, never a zero timestamp, outside it.
 func TestGetBillingStatusReportsTheGraceDeadline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -323,7 +323,7 @@ func TestGetBillingStatusShowsNoGraceDeadlineWithBillingOff(t *testing.T) {
 }
 
 // Both ends of the money's period, so a client can draw the whole billing month, and
-// neither — never a zero timestamp — once nothing live is billing.
+// neither, never a zero timestamp, once nothing live is billing.
 func TestGetBillingStatusReportsTheBillingPeriod(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

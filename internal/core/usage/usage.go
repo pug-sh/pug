@@ -94,7 +94,7 @@ func (s *Service) GetPeriodUsage(ctx context.Context, orgID string, start time.T
 
 // An anniversary rollover leaves the new period rowless until the next pass. That
 // is a metered org with nothing counted yet, not an unmetered one, so it keeps the
-// org's last stamp — otherwise a dashboard reads "never metered" every time its
+// org's last stamp; otherwise a dashboard reads "never metered" every time its
 // org crosses its anchor. Counted stays false: the stamp says the meter is alive,
 // not that it has summed this period.
 func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsage, error) {
@@ -113,7 +113,7 @@ func (s *Service) periodNotReached(ctx context.Context, orgID string) (PeriodUsa
 // MaxDailyRows caps one ListDailyUsage read. A row is (day x project): the
 // request's 400-day span cap bounds the days, nothing bounds the projects, so
 // without this a large org's 400-day request materializes the product. 10k rows
-// covers a year for 27 projects, or 400 days for 25 — past that the series is a
+// covers a year for 27 projects, or 400 days for 25; past that the series is a
 // chart nobody reads, and the caller is better served by a narrower window.
 const MaxDailyRows = 10_000
 

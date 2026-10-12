@@ -12,7 +12,7 @@ func TestCarry(t *testing.T) {
 	if want := []int64{50_000, 0, 0}; !slices.Equal(got, want) {
 		t.Fatalf("carry = %v, want %v", got, want)
 	}
-	// Stated past the final count — an erasure recount — carries nothing, never a
+	// Stated past the final count (an erasure recount) carries nothing, never a
 	// negative that would lower the next period.
 	if got := carry([]int64{10, 0}, []int64{20, 0}); !slices.Equal(got, []int64{0, 0}) {
 		t.Fatalf("carry below what was stated = %v, want zeros", got)

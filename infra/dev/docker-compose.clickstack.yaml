@@ -22,7 +22,7 @@ services:
     image: hyperdx/hyperdx-local:2.27.0
     restart: always
     # The image's built-in healthcheck curls :8080 (its default app port), but we
-    # run the app on 3001 — so override it to hit the API's /health route instead.
+    # run the app on 3001, so override it to hit the API's /health route instead.
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8081/health >/dev/null || exit 1"]
       interval: 10s

@@ -98,7 +98,7 @@ func start(ctx context.Context, d *deps) error {
 	// otel outside ErrorInterceptor so a span exists for trace_id; ErrorInterceptor
 	// outside validate, which short-circuits a bad request without calling the inner
 	// chain; Logging outside that, so it observes the final resolved code. Authz is
-	// innermost and is the only authorization gate — handlers carry none of their own.
+	// innermost and is the only authorization gate: handlers carry none of their own.
 	//
 	// WithRecover is required, not cosmetic: on the /mcp loopback the handler runs on
 	// a jsonrpc2 goroutine that no net/http recover reaches, so an escaping panic
@@ -114,7 +114,7 @@ func start(ctx context.Context, d *deps) error {
 			pogrpc.AuthzInterceptor(d.authz, orgsSvc),
 		),
 		connect.WithRecover(pogrpc.RecoverHandlerPanic),
-		// The decompressed message — WithRequestLimits only sees the gzipped wire bytes.
+		// The decompressed message: WithRequestLimits only sees the gzipped wire bytes.
 		connect.WithReadMaxBytes(pogrpc.MaxRequestBytes),
 	)
 
@@ -208,7 +208,7 @@ func start(ctx context.Context, d *deps) error {
 	mux.HandleFunc("/healthz", livenessHandler)
 	mux.HandleFunc("/readyz", d.readinessHandler)
 
-	// AUTHZ CONTRACT: mount every RPC service through handle(), never mux.Handle — it
+	// AUTHZ CONTRACT: mount every RPC service through handle(), never mux.Handle; it
 	// records the service name, and the assertions below fail startup unless the
 	// mounted set exactly equals the authz registry.
 	mounted := map[string]bool{}
@@ -250,7 +250,7 @@ func start(ctx context.Context, d *deps) error {
 		return err
 	}
 
-	// Advertises exactly the authorized services — same source as the check above.
+	// Advertises exactly the authorized services, same source as the check above.
 	reflector := grpcreflect.NewStaticReflector(pogrpc.ServedServiceNames()...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
@@ -270,8 +270,8 @@ func start(ctx context.Context, d *deps) error {
 		slog.InfoContext(ctx, "mounted the payments webhook", slog.String("path", webhook.BillingPath(provider)))
 	}
 
-	// WithCorrelationID wraps the whole mux so auth rejections — which happen outside
-	// the interceptor chain — carry an error_id too. ReadTimeout stays unset: it
+	// WithCorrelationID wraps the whole mux so auth rejections, which happen outside
+	// the interceptor chain, carry an error_id too. ReadTimeout stays unset: it
 	// would cap the body as tightly as the headers, and WithRequestLimits already
 	// bounds the body's size and time.
 	server := &http.Server{
@@ -285,13 +285,13 @@ func start(ctx context.Context, d *deps) error {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err)) // puglint:exempt — no span at shutdown
+			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err)) // puglint:exempt (no span at shutdown)
 		}
 	}()
 
 	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt — no span at startup
+		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt (no span at startup)
 		return err
 	}
 

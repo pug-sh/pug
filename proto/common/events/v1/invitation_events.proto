@@ -12,7 +12,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // (project_id, team_id) over generalizing workspace_id, so each scope is
 // queryable independently and existing data stays unambiguous.
 //
-// Populate at least one of invitee_id or invitee_email — the other is fine
+// Populate at least one of invitee_id or invitee_email; the other is fine
 // to leave empty when not known.
 
 message InviteSentProperties {

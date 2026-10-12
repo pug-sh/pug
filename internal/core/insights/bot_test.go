@@ -165,7 +165,7 @@ func TestBotExclusion_EveryInsightType(t *testing.T) {
 			})
 			q, err := BuildUserFlowQuery(req, "p1")
 			must(t, err)
-			// Groups by session, so the predicate is session-level — a row-level
+			// Groups by session, so the predicate is session-level: a row-level
 			// one would leave a straddling session as a truncated path.
 			return []botScan{{"raw", q.SQL(), botSessionNeedle, 1}}
 		},
@@ -210,7 +210,7 @@ func TestBotExclusion_EveryInsightType(t *testing.T) {
 		it := insightsv1.InsightType(num)
 		build, ok := cases[it]
 		if !ok {
-			t.Errorf("%s has no bot decision: every insight must exclude bots by default — add it to this table and thread botExclusionCond (or botSessionHaving) through its builders", name)
+			t.Errorf("%s has no bot decision: every insight must exclude bots by default; add it to this table and thread botExclusionCond (or botSessionHaving) through its builders", name)
 			continue
 		}
 		if build == nil {
@@ -249,7 +249,7 @@ func TestBotExclusion_EverySessionMetric(t *testing.T) {
 		metric := insightsv1.SessionMetric(num)
 		ok, decided := buildable[metric]
 		if !decided {
-			t.Errorf("%s has no session-bot decision: add it to buildable — a session metric must exclude bot sessions whole", name)
+			t.Errorf("%s has no session-bot decision: add it to buildable; a session metric must exclude bot sessions whole", name)
 			continue
 		}
 		if !ok {
@@ -298,7 +298,7 @@ func TestBotExclusion_EverySessionMetric(t *testing.T) {
 
 // Both toggle states must stay on the fast path: bot is a key column on both
 // rollups, so exclusion is a predicate and inclusion is a merge across the
-// key's two values — never a reason to fall back to raw events.
+// key's two values, never a reason to fall back to raw events.
 func TestBotExclusion_KeepsFastPath(t *testing.T) {
 	uu := insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS
 	now := time.Now()
@@ -329,7 +329,7 @@ func TestBotExclusion_KeepsFastPath(t *testing.T) {
 	}
 }
 
-// Multi-event trends put the predicate in the shared WHERE once — unlike
+// Multi-event trends put the predicate in the shared WHERE once, unlike
 // cookieless, which is per branch because a TOTAL sibling keeps that traffic.
 func TestBotExclusion_MultiEventTrendsSharedWhere(t *testing.T) {
 	spec := rollupMultiEventTrendsSpec("page_view", "signup")

@@ -41,7 +41,7 @@ type DashboardQueryOverrides struct {
 // Invariant, upheld by renderInsightTile (the sole producer): for an insight tile
 // exactly one of Result / ErrorMessage is set, and Result is non-nil whenever
 // ErrorMessage == ""; markdown tiles carry neither. RenderedDashboardToRPC depends
-// on this — it checks ErrorMessage before Result — and renderInsightTile's
+// on this (it checks ErrorMessage before Result), and renderInsightTile's
 // result == nil guard prevents an outcome-less insight tile. The proto RenderedTile
 // models this as a oneof, but that is not validated outbound, so this Go-side
 // discipline is the actual enforcement.
@@ -171,7 +171,7 @@ func renderInsightTile(
 	result, err := coreinsights.ExecuteQuery(ctx, executor, projectID, assembled, now)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, "", err // request lifecycle, not a tile fault — propagate
+			return nil, "", err // request lifecycle, not a tile fault; propagate
 		}
 		if invalid, ok := errors.AsType[*coreinsights.InvalidQueryError](err); ok {
 			return nil, "invalid query parameters: " + invalid.Message, nil

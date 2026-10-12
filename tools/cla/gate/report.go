@@ -156,7 +156,7 @@ func signMarkdown(claURL string, head *SignatureFile, mine *Principal, blocks []
 		if mention {
 			name = "@" + name
 		}
-		fmt.Fprintf(&md, "\n**%s** — comment `/sign` on this pull request and that is done. "+
+		fmt.Fprintf(&md, "\n**%s**, comment `/sign` on this pull request and that is done. "+
 			"To sign by hand instead, add this to the `signatures` array in "+
 			"`tools/cla/signatures.json`, then commit and push:\n\n```json\n%s\n```\n",
 			name, entryJSON(*mine, head.CLAVersion, "", now))
@@ -177,7 +177,7 @@ const (
 // signedComment replaces a request comment once the signature lands, so a merged
 // pull request is not left showing a demand that has already been met.
 func signedComment(version string) string {
-	return fmt.Sprintf("%s\nCLA %s signed — thanks!\n", commentMarker, version)
+	return fmt.Sprintf("%s\nCLA %s signed, thanks!\n", commentMarker, version)
 }
 
 // Like problemComment, the reason stays in the log: it quotes a login out of the

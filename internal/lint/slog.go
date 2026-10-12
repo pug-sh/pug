@@ -116,7 +116,7 @@ func packageInitBodies(file *ast.File) map[*ast.BlockStmt]bool {
 	return out
 }
 
-// carriesError reports whether the log call has an error to record at all — an
+// carriesError reports whether the log call has an error to record at all: an
 // ERROR line about a state change has nothing to pair with. Any error-typed
 // subexpression counts, and so does a spread argument list, which is opaque
 // here: the rule would rather ask for a needless pairing than miss one.
@@ -137,8 +137,8 @@ func carriesError(pass *analysis.Pass, call *ast.CallExpr) bool {
 }
 
 // recordedAtOrAbove reports whether a RecordError sits in this block or in one
-// enclosing it. A record in an enclosing block still covers the log — it runs on
-// the same path — but a record in a sibling branch does not, which is what
+// enclosing it. A record in an enclosing block still covers the log (it runs on
+// the same path), but a record in a sibling branch does not, which is what
 // stops one telemetry call from clearing every error path in a function.
 func recordedAtOrAbove(recorded map[*ast.BlockStmt]bool, parent map[*ast.BlockStmt]*ast.BlockStmt, b *ast.BlockStmt) bool {
 	for ; b != nil; b = parent[b] {

@@ -279,7 +279,7 @@ func validSpec() *insightsv1.InsightQuerySpec {
 
 // ----- Upsert request & DashboardTileInput validation -------------------
 //
-// These cases pin Upsert request validation at the proto level — protovalidate
+// These cases pin Upsert request validation at the proto level: protovalidate
 // alone rejects the bad shapes before they ever reach the handler.
 
 func validTileInput() *dashboardsv1.DashboardTileInput {
@@ -410,7 +410,7 @@ func TestTileHeader_AcceptsAllowedAccentColors(t *testing.T) {
 
 func TestTileHeader_RejectsOverlongIcon(t *testing.T) {
 	tile := validTileInput()
-	// 9 bytes — one over the max_len = 8 cap.
+	// 9 bytes, one over the max_len = 8 cap.
 	tile.Header = &dashboardsv1.TileHeader{Icon: proto.String(strings.Repeat("a", 9))}
 	if err := protovalidate.Validate(tile); err == nil {
 		t.Fatal("expected validation error for 9-byte icon")

@@ -44,7 +44,7 @@ func TestBuildTopKQuery_PropertyPromoted(t *testing.T) {
 		"'$others'",
 		"AS is_others",
 		"GROUP BY dim_value, is_others",
-		// Inner top_vals sort key is (Float64, String) — pins the numeric ORDER BY
+		// Inner top_vals sort key is (Float64, String): pins the numeric ORDER BY
 		// the DisableTopKDynamicFiltering-not-needed rationale in topk.go relies on.
 		"ORDER BY toFloat64(count(*)) DESC, dim_value ASC",
 		"ORDER BY is_others ASC, value DESC, dim_value ASC",
@@ -246,7 +246,7 @@ func TestBuildTopKQuery_OmitOthers(t *testing.T) {
 
 	t.Run("default_path_unchanged_by_explicit_false", func(t *testing.T) {
 		// Zero-value omit_others (false) keeps the $others bucket, and an
-		// explicit false is byte-identical to leaving it unset — the
+		// explicit false is byte-identical to leaving it unset: the
 		// suppress-flag presence contract that makes every existing caller safe.
 		base := func(omit *bool) *insightsv1.TopKQuery {
 			return &insightsv1.TopKQuery{
@@ -312,7 +312,7 @@ func TestBuildTopKQuery_ScopeAndFiltersInBothScans(t *testing.T) {
 
 	// Args layout is [CTE scan args..., limit, outer scan args...]; the two
 	// scans share the same WHERE, so the halves around the LIMIT arg must be
-	// identical — proving scope + filters apply to both top_vals and the outer
+	// identical, proving scope + filters apply to both top_vals and the outer
 	// aggregation.
 	limitIdx := -1
 	for i, a := range args {
@@ -343,7 +343,7 @@ func TestBuildTopKQuery_ScopeAndFiltersInBothScans(t *testing.T) {
 
 // TestBuildTopKQuery_UserDimension verifies the single-pass USER shape:
 // LEFT ANY JOIN onto identity_union, e.-aliased conditions, per-user partials
-// with row_number ranking, and — critically — that events and each identity
+// with row_number ranking, and, critically, that events and each identity
 // CTE appear exactly once (a CTE referenced twice would re-execute its scan).
 // The CTE's own shape is pinned in the profiles package, next to its source.
 func TestBuildTopKQuery_UserDimension(t *testing.T) {

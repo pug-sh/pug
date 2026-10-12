@@ -105,7 +105,7 @@ func TestIntegrationCookieless(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Consented only: 3 events / 2 users = 1.5 — a mixed-population ratio
+		// Consented only: 3 events / 2 users = 1.5; a mixed-population ratio
 		// (5/2 or 5/4) would prove numerator and denominator diverged.
 		if got := sumTrendsValues(resp); got != 1.5 {
 			t.Errorf("PER_USER_AVG = %v, want 1.5 (3 consented events / 2 consented users)", got)
@@ -202,7 +202,7 @@ func TestIntegrationCookieless(t *testing.T) {
 // that swap maximally visible: C01..C10 carry only cookieless traffic (high
 // event volume, zero consented users) while C11/C12 carry only consented
 // traffic (low volume, real users). Ranked over all traffic the top-10 is
-// C01..C10; ranked over consented-only it is C11/C12 — disjoint, so a
+// C01..C10; ranked over consented-only it is C11/C12, disjoint, so a
 // regression cannot squeak through on a tie.
 //
 // Note WHAT gets corrupted: the page_view series is TOTAL and carries no
@@ -296,7 +296,7 @@ func TestIntegrationRollupBreakdownOrderIndependent(t *testing.T) {
 	// Positive checks, so the equality above cannot pass by both sides being
 	// equally wrong. page_view's $others is the discriminator: ranked over ALL
 	// traffic only C11+C12 fold into it (1+1=2). Had it ranked over the
-	// consented-only population — what events[0]=UNIQUE_USERS used to impose —
+	// consented-only population, what events[0]=UNIQUE_USERS used to impose,
 	// C01..C10 would fold instead and $others would total 30.
 	if got := forward["page_view|$others"]; got != 2 {
 		t.Errorf("page_view $others = %v, want 2 (only consented-only C11+C12 fold); "+

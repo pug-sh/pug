@@ -43,7 +43,7 @@ func TestResolveNoRowIsFree(t *testing.T) {
 }
 
 // The quota window is the org's billing anniversary, not the 1st, and a plan
-// never moves it — that is what keeps it equal to the window the meter sums.
+// never moves it; that is what keeps it equal to the window the meter sums.
 func TestResolveWindowRunsFromTheAnniversary(t *testing.T) {
 	ent := entitlement.Resolve(created, entitlement.Record{}, nil, later, true)
 	wantStart := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
@@ -115,11 +115,11 @@ func TestContractEndExclusiveCoversTheWholeNamedDay(t *testing.T) {
 
 	lateOnTheLastDay := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 	if got := quota(t, entitlement.Resolve(created, rec, nil, lateOnTheLastDay, true)); got != 5_000_000 {
-		t.Errorf("allowance at %s = %d, want the comp's — the named day is inclusive", lateOnTheLastDay, got)
+		t.Errorf("allowance at %s = %d, want the comp's: the named day is inclusive", lateOnTheLastDay, got)
 	}
 	nextMidnight := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 	if got := quota(t, entitlement.Resolve(created, rec, nil, nextMidnight, true)); got != freeEvents() {
-		t.Errorf("allowance at %s = %d, want the current plan's — the comp ends when the day does", nextMidnight, got)
+		t.Errorf("allowance at %s = %d, want the current plan's: the comp ends when the day does", nextMidnight, got)
 	}
 }
 
@@ -208,7 +208,7 @@ func TestResolveWithBillingOffHasNoQuota(t *testing.T) {
 }
 
 // A row naming a slug nothing knows any more is still just a row: it resolves free,
-// and its own negotiated numbers still apply — they owe nothing to the catalog.
+// and its own negotiated numbers still apply; they owe nothing to the catalog.
 func TestResolveALegacyRowKeepsItsOverrides(t *testing.T) {
 	ent := entitlement.Resolve(created, entitlement.Record{
 		Present: true, PlanSlug: "growth-v9",
@@ -248,11 +248,11 @@ func TestContractEndExclusiveIsZoneStable(t *testing.T) {
 			}
 			lateOnTheLastDay := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 			if got := quota(t, entitlement.Resolve(created, rec, nil, lateOnTheLastDay, true)); got != 5_000_000 {
-				t.Errorf("allowance at %s = %d, want the comp's — the named day is inclusive", lateOnTheLastDay, got)
+				t.Errorf("allowance at %s = %d, want the comp's: the named day is inclusive", lateOnTheLastDay, got)
 			}
 			nextMidnight := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
 			if got := quota(t, entitlement.Resolve(created, rec, nil, nextMidnight, true)); got != freeEvents() {
-				t.Errorf("allowance at %s = %d, want the current plan's — the comp ends when the day does", nextMidnight, got)
+				t.Errorf("allowance at %s = %d, want the current plan's: the comp ends when the day does", nextMidnight, got)
 			}
 		})
 	}
@@ -291,7 +291,7 @@ func TestResolveReportsThePlansRetention(t *testing.T) {
 	}
 }
 
-// A deal's retention is the org's own, and it expires with the deal — the same
+// A deal's retention is the org's own, and it expires with the deal: the same
 // rule the allowance follows, because both are terms of the same agreement.
 func TestResolveAppliesANegotiatedRetention(t *testing.T) {
 	rec := entitlement.Record{

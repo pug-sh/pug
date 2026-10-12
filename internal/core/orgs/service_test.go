@@ -83,7 +83,7 @@ func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
 	// path every new customer's first project is born on (CompleteMagicLink /
 	// CompleteOIDCSignIn -> FinishSignup -> CreateOrgWithDefaultsInTx ->
 	// CreateProjectInTx), where the starter key is a *second* statement inside the
-	// signup transaction — so the project can commit without one if that insert is
+	// signup transaction, so the project can commit without one if that insert is
 	// ever moved out or fails silently. The symptom would be a customer who signs up
 	// successfully and can never send an event, which no other test would catch:
 	// the rest of the starter-key coverage goes through Service.CreateProject, a
@@ -96,7 +96,7 @@ func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
 		t.Fatalf("want 1 starter key on the default project, got %d", len(keys))
 	}
 	if got := coreprojects.Kind(keys[0].Kind); got != coreprojects.KindPublic {
-		t.Errorf("starter key kind = %q, want %q — a private key is never implicit", got, coreprojects.KindPublic)
+		t.Errorf("starter key kind = %q, want %q: a private key is never implicit", got, coreprojects.KindPublic)
 	}
 	// A public key is stored whole, so the token is the key an SDK actually sends.
 	if !strings.HasPrefix(keys[0].Token, "pub_") {
@@ -113,7 +113,7 @@ func TestCreateOrgWithDefaultsRollsBackWhenMemberFKFails(t *testing.T) {
 	svc := orgs.NewService(db.PgRO, db.PgW, nil)
 	ctx := context.Background()
 
-	// Use a customer that does NOT exist — the CreateOrgMember FK should fail
+	// Use a customer that does NOT exist: the CreateOrgMember FK should fail
 	// and the whole tx (org + member + project) must roll back.
 	missingCustomerID := xid.New().String()
 
@@ -360,7 +360,7 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	if resendDispatch.RawToken == firstDispatch.RawToken {
 		t.Fatal("resend should rotate the raw invite token")
 	}
-	// Status must remain PENDING — only acceptance (ApplyInviteAcceptanceInTx) advances state.
+	// Status must remain PENDING: only acceptance (ApplyInviteAcceptanceInTx) advances state.
 	if resendDispatch.Invitation.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
 		t.Fatalf("status = %q, want PENDING", resendDispatch.Invitation.Status)
 	}
@@ -383,7 +383,7 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 		t.Fatalf("expected old token consumed after resend, got %v", err)
 	}
 	// GetValid… returns ErrNoRows for both deleted and consumed rows, so verify
-	// the prior token row was UPDATEd (consumed_at set) rather than DELETEd —
+	// the prior token row was UPDATEd (consumed_at set) rather than DELETEd,
 	// preserving the audit trail. There's no sqlc query for this by design
 	// (production code never reads consumed tokens), so we go through the pool.
 	var consumedAt pgtype.Timestamptz
@@ -467,7 +467,7 @@ func TestResendInviteRejectsCrossOrg(t *testing.T) {
 // TestResendInviteExtendsExpiresAt pins the "resurrect expired invite" flow:
 // resending a still-PENDING invitation whose expires_at is in the past must
 // push expires_at forward by inviteTTL. ResendInvite intentionally does NOT
-// gate on expiry — only on status — so an expired pending row can be revived.
+// gate on expiry, only on status, so an expired pending row can be revived.
 func TestResendInviteExtendsExpiresAt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -549,8 +549,8 @@ func TestResendInviteSendLimitClearsAfterWindow(t *testing.T) {
 }
 
 // TestRevokeInviteFreesTheAddress pins what revoking is for: the invitation row
-// is what blocks a fresh invite for the same (org, email) — an expired one stays
-// PENDING — so revoke must delete it, not flip a status. The token cascade is
+// is what blocks a fresh invite for the same (org, email) (an expired one stays
+// PENDING), so revoke must delete it, not flip a status. The token cascade is
 // the other half: a link already in the invitee's inbox has to stop working.
 func TestRevokeInviteFreesTheAddress(t *testing.T) {
 	if testing.Short() {
@@ -573,7 +573,7 @@ func TestRevokeInviteFreesTheAddress(t *testing.T) {
 		t.Fatalf("emailed link still redeemable after revoke: %v", err)
 	}
 
-	// The address is invitable again — including at a different role, which a
+	// The address is invitable again, including at a different role, which a
 	// resend of the original invitation could never change.
 	redo, err := f.svc.InviteMemberWithRole(ctx, f.org.ID, f.inviter.ID, "revoked@example.com", orgs.RoleAdmin)
 	if err != nil {
@@ -765,7 +765,7 @@ func TestOrgMembersRoleCheckRejectsInvalidRole(t *testing.T) {
 
 // inviteFixture sets up an inviter customer + org + pending invitation, and
 // returns the raw invite token. Centralises the boilerplate used by the invite
-// tests below. The invitee is deliberately left unregistered — an invite may
+// tests below. The invitee is deliberately left unregistered: an invite may
 // name any address, and that is the case worth pinning.
 type inviteFixture struct {
 	t        *testing.T
@@ -817,7 +817,7 @@ func newInviteFixture(t *testing.T, inviteeEmail string) *inviteFixture {
 }
 
 // backdateInvitation overrides a pending invitation's expires_at via raw SQL.
-// Used only by the expired-invitation test — there's no production code path
+// Used only by the expired-invitation test: there's no production code path
 // to back-date, which is exactly why we bypass sqlc.
 func backdateInvitation(ctx context.Context, t *testing.T, f *inviteFixture, ts time.Time) error {
 	t.Helper()
@@ -978,7 +978,7 @@ func TestUpdateMemberRolePromote(t *testing.T) {
 }
 
 // TestUpdateMemberRoleDemoteCoAdmin: an admin may be demoted to a non-admin role
-// while another admin remains — the last-admin guard fires only for the *sole*
+// while another admin remains; the last-admin guard fires only for the *sole*
 // admin (see TestUpdateMemberRoleRejectsLastAdminDemotion).
 func TestUpdateMemberRoleDemoteCoAdmin(t *testing.T) {
 	if testing.Short() {
@@ -1087,7 +1087,7 @@ func TestUpdateMemberRoleRejectsLastAdminDemotion(t *testing.T) {
 }
 
 // TestUpdateMemberRoleNoOpSucceeds: assigning a member's current role is an
-// idempotent no-op that succeeds — including sole admin -> admin, which is not a
+// idempotent no-op that succeeds, including sole admin -> admin, which is not a
 // demotion and so is not caught by the last-admin guard.
 func TestUpdateMemberRoleNoOpSucceeds(t *testing.T) {
 	if testing.Short() {
@@ -1145,7 +1145,7 @@ func TestLeaveNonAdminSoleMember(t *testing.T) {
 	ctx := context.Background()
 
 	// Construct an unusual but defensively-supported state: a non-admin sole member.
-	// The public API cannot produce this — CreateOrgWithDefaults seats the caller as
+	// The public API cannot produce this: CreateOrgWithDefaults seats the caller as
 	// ADMIN, and Leave/RemoveMember/UpdateMemberRole all preserve the invariant of
 	// at least one admin per org. We construct it by seeding an admin + a member,
 	// then directly deleting the admin via the unchecked DeleteOrgMember query.

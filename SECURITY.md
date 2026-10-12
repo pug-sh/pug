@@ -13,11 +13,11 @@ Discord, or any other public channel.**
 
 Report privately via one of:
 
-1. **GitHub private vulnerability reporting** (preferred) — on the
+1. **GitHub private vulnerability reporting** (preferred): on the
    [repository's Security tab](https://github.com/pug-sh/pug/security), choose
    **Report a vulnerability**. This opens a private advisory visible only to you
    and the maintainers.
-2. **Email** — **dev@pug.sh**.
+2. **Email**: **dev@pug.sh**.
 
 Please include:
 

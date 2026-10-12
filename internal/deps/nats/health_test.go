@@ -66,7 +66,7 @@ func TestHealthHandler(t *testing.T) {
 }
 
 // The mux must route /healthz to the liveness snapshot and /readyz to the
-// readiness snapshot — transposing the two would make a wedged worker pass
+// readiness snapshot: transposing the two would make a wedged worker pass
 // readiness or a disconnected worker fail liveness. A worker that is healthy
 // (liveness OK) but disconnected (readiness fails) distinguishes the two paths:
 // /healthz must be 200 while /readyz is 503.

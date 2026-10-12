@@ -155,7 +155,7 @@ func TestIntegrationWebAnalytics(t *testing.T) {
 					t.Errorf("raw and rollup top-K diverge:\nraw:    %+v\nrollup: %+v", rawRows, rollupRows)
 				}
 				if len(rollupRows) == 0 {
-					t.Error("empty top-K result — seed/window mismatch would make this parity check vacuous")
+					t.Error("empty top-K result: seed/window mismatch would make this parity check vacuous")
 				}
 			})
 		}
@@ -272,13 +272,13 @@ func TestIntegrationWebAnalytics(t *testing.T) {
 				t.Errorf("kind=page_view entry = %v, want /landing|2024-04-01 = 1", scoped)
 			}
 			// Unscoped: the URL-less identify event is first, so it claims entry
-			// with an empty pathname — exactly the first-touch theft the scope
+			// with an empty pathname, exactly the first-touch theft the scope
 			// exists to prevent.
 			if unscoped["|2024-04-01"] != 1 {
 				t.Errorf("unscoped entry = %v, want the URL-less event to claim it with an empty pathname", unscoped)
 			}
 			if reflect.DeepEqual(scoped, unscoped) {
-				t.Errorf("kind=page_view and unscoped entry states are identical (%v) — the rollup's kind routing is untested", scoped)
+				t.Errorf("kind=page_view and unscoped entry states are identical (%v): the rollup's kind routing is untested", scoped)
 			}
 		})
 
@@ -352,21 +352,21 @@ type mutationCorpusRow struct {
 	locale, utmTerm, utmContent, pageTitle string
 	screenW, screenH                       int64
 	// Screen dims in the String variant slot. Client auto-properties are never
-	// re-typed at ingest, so an SDK sending stringValue lands here — the
+	// re-typed at ingest, so an SDK sending stringValue lands here; the
 	// mutation must read this slot too or history derives nothing while live
 	// traffic derives a size.
 	screenWStr, screenHStr string
 	// Screen dims in the Float64 variant slot: a JS SDK with no int/double
 	// distinction sends window.screen.width as a double. autoprop.String
 	// renders an integral double the same as the Int64 slot, so live traffic
-	// derives a size — the mutation must read Float64 too or history diverges.
+	// derives a size; the mutation must read Float64 too or history diverges.
 	screenWFloat, screenHFloat float64
 }
 
 // screenDim mirrors handler.go's autoPropInt64: it reads the first populated
 // variant slot (Int64, then String, then Float64) as the integer the promotion
 // layer would store, matching autoprop.String + ParseInt. Derive itself takes
-// int64s, so this coercion is the handler's — and the 008 mutation mirrors the
+// int64s, so this coercion is the handler's, and the 008 mutation mirrors the
 // slots, not Derive alone.
 func screenDim(n int64, s string, f float64) int64 {
 	if n != 0 {
@@ -406,7 +406,7 @@ func (r mutationCorpusRow) deriveInput() attribution.Input {
 	}
 }
 
-// Rows must stay inside what frozen 008 can also derive — see
+// Rows must stay inside what frozen 008 can also derive; see
 // TestMutationCorpusStaysWithin008Semantics below before adding one.
 var mutationCorpus = []mutationCorpusRow{
 	{name: "plain_page", url: "https://pugandpals.example.com/products/ball", locale: "en-us", screenW: 1920, screenH: 1080, pageTitle: "Ball"},
@@ -424,7 +424,7 @@ var mutationCorpus = []mutationCorpusRow{
 	{name: "campaign_only_unassigned", url: "https://pugandpals.example.com/x", utmCampaign: "brand"},
 	{name: "video_ref", url: "https://pugandpals.example.com/x", referrer: "https://youtu.be/abc"},
 	// Channel branches no other corpus row reaches (Paid Video, Display, Paid
-	// Other, Affiliate), plus both directions of the cpm precedence — cpm is
+	// Other, Affiliate), plus both directions of the cpm precedence: cpm is
 	// BOTH a paid medium (matches ^.*cp.*) AND a display medium, so which
 	// channel it books is decided purely by rule ORDER, and that order is the
 	// one thing the Go table and the SQL multiIf must agree on exactly. Without
@@ -448,7 +448,7 @@ var mutationCorpus = []mutationCorpusRow{
 	{name: "protocol_relative_referrer", url: "https://pugandpals.example.com/x", referrer: "//blog.dogfood.example.org/p"},
 	{name: "android_app_referrer", url: "https://pugandpals.example.com/x", referrer: "android-app://com.google.android.gm"},
 	// ClickHouse's domainWithoutWWW compares "www." case-sensitively, so an
-	// uppercase WWW must be stripped by lower-then-strip to match Go — else
+	// uppercase WWW must be stripped by lower-then-strip to match Go, else
 	// the self-referral below survives blanking and the tenant's own domain
 	// becomes its top referrer for all history.
 	{name: "uppercase_www_self_referral", url: "https://WWW.Shop.example.com/x", referrer: "https://WWW.Shop.example.com/y"},
@@ -469,7 +469,7 @@ var mutationCorpus = []mutationCorpusRow{
 	{name: "screen_dims_fractional_double_rejected", url: "https://pugandpals.example.com/x", screenWFloat: 1920.5, screenHFloat: 1080},
 	{name: "garbage_url", url: "not a url", referrer: "https://www.google.com/", locale: "EN"},
 	{name: "no_url_app_event", referrer: "", locale: "zh-hans-cn", screenW: 390, screenH: 844},
-	{name: "term_content_in_map", url: "https://pugandpals.example.com/x", utmTerm: "puppy harness", utmContent: "story-2", pageTitle: "Harness — Pug & Pals"},
+	{name: "term_content_in_map", url: "https://pugandpals.example.com/x", utmTerm: "puppy harness", utmContent: "story-2", pageTitle: "Harness · Pug & Pals"},
 	{name: "screen_missing_height", url: "https://pugandpals.example.com/x", screenW: 1920},
 	// url.Parse splits the #fragment off BEFORE RawQuery, so a UTM living in a
 	// hash route is invisible to Query(); extractURLParameter scans the whole
@@ -477,7 +477,7 @@ var mutationCorpus = []mutationCorpusRow{
 	// where live traffic books Direct.
 	{name: "utm_in_hash_route", url: "https://app.example.com/#/dashboard?utm_source=newsletter&utm_medium=email"},
 	{name: "utm_in_fragment_after_query", url: "https://x.com/?a=1#utm_source=google"},
-	// A hash route on the BARE ORIGIN — no path segment before the '#'. path()
+	// A hash route on the BARE ORIGIN: no path segment before the '#'. path()
 	// excludes the fragment from what it RETURNS but still starts scanning
 	// inside it, so the first '/' it finds is the fragment's: the SPA's
 	// permanent $pathname reads "/dashboard" in backfilled history where live
@@ -496,7 +496,7 @@ var mutationCorpus = []mutationCorpusRow{
 	// carries them: url.Parse stores RawQuery unvalidated, so a bad escape in the
 	// QUERY only drops its own key (Query() skips the pair and the rest survive);
 	// the same bytes in the PATH or the FRAGMENT fail url.Parse outright and the
-	// event derives nothing at all — not even hostname.
+	// event derives nothing at all, not even hostname.
 	{name: "bad_escape_in_query_value", url: "https://x.com/?utm_campaign=100%off&utm_source=google"},
 	{name: "bad_escape_in_path", url: "https://shop.example.com/deals/50%-off"},
 	{name: "bad_escape_in_hash_route", url: "https://app.example.com/#/search?q=100%off"},
@@ -511,13 +511,13 @@ var mutationCorpus = []mutationCorpusRow{
 	{name: "locale_nbsp_padded", url: "https://pugandpals.example.com/x", locale: "\u00a0en-US\u00a0"},
 	// Hosts url.Parse resolves that ClickHouse's domain() does not: an IPv6
 	// literal, and userinfo hiding the real host behind an embedded '@' (Go splits
-	// the authority at the LAST '@', domainRFC at the first — so a URL crafted to
+	// the authority at the LAST '@', domainRFC at the first, so a URL crafted to
 	// read as evil.com must still attribute to real.com).
 	{name: "ipv6_literal_host", url: "https://[::1]/p"},
 	{name: "userinfo_host_confusion", url: "https://user:pw@evil.com@real.com/p"},
 	// Uppercase non-ASCII host/referrer: Go lowercases with Unicode-aware
 	// strings.ToLower (Ü→ü), so the mutation must use lowerUTF8, not ASCII
-	// lower() — which leaves Ü intact and would split one site into two
+	// lower(), which leaves Ü intact and would split one site into two
 	// permanent hostname/referrer_domain rollup dim_values between live traffic
 	// and backfilled history. Unreachable from a browser's location.href (hosts
 	// arrive punycoded and lowercased), but a non-browser SDK can send it and
@@ -535,7 +535,7 @@ var mutationCorpus = []mutationCorpusRow{
 func TestMutationCorpusStaysWithin008Semantics(t *testing.T) {
 	for _, row := range mutationCorpus {
 		if msg := outside008Semantics(row); msg != "" {
-			t.Errorf("%s: %s — drop the row, do not edit the migration", row.name, msg)
+			t.Errorf("%s: %s; drop the row, do not edit the migration", row.name, msg)
 		}
 	}
 }
@@ -719,7 +719,7 @@ func testMutation008DeriveParity(t *testing.T, ctx context.Context, ch *testutil
 	// copies, so leaving the raw map entry behind would outrank the normalized
 	// column on read (MergeIntoAutoProperties is map-wins): the events API would
 	// answer "en-us" where insights answer "en-US". The mutation drops that key
-	// and ONLY that key — the copied-verbatim residue ($referrer/$utmTerm/…)
+	// and ONLY that key: the copied-verbatim residue ($referrer/$utmTerm/…)
 	// merges to an identical value and is left alone.
 	var localeResidue uint64
 	if err := ch.Conn.QueryRow(ctx,
@@ -740,7 +740,7 @@ func testMutation008DeriveParity(t *testing.T, ctx context.Context, ch *testutil
 		t.Fatalf("count $referrer residue: %v", err)
 	}
 	if referrerResidue == 0 {
-		t.Error("the mutation cleared more than '$locale' from auto_properties — the other promoted keys are copied verbatim and must stay, or this becomes an unreviewed map rewrite")
+		t.Error("the mutation cleared more than '$locale' from auto_properties: the other promoted keys are copied verbatim and must stay, or this becomes an unreviewed map rewrite")
 	}
 }
 
@@ -796,8 +796,8 @@ func testSessionRollupPartialInsertMergeIdentity(t *testing.T, ctx context.Conte
 	}
 
 	// Re-run migration 010's partial-column backfill INSERT verbatim. Omitted
-	// AggregateFunction columns must take the empty state — the merge identity
-	// — so count/duration/entry_url stay EXACTLY as before; the argMin/argMax
+	// AggregateFunction columns must take the empty state, the merge identity,
+	// so count/duration/entry_url stay EXACTLY as before; the argMin/argMax
 	// states are idempotent under the duplicate merge.
 	backfill := extractMigrationStatement(t, "010_extend_dashboard_session_rollup.sql",
 		`(?s)INSERT INTO dashboard_session_rollup \(.*?GROUP BY project_id, kind, session_id`)
@@ -814,7 +814,7 @@ func testSessionRollupPartialInsertMergeIdentity(t *testing.T, ctx context.Conte
 // testBackfill009Rerunnable pins migration 009's delta backfill as re-runnable.
 // cnt is SimpleAggregateFunction(sum), so the INSERT alone is NOT idempotent:
 // an INSERT ... SELECT that dies partway (max_execution_time, memory) cannot
-// roll back and leaves its parts behind, and goose records no version — so the
+// roll back and leaves its parts behind, and goose records no version, so the
 // natural `pug clickhouse migrate` retry lays a second full copy on top and
 // doubles cnt for every new dim forever (UNIQUE_USERS stays right, so it reads
 // as plausible rather than broken). The DELETE prelude is the only thing making
@@ -860,7 +860,7 @@ func testBackfill009Rerunnable(t *testing.T, ctx context.Context, ch *testutil.T
 		}
 	}
 
-	// Replay 009's guard + backfill, exactly as a retried migrate would — with
+	// Replay 009's guard + backfill, exactly as a retried migrate would, with
 	// one post-011 adaptation: 009's INSERT is positional (no column list),
 	// which goose can only ever execute against the pre-011 seven-column table
 	// (a 009 retry always precedes 011 in migration order), but THIS database
@@ -886,7 +886,7 @@ func testBackfill009Rerunnable(t *testing.T, ctx context.Context, ch *testutil.T
 	}
 
 	if after := read(); !reflect.DeepEqual(before, after) {
-		t.Errorf("009 delta backfill is not re-runnable — cnt changed on replay:\nbefore: %+v\nafter:  %+v", before, after)
+		t.Errorf("009 delta backfill is not re-runnable; cnt changed on replay:\nbefore: %+v\nafter:  %+v", before, after)
 	}
 }
 
@@ -946,7 +946,7 @@ func insertWebEvent(ctx context.Context, ch *testutil.TestClickHouse, projectID,
 
 // insertWebEventKind is insertWebEvent for a non-page_view kind. The session
 // rollup keys on kind, so a project seeded with page_view alone leaves its
-// empty-kind and kind='page_view' rows carrying identical state — and every
+// empty-kind and kind='page_view' rows carrying identical state, and every
 // kind-scoped assertion passes without ever discriminating the scope.
 func insertWebEventKind(ctx context.Context, ch *testutil.TestClickHouse, projectID, distinctID, sessionID, kind string, occur time.Time, p webProps) error {
 	batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)
@@ -1002,7 +1002,7 @@ func seedWebEventGrain(t *testing.T, ctx context.Context, ch *testutil.TestClick
 
 // seedWebSessionGrain: three sessions for the session-grain panels.
 // S1 alice Jan1: /landing (Organic Search, google.com) 10:00 → /checkout (Direct) 10:05.
-// S2 bob   Jan1: /home (Direct) 11:00 — bounce.
+// S2 bob   Jan1: /home (Direct) 11:00, bounce.
 // S3 carol Jan2: /a (Organic Social, reddit.com) 9:00 → /b 9:10 → /c 9:30.
 func seedWebSessionGrain(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
 	t.Helper()
@@ -1159,7 +1159,7 @@ func assertTrendsParityBy(t *testing.T, ctx context.Context, executor *insights.
 		t.Errorf("rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
 	}
 	if len(rollup) == 0 {
-		t.Error("empty result — seed/window mismatch would make this parity check vacuous")
+		t.Error("empty result: seed/window mismatch would make this parity check vacuous")
 	}
 	return rollup
 }
@@ -1209,7 +1209,7 @@ func assertSessionTrendsParityBy(t *testing.T, ctx context.Context, executor *in
 		t.Errorf("session trends rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
 	}
 	if len(rollup) == 0 {
-		t.Error("empty result — seed/window mismatch would make this parity check vacuous")
+		t.Error("empty result: seed/window mismatch would make this parity check vacuous")
 	}
 	return rollup
 }

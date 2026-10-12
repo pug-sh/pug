@@ -80,7 +80,7 @@ func TestNewPaymentsBuildsTheProvider(t *testing.T) {
 	}
 }
 
-// The route does not mount without a secret, so every delivery 404s — but
+// The route does not mount without a secret, so every delivery 404s, but
 // checkout still works, and startup must not fail.
 func TestNewPaymentsWithoutAWebhookSecret(t *testing.T) {
 	t.Setenv("PUG_BILLING_PROVIDER", dodo.Name)

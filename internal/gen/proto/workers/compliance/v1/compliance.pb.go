@@ -23,7 +23,7 @@ const (
 )
 
 // EraseMessage is published to compliance.erase by the deletion RPCs to trigger
-// asynchronous hard erasure of a data subject — events across every distinct_id,
+// asynchronous hard erasure of a data subject: events across every distinct_id,
 // the profile, aliases, and the per-person derived rollups. The worker loads the
 // compliance_requests row by (project_id, request_id) as the source of truth;
 // profile_id and external_id are carried for logging.

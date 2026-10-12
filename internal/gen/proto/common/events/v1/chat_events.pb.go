@@ -1735,7 +1735,7 @@ func (x *ChatCallRecordingStartedProperties) GetCallId() string {
 	return ""
 }
 
-// mute_duration is optional — populate when the mute is time-bounded
+// mute_duration is optional: populate when the mute is time-bounded
 // (e.g. "mute for 1h"); leave unset for indefinite mutes.
 type ChatMemberMutedProperties struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`

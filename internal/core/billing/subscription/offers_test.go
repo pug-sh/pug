@@ -49,7 +49,7 @@ func TestARetiredPlanIsNeverOffered(t *testing.T) {
 	}
 }
 
-// The org's own deal is offered beside the plans, from its row — and bought only
+// The org's own deal is offered beside the plans, from its row, and bought only
 // while the deployment takes money: with billing off, a deal's product must not
 // light a button that checkout then refuses.
 func TestADealIsOfferedFromItsOwnRow(t *testing.T) {

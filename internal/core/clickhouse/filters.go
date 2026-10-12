@@ -14,7 +14,7 @@ import (
 // profilePropertyNamePattern mirrors the regex on common.v1.PropertyFilter.property
 // and common.v1.GetPropertyValuesRequest.property_key. Kept in lockstep with the
 // proto definitions so direct callers bypassing the RPC interceptor get the same
-// validation as RPC callers — the SAFETY contract on profilePropertyPath relies
+// validation as RPC callers: the SAFETY contract on profilePropertyPath relies
 // on this exact pattern (no backticks, no whitespace, no empty segments).
 var profilePropertyNamePattern = regexp.MustCompile(`^\$?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
@@ -24,9 +24,9 @@ var profilePropertyNamePattern = regexp.MustCompile(`^\$?[a-zA-Z0-9_-]+(\.[a-zA-
 // auto's String representation is genuinely empty (i.e. the auto Variant is an
 // empty String slot, OR auto is fully absent). Non-empty stringifications of
 // typed auto slots (e.g. Int64 0 → '0', Bool false → 'false') BLOCK the
-// fallthrough — custom is not consulted in that case. Both maps' values are
+// fallthrough: custom is not consulted in that case. Both maps' values are
 // coerced to string for unified operator handling (custom_properties stores
-// Variant — CAST(v AS Nullable(String)) collapses any active variant type to
+// Variant: CAST(v AS Nullable(String)) collapses any active variant type to
 // its string representation; auto_properties uses the same Variant shape and
 // cast. Numeric operators downstream re-parse via toFloat64OrNull).
 //
@@ -42,7 +42,7 @@ var profilePropertyNamePattern = regexp.MustCompile(`^\$?[a-zA-Z0-9_-]+(\.[a-zA-
 //	  - Property absent from both maps.
 //	  - Auto value is an empty String variant (nullIf collapses '' to NULL,
 //	    falls through to custom). Non-string auto variants project to a
-//	    non-empty string ('0', 'false', etc.) and BLOCK the fallthrough —
+//	    non-empty string ('0', 'false', etc.) and BLOCK the fallthrough:
 //	    custom is not consulted in that case.
 //	  - Custom Variant String value is '' (CAST surfaces '' through the
 //	    coalesce). NB: empty-string custom values are indistinguishable from
@@ -110,7 +110,7 @@ func propertyNumericExpr(name, alias string) string {
 // unsafe SQL when interpolated into profilePropertyPath. Mirrors the regex on
 // common.v1.PropertyFilter.property byte-for-byte so direct callers (workers,
 // scripts) bypassing the proto interceptor get the same defense the RPC layer
-// provides — the SAFETY contract on profilePropertyPath depends on this
+// provides: the SAFETY contract on profilePropertyPath depends on this
 // equivalence holding.
 func ValidateProfilePropertyName(name string) error {
 	if name == "" {
@@ -155,13 +155,13 @@ func ProfilePropertyExpr(name string) string {
 
 // ProfilePropertyNumericExpr returns the Nullable(Float64) projection of a
 // profile property for numeric operators. JSON typed subcolumns (.:Float64,
-// .:Int64, .:String) are strict — they return the value only if the path is
+// .:Int64, .:String) are strict: they return the value only if the path is
 // stored as exactly that type, NULL otherwise.
 //
 // The coalesce ladder mirrors propertyNumericExpr's leniency for events:
 // Float64 storage wins, then Int64 cast up to Float64, then a final re-parse of
 // String-stored numerics (for clients that stringify numbers like
-// {"ltv": "1234"}). The strict typed projections intentionally exclude Bool —
+// {"ltv": "1234"}). The strict typed projections intentionally exclude Bool:
 // a property stored as true/false is not meaningfully comparable to a numeric
 // threshold, and CH's direct CAST(JSON AS Float64) would coerce Bool to 1/0
 // with surprising filter results.
@@ -300,7 +300,7 @@ func isNumericOperator(op commonv1.FilterOperator) bool {
 // string (coalesced) condition builders based on the operator class. Callers
 // pre-compute both projections; adding a new FilterOperator only requires
 // updating isNumericOperator and this switch (or operatorCondition for string
-// operators) — not every per-source caller.
+// operators), not every per-source caller.
 func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (Condition, error) {
 	switch f.GetOperator() {
 	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
@@ -330,7 +330,7 @@ func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (
 // The alias only prefixes the outer distinct_id reference; subquery columns reference
 // profiles/profile_aliases tables directly and are unaffected by the alias.
 //
-// The IN set is the full identity set of every matching profile — id,
+// The IN set is the full identity set of every matching profile: id,
 // external_id, and alias ids. It restates profiles.IdentityUnionCTE's id
 // sources rather than referencing it: a Condition is a self-contained fragment
 // with no CTE to register against, and the property predicate filters profiles

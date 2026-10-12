@@ -11,7 +11,7 @@ on conflict (project_id, id) do update set
 returning *;
 
 -- name: LinkDeviceToProfile :execrows
--- Assigns a device to a profile. Always overwrites — handles both first-time
+-- Assigns a device to a profile. Always overwrites: handles both first-time
 -- linking (NULL → profile) and account switching (old profile → new profile).
 -- Idempotent: 0 rows if device doesn't exist or target profile is soft-deleted.
 update profile_devices pd

@@ -3,8 +3,8 @@
 // dashboard and live map always show fresh data.
 //
 // Sessions are spawned at a Poisson-ish rate shaped by the seed generator's
-// diurnal/weekly curve, and each session's events are written one at a time —
-// at their generated timestamps — straight into ClickHouse via the same insert
+// diurnal/weekly curve, and each session's events are written one at a time,
+// at their generated timestamps, straight into ClickHouse via the same insert
 // path the historical backfill uses. The worker is fully self-contained: it
 // owns its ClickHouse connection and depends on no other workers (no NATS hop),
 // so a single deployment seeds-then-streams. The rollup materialized view still
@@ -14,7 +14,7 @@
 // first run, so no project id needs to be configured. The worker is gated by
 // PUG_DEMO_ENABLED everywhere (the same flag `pug server` reads to expose the
 // demo login): when off, `pug dev` never spawns it and the standalone `pug
-// worker demo` idles (stays running, generates nothing — so a k8s Deployment
+// worker demo` idles (stays running, generates nothing, so a k8s Deployment
 // doesn't restart-loop). Peak volume is controlled by
 // PUG_DEMO_PEAK_SESSIONS_PER_MIN (default 6 ≈ 30-50k events/day with the
 // default journey mix).
@@ -51,14 +51,14 @@ type Config struct {
 }
 
 // Enabled reports whether the demo is turned on, via PUG_DEMO_ENABLED. It is the
-// single demo switch: it gates the rolling worker everywhere — `pug dev` (which
+// single demo switch: it gates the rolling worker everywhere, `pug dev` (which
 // also uses it to decide whether to spawn the goroutine and what to print) and
-// the standalone `pug worker demo` (enforced inside Run) — and `pug server`
+// the standalone `pug worker demo` (enforced inside Run), and `pug server`
 // reads the same env var to expose AuthService.DemoSignIn. A plain on/off
 // switch; the demo project is derived from the demo user, so no project id is
 // configured.
 //
-// A non-empty value that isn't a bool literal is treated as off (fail closed —
+// A non-empty value that isn't a bool literal is treated as off (fail closed:
 // this gates a public, credential-less login) but logged as a misconfiguration,
 // so a demo deployment meant to be on isn't silently disabled by a typo. `pug
 // server` reaches the same value through envconfig, which rejects a malformed
@@ -90,7 +90,7 @@ func parseEnabled(raw string) (enabled, malformed bool) {
 
 func Run(ctx context.Context) error {
 	// PUG_DEMO_ENABLED is the single demo switch: off (the default) means no demo
-	// anywhere — neither the rolling worker here nor the server's DemoSignIn
+	// anywhere, neither the rolling worker here nor the server's DemoSignIn
 	// login. Gating inside Run covers every standalone entry (`pug worker demo`
 	// and the cmd/workers/demo binary); `pug dev` additionally checks Enabled()
 	// before spawning the goroutine.
@@ -98,7 +98,7 @@ func Run(ctx context.Context) error {
 	// When disabled, idle instead of returning: this is a long-lived worker, so
 	// on k8s an immediate exit (even exit 0) is restarted in a loop under the
 	// Deployment's restartPolicy. Block until the process is signalled, then exit
-	// cleanly — the same shutdown semantics as the running worker (StartWorker
+	// cleanly, the same shutdown semantics as the running worker (StartWorker
 	// also returns nil on ctx cancellation), so the pod stays Running and does no
 	// work until the flag is flipped on. The worker has no health port, so
 	// idling trips no probe; it holds no resources (no telemetry/ClickHouse set
@@ -160,7 +160,7 @@ const (
 // it from there, so n >= seedCount is treated as "a prior run completed". That
 // is a proxy, not a proof: the count alone can't distinguish a clean backfill
 // from one that was interrupted early and then had live traffic push the total
-// past seedCount — both read as complete. We accept that (the alternative is a
+// past seedCount; both read as complete. We accept that (the alternative is a
 // persisted completion marker) because the blast radius is a slightly thin demo
 // dashboard, not production data. 0 < n < seedCount is an interrupted backfill
 // that re-running can't repair (random event ids defeat ReplacingMergeTree
@@ -180,7 +180,7 @@ func decideSeedAction(n uint64, seedCount int64) seedAction {
 // first time the worker starts against an empty ClickHouse. It ensures the
 // Postgres customer/org/project exists (creating it on a fresh database,
 // resolving it otherwise), backfills a few months of historical events, and
-// then seeds profiles for exactly the users those events belong to — so a
+// then seeds profiles for exactly the users those events belong to, so a
 // profile never exists for a user with no events. Users whose join date is
 // still in the future stay profile-less until they sign up live.
 //
@@ -248,7 +248,7 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 		)
 		return project.ID, nil
 	case seedBackfill:
-		// Empty project — fall through to the one-time backfill below.
+		// Empty project: fall through to the one-time backfill below.
 	default:
 		return "", fmt.Errorf("unhandled seed action %d", action)
 	}
@@ -290,9 +290,9 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 type profileHealAction int
 
 const (
-	profileHealOK       profileHealAction = iota // ClickHouse in sync or ahead — nothing to do
-	profileHealRecopy                            // ClickHouse behind Postgres — re-drive the idempotent copy
-	profileHealNoSource                          // Postgres has no demo profiles — nothing to copy from
+	profileHealOK       profileHealAction = iota // ClickHouse in sync or ahead: nothing to do
+	profileHealRecopy                            // ClickHouse behind Postgres: re-drive the idempotent copy
+	profileHealNoSource                          // Postgres has no demo profiles: nothing to copy from
 )
 
 // decideProfileHeal maps the two profile counts onto the reconciliation action.
@@ -312,7 +312,7 @@ func decideProfileHeal(chProfiles uint64, pgProfiles int64) profileHealAction {
 // healDemoProfiles reconciles the ClickHouse profile set against Postgres when a
 // restart finds events already present. CopyProfilesToClickHouse is idempotent
 // (ReplacingMergeTree + deterministic per-index properties), so a ClickHouse
-// count behind Postgres — a copy that crashed partway, or never ran — is healed
+// count behind Postgres (a copy that crashed partway, or never ran) is healed
 // by simply re-driving it: already-present rows are untouched and live-created
 // ClickHouse-only profiles are preserved. If Postgres itself has no demo
 // profiles, a prior seed crashed before any profile was written and there is
@@ -374,7 +374,7 @@ type worker struct {
 // liveBotShare sets the flat crawler session rate as a fraction of the
 // configured human peak. ~4% keeps the bot filters and bot-score charts
 // populated without crawlers dominating the live map. Bots don't follow the
-// diurnal curve — they crawl around the clock — so their share of total traffic
+// diurnal curve (they crawl around the clock), so their share of total traffic
 // naturally rises at night when human traffic dips.
 const liveBotShare = 0.04
 
@@ -395,7 +395,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, cfg Config, projectID stri
 	// players tracks in-flight session goroutines; loops tracks the two
 	// long-lived spawn loops. Keeping them separate means players only ever
 	// gets Add'd from inside a running loop, so the final players.Wait() can't
-	// race a concurrent Add — loops drain first (on ctx cancel), then sessions.
+	// race a concurrent Add: loops drain first (on ctx cancel), then sessions.
 	var players, loops sync.WaitGroup
 	defer players.Wait()
 
@@ -440,7 +440,7 @@ func (w *worker) spawnLoop(ctx context.Context, players *sync.WaitGroup, rate fu
 }
 
 // playHuman ensures the session's user has a profile, then plays the session.
-// Creating the profile here — the first time a user appears in this run — is how
+// Creating the profile here, the first time a user appears in this run, is how
 // fresh signups keep showing up on the demo dashboard over time: as the wall
 // clock crosses a user's join date the live generator forces their signup
 // journey, and this attaches a profile to it. A profile is only ever created
@@ -456,7 +456,7 @@ func (w *worker) playHuman(ctx context.Context, sess []seed.LiveEvent) {
 // ensureProfile creates a ClickHouse profile for distinctID the first time it is
 // seen this run, so the user appears on the (CH-backed) profiles page. Properties
 // are deterministic per user, so re-creating an already-backfilled user leaves
-// its properties, external_id and create_time unchanged — the profiles
+// its properties, external_id and create_time unchanged: the profiles
 // ReplacingMergeTree is versioned on insert_time, so this later write wins the
 // merge and only its update_time (set to now) differs from the backfilled row.
 // create_time is the user's join (their first-seen / anonymous-creation time,
@@ -513,7 +513,7 @@ func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 			if errors.Is(err, context.Canceled) {
 				return // cancellation during shutdown, not a real insert failure
 			}
-			// Drop the rest of the session rather than retrying — this is
+			// Drop the rest of the session rather than retrying: this is
 			// synthetic traffic and the next session is seconds away.
 			slog.ErrorContext(ctx, "demo: failed to insert live event",
 				slogx.Error(err), slog.String("distinct_id", e.DistinctID))

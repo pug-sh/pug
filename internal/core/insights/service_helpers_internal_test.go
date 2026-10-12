@@ -18,7 +18,7 @@ func TestVariantTypeToPropertyValueType(t *testing.T) {
 		"DateTime64(3)": commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME,
 		// Structured JSON outputs surface as their CH type names (e.g.
 		// "Array(Nullable(String))" for arrays). They intentionally fall
-		// through to OTHER — PropertyFilter's current shape can't express
+		// through to OTHER: PropertyFilter's current shape can't express
 		// filters on structured values.
 		"Array(Nullable(String))": commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
 		"Tuple(String, Int64)":    commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,

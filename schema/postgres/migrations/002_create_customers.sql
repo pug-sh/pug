@@ -10,7 +10,7 @@ create table customers (
 );
 
 -- Functional unique index makes the email column case-insensitive for
--- uniqueness — Bob@example.com and bob@example.com cannot both insert.
+-- uniqueness: Bob@example.com and bob@example.com cannot both insert.
 -- Reads in service.go also use lower(email) = lower(@email) so storage
 -- case is preserved while comparisons are case-insensitive.
 create unique index customers_email_lower_idx on customers (lower(email));

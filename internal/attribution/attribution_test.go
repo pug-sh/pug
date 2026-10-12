@@ -6,8 +6,8 @@ import (
 )
 
 // TestOutputPairsCoversEveryField pins Pairs to Output's shape. Pairs is the
-// entire write side of the enrichment — both the ingest handler and the demo
-// seeder iterate it and nothing else — so a value added to Output but not to
+// entire write side of the enrichment (both the ingest handler and the demo
+// seeder iterate it and nothing else), so a value added to Output but not to
 // Pairs would be derived correctly and then dropped on the floor by every
 // caller, with no error and no column ever populated.
 func TestOutputPairsCoversEveryField(t *testing.T) {
@@ -40,8 +40,8 @@ func TestOutputPairsCoversEveryField(t *testing.T) {
 
 // TestPairsKeyToFieldMapping pins each canonical key to the SPECIFIC Output
 // field it carries. TestOutputPairsCoversEveryField only checks that every
-// field surfaces somewhere, so swapping two entries — e.g. binding $channel to
-// o.Locale and $locale to o.Channel — leaves both field names present and
+// field surfaces somewhere, so swapping two entries (e.g. binding $channel to
+// o.Locale and $locale to o.Channel) leaves both field names present and
 // passes it. A swap would file the channel classifier's output into the
 // permanent locale rollup column (and vice versa) with no error, so the
 // binding, not just the coverage, must be pinned. Same explicit-table shape as
@@ -69,7 +69,7 @@ func TestPairsKeyToFieldMapping(t *testing.T) {
 		PropLocale:         "Locale",
 	}
 	if len(want) != rt.NumField() {
-		t.Fatalf("want table has %d keys, Output has %d fields — add the new field's row", len(want), rt.NumField())
+		t.Fatalf("want table has %d keys, Output has %d fields; add the new field's row", len(want), rt.NumField())
 	}
 	for _, p := range out.Pairs() {
 		field, ok := want[p.Key]
@@ -233,7 +233,7 @@ func TestDeriveReferrerDomain(t *testing.T) {
 		{"google ccTLD sign-in stays a referral", Input{URL: "https://example.com/x", Referrer: "https://accounts.google.co.uk/x"}, "accounts.google.co.uk"},
 		// Pins the deliberate omission: github.com serves pages too.
 		{"github stays a referral", Input{URL: "https://example.com/x", Referrer: "https://github.com/login/oauth/authorize"}, "github.com"},
-		// Pinned v1 behavior: subdomains are NOT collapsed (no publicsuffix) —
+		// Pinned v1 behavior: subdomains are NOT collapsed (no publicsuffix);
 		// app.example.com referred from www.example.com stays a referral.
 		{"subdomain not collapsed", Input{URL: "https://app.example.com/x", Referrer: "https://www.example.com/"}, "example.com"},
 		{"non-http scheme with host accepted", Input{URL: "https://example.com/x", Referrer: "android-app://com.google.android.gm"}, "com.google.android.gm"},
@@ -303,7 +303,7 @@ func TestNormalizeLocale(t *testing.T) {
 }
 
 // TestDeriveChannelGating pins that channel derives only alongside a valid
-// page URL: non-web events (no $url) must carry no channel — not "Direct".
+// page URL: non-web events (no $url) must carry no channel, not "Direct".
 func TestDeriveChannelGating(t *testing.T) {
 	if out := Derive(Input{Referrer: "https://www.google.com"}); out.Channel != "" {
 		t.Errorf("channel without page url = %q, want empty", out.Channel)
@@ -328,7 +328,7 @@ func TestDeriveDoesNotMutateInput(t *testing.T) {
 
 // TestStripServerOnly pins the strip both ingest paths rely on. Derive never
 // reads these keys from Input, so a client-sent copy cannot change what is
-// derived — but the write side never clears a key, so anything left in the map
+// derived, but the write side never clears a key, so anything left in the map
 // survives verbatim into storage. Failing to strip therefore does not produce
 // a wrong derivation, it produces a client-authored $channel sitting in the
 // column analytics reads.
@@ -374,12 +374,12 @@ func TestStripServerOnly(t *testing.T) {
 
 // TestServerOnlyKeysMatchDerivedOnlyFields pins serverOnlyKeys to the type
 // shape so the strip can never silently fall behind Output. A server-only key
-// is one Derive computes with no Input field to echo — precisely an Output
+// is one Derive computes with no Input field to echo, precisely an Output
 // field whose name has no Input counterpart (today: ReferrerDomain, Channel).
 // The write side never clears a key, so any server-only key left unstripped
 // survives a client-sent copy verbatim into a permanent rollup column. The
 // two-element serverOnlyKeys is correct today, but a future always-server-
-// derived Output field added without a matching entry would leak — and the
+// derived Output field added without a matching entry would leak, and the
 // empty-derivation path (a non-web event) makes that leak invisible, because
 // the write loop skips empty outputs and so never overwrites the client value.
 // This test turns that omission into a build failure instead of a silent leak.
@@ -435,9 +435,9 @@ func (keyEchoSource) String(key string) string   { return "v:" + key }
 func (keyEchoSource) ScreenDims() (int64, int64) { return 390, 844 }
 
 // TestInputFrom pins InputFrom to Input's shape. InputFrom is the only way the
-// ingest handler and the demo seeder assemble a Derive input — the promise
+// ingest handler and the demo seeder assemble a Derive input (the promise
 // that demo data and production traffic classify identically rests on the
-// inputs matching, not just the derivation — so a field added to Input but
+// inputs matching, not just the derivation), so a field added to Input but
 // never read here would silently stay zero on both paths at once, and the
 // classification would degrade identically in demo and prod with nothing to
 // contradict it.

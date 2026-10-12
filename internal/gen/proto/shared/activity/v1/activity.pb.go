@@ -26,7 +26,7 @@ const (
 )
 
 // ProfileSessionSort names the ordering of GetProfileSessions. Ordering is always
-// descending — newest, longest, or busiest first — with the session id breaking ties.
+// descending (newest, longest, or busiest first), with the session id breaking ties.
 type ProfileSessionSort int32
 
 const (
@@ -776,7 +776,7 @@ type GetProfileSessionsRequest struct {
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
 	// A token is bound to the sort it was issued under, since the seek predicate is
 	// built from the ordering column; send the same sort back, or restart from an
-	// empty token to change it. It is not bound to the other fields — changing
+	// empty token to change it. It is not bound to the other fields; changing
 	// time_range or include_bots mid-pagination gives undefined paging.
 	PageToken *string `protobuf:"bytes,3,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Defaults to PROFILE_SESSION_SORT_STARTED_AT.

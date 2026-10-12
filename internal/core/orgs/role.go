@@ -8,7 +8,7 @@ import "fmt"
 // values map 1:1 with no proto import required inside this package.
 //
 // The zero value Role("") is deliberately invalid (IsValid returns false): it
-// is the reserved drift/UNSPECIFIED sentinel — roleFromDBJoinRow returns it for
+// is the reserved drift/UNSPECIFIED sentinel; roleFromDBJoinRow returns it for
 // an unrecognized stored value, and toRPCRole maps it to ORG_ROLE_UNSPECIFIED.
 type Role string
 

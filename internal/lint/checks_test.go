@@ -14,7 +14,7 @@ import (
 // devices, campaigns and scheduler are complete worker packages held for a
 // later release, so no command wires them and no image ships them, and two look
 // up consumers schema/nats/consumers.yaml never declared. Listed verbatim so
-// drift fails the build in either direction — a new finding, or one of these
+// drift fails the build in either direction: a new finding, or one of these
 // disappearing because the package was deleted rather than shipped. Their RPC
 // handlers (rpc/shared/campaigns, rpc/sdk/devices) are parked too but pinned by
 // nothing; no check covers an unmounted handler.

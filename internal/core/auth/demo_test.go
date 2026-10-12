@@ -15,7 +15,7 @@ import (
 )
 
 // TestDemoSignIn covers the credential-less demo viewer login: it is gated by
-// the demo flag, requires the demo account to be seeded, and — once both hold —
+// the demo flag, requires the demo account to be seeded, and, once both hold,
 // mints a session for the seeded viewer scoped to the demo project.
 func TestDemoSignIn(t *testing.T) {
 	if testing.Short() {
@@ -82,7 +82,7 @@ func TestDemoSignIn(t *testing.T) {
 			t.Errorf("project id = %q, want %q", demo.ProjectID, proj.ID)
 		}
 
-		// The minted session must be for the demo VIEWER specifically — the JWT
+		// The minted session must be for the demo VIEWER specifically: the JWT
 		// subject is what WithJWTAuth resolves to a customer, so this pins that the
 		// principal is snoop (and thus a read-only org member), not anyone else.
 		var claims jwt.RegisteredClaims
@@ -101,7 +101,7 @@ func TestDemoSignIn(t *testing.T) {
 // the demo flag on and the account fully seeded (org + membership + project),
 // DemoSignIn refuses to mint unless the resolved demo account is genuinely an
 // ORG_ROLE_VIEWER. This is the runtime guard on the read-only invariant of the
-// public, credential-less endpoint — a mis-seed or a later promotion of snoop to
+// public, credential-less endpoint: a mis-seed or a later promotion of snoop to
 // a write-capable role must fail closed rather than yield an elevated session.
 func TestDemoSignInRejectsNonViewer(t *testing.T) {
 	if testing.Short() {
@@ -143,7 +143,7 @@ func TestDemoSignInRejectsNonViewer(t *testing.T) {
 // TestDemoSignInUnavailableWhenHalfSeeded pins the two half-seeded failure modes
 // resolveDemoProjectID guards: the demo viewer customer exists (so the email
 // lookup succeeds), but the rest of the demo graph is incomplete. A viewer with
-// no org membership, or a viewer whose org has no project, is a mis-/half-seed —
+// no org membership, or a viewer whose org has no project, is a mis-/half-seed,
 // and the credential-less endpoint must fail closed with ErrDemoUnavailable
 // rather than mint a session it cannot scope to a demo project.
 func TestDemoSignInUnavailableWhenHalfSeeded(t *testing.T) {
@@ -201,7 +201,7 @@ func TestDemoSignInUnavailableWhenHalfSeeded(t *testing.T) {
 
 // TestDemoSignInPropagatesLookupError pins that a transient infrastructure error
 // during the demo account lookup (forced here with a cancelled context) surfaces
-// as the raw error — which the handler maps to CodeInternal — and is NOT collapsed
+// as the raw error, which the handler maps to CodeInternal, and is NOT collapsed
 // into ErrDemoUnavailable. ErrDemoUnavailable is reserved for the demo being off
 // or genuinely unseeded (pgx.ErrNoRows); a DB outage is a distinct, retryable
 // state, so DemoSignIn must not make a failing database look like an unseeded one.

@@ -86,7 +86,7 @@ func TestBuildTopKResult_OmitOthersAllRowsPreserved(t *testing.T) {
 // TestBuildTopKResult_EnrichmentFailureDegrades asserts that a (non-context)
 // failure of the USER-row profile enrichment query degrades to un-enriched rows
 // rather than discarding the already-computed ranking. The ranked rows + values
-// are the payload; profile id/external_id/properties are decoration — a transient
+// are the payload; profile id/external_id/properties are decoration: a transient
 // enrichment-query failure must not 5xx an otherwise-good top-K tile.
 func TestBuildTopKResult_EnrichmentFailureDegrades(t *testing.T) {
 	res, err := userTopKResult(t, NewExecutor(fakeConn{}))
@@ -129,7 +129,7 @@ func TestBuildTopKResult_PropagatesContextError(t *testing.T) {
 
 // TestBuildTopKResult_EmptyRowsSkipEnrichment asserts that with no ranked rows
 // the enrichment query is never issued (so a failing conn cannot error) and an
-// empty result is returned — pinning the len(ids) > 0 short-circuit. This is the
+// empty result is returned, pinning the len(ids) > 0 short-circuit. This is the
 // shape a dashboard tile renders for an empty window.
 func TestBuildTopKResult_EmptyRowsSkipEnrichment(t *testing.T) {
 	// fakeConn would error if Query were called; reaching a nil error proves

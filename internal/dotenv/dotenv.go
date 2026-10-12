@@ -41,7 +41,7 @@ func Load() error {
 // LoadOrExit logs and exits 1 when Load fails.
 func LoadOrExit(ctx context.Context) {
 	if err := Load(); err != nil {
-		slog.ErrorContext(ctx, "failed to load .env", slogx.Error(err)) // puglint:exempt — no span at startup
+		slog.ErrorContext(ctx, "failed to load .env", slogx.Error(err)) // puglint:exempt (no span at startup)
 		os.Exit(1)
 	}
 }

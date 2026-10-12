@@ -6,16 +6,16 @@
 -- first-touch acquisition panels). Three steps, ORDER LOAD-BEARING:
 --
 --   1. ADD COLUMN for the ten AggregateFunction states (metadata-only).
---      Existing rows read the implicit default — the EMPTY aggregate state,
---      which is the merge identity — so history is untouched.
+--      Existing rows read the implicit default (the EMPTY aggregate state,
+--      which is the merge identity), so history is untouched.
 --
 --   2. MODIFY QUERY restating all 32 argMin/argMax states (+ start/end/count)
 --      with the inner UNION ALL projecting the new columns. Never
 --      DROP->CREATE (events inserted in the gap would lose ALL states).
 --
 --   3. Partial-column backfill INSERT listing ONLY the key columns + the ten
---      new states. Omitted AggregateFunction columns take their default —
---      the empty state, the merge identity — so event_count_state /
+--      new states. Omitted AggregateFunction columns take their default
+--      (the empty state, the merge identity), so event_count_state /
 --      start/end and the existing entry/exit states are untouched and
 --      bounce/duration cannot double. This is the one backfill that is
 --      silently catastrophic if done naively (re-inserting countState()
@@ -26,7 +26,7 @@
 --
 -- LowCardinality source columns go through toString() (AggregateFunction
 -- argMin/argMax is declared over plain String); pathname is a plain String
--- column and stays bare — the migration-007 convention, pinned by
+-- column and stays bare, the migration-007 convention, pinned by
 -- TestMigration010SessionRollupDimExprsMatch.
 
 ALTER TABLE dashboard_session_rollup

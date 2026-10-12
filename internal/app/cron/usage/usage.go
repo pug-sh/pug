@@ -30,7 +30,7 @@ const (
 	defaultRescanDays = coreusage.DefaultRescanDays
 
 	// Past the retention window a wider rescan re-inserts day cells that the same
-	// pass's prune then deletes, every pass, forever — and the ClickHouse scan stops
+	// pass's prune then deletes, every pass, forever, and the ClickHouse scan stops
 	// pruning partitions long before that. Expressed from retention so the two
 	// cannot drift.
 	maxRescanDays = int(retention / (24 * time.Hour))
@@ -133,7 +133,7 @@ func init() {
 
 // setupFailed reports a dependency that would not come up. These all return
 // before the pass starts, so without an explicit log+record they reach only
-// main's stderr line — printed after closeOtel has swapped the handler back — and
+// main's stderr line, printed after closeOtel has swapped the handler back, and
 // never OTLP, which is where a misconfigured deployment is diagnosed.
 func setupFailed(ctx context.Context, dependency string, err error) error {
 	err = fmt.Errorf("usage meter setup: %s: %w", dependency, err)
@@ -156,7 +156,7 @@ func Run(ctx context.Context) error {
 
 	// Started before config and pools rather than after: telemetry.RecordError
 	// resolves to the noop span until a root span exists, so anything recorded
-	// during setup would be silently discarded — and setup is exactly where a
+	// during setup would be silently discarded, and setup is exactly where a
 	// misconfigured deployment fails.
 	ctx, span := otel.Tracer("cron/usage").Start(ctx, "usage.pass")
 	defer span.End()
@@ -222,8 +222,8 @@ func Run(ctx context.Context) error {
 	// Recorded at the layer that detected it; this only reports the disposition.
 	outcome = outcomeFailed
 	if err := j.run(ctx); err != nil {
-		// Another pod is doing this work. Exit 0 — alerting on healthy overlap would
-		// alert on nothing — but say so, because "skipped" and "metered" are
+		// Another pod is doing this work. Exit 0 (alerting on healthy overlap would
+		// alert on nothing), but say so, because "skipped" and "metered" are
 		// otherwise the same silent success.
 		if errors.Is(err, cron.ErrLockHeld) {
 			outcome = outcomeLockHeld
@@ -233,7 +233,7 @@ func Run(ctx context.Context) error {
 		slog.ErrorContext(ctx, "usage metering pass failed", slogx.Error(err))
 		// The root span's own status, not a second exception event: errors detected
 		// under ClickHouse record onto its child span, and OTel does not propagate a
-		// child's status to its parent — so a trace query filtered on status=ERROR
+		// child's status to its parent, so a trace query filtered on status=ERROR
 		// over usage.pass would miss exactly the passes that failed while metering.
 		telemetry.RecordErrorOnSpan(span, err)
 		return err
@@ -385,7 +385,7 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 	// No orgs at all usually means the reader pool is pointed somewhere unmigrated,
 	// not that pug has no users. Metered cells settle it: a cell implies a project,
 	// which has an FK to an org, so cells without orgs cannot happen on a Postgres
-	// this pass can actually see. Fail rather than warn — left as a warning this
+	// this pass can actually see. Fail rather than warn: left as a warning this
 	// freezes every org's stamp forever behind a green CronJob, since the day cells
 	// still land on the writer pool and no other guard fires.
 	if len(windows) == 0 {
@@ -418,7 +418,7 @@ func (j *job) meter(ctx context.Context, now time.Time) error {
 	if failed > 0 {
 		// Each org's own failure was recorded at source; this reports the tally.
 		err := fmt.Errorf("usage meter left %d of %d orgs unrefreshed: %w", failed, len(windows), firstErr)
-		slog.ErrorContext(ctx, "failed to refresh period usage for some orgs", slogx.Error(err)) // puglint:exempt — each org's failure was recorded at source
+		slog.ErrorContext(ctx, "failed to refresh period usage for some orgs", slogx.Error(err)) // puglint:exempt (each org's failure was recorded at source)
 		return err
 	}
 

@@ -762,7 +762,7 @@ func TestSendTestUsesFreshIdempotencyKeyPerAttempt(t *testing.T) {
 
 // TestSetReturnsInternalOnInvalidateFailure pins the load-bearing-Invalidate
 // contract. With the bracketed Invalidate→Upsert→Invalidate ordering, a
-// Redis failure on the FIRST invalidate aborts before the Upsert runs —
+// Redis failure on the FIRST invalidate aborts before the Upsert runs:
 // the DB stays unchanged and the admin gets CodeInternal so they retry.
 // Without bracketing, a Redis hiccup after a successful Upsert would leave
 // stale ciphertext serving real email sends for the cache TTL window.
@@ -826,7 +826,7 @@ func TestSetReturnsInternalOnInvalidateFailure(t *testing.T) {
 
 	// Sanity: with bracketed invalidate ordering, the first Invalidate fails
 	// before the Upsert runs, so no row should exist. This pins the
-	// atomic-ish "no DB write without a successful invalidate" contract —
+	// atomic-ish "no DB write without a successful invalidate" contract:
 	// a regression that moved Upsert before Invalidate would leave a row
 	// behind here.
 	if _, err := read.GetOrgEmailProvider(ctx, org.ID); err == nil {

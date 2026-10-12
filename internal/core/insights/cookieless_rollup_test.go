@@ -52,8 +52,8 @@ func TestCookielessExclusion_RollupBuilders(t *testing.T) {
 	})
 
 	t.Run("mixed_agg_breakdown_ranking_is_order_independent", func(t *testing.T) {
-		// The ranking CTE once keyed its cookieless predicate off aggregationType(req)
-		// — events[0] ONLY — while each branch keyed off its own aggregation. With one
+		// The ranking CTE once keyed its cookieless predicate off aggregationType(req),
+		// events[0] ONLY, while each branch keyed off its own aggregation. With one
 		// TOTAL and one UNIQUE_USERS event, swapping the `events` order flipped whether
 		// the ranking population excluded cookieless traffic, so two dashboard tiles
 		// differing only in event order named different breakdown values. Nothing in

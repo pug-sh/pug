@@ -13,7 +13,7 @@ import (
 )
 
 // ErrLockHeld means another pass holds the job's lock and this one did nothing.
-// Not a failed pass — whoever holds it is doing the work, and a caller driving a
+// Not a failed pass: whoever holds it is doing the work, and a caller driving a
 // CronJob should map this to exit 0. It is a distinct value rather than a nil so
 // that "skipped" and "ran" are tellable apart: every pass returning nil looks
 // identical whether the job is healthy or its lock has been wedged for a day.
@@ -44,7 +44,7 @@ func WithLock(ctx context.Context, pgW *pgxpool.Pool, job Job, fn func(context.C
 	}()
 
 	// The tx holds the lock while doing nothing, which is exactly what a non-zero
-	// idle_in_transaction_session_timeout kills — several managed Postgres
+	// idle_in_transaction_session_timeout kills; several managed Postgres
 	// providers ship one. Disabling it for this transaction only (SET LOCAL reverts
 	// when the connection returns to the pool) is what makes "cannot double-meter"
 	// true for the pass's whole duration rather than only until the timeout fires.

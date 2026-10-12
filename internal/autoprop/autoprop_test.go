@@ -62,7 +62,7 @@ func TestPropertyValue_ParseFailureFallback(t *testing.T) {
 }
 
 // TestPropertyValue_BackgroundContext verifies non-production callers can use
-// context.Background() — the OTel default meter is a no-op without an
+// context.Background(): the OTel default meter is a no-op without an
 // exporter, so seed/test paths can rely on this without setup.
 func TestPropertyValue_BackgroundContext(t *testing.T) {
 	got := PropertyValue(context.Background(), "", PropBotScore, "not-a-number")
@@ -75,7 +75,7 @@ func TestPropertyValue_BackgroundContext(t *testing.T) {
 // depend on: the SDK handler derives $channel/$pathname from this string while
 // applyPromotedPropertyValue files that same value into the column, so a
 // divergence here is a row whose derived columns describe a value the row does
-// not contain. The ok result is the promote/skip decision — false must mean
+// not contain. The ok result is the promote/skip decision: false must mean
 // "no slot", never "empty slot", or a client-sent "" would stop reaching the
 // column it belongs in.
 func TestString(t *testing.T) {

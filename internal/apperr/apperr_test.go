@@ -39,7 +39,7 @@ func TestReasonRegistry_add(t *testing.T) {
 }
 
 func TestErr_panicsOnUnregisteredReason(t *testing.T) {
-	// A reason that was never minted via codes.add must not be constructible — it
+	// A reason that was never minted via codes.add must not be constructible: it
 	// would otherwise become a public ErrorInfo.Reason with no validity guarantee.
 	assertPanics(t, func() { _ = Err(connect.CodeNotFound, Reason("NEVER_REGISTERED"), "x") })
 	// A format-valid but unregistered reason is still rejected (registration, not

@@ -64,7 +64,7 @@ type LinkDeviceToProfileParams struct {
 	ProjectID string
 }
 
-// Assigns a device to a profile. Always overwrites — handles both first-time
+// Assigns a device to a profile. Always overwrites: handles both first-time
 // linking (NULL → profile) and account switching (old profile → new profile).
 // Idempotent: 0 rows if device doesn't exist or target profile is soft-deleted.
 func (q *Queries) LinkDeviceToProfile(ctx context.Context, arg LinkDeviceToProfileParams) (int64, error) {

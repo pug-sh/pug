@@ -305,7 +305,7 @@ func TestSignatureLoginMustMatchTheIDItClaims(t *testing.T) {
 }
 
 // Only the noreply form is ever looked up, so an ordinary address is unidentified
-// rather than absent from GitHub — the report must not claim a search it skipped.
+// rather than absent from GitHub: the report must not claim a search it skipped.
 func TestOnlyTheNoreplyFormYieldsALogin(t *testing.T) {
 	for _, addr := range []string{"someone@example.com", "woof@pug.sh", "1+alice@users.noreply.github.example"} {
 		if got := noreplyLogin(addr); got != "" {
@@ -326,7 +326,7 @@ func TestOnlyTheNoreplyFormYieldsALogin(t *testing.T) {
 }
 
 // A lone CR ends a line for the Actions log and, per CommonMark, for the comment
-// too — so a trailer carrying one could forge a workflow command and break out of
+// too, so a trailer carrying one could forge a workflow command and break out of
 // the code span the report renders it in.
 func TestTrailerAddressCannotCarryACarriageReturn(t *testing.T) {
 	got := coauthorEmails([]Commit{commit("a1", nil, nil,

@@ -444,7 +444,7 @@ func TestSettingsHelpers(t *testing.T) {
 		}
 	})
 
-	t.Run("repeated WithQueryCache calls dedup by key — last TTL wins", func(t *testing.T) {
+	t.Run("repeated WithQueryCache calls dedup by key: last TTL wins", func(t *testing.T) {
 		sql, _ := build(t,
 			chq.NewQuery().
 				Select("1").
@@ -639,7 +639,7 @@ func TestUnionAllSettingsHelpers(t *testing.T) {
 		chq.UnionAll(q1, q2).WithQueryCache(-1)
 	})
 
-	t.Run("repeated WithQueryCache calls dedup by key — last TTL wins", func(t *testing.T) {
+	t.Run("repeated WithQueryCache calls dedup by key: last TTL wins", func(t *testing.T) {
 		sql, _, err := chq.UnionAll(q1, q2).
 			WithQueryCache(60).
 			WithQueryCache(120).
@@ -661,7 +661,7 @@ func TestUnionAllSettingsHelpers(t *testing.T) {
 // ClickHouse only accepts SETTINGS at the top level of a SELECT/UNION; emitting SETTINGS
 // inside a CTE body or a UNION branch would produce SQL the server rejects. Since
 // `analyticsCacheTTL` is package-private and only applied to outer queries, this guard
-// is unreachable except via a programmer error — panic surfaces it on the first run.
+// is unreachable except via a programmer error; panic surfaces it on the first run.
 func TestSettingsBuildGuards(t *testing.T) {
 	expectPanic := func(t *testing.T, want string, fn func()) {
 		t.Helper()

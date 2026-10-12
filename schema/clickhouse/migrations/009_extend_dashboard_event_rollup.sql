@@ -3,7 +3,7 @@
 -- Extends the daily event rollup (migration 006) with the ten web-analytics
 -- dimensions. Three steps, ORDER LOAD-BEARING on a live system:
 --
---   1. MODIFY QUERY on the MV — never DROP->CREATE, which would lose ALL dims
+--   1. MODIFY QUERY on the MV, never DROP->CREATE, which would lose ALL dims
 --      (including $__total__) for events inserted in the gap. The full
 --      21-tuple ARRAY JOIN is restated; dim exprs read promoted columns only
 --      (the TestMigration<N>PromotedDimExprsMatch for whichever migration
@@ -16,7 +16,7 @@
 --
 --   3. Delta backfill INSERT restricted to the NEW dim_names. New EAV key
 --      rows are disjoint from every existing row (dim_name is in the ORDER BY
---      key), so there is no merge hazard — and existing dims must NOT be
+--      key), so there is no merge hazard, and existing dims must NOT be
 --      re-inserted (a full-list backfill would double cnt for the old dims).
 --
 -- Deriving the promoted columns is 008's job alone, and this file deliberately
@@ -26,7 +26,7 @@
 -- partition to derive nothing. Nor is there a deploy window to catch up: PreSync
 -- completes before any pod rolls, so no new binary has written a row yet. A
 -- failing step 3 retries automatically (PreSync backoffLimit + the Application's
--- retry limit) minutes apart, and aborts the Sync so no rollout happens — a gap
+-- retry limit) minutes apart, and aborts the Sync so no rollout happens; a gap
 -- long enough to strand underived rows means a human is already intervening, and
 -- the repair is 008's mutation followed by steps 2+3. That is the one repair
 -- procedure for every case, the rollout window included; see the deploy runbook
@@ -34,7 +34,7 @@
 --
 -- Accepted accuracy tradeoff: events inserted between step 1 taking effect
 -- and step 3's snapshot are counted twice into cnt for the NEW dims only
--- (uniq_state is idempotent) — the same bounded class as the documented
+-- (uniq_state is idempotent), the same bounded class as the documented
 -- redelivery over-count in migration 006, on dims with zero historical
 -- baseline. A cutoff cannot fully close this (an insert in flight during
 -- MODIFY QUERY is ambiguous either way), so it is accepted and documented.
@@ -77,14 +77,14 @@ GROUP BY project_id, day, kind, dim_name, dim_value;
 -- Re-run guard, and the reason step 3 is safe to retry. `cnt` is
 -- SimpleAggregateFunction(sum), so AggregatingMergeTree SUMS duplicate keys:
 -- an INSERT ... SELECT that dies partway (max_execution_time, memory) cannot
--- roll back, leaves its parts behind, and goose never records version 9 — so
+-- roll back, leaves its parts behind, and goose never records version 9, so
 -- the natural `pug clickhouse migrate` re-run would lay a second full copy on
 -- top and permanently inflate cnt for every new dim, with UNIQUE_USERS still
 -- correct so the result looks plausible rather than broken. Deleting first
 -- makes the pair idempotent: a no-op on the first run (no rows carry these
 -- dim_names until the INSERT below), and on a retry the INSERT re-derives
 -- them from `events`, the source of truth. Keep the list equal to
--- eventRollupDims009 — TestMigration009BackfillDeleteCoversNewDims.
+-- eventRollupDims009 (TestMigration009BackfillDeleteCoversNewDims).
 ALTER TABLE dashboard_event_rollup_daily DELETE
 WHERE dim_name IN ('$pathname', '$hostname', '$referrerDomain', '$channel', '$locale', '$screenSize', '$utmTerm', '$utmContent', '$browserVersion', '$osVersion')
 SETTINGS mutations_sync = 2;

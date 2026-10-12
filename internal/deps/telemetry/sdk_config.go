@@ -23,7 +23,7 @@ var otlpEndpointEnvVars = []string{
 }
 
 // otlpConfigured reports whether the environment points the OTel SDK at a
-// collector — i.e. whether OTLP export is wanted. It is true when any
+// collector, i.e. whether OTLP export is wanted. It is true when any
 // otlpEndpointEnvVars entry holds a non-empty value; a present-but-blank var
 // (e.g. OTEL_EXPORTER_OTLP_ENDPOINT=) is treated as unset so a conditionally
 // templated empty value can't flip pug into exporting at a collector that

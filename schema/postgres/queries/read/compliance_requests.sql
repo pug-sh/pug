@@ -1,7 +1,7 @@
 -- name: GetEraseRequestByID :one
 -- Erase-path load. Scoped to kind = 'erase' so the erasure executor and the
 -- erasure-status RPC structurally cannot load (and the executor cannot hard-delete
--- against) an 'export' row once the unified ledger holds both kinds — an export row
+-- against) an 'export' row once the unified ledger holds both kinds: an export row
 -- simply reads as not-found here. Export gets its own GetExportRequestByID.
 select * from compliance_requests
 where id = @id and project_id = @project_id and kind = 'erase';

@@ -3,15 +3,15 @@
 -- project, explicitly created and deletable, so a leaked key can be rotated.
 --
 -- A private key is stored only as a sha256 hash (never plaintext), exactly like
--- email_action_tokens and refresh_tokens — a leak of this table must not hand an
+-- email_action_tokens and refresh_tokens: a leak of this table must not hand an
 -- attacker working credentials. A public key is embedded in client apps and is
 -- extractable by design, so hashing it would buy nothing and would cost the
 -- ability to show it back on the project settings page: it stays plaintext.
 --
 -- projects.private_api_key / public_api_key are dropped here, in this same
 -- migration, rather than kept alive for a release. That buys the absence of a
--- transitional dual-read — no *Legacy fallback lookups, no re-runnable backfill,
--- no marker value standing in for a column that must hold something, no phase 2 —
+-- transitional dual-read (no *Legacy fallback lookups, no re-runnable backfill,
+-- no marker value standing in for a column that must hold something, no phase 2)
 -- at the cost of a deploy window: a pod still running the previous image selects
 -- these columns and fails until it rolls. Deliberate at current traffic (one
 -- project, no signups mid-deploy). If a rollout ever has to be seamless, the
@@ -41,7 +41,7 @@ update on api_keys for each row execute procedure moddatetime(update_time);
 
 -- Carry every existing key pair over, hashing the private key so its plaintext
 -- never lands in this table. sha256() is built in (PG11+); there is no cast from
--- char/text to bytea, hence convert_to(). This runs exactly once — the columns are
+-- char/text to bytea, hence convert_to(). This runs exactly once: the columns are
 -- gone by the end of this migration, so there is nothing to catch up later and no
 -- re-run to stay correct against.
 --
@@ -51,7 +51,7 @@ update on api_keys for each row execute procedure moddatetime(update_time);
 -- credential nobody created.
 --
 -- Ids derive from the project id (there is no xid generator in SQL, and this is
--- unique per project per kind). create_time is inherited from the project — that
+-- unique per project per kind). create_time is inherited from the project: that
 -- is when these keys really came into existence, and the settings page orders by
 -- it.
 insert into api_keys (create_time, id, kind, masked, project_id, token)
@@ -81,11 +81,11 @@ alter table projects
 
 -- +goose Down
 -- Lossy, and only meaningful paired with an image rollback. The public key is
--- restored from api_keys. The private key cannot be — only its digest was ever
--- stored — so the column comes back holding the project id, which carries no
+-- restored from api_keys. The private key cannot be (only its digest was ever
+-- stored) so the column comes back holding the project id, which carries no
 -- "prv_" prefix and therefore authenticates nothing: a project that had a private
 -- key before this migration needs a new one issued after a rollback. A project
--- with no public key in api_keys gets its id there too, for the same reason — the
+-- with no public key in api_keys gets its id there too, for the same reason: the
 -- columns are not null unique and must hold something unique.
 alter table projects
   add column private_api_key char(24),

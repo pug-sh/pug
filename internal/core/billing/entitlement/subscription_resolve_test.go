@@ -52,7 +52,7 @@ func TestPastDueKeepsTheQuota(t *testing.T) {
 	sub.Status = corebilling.SubStatusPastDue
 	ent := entitlement.Resolve(created, entitlement.Record{}, sub, later, true)
 	if ent.Slug != entitlement.SlugUsage {
-		t.Errorf("slug = %q, want %s — a failed card must not degrade the plan", ent.Slug, entitlement.SlugUsage)
+		t.Errorf("slug = %q, want %s: a failed card must not degrade the plan", ent.Slug, entitlement.SlugUsage)
 	}
 	if got := quota(t, ent); got != freeEvents() {
 		t.Errorf("allowance = %d, want %d", got, freeEvents())
@@ -138,7 +138,7 @@ func TestLapsedContractDoesNotStripALiveDealsQuota(t *testing.T) {
 	}
 	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugCustom), later, true)
 	if got := quota(t, ent); got != 5_000_000 {
-		t.Errorf("allowance = %d, want 5000000 — the customer is still being charged", got)
+		t.Errorf("allowance = %d, want 5000000: the customer is still being charged", got)
 	}
 
 	// With nothing being charged, the deal's terms are gone with it.
@@ -186,7 +186,7 @@ func TestADealsTermsDoNotRideOnAPublicPlan(t *testing.T) {
 }
 
 // The usage plan is a different purchase, so a lapsed deal's allowance and name
-// must not ride along on it — the customer would pay usage rates on the pilot's
+// must not ride along on it: the customer would pay usage rates on the pilot's
 // allowance.
 func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
 	rec := entitlement.Record{
@@ -197,7 +197,7 @@ func TestLapsedContractDoesNotRideOnACatalogSubscription(t *testing.T) {
 	}
 	ent := entitlement.Resolve(created, rec, liveSub(entitlement.SlugUsage), later, true)
 	if got := quota(t, ent); got != freeEvents() {
-		t.Errorf("allowance = %d, want %d — the pilot's grant lapsed", got, freeEvents())
+		t.Errorf("allowance = %d, want %d: the pilot's grant lapsed", got, freeEvents())
 	}
 	if want := entitlement.CurrentPlan().DisplayName; ent.DisplayName != want {
 		t.Errorf("display name = %q, want %q", ent.DisplayName, want)

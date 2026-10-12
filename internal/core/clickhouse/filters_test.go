@@ -504,7 +504,7 @@ func TestPropertyCondition_ProfileSource_In(t *testing.T) {
 		t.Errorf("expected IN condition for profile property, got: %s", sql)
 	}
 	// Multi-value operator: one (projectID, val1, val2) group per branch (id,
-	// external_id, alias — the alias branch carries outer + inner projectIDs).
+	// external_id, alias; the alias branch carries outer + inner projectIDs).
 	args := cond.Args()
 	wantArgs := []any{"proj_abc", "pro", "enterprise", "proj_abc", "pro", "enterprise", "proj_abc", "proj_abc", "pro", "enterprise"}
 	if len(args) != len(wantArgs) {

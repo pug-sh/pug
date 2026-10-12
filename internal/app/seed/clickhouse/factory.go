@@ -149,7 +149,7 @@ type userMemory struct {
 	// emits several signup events. Set the first time a signup journey is
 	// built and read by journeyFor to suppress later forces. Because the
 	// backfill generates sessions out of order, "first" means first-generated,
-	// not strictly-earliest — but every forced signup still lands inside the
+	// not strictly-earliest, but every forced signup still lands inside the
 	// join window, so the single retained signup is always near cohort entry.
 	signedUp bool
 }
@@ -359,7 +359,7 @@ func (f *sessionFactory) location(ctx context.Context, name string) *time.Locati
 
 // Diurnal traffic shapes, applied in the user's local timezone. Desktop
 // leans into work hours, mobile into evenings, and weekends have no commute
-// ramp — late mornings are already busy.
+// ramp: late mornings are already busy.
 var hourWeights = [24]float64{ // aggregate (used by the live worker's rate)
 	0.45, 0.35, 0.25, 0.22, 0.22, 0.28, // 00-05
 	0.40, 0.55, 0.70, 0.85, 0.95, 1.00, // 06-11
@@ -393,10 +393,10 @@ var weekendHourWeights = [24]float64{
 var dayWeights = [7]float64{1.35, 0.85, 0.85, 0.90, 0.95, 1.10, 1.45} // Sun..Sat
 
 // startTimeWeight combines diurnal/weekly curves with episode multipliers.
-// Long-term growth is not synthesized here — it emerges from loyal users
+// Long-term growth is not synthesized here; it emerges from loyal users
 // accumulating as join dates spread across the window. Max possible value:
 // Sat/Sun force weekendHourWeights (peak 1.50) rather than the mobile table
-// (1.65), so the weekend ceiling dominates — 1.50 (weekend hour peak) * 1.45
+// (1.65), so the weekend ceiling dominates. 1.50 (weekend hour peak) * 1.45
 // (Saturday) * 1.45 (promo) ≈ 3.15; 3.5 is a safe over-estimate for the
 // rejection sampler (an over-estimated denominator only costs sampling
 // efficiency, never correctness).

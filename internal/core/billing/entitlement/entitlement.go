@@ -37,7 +37,7 @@ var (
 	ErrClearWouldStrandSubscription = errors.New("billing: this org has a live custom subscription; cancel it with the provider first")
 	ErrAnchorDayRange               = errors.New("billing: anchor day must be between 1 and 31")
 	// ErrDealAllowanceZero is --events 0 on a deal, which would clear the override and
-	// fall back to its plan's allowance — the opposite of "bill from the first event".
+	// fall back to its plan's allowance, the opposite of "bill from the first event".
 	ErrDealAllowanceZero = errors.New("billing: --events 0 on a deal falls back to its plan's free allowance; pass --events 1 to bill from the first event, or the allowance itself")
 	ErrQuotaNegative     = errors.New("billing: the events override must be positive")
 	ErrRetentionNegative = errors.New("billing: the retention override must be positive")
@@ -166,7 +166,7 @@ func recordFromRow(row dbread.GetOrgEntitlementRow) Record {
 const MaxDisplayNameLen = 150
 
 // Change is one operator edit. PlanSlug is required; every other field is nil to
-// leave the stored value alone, or a value to write — the zero value clearing it.
+// leave the stored value alone, or a value to write, the zero value clearing it.
 // Nil keeps, because the common re-set is a renewal on unchanged terms.
 type Change struct {
 	PlanSlug          string
@@ -215,7 +215,7 @@ func (s *Service) SetPlan(ctx context.Context, orgID, actor string, change Chang
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	next := applyChange(cur, change)
-	// A deal's price is its product, and a product names a deal and nothing else —
+	// A deal's price is its product, and a product names a deal and nothing else:
 	// the rule the custom_needs_product constraint holds too, said as a sentence.
 	if next.PlanSlug == SlugCustom && next.ProviderProductID == "" {
 		return Record{}, ErrCustomNeedsProduct
@@ -544,7 +544,7 @@ type HistoryEntry struct {
 // times a year, so this is decades of it.
 const MaxHistoryRows = 200
 
-// History is operator and support data — no RPC serves it.
+// History is operator and support data: no RPC serves it.
 func (s *Service) History(ctx context.Context, orgID string) ([]HistoryEntry, error) {
 	rows, err := s.read.ListBillingEntitlementHistory(ctx, dbread.ListBillingEntitlementHistoryParams{
 		OrgID:    orgID,

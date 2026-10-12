@@ -1,8 +1,8 @@
 // Command gate holds a pull request until everyone with work in it has signed
 // the Contributor License Agreement.
 //
-// Everyone whose copyright can reach the repository through the pull request —
-// commit author, committer, co-author, and the person who opened it — must appear
+// Everyone whose copyright can reach the repository through the pull request
+// (commit author, committer, co-author, and the person who opened it) must appear
 // in tools/cla/signatures.json. The file is read both at the pull request's head,
 // where a hand-written signature lands, and at the base branch tip, where a /sign
 // comment lands one. A hand-written edit must be append-only and may only add the
@@ -120,7 +120,7 @@ type githubAPI interface {
 }
 
 // checker is everything the gate talks to. run assembles it once so check itself
-// reaches for no ambient state — not the API, not stdout, not the clock.
+// reaches for no ambient state: not the API, not stdout, not the clock.
 type checker struct {
 	cfg config
 	gh  githubAPI
@@ -163,7 +163,7 @@ func main() {
 }
 
 // escapeAnnotation applies GitHub's workflow-command encoding. An error can carry
-// a value the pull request chose — a login out of tools/cla/signatures.json — and a raw
+// a value the pull request chose (a login out of tools/cla/signatures.json), and a raw
 // newline in one would start a second command on the line below.
 var annotationEscaper = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
 
@@ -181,7 +181,7 @@ func run(ctx context.Context) error {
 	return c.check(ctx)
 }
 
-// A gate that fell over must not leave "signed — thanks!" standing on a red
+// A gate that fell over must not leave "signed, thanks!" standing on a red
 // check, nor advice the contributor has just followed and failed on.
 func (c *checker) check(ctx context.Context) error {
 	err := c.verdict(ctx)
@@ -222,8 +222,8 @@ func (c *checker) verdict(ctx context.Context) error {
 			strings.Join(unlinked, ", "), c.cfg.serverURL)
 	}
 
-	// An unidentified co-author blocks the gate like an unsigned one — a trailer
-	// names a copyright holder either way — but is reported rather than raised: it
+	// An unidentified co-author blocks the gate like an unsigned one (a trailer
+	// names a copyright holder either way) but is reported rather than raised: it
 	// is the contributor's to fix, and a checker error would bury the report.
 	coauthors, unknown, err := resolveCoauthors(ctx, c.gh, commits)
 	if err != nil {
@@ -267,7 +267,7 @@ func (c *checker) verdict(ctx context.Context) error {
 		c.syncLabels(ctx, labelUnsigned, labelSigned)
 		return errUnsigned
 	}
-	// A pull request authored entirely by bots — dependabot and friends — has no
+	// A pull request authored entirely by bots, dependabot and friends, has no
 	// human copyright to license, so there is nothing to sign for.
 	if len(checked) == 0 {
 		fmt.Fprintf(c.out, "CLA %s: no human authors across %d commit(s); nothing to sign\n", head.CLAVersion, len(commits))
@@ -366,10 +366,10 @@ func (c *checker) baseFile(ctx context.Context) (*SignatureFile, error) {
 
 // resolveCoauthors turns Co-authored-by trailers into principals. It takes the
 // API rather than hanging off the checker: the signer needs exactly this list to
-// decide who may sign, and two implementations of "who is a principal" — one
-// deciding who must sign and one deciding who may — is the single disagreement
+// decide who may sign, and two implementations of "who is a principal" (one
+// deciding who must sign and one deciding who may) is the single disagreement
 // this system cannot survive. A trailer is
-// commit-message text, so nothing in it is taken on trust — the address only
+// commit-message text, so nothing in it is taken on trust: the address only
 // chooses which login is looked up, and the id always comes back from the API.
 //
 // Only the noreply form is resolved. Any other address would have to go through

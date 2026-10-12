@@ -18,7 +18,7 @@ import (
 
 // hasRule returns true if err is a *protovalidate.ValidationError and any of
 // its violations has a rule id containing the given substring. Returns false
-// for any other error type — strict matching prevents accidental false-positive
+// for any other error type: strict matching prevents accidental false-positive
 // matches against CEL compile-time diagnostics that may embed rule ids verbatim.
 func hasRule(err error, ruleSubstring string) bool {
 	var ve *protovalidate.ValidationError
@@ -226,7 +226,7 @@ func TestUserFlowQueryValidation(t *testing.T) {
 	})
 
 	t.Run("user_flow_only_for_user_flow_insight_type", func(t *testing.T) {
-		req := validQueryRequest() // TRENDS with events — otherwise valid
+		req := validQueryRequest() // TRENDS with events, otherwise valid
 		req.Spec.UserFlow = &insightsv1.UserFlowQuery{}
 		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_only_for_user_flow") {
 			t.Errorf("expected user_flow_only_for_user_flow, got: %v", err)
@@ -450,7 +450,7 @@ func TestTopKQueryValidation(t *testing.T) {
 	})
 
 	t.Run("top_k_only_for_top_k_insight_type", func(t *testing.T) {
-		req := validQueryRequest() // TRENDS with events — otherwise valid
+		req := validQueryRequest() // TRENDS with events, otherwise valid
 		req.Spec.TopK = &insightsv1.TopKQuery{
 			Dimension: insightsv1.TopKQuery_DIMENSION_EVENT_KIND.Enum(),
 		}
@@ -905,8 +905,8 @@ func TestGranularityValidation(t *testing.T) {
 }
 
 // TestFunnelOnlyConversionWindow exercises the funnel_only_conversion_window CEL rule.
-// The rule changed semantics this PR — from "conversion_window_seconds == 0" to
-// "!has(this.conversion_window)" — so any *set* (even zero-Duration) field on a non-funnel
+// The rule changed semantics this PR, from "conversion_window_seconds == 0" to
+// "!has(this.conversion_window)", so any *set* (even zero-Duration) field on a non-funnel
 // insight type now fails validation.
 func TestFunnelOnlyConversionWindow(t *testing.T) {
 	tests := []struct {
@@ -917,29 +917,29 @@ func TestFunnelOnlyConversionWindow(t *testing.T) {
 		wantRule    string
 	}{
 		{
-			name:        "funnel with window — accepted",
+			name:        "funnel with window: accepted",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
 			window:      durationpb.New(1 * time.Hour),
 		},
 		{
-			name:        "funnel without window — accepted",
+			name:        "funnel without window: accepted",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
 			window:      nil,
 		},
 		{
-			name:        "trends without window — accepted",
+			name:        "trends without window: accepted",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 			window:      nil,
 		},
 		{
-			name:        "trends with explicit window — rejected",
+			name:        "trends with explicit window: rejected",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 			window:      durationpb.New(1 * time.Hour),
 			wantErr:     true,
 			wantRule:    "funnel_only_conversion_window",
 		},
 		{
-			name:        "retention with window — rejected",
+			name:        "retention with window: rejected",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
 			window:      durationpb.New(30 * time.Minute),
 			wantErr:     true,
@@ -985,29 +985,29 @@ func TestFunnelOnlyStepTiming(t *testing.T) {
 		wantRule    string
 	}{
 		{
-			name:        "funnel with include_step_timing=true — accepted",
+			name:        "funnel with include_step_timing=true: accepted",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
 			include:     true,
 		},
 		{
-			name:        "funnel with include_step_timing=false — accepted",
+			name:        "funnel with include_step_timing=false: accepted",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
 			include:     false,
 		},
 		{
-			name:        "trends with include_step_timing=false — accepted",
+			name:        "trends with include_step_timing=false: accepted",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 			include:     false,
 		},
 		{
-			name:        "trends with include_step_timing=true — rejected",
+			name:        "trends with include_step_timing=true: rejected",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 			include:     true,
 			wantErr:     true,
 			wantRule:    "funnel_only_step_timing",
 		},
 		{
-			name:        "segmentation with include_step_timing=true — rejected",
+			name:        "segmentation with include_step_timing=true: rejected",
 			insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 			include:     true,
 			wantErr:     true,
@@ -1050,11 +1050,11 @@ func TestConversionWindowMinimum(t *testing.T) {
 		window  *durationpb.Duration
 		wantErr bool
 	}{
-		{name: "1s — accepted", window: durationpb.New(1 * time.Second)},
-		{name: "1h — accepted", window: durationpb.New(1 * time.Hour)},
-		{name: "500ms — rejected (sub-second)", window: durationpb.New(500 * time.Millisecond), wantErr: true},
-		{name: "0s — rejected (sub-second)", window: durationpb.New(0), wantErr: true},
-		{name: "negative — rejected", window: durationpb.New(-1 * time.Second), wantErr: true},
+		{name: "1s: accepted", window: durationpb.New(1 * time.Second)},
+		{name: "1h: accepted", window: durationpb.New(1 * time.Hour)},
+		{name: "500ms: rejected (sub-second)", window: durationpb.New(500 * time.Millisecond), wantErr: true},
+		{name: "0s: rejected (sub-second)", window: durationpb.New(0), wantErr: true},
+		{name: "negative: rejected", window: durationpb.New(-1 * time.Second), wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1087,12 +1087,12 @@ func TestConversionWindowWholeSeconds(t *testing.T) {
 		window  *durationpb.Duration
 		wantErr bool
 	}{
-		{name: "1s — accepted", window: durationpb.New(1 * time.Second)},
-		{name: "30s — accepted", window: durationpb.New(30 * time.Second)},
-		{name: "1h — accepted", window: durationpb.New(1 * time.Hour)},
-		{name: "1500ms — rejected (sub-second precision)", window: durationpb.New(1500 * time.Millisecond), wantErr: true},
-		{name: "1s + 1ns — rejected", window: durationpb.New(time.Second + time.Nanosecond), wantErr: true},
-		{name: "2700ms — rejected", window: durationpb.New(2700 * time.Millisecond), wantErr: true},
+		{name: "1s: accepted", window: durationpb.New(1 * time.Second)},
+		{name: "30s: accepted", window: durationpb.New(30 * time.Second)},
+		{name: "1h: accepted", window: durationpb.New(1 * time.Hour)},
+		{name: "1500ms: rejected (sub-second precision)", window: durationpb.New(1500 * time.Millisecond), wantErr: true},
+		{name: "1s + 1ns: rejected", window: durationpb.New(time.Second + time.Nanosecond), wantErr: true},
+		{name: "2700ms: rejected", window: durationpb.New(2700 * time.Millisecond), wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

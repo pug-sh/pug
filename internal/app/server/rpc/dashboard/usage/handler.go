@@ -39,7 +39,7 @@ func (s *Server) GetUsage(
 
 	orgID := req.Msg.GetOrgId()
 	// The org's own quota window, which starts on its billing anniversary rather
-	// than the 1st — resolved through the same helper the meter uses, so the
+	// than the 1st, resolved through the same helper the meter uses, so the
 	// window shown and the window summed cannot diverge.
 	periodStart, periodEnd, err := s.service.GetOrgPeriod(ctx, orgID, time.Now())
 	if err != nil {

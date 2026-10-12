@@ -28,7 +28,7 @@ const readinessTimeout = 2 * time.Second
 const readinessFailureAlertThreshold = 5
 
 // livenessHandler answers Kubernetes liveness probes. It reports only that the
-// process is up and serving — it deliberately does NOT check dependencies, so a
+// process is up and serving; it deliberately does NOT check dependencies, so a
 // transient dependency blip can't trigger a restart cascade across replicas.
 func livenessHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -62,7 +62,7 @@ func (d *deps) readinessHandler(w http.ResponseWriter, r *http.Request) {
 // writeReadiness runs every dependency check and writes the probe response: 200
 // with all deps "ok", or 503 if any fails. Checks run concurrently against a
 // single shared deadline (the ctx passed in), so total probe latency is bounded
-// by the slowest dependency rather than the sum of all of them — a slow check
+// by the slowest dependency rather than the sum of all of them: a slow check
 // can't serialize ahead of the others and starve them of their budget. It returns
 // the overall readiness and the per-dependency failures (the underlying error
 // strings, operator-only) so the caller can log/escalate without re-running the
@@ -112,8 +112,8 @@ func writeReadiness(ctx context.Context, w http.ResponseWriter, checks map[strin
 // outage. A one-off failure is a routine operational signal (WARN) so a transient
 // dependency blip doesn't pollute error telemetry. Once failures persist for
 // readinessFailureAlertThreshold consecutive probes the outage is no longer a
-// blip: it escalates to slog.ErrorContext — exported at ERROR severity via the
-// otelslog bridge — so a fleet stuck NotReady can't drain from its Service with
+// blip: it escalates to slog.ErrorContext, exported at ERROR severity via the
+// otelslog bridge, so a fleet stuck NotReady can't drain from its Service with
 // only WARN noise to show for it. It stays escalated for the duration (not just
 // at the transition) so the signal can't age out while the outage continues; a
 // single healthy probe resets the counter.

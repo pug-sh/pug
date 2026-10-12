@@ -24,7 +24,7 @@ const (
 
 // Platform identifies the client/runtime an event is intended for.
 // Used by SDK codegen tooling to decide which language targets should
-// surface a given well-known event. Like `kind`, this is an SDK hint —
+// surface a given well-known event. Like `kind`, this is an SDK hint:
 // the server does not enforce it.
 //
 // Naming note: a separate `Platform` enum exists in
@@ -32,7 +32,7 @@ const (
 // targets (ANDROID/IOS only). The two enums describe different concepts
 // (event source vs push transport) and intentionally coexist; in Go
 // they are `commoneventsv1.Platform` vs `deliveryv1.Platform`. Their
-// ordinal integers are independent — do not assume a value name shared
+// ordinal integers are independent; do not assume a value name shared
 // between them encodes to the same wire integer in both packages.
 type Platform int32
 

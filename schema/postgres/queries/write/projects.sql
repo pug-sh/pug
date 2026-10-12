@@ -9,7 +9,7 @@ returning *;
 
 -- name: CreateProjectAsAdmin :one
 -- CreateProject plus the admin guard. Returns no row for a non-admin, which
--- leaves the caller's transaction without a project — so the starter key insert
+-- leaves the caller's transaction without a project, so the starter key insert
 -- that follows never runs either.
 with check_admin as (
   select 1 from org_members

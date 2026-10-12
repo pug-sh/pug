@@ -138,7 +138,7 @@ var organicReferrers = []string{
 	"https://news.ycombinator.com",
 	"https://www.youtube.com",
 	// Self-referral: attribution.Derive blanks it (same host as $url), so the
-	// session classifies Direct — keeps the blanking path exercised in demo data.
+	// session classifies Direct. Keeps the blanking path exercised in demo data.
 	storeURL + "/",
 }
 

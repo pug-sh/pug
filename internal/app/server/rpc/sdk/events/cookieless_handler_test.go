@@ -41,8 +41,8 @@ type stubResolver struct {
 
 // DayOf derives the day from occur rather than returning a constant. A fixed day
 // made a two-day batch unrepresentable in tests, so the per-day memoisation in
-// resolveCookieless — whose comment promises "a batch can legitimately straddle
-// UTC midnight (two days, two salts, two ids)" — could not be exercised, and
+// resolveCookieless (whose comment promises "a batch can legitimately straddle
+// UTC midnight (two days, two salts, two ids)") could not be exercised, and
 // collapsing it to a single batch-wide key passed.
 func (s *stubResolver) DayOf(occur time.Time) (cookieless.Day, bool) {
 	return cookieless.Day(occur.UTC().Format("20060102")), s.dayOK
@@ -51,7 +51,7 @@ func (s *stubResolver) DayOf(occur time.Time) (cookieless.Day, bool) {
 // DistinctID records EVERY argument, not just ip/ua. Discarding day and
 // projectID left the four same-typed string parameters mutually
 // indistinguishable to the test suite: transposing day and projectID at the call
-// site kept the whole suite green while keying the salt by project — one salt per
+// site kept the whole suite green while keying the salt by project: one salt per
 // project, minted once, never rotating, silently destroying the daily-rotation
 // privacy guarantee this package exists to provide.
 func (s *stubResolver) DistinctID(_ context.Context, day cookieless.Day, projectID, ip, ua string) (string, error) {
@@ -173,7 +173,7 @@ func TestResolveCookieless_DayOutOfRange_DropsOnlyCookieless(t *testing.T) {
 		t.Errorf("dropped = %d, want 1", got)
 	}
 	if got := resp.Msg.GetDroppedByReason()[dropReasonDayOutOfRange]; got != 1 {
-		t.Errorf("dropped_by_reason[%s] = %d, want 1 — a client must be able to tell "+
+		t.Errorf("dropped_by_reason[%s] = %d, want 1: a client must be able to tell "+
 			"permanent clock skew from a retryable server fault", dropReasonDayOutOfRange, got)
 	}
 	var batch eventsv1.EventBatch
@@ -193,7 +193,7 @@ func TestResolveCookieless_SaltUnavailable_DropsOnlyCookieless(t *testing.T) {
 	// A MIXED batch, which is what this test's name claims to cover: a salt
 	// outage must strand the cookieless events and still publish the consented
 	// ones. Sending only cookieless events would pin the 200-not-500 decision
-	// while leaving "only" — the partial acceptance — unverified.
+	// while leaving "only", the partial acceptance, unverified.
 	resp, err := s.BatchCreate(ctxWithProject(context.Background()),
 		cookielessReq(testCookielessEvent(), testConsentedEvent("anon-u1"), testCookielessEvent()))
 	if err != nil {
@@ -206,7 +206,7 @@ func TestResolveCookieless_SaltUnavailable_DropsOnlyCookieless(t *testing.T) {
 		t.Errorf("dropped = %d, want 2", got)
 	}
 	// salt_unavailable is a server fault, so the reason is what tells the client
-	// this payload is worth retrying — the distinction accepted=1 alone erases.
+	// this payload is worth retrying, the distinction accepted=1 alone erases.
 	if got := resp.Msg.GetDroppedByReason()[dropReasonSaltUnavailable]; got != 2 {
 		t.Errorf("dropped_by_reason[%s] = %d, want 2", dropReasonSaltUnavailable, got)
 	}
@@ -235,7 +235,7 @@ func TestResolveCookieless_AllDropped_ReportsReasonNotBareZero(t *testing.T) {
 	if js.data != nil {
 		t.Error("nothing must be published for an all-dropped batch")
 	}
-	// The all-dropped path returns early, before publish — it must still carry the
+	// The all-dropped path returns early, before publish; it must still carry the
 	// tally, or a total loss looks identical to an empty request.
 	if got := resp.Msg.GetDropped(); got != 1 {
 		t.Errorf("dropped = %d, want 1 on the all-dropped early return", got)
@@ -262,8 +262,8 @@ func TestResolveCookieless_NoCookielessEvents_NoResolverNeeded(t *testing.T) {
 }
 
 // TestResolveCookieless_PassesArgumentsInOrder guards the call site's argument
-// order. Its day/projectID half is now enforced by the compiler — cookieless.Day
-// is a distinct type, so transposing those two no longer builds — but ip and ua
+// order. Its day/projectID half is now enforced by the compiler (cookieless.Day
+// is a distinct type, so transposing those two no longer builds), but ip and ua
 // are both plain strings and remain transposable in silence, producing a real id
 // derived from the wrong inputs.
 func TestResolveCookieless_PassesArgumentsInOrder(t *testing.T) {
@@ -295,7 +295,7 @@ func TestResolveCookieless_PassesArgumentsInOrder(t *testing.T) {
 // TestResolveCookieless_BatchStraddlingMidnightGetsTwoIDs exercises the per-day
 // memoisation. resolveCookieless caches the derived id per day precisely because
 // "a batch can legitimately straddle UTC midnight (two days, two salts, two
-// ids)" — and collapsing that cache to one batch-wide key used to pass, because
+// ids)", and collapsing that cache to one batch-wide key used to pass, because
 // the stub returned a constant day and no test could express a two-day batch.
 //
 // Merging the two days would hand both events one id across the rotation
@@ -320,10 +320,10 @@ func TestResolveCookieless_BatchStraddlingMidnightGetsTwoIDs(t *testing.T) {
 		t.Fatalf("kept %d events, want 2", len(kept))
 	}
 	if res.distinctCalls != 2 {
-		t.Errorf("DistinctID called %d times, want 2 — a batch spanning midnight needs one id per day", res.distinctCalls)
+		t.Errorf("DistinctID called %d times, want 2: a batch spanning midnight needs one id per day", res.distinctCalls)
 	}
 	if len(res.gotDays) == 2 && res.gotDays[0] == res.gotDays[1] {
-		t.Errorf("both events resolved under day %q — the two sides of midnight were merged", res.gotDays[0])
+		t.Errorf("both events resolved under day %q: the two sides of midnight were merged", res.gotDays[0])
 	}
 }
 
@@ -366,7 +366,7 @@ func TestResolveCookieless_DegradedSessionStillPublishes(t *testing.T) {
 		t.Fatalf("a degraded session must not fail the request: %v", err)
 	}
 	if len(kept) != 1 {
-		t.Fatalf("kept %d events, want 1 — degraded means coarser sessions, never lost data", len(kept))
+		t.Fatalf("kept %d events, want 1: degraded means coarser sessions, never lost data", len(kept))
 	}
 	if drops.total() != 0 {
 		t.Errorf("dropped %d events on a degraded session, want 0", drops.total())
@@ -377,8 +377,8 @@ func TestResolveCookieless_DegradedSessionStillPublishes(t *testing.T) {
 }
 
 // TestResolveCookieless_CorruptSaltReportsDistinctReason pins the CONSUMER half
-// of ErrCorruptSalt. The producer half — storeSalt rejecting an undecodable or
-// wrong-length value — was already pinned; this branch was not. Deleting the
+// of ErrCorruptSalt. The producer half, storeSalt rejecting an undecodable or
+// wrong-length value, was already pinned; this branch was not. Deleting the
 // errors.Is from resolveCookieless left the entire package green, so a corrupt
 // salt would have been reported to operators and clients as salt_unavailable.
 //
@@ -404,36 +404,36 @@ func TestResolveCookieless_CorruptSaltReportsDistinctReason(t *testing.T) {
 		t.Fatalf("BatchCreate: %v", err)
 	}
 	if got := resp.Msg.GetDroppedByReason()[dropReasonSaltCorrupt]; got != 1 {
-		t.Errorf("dropped_by_reason[%s] = %d, want 1 — a corrupt salt must not be "+
+		t.Errorf("dropped_by_reason[%s] = %d, want 1: a corrupt salt must not be "+
 			"reported as the retryable reason", dropReasonSaltCorrupt, got)
 	}
 	if got := resp.Msg.GetDroppedByReason()[dropReasonSaltUnavailable]; got != 0 {
-		t.Errorf("dropped_by_reason[%s] = %d, want 0 — retrying never clears a corrupt salt",
+		t.Errorf("dropped_by_reason[%s] = %d, want 0: retrying never clears a corrupt salt",
 			dropReasonSaltUnavailable, got)
 	}
 	if got := resp.Msg.GetAccepted(); got != 1 {
-		t.Errorf("accepted = %d, want 1 — consented traffic is unaffected by a salt fault", got)
+		t.Errorf("accepted = %d, want 1: consented traffic is unaffected by a salt fault", got)
 	}
 }
 
 // TestDropReasons_RegistryMatchesDeclaredConstants pins the drop-reason
-// vocabulary against ADDITION — which is precisely what its predecessor could
+// vocabulary against ADDITION, which is precisely what its predecessor could
 // not do.
 //
 // The reason strings ship to clients as keys of
 // BatchCreateResponse.dropped_by_reason, and the proto comment invites branching
 // on them (salt_unavailable is retryable, day_out_of_range is not). The wire type
-// is map<string, uint32> — protobuf forbids enum map keys — so clients get no
+// is map<string, uint32> (protobuf forbids enum map keys), so clients get no
 // generated symbol and the valid set exists only as these constants plus prose.
 //
 // The previous version of this test asserted nothing. It built a 4-entry map
-// literal from the constants, then checked `len(want) != 4` — unreachable, since
+// literal from the constants, then checked `len(want) != 4` (unreachable, since
 // duplicate constant keys in a Go map literal are a COMPILE error, so the literal
-// is always exactly 4 — and a duplicate check over map keys, also unreachable
+// is always exactly 4) and a duplicate check over map keys, also unreachable
 // since ranging a map yields unique keys. Only the empty-string check was live.
 // Adding and emitting a fifth reason left it green. Worse, because salt_corrupt
 // appeared in its table the reason READ as covered, while its consumer branch
-// (the errors.Is in resolveCookieless) was in fact unpinned — deleting that
+// (the errors.Is in resolveCookieless) was in fact unpinned: deleting that
 // branch kept the whole package green. See TestResolveCookieless_CorruptSaltReportsDistinctReason.
 //
 // This version reads the declarations out of the source with go/ast, so a new
@@ -473,13 +473,13 @@ func TestDropReasons_RegistryMatchesDeclaredConstants(t *testing.T) {
 		}
 	}
 	if len(declared) == 0 {
-		t.Fatal("found no dropReason* constants in handler.go — the AST scan broke, not the code")
+		t.Fatal("found no dropReason* constants in handler.go: the AST scan broke, not the code")
 	}
 
 	registered := map[string]bool{}
 	for _, r := range allDropReasons {
 		if r == "" {
-			t.Error("a drop reason must never be empty — it becomes a metric label and a wire key")
+			t.Error("a drop reason must never be empty: it becomes a metric label and a wire key")
 		}
 		if registered[r] {
 			t.Errorf("duplicate drop reason %q: the metric label and the wire key would collide", r)
@@ -501,7 +501,7 @@ func TestDropReasons_RegistryMatchesDeclaredConstants(t *testing.T) {
 
 // TestPeerIP covers the two fallbacks that only fire without a proxy header.
 // peerIP is the last resort for the cookieless HMAC's ip input, so returning the
-// wrong string here does not fail — it silently derives a different visitor.
+// wrong string here does not fail: it silently derives a different visitor.
 func TestPeerIP(t *testing.T) {
 	for _, c := range []struct{ name, addr, want string }{
 		{"host_port", "198.51.100.4:44321", "198.51.100.4"},
@@ -512,7 +512,7 @@ func TestPeerIP(t *testing.T) {
 		// The peer host keys an HMAC exactly like a header-derived IP, so it must
 		// clear the same bar. geo.ClientIP was given parsing precisely so the
 		// NUL-framing argument in DistinctID would hold by construction rather
-		// than by transport accident — but this path bypassed it:
+		// than by transport accident, but this path bypassed it:
 		// net.SplitHostPort("198.51.100.4\x00x:44321") returns that host with a
 		// nil error, and the no-port branch returns the string verbatim. Safe only
 		// while RemoteAddr is kernel-derived; a Unix socket, an h2c shim or a
@@ -535,7 +535,7 @@ func TestPeerIP(t *testing.T) {
 // TestIdentitySource pins that a rejected proxy header stays distinguishable
 // from an absent one after the peer fallback. Collapsing the two hides the case
 // where a proxy emits unparseable addresses and every visitor behind it hashes
-// to the proxy's own — one identity per UA per day for the whole tenant, at a
+// to the proxy's own: one identity per UA per day for the whole tenant, at a
 // 200 response, with no other symptom.
 func TestIdentitySource(t *testing.T) {
 	for _, c := range []struct {

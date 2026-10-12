@@ -90,7 +90,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to send email", slogx.Error(err),
-			slog.String("dispatch_id", job.GetDispatchId())) // puglint:exempt — the mailer recorded it at source
+			slog.String("dispatch_id", job.GetDispatchId())) // puglint:exempt (the mailer recorded it at source)
 		if coreemail.IsPermanentError(err) {
 			return natsworker.NewPermanentError(err).With("worker", "misc_email")
 		}
@@ -101,7 +101,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 
 // idempotencyKeyForJob keys the send on the dispatch id: fresh per issuance, so
 // a resend never reuses the original's key, and stable across redeliveries.
-// Errors on a blank id — providers skip the header, silently disabling dedup.
+// Errors on a blank id: providers skip the header, silently disabling dedup.
 func idempotencyKeyForJob(job *emailworkerv1.EmailJob) (string, error) {
 	id := strings.TrimSpace(job.GetDispatchId())
 	if id == "" {

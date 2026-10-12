@@ -129,7 +129,7 @@ func TestAuthService(t *testing.T) {
 		}
 		// Pin the access token's absolute lifetime. It is not a theft bound (the
 		// client holds both tokens in one localStorage), but a regression to a long
-		// TTL would turn every leaked JWT into a near-permanent credential — SignOut
+		// TTL would turn every leaked JWT into a near-permanent credential: SignOut
 		// revokes the refresh family, never an issued JWT. The band is absolute, not
 		// a ratio to refreshTokenTTL: package auth_test can read neither constant.
 		if claims.ExpiresAt == nil || claims.IssuedAt == nil {
@@ -225,7 +225,7 @@ func TestEmailPublishFailureCountersByKind(t *testing.T) {
 
 	t.Run("unknown", func(t *testing.T) {
 		// Direct PublishEmailJobForTest call with an EmailJob whose Payload
-		// oneof is unset hits the default branch of payloadKindFromJob — the
+		// oneof is unset hits the default branch of payloadKindFromJob, the
 		// only counter bucket that fires on proto drift, so it must be
 		// observable to operators.
 		svc.PublishEmailJobForTest(ctx, &emailworkerv1.EmailJob{})

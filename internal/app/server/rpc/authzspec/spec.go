@@ -8,9 +8,9 @@
 // Spec only through the constructors here:
 //
 //   - A role-gated Spec cannot be written as a bare struct literal that forgets
-//     orgSource — OrgGated/ProjGated always set the full triple.
+//     orgSource: OrgGated/ProjGated always set the full triple.
 //   - A non-role-gated literal cannot carry a stray (resource, action) that would
-//     read as gated but be silently ignored — the fields can't be set from
+//     read as gated but be silently ignored: the fields can't be set from
 //     outside the package.
 //   - The lone literal still expressible from outside, authzspec.Spec{}, is
 //     kindUnset and is rejected by the registry-completeness test (Defined()).
@@ -26,7 +26,7 @@ import "github.com/pug-sh/pug/internal/core/authz"
 type kind int
 
 const (
-	// kindUnset is the zero value — a bare Spec{}. It is neither gated nor a valid
+	// kindUnset is the zero value: a bare Spec{}. It is neither gated nor a valid
 	// decision; the registry-completeness test rejects it via Defined().
 	kindUnset kind = iota
 	// kindPublic: no authentication (the auth service; public share links).
@@ -37,10 +37,10 @@ const (
 	// kindSelfWrite: authenticated customer changing their OWN data / orgs; no
 	// org-role gate (e.g. Create/Leave orgs, SetPassword).
 	kindSelfWrite
-	// kindRoleGated: an org-role gate applies — the interceptor resolves the
+	// kindRoleGated: an org-role gate applies; the interceptor resolves the
 	// caller's role and checks (resource, action).
 	kindRoleGated
-	// kindProject: project-scoped via x-project-id, with NO org-role gate —
+	// kindProject: project-scoped via x-project-id, with NO org-role gate;
 	// project access is fully established at auth time (Principal.Project is set
 	// only for org members) and the RPC merely echoes it (projects.Get). A role
 	// check would be redundant: the only read it allows is in every role's floor.
@@ -50,7 +50,7 @@ const (
 )
 
 // OrgSource says how AuthzInterceptor resolves the org a role-gated RPC is
-// authorized in — the one thing that varies per role-gated RPC, and what makes a
+// authorized in: the one thing that varies per role-gated RPC, and what makes a
 // single generic interceptor viable across both planes. The zero value is "no org
 // source"; a non-role-gated Spec has it by construction.
 type OrgSource int
@@ -61,7 +61,7 @@ const (
 	// orgemailproviders.*). The org control plane.
 	OrgFromMessage OrgSource = iota + 1
 	// OrgFromProject: the org is the x-project-id project's org
-	// (principal.Project.OrgID) — dashboards / insights / activity / profiles and
+	// (principal.Project.OrgID). Dashboards / insights / activity / profiles and
 	// the project-lifecycle writes. The project data plane.
 	OrgFromProject
 )
@@ -79,7 +79,7 @@ func (o OrgSource) String() string {
 }
 
 // Spec is the authorization decision for one RPC. It is immutable and can only be
-// built via the constructors below — which is what makes the role-gated invariant
+// built via the constructors below, which is what makes the role-gated invariant
 // hold by construction. For a role-gated Spec, AuthzInterceptor reads
 // (Resource, Action, OrgSource) and enforces them, so the registry is the single
 // ENFORCED source of truth: a drifted pair changes real behavior and is caught by
@@ -102,11 +102,11 @@ func firstNote(notes []string) string {
 // Public builds a no-auth Spec.
 func Public(notes ...string) Spec { return Spec{kind: kindPublic, note: firstNote(notes)} }
 
-// SelfRead builds a Spec for an authenticated customer reading their OWN data —
+// SelfRead builds a Spec for an authenticated customer reading their OWN data:
 // no org-role gate.
 func SelfRead(notes ...string) Spec { return Spec{kind: kindSelfRead, note: firstNote(notes)} }
 
-// SelfWrite builds a Spec for an authenticated customer changing their OWN data —
+// SelfWrite builds a Spec for an authenticated customer changing their OWN data:
 // no org-role gate, but refused for the demo account.
 func SelfWrite(notes ...string) Spec { return Spec{kind: kindSelfWrite, note: firstNote(notes)} }
 

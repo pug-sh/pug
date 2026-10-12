@@ -223,7 +223,7 @@ func TestHandleIdentify_UpsertMergesTraits(t *testing.T) {
 		t.Fatalf("query profile after first identify: %v", err)
 	}
 
-	// Second identify: merges traits — new traits overwrite existing keys.
+	// Second identify: merges traits; new traits overwrite existing keys.
 	data2 := makeIdentifyData(t, projectID, "bob@test.com", "", "", map[string]any{"plan": "pro", "role": "admin"})
 	if err := handleIdentify(ctx, w, natsClient, data2); err != nil {
 		t.Fatalf("second identify: %v", err)
@@ -389,7 +389,7 @@ func TestHandleIdentify_MergeOverlappingKeys(t *testing.T) {
 
 	w := profiles.NewWorker(pg.PgW)
 
-	// Identify with traits that overlap on "plan" — target should win.
+	// Identify with traits that overlap on "plan": target should win.
 	data := makeIdentifyData(t, projectID, "overlap@test.com", anonID, "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
@@ -511,7 +511,7 @@ func TestHandleIdentify_RetryAfterMerge(t *testing.T) {
 		t.Fatalf("upsert target: %v", err)
 	}
 
-	// Identify with an anonymous_id that does NOT exist — simulates retry
+	// Identify with an anonymous_id that does NOT exist: simulates retry
 	// where the anonymous profile was already merged and deleted.
 	ghostAnonID := xid.New().String()
 	data := makeIdentifyData(t, projectID, "eve@test.com", ghostAnonID, "", map[string]any{"plan": "pro"})
@@ -519,7 +519,7 @@ func TestHandleIdentify_RetryAfterMerge(t *testing.T) {
 		t.Fatalf("retry identify: %v", err)
 	}
 
-	// Should succeed via ErrNoRows fallback — produces 2 upserts + 1 alias.
+	// Should succeed via ErrNoRows fallback: produces 2 upserts + 1 alias.
 	upserts := fetchUpserts(t, ctx, js, 2)
 	if len(upserts) != 2 {
 		t.Fatalf("expected 2 upserts, got %d", len(upserts))
@@ -599,7 +599,7 @@ func TestHandleIdentify_CrossProjectIsolation(t *testing.T) {
 
 	w := profiles.NewWorker(pg.PgW)
 
-	// Identify in project B with anonymous_id from project A — should NOT merge.
+	// Identify in project B with anonymous_id from project A: should NOT merge.
 	data := makeIdentifyData(t, projectB, "cross@test.com", anonID, "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
@@ -628,7 +628,7 @@ func TestHandleIdentify_CrossProjectIsolation(t *testing.T) {
 		t.Fatalf("query profile in project B: %v", err)
 	}
 	if props["source"] == "web" {
-		t.Error("project B profile got project A's anonymous properties — cross-project isolation broken")
+		t.Error("project B profile got project A's anonymous properties: cross-project isolation broken")
 	}
 	if props["plan"] != "pro" {
 		t.Errorf("plan = %v, want %q", props["plan"], "pro")
@@ -663,7 +663,7 @@ func TestHandleIdentify_LinkDevice(t *testing.T) {
 
 	w := profiles.NewWorker(pg.PgW)
 
-	// Identify with device_id set — should link device to the identified profile.
+	// Identify with device_id set: should link device to the identified profile.
 	data := makeIdentifyData(t, projectID, "link@test.com", "", deviceID, nil)
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
@@ -733,7 +733,7 @@ func TestHandleIdentify_DeviceAccountSwitch(t *testing.T) {
 
 	w := profiles.NewWorker(pg.PgW)
 
-	// Identify as profile B with the same device_id — account switch.
+	// Identify as profile B with the same device_id: account switch.
 	data := makeIdentifyData(t, projectID, "profile-b@test.com", "", deviceID, nil)
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
@@ -880,7 +880,7 @@ func TestSoftDeleteIdempotency(t *testing.T) {
 		ProjectID: projectID,
 	}
 
-	// First soft-delete — should affect 1 row.
+	// First soft-delete: should affect 1 row.
 	rows1, err := write.SoftDeleteProfileByIDAndProjectID(ctx, params)
 	if err != nil {
 		t.Fatalf("first soft delete: %v", err)
@@ -889,7 +889,7 @@ func TestSoftDeleteIdempotency(t *testing.T) {
 		t.Errorf("first soft delete rows = %d, want 1", rows1)
 	}
 
-	// Second soft-delete — should affect 0 rows (already deleted).
+	// Second soft-delete: should affect 0 rows (already deleted).
 	rows2, err := write.SoftDeleteProfileByIDAndProjectID(ctx, params)
 	if err != nil {
 		t.Fatalf("second soft delete: %v", err)
@@ -988,7 +988,7 @@ func TestReIdentifyAfterSoftDelete(t *testing.T) {
 	read := dbread.New(pg.PgW)
 	write := dbwrite.New(pg.PgW)
 
-	// Step 1: Identify — creates profile.
+	// Step 1: Identify (creates profile).
 	data := makeIdentifyData(t, projectID, "reident@test.com", "", "", nil)
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("first identify: %v", err)
@@ -1074,7 +1074,7 @@ func TestMergeWithSoftDeletedAnonymousProfile(t *testing.T) {
 
 	w := profiles.NewWorker(pg.PgW)
 
-	// Identify with the soft-deleted anonymous_id — merge should gracefully skip.
+	// Identify with the soft-deleted anonymous_id: merge should gracefully skip.
 	data := makeIdentifyData(t, projectID, "merge-deleted@test.com", anonID, "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)

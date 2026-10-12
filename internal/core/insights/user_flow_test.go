@@ -125,7 +125,7 @@ func TestGroupUserFlowResult_ChainAdjacencyAndNodes(t *testing.T) {
 
 // TestGroupUserFlowResult_SameLabelDistinctPerStep pins the core of the step
 // model: one label reached at several positions becomes several distinct nodes,
-// one per depth — never collapsed into a single cyclic node.
+// one per depth, never collapsed into a single cyclic node.
 func TestGroupUserFlowResult_SameLabelDistinctPerStep(t *testing.T) {
 	got := insights.GroupUserFlowResult(context.Background(), chainRows(), 20, 250)
 
@@ -253,7 +253,7 @@ func TestGroupUserFlowResult_MaxLinksTruncation(t *testing.T) {
 	}
 	// "d" was only referenced by the truncated b->d link, so it drops out.
 	if n := nodesByLabel(got, "d"); len(n) != 0 {
-		t.Error("node d should be excluded — only referenced by truncated link")
+		t.Error("node d should be excluded: only referenced by truncated link")
 	}
 }
 

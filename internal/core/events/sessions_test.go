@@ -448,7 +448,7 @@ func TestDecodeProfileSessionCursor_NonPositiveAccepted(t *testing.T) {
 	}
 }
 
-// Ties on the sort column are the common case — every single-event session ties on
+// Ties on the sort column are the common case: every single-event session ties on
 // both duration and event count. The cursor's (value, session_id) tuple is what keeps
 // a page boundary inside a run of them from dropping or repeating rows.
 func TestGetProfileSessions_PaginatesThroughTies(t *testing.T) {

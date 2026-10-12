@@ -5,7 +5,7 @@ import (
 	corebilling "github.com/pug-sh/pug/internal/core/billing"
 )
 
-// Pug's own tokens, straight off src/index.css in the dashboard — the overlay opens
+// Pug's own tokens, straight off src/index.css in the dashboard: the overlay opens
 // over that page, so a mismatch is visible side by side. The font is deliberately
 // absent: font_primary_url must be a public https URL, and Figtree ships hashed.
 func customization(theme corebilling.CheckoutTheme) dodopayments.CheckoutSessionCustomizationParam {

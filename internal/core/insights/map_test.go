@@ -49,7 +49,7 @@ func TestTopKRequestForMap(t *testing.T) {
 			t.Errorf("limit = %d, want %d", got, mapCountryLimit)
 		}
 		if !tk.GetOmitOthers() {
-			t.Error("omit_others = false, want true — an $others bucket cannot be drawn on a map")
+			t.Error("omit_others = false, want true: an $others bucket cannot be drawn on a map")
 		}
 	})
 
@@ -113,7 +113,7 @@ func TestTopKRequestForMap(t *testing.T) {
 	})
 
 	// mapCountryLimit deliberately exceeds TopKQuery.limit's lte:100. That is only safe
-	// because the rewrite runs downstream of every protovalidate call — this pins the
+	// because the rewrite runs downstream of every protovalidate call; this pins the
 	// tradeoff so a defensive re-validate fails here rather than on every map tile.
 	t.Run("is deliberately not schema-valid", func(t *testing.T) {
 		out := topKRequestForMap(mapRequest(&insightsv1.MapQuery{}))
@@ -122,7 +122,7 @@ func TestTopKRequestForMap(t *testing.T) {
 		}
 	})
 
-	// PROPERTY dimension + a numeric metric is the shape only map reaches by default —
+	// PROPERTY dimension + a numeric metric is the shape only map reaches by default:
 	// every other top-K numeric test goes through the USER-dimension builder.
 	t.Run("builds a numeric metric over the country dimension", func(t *testing.T) {
 		out := topKRequestForMap(mapRequest(&insightsv1.MapQuery{

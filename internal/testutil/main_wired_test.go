@@ -15,7 +15,7 @@ import (
 // setupHelpers are the testutil entry points that start a container shared by a
 // whole package. The scan below keys off these names, so a rename that missed
 // this list would leave that helper's packages unchecked while the rest kept the
-// scan looking healthy — assertScanIsLive is what makes that loud.
+// scan looking healthy; assertScanIsLive is what makes that loud.
 var setupHelpers = []string{"SetupPostgres", "SetupClickHouse", "SetupNATS", "SetupRedis"}
 
 // pkgScan is what one walk over the repo's test files yields. Every field is
@@ -38,7 +38,7 @@ type pkgScan struct {
 //
 // The helpers share one container per test binary, so the container's teardown
 // hangs off Main rather than any single test's t.Cleanup. A package that skips it
-// still passes — it just strands its containers, with no failing test to point at.
+// still passes: it just strands its containers, with no failing test to point at.
 // This is that failing test.
 func TestSetupCallersWireMain(t *testing.T) {
 	s := scanTests(t)
@@ -63,7 +63,7 @@ func TestSetupCallersWireMain(t *testing.T) {
 			strings.Join(missing, "\n\t"), remedy)
 	}
 	// Checking for TestMain by name alone would pass the idiomatic
-	// os.Exit(m.Run()) — a TestMain that never tears a container down, and the
+	// os.Exit(m.Run()): a TestMain that never tears a container down, and the
 	// likeliest way to arrive at one is to add it for something else first.
 	if len(unwired) > 0 {
 		t.Errorf("these packages declare TestMain but never reach testutil.Main, so their shared containers outlive the run:\n\t%s%s",
@@ -168,8 +168,8 @@ func scanTests(t *testing.T) pkgScan {
 	return s
 }
 
-// assertScanIsLive guards against the scan quietly matching nothing — a renamed
-// helper, a moved root — which would leave these tests passing forever without
+// assertScanIsLive guards against the scan quietly matching nothing (a renamed
+// helper, a moved root), which would leave these tests passing forever without
 // checking anything.
 func assertScanIsLive(t *testing.T, s pkgScan) {
 	t.Helper()
@@ -185,8 +185,8 @@ func assertScanIsLive(t *testing.T, s pkgScan) {
 
 // skipDir keeps the walk out of trees with no hand-written tests to check.
 //
-// It ignores what standard Go tooling ignores — directory names beginning with
-// "." or "_", plus "testdata" and "vendor" — so a deliberately malformed
+// It ignores what standard Go tooling ignores (directory names beginning with
+// "." or "_", plus "testdata" and "vendor"), so a deliberately malformed
 // *_test.go kept as a parser fixture can't fail the ParseFile above; node_modules
 // and bin are dropped for the same reason (".git" falls under the "." rule). The
 // walk root is the repo root, which repoRoot builds through filepath.Join and so

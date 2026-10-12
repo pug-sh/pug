@@ -52,7 +52,7 @@ var chContainer = &lazyContainer[sharedClickHouse]{kind: "clickhouse", start: st
 // via t.Cleanup; the container is torn down by Main.
 func SetupClickHouse(t *testing.T) *TestClickHouse {
 	t.Helper()
-	// Scoped to the test — see the note in SetupPostgres for why the shared
+	// Scoped to the test; see the note in SetupPostgres for why the shared
 	// container and the cleanup below use context.Background instead.
 	ctx := t.Context()
 
@@ -77,7 +77,7 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 		// sync: the databases here are Atomic, which detaches a dropped table at once
 		// but only unlinks its data after database_atomic_delay_before_drop_table_sec
 		// (480s). The database leaves system.databases either way, so nothing looks
-		// wrong — but without sync every test's tables sit in system.dropped_tables
+		// wrong, but without sync every test's tables sit in system.dropped_tables
 		// holding their data, and a package's worth of them accumulates in a container
 		// the whole package shares. sync unlinks before returning.
 		//

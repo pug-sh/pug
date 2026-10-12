@@ -44,7 +44,7 @@ func TestDayOf(t *testing.T) {
 func TestDistinctID_DeterministicAndRotating(t *testing.T) {
 	ctx := context.Background()
 	r := fixedResolver(time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC))
-	// Seed salts directly — salt fetch (Redis) is covered by integration tests.
+	// Seed salts directly: salt fetch (Redis) is covered by integration tests.
 	r.salts["20260720"] = []byte("0123456789abcdef0123456789abcdef")
 	r.salts["20260719"] = []byte("fedcba9876543210fedcba9876543210")
 
@@ -119,7 +119,7 @@ func TestParseSession_RoundTrip(t *testing.T) {
 // TestStoreSalt_RejectsCorrupt pins the rejection that stands between a corrupt
 // Redis value and a fabricated identity. hmac.New accepts ANY key length, so
 // without this check a truncated or empty salt still mints confident-looking
-// ids — failing open on the one primitive the privacy guarantee rests on.
+// ids, failing open on the one primitive the privacy guarantee rests on.
 // Mutation-verified: deleting the length/decode check leaves the suite green.
 func TestStoreSalt_RejectsCorrupt(t *testing.T) {
 	r := fixedResolver(time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC))
@@ -135,7 +135,7 @@ func TestStoreSalt_RejectsCorrupt(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			got, err := r.storeSalt("20260720", c.val)
 			if err == nil {
-				t.Fatalf("storeSalt(%q) = (%x, nil), want an error — a corrupt salt must never key an HMAC", c.val, got)
+				t.Fatalf("storeSalt(%q) = (%x, nil), want an error: a corrupt salt must never key an HMAC", c.val, got)
 			}
 			if got != nil {
 				t.Errorf("rejected salt must return nil bytes, got %x", got)
@@ -153,7 +153,7 @@ func TestStoreSalt_RejectsCorrupt(t *testing.T) {
 // TestSaltForDay_RejectsDayOutsideWindow moves the accepted-window invariant from
 // caller discipline into the boundary that depends on it. DayOf computes the
 // window and the ingest handler honours it, but saltForDay itself accepted any
-// string — so a malformed or out-of-window day minted a real salt and persisted
+// string, so a malformed or out-of-window day minted a real salt and persisted
 // it under its own key, outliving every code path that could use it.
 func TestSaltForDay_RejectsDayOutsideWindow(t *testing.T) {
 	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
@@ -172,7 +172,7 @@ func TestSaltForDay_RejectsDayOutsideWindow(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if _, err := r.saltForDay(context.Background(), c.day); err == nil {
-				t.Errorf("saltForDay(%q) = nil error, want rejection — an out-of-window day must never mint a salt", c.day)
+				t.Errorf("saltForDay(%q) = nil error, want rejection: an out-of-window day must never mint a salt", c.day)
 			}
 		})
 	}
@@ -183,7 +183,7 @@ func TestSaltForDay_RejectsDayOutsideWindow(t *testing.T) {
 // be minted.
 //
 // The TTL is the privacy guarantee, so its anchor matters: SetNX stamps expiry at
-// mint, and a salt is minted lazily on the first event attributed to that day —
+// mint, and a salt is minted lazily on the first event attributed to that day,
 // which an offline-buffered flush can push to nearly D+2. A flat 72h therefore
 // kept a salt re-derivable until as late as D+5, and made "at most two salts are
 // ever live" false (up to five coexist). Anchoring to D+2 00:00 UTC makes that
@@ -209,7 +209,7 @@ func TestSaltTTLFor_DayAligned(t *testing.T) {
 				t.Errorf("saltTTLFor(%s) at %v = %v, want %v (expiry must be D+2 00:00 UTC)", c.day, c.now, got, c.want)
 			}
 			if got > 48*time.Hour {
-				t.Errorf("TTL %v exceeds the 48h accepted window — the salt would outlive every path that can use it", got)
+				t.Errorf("TTL %v exceeds the 48h accepted window: the salt would outlive every path that can use it", got)
 			}
 		})
 	}
@@ -257,7 +257,7 @@ func TestStaleSessionID_PerWindow(t *testing.T) {
 // It shares the salt_unavailable drop path with a Redis outage, but the two need
 // opposite operator responses: an outage clears itself and the same payload
 // succeeds on retry, whereas a corrupt value is re-read and re-rejected until
-// the key expires — the drop reason's own comment ("the same payload may succeed
+// the key expires. The drop reason's own comment ("the same payload may succeed
 // on retry") is false for it. Only this code writes the key, so a corrupt value
 // implies an external writer or a saltLen change mid-rolling-deploy; either way
 // it needs a human, not a retry.
@@ -287,10 +287,10 @@ func TestDayOf_MidnightEdges(t *testing.T) {
 	yesterdayMidnight := time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC)
 
 	if day, ok := r.DayOf(yesterdayMidnight); !ok || day != "20260719" {
-		t.Errorf("DayOf(yesterday 00:00:00.000) = (%q,%v), want (\"20260719\",true) — the window's first instant", day, ok)
+		t.Errorf("DayOf(yesterday 00:00:00.000) = (%q,%v), want (\"20260719\",true): the window's first instant", day, ok)
 	}
 	if day, ok := r.DayOf(yesterdayMidnight.Add(-time.Nanosecond)); ok {
-		t.Errorf("DayOf(yesterday 00:00 minus 1ns) = (%q,true), want rejected — one nanosecond outside the window", day)
+		t.Errorf("DayOf(yesterday 00:00 minus 1ns) = (%q,true), want rejected: one nanosecond outside the window", day)
 	}
 	todayMidnight := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
 	if day, ok := r.DayOf(todayMidnight); !ok || day != "20260720" {

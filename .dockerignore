@@ -36,7 +36,7 @@ pr-*review.md
 infra/dev/
 tools/
 
-# Proto sources & codegen config — generated Go is committed under internal/gen
+# Proto sources & codegen config: generated Go is committed under internal/gen
 proto/
 buf.yaml
 buf.gen.yaml

@@ -95,7 +95,7 @@ func (r *reasonRegistry) registered(reason Reason) bool {
 
 var codes = &reasonRegistry{seen: map[Reason]struct{}{}}
 
-// Generic reasons — mirror Connect codes, used as fallbacks for untagged errors.
+// Generic reasons: mirror Connect codes, used as fallbacks for untagged errors.
 var (
 	ReasonUnknown            = codes.add("UNKNOWN")
 	ReasonCanceled           = codes.add("CANCELED")

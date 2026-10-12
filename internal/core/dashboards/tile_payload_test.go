@@ -53,7 +53,7 @@ func mustEncode(t *testing.T, p TilePayload) EncodedTilePayload {
 
 // Pins the cardinal Encode invariant: identical inputs produce identical
 // hashes. If this fails, the SQL `payload_hash <> $1` short-circuit becomes
-// non-deterministic — the same content can be UPDATEd or no-op on different
+// non-deterministic: the same content can be UPDATEd or no-op on different
 // runs.
 func TestTilePayload_HashStableAcrossRewrites(t *testing.T) {
 	a := mustEncode(t, fullPayload())
@@ -82,7 +82,7 @@ func TestTilePayload_HashStableAcrossNilVsEmptyHeader(t *testing.T) {
 }
 
 // Position: nil and Position: &GridPosition{} both store as `{}` bytes, so they
-// must hash identically — same nil-vs-empty contract as header/visualization.
+// must hash identically, same nil-vs-empty contract as header/visualization.
 func TestTilePayload_HashStableAcrossNilVsEmptyPosition(t *testing.T) {
 	p := fullPayload()
 	p.Position = nil
@@ -97,7 +97,7 @@ func TestTilePayload_HashStableAcrossNilVsEmptyPosition(t *testing.T) {
 }
 
 // Encode must serialize position to the stored jsonb map, and a tile echoed back
-// from storage (map decoded via MapToMessage) must re-hash identically — the
+// from storage (map decoded via MapToMessage) must re-hash identically: the
 // Get→Upsert no-op short-circuit relies on it.
 func TestTilePayload_PositionEchoStableThroughStoredMap(t *testing.T) {
 	p := fullPayload()
@@ -127,7 +127,7 @@ func TestMapStoredMessage_SurfacesSchemaDrift(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	var pos dashboardsv1.GridPosition
-	// "breakpoint" is a stale layouts-shaped key — unknown to GridPosition.
+	// "breakpoint" is a stale layouts-shaped key, unknown to GridPosition.
 	if err := MapStoredMessage(context.Background(), "test.drift_surfaces", map[string]any{"breakpoint": "lg"}, &pos); err != nil {
 		t.Fatalf("MapStoredMessage: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestMapStoredMessage_NoDriftForValidOrEmpty(t *testing.T) {
 // Each customization field is part of the hash domain; mutating any of them
 // must produce a different hash. Without this, a future refactor that drops a
 // field from the hash input would silently break the short-circuit invariant
-// in the "should re-write" direction (no false negatives — but a non-trivial
+// in the "should re-write" direction (no false negatives, but a non-trivial
 // change could end up no-op'd in SQL).
 func TestTilePayload_HashChangesPerField(t *testing.T) {
 	base := mustEncode(t, fullPayload()).PayloadHash
@@ -346,17 +346,17 @@ func TestTilePayload_HashContractCoversEveryInputField(t *testing.T) {
 			tc.mut(&p)
 			got := mustEncode(t, p).PayloadHash
 			if bytes.Equal(got, zeroHash) {
-				t.Errorf("populating %q produced the zero-payload hash — field is not in the hash domain", tc.fields)
+				t.Errorf("populating %q produced the zero-payload hash: field is not in the hash domain", tc.fields)
 			}
 		})
 	}
 
 	// Sentinel: enumerate the proto descriptor's top-level fields and report
 	// any that don't appear in the case list above. Catches drift the other
-	// direction — a new proto field whose hash status nobody decided.
+	// direction: a new proto field whose hash status nobody decided.
 	desc := (&dashboardsv1.DashboardTileInput{}).ProtoReflect().Descriptor()
 	covered := map[string]bool{
-		// id is intentionally excluded — hash represents content, not identity.
+		// id is intentionally excluded: hash represents content, not identity.
 		"id": true,
 	}
 	for _, tc := range cases {
@@ -368,7 +368,7 @@ func TestTilePayload_HashContractCoversEveryInputField(t *testing.T) {
 	for i := range fields.Len() {
 		name := string(fields.Get(i).Name())
 		if !covered[name] {
-			t.Errorf("DashboardTileInput field %q is not covered by the hash contract test — decide whether it should affect the hash and update either computeTilePayloadHash or this test", name)
+			t.Errorf("DashboardTileInput field %q is not covered by the hash contract test; decide whether it should affect the hash and update either computeTilePayloadHash or this test", name)
 		}
 	}
 }

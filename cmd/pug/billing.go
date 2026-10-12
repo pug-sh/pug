@@ -25,7 +25,7 @@ func newBillingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "billing",
 		Short: "Set and inspect org billing entitlements",
-		Long: "Operator commands for the entitlement store — an org's free allowance and any\n" +
+		Long: "Operator commands for the entitlement store: an org's free allowance and any\n" +
 			"negotiated deal. Postgres only: no payments provider is contacted, and no price is\n" +
 			"ever written here. Every write is attributed to --actor and appended to\n" +
 			"the org's history in the same transaction.",
@@ -66,8 +66,8 @@ func newBillingSetCmd() *cobra.Command {
 			"and negotiated terms). A deal splits over the plan current when its product is\n" +
 			"set, pinned on its row; a renewal on the same product keeps the pin. A usage\n" +
 			"plan is held only through a subscription, so it is never set here. Omitting an\n" +
-			"override flag leaves the stored value alone — the common re-set is a renewal\n" +
-			"on terms that have not changed — and passing its empty value (--events 0,\n" +
+			"override flag leaves the stored value alone (the common re-set is a renewal\n" +
+			"on terms that have not changed), and passing its empty value (--events 0,\n" +
 			"--retention-days 0, --name \"\", --anchor-day 0, --until \"\") clears it back\n" +
 			"to the plan's. A deal refuses --events 0: pass --events 1 to bill from the\n" +
 			"first event.\n\n" +

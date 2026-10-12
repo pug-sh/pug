@@ -21,14 +21,14 @@ import (
 // These ship a set of saved dashboards on the demo project so the demo isn't a
 // blank canvas: every board is built from the real seeded event/property
 // vocabulary (internal/app/seed/clickhouse) and is deliberately complex, so the
-// boards double as a living showcase of the insights engine — mixed-source
+// boards double as a living showcase of the insights engine (mixed-source
 // nested filter groups, per-event/per-step filters, numeric aggregations,
 // funnels with conversion windows and timing, retention cohorts, and top-K
-// rankings (incl. USER-dimension profile enrichment). Session metrics and user
-// flow (Sankey) are intentionally excluded — the dashboard FE renders neither.
+// rankings (incl. USER-dimension profile enrichment)). Session metrics and user
+// flow (Sankey) are intentionally excluded: the dashboard FE renders neither.
 //
 // Every board opens with a compact markdown *explainer* callout in the top-left
-// cell — a short product-marketing teaser (heading + bold lead + bullet list)
+// cell: a short product-marketing teaser (heading + bold lead + bullet list)
 // that teaches the capabilities that board shows off. It is a 1/3-width cell
 // sitting beside a full hero chart, not a full-width banner, so a real chart is
 // always visible the moment the board loads.
@@ -42,12 +42,12 @@ import (
 //     renderer sums the trend series into one number, so TOTAL/SUM render
 //     exactly (MAX / UNIQUE_USERS would not). SEGMENTATION is the natural
 //     single-scalar fit, but the dashboard FE renders only trends/funnel/
-//     retention/top-K — not segmentation results — so it is avoided here.
+//     retention/top-K, not segmentation results, so it is avoided here.
 //     "Metric by dimension, no time axis" is a top-K tile.
 //   - currency is always "USD" in the seed, so it is never used as a filter.
 // ---------------------------------------------------------------------------
 
-// enum shorthands — keep the tile definitions readable. Each is a typed proto
+// enum shorthands: keep the tile definitions readable. Each is a typed proto
 // enum constant; `.Enum()` returns the pointer the (edition-2023) generated
 // structs want.
 const (
@@ -100,7 +100,7 @@ const (
 
 // pf builds a single-value property filter (equals / not_equals / contains /
 // lt / lte / gt / gte / is_set / is_not_set). For the set operators pass value
-// "" — the proto rejects a value there.
+// "": the proto rejects a value there.
 func pf(property string, op commonv1.FilterOperator, src commonv1.PropertySource, value string) *commonv1.PropertyFilter {
 	f := &commonv1.PropertyFilter{
 		Property: proto.String(property),
@@ -173,14 +173,14 @@ func bd(props ...string) []*insightsv1.Breakdown {
 //
 // Only WIDTH is inset: cell() shaves one `gap` column off each tile's right so
 // neighbours show a gutter, because the grid's horizontal margin is 0 and a gap
-// there is only an empty column track. Height is used as-is — the grid's
+// there is only an empty column track. Height is used as-is: the grid's
 // vertical margin (`GRID_V_GUTTER`) draws the gap between stacked tiles, and
 // compactType:"vertical" collapses an empty row track anyway. A tile of h rows
 // therefore renders ~18h-14 px tall.
 //
 // Heights MUST clear the FE's per-kind floor: an under-tall tile is clamped UP
-// (grid.tsx `Math.max(pos.h, minH)`) and then silently overlaps the tile below
-// — the "cascading overlap". Floors in rows: insight 15, KPI 9, markdown 9.
+// (grid.tsx `Math.max(pos.h, minH)`) and then silently overlaps the tile below,
+// the "cascading overlap". Floors in rows: insight 15, KPI 9, markdown 9.
 // TestDemoDashboardTileLayout pins the bounds, floor, and no-overlap for every
 // seeded tile.
 // ---------------------------------------------------------------------------
@@ -188,16 +188,16 @@ const (
 	gap = 1 // gutter between tiles, in fine grid units (~18px)
 
 	wFull     = 72 // full row
-	wTwoThird = 48 // 2/3 — wider side of a 2:1 split
-	wWide     = 42 // 7/12 — wider side of a 7:5 split
+	wTwoThird = 48 // 2/3: wider side of a 2:1 split
+	wWide     = 42 // 7/12: wider side of a 7:5 split
 	wHalf     = 36 // half row
-	wNarrow   = 30 // 5/12 — narrower side of a 7:5 split
-	wThird    = 24 // 1/3 — narrower side of a 2:1 split; also the explainer-callout width
+	wNarrow   = 30 // 5/12: narrower side of a 7:5 split
+	wThird    = 24 // 1/3: narrower side of a 2:1 split; also the explainer-callout width
 
 	// Heights are sized to the tile's CONTENT so nothing scrolls inside its own
 	// card: a ranked list needs a row per entry, a broken-down funnel one block
 	// per series, the explainer enough room for its bullets.
-	hKPI      = 16 // KPI stat card — one number over a short sparkline
+	hKPI      = 16 // KPI stat card: one number over a short sparkline
 	hNote     = 20 // explainer callout where it shares its column with a stat card
 	hRanked   = 19 // ranked list of ~6 rows (a fixed, small limit)
 	hStd      = 22 // standard trend chart, or a top-K list of <= 8 rows
@@ -214,7 +214,7 @@ func gridPos(x, y, w, h int32) *dashboardsv1.GridPosition {
 
 // cell places a tile from a clean cell span (wHalf, hStd, …): it insets the tile
 // by one `gap` column on its right so adjacent tiles show a gutter. Height and y
-// pass through untouched — the grid's row margin already separates stacked
+// pass through untouched: the grid's row margin already separates stacked
 // tiles, so a shaved row would only cost chart height. Every tile is placed this
 // way, including the markdown explainer, so it aligns to the same grid as the
 // hero chart sharing its top row.
@@ -227,7 +227,7 @@ func threshold(op dashboardsv1.ThresholdRule_Operator, value float64, tone dashb
 	return &dashboardsv1.ThresholdRule{Operator: op.Enum(), Value: proto.Float64(value), Tone: tone.Enum()}
 }
 
-// tileOpt mutates a TilePayload — used for the optional compare/thresholds.
+// tileOpt mutates a TilePayload, used for the optional compare/thresholds.
 type tileOpt func(*coredashboards.TilePayload)
 
 func withCompare() tileOpt {
@@ -255,7 +255,7 @@ func insightTile(name, desc string, view dashboardsv1.DashboardTileViewMode, pos
 	return coredashboards.UpsertTileInput{Payload: p}
 }
 
-// markdownTile builds a board's markdown explainer callout — a short
+// markdownTile builds a board's markdown explainer callout: a short
 // product-marketing teaser (heading + bold lead + bullet list) that reads as
 // plainly informational beside the charts. Display name is left empty so the
 // callout never collides on the per-dashboard display-name unique index (empty
@@ -274,7 +274,7 @@ func markdownTile(body string, pos *dashboardsv1.GridPosition) coredashboards.Up
 // ---------------------------------------------------------------------------
 
 // dashDef is a demo dashboard: its metadata window plus its tiles. The window
-// (default_time_range + default_granularity) drives every tile — tiles store
+// (default_time_range + default_granularity) drives every tile: tiles store
 // only *what* they measure.
 type dashDef struct {
 	displayName string
@@ -304,28 +304,28 @@ func demoDashboards() []dashDef {
 	}
 }
 
-// revenueDashboard — "Revenue & Commerce": numeric aggregations (Sum/Avg/Max),
+// revenueDashboard ("Revenue & Commerce"): numeric aggregations (Sum/Avg/Max),
 // nested mixed-source filter groups, a per-step-filtered funnel with conversion
 // window + timing, period comparison, and KPI thresholds.
 func revenueDashboard() dashDef {
 	return dashDef{
 		displayName: "Revenue & Commerce",
-		description: "Net revenue, AOV, and checkout conversion — mixed auto/custom/profile filters and numeric aggregations.",
+		description: "Net revenue, AOV, and checkout conversion: mixed auto/custom/profile filters and numeric aggregations.",
 		timeRange:   rangeLast90,
 		granularity: granDay,
 		tiles: []coredashboards.UpsertTileInput{
 			markdownTile(
 				"### 💰 Revenue & Commerce\n\n"+
-					"Pug turns purchase events into the revenue numbers you report on — and shows where checkout leaks.\n\n"+
+					"Pug turns purchase events into the revenue numbers you report on, and shows where checkout leaks.\n\n"+
 					"- **Net & gross revenue** from sum, average & count aggregations\n"+
 					"- **Category & brand** value leaderboards\n"+
 					"- **A checkout funnel** with step-by-step conversion timing\n"+
 					"- **Layered filters** mixing event, custom & profile data to drop bots & staff\n\n"+
-					"It all runs straight over your events in ClickHouse — fast, with no data warehouse to wire up.\n",
+					"It all runs straight over your events in ClickHouse: fast, with no data warehouse to wire up.\n",
 				cell(0, 0, wThird, hLarge),
 			),
 
-			// TRENDS · Area · SUM(amount) — net revenue from real humans on
+			// TRENDS · Area · SUM(amount): net revenue from real humans on
 			// non-zero orders. filter group mixes auto ($bot_score) + profile
 			// (email) sources; per-event filter on amount. Compared to prior period.
 			insightTile(
@@ -348,7 +348,7 @@ func revenueDashboard() dashDef {
 				withCompare(),
 			),
 
-			// TRENDS · KPI · TOTAL(purchase) — order count with color thresholds. A
+			// TRENDS · KPI · TOTAL(purchase): order count with color thresholds. A
 			// KPI sums its trend series, so an additive metric (TOTAL) stays exact.
 			// Stacked under the gross-revenue KPI: two stat cards fill the column
 			// beside the funnel, which is far taller than either card alone.
@@ -366,7 +366,7 @@ func revenueDashboard() dashDef {
 				),
 			),
 
-			// TOP_K · Bar · AVG(amount) by category — "AOV by category". Ranked
+			// TOP_K · Bar · AVG(amount) by category: "AOV by category". Ranked
 			// dimension with a numeric metric; scope restricts to purchases.
 			insightTile(
 				"Average Order Value by Category",
@@ -386,7 +386,7 @@ func revenueDashboard() dashDef {
 				},
 			),
 
-			// TOP_K · Table · SUM(amount) by brand — revenue leaderboard. Limit
+			// TOP_K · Table · SUM(amount) by brand: revenue leaderboard. Limit
 			// matches the seed's brand count (6) and hRanked: a larger limit would
 			// scroll inside the tile the moment the catalog grew.
 			insightTile(
@@ -408,7 +408,7 @@ func revenueDashboard() dashDef {
 			),
 
 			// FUNNEL · per-step filter + conversion window + step timing. Height is
-			// hKPI*2 so it ends flush with the two stat cards stacked beside it —
+			// hKPI*2 so it ends flush with the two stat cards stacked beside it:
 			// n stacked tiles span exactly the same rows as one tile of n*h.
 			insightTile(
 				"High-Value Cart → Purchase",
@@ -426,12 +426,12 @@ func revenueDashboard() dashDef {
 				},
 			),
 
-			// TRENDS · KPI · SUM(amount) — gross revenue (all orders, unfiltered).
+			// TRENDS · KPI · SUM(amount): gross revenue (all orders, unfiltered).
 			// A KPI sums its trend series, so SUM is exact; MAX is not, and
 			// SEGMENTATION (the natural MAX fit) isn't rendered by the dashboard FE.
 			insightTile(
 				"Gross Revenue (90d)",
-				"SUM(amount) across all purchases in the window — unfiltered gross, vs the filtered net above.",
+				"SUM(amount) across all purchases in the window: unfiltered gross, vs the filtered net above.",
 				viewKPI, cell(48, 45, wThird, hKPI),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
@@ -439,7 +439,7 @@ func revenueDashboard() dashDef {
 				},
 			),
 
-			// TRENDS · Line · SUM(discount_amount) — coupon spend, vs prior period.
+			// TRENDS · Line · SUM(discount_amount): coupon spend, vs prior period.
 			insightTile(
 				"Coupon Discount Spend",
 				"SUM(discount_amount) on coupon_applied events, compared to the prior period.",
@@ -454,24 +454,24 @@ func revenueDashboard() dashDef {
 	}
 }
 
-// acquisitionDashboard — "Acquisition & Marketing": UTM attribution with the
+// acquisitionDashboard ("Acquisition & Marketing"): UTM attribution with the
 // IN / IS SET / IS NOT SET / NOT CONTAINS operators, a breakdown funnel, top-K
 // rankings of marketing dimensions, and traffic/conversions by source & platform.
 func acquisitionDashboard() dashDef {
 	return dashDef{
 		displayName: "Acquisition & Marketing",
-		description: "Channel attribution, a paid-traffic purchase funnel, and traffic/conversions by source — UTM/referrer filters and breakdowns.",
+		description: "Channel attribution, a paid-traffic purchase funnel, and traffic/conversions by source: UTM/referrer filters and breakdowns.",
 		timeRange:   rangeLast90,
 		granularity: granDay,
 		tiles: []coredashboards.UpsertTileInput{
 			markdownTile(
 				"### 📣 Acquisition & Marketing\n\n"+
-					"Follow every visitor from first click to paying customer — attribution is built in.\n\n"+
+					"Follow every visitor from first click to paying customer: attribution is built in.\n\n"+
 					"- **Channel attribution** from UTM & referrer auto-properties\n"+
 					"- **Campaign & referrer** leaderboards\n"+
 					"- **A paid browse → buy funnel** split by marketing medium\n"+
 					"- **Traffic & conversions** over time, stacked by source\n\n"+
-					"Pug auto-captures UTM, referrer, geo & device on every event — attribution with zero extra instrumentation.\n",
+					"Pug auto-captures UTM, referrer, geo & device on every event: attribution with zero extra instrumentation.\n",
 				cell(0, 0, wThird, hLarge),
 			),
 
@@ -555,11 +555,11 @@ func acquisitionDashboard() dashDef {
 			),
 
 			// TRENDS · Area · TOTAL(page_view) stacked by acquisition source, with a
-			// known source (IS SET) — drops the dominant direct/organic bucket so the
+			// known source (IS SET): drops the dominant direct/organic bucket so the
 			// paid/referral channels are actually comparable.
 			insightTile(
 				"Traffic by Source",
-				"Page views over time, stacked by acquisition source ($utmSource is set — direct/organic excluded).",
+				"Page views over time, stacked by acquisition source ($utmSource is set, direct/organic excluded).",
 				viewArea, cell(0, 90, wFull, hLarge),
 				&insightsv1.InsightQuerySpec{
 					InsightType:    itTrends.Enum(),
@@ -573,7 +573,7 @@ func acquisitionDashboard() dashDef {
 			),
 
 			// TRENDS · Bar · TOTAL(purchase) on web with a known source (EQUALS +
-			// IS SET filters), by source — direct/organic dropped so the channels
+			// IS SET filters), by source: direct/organic dropped so the channels
 			// are comparable.
 			insightTile(
 				"Web Purchases by Source",
@@ -592,7 +592,7 @@ func acquisitionDashboard() dashDef {
 				},
 			),
 
-			// TRENDS · Line · UNIQUE_USERS(page_view) — daily active users by platform.
+			// TRENDS · Line · UNIQUE_USERS(page_view): daily active users by platform.
 			insightTile(
 				"Active Users by Platform",
 				"Daily active users (distinct) split by $platform (web / ios / android).",
@@ -607,19 +607,19 @@ func acquisitionDashboard() dashDef {
 	}
 }
 
-// productHealthDashboard — "Product & UX Health": top-K over property / event-kind
+// productHealthDashboard ("Product & UX Health"): top-K over property / event-kind
 // dimensions, top pages and error codes, multi-breakdown stacked errors, a
 // unique-user crash view, and a per-user-average trend.
 func productHealthDashboard() dashDef {
 	return dashDef{
 		displayName: "Product & UX Health",
-		description: "Search, navigation, errors, and crashes — top-K rankings, top pages/error codes, and multi-dimension breakdowns.",
+		description: "Search, navigation, errors, and crashes: top-K rankings, top pages/error codes, and multi-dimension breakdowns.",
 		timeRange:   rangeLast30,
 		granularity: granDay,
 		tiles: []coredashboards.UpsertTileInput{
 			markdownTile(
 				"### 🛠 Product & UX Health\n\n"+
-					"Spot what users love and what's quietly breaking — engagement and reliability, together.\n\n"+
+					"Spot what users love and what's quietly breaking: engagement and reliability, together.\n\n"+
 					"- **Top-K rankings** for products, pages & events\n"+
 					"- **Native-app events** ranked by kind\n"+
 					"- **Error leaderboards** plus a severity × platform breakdown\n"+
@@ -727,7 +727,7 @@ func productHealthDashboard() dashDef {
 			// TRENDS · Line · PER_USER_AVG product views.
 			insightTile(
 				"Avg Product Views per User",
-				"PER_USER_AVG of product_viewed — browsing depth per active user.",
+				"PER_USER_AVG of product_viewed: browsing depth per active user.",
 				viewLine, cell(0, 104, wFull, hStd),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
@@ -738,13 +738,13 @@ func productHealthDashboard() dashDef {
 	}
 }
 
-// usersCohortsDashboard — "Users, Cohorts & Segments": a same-event
+// usersCohortsDashboard ("Users, Cohorts & Segments"): a same-event
 // repeat-purchase retention cohort, a USER-dimension top-K with profile
 // enrichment, and profile-filtered segments (IS SET / BETWEEN on profile props).
 func usersCohortsDashboard() dashDef {
 	return dashDef{
 		displayName: "Users, Cohorts & Segments",
-		description: "Retention, whale users, and profile-filtered segments — cohorts, USER top-K, and PROFILE-source filters.",
+		description: "Retention, whale users, and profile-filtered segments: cohorts, USER top-K, and PROFILE-source filters.",
 		timeRange:   rangeLast180,
 		granularity: granWeek,
 		tiles: []coredashboards.UpsertTileInput{
@@ -755,11 +755,11 @@ func usersCohortsDashboard() dashDef {
 					"- **Top customers** enriched with each dog's name, breed & city\n"+
 					"- **VIP orders** from club members or big spenders\n"+
 					"- **Profile segments** like senior dogs, split by country\n\n"+
-					"Pug links events to identified profiles you can segment — and re-engage with push campaigns.\n",
+					"Pug links events to identified profiles you can segment, and re-engage with push campaigns.\n",
 				cell(0, 0, wThird, hNote),
 			),
 
-			// TOP_K · Table · USER dimension — rows carry dog-profile enrichment.
+			// TOP_K · Table · USER dimension: rows carry dog-profile enrichment.
 			// The board's hero, beside the explainer in the top row.
 			insightTile(
 				"Top Customers (whales)",
@@ -777,12 +777,12 @@ func usersCohortsDashboard() dashDef {
 				},
 			),
 
-			// RETENTION · Table · same-event repeat-purchase cohorts — a user's first
+			// RETENTION · Table · same-event repeat-purchase cohorts: a user's first
 			// purchase in a week defines the cohort; retained by buying again in later
 			// weeks. (signup→purchase was empty: in-window signups are recent joiners
 			// while purchasers are long-tenured, so the two cohorts barely overlap.)
 			// Full width: the cohort table is one column per period, and a 180d/week
-			// window has ~26 of them — the widest tile on any board still scrolls.
+			// window has ~26 of them; the widest tile on any board still scrolls.
 			insightTile(
 				"Repeat Purchase Retention",
 				"Weekly cohorts of first-time purchasers, retained by whether they buy again.",
@@ -794,13 +794,13 @@ func usersCohortsDashboard() dashDef {
 			),
 
 			// TRENDS · KPI · TOTAL(purchase) over a nested OR group mixing a profile
-			// prop with an order amount — a "VIP" order = club member OR big spender.
+			// prop with an order amount: a "VIP" order = club member OR big spender.
 			// Distinct VIP *customers* needs segmentation (not rendered by the FE);
 			// a KPI sums its series, so we count VIP orders instead. Stacked under the
 			// explainer so the cohort table below can take the full row.
 			insightTile(
 				"VIP Orders (90d)",
-				"Purchases that are VIP — an OR group mixing a profile prop (pug_club is set) with a custom prop (amount ≥ 100).",
+				"Purchases that are VIP: an OR group mixing a profile prop (pug_club is set) with a custom prop (amount ≥ 100).",
 				viewKPI, cell(0, 20, wThird, hKPI),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
@@ -841,7 +841,7 @@ func usersCohortsDashboard() dashDef {
 // SeedDemoDashboards idempotently reconciles the demo project's showcase
 // dashboards to their seed definitions. It is safe to call on every seed run /
 // worker start: a board missing by display name is created, and an existing one
-// is reconciled in place (by id) against the current definition — so a redeploy
+// is reconciled in place (by id) against the current definition, so a redeploy
 // that changes a tile or layout converges on the next worker start without a
 // full reset, and a partial prior run (dashboard created but its tiles never
 // upserted) self-heals. Reconciling re-replaces a board's tiles each run (the

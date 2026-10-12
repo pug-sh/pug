@@ -68,7 +68,7 @@ func TestQuery_UnknownShareToken_NotFound(t *testing.T) {
 }
 
 // TestQuery_DisabledShareToken_NotFound: a token whose share was disabled must
-// 404 — the enabled=true predicate is the access-control gate.
+// 404; the enabled=true predicate is the access-control gate.
 func TestQuery_DisabledShareToken_NotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

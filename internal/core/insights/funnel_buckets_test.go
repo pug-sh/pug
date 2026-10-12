@@ -189,7 +189,7 @@ func TestFunnelTimingBuckets_Invariants(t *testing.T) {
 		t.Errorf("last bucket upper should be time.Duration(math.MaxInt64), got %v", last.upper)
 	}
 
-	// Pin the exact label strings — clients display these as-is, so a typo would silently
+	// Pin the exact label strings: clients display these as-is, so a typo would silently
 	// propagate to every consumer. Update both this list and CLAUDE.md if labels change.
 	wantLabels := []string{"0-30s", "30s-2m", "2-5m", "5-15m", "15-60m", "1-6h", "6-24h", "24h+"}
 	for i, want := range wantLabels {

@@ -9,13 +9,13 @@ import (
 // excludeCookielessForAgg reports whether a query computing agg must exclude
 // cookieless-prefixed distinct_ids: user-counting metrics exclude them by
 // default (a daily-rotating id counts one human as a new user every day),
-// while totals and numeric aggregations always count all traffic — a
+// while totals and numeric aggregations always count all traffic; a
 // consent-rejector's pageview is still a pageview. The spec toggle re-admits
 // them. Session metrics never consult this (they never read distinct_id).
 // The switch is exhaustive over AggregationType rather than a two-member
 // inclusion list, because the list form failed OPEN: an aggregation added to the
 // proto and not considered here silently returned false, admitting cookieless
-// ids into a metric that may well count people — inflating user counts with no
+// ids into a metric that may well count people, inflating user counts with no
 // error at any layer. Nothing else stops it either; protovalidate's
 // enum.defined_only admits any newly defined member, rollupAggExpr's default is
 // a silent fall back to the raw path, and aggregationExpr's default returns
@@ -31,7 +31,7 @@ func excludeCookielessForAgg(spec *insightsv1.InsightQuerySpec, agg insightsv1.A
 		insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG:
 		return true
 	// Counts events or event properties, never people. A consent-rejector's
-	// pageview is still a pageview, so these must keep counting all traffic —
+	// pageview is still a pageview, so these must keep counting all traffic:
 	// excluding here would UNDER-count, which is its own silent wrong answer.
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED,
 		insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
@@ -58,7 +58,7 @@ func excludeCookielessForPersons(spec *insightsv1.InsightQuerySpec) bool {
 
 // cookielessExclusionCond is the raw-path predicate. alias "" targets an
 // unaliased events scan; identity-joined scans pass "e", the raw events table
-// under profiles.IdentityJoinedEvents — never a CTE sitting above that join,
+// under profiles.IdentityJoinedEvents, never a CTE sitting above that join,
 // or the predicate filters already-aggregated rows. Returns the zero Condition
 // when exclude is false, which Where skips.
 func cookielessExclusionCond(exclude bool, alias string) chq.Condition {

@@ -685,7 +685,7 @@ type ListRequest struct {
 	FilterGroupsOperator *v1.LogicalOperator `protobuf:"varint,3,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
 	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
 	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
-	// A derived anonymous person's create_time — the sort and cursor key — is
+	// A derived anonymous person's create_time, the sort and cursor key, is
 	// computed after this filter, so changing it mid-pagination skips rows. Keep it
 	// constant for a page_token run and restart from an empty token to flip it.
 	IncludeBots   *bool `protobuf:"varint,4,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
@@ -820,7 +820,7 @@ type ProfileActivitySummary struct {
 	Region         *string                `protobuf:"bytes,12,opt,name=region" json:"region,omitempty"`
 	City           *string                `protobuf:"bytes,13,opt,name=city" json:"city,omitempty"`
 	// True when EVERY event counted in this summary was tagged as automated at
-	// ingest ($bot) — a crawler, not a user with one tagged event. Only ever true
+	// ingest ($bot): a crawler, not a user with one tagged event. Only ever true
 	// on a read that set include_bots, since bot traffic is otherwise excluded.
 	Bot           *bool `protobuf:"varint,14,opt,name=bot" json:"bot,omitempty"`
 	unknownFields protoimpl.UnknownFields

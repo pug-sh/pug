@@ -29,7 +29,7 @@ type envelope struct {
 }
 
 // subscriptionPayload is the subscription object as both a delivery and a direct
-// read carry it, so Normalize and FetchSubscription produce identical events — but
+// read carry it, so Normalize and FetchSubscription produce identical events, but
 // for the grace deadline, which only a delivery carries.
 type subscriptionPayload struct {
 	Currency   string `json:"currency"`
@@ -105,7 +105,7 @@ func envelopeType(raw []byte) (string, error) {
 }
 
 // Normalize maps one verified delivery onto pug's vocabulary. A zero event means
-// "store, mark processed, ignore" — a type pug does not handle must never 500.
+// "store, mark processed, ignore": a type pug does not handle must never 500.
 func (c *Client) Normalize(d corebilling.Delivery) (corebilling.SubscriptionEvent, error) {
 	if !strings.HasPrefix(d.EventType, subscriptionPrefix) {
 		return corebilling.SubscriptionEvent{}, nil
@@ -192,7 +192,7 @@ func (c *Client) eventFromSubscription(p subscriptionPayload) corebilling.Subscr
 }
 
 // An unmapped state comes back as the provider's own word, stored verbatim and
-// unparsed at read time — so it can only withhold a plan, never grant one,
+// unparsed at read time, so it can only withhold a plan, never grant one,
 // provided every word that spells a live pug state is mapped here.
 func statusFromDodo(status string) corebilling.SubStatus {
 	raw := strings.ToLower(strings.TrimSpace(status))

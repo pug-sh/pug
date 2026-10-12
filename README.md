@@ -6,26 +6,26 @@
 
 Pug is an open-source product analytics platform. Capture events, identify the
 people behind them, and explore behavior through funnels, retention, trends,
-segmentation, and user-flow analysis — all surfaced on customizable dashboards.
+segmentation, and user-flow analysis, all surfaced on customizable dashboards.
 
 Built in Go on PostgreSQL, ClickHouse, and NATS.
 
 ## Features
 
-- **Event ingestion** — a NATS-backed capture pipeline with automatic geo,
+- **Event ingestion**: a NATS-backed capture pipeline with automatic geo,
   user-agent, bot-detection, and web-attribution enrichment.
-- **Web analytics** — an overview auto-built from your events: visitors,
-  sessions, pageviews, bounce rate, and traffic sources, with no tile to wire up.
-- **Live view** — every visitor on a real-time world map, down to the person and
+- **Web analytics**: an overview auto-built from your events (visitors,
+  sessions, pageviews, bounce rate, and traffic sources), with no tile to wire up.
+- **Live view**: every visitor on a real-time world map, down to the person and
   the event they just fired.
-- **Profiles** — identify and alias the users behind events, with a
+- **Profiles**: identify and alias the users behind events, with a
   ClickHouse-backed profile and activity API.
-- **Insights** — trends, funnels, retention, segmentation, user flow (Sankey),
+- **Insights**: trends, funnels, retention, segmentation, user flow (Sankey),
   and top-K breakdowns, with filtering, breakdowns, and period-over-period
   comparison.
-- **Dashboards** — compose insight and markdown tiles on a grid with a
+- **Dashboards**: compose insight and markdown tiles on a grid with a
   board-level time window, accelerated by a pre-aggregated rollup fast path.
-- **Privacy & compliance** — GDPR/DPDP data-subject erasure of a person's
+- **Privacy & compliance**: GDPR/DPDP data-subject erasure of a person's
   events and profile.
 
 <p>
@@ -33,7 +33,7 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/overview-dark.webp" />
     <img src="docs/assets/overview-light.webp" alt="Pug's overview page showing visitors, sessions, pageviews, and traffic sources" />
   </picture>
-  <br /><sub><b>Overview</b> — a web-analytics view auto-built from your events, with the previous period alongside.</sub>
+  <br /><sub><b>Overview</b>: a web-analytics view auto-built from your events, with the previous period alongside.</sub>
 </p>
 
 <p>
@@ -41,12 +41,12 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/breakdowns-dark.webp" />
     <img src="docs/assets/breakdowns-light.webp" alt="Pug's overview breakdowns: a choropleth of pageviews by country, plus locations, devices, and events" />
   </picture>
-  <br /><sub><b>Breakdowns</b> — pageviews by country, plus locations, devices, and events; click any value to filter the whole view.</sub>
+  <br /><sub><b>Breakdowns</b>: pageviews by country, plus locations, devices, and events; click any value to filter the whole view.</sub>
 </p>
 
 <p>
   <img src="docs/assets/live-light.webp" alt="Pug's live map flying between real-time visitors around the world" />
-  <br /><sub><b>Live view</b> — every visitor on a live world map; click one to fly to them and see the page, device, and profile behind it.</sub>
+  <br /><sub><b>Live view</b>: every visitor on a live world map; click one to fly to them and see the page, device, and profile behind it.</sub>
 </p>
 
 <p>
@@ -54,7 +54,7 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboards-dark.webp" />
     <img src="docs/assets/dashboards-light.webp" alt="A Pug dashboard composed of insight and markdown tiles" />
   </picture>
-  <br /><sub><b>Dashboards</b> — compose insight and markdown tiles on a time-windowed grid.</sub>
+  <br /><sub><b>Dashboards</b>: compose insight and markdown tiles on a time-windowed grid.</sub>
 </p>
 
 <p>
@@ -62,7 +62,7 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/insights-dark.webp" />
     <img src="docs/assets/insights-light.webp" alt="A Pug trends insight broken down by country" />
   </picture>
-  <br /><sub><b>Insights</b> — trends, filters, and breakdowns; here product views split by country.</sub>
+  <br /><sub><b>Insights</b>: trends, filters, and breakdowns; here product views split by country.</sub>
 </p>
 
 <p>
@@ -70,15 +70,15 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/profiles-dark.webp" />
     <img src="docs/assets/profiles-light.webp" alt="A Pug user profile showing traits and recent activity" />
   </picture>
-  <br /><sub><b>Profiles</b> — the person behind the events, with traits, sessions, and activity.</sub>
+  <br /><sub><b>Profiles</b>: the person behind the events, with traits, sessions, and activity.</sub>
 </p>
 
 ## Tech stack
 
-- **Go** — backend services and workers, exposed over [Connect RPC](https://connectrpc.com/) (HTTP/2)
-- **PostgreSQL** — relational store (orgs, projects, dashboards, auth)
-- **ClickHouse** — analytical store for events, insights, and profiles
-- **NATS** — messaging backbone for the ingestion and worker pipelines
+- **Go**: backend services and workers, exposed over [Connect RPC](https://connectrpc.com/) (HTTP/2)
+- **PostgreSQL**: relational store (orgs, projects, dashboards, auth)
+- **ClickHouse**: analytical store for events, insights, and profiles
+- **NATS**: messaging backbone for the ingestion and worker pipelines
 
 ## Quick start
 
@@ -95,7 +95,7 @@ make infra
 ./bin/pug clickhouse migrate
 
 # Seed the demo project with events, profiles, and dashboards
-# (resets the local Postgres and ClickHouse databases — see "Demo data" below)
+# (resets the local Postgres and ClickHouse databases; see "Demo data" below)
 ./bin/pug seed
 
 # Start the dev server + workers together
@@ -114,7 +114,7 @@ dashboards, insights, and profiles have something to show. Profiles are seeded
 only for users that produced events, so the data is internally consistent.
 
 > **Local databases only.** By default `seed` migrates Postgres and ClickHouse
-> all the way down and back up, dropping every table — not just the demo rows.
+> all the way down and back up, dropping every table, not just the demo rows.
 > There is no confirmation prompt and no environment check: it connects to
 > whatever `DATABASE_URL` and `CLICKHOUSE_URL` resolve to, and an already
 > exported variable beats `.env`. Point it at a disposable local or demo
@@ -128,15 +128,15 @@ as the rest of the CLI.
 
 Two accounts are seeded:
 
-- `woof@pug.sh` — org admin, password `goodboy`
-- `snoop@pug.sh` — read-only viewer, no password; open `/demo` with
+- `woof@pug.sh`: org admin, password `goodboy`
+- `snoop@pug.sh`: read-only viewer, no password; open `/demo` with
   `PUG_DEMO_ENABLED=true` to sign in as it
 
 For a live stream of traffic instead of a one-shot backfill, set
 `PUG_DEMO_ENABLED=true`: `./bin/pug dev` then also runs the demo worker. It
 backfills an **empty** project once, so after `pug seed` it skips straight to
 playing new sessions out in real time. If you seed with a smaller `--count`,
-lower `PUG_DEMO_SEED_COUNT` to match — the worker reads a project holding fewer
+lower `PUG_DEMO_SEED_COUNT` to match: the worker reads a project holding fewer
 events than that as an interrupted backfill and warns rather than topping it up.
 
 ## Development
@@ -159,5 +159,5 @@ guidance and conventions are in [`CLAUDE.md`](CLAUDE.md).
 ## License
 
 Pug is licensed under the [GNU AGPL v3.0](LICENSE). Contributors sign a
-[CLA](CLA.md) before their first pull request is merged — see
+[CLA](CLA.md) before their first pull request is merged; see
 [CONTRIBUTING.md](CONTRIBUTING.md).

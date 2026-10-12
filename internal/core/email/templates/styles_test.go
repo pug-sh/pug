@@ -10,7 +10,7 @@ func TestEmailCSSHasBrandTokensAndMediaQuery(t *testing.T) {
 	if !strings.Contains(emailCSS, ColorPrimary) {
 		t.Fatalf("emailCSS missing primary color %s", ColorPrimary)
 	}
-	// No OKLCH may leak into email output — clients can't parse it.
+	// No OKLCH may leak into email output: clients can't parse it.
 	if strings.Contains(emailCSS, "oklch(") {
 		t.Fatalf("emailCSS contains oklch(), which email clients cannot render")
 	}

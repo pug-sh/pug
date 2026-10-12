@@ -40,7 +40,7 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 
 // sanitizeHeader strips CR and LF from header values. The SES SDK likely
 // rejects malformed headers internally, but stripping here keeps parity with
-// the SMTP provider's defense-in-depth (smtp.go::sanitizeHeader) — any
+// the SMTP provider's defense-in-depth (smtp.go::sanitizeHeader): any
 // user-controlled string that reaches Subject or Reply-To has already been
 // scrubbed once at the application layer, this is the second pass.
 func sanitizeHeader(v string) string {

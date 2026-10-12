@@ -11,7 +11,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // Subscription, invoice, payment, and trial lifecycle events.
 // `currency` is an uppercase ISO 4217 code; `amount` is the transaction total
 // in the major currency unit (dollars, euros, yen). These events are revenue
-// signals for analytics — your billing/invoice/ledger system is the source
+// signals for analytics; your billing/invoice/ledger system is the source
 // of truth. See options.proto for the package-wide money precision contract.
 //
 // Common values for freeform `payment_method_type` (not enforced, document

@@ -7,7 +7,7 @@ import (
 
 // This file is the single normative marketing-channel taxonomy
 // (docs/architecture/web-analytics.md). Every channel a pug event can carry is
-// classified here — profiles.md's "no ad hoc channel" rule points at this
+// classified here; profiles.md's "no ad hoc channel" rule points at this
 // derivation. Changing a rule, a set entry, or the rule ORDER changes what
 // lands in the permanent rollups; treat edits as taxonomy changes, not
 // refactors, and pin them in channel_test.go.
@@ -69,7 +69,7 @@ var (
 
 	// googleSearchSubdomains are the labels that may precede "google.<tld>" on a
 	// search surface; "" is the apex. An allow-list, so an unlisted subdomain
-	// (accounts, mail, search — and whatever google ships next) books a visible
+	// (accounts, mail, search, and whatever google ships next) books a visible
 	// Referral instead of silently re-inflating Organic Search. gemini and lens
 	// are here because perplexity.ai is a searchDomain: same kind of surface.
 	googleSearchSubdomains = []string{
@@ -79,7 +79,7 @@ var (
 
 	// webmailDomains are webmail clients: a click there is a click inside an
 	// email, so it books Email. The mail.yahoo/mail.yandex hosts also suffix-match
-	// a search domain — one entry per such sibling, or the Organic Search defect
+	// a search domain: one entry per such sibling, or the Organic Search defect
 	// survives on the host left out.
 	webmailDomains = []string{
 		"mail.google.com", "mail.yahoo.com", "mail.yahoo.co.jp", "mail.yandex.ru",
@@ -92,7 +92,7 @@ var (
 // ref is referrerDomain's output (lowercased; self-referrals and
 // authIntermediaryHosts already blanked); src/med are the EFFECTIVE
 // utm_source/utm_medium (after URL completion) and are lowercased here;
-// anySignal reports that the event carried SOME attribution signal — any of
+// anySignal reports that the event carried SOME attribution signal: any of
 // the five effective UTM values, or a referrer that was sent but yielded no
 // host (referrerDomain's unresolved).
 //
@@ -126,7 +126,7 @@ func classifyChannel(ref, src, med string, anySignal bool) string {
 
 	// A webmail ref is an email click, not the provider's search engine:
 	// mail.yahoo.com would otherwise suffix-match yahoo.com. Guards the ref arms
-	// only — a search utm_source still wins.
+	// only; a search utm_source still wins.
 	webmail := matchesHost(ref, webmailDomains)
 	search := matchesSource(src, searchSources, searchDomains) || isGoogleSearchHost(src) ||
 		(!webmail && (matchesHost(ref, searchDomains) || isGoogleSearchHost(ref)))
@@ -205,7 +205,7 @@ func matchesSource(src string, names, domains []string) bool {
 // isGoogleSearchHost matches google's SEARCH hosts without enumerating the
 // ccTLDs: a dot-boundary suffix of the host must be "google." followed by a
 // TLD-shaped tail (one or two labels of 2–3 alphabetic chars), AND the whole
-// prefix before it must be a googleSearchSubdomains entry —
+// prefix before it must be a googleSearchSubdomains entry.
 // google.com, google.co.uk and images.google.de match; accounts.google.com,
 // mail.google.com and search.google.com do not. The tail-shape check is what
 // keeps reverse-DNS app hosts out: android-app://com.google.android.gm
@@ -217,7 +217,7 @@ func isGoogleSearchHost(host string) bool {
 		return true
 	}
 	// Walk label boundaries to the first "google.<tld>": everything walked past
-	// is the subdomain — ALL of it, not the last label, or evil.www.google.com
+	// is the subdomain, ALL of it, not the last label, or evil.www.google.com
 	// would read as "www" and pass.
 	for i := 0; ; {
 		if tail, ok := strings.CutPrefix(host[i:], "google."); ok && tldShaped(tail) {
@@ -245,7 +245,7 @@ func tldShaped(tail string) bool {
 	if !more {
 		return true
 	}
-	// A second dot means a third label — too long to be a public-suffix tail.
+	// A second dot means a third label, too long to be a public-suffix tail.
 	return !strings.Contains(rest, ".") && tldLabel(rest)
 }
 

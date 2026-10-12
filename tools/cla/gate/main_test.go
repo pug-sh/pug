@@ -98,8 +98,8 @@ func (f *fakeGitHub) signatureFile(_ context.Context, ref string) (*SignatureFil
 	}
 	// The checker reads the version in force at the base branch by name. In the
 	// ordinary case that branch and the merge base carry the same file, so "main"
-	// falls back to the merge base's entry; a test that needs them to differ —
-	// which is what a /sign comment produces — seeds "main" explicitly.
+	// falls back to the merge base's entry; a test that needs them to differ,
+	// which is what a /sign comment produces, seeds "main" explicitly.
 	if ref == "main" {
 		if sf, ok := f.files["base"]; ok {
 			return sf, nil
@@ -277,7 +277,7 @@ func TestCheckWritesTheJobSummary(t *testing.T) {
 }
 
 // A rate limit is not evidence that carol has no account, so it must not reach
-// her as "unidentified" — that sends the contributor off to fix an address that
+// her as "unidentified": that sends the contributor off to fix an address that
 // was fine. It is the checker's fault and is raised as one.
 func TestResolveCoauthorsRaisesALookupFailure(t *testing.T) {
 	commits := []Commit{commit("a1", user("alice", 1), user("alice", 1),
@@ -304,8 +304,8 @@ func TestResolveCoauthorsReportsAPlaintextAddress(t *testing.T) {
 	}
 }
 
-// An assistant holds no copyright, so its trailer is skipped rather than blocking
-// — otherwise every contributor using one rewrites their branch to merge. The
+// An assistant holds no copyright, so its trailer is skipped rather than blocking;
+// otherwise every contributor using one rewrites their branch to merge. The
 // pairing matters: an address that might belong to a person must still stop the
 // gate, or the exemption is a hole rather than a rule.
 func TestAnAssistantTrailerIsSkippedButAPersonsIsNot(t *testing.T) {
@@ -325,7 +325,7 @@ func TestAnAssistantTrailerIsSkippedButAPersonsIsNot(t *testing.T) {
 	}
 }
 
-// The gate still blocks — a trailer names a copyright holder either way — but the
+// The gate still blocks (a trailer names a copyright holder either way), but the
 // contributor must meet the ordinary report, not an error that hides it.
 func TestUnidentifiedCoauthorBlocksThroughTheReport(t *testing.T) {
 	var out bytes.Buffer
@@ -404,7 +404,7 @@ func TestLoadConfigRejectsInputsItCannotCheckWithout(t *testing.T) {
 		{"no opener", map[string]string{"PR_USER_ID": ""}, "PR_USER_ID"},
 		{"no repo", map[string]string{"GITHUB_REPOSITORY": ""}, "GITHUB_REPOSITORY is empty"},
 		{"no head", map[string]string{"PR_HEAD_SHA": ""}, "PR_HEAD_SHA is empty"},
-		// "0" parses, so only the explicit guard catches it — and an id of zero is
+		// "0" parses, so only the explicit guard catches it, and an id of zero is
 		// dropped by unsigned(), which would empty the check rather than fail it.
 		{"zero opener", map[string]string{"PR_USER_ID": "0"}, "PR_USER_ID is zero"},
 		// appendOnly matches the entry's login against the opener's, so an empty
@@ -583,7 +583,7 @@ func TestAnnotationEscapingKeepsAnErrorToOneCommand(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a validation error to carry the login")
 	}
-	// GitHub reads one command per line, so a single line is a single command —
+	// GitHub reads one command per line, so a single line is a single command:
 	// the injected "::error::" survives only as inert text after its newline goes.
 	line := fmt.Sprintf("::error::%s", escapeAnnotation(err.Error()))
 	if strings.ContainsAny(line, "\r\n") {
@@ -915,7 +915,7 @@ func TestSubcommandRejectsAnUnknownArgument(t *testing.T) {
 	}
 	// cla.yaml invokes the gate bare. Dispatching that to the signer would find no
 	// COMMENT_BODY, return nil, and turn the required check green having checked
-	// nothing — so the function itself is asserted, not just that one was returned.
+	// nothing, so the function itself is asserted, not just that one was returned.
 	bare, ok := subcommand([]string{"gate"})
 	if !ok {
 		t.Fatal("subcommand rejected a bare invocation, which is the checker")

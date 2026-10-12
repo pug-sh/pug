@@ -107,7 +107,7 @@ func TestMaySignRefusesSomeoneAlreadySignedOnTheBaseBranch(t *testing.T) {
 
 // A signature already in the pull request's own head counts too. Writing a second
 // one would put the id in the file twice once the branch merges the base, and
-// validate() rejects a repeated id and version outright — failing the gate for
+// validate() rejects a repeated id and version outright, failing the gate for
 // the crime of signing enthusiastically.
 func TestMaySignRefusesSomeoneAlreadySignedInHead(t *testing.T) {
 	people := []Principal{{ID: 1, Login: "alice", Type: "User"}}

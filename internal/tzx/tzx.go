@@ -3,8 +3,8 @@
 // stored) and the insights/dashboards query paths (where it aligns time-bucket
 // boundaries and preset windows to a viewer's local calendar).
 //
-// The empty string and the literal "UTC" are treated identically as "UTC bucketing"
-// — the historical default — so callers can store/compare a single canonical zero
+// The empty string and the literal "UTC" are treated identically as "UTC bucketing",
+// the historical default, so callers can store/compare a single canonical zero
 // value ("") and keep byte-identical SQL and rollup eligibility for UTC.
 package tzx
 
@@ -50,7 +50,7 @@ func Normalize(name string) string {
 // Validate accepts ""/"UTC" (UTC) and otherwise requires the injection-safe charset
 // and a loadable location. ClickHouse carries its own tz database, so a name accepted
 // here but unknown there would surface as a query error at execution rather than here.
-// It is Load with the resolved location discarded — the two share one validation ladder.
+// It is Load with the resolved location discarded: the two share one validation ladder.
 func Validate(name string) error {
 	_, err := Load(name)
 	return err

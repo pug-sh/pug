@@ -18,7 +18,7 @@ import (
 )
 
 // Authorization (org-role gating) is enforced centrally by rpc.AuthzInterceptor
-// from the permission registry, before any handler runs — these handlers assume
+// from the permission registry, before any handler runs; these handlers assume
 // the caller is already authorized for the (resource, action) recorded there.
 type server struct {
 	service *coreorgs.Service
@@ -372,7 +372,7 @@ func (s *server) UpdateMemberRole(
 	row, err := s.service.GetMember(ctx, req.Msg.GetOrgId(), req.Msg.GetCustomerId())
 	if err != nil {
 		// ErrMemberNotFound here would mean a concurrent removal between the
-		// update and the re-fetch — translate accordingly; everything else is
+		// update and the re-fetch. Translate accordingly; everything else is
 		// already logged at the service layer.
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgMemberNotFound, "member not found", apperr.Resource("org_member", req.Msg.GetCustomerId()))

@@ -81,7 +81,7 @@ func TestReconcileAppliesAMissedCancellation(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — the missed cancellation was not applied", ent.Slug)
+		t.Errorf("slug = %q, want free: the missed cancellation was not applied", ent.Slug)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestReconcileReportsADealWithNoSubscription(t *testing.T) {
 		t.Fatalf("StoredRecord: %v", err)
 	}
 	if rec.PlanSlug != entitlement.SlugCustom || rec.ProviderProductID != "prod_deal" {
-		t.Errorf("stored %+v, want the deal untouched — reconcile must not revoke it", rec)
+		t.Errorf("stored %+v, want the deal untouched: reconcile must not revoke it", rec)
 	}
 }
 
@@ -150,7 +150,7 @@ func TestPastDueCountsAsBilled(t *testing.T) {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if report.EntitledUnbilled != 0 {
-		t.Errorf("entitled_unbilled = %d, want 0 — a past_due subscription is still being billed", report.EntitledUnbilled)
+		t.Errorf("entitled_unbilled = %d, want 0: a past_due subscription is still being billed", report.EntitledUnbilled)
 	}
 }
 
@@ -245,7 +245,7 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Fatalf("PruneDeliveries: %v", err)
 	}
 	if pruned != 2 {
-		t.Errorf("pruned = %d, want 2 — both rows past retention, processed or not", pruned)
+		t.Errorf("pruned = %d, want 2: both rows past retention, processed or not", pruned)
 	}
 
 	var remaining string
@@ -255,7 +255,7 @@ func TestPruneDropsEverythingPastTheWindow(t *testing.T) {
 		t.Fatalf("read remaining: %v", err)
 	}
 	if remaining != "evt_stuck" {
-		t.Errorf("remaining delivery = %q, want evt_stuck — a retry can still fix that one", remaining)
+		t.Errorf("remaining delivery = %q, want evt_stuck: a retry can still fix that one", remaining)
 	}
 
 	// The same window drops spent refs. Deleting one early makes its checkout
@@ -349,7 +349,7 @@ func TestReconcileCountsAcceptedButUnappliedDeliveries(t *testing.T) {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if report.Rejected != 1 {
-		t.Errorf("rejected = %d, want 1 — only the delivery carrying a reason", report.Rejected)
+		t.Errorf("rejected = %d, want 1: only the delivery carrying a reason", report.Rejected)
 	}
 }
 
@@ -377,10 +377,10 @@ func TestReconcileCountsStrandedDeliveries(t *testing.T) {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if report.Stranded != 1 {
-		t.Errorf("stranded = %d, want 1 — a delivery still in flight is not stranded", report.Stranded)
+		t.Errorf("stranded = %d, want 1: a delivery still in flight is not stranded", report.Stranded)
 	}
 	if report.Rejected != 0 {
-		t.Errorf("rejected = %d, want 0 — a stranded delivery carries no reason", report.Rejected)
+		t.Errorf("rejected = %d, want 0: a stranded delivery carries no reason", report.Rejected)
 	}
 }
 
@@ -410,7 +410,7 @@ func TestReconcileWalksPastThePageBoundary(t *testing.T) {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if report.Checked != rows {
-		t.Errorf("checked = %d, want %d — the walk stopped at a page boundary", report.Checked, rows)
+		t.Errorf("checked = %d, want %d: the walk stopped at a page boundary", report.Checked, rows)
 	}
 }
 
@@ -474,7 +474,7 @@ func TestReconcileCountsTwoLiveSubscriptions(t *testing.T) {
 		t.Fatalf("read the live subscription: %v", err)
 	}
 	if live != "sub00000000000000051" {
-		t.Errorf("live subscription = %s, want sub00000000000000051 — the revived row won", live)
+		t.Errorf("live subscription = %s, want sub00000000000000051: the revived row won", live)
 	}
 }
 
@@ -511,7 +511,7 @@ func TestReconcileStopsOnACancelledContext(t *testing.T) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	if provider.calls != 1 {
-		t.Errorf("provider was called %d times, want 1 — the walk carried on past the cancellation", provider.calls)
+		t.Errorf("provider was called %d times, want 1: the walk carried on past the cancellation", provider.calls)
 	}
 	if report.Unreadable > 1 {
 		t.Errorf("unreadable = %d; a cancellation was counted as a provider outage", report.Unreadable)

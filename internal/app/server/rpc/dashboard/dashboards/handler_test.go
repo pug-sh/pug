@@ -25,7 +25,7 @@ import (
 	"github.com/pug-sh/pug/internal/testutil"
 )
 
-// authCtx returns a context with a Principal that has a Project — what
+// authCtx returns a context with a Principal that has a Project: what
 // MustGetPrincipalWithProject expects in the happy path.
 func authCtx(projectID string) context.Context {
 	return authn.SetInfo(context.Background(), &rpc.Principal{
@@ -92,7 +92,7 @@ func TestHandler_QueryDashboard_Unauthenticated(t *testing.T) {
 // The handler translates sentinels (ErrDashboardNotFound, ErrDashboardTileNotFound,
 // ErrDashboardTileDisplayNameConflict) into specific connect codes. A regression
 // that adds a new sentinel without wiring it up would silently fall through to
-// CodeInternal — a user-facing wrong-HTTP-status bug. These tests pin the
+// CodeInternal: a user-facing wrong-HTTP-status bug. These tests pin the
 // mappings end-to-end against a real Postgres.
 
 func TestHandler_Get_NotFound_MapsToCodeNotFound(t *testing.T) {
@@ -286,7 +286,7 @@ func TestHandler_Update_EmptyDescriptionPreservesExisting(t *testing.T) {
 // TestHandler_Update_IsPublicPresenceSemantics pins the presence-aware sharing
 // contract on Update: is_public is acted on only when the field is present.
 // Enabling returns a share_id; a later Update that OMITS is_public must preserve
-// the share (not silently disable it — the footgun this guards against); false
+// the share (not silently disable it, the footgun this guards against); false
 // disables it; and re-enabling returns the same token (ON CONFLICT preserves it).
 func TestHandler_Update_IsPublicPresenceSemantics(t *testing.T) {
 	if testing.Short() {
@@ -355,7 +355,7 @@ func TestHandler_Update_IsPublicPresenceSemantics(t *testing.T) {
 }
 
 // TestHandler_Get_ShareReadFailureDegradesToPrivate pins S2: a transient
-// dashboard_shares read failure must not fail the whole Get — the dashboard is
+// dashboard_shares read failure must not fail the whole Get; the dashboard is
 // returned without a share_id rather than 500ing (the share is supplementary).
 // Simulated by dropping the share table after enabling sharing.
 func TestHandler_Get_ShareReadFailureDegradesToPrivate(t *testing.T) {

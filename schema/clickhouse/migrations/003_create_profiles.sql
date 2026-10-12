@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     -- typed subcolumn; paths beyond the limit spill to a shared subcolumn
     -- (correct, slower to filter on). An explicit cap of 1000 bounds per-row
     -- column count predictably regardless of any future change to the CH
-    -- default — clients defining hundreds of properties spill at a known
+    -- default: clients defining hundreds of properties spill at a known
     -- threshold rather than wherever a CH upgrade happens to land the default.
     properties  JSON(max_dynamic_paths = 1000),
     is_deleted  UInt8 DEFAULT 0,

@@ -199,7 +199,7 @@ func TestProfileSessionSort_MapsEveryProtoValue(t *testing.T) {
 		}
 		got := profileSessionSort(mode)
 		if got == events.ProfileSessionSortStartedAt && mode != activityv1.ProfileSessionSort_PROFILE_SESSION_SORT_STARTED_AT {
-			t.Errorf("profileSessionSort(%s) fell through to %q — add it to the switch", value.Name(), got)
+			t.Errorf("profileSessionSort(%s) fell through to %q; add it to the switch", value.Name(), got)
 			continue
 		}
 		if prev, dup := seen[got]; dup {
@@ -238,7 +238,7 @@ func TestGetProfileStats_Unauthenticated(t *testing.T) {
 
 // TestIncludeBots_ReachesTheReader pins the proto field through the handler for all
 // five activity RPCs. The core-layer toggle is covered by events.TestBotExclusion;
-// what is untested without this is the plumbing — a handler that drops the field or
+// what is untested without this is the plumbing: a handler that drops the field or
 // hardcodes it passes every core test.
 func TestIncludeBots_ReachesTheReader(t *testing.T) {
 	if testing.Short() {
@@ -336,14 +336,14 @@ func TestIncludeBots_ReachesTheReader(t *testing.T) {
 				t.Fatalf("%s(include_bots=true): %v", tc.name, err)
 			}
 			if included != 2 {
-				t.Errorf("%s with bots included = %d, want 2 — the field is not reaching the reader", tc.name, included)
+				t.Errorf("%s with bots included = %d, want 2: the field is not reaching the reader", tc.name, included)
 			}
 		})
 	}
 }
 
 // Pins encode → response → decode → seek. Without it, dropping the NextPageToken
-// assignment in the handler fails nothing — the same shape as the bug this RPC fixes.
+// assignment in the handler fails nothing, the same shape as the bug this RPC fixes.
 func TestGetProfileSessions_PageTokenRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

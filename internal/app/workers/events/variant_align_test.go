@@ -17,7 +17,7 @@ import (
 //	Variant(String, Int64, Float64, Bool, DateTime64(3))
 //
 // Adding a new oneof case to property_value.proto without updating this
-// table — and the matching ClickHouse schema / insights type mapping — will make
+// table, and the matching ClickHouse schema / insights type mapping, will make
 // TestPropertyValueOneofCoverage fail.
 var expectedVariantTypes = map[string]string{
 	"string_value":    "String",
@@ -55,7 +55,7 @@ func TestPropertyValueOneofCoverage(t *testing.T) {
 	descriptor := (&commonv1.PropertyValue{}).ProtoReflect().Descriptor()
 	oneof := descriptor.Oneofs().ByName("value")
 	if oneof == nil {
-		t.Fatal("PropertyValue.value oneof not found in descriptor — proto contract changed")
+		t.Fatal("PropertyValue.value oneof not found in descriptor; proto contract changed")
 	}
 
 	samples := samplePropertyValues()
@@ -67,13 +67,13 @@ func TestPropertyValueOneofCoverage(t *testing.T) {
 
 		wantSlot, declared := expectedVariantTypes[field]
 		if !declared {
-			t.Errorf("oneof case %q is missing from expectedVariantTypes — wire it through propertyValueToVariant, the migration's Variant(...), and variantTypeToPropertyValueType", field)
+			t.Errorf("oneof case %q is missing from expectedVariantTypes; wire it through propertyValueToVariant, the migration's Variant(...), and variantTypeToPropertyValueType", field)
 			continue
 		}
 
 		sample, ok := samples[field]
 		if !ok {
-			t.Errorf("oneof case %q missing a sample value — extend samplePropertyValues", field)
+			t.Errorf("oneof case %q missing a sample value; extend samplePropertyValues", field)
 			continue
 		}
 
@@ -82,7 +82,7 @@ func TestPropertyValueOneofCoverage(t *testing.T) {
 		// the proto-oneof → write-side translator together.
 		variant, err := propertyValueToVariant(sample)
 		if err != nil {
-			t.Errorf("oneof case %q: propertyValueToVariant returned error: %v — extend the switch", field, err)
+			t.Errorf("oneof case %q: propertyValueToVariant returned error: %v; extend the switch", field, err)
 			continue
 		}
 		gotSlot := variant.Type()
@@ -93,7 +93,7 @@ func TestPropertyValueOneofCoverage(t *testing.T) {
 
 	for declared := range expectedVariantTypes {
 		if !seen[declared] {
-			t.Errorf("expectedVariantTypes lists %q but the proto oneof no longer contains a matching case — remove the stale entry", declared)
+			t.Errorf("expectedVariantTypes lists %q but the proto oneof no longer contains a matching case; remove the stale entry", declared)
 		}
 	}
 }

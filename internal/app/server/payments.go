@@ -26,7 +26,7 @@ type paymentsConfig struct {
 // billing page, never a provider page.
 const checkoutReturnPath = "/settings/billing"
 
-// newPayments builds the provider wiring, or nil when none is configured — a
+// newPayments builds the provider wiring, or nil when none is configured: a
 // supported mode where only the buy button is missing. An unrecognised provider
 // name FAILS STARTUP: from the dashboard it is indistinguishable from disabled.
 func newPayments(ctx context.Context) (*corebilling.Payments, error) {

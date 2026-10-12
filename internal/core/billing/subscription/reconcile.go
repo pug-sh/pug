@@ -41,7 +41,7 @@ type ReconcileReport struct {
 	Untracked int
 	// A custom deal with no live custom subscription behind it: staged and not yet
 	// bought, passed over for the usage plan, or lapsed while its contract runs. An
-	// org with NO entitlement row is invisible here — see UnmappedProduct.
+	// org with NO entitlement row is invisible here; see UnmappedProduct.
 	EntitledUnbilled int
 	// A live subscription against a product nothing maps to: a deploy is missing a
 	// product key, or an operator created a product without pasting its id.
@@ -54,7 +54,7 @@ type ReconcileReport struct {
 	// customer, or a negative price. Counted rather than skipped, or the pass
 	// reports a sweep it did not make.
 	Unapplicable int
-	// Two live subscriptions for one org, refused by the partial unique index — the
+	// Two live subscriptions for one org, refused by the partial unique index: the
 	// one finding that means an org may be paying twice.
 	TwoLive int
 	// Deliveries accepted and not applied. The walk above cannot see them: one that
@@ -63,8 +63,8 @@ type ReconcileReport struct {
 	// Deliveries that never settled: every retry failed, so nothing recorded a
 	// reason. The one outcome no other counter can represent.
 	Stranded int
-	// A live deal whose product does not bill every tier as the meter states it — a
-	// missing meter bills that tier at zero — or that is pinned to a plan the catalog
+	// A live deal whose product does not bill every tier as the meter states it (a
+	// missing meter bills that tier at zero) or that is pinned to a plan the catalog
 	// does not know. A finding for an operator, who fixes the product in the
 	// provider's dashboard; a check that could not reach the provider is Unreadable.
 	MisconfiguredDeals int
@@ -83,7 +83,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 	provider := s.payments.Provider
 
 	// Paged by offset rather than keyset: the walk holds no lock, and a row seen
-	// twice or not at all is harmless — the CAS makes a repeat a no-op.
+	// twice or not at all is harmless; the CAS makes a repeat a no-op.
 	for offset := int32(0); ; offset += reconcilePageSize {
 		rows, err := s.read.ListBillingSubscriptionsByProvider(ctx,
 			dbread.ListBillingSubscriptionsByProviderParams{
@@ -125,8 +125,8 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) (ReconcileReport
 			slog.String("org_id", row.OrgID), slog.String("plan_slug", row.PlanSlug))
 	}
 
-	// A deal's product is built by hand, one per deal, so the meter's startup check —
-	// which covers the catalog's products — cannot see it.
+	// A deal's product is built by hand, one per deal, so the meter's startup check,
+	// which covers the catalog's products, cannot see it.
 	if s.payments.Usage != nil {
 		deals, err := s.read.ListLiveCustomDealProducts(ctx, provider.Name())
 		if err != nil {
@@ -269,7 +269,7 @@ func (s *Service) reconcileOne(
 	applied, err := s.applySubscription(ctx, provider, row.OrgID, event, now)
 	if err != nil {
 		// Already logged at the write, except the two states the writer names rather
-		// than fails on — and every one of them has to land on a counter, or the pass
+		// than fails on, and every one of them has to land on a counter, or the pass
 		// reports a sweep it did not make.
 		switch {
 		case errors.Is(err, ErrTwoLiveSubscriptions):

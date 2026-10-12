@@ -452,7 +452,7 @@ func TestWithJWTAuth(t *testing.T) {
 	})
 
 	t.Run("non-HS256 algorithm returns error", func(t *testing.T) {
-		// Sign with HS384 — still HMAC, so the keyfunc's SigningMethodHMAC
+		// Sign with HS384: still HMAC, so the keyfunc's SigningMethodHMAC
 		// check passes; only WithValidMethods("HS256") rejects it. This
 		// isolates that the algorithm pin works, not just the keyfunc.
 		raw := jwt.NewWithClaims(jwt.SigningMethodHS384, jwt.MapClaims{
@@ -648,7 +648,7 @@ func TestNormalizeBearerAPIKey(t *testing.T) {
 		// separately from want because the two legitimately disagree: a public key is
 		// never an effective credential (want "") yet stays on the request untouched for
 		// the auth boundary to reject. It is the header, not the return value, that the
-		// outer WithPrivateKeyAuth reads — so dropping the Set in NormalizeBearerAPIKey
+		// outer WithPrivateKeyAuth reads, so dropping the Set in NormalizeBearerAPIKey
 		// would break Bearer auth for every MCP client while every want below still held.
 		wantHeader string
 	}{

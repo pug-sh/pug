@@ -64,7 +64,7 @@ func ExecuteQuery(
 		if usedRollup && req.GetSpec().GetSession() == nil {
 			// Session rollup queries carry no event list and emit a single
 			// synthetic series kind ($session), so multi-event-kind zero-filling
-			// doesn't apply — skip it for them.
+			// doesn't apply; skip it for them.
 			// fillMultiEventTrendZeros self-guards on len(kinds) <= 1, so single-
 			// event rollup queries pass through unchanged.
 			events := req.GetSpec().GetEvents()
@@ -206,8 +206,8 @@ func ExecuteQuery(
 		resp.Result = &insightsv1.QueryResponse_UserFlow{UserFlow: result}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_TOP_K, insightsv1.InsightType_INSIGHT_TYPE_MAP:
-		// A map is a top K over $country, so it shares the whole path — builders,
-		// rollup eligibility, result assembly — and answers in top_k rows.
+		// A map is a top K over $country, so it shares the whole path (builders,
+		// rollup eligibility, result assembly) and answers in top_k rows.
 		topKReq, insight := req, "top k"
 		isMap := req.GetSpec().GetInsightType() == insightsv1.InsightType_INSIGHT_TYPE_MAP
 		if isMap {
@@ -246,11 +246,11 @@ func ExecuteQuery(
 // buildQueryError classifies a trends/segmentation build failure. usedRollup
 // (reported by the execution dispatcher, so eligibility is evaluated once) means
 // the failing builder was buildTrendsFromRollup / buildSegmentationFromRollup,
-// whose preconditions the dispatcher already guaranteed — so any error is an
+// whose preconditions the dispatcher already guaranteed, so any error is an
 // internal bug: logged + recorded at source here and returned as a generic
 // failure. Otherwise it is a client BuildTrendsQuery / BuildSegmentationQuery
 // validation error, which surfaces as InvalidQueryError (WarnContext, not
-// recorded — telemetry.md's client-input exception).
+// recorded: telemetry.md's client-input exception).
 func buildQueryError(ctx context.Context, projectID, insight string, usedRollup bool, err error) error {
 	if usedRollup {
 		slog.ErrorContext(ctx, "rollup query build failed", slogx.Error(err),

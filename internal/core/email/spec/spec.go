@@ -1,7 +1,7 @@
 // Package spec holds the leaf types shared between core/email and the
 // deps/email/* provider packages (resend, smtp, ses). Living in a separate
 // package lets the deps providers describe their Send signature without
-// importing core/email — that import direction would be a cycle once
+// importing core/email: that import direction would be a cycle once
 // core/email needs to construct providers from per-tenant config
 // (see internal/core/email/tenant_resolver.go).
 package spec

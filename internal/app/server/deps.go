@@ -44,7 +44,7 @@ type deps struct {
 	readyFailures atomic.Int64
 }
 
-// close shuts down all deps. OTel must shut down last — it owns the slog backend,
+// close shuts down all deps. OTel must shut down last: it owns the slog backend,
 // so earlier components' shutdown logs are still captured. Cancellation is
 // stripped from ctx so cleanup isn't aborted by a cancelled signal context.
 func (d *deps) close(ctx context.Context) {
@@ -61,12 +61,12 @@ func (d *deps) close(ctx context.Context) {
 	}
 	if d.ch != nil {
 		if err := d.ch.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close clickhouse", slogx.Error(err)) // puglint:exempt — no span at shutdown
+			slog.ErrorContext(ctx, "failed to close clickhouse", slogx.Error(err)) // puglint:exempt (no span at shutdown)
 		}
 	}
 	if d.closeOtel != nil {
 		if err := d.closeOtel(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err)) // puglint:exempt — nothing left to record it on
+			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err)) // puglint:exempt (nothing left to record it on)
 		}
 	}
 }
@@ -84,14 +84,14 @@ func newDeps(ctx context.Context) (*deps, error) {
 
 	otelInterceptor, closeOtel, err := telemetry.NewOtelInterceptor(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err)) // puglint:exempt — nothing to record it on yet
+		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err)) // puglint:exempt (nothing to record it on yet)
 		return nil, err
 	}
 	closers = append(closers, func() {
 		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := closeOtel(rollbackCtx); err != nil {
-			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err)) // puglint:exempt — nothing left to record it on
+			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err)) // puglint:exempt (nothing left to record it on)
 		}
 	})
 
@@ -149,7 +149,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 	}
 	closers = append(closers, func() {
 		if err := chConn.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close clickhouse during rollback", slogx.Error(err)) // puglint:exempt — no span at startup
+			slog.ErrorContext(ctx, "failed to close clickhouse during rollback", slogx.Error(err)) // puglint:exempt (no span at startup)
 		}
 	})
 

@@ -5,7 +5,7 @@ import "testing"
 // TestClassifyChannelRules pins the normative rule table row by row, plus the
 // precedence between rows. The full Input → Derive path is exercised so the
 // tests also cover UTM completion, self-blanking, and lowercasing feeding the
-// classifier. Editing an expectation here is a taxonomy change — update
+// classifier. Editing an expectation here is a taxonomy change; update
 // docs/architecture/web-analytics.md alongside.
 func TestClassifyChannelRules(t *testing.T) {
 	page := "https://pugandpals.example.com/products/ball"
@@ -56,7 +56,7 @@ func TestClassifyChannelRules(t *testing.T) {
 		// Domain-shaped utm_source: some tools stamp the full referrer domain
 		// (utm_source=facebook.com), so matchesSource falls through to its
 		// matchesHost arm. Every bare-name source case above takes the
-		// slices.Contains arm and never exercises it — a regression dropping the
+		// slices.Contains arm and never exercises it; a regression dropping the
 		// domain arm would misfile these into Referral/Unassigned with the suite
 		// green. The subdomain case pins the dot-boundary suffix match too.
 		{"organic social via domain-shaped source", Input{URL: page, UTMSource: "facebook.com"}, ChannelOrganicSocial},
@@ -88,7 +88,7 @@ func TestClassifyChannelRules(t *testing.T) {
 		// 9 beats 10: an affiliate link forwarded in a newsletter.
 		{"webmail ref with affiliate medium is email", Input{URL: page, Referrer: "https://mail.google.com/x", UTMMedium: "affiliate"}, ChannelEmail},
 		// The webmail guard covers the REF side only, so a search source still
-		// takes rule 6 — and a paid medium still takes rules 1-5. Both are what
+		// takes rule 6, and a paid medium still takes rules 1-5. Both are what
 		// an edit hoisting `webmail` out of the search expression would break.
 		{"search source beats webmail ref", Input{URL: page, Referrer: "https://mail.google.com/x", UTMSource: "google"}, ChannelOrganicSearch},
 		{"paid medium with webmail ref is paid other", Input{URL: page, Referrer: "https://mail.yahoo.com/x", UTMMedium: "cpc"}, ChannelPaidOther},
@@ -128,7 +128,7 @@ func TestClassifyChannelRules(t *testing.T) {
 		// 13: Direct
 		{"no referrer no utm", Input{URL: page}, ChannelDirect},
 		// A self-referral is RESOLVED and deliberately blanked, so it must stay
-		// Direct — it is not an unclassifiable signal.
+		// Direct; it is not an unclassifiable signal.
 		{"self-referral collapses to direct", Input{URL: page, Referrer: "https://pugandpals.example.com/"}, ChannelDirect},
 		{"self-referral with www collapses to direct", Input{URL: page, Referrer: "https://www.pugandpals.example.com/"}, ChannelDirect},
 		// Auth bounce: blanked before classification, so Direct like a self-referral.
@@ -153,12 +153,12 @@ func TestClassifyChannelRules(t *testing.T) {
 
 // TestChannelValuesFrozen pins the literal string of every channel constant.
 // TestClassifyChannelRules asserts Derive(...).Channel == ChannelPaidSearch,
-// which is tautological on the string — renaming ChannelPaidSearch to a typo
+// which is tautological on the string: renaming ChannelPaidSearch to a typo
 // changes both sides and stays green. These values land in a
 // LowCardinality(String) rollup dimension and in migration 008's multiIf; a
 // rename would fork history into two irreconcilable dim_values and silently
 // desync the SQL mirror. Editing a value here is therefore a taxonomy
-// MIGRATION, not a refactor — the same freeze contract as the migration-scoped
+// MIGRATION, not a refactor: the same freeze contract as the migration-scoped
 // dim lists in insights. 008 itself is shipped and must NOT be edited to
 // re-sync: a value change needs a NEW migration re-deriving the column.
 func TestAuthIntermediaryHostsBlankToDirect(t *testing.T) {
@@ -189,7 +189,7 @@ func TestChannelValuesFrozen(t *testing.T) {
 	// A rename collapses two keys onto one literal (or frees a literal), so the
 	// count guards against a silent merge as well as a typo.
 	if len(frozen) != 13 {
-		t.Fatalf("expected 13 distinct channel values, got %d — a rename collided two constants", len(frozen))
+		t.Fatalf("expected 13 distinct channel values, got %d: a rename collided two constants", len(frozen))
 	}
 	for got, want := range frozen {
 		if got != want {

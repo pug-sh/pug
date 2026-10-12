@@ -1,7 +1,7 @@
 # Payments
 
-Design reference for the second billing slice: taking money. Entitlement — how
-much of what an org sends is free, and how the rest splits — is
+Design reference for the second billing slice: taking money. Entitlement (how
+much of what an org sends is free, and how the rest splits) is
 [`billing.md`](billing.md) and is already implemented; counting is
 [`usage.md`](usage.md). This document covers the provider, checkout, the webhook
 inbox, and the one question that decides the shape of everything else: who owns
@@ -9,7 +9,7 @@ the price.
 
 **Dodo Payments is the provider, and it sits behind an interface (§2.1).** The
 provider is a choice pug should be able to change without touching resolution,
-the inbox, the reconcile pass or the dashboard — merchant-of-record terms and
+the inbox, the reconcile pass or the dashboard: merchant-of-record terms and
 fee schedules move, and being locked to one is a commercial risk, not only a
 technical one. Dodo is the first and, for now, the only implementation.
 
@@ -39,13 +39,13 @@ webhook inbox; the provider-reported states entitlement cannot derive
 the pug dashboard rather than from a link we send (§5.2).
 
 **Out:** cheques, wire transfers, and any payment that happens outside the
-provider (§16 — this is the largest departure from the archived build); **a
+provider (§16; this is the largest departure from the archived build); **a
 second provider implementation** (§2.1); per-seat pricing; multi-currency (§3); an in-dashboard plan switcher (Dodo's
 customer portal does that); revenue reporting.
 
 **Unchanged when it shipped:** the quota window, the plan catalog's quotas, and
-every existing test. `Resolve` gained one argument — a nullable subscription
-(§7) — and every branch it already had survived beneath it. `billing_entitlements`
+every existing test. `Resolve` gained one argument, a nullable subscription
+(§7), and every branch it already had survived beneath it. `billing_entitlements`
 gained exactly one nullable column (§6) and `pug billing set` one flag. That
 slice was additive; usage billing is not. A plan now comes only from
 `billing_subscriptions`, so reverting payments would drop every subscriber to
@@ -58,7 +58,7 @@ free.
    monthly fee are the provider's, on its product (§4.1), and pug cannot alter
    them by writing to Postgres.
 2. **One writer per row.** The operator writes `billing_entitlements`. The
-   payments side writes `billing_subscriptions` — the webhook, reconcile and
+   payments side writes `billing_subscriptions`: the webhook, reconcile and
    `ConfirmCheckout`, all through the one CAS in `applySubscription`, so there is
    no second notion of "newer". Neither side writes the other's table. This is
    what makes drift structurally impossible rather than a thing to remember (§4),
@@ -71,10 +71,10 @@ free.
    entitlement service's `WithOrgLock`, which takes the same
    `pg_advisory_xact_lock` a `billing clear` does and hands it that row as read
    under the lock. Otherwise a clear can commit between the mapping and the
-   write, leaving a live custom subscription against no row — a deal charged
+   write, leaving a live custom subscription against no row: a deal charged
    without its terms, and exactly the stranding `Clear`'s own guard refuses to
    cause.
-3. **Every paid org has a provider subscription**, negotiated deals included —
+3. **Every paid org has a provider subscription**, negotiated deals included,
    by construction: there is no manual-payment path, and an entitlement row never
    grants a plan on its own ([`billing.md`](billing.md) §6). A `custom` row with
    no live custom subscription is a deal staged and not bought, passed over for
@@ -150,7 +150,7 @@ Three rules keep the seam from rotting:
   providers is the thing that cannot be maintained.
 - **The canonical status vocabulary is pug's** (§7) and does not grow to fit a
   provider. A state pug has no word for normalizes to "not live", which is the
-  safe direction — see §7.
+  safe direction; see §7.
 - **One implementation, not two.** Writing a second provider now to prove the
   abstraction costs more than it saves and validates nothing: the interface is
   shaped by the second real provider, not by a speculative one. What this slice
@@ -158,8 +158,8 @@ Three rules keep the seam from rotting:
 
 **Why one provider still needs the seam now, not later:** the two things that
 make a provider swap expensive are not the API calls, they are the *stored*
-shapes — a subscription row keyed to one provider's assumptions, and a payload
-column read directly by the apply path. Both are decided in this slice and both
+shapes (a subscription row keyed to one provider's assumptions, and a payload
+column read directly by the apply path). Both are decided in this slice and both
 are hard to change afterwards, so §6 pays for them now (a `provider` column, a
 key that permits two providers at once) while they are free.
 
@@ -171,8 +171,8 @@ sells in USD and stores USD, and every product pug sells is priced in USD.
 This is enforced rather than assumed, by the one write every subscription goes
 through: the apply the webhook, reconcile and `ConfirmCheckout` share refuses a
 currency that is not `USD`. The webhook and `ConfirmCheckout` also check before
-it, so a foreign-currency delivery is **rejected at the webhook** — stored in the
-inbox, marked processed, logged as an error, and not applied — and a buyer back
+it, so a foreign-currency delivery is **rejected at the webhook** (stored in the
+inbox, marked processed, logged as an error, and not applied), and a buyer back
 from checkout is told why rather than handed an internal error. The write stores
 `USD` rather than the payload's code, so a foreign currency let through would be
 stored as a USD figure it never was.
@@ -180,7 +180,7 @@ stored as a USD figure it never was.
 The payoff for writing the guard down instead of leaving it implicit: while it
 holds, `price_cents` is an accurate field name. When multi-currency arrives, what
 changes is every comparison against `billing.Currency`, and the rename to
-`price_minor_units` happens with it — JPY has no cents, so the name and the
+`price_minor_units` happens with it: JPY has no cents, so the name and the
 constraint fall together or not at all.
 
 ## 4. Who owns the price
@@ -191,7 +191,7 @@ mechanics.
 An earlier cut of the entitlement slice let an operator type `--price 40000
 --currency USD` into `pug billing set` and stored it. Nothing charged anybody, so
 the number was a note. The moment Dodo bills the org, that same number becomes a
-**second authority on what the customer pays** — and the two can disagree the first time a deal is repriced in
+**second authority on what the customer pays**, and the two can disagree the first time a deal is repriced in
 Dodo's dashboard. The dashboard would then render a stale figure as fact, which
 is worse than rendering nothing.
 
@@ -201,11 +201,11 @@ comes back every time somebody wants a price on a page.
 
 | Question | Answer | Source |
 |---|---|---|
-| How much of what it sends is free? | `included_events` | pug — the catalog's allowance, or the org's override |
-| How is the rest split into tiers? | `TierUpTo` | pug — the catalog; a deal splits over its pinned base plan's |
-| How long is its history kept? | `retention_days` | pug — catalog, or the org's override |
-| What does each tier cost, and the fee? | the rates | Dodo — the product's meters and fixed price (§4.1) |
-| What does this org pay? | the amount | Dodo — the subscription, mirrored read-only |
+| How much of what it sends is free? | `included_events` | pug: the catalog's allowance, or the org's override |
+| How is the rest split into tiers? | `TierUpTo` | pug: the catalog; a deal splits over its pinned base plan's |
+| How long is its history kept? | `retention_days` | pug: catalog, or the org's override |
+| What does each tier cost, and the fee? | the rates | Dodo: the product's meters and fixed price (§4.1) |
+| What does this org pay? | the amount | Dodo: the subscription, mirrored read-only |
 
 Concretely (**done**): `price_cents_override` and `currency_override` are gone
 from migration 019, `--price` / `--currency` are gone from `pug billing set`, and
@@ -216,7 +216,7 @@ record rather than a source of truth.
 
 Usage billing (2026-09-27) went the rest of the way: the catalog's list prices
 went too, and `price_cents` and `currency` are reserved on the wire. A usage plan
-has no single price to list — what a month costs depends on the month — and a
+has no single price to list (what a month costs depends on the month), and a
 copy of the product's rates in pug would go stale the first time one is repriced
 in Dodo's dashboard. What an org is actually charged lives in the provider;
 `billing_subscriptions.price_cents` mirrors the subscription's recurring amount
@@ -228,7 +228,7 @@ naming question all stop existing.
 
 **The counter-argument, recorded:** a comped or annual deal has an agreed
 amount an operator may want stored where a query can reach it. `--note` is
-prose. If that turns out to matter, the column comes back — as a nullable
+prose. If that turns out to matter, the column comes back, as a nullable
 mirror written by the webhook, never by a person.
 
 ### 4.1 Setting up a usage product
@@ -240,12 +240,12 @@ by hand, and a mistake in any bills silently wrong. The meter binary's startup
 check (for catalog products) and reconcile (for live deals' products, §9) catch
 the first three.
 
-1. **One `max` meter per tier** on the event `pug.usage`, keyed `t1`, `t2`, … —
-   `Plan.Tiers()` of them. Every product shares the same meters.
+1. **One `max` meter per tier** on the event `pug.usage`, keyed `t1`, `t2`, …
+   (`Plan.Tiers()` of them). Every product shares the same meters.
 2. **Every tier's meter attached to the product, and no other meter**, each at its
    tier's rate and with a **free threshold of 0**: the allowance is pug's, and a
    threshold would apply it twice. Any other meter would bill what pug never
-   states to it — a `sum` over a tier's key, say, bills the total of every hourly
+   states to it: a `sum` over a tier's key, say, bills the total of every hourly
    statement, each of which is the whole period so far.
 3. **A fixed price of at least $1.00 a month** (`FixedPrice ≥ 100`): Dodo refuses
    payments under $1.00, so the fee keeps every renewal chargeable however quiet
@@ -272,15 +272,15 @@ pass could lower.
 **It bills from `pug cron usage`'s day cells.** Every statement is summed from
 `usage_daily`, which only the usage pass ([`usage.md`](usage.md)) writes, so a
 usage pass that stopped would bill every subscriber the fee alone. While anybody
-is subscribed, the meter pass therefore states nothing and exits non-zero —
-outcome `stale_usage` — when the newest `usage_computed_at` is absent or more than
+is subscribed, the meter pass therefore states nothing and exits non-zero
+(outcome `stale_usage`) when the newest `usage_computed_at` is absent or more than
 three hours old (`usageStaleAfter`): a couple of missed hourly runs, or the usage
 pass refusing to stamp a read it cannot trust. Stale cells would not over-bill,
 since every statement is a lower bound the next supersedes; refusing is what makes
 the stall loud.
 
 **A statement** is one `pug.usage` event per org, carrying one metadata key per
-tier — `t1` … `tN`, each that tier's count for the period so far — stamped with
+tier (`t1` … `tN`, each that tier's count for the period so far), stamped with
 the tick's start. Each meter keeps the **max** of its key over the period, so a
 statement is always the whole period: a repeat changes nothing and a lost one is
 superseded by the next. That is the guard pug relies on against a repeat: Dodo
@@ -311,8 +311,8 @@ Each tick, for each live subscription:
    next tick (`superseded`) rather than stated wrongly or failed.
 3. **Window.** A statement covers whole UTC days, because `usage_daily` counts
    days while Dodo's periods start at an instant. An org's windows are contiguous
-   and never overlap: each starts where the days it follows end — or at its own
-   start day after a gap — and ends on the day its period ends. What a window
+   and never overlap: each starts where the days it follows end, or at its own
+   start day after a gap, and ends on the day its period ends. What a window
    follows is the org's other ledger row whose days end latest: across a renewal
    of the same subscription its whole window, and across a change of subscription
    only the days summed while the old one was live (`summed_through`, which every
@@ -325,14 +325,14 @@ Each tick, for each live subscription:
    starts at the org's own allowance rather than the plan's default.
 5. **Carry.** When the window meets the days it follows, those days are recounted
    and re-split under the terms they were stated under, and whatever a tier ended
-   short lands in the same tier this period — on the product the org holds now, at
+   short lands in the same tier this period, on the product the org holds now, at
    that product's rate for the tier. Only within one plan: another plan's tier
    covers other bounds, so a change of plan carries nothing, reported as an error
    once. Recomputed every tick, so days metered late still arrive; each window's
    shortfall is carried once, by the window after it, measured against what that
    window stated as its own.
-6. **Never down.** Each count is the max of what was stated and what is computed —
-   what a `max` meter holds anyway — so an erasure mid-period never lowers a bill.
+6. **Never down.** Each count is the max of what was stated and what is computed,
+   what a `max` meter holds anyway, so an erasure mid-period never lowers a bill.
    A period restates only under the plan it was first split by: the max of two
    plans' splits could state more events than were sent, so that is refused,
    loudly, instead.
@@ -342,7 +342,7 @@ Each tick, for each live subscription:
 | Fails | Outcome |
 |---|---|
 | The write ahead | Nothing is sent; the next tick retries. |
-| The ingest | The row stays un-acked; the next tick re-sends it — the same counts and event id, stamped with that tick. |
+| The ingest | The row stays un-acked; the next tick re-sends it: the same counts and event id, stamped with that tick. |
 | The ack | The next tick re-sends it; `max` makes the repeat inert. |
 | The ingest, on the last tick before renewal | The row overstates what Dodo holds by one tick's growth, and the carry under-bills by that much. |
 
@@ -351,20 +351,20 @@ only when a tier grew. Each statement is logged with its org, period and event i
 because the ledger keeps only a period's latest and a disputed invoice is traced
 from Dodo's event log. The ledger row keeps, per org and Dodo period, the
 subscription it belongs to, the terms the period was split under (the plan whose
-tiers split it — a deal's base plan, since `custom` names no layout — and the
+tiers split it, a deal's base plan, since `custom` names no layout, and the
 allowance), its window and how far it was summed while live, the period's own
 counts and the carry separately, and whether the last statement was acknowledged.
 
 **The dashboard shows what was stated.** `GetBillingStatus.tier_usage` is the
-ledger row of the live subscription's current period — each tier's count, carry
-included, between the bounds of the plan and allowance it was split by — and
+ledger row of the live subscription's current period (each tier's count, carry
+included, between the bounds of the plan and allowance it was split by), and
 `tier_usage_as_of` says when. A running figure, not an invoice: Dodo bills each
 tier the most it was told by the period's end, and the row can hold a statement
 not yet acknowledged. Quantities only: the rates live on the product, so pug
 never shows a price that can go stale.
 
 **Accepted limits.** A cancelled subscription loses the usage since its last
-statement — about an hour, plus however far the usage pass lagged, which the
+statement: about an hour, plus however far the usage pass lagged, which the
 three-hour gate bounds. A bill cannot go down within a period. The carry reaches
 one period back, so a day metered later than that goes unbilled. A subscription's
 first window includes its checkout day from UTC midnight, normally inside the
@@ -379,27 +379,27 @@ until a later change settles them.
 
 **A negotiated deal is a Dodo product plus a pug entitlement row.** It cannot
 live only in pug: Dodo charges products, so a deal Dodo has never heard of is a
-deal nobody can pay for. What can live only in pug is the *quantities* — the
-allowance, the retention and the name — and they do.
+deal nobody can pay for. What can live only in pug is the *quantities* (the
+allowance, the retention and the name), and they do.
 
 The split for `custom`:
 
-- **In Dodo:** a usage product like the plan's (§4.1) — one meter per tier of
+- **In Dodo:** a usage product like the plan's (§4.1; one meter per tier of
   the plan it is made against, at the deal's rates, and the deal's monthly fee as
-  its fixed price, never under $1.00 — and the subscription the customer holds
+  its fixed price, never under $1.00) and the subscription the customer holds
   against it. Created **by hand in Dodo's dashboard**, not by pug (§5.1).
 - **In pug:** `plan_slug = 'custom'` with that product's id
   (`provider_product_id`, §5.2) and the plan it splits over (`base_plan_slug`,
-  which `pug billing set` pins to the current plan when the product is set) —
-  `custom_needs_product` and `custom_needs_base_plan` make the three inseparable
-  — plus whatever the deal negotiated on top: `included_events_override` for its
+  which `pug billing set` pins to the current plan when the product is set)
+  (`custom_needs_product` and `custom_needs_base_plan` make the three inseparable)
+  plus whatever the deal negotiated on top: `included_events_override` for its
   free allowance (the base plan's without one; `--events 1` for a deal that
   charges from the first event, since `--events 0` is refused),
   `retention_days_override`, a display name, `contract_ends_at` and `--note`.
   The pin is what keeps a reprice from moving a deal: its product still carries
   its base plan's meters ([`billing.md`](billing.md) §4.2).
 - **The join:** the subscription row the webhook writes, attributed by the
-  `checkout_ref` pug mints for the checkout session it opens — or, for a payment
+  `checkout_ref` pug mints for the checkout session it opens, or, for a payment
   link, by `metadata.org_id` paired with the `provider_product_id` staged above.
 
 Note what is *not* here: no price typed into pug, and no payment link emailed to
@@ -414,9 +414,9 @@ This design drops both for v1.
 
 Custom deals will be rare, and each one already involves a human conversation. Creating the product in Dodo's dashboard takes a minute, is
 where the operator can see tax categories and the product collection anyway, and
-removes an entire API surface — product creation, repricing, the
+removes an entire API surface (product creation, repricing, the
 create-then-checkout race, and the "what if the product exists but the
-subscription never activated" state — from pug.
+subscription never activated" state) from pug.
 
 What pug keeps is the part a dashboard cannot do: the allowance, and the link
 back to the org. Add `CreateProduct` when the deal rate makes the paste annoying, not
@@ -424,7 +424,7 @@ before.
 
 Worth being explicit, because it looks like a contradiction with §4: creating the
 product over the API would mean passing the negotiated price *through* pug, which
-is not the same as storing it — the price would be an argument to Dodo and the
+is not the same as storing it; the price would be an argument to Dodo and the
 product id would be what comes back. §4 is not what rules `CreateProduct` out;
 the API surface it drags in is.
 
@@ -442,8 +442,8 @@ pug billing set o_2f9k --plan custom --events 5000000 \
 
 `billing_entitlements` gains one nullable `provider_product_id`, operator-written
 like every other column on that table (invariant 2). `GetBillingStatus` reports
-whether one is set; when it is, the dashboard shows this org — and only this org
-— a buy button, and `CreateCheckoutSession` opens a Dodo checkout against that
+whether one is set; when it is, the dashboard shows this org, and only this org,
+a buy button, and `CreateCheckoutSession` opens a Dodo checkout against that
 product with `metadata.org_id` set. On `subscription.active` the webhook writes
 the subscription row and the deal is live.
 
@@ -451,18 +451,18 @@ So the whole flow is: create the product in Dodo, paste its id, tell the custome
 it is waiting in their dashboard. No link leaves our hands, and no price enters
 pug.
 
-**A payment link still works** and stays the fallback — for a customer who wants
+**A payment link still works** and stays the fallback: for a customer who wants
 to pay before anyone touches pug, or a deal where the buyer is not a pug user at
 all. It carries no `checkout_ref`, so it attributes on `metadata.org_id` **paired
 with** the `provider_product_id` already on that org's row: `pug billing set
 --provider-product` has to run *before* the link is paid, not after. That pairing
 is what keeps a buyer-settable `metadata_org_id` from placing a subscription on
-someone else's org — the worst a forged one can do is buy the org exactly the
+someone else's org: the worst a forged one can do is buy the org exactly the
 product an operator already staged for it.
 
 **The one ordering hazard:** a payment link paid before `pug billing set
 --provider-product` has run names a product no row maps, so the delivery is
-refused (§8) — stored, marked processed, and reported by reconcile (§9) — and the
+refused (§8), stored, marked processed, and reported by reconcile (§9), and the
 org stays free while Dodo charges it. A customer paying for nothing is exactly the
 kind of thing that must be loud. The buy button cannot reach this: it exists only
 once the product is on the row.
@@ -479,7 +479,7 @@ A custom-deal customer does everything from the pug dashboard, like anybody else
 
 The only operator step is pasting a product id once per deal, and it happens
 during a conversation that was going to happen anyway. Nothing about a custom
-deal makes the customer's experience different from a self-serve one — they never
+deal makes the customer's experience different from a self-serve one: they never
 receive a link, and they never see Dodo except as the checkout and portal pages a
 self-serve customer sees too.
 
@@ -494,7 +494,7 @@ billing_entitlements
                                      -- written, like every other column here.
 ```
 
-NULL is every org that is not a negotiated deal — the catalog plans get their
+NULL is every org that is not a negotiated deal; the catalog plans get their
 product ids from config (section 13), not from the row: one key per catalog plan,
 retired plans included, mapping its slug to a provider product id. Since usage
 billing it is also set exactly when the row is `custom` (`custom_needs_product`),
@@ -504,7 +504,7 @@ beside the base plan its meters were made for (`base_plan_slug`,
 The id belongs to whichever provider is configured, and a provider swap
 invalidates every stored one along with every config key. That is a re-paste per
 custom deal at cutover, which at the expected deal rate (section 5.1) is minutes
-of work — recorded here so it is a known cost rather than a surprise. It is not
+of work, recorded here so it is a known cost rather than a surprise. It is not
 worth a `provider` column beside it: an id that names the wrong provider is
 caught by the checkout call failing, immediately and loudly, on the one org it
 affects.
@@ -534,15 +534,15 @@ billing_subscriptions
 
 **One LIVE subscription per org, not one row per org.** An earlier cut of this
 design made `org_id` the primary key, the same reasoning as the entitlement row.
-That is wrong the moment the provider is swappable: a cutover cannot be atomic —
-the customer re-checks-out on the new provider while the old subscription is
-still winding down — so for a period an org legitimately holds two rows, one
+That is wrong the moment the provider is swappable: a cutover cannot be atomic
+(the customer re-checks-out on the new provider while the old subscription is
+still winding down), so for a period an org legitimately holds two rows, one
 live and one cancelled. A single-row-per-org key makes that migration
 impossible to perform without deleting billing history, which is the record you
 least want to destroy during exactly that operation.
 
-The partial unique index keeps the invariant that actually matters — an org
-cannot be *billed twice* — while permitting the dead row beside the live one. It
+The partial unique index keeps the invariant that actually matters (an org
+cannot be *billed twice*) while permitting the dead row beside the live one. It
 is also what makes §9's reconcile able to report "two live subscriptions" as the
 database refusing it rather than as a report nobody reads.
 
@@ -573,7 +573,7 @@ safe (§8), and because a payload that failed to apply is otherwise
 unrecoverable.
 
 `payload` is the delivery as sent, which for a subscription event carries the
-customer's name, email, billing address and any tax id — personal data pug does
+customer's name, email, billing address and any tax id: personal data pug does
 not otherwise store. Replay needs the bytes, so the controls are on the row
 rather than on the fields: no RPC or MCP tool reads this table, and the
 reconcile pass prunes rows **90 days** after `processed_at`, or after
@@ -582,22 +582,22 @@ long before that, so an undecodable body does not keep its payload for good.
 Retention is
 therefore the whole control today: `compliance` erases a data subject, not an
 org, and pug has no org-deletion path at all. An erasure query was written and
-removed — it matched deliveries through `billing_subscriptions`, which cascades
+removed: it matched deliveries through `billing_subscriptions`, which cascades
 away with the org, so it erased nothing once the org was gone. Anything
-long-lived that a query wants — status, period, amount — belongs on
+long-lived that a query wants (status, period, amount) belongs on
 `billing_subscriptions`, which outlives the payload it came from.
 
 ## 7. Resolution with a subscription
 
 `Resolve` grows one input: a `*Subscription` beside `rec Record`, nil for the
 orgs that have none. A separate argument rather than a field on `Record` because
-the two rows have different writers (invariant 2) and different readers — a
+the two rows have different writers (invariant 2) and different readers: a
 `Record` is what `pug billing` produces, and folding a webhook-owned row into it
 would put the operator's type in the provider's write path.
 
 The order, most specific first:
 
-1. A **live subscription** supplies the plan — a usage slug, or `custom` over
+1. A **live subscription** supplies the plan: a usage slug, or `custom` over
    the base plan its row pins.
 2. Otherwise the org is **free**, on the current plan's allowance. An
    entitlement row never supplies a plan on its own: without a subscription
@@ -621,8 +621,8 @@ is the first implementation of it:
 | Dodo `status` | pug `status` | Live |
 |---|---|---|
 | `active` | `active` | yes |
-| `on_hold` | `past_due` | yes — with no grace period, or after one ends; the card failed, the entitlement does not (§11) |
-| `past_due` | `past_due` | yes — the same, inside Dodo's grace period (§11) |
+| `on_hold` | `past_due` | yes: with no grace period, or after one ends; the card failed, the entitlement does not (§11) |
+| `past_due` | `past_due` | yes: the same, inside Dodo's grace period (§11) |
 | `paused` | `paused` | no |
 | `cancelled`, `expired`, `failed` | same word | no |
 | anything else | stored verbatim, treated as not live | no |
@@ -634,7 +634,7 @@ on its first day and fails in the direction that costs a support ticket rather
 than free service.
 
 `subscription.paused` and `.unpaused` run the same apply path as every other
-`subscription.*` — the payload's status is what moves the row, so pausing drops
+`subscription.*`: the payload's status is what moves the row, so pausing drops
 the org to whatever is beneath the subscription and unpausing restores it, with
 no event-name-specific branch. An unrecognized status is not live: a state we
 have never seen must not silently grant a plan.
@@ -644,8 +644,8 @@ kept rather than deleted: "when did this lapse" is a question support asks.
 
 ## 8. The webhook
 
-Endpoint `POST /billing/webhooks/<provider>` — `/billing/webhooks/dodo` and
-`/billing/webhooks/dodo/` today — mounted with `mux.Handle` **directly**, never
+Endpoint `POST /billing/webhooks/<provider>` (`/billing/webhooks/dodo` and
+`/billing/webhooks/dodo/` today) mounted with `mux.Handle` **directly**, never
 the `handle()` closure in `server.go`, which registers into the authz contract
 and would fail `assertServedServicesMatch` at startup. `/mcp` is the precedent.
 The path is scoped under `/billing/` rather than a bare `/webhooks/` so the
@@ -675,28 +675,28 @@ processed. Only `Verify` and `Normalize` change per provider.
 Dodo's verification is [Standard Webhooks](https://www.standardwebhooks.com/):
 HMAC-SHA256 over `"{webhook-id}.{webhook-timestamp}.{raw body}"`, constant-time
 compared against **each** space-delimited signature in `webhook-signature` (the
-header carries several during secret rotation), 24h timestamp tolerance — wide
+header carries several during secret rotation), 24h timestamp tolerance, wide
 because a retry reuses its original timestamp, so a tighter window would reject
 every late attempt.
-The raw body must be read before any JSON decode — re-serializing changes the
+The raw body must be read before any JSON decode: re-serializing changes the
 bytes and breaks the signature. Not every provider uses this scheme, which is
 why it lives behind `Verify` rather than in the handler.
 
 Dodo's delivery semantics, and the code each one forces. These are the weakest
-guarantees pug should assume of any provider — a provider that promises ordering
+guarantees pug should assume of any provider; a provider that promises ordering
 simply makes the CAS a no-op, so the inbox shape survives a swap unchanged:
 
 | Guarantee | Consequence |
 |---|---|
 | 8 retries, exponential backoff, 15s timeout | Persist to the inbox and apply inline; return 2xx only once the row is durable. |
-| **No ordering guarantee**; each delivery carries the *latest* payload | CAS on `provider_updated_at` = the `webhook-timestamp` header — apply only when strictly newer than the stored value, **or** equal while the stored row is still live. Delivery time bounds payload freshness precisely *because* every delivery carries the latest object, and it is uniform across event types, which no payload field is. The header is whole seconds, so a cutover's cancellation and activation can tie; the tie-break resolves toward withholding, so an equal stamp can end a subscription but never revive one. |
+| **No ordering guarantee**; each delivery carries the *latest* payload | CAS on `provider_updated_at` = the `webhook-timestamp` header: apply only when strictly newer than the stored value, **or** equal while the stored row is still live. Delivery time bounds payload freshness precisely *because* every delivery carries the latest object, and it is uniform across event types, which no payload field is. The header is whole seconds, so a cutover's cancellation and activation can tie; the tie-break resolves toward withholding, so an equal stamp can end a subscription but never revive one. |
 | Retries reuse `webhook-id` | On primary-key conflict, **re-apply when `processed_at is null`**. A bare conflict→200 would neutralize Dodo's retry of a delivery that died mid-apply. |
 | New event types appear over time | Unknown types are stored, marked processed, ignored. A type we do not handle must never 500 and never retry forever. |
 | The payload's **shape** changes under us | A body `Normalize` cannot decode is the one unapplicable-looking case that IS retried: a redeploy inside the retry window fixes it, and marking it processed would consume the delivery, losing the replay. |
 
-Handled: every `subscription.*`, since `Normalize` matches the prefix — Dodo's
-twelve as of SDK v1.116.0, `.update_payment_method` and `.paused` among them. Every
-one runs one apply path and the new state comes from the payload's `status`, not the event name —
+Handled: every `subscription.*`, since `Normalize` matches the prefix (Dodo's
+twelve as of SDK v1.116.0, `.update_payment_method` and `.paused` among them). Every
+one runs one apply path and the new state comes from the payload's `status`, not the event name;
 the name only selects side effects. That is also what makes the apply path
 portable: event-type vocabularies differ sharply between providers, subscription
 *states* barely do, so `Normalize` maps names to nothing and status to
@@ -704,14 +704,14 @@ everything. `payment.*` and `refund.*` are stored and
 ignored in this slice; the ledger is a later one
 ([`billing.md`](billing.md) §11.4).
 
-Attribution is a `checkout_ref` — 32 crypto-random bytes pug mints and stores in
+Attribution is a `checkout_ref`: 32 crypto-random bytes pug mints and stores in
 `billing_checkout_sessions` (§6) *before* it opens the checkout, then sets in the
 checkout's metadata. A row there is keyed by the ref, carries the org and the
 provider, and is pruned on the inbox's 90-day window: past it the ref has either
 produced a subscription row, which carries attribution from then on, or belonged
 to an abandoned checkout. It falls back to `metadata.org_id`, but **only** when that
 org's `provider_product_id` equals the delivery's product (the staged-deal link
-below), and then to `provider_customer_id` — that one only while the customer
+below), and then to `provider_customer_id`, that one only while the customer
 names a single org. `metadata.org_id` is never sufficient alone: Dodo's static
 payment links accept `metadata_*` query parameters, so a buyer can set it to any
 org id, and trusting it would let anyone who pays put a subscription on an org
@@ -719,7 +719,7 @@ they do not belong to. Checkout sets `always_create_new_customer`, so one
 buyer paying for two orgs gets two provider customers rather than one shared
 between them; without that flag Dodo matches on email and the fallback would
 resolve to two orgs, and the portal would open on whichever it found. A delivery that resolves
-to no org, or to two, is stored, marked processed, and logged — never applied to
+to no org, or to two, is stored, marked processed, and logged, never applied to
 a guess.
 
 **A body that verifies and will not decode answers 500, not 401.** The signature
@@ -730,20 +730,20 @@ rather than filed under the warning a port scanner produces.
 **A product pug cannot place is the same case, in the granting direction only.**
 If `product_id` maps to no configured plan (§13) and does not match the attributed
 org's `provider_product_id`, there is no `plan_slug` to write, so the delivery is
-stored, marked processed, logged as an error, and **not applied** — the same
+stored, marked processed, logged as an error, and **not applied**, the same
 disposition as a foreign currency (§3) and an unattributable delivery, for the
 same reason: retrying cannot fix a mapping that lives in config, and the provider's retries (§8)
 would only delay the alert. Every such delivery is counted and logged by the
-reconcile pass as `Rejected` (§9) — the subscription walk cannot see it, because a
+reconcile pass as `Rejected` (§9): the subscription walk cannot see it, because a
 delivery pug did not apply wrote no subscription row at all.
 
 **A delivery that ENDS a subscription is exempt.** A non-live status keeps the
 `plan_slug` already stored on the row rather than resolving one from the product,
 because refusing a cancellation whose product has left the config would leave the
-row `active` and the org on a plan it stopped paying for — an unmapped product may
+row `active` and the org on a plan it stopped paying for: an unmapped product may
 withhold a plan, never preserve one. Only a delivery with no stored row to end
-falls back to the refusal above. Reconcile (§9) reports it as a third inconsistency —
-a live subscription against a product pug does not know — which is the signal
+falls back to the refusal above. Reconcile (§9) reports it as a third inconsistency,
+a live subscription against a product pug does not know, which is the signal
 that a deploy is missing a product key or that an operator created a product
 without pasting its id.
 
@@ -752,21 +752,21 @@ without pasting its id.
 A `cmd/cron/billing-reconcile` pass, shaped like `pug cron usage`: one-shot,
 advisory-locked, non-zero exit on failure, run by a k8s CronJob. It is a
 standalone binary, not a `pug cron` subcommand. It is the
-backstop for the one thing the inbox cannot cover — a webhook that never arrived
+backstop for the one thing the inbox cannot cover: a webhook that never arrived
 at all.
 
 For every org with a subscription row, fetch the subscription through
 `FetchSubscription` (§2.1) and apply the same CAS. During a cutover the pass
-runs per provider — a row names the provider it belongs to (§6), so an org with
+runs per provider: a row names the provider it belongs to (§6), so an org with
 a winding-down subscription and a live new one is reconciled against the right
 API for each. Then the consistency reports, which are the point of invariant 3:
 
-- A subscription pug stores that the provider no longer knows — a 404 on the
+- A subscription pug stores that the provider no longer knows: a 404 on the
   re-read, or a row left behind by an environment switch. A finding, deliberately
   not a read failure: counting it as one would hold the CronJob red on every
   later run over a row that is never coming back.
 - A `custom` row with no live custom subscription behind it
-  (`ListCustomDealsWithoutLiveSubscription`) — a deal staged and not yet bought,
+  (`ListCustomDealsWithoutLiveSubscription`): a deal staged and not yet bought,
   one whose org bought the usage plan instead, or one whose subscription lapsed
   while its contract still runs. An org with **no** entitlement row is invisible
   here, since the query reads `billing_entitlements`; the §5.2 case of a deal
@@ -775,8 +775,8 @@ API for each. Then the consistency reports, which are the point of invariant 3:
 - A live subscription against a product no config key and no org row maps to
   (§8), which is a delivery that could not be applied.
 - A live deal whose product does not bill every tier of the plan it is pinned
-  to as §4.1 sets it up — a missing meter, any other meter beside them, a free
-  threshold, a fee under $1.00 — or that is pinned to a plan the catalog does not
+  to as §4.1 sets it up (a missing meter, any other meter beside them, a free
+  threshold, a fee under $1.00) or that is pinned to a plan the catalog does not
   know (`MisconfiguredDeals`). A deal's product is built by hand, one per deal, so
   the meter's startup check, which covers the catalog's products, cannot see it.
   A check that could not reach the provider is not a finding: it is counted with
@@ -788,8 +788,8 @@ API for each. Then the consistency reports, which are the point of invariant 3:
   rather than reporting a skip, or it would be neither an apply nor a finding and
   the pass would print a sweep it did not make.
 - A delivery that **never settled** (`Stranded`): every retry failed, so no reason
-  was ever written to the row and the rejection query — which keys on a non-empty
-  `error` — cannot see it. It wrote no subscription row either, so without this
+  was ever written to the row and the rejection query, which keys on a non-empty
+  `error`, cannot see it. It wrote no subscription row either, so without this
   counter it is invisible to everything until its payload is pruned. Dated from
   arrival, a day back, which is long past the provider's last retry. The CAS's own
   skip is deliberately **not** counted here: deliveries arrive unordered, so a
@@ -798,7 +798,7 @@ API for each. Then the consistency reports, which are the point of invariant 3:
 
 All are logged and counted, not auto-fixed. An automatic repair here would be
 writing to the money side of the system from a guess. A pass that could not read
-the provider — or could not read or write Postgres either side of it — exits
+the provider, or could not read or write Postgres either side of it, exits
 non-zero; the rest are findings for a person. So does a pass that names a
 provider with no API key configured: reconciling nothing and exiting 0 is
 indistinguishable from a healthy run, and this is the backstop for a webhook that
@@ -806,9 +806,9 @@ never arrived.
 
 ## 10. Deleting an org must cancel first
 
-**Not built — pug has no org-deletion path yet.** When it gets one: the `on
+**Not built: pug has no org-deletion path yet.** When it gets one: the `on
 delete cascade` drops both rows and the provider knows nothing about it, so a
-deleted customer keeps being charged — a refund and a chargeback, not merely an
+deleted customer keeps being charged, a refund and a chargeback, not merely an
 inconsistency. Org deletion must cancel at the provider **before** the local
 delete, and refuse to proceed if the cancel call fails.
 
@@ -817,8 +817,8 @@ delete, and refuse to proceed if the cancel call fails.
 A failed renewal changes nothing about entitlement. `PAST_DUE` keeps the plan;
 degrading a paying customer's product over an expired card is worse for both
 sides than a few unbilled days. What ends it is the provider's dunning, never
-pug, which cancels nothing itself (§17). Under Dodo's defaults — the grace period
-and card retries both off — a declined renewal goes straight to `on_hold`
+pug, which cancels nothing itself (§17). Under Dodo's defaults, the grace period
+and card retries both off, a declined renewal goes straight to `on_hold`
 (measured in test mode, 2026-10-01), and a hold lasts until the customer pays or
 someone cancels it, so an org that never pays keeps its plan. Only a grace period
 set to end in cancellation bounds it; the delivery that normalizes to
@@ -836,14 +836,14 @@ served as `GetBillingStatus.grace_period_ends_at` for the banner's "update your
 card by". It dates the window, not the failure: a hold that follows it is still
 `PAST_DUE`, with no date.
 
-Only a delivery carries it — Dodo's subscription API does not return it (SDK
-v1.116.0) — while reconcile re-reads every subscription each pass with a newer
+Only a delivery carries it: Dodo's subscription API does not return it (SDK
+v1.116.0), while reconcile re-reads every subscription each pass with a newer
 stamp. A read knows there is no window in any state but Dodo's `past_due`, a hold
 included, and clears the deadline; inside the window a write that cannot see it
 keeps the stored one. A delivery replaces it, believed only when the date is
 there, parses and could end a window open when it was sent: otherwise the stored
 one is kept, the rest of the delivery still applies, and the reason is logged. A
-delivery the CAS refuses — held back while a reconcile pass stamped the row —
+delivery the CAS refuses, held back while a reconcile pass stamped the row,
 still dates a window the row has no date for, while the provider reports the
 state it was sent in: never over a stored deadline, and never one already past.
 
@@ -858,19 +858,19 @@ the allowance banner stays on the viewer floor but starting a checkout does not:
   against the org's own `provider_product_id` and returns `FailedPrecondition`
   when none is recorded; for a catalog plan it uses the configured product id.
 - `CreatePortalSession() → portal_url`, `FailedPrecondition` for an org with no
-  `provider_customer_id` — free and comped orgs have never checked out.
+  `provider_customer_id`: free and comped orgs have never checked out.
 - `ConfirmCheckout(session_id) → confirmed` (§12.1), which is how a returning
   buyer is confirmed without a delivery having arrived.
 
 `GetBillingStatus` gains `subscription_status`, `current_period_end` and a
-`purchasable` bool — what the FE renders the buy button from, without ever
+`purchasable` bool, what the FE renders the buy button from, without ever
 seeing a product id. It is true only when the checkout would actually open:
 billing enabled, a Dodo API key configured, and a product to check out against
 (a configured plan on sale, or `custom` once the org has a
 `provider_product_id`). It gates the buy button as a whole; whether a particular
 plan can be bought is `PlanOption.purchasable`. Both are read off one list,
 `offers`, which is also the only thing `CreateCheckoutSession` opens a checkout
-from, so a button and the call behind it cannot disagree — a button that cannot
+from, so a button and the call behind it cannot disagree: a button that cannot
 work is worse than no button. A retired plan is kept off sale there
 (`TestARetiredPlanIsNeverOffered`). Tested both
 configured and unconfigured. It keeps the viewer floor. Plan changes and cancellation go through Dodo's customer
@@ -885,13 +885,13 @@ skips the days the previous one counted (§4.2, Window).
 
 ### 12.1 Confirming the buyer who came back
 
-The webhook is the authority for the subscription *lifecycle* — renewal,
-dunning, cancellation, expiry, refunds — because none of those has a redirect to
+The webhook is the authority for the subscription *lifecycle* (renewal,
+dunning, cancellation, expiry, refunds) because none of those has a redirect to
 be carried on. It is a bad authority for the one moment somebody is watching.
 
 `CreateCheckoutSession` therefore also returns the provider's `session_id`, and
 `ConfirmCheckout(org_id, session_id)` re-reads that checkout **straight from the
-provider** and applies it through `applySubscription` — the same CAS the webhook
+provider** and applies it through `applySubscription`, the same CAS the webhook
 and reconcile write through, so no third notion of "newer" exists.
 For Dodo the walk is session → payment → subscription (`FetchCheckoutOutcome`),
 because the session status carries a payment id but no subscription id, and only
@@ -900,8 +900,8 @@ hop is `FetchSubscription` itself, which is what keeps the event the same shape
 as the one a delivery normalizes to.
 
 What this buys is not latency, it is **reachability**. Before it, the dashboard's
-return handler polled `GetBillingStatus` — pug's own state, which nothing but a
-delivery changes — so the checkout moment depended on inbound connectivity. On a
+return handler polled `GetBillingStatus` (pug's own state, which nothing but a
+delivery changes), so the checkout moment depended on inbound connectivity. On a
 deployment whose webhook URL is not reachable (self-hosted behind NAT, or a
 laptop) a purchase could never complete: the poll ran its ~17.5s and told a
 paying customer their payment was "still confirming", forever.
@@ -910,10 +910,10 @@ Six rules make it safe:
 
 - **`session_id` is a claim, not evidence.** The subscription it resolves to must
   carry the `metadata.org_id` pug wrote at checkout, and it must equal the
-  caller's org — `PermissionDenied` otherwise. `metadata.org_id` alone only
+  caller's org, `PermissionDenied` otherwise. `metadata.org_id` alone only
   *names* an org, though (§8: static payment links let a buyer set `metadata_*`
   from the URL), so the subscription must **also** carry a `checkout_ref` that
-  resolves against `billing_checkout_sessions` to that same org — no ref at all, a
+  resolves against `billing_checkout_sessions` to that same org; no ref at all, a
   ref pug never minted, or one minted for another org is refused. Pug mints one for
   every checkout it opens, so all this turns away is a payment link's purchase,
   which is §8's to place. There is deliberately **no
@@ -930,12 +930,12 @@ Six rules make it safe:
   landed.** The CAS also skips the write when a delivery already stored something
   newer, and reporting that as "not confirmed" would push a buyer who already
   holds the plan into the poll this exists to remove. The one refusal that is
-  *not* a harmless skip — a second live subscription hitting
-  `billing_subscriptions_one_live_idx` — comes back as `ErrTwoLiveSubscriptions`
+  *not* a harmless skip, a second live subscription hitting
+  `billing_subscriptions_one_live_idx`, comes back as `ErrTwoLiveSubscriptions`
   rather than as a `false` from the writer, or a buyer would be told "confirmed"
   for a row that was never stored.
 - **A subscription pug has no word for is written but not confirmed.** `pending`
-  stores its row — which is what leaves the org a customer to manage — and grants
+  stores its row, which is what leaves the org a customer to manage, and grants
   nothing, so telling the buyer it worked would be a lie.
 - **Every paid-but-unplaceable case is returned, not swallowed.** A foreign
   currency (§3), an unmappable product, a second live subscription and a
@@ -950,8 +950,8 @@ Six rules make it safe:
   card returns `ErrCheckoutFailed` → `BILLING_CHECKOUT_FAILED` instead of the
   zero event that means "not settled yet". Without it a decline is
   indistinguishable from a slow payment and the buyer polls for money that will
-  never arrive. Anything else — `processing`, an unfinished 3DS challenge, a word
-  Dodo adds later — stays "not yet", so an unknown state can only delay the
+  never arrive. Anything else (`processing`, an unfinished 3DS challenge, a word
+  Dodo adds later) stays "not yet", so an unknown state can only delay the
   answer, never invent a failure.
 
 The client keeps the poll as its own fallback: `confirmed=false` is the ordinary
@@ -964,14 +964,14 @@ still coming.
 |---|---|---|
 | `PUG_BILLING_ENABLED` | `false` | Unchanged. Off ⇒ no allowance, and the checkout RPCs return `Unavailable`. |
 | `PUG_BILLING_PROVIDER` | `""` | Which provider to construct: `dodo` today. Empty ⇒ no provider at all. An unrecognized value **fails startup** rather than silently disabling checkout, since the two are indistinguishable from the dashboard. |
-| `PUG_DODO_API_KEY` | — | Absent ⇒ no provider. Checkout returns `Unavailable`; everything else works. |
-| `PUG_DASHBOARD_BASE_URL` | — | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
+| `PUG_DODO_API_KEY` | - | Absent ⇒ no provider. Checkout returns `Unavailable`; everything else works. |
+| `PUG_DASHBOARD_BASE_URL` | - | The email service's variable, reused as the checkout's `return_url`. A **named provider with a key makes it mandatory and absolute**: Dodo rejects a relative `return_url`, so the server refuses to start rather than failing every checkout at the provider. Turning billing on therefore takes the whole API down if it is unset. |
 | `PUG_DODO_ENVIRONMENT` | `test` | `test` or `live`. A malformed value fails startup. |
-| `PUG_DODO_WEBHOOK_SECRET` | — | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
-| `PUG_DODO_PRODUCT_<SLUG>` | — | One per catalog plan, retired plans included — the slug upper-cased with `-` as `_`, so `PUG_DODO_PRODUCT_USAGE_2026_10` — mapping it to that plan's usage product (§4.1). Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A plan on sale with no key is not purchasable (§12). A **retired** plan keeps its key: it is never sold, but without the key the webhook rejects its holders' renewals as an unmapped product. `custom` has no key, since its product id lives on the org's row. |
+| `PUG_DODO_WEBHOOK_SECRET` | - | Absent ⇒ the route is **not mounted** (invariant 4). Billing enabled with a key but no secret WARNs at startup. |
+| `PUG_DODO_PRODUCT_<SLUG>` | - | One per catalog plan, retired plans included (the slug upper-cased with `-` as `_`, so `PUG_DODO_PRODUCT_USAGE_2026_10`), mapping it to that plan's usage product (§4.1). Both directions: checkout reads slug → product, the webhook reads product → slug (§8). A plan on sale with no key is not purchasable (§12). A **retired** plan keeps its key: it is never sold, but without the key the webhook rejects its holders' renewals as an unmapped product. `custom` has no key, since its product id lives on the org's row. |
 
 The meter pass (`cmd/cron/billing-meter`, §4.2) reads the same variables. It
-exits 0 when nobody is paying — billing off, or no live subscription — and
+exits 0 when nobody is paying (billing off, or no live subscription) and
 otherwise needs a provider and its API key, and checks every
 `PUG_DODO_PRODUCT_<SLUG>` product against §4.1 before it states anything.
 
@@ -979,13 +979,13 @@ Provider credentials stay under their own `PUG_<PROVIDER>_` prefix rather than a
 generic `PUG_PAYMENTS_*`: a second provider's keys then sit beside the first's
 instead of overwriting them, which is what lets both be configured at once
 during a cutover. Only `PUG_BILLING_PROVIDER` decides which one is constructed
-for checkout, and that one provider's webhook route is the only one mounted —
+for checkout, and that one provider's webhook route is the only one mounted,
 so a cutover must keep the outgoing provider configured until its last
 cancellation has arrived.
 
 Billing enabled with no provider credentials is a supported mode, not a broken
 one: allowances and comps work, and only the buy button is missing. Nobody can
-subscribe in it, so the meter CronJob exits 0 there too — until a live
+subscribe in it, so the meter CronJob exits 0 there too, until a live
 subscription is found, which it reports, since nothing would state its usage. It
 is not the self-hosted shape, which is billing off and no allowance at all.
 
@@ -993,14 +993,14 @@ is not the self-hosted shape, which is billing off and no allowance at all.
 
 `internal/core/billing/subscription` has its own `TestMain` and no `t.Parallel()`
 ([`CLAUDE.md`](../../CLAUDE.md) § Testing); the additions follow. The provider is
-an interface (§2.1) with a fake in tests — no container talks to a payments API.
+an interface (§2.1) with a fake in tests: no container talks to a payments API.
 What must be tested against Postgres: the CAS on out-of-order deliveries, the
 retry that re-applies an unprocessed row, every Dodo status in §7's table
 reaching its normalized value, and resolution with every (subscription status ×
 entitlement) pair from §7.
 
 **The seam is tested by the fake, not by a second provider.** Everything above
-§2.1 — inbox, CAS, attribution, resolution, reconcile — is exercised through a
+§2.1 (inbox, CAS, attribution, resolution, reconcile) is exercised through a
 fake provider whose `Verify` and `Normalize` are trivial, which is what proves
 those paths hold no Dodo assumption. A test that the fake and Dodo agree on
 anything beyond the interface would be testing the mock.
@@ -1011,26 +1011,26 @@ likely to be wrong in a way nothing else catches, and it is per provider.
 
 ## 15. Decisions
 
-1. **§2.1 — the provider sits behind an interface**, with Dodo as the only
+1. **§2.1: the provider sits behind an interface**, with Dodo as the only
    implementation and no second one written speculatively. DECIDED 2026-09-06.
    The two costs paid up front are in storage (§6): the subscription key permits
    an org to hold a dead and a live row at once, and both the inbox and the
    subscription row name their provider.
-2. **§4 — pug stores no money.** DECIDED yes, and already applied to migration
+2. **§4: pug stores no money.** DECIDED yes, and already applied to migration
    019 and the CLI.
-3. **§3 — USD only**, enforced by the apply every subscription write goes
+3. **§3: USD only**, enforced by the apply every subscription write goes
    through. DECIDED.
-4. **§5.1 — custom products are created by hand in Dodo**, not over the API.
+4. **§5.1: custom products are created by hand in Dodo**, not over the API.
    DECIDED for v1.
-5. **§5.2 — no payment links.** The operator pastes the product id onto the org
+5. **§5.2: no payment links.** The operator pastes the product id onto the org
    and the customer buys from the pug dashboard. DECIDED; a link stays a working
    fallback rather than the normal path.
-6. **§12 — is checkout admin-only?** DECIDED yes, as recommended. Granted as
+6. **§12: is checkout admin-only?** DECIDED yes, as recommended. Granted as
    `ActionCreate` on `ResourceBilling` rather than a new verb: both session RPCs
    mint a provider session. The read stays on the viewer floor.
-7. **§10 — does a failed provider cancel block org deletion?** MOOT, not
-   decided. This codebase has no org-delete path at all — no RPC, no CLI, no
-   `delete from orgs` query — so there is nothing to guard. See §17.
+7. **§10: does a failed provider cancel block org deletion?** MOOT, not
+   decided. This codebase has no org-delete path at all (no RPC, no CLI, no
+   `delete from orgs` query), so there is nothing to guard. See §17.
 
 ## 16. Divergences from the archived build
 
@@ -1042,7 +1042,7 @@ this slice plus the next two. Where this design differs, it is on purpose:
   wire transfer path. Dropped: every deal goes through the provider, which is
   what makes invariant 3 and the §9 reconcile report meaningful. This deletes a
   table, a command and a resolution branch. Note the archive's `provider` column
-  is a different idea from §2.1's — it enumerated *payment methods*, one of
+  is a different idea from §2.1's: it enumerated *payment methods*, one of
   which was "none", where this one names which merchant of record a row came
   from.
 - **No `CreateProduct` / `pug billing checkout create`** (§5.1). The bespoke
@@ -1059,7 +1059,7 @@ this slice plus the next two. Where this design differs, it is on purpose:
 - **No payment ledger in this slice.** `payment.*` deliveries are stored and
   ignored until the third slice.
 
-The archive remains the reference for §8's mechanics — its delivery-semantics
+The archive remains the reference for §8's mechanics: its delivery-semantics
 table is reproduced here nearly verbatim because it was derived from Dodo's
 documented behaviour and reviewed once already.
 
@@ -1072,20 +1072,20 @@ Six departures from the design above, all made during implementation.
 would be org deletion, and pug has no org-delete path: `OrgsService` serves no
 Delete, and no query deletes an org. Shipping the verb now would be the
 speculative abstraction §2.1 argues against. When org deletion lands, it adds the
-method and the cancel-before-delete rule together — and that is the moment to
+method and the cancel-before-delete rule together, and that is the moment to
 settle §15.7.
 
 **`status` is not constrained to pug's six words (§6, §7).** The design's §7
 table says an unmapped provider state is "stored verbatim, treated as not live",
 which a `check (status in (...))` makes impossible. Refusing to store it instead
-leaves the row on its LAST KNOWN status — for a lapsing subscription, that grants
+leaves the row on its LAST KNOWN status: for a lapsing subscription, that grants
 a plan nobody is paying for, the exact opposite of the safe direction. So the
 column is checked non-empty, the provider's own word is stored, and
 `ParseSubStatus` refusing it at read time is what makes it not live.
 
 **`GetBillingStatus` reports `manageable` as well as `purchasable` (§12).** The
 portal's precondition is a provider *customer*, which a cancelled org still has
-while reporting `SUBSCRIPTION_STATUS_UNSPECIFIED` — so a client inferring the
+while reporting `SUBSCRIPTION_STATUS_UNSPECIFIED`, so a client inferring the
 button from the status hides invoices from the org most likely to want them.
 Same rule as `purchasable`: read from the one helper the RPC refuses on. Writing
 it as `ProviderCustomerID != ""` on the resolved entitlement reproduced exactly
@@ -1093,32 +1093,32 @@ the drift this is meant to prevent, and a test caught it.
 
 **A lapsed contract no longer gates the overrides when a custom subscription is
 live (§7).** `applyOverrides` was contract-gated, which collapsed a live custom
-deal to no quota — and then to free — on the day its agreed term passed, while
+deal to no quota, and then to free, on the day its agreed term passed, while
 Dodo went on charging. The contract bounds a grant an operator made; it cannot
 expire a subscription the provider still says is live. Only a custom one is
 exempt: a lapsed comp's numbers must not ride onto a usage plan.
 
 **`ListPlans` was added (§12).** The design adds two RPCs and says the dashboard
-renders its buy button from `purchasable` — but `CreateCheckoutSession` takes a
+renders its buy button from `purchasable`, but `CreateCheckoutSession` takes a
 plan *slug*, so something has to name the plans, and the catalog is Go rather
 than rows precisely so it is not queryable. The alternative was a hardcoded
-catalog in the frontend, which would put a second authority on what a plan costs
-— the mistake §4 exists to prevent, one layer up. It sits on the viewer floor
+catalog in the frontend, which would put a second authority on what a plan costs,
+the mistake §4 exists to prevent, one layer up. It sits on the viewer floor
 beside `GetBillingStatus`: the person reading the allowance banner is the one who
 wants to see what is on sale. It never returns a product id, and offers `custom`
 only to the org whose row records its product. Since usage billing it lists
-quantities only — the plan's free allowance and retention — and never `free`,
+quantities only (the plan's free allowance and retention) and never `free`,
 which is a state rather than a plan. A deal's option leaves both absent: once
 bought, its terms are the org's entitlement, its base plan's unless its row
 overrides them.
 
 **`ConfirmCheckout` was added, and the redirect stopped being a spinner (§12.1).**
-The design has the dashboard poll after checkout, and the implementation did —
+The design has the dashboard poll after checkout, and the implementation did,
 but it polled pug's own state, which only a delivery changes, so it verified
 nothing and made the checkout moment depend on a reachable webhook URL. Found by
 testing locally, where there is none: the payment succeeded at Dodo and the
 dashboard read "Trial" indefinitely. The reconcile pass is not a
-recovery for it either — it walks `ListBillingSubscriptionsByProvider`, so with
+recovery for it either: it walks `ListBillingSubscriptionsByProvider`, so with
 no stored row there is nothing to re-read.
 
 `provider_product_id` is also on `billing_entitlement_history`, which §6 does not

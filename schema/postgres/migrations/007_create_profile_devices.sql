@@ -5,7 +5,7 @@ create table profile_devices (
   platform text not null check (platform in ('android', 'ios', 'web')),
   -- FK uses ON DELETE SET NULL. Load-bearing for GDPR/DPDP erasure: the erase
   -- worker hard-deletes the profile, so it must delete these device rows FIRST
-  -- (DeleteDevicesByProfileID) — else SET NULL would orphan a row still holding the
+  -- (DeleteDevicesByProfileID), else SET NULL would orphan a row still holding the
   -- push token + endpoint. Outside erasure, profiles are soft-deleted and devices
   -- are deactivated within the same transaction.
   profile_id char(20) references profiles(id) on delete set null,

@@ -15,7 +15,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 //   - `amount` denotes a transaction total (e.g. on cart_viewed, checkout_started,
 //     purchase, order_refunded).
 //   - `currency` is an uppercase ISO 4217 code (e.g. "USD", "EUR"). When you
-//     populate `price` or `amount`, populate `currency` too — both are
+//     populate `price` or `amount`, populate `currency` too: both are
 //     individually validated when present.
 //   - Money fields use the major currency unit (dollars, euros, yen).
 //     These events are revenue signals for analytics; the order/checkout
@@ -33,7 +33,7 @@ message ProductViewedProperties {
   string currency = 7 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
 }
 
-// A list/category/search-results impression — fired when the user views a
+// A list/category/search-results impression, fired when the user views a
 // collection of products rather than a single product detail page.
 message ProductListViewedProperties {
   option (common.events.v1.kind) = "product_list_viewed";

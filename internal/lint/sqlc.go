@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// `update` is matched anywhere, not just at line start, so a data-modifying CTE
-// — the way a mutation actually sneaks into the read set — cannot hide behind
+// `update` is matched anywhere, not just at line start, so a data-modifying CTE,
+// the way a mutation actually sneaks into the read set, cannot hide behind
 // `with ... as (...) update`. Row locks are masked out first because
 // `select ... for update` is not a mutation.
 var (

@@ -252,8 +252,8 @@ func TestDelete_NonExistent(t *testing.T) {
 	projectID := seedProject(t, ctx, pg)
 
 	// A real ClickHouse (no alias / no activity for the id) so Delete exercises
-	// the full resolution ladder — Postgres miss → CH alias miss → external_id
-	// miss → activity-probe miss → NotFound — rather than the removed nil-ch
+	// the full resolution ladder (Postgres miss → CH alias miss → external_id
+	// miss → activity-probe miss → NotFound) rather than the removed nil-ch
 	// shortcut.
 	s := NewServer(coreprofiles.NewService(pg.PgW, ch.Conn, natsClient))
 
@@ -639,7 +639,7 @@ func TestGetByExternalId_ReturnsProfile(t *testing.T) {
 // TestList_BoolPropertyExcludedFromNumericFilter pins the load-bearing
 // invariant on ProfilePropertyNumericExpr: a Bool-stored property must NOT
 // match a numeric comparison. CH would otherwise coerce true → 1 with a
-// direct CAST(JSON AS Float64), producing surprising filter results — the
+// direct CAST(JSON AS Float64), producing surprising filter results; the
 // coalesce ladder explicitly omits .:Bool so this returns NULL (no match).
 func TestList_BoolPropertyExcludedFromNumericFilter(t *testing.T) {
 	if testing.Short() {
@@ -714,8 +714,8 @@ func TestList_BoolPropertyExcludedFromNumericFilter(t *testing.T) {
 
 // TestList_FilterGroupsORRouting pins the OR branch in
 // buildProfileFilterCondition. Every other filter test uses a single group
-// (default AND), so the OR routing — selected by filter_groups_operator on
-// ListRequest — would otherwise be dead test surface. Asserts the union of
+// (default AND), so the OR routing, selected by filter_groups_operator on
+// ListRequest, would otherwise be dead test surface. Asserts the union of
 // two single-filter groups matches the OR of the underlying predicates.
 func TestList_FilterGroupsORRouting(t *testing.T) {
 	if testing.Short() {
@@ -845,7 +845,7 @@ func newProfilesTestClient(t *testing.T, svc *Server, projectID string) profiles
 
 // TestIncludeBots_ReachesTheReader pins the proto field through the handler for all
 // three profiles RPCs. The core-layer toggle is covered by TestProfilesBotExclusion;
-// what is untested without this is the plumbing — a handler that drops the field or
+// what is untested without this is the plumbing: a handler that drops the field or
 // hardcodes it passes every core test.
 func TestIncludeBots_ReachesTheReader(t *testing.T) {
 	if testing.Short() {
@@ -889,10 +889,10 @@ func TestIncludeBots_ReachesTheReader(t *testing.T) {
 		return out
 	}
 	if listIDs(false)["anon-crawler"] {
-		t.Error("List: bot-only person present with include_bots=false — the field is not reaching the reader")
+		t.Error("List: bot-only person present with include_bots=false; the field is not reaching the reader")
 	}
 	if !listIDs(true)["anon-crawler"] {
-		t.Error("List: bot-only person absent with include_bots=true — the field is not reaching the reader")
+		t.Error("List: bot-only person absent with include_bots=true; the field is not reaching the reader")
 	}
 
 	// Get and GetByExternalId go straight at the server: the test client carries no apperr

@@ -29,7 +29,7 @@ func setupTracing(t *testing.T) *tracetest.InMemoryExporter {
 }
 
 // fakeConn records what it was handed. The wrapper passes (format, query) as
-// two adjacent strings, so a swap has to be caught by assertion — it compiles
+// two adjacent strings, so a swap has to be caught by assertion: it compiles
 // and vets clean either way.
 type fakeConn struct {
 	chdriver.Conn
@@ -626,7 +626,7 @@ func TestAbortUnsentFinalizesAbandonedBatch(t *testing.T) {
 
 // A failed Append leaves the batch unsent, so this is the one path the insert
 // workers actually take where the driver's sent flag and the wrapper's
-// recorded/ended flags disagree — an IsSent sourced from wrapper state would
+// recorded/ended flags disagree: an IsSent sourced from wrapper state would
 // skip the abort here and strand the pooled connection.
 func TestAbortUnsentFinalizesAppendFailedBatch(t *testing.T) {
 	exporter := setupTracing(t)

@@ -97,7 +97,7 @@ func toRPCInvitationStatus(ctx context.Context, status string) orgsv1.Invitation
 	return orgsv1.InvitationStatus_INVITATION_STATUS_UNSPECIFIED
 }
 
-// toRPCInvitation and toRPCInvitationRO must be kept in sync — they convert
+// toRPCInvitation and toRPCInvitationRO must be kept in sync: they convert
 // the write and read invitation models to the same proto message. The proto
 // OrgInvitation has no token field; invite acceptance is driven by the emailed
 // link, never by a value returned from these endpoints.

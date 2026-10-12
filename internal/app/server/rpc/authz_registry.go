@@ -15,7 +15,7 @@ import (
 //
 // OrgGated resolves the caller's org from the request message's GetOrgId (org
 // control plane); ProjGated resolves it from the x-project-id project
-// (principal.Project.OrgID — project data plane + project-lifecycle writes).
+// (principal.Project.OrgID; project data plane + project-lifecycle writes).
 //
 // TestPermissionRegistryCoversAllProcedures asserts this map is exactly the set
 // of served procedures, derived from the generated handler interfaces by
@@ -78,7 +78,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.dashboards.v1.DashboardsService/Delete":         authzspec.ProjGated(authz.ResourceDashboard, authz.ActionDelete),
 	"/dashboard.dashboards.v1.DashboardsService/Upsert":         authzspec.ProjGated(authz.ResourceDashboard, authz.ActionUpdate, "reconciles tiles of an existing dashboard"),
 
-	// --- dashboard.orgemailproviders.v1.OrgEmailProvidersService — admin-only in the policy, reads included ---
+	// --- dashboard.orgemailproviders.v1.OrgEmailProvidersService: admin-only in the policy, reads included ---
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get":      authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionRead),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":      authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionUpdate),
 	"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   authzspec.OrgGated(authz.ResourceEmailProvider, authz.ActionDelete),

@@ -50,7 +50,7 @@ func TestGetUsageFollowsTheOrgsAnchorDay(t *testing.T) {
 }
 
 // Membership is proven before the handler runs, so this is only reachable when a
-// cached role outlives the org row — but it must be NotFound, not Internal.
+// cached role outlives the org row, but it must be NotFound, not Internal.
 func TestGetUsageOnAMissingOrg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -87,7 +87,7 @@ func seedOrgProject(t *testing.T, pg *testutil.TestPostgres) (orgID, projectID s
 		t.Fatalf("create org: %v", err)
 	}
 	// Backdated to the 1st so the org's quota window is the calendar month these
-	// assertions assume — an anchor derives from create_time, so an org created
+	// assertions assume: an anchor derives from create_time, so an org created
 	// "now" would shift every expected bound with the suite's run date.
 	testutil.SetOrgCreateTime(t, pg.PgW, org.ID, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	id := xid.New().String()
@@ -123,7 +123,7 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 		t.Errorf("usage_computed_at = %v on an unmetered org, want absent", resp.Msg.UsageComputedAt)
 	}
 	if resp.Msg.UsedEvents != nil {
-		t.Errorf("used_events = %d on an unmetered org, want absent — a client would render it as 0",
+		t.Errorf("used_events = %d on an unmetered org, want absent: a client would render it as 0",
 			resp.Msg.GetUsedEvents())
 	}
 	if resp.Msg.GetCounted() {
@@ -182,7 +182,7 @@ func TestGetUsageOmitsBothFieldsUntilMetered(t *testing.T) {
 }
 
 // An org whose usage the meter has not reached this period still reports the
-// stamp from its last one, so a month rollover does not read as "never metered" —
+// stamp from its last one, so a month rollover does not read as "never metered",
 // but used_events stays ABSENT, because nothing has counted this period yet.
 //
 // The assertion is on presence, not value: GetUsedEvents() returns 0 for an
@@ -212,7 +212,7 @@ func TestGetUsageKeepsTheStampAcrossAMonthRollover(t *testing.T) {
 		t.Error("usage_computed_at is absent, so every dashboard reads 'never metered' on the 1st")
 	}
 	if resp.Msg.UsedEvents != nil {
-		t.Errorf("used_events = %d, want ABSENT — a period the meter has not reached has no total, "+
+		t.Errorf("used_events = %d, want ABSENT: a period the meter has not reached has no total, "+
 			"and a present zero is a number the server has no basis for", resp.Msg.GetUsedEvents())
 	}
 	// The state the flag exists for: used_events' absence does not survive

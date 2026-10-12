@@ -1,5 +1,5 @@
 // Package billing is the operator CLI behind `pug billing`: the only writer of
-// billing_entitlements. Postgres only — no provider and no network — and ungated
+// billing_entitlements. Postgres only, no provider and no network, and ungated
 // by PUG_BILLING_ENABLED, which decides only how the resolved half is reported.
 package billing
 

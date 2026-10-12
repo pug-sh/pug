@@ -97,7 +97,7 @@ type DeleteOrgMemberIfNotLastAdminParams struct {
 }
 
 // 'locked' acquires row-level locks on every member of the org so concurrent
-// callers serialize on the admin set — without it, two snapshots could both
+// callers serialize on the admin set: without it, two snapshots could both
 // see admin_count = 2 and both succeed, leaving the org with zero admins.
 func (q *Queries) DeleteOrgMemberIfNotLastAdmin(ctx context.Context, arg DeleteOrgMemberIfNotLastAdminParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteOrgMemberIfNotLastAdmin, arg.OrgID, arg.CustomerID)

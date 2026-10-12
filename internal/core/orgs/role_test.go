@@ -64,7 +64,7 @@ func TestParseRoleAcceptsAllProtoEnumValues(t *testing.T) {
 			continue
 		}
 		if _, err := orgs.ParseRole(name); err != nil {
-			t.Errorf("ParseRole(%q): proto enum value not recognized by Role package — add to IsValid/ParseRole or to the constants block", name)
+			t.Errorf("ParseRole(%q): proto enum value not recognized by Role package; add to IsValid/ParseRole or to the constants block", name)
 		}
 	}
 }

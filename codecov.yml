@@ -1,4 +1,4 @@
-# Codecov configuration — https://docs.codecov.com/docs/codecov-yaml
+# Codecov configuration: https://docs.codecov.com/docs/codecov-yaml
 # Exclude generated code, binary entrypoints, and demo-traffic tooling so
 # coverage reflects hand-written, testable product code.
 ignore:

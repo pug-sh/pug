@@ -126,7 +126,7 @@ func TestIdempotencyKeyRejectsBlankDispatchID(t *testing.T) {
 }
 
 // TestProcessorRejectsJobWithoutDispatchID pins that an unusable dispatch id is
-// rejected before any send — validation runs ahead of the mailer, so a nil
+// rejected before any send: validation runs ahead of the mailer, so a nil
 // mailer is enough to prove nothing was sent.
 //
 // Two guards, not one: protovalidate's `required` catches an absent id, but

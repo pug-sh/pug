@@ -171,7 +171,7 @@ func TestTenantAwareResolverIsolatesPerTenant(t *testing.T) {
 
 // TestTenantAwareResolverDecryptFailureIsPermanent pins the DLQ-vs-infinite-
 // retry decision point. If the operator rotates PUG_EMAIL_PROVIDER_SECRET_KEY
-// without re-encrypting rows, retrying the same row will keep failing — the
+// without re-encrypting rows, retrying the same row will keep failing; the
 // worker must DLQ rather than spin. A regression that dropped the
 // NewPermanentError wrap would cause every email to a misconfigured tenant
 // to retry until MaxDeliver.

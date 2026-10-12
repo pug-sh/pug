@@ -108,7 +108,7 @@ func (s *Server) GetBillingStatus(
 }
 
 // tierUsage pairs each stated count with its tier's bounds, under the plan and the
-// allowance the period was split by — the bounds meter.Split used. False for a plan
+// allowance the period was split by: the bounds meter.Split used. False for a plan
 // the catalog no longer knows: bounds taken from any other would misdescribe what
 // the provider bills.
 func tierUsage(stated meter.Stated) ([]*billingv1.TierUsage, bool) {
@@ -222,7 +222,7 @@ func (s *Server) ConfirmCheckout(
 
 // confirmErr translates the confirm path: every case below has already taken the
 // customer's money, so none may fall through to checkoutErr, which answers as
-// though none had moved. FailedPrecondition throughout — a person is needed.
+// though none had moved. FailedPrecondition throughout: a person is needed.
 func confirmErr(err error, orgID string) error {
 	paid := func(reason apperr.Reason, msg string) error {
 		return apperr.FailedPrecondition(reason, msg,

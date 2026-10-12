@@ -53,7 +53,7 @@ type fakeJetStream struct {
 func (f *fakeJetStream) PublishMsg(ctx context.Context, msg *nats.Msg, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
 	// Context-aware so tests can observe whether the DLQ publish ran on a LIVE
 	// context. A publish attempted on an already-cancelled context records nothing
-	// in published and fails — exactly the failure that occurs if dlqContext stops
+	// in published and fails, exactly the failure that occurs if dlqContext stops
 	// shedding the expired per-message processing deadline (the headline DLQ-loss
 	// bug). Existing callers pass a live context, so their behavior is unchanged.
 	if err := ctx.Err(); err != nil {
@@ -174,7 +174,7 @@ func TestWorkerHealthCheck(t *testing.T) {
 }
 
 // Ready (readiness) requires BOTH that the worker has started consuming AND that
-// its NATS connection is currently live — distinct from HealthCheck (liveness),
+// its NATS connection is currently live, distinct from HealthCheck (liveness),
 // which only tracks whether the consume loop is wedged. A disconnected worker is
 // not ready (pull it from rotation) but not necessarily dead (don't restart it).
 func TestWorkerReady(t *testing.T) {
@@ -198,7 +198,7 @@ func TestWorkerReady(t *testing.T) {
 	}
 }
 
-// Ready must fail closed — not panic — when the connectivity probe is unwired
+// Ready must fail closed, not panic, when the connectivity probe is unwired
 // (nil connected func). NewWorker always sets it, but the defensive nil guard in
 // Ready has no other test pinning it, so a regression that drops the guard would
 // otherwise surface only as a nil-func panic in production.
@@ -211,7 +211,7 @@ func TestWorkerReadyNilConnectedFailsClosed(t *testing.T) {
 	}
 }
 
-// The registry snapshots report the first failing worker — liveness via
+// The registry snapshots report the first failing worker: liveness via
 // HealthCheck, readiness via Ready. A fresh healthRegistry per case needs no
 // process-global save/restore, which is exactly the test-pollution hazard that
 // boxing the registry into a value type removes.
@@ -265,7 +265,7 @@ func TestDLQContextShedsDeadline(t *testing.T) {
 }
 
 // A retryable failure before the last delivery naks with the backoff delay for
-// that attempt — this is the core Nak()→NakWithDelay wiring, asserting the delay
+// that attempt; this is the core Nak()→NakWithDelay wiring, asserting the delay
 // is actually threaded through (not dropped to 0 or a bare Nak).
 func TestHandleMessageNaksWithBackoffOnNonLastFailure(t *testing.T) {
 	m := &fakeMsg{subject: "s.sub", meta: &jetstream.MsgMetadata{NumDelivered: 2}} // MaxDeliver 3 → not last
@@ -307,8 +307,8 @@ func TestHandleMessageRoutesToDLQOnLastFailure(t *testing.T) {
 	}
 }
 
-// A PermanentError is dead-lettered immediately on the first delivery — it must
-// not consume retries — and its With() metadata is copied onto the DLQ message.
+// A PermanentError is dead-lettered immediately on the first delivery (it must
+// not consume retries) and its With() metadata is copied onto the DLQ message.
 func TestHandleMessageRoutesPermanentErrorToDLQWithoutRetry(t *testing.T) {
 	m := &fakeMsg{subject: "s.sub", meta: &jetstream.MsgMetadata{NumDelivered: 1}} // first delivery
 	js := &fakeJetStream{}
@@ -331,7 +331,7 @@ func TestHandleMessageRoutesPermanentErrorToDLQWithoutRetry(t *testing.T) {
 	}
 }
 
-// When the DLQ publish itself fails the message is still terminated — data is
+// When the DLQ publish itself fails the message is still terminated: data is
 // lost (and counted as outcome=dropped) but the message must not loop forever.
 func TestHandleMessageTermsWhenDLQPublishFails(t *testing.T) {
 	m := &fakeMsg{subject: "s.sub", meta: &jetstream.MsgMetadata{NumDelivered: 3}}
@@ -387,7 +387,7 @@ func TestHandleMessageAcksOnSuccess(t *testing.T) {
 // delivery while its processing context is ALREADY cancelled (e.g. it blew its
 // ProcessingTimeout) must still reach the DLQ. dlqContext sheds the dead deadline
 // before publishing. If that regresses (publishing on the cancelled procCtx), the
-// context-aware fake records no publish and this test fails — which neither the
+// context-aware fake records no publish and this test fails, which neither the
 // isolated dlqContext unit test nor the live-context disposition tests would catch.
 func TestHandleMessageReachesDLQOnAlreadyCancelledContext(t *testing.T) {
 	m := &fakeMsg{subject: "s.sub", meta: &jetstream.MsgMetadata{NumDelivered: 3}} // == MaxDeliver → last
@@ -395,7 +395,7 @@ func TestHandleMessageReachesDLQOnAlreadyCancelledContext(t *testing.T) {
 	w := newTestWorker(failProc, js)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already cancelled — mimics a message that exhausted ProcessingTimeout
+	cancel() // already cancelled: mimics a message that exhausted ProcessingTimeout
 
 	w.handleMessage(ctx, m)
 

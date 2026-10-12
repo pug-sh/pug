@@ -25,7 +25,7 @@ const (
 	// Misc subjects
 	MiscEmailJobsSubject = "misc.email.jobs"
 
-	// Dead letter queue subjects — mirror the ingest subject hierarchy.
+	// Dead letter queue subjects: mirror the ingest subject hierarchy.
 	// Subscribe to "dlq.>" for all DLQ messages, or "dlq.profiles.>" for a domain.
 	DLQDevicesSubject          = "dlq.devices.ops"
 	DLQCampaignsSubject        = "dlq.campaigns.scheduled"

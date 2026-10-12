@@ -65,7 +65,7 @@ func TestVerify(t *testing.T) {
 			t.Errorf("webhook_id = %q, want evt_1", d.WebhookID)
 		}
 		if d.EventType != "subscription.active" {
-			t.Errorf("event_type = %q — it must be read from the SIGNED body, not a header", d.EventType)
+			t.Errorf("event_type = %q; it must be read from the SIGNED body, not a header", d.EventType)
 		}
 		if !d.DeliveredAt.Equal(now.Truncate(time.Second)) {
 			t.Errorf("delivered_at = %s, want %s", d.DeliveredAt, now)
@@ -156,7 +156,7 @@ func TestNormalize(t *testing.T) {
 		t.Errorf("checkout_ref = %q, want ref_deadbeef", event.CheckoutRef)
 	}
 	if event.OrgID != "org_abc" {
-		t.Errorf("org_id = %q, want org_abc — attribution comes from metadata", event.OrgID)
+		t.Errorf("org_id = %q, want org_abc; attribution comes from metadata", event.OrgID)
 	}
 	if event.Status != corebilling.SubStatusActive {
 		t.Errorf("status = %q, want active", event.Status)
@@ -192,7 +192,7 @@ func subscriptionDelivery(eventType, status, deadline string) []byte {
 // Dodo dates a grace window only in its own past_due, and on every subscription
 // event sent inside one. Inside a window a deadline is believed only when it is
 // there, parses and is plausible: anything else is doubt, which keeps the stored
-// one and is reported, but never fails the delivery — the field only dates a
+// one and is reported, but never fails the delivery; the field only dates a
 // banner. Outside a window there is no deadline, whatever the payload says.
 func TestNormalizeTheGraceDeadline(t *testing.T) {
 	sent := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
@@ -230,7 +230,7 @@ func TestNormalizeTheGraceDeadline(t *testing.T) {
 				RawPayload:  subscriptionDelivery(tc.eventType, tc.status, tc.field),
 			})
 			if err != nil {
-				t.Fatalf("Normalize: %v — a grace deadline must never fail the delivery", err)
+				t.Fatalf("Normalize: %v; a grace deadline must never fail the delivery", err)
 			}
 			if !event.GracePeriodEndsAt.Equal(tc.want) || event.GracePeriodEndsAtKnown != tc.known {
 				t.Errorf("grace deadline = (%s, known %v), want (%s, known %v)",

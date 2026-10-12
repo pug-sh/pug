@@ -100,7 +100,7 @@ func TestEnabled(t *testing.T) {
 }
 
 // newTestWorker builds a worker with the ensured-set initialized and a
-// substitute profile inserter — the minimum ensureProfile needs without a
+// substitute profile inserter: the minimum ensureProfile needs without a
 // ClickHouse connection.
 func newTestWorker(insert func(context.Context, driver.Conn, string, seed.LiveProfile) error) *worker {
 	return &worker{
@@ -133,7 +133,7 @@ func TestEnsureProfileDedupAndSkipsBots(t *testing.T) {
 
 // TestEnsureProfilePayload pins the LiveProfile the worker hands to the insert:
 // the id is the session's distinct id, create_time is the user's join, and the
-// properties + external id are exactly DemoProfileProperties(idx) — the
+// properties + external id are exactly DemoProfileProperties(idx), the
 // determinism the ReplacingMergeTree re-create relies on. A swapped or wrong-index
 // field here would silently desync the live-created profile from its backfilled
 // twin (flipping properties or create_time on the merge instead of being a no-op).

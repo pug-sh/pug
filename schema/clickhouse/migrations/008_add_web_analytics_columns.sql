@@ -4,7 +4,7 @@
 -- Types follow the migration-001 conventions: LowCardinality for
 -- arbitrary-but-bounded tenant text (the utm_campaign precedent), plain String
 -- for genuinely high-cardinality values (pathname/referrer/page_title, like
--- url/city). ADD COLUMN with DEFAULT '' is metadata-only — no part rewrite —
+-- url/city). ADD COLUMN with DEFAULT '' is metadata-only, no part rewrite,
 -- so THIS statement is instant on a live table; the backfill mutation below is
 -- the opposite (it rewrites every part, mutations_sync = 2). Keep in sync with
 -- internal/core/clickhouse/promoted_auto.go (promotedAutoColumns).
@@ -21,14 +21,14 @@ ALTER TABLE events
     ADD COLUMN IF NOT EXISTS page_title      String DEFAULT '';
 
 -- Derivation backfill for pre-008 rows, mirroring internal/attribution
--- (attribution.Derive) — the Go enricher is the source of truth; this is its
+-- (attribution.Derive): the Go enricher is the source of truth; this is its
 -- one-shot SQL mirror for historical rows, pinned by
 -- TestIntegrationWebAnalytics/mutation_008_matches_attribution_derive. Reading residual
 -- auto_properties map keys is legitimate HERE (historical rows were never
 -- split); the 009/010 rollup blocks must read only promoted columns.
 --
 -- Every assignment is guarded if(col != '', col, <derived>), making the
--- mutation idempotent — which is what lets it double as the manual repair when
+-- mutation idempotent, which is what lets it double as the manual repair when
 -- rows land underived (a rollout window, or an aborted 009): re-run it, then
 -- 009's DELETE + delta backfill. This is the only copy; 009 derives nothing and
 -- reads an events table this has already derived.
@@ -45,7 +45,7 @@ ALTER TABLE events
 --     LAST '@'), so without the strip history would book a host the visitor
 --     never reached. The strip mirrors Go because "[^/?#]*@" is GREEDY: it
 --     consumes through to the last '@' before any /?#, exactly Go's
---     strings.LastIndex(authority, "@") — do not make it lazy or add '@' to the
+--     strings.LastIndex(authority, "@"). Do not make it lazy or add '@' to the
 --     class, either reverts to first-'@' semantics and reintroduces the bug.
 --     One spelling serves both url and referrer: the scheme group is optional,
 --     so a protocol-relative "//host/p" strips identically, and the class
@@ -53,14 +53,14 @@ ALTER TABLE events
 --     contains an '@'.
 --   * Whether a value resolves at all turns on WHERE an invalid %-escape sits.
 --     url.Parse UNESCAPES the path and the fragment, so a bad escape in either
---     fails the whole parse and Derive yields nothing — not even a hostname —
+--     fails the whole parse and Derive yields nothing, not even a hostname,
 --     while RawQuery is stored verbatim, so the same bytes in the query void
 --     only their own key (see the per-value guard below). path() and fragment()
 --     are joined by '#' before the one match(): '#' is neither '%' nor a hex
 --     digit, so it validates both regions at once without letting an escape
 --     straddle the boundary Go validates separately.
 --   * extractURLParameter reads the whole string INCLUDING the #fragment, which
---     url.Parse splits off before RawQuery ever exists — so a hash-router SPA's
+--     url.Parse splits off before RawQuery ever exists, so a hash-router SPA's
 --     "/#/dashboard?utm_source=newsletter" is Email here and Direct live unless
 --     the fragment is cut first. cutFragment is applied at every extraction.
 --   * Each extracted value is decoded only when its escaping is valid, else ''.
@@ -77,7 +77,7 @@ ALTER TABLE events
 --     cutFragment(url) like every other extraction: it excludes the fragment
 --     from its RESULT but still SCANS into it, so on a bare-origin hash route
 --     ("https://app.example.com#/dashboard", no path segment before '#') its
---     first '/' is the fragment's — storing "/dashboard" where Derive, reading
+--     first '/' is the fragment's, storing "/dashboard" where Derive, reading
 --     url.URL.Path off the already-split fragment, yields "/".
 --   * arrayMap over one-element arrays binds each derived input to a name
 --     exactly once (mutations have no CTEs); arrayElement(..., 1) unwraps.
@@ -85,12 +85,12 @@ ALTER TABLE events
 --     hostname COLUMN, mirroring Derive: the column can echo a client-sent
 --     $hostname, which must never steer the server-only referrer_domain. A
 --     no-op for pre-008 rows (hostname is always '' there, so the url branch
---     wins anyway) — it matters when this mutation re-derives a post-008 row
+--     wins anyway); it matters when this mutation re-derives a post-008 row
 --     whose referrer_domain is legitimately '' (a self-referral), where the
 --     column-first order would un-blank what Derive blanked.
 --   * The referrer's "www." strip is spelled out rather than using
 --     domainWithoutWWW, which compares "www." CASE-SENSITIVELY and so leaves
---     "WWW.Shop.com" intact — lowercasing afterwards would store
+--     "WWW.Shop.com" intact: lowercasing afterwards would store
 --     "www.shop.com" where Go (stripOneWWW after ToLower) stores "shop.com",
 --     defeating self-referral blanking and listing the tenant's own domain as
 --     its top referrer. Lower-then-strip mirrors Go and matches `own` below.
@@ -108,15 +108,15 @@ ALTER TABLE events
 --     channel source sets, so its casing can never change a channel and
 --     mirroring ToLower there would be a no-op the parity test cannot observe.
 --   * The locale trim is an explicit regexp, not trimBoth, which strips ONLY
---     ASCII 0x20. Go's strings.TrimSpace strips the whole unicode.IsSpace set —
---     [\t\n\v\f\r\x{0085}] plus \pZ (Zs/Zl/Zp) is exactly that set — and a
+--     ASCII 0x20. Go's strings.TrimSpace strips the whole unicode.IsSpace set
+--     ([\t\n\v\f\r\x{0085}] plus \pZ (Zs/Zl/Zp) is exactly that set), and a
 --     surviving separator fragments the Languages panel twice over: "en-US\n"
 --     stores as-is AND misses the length(p)=2 region re-caser ("US\n" is 3
 --     bytes), landing "en-us\n" where live traffic lands "en-US". The class is
 --     codepoint-aware, so it cannot shear a continuation byte off "à".
 --   * $screenWidth/$screenHeight read the Int64 slot, OR a String slot parsed
 --     with toInt64OrNull, OR the Float64 slot (a JS SDK sends dims as doubles)
---     stringified then parsed the same way — mirroring handler.go's
+--     stringified then parsed the same way, mirroring handler.go's
 --     autoPropInt64, which reads through autoprop.String (FormatFloat for a
 --     double) and ParseInt, so an integral double resolves and a fractional
 --     one does not. Client
@@ -125,7 +125,7 @@ ALTER TABLE events
 --     derived "1920x1080". toInt64OrNull rejects " 123"/"12.5" exactly as Go's
 --     strconv.ParseInt does, and a non-positive value fails the > 0 gate.
 --   * A referrer resolves only when it carries an authority ("//host"), which
---     is what Go's url.Parse requires before it reports a Hostname — bare
+--     is what Go's url.Parse requires before it reports a Hostname: bare
 --     ClickHouse domain() is LENIENT and would extract a host from a schemeless
 --     "www.google.com/search" that Go reads as a path, so the two would
 --     disagree on referrer_domain (and hence channel) without this gate.
@@ -144,27 +144,27 @@ ALTER TABLE events
 --     on any drift, including a reordering of the branches (cpm is both a paid
 --     and a display medium, so rule ORDER alone decides its channel). A taxonomy
 --     edit in channel.go is therefore a MIGRATION, not a refactor: update this
---     multiIf. But this mutation CANNOT reclassify on its own — every channel
+--     multiIf. But this mutation CANNOT reclassify on its own: every channel
 --     assignment is guarded if(channel != '', channel, …), so a re-run preserves
 --     each already-classified row (that guard is exactly what makes the re-run
 --     safe as an underived-row repair). To reclassify history after a taxonomy
 --     change, ship a NEW forward migration whose channel assignment is
---     UNCONDITIONAL — it sets channel = <derived> for every row, dropping the
---     if-guard — then run 009's DELETE + delta backfill so the rollup picks up
+--     UNCONDITIONAL (it sets channel = <derived> for every row, dropping the
+--     if-guard), then run 009's DELETE + delta backfill so the rollup picks up
 --     the rewrite.
--- Known limitations — divergences from Go this gate does NOT mirror, all
+-- Known limitations (divergences from Go this gate does NOT mirror, all
 -- unreachable from a browser's location.href, so they are accepted rather than
--- chased into a longer statement:
+-- chased into a longer statement):
 --   - host parsing: an invalid port ("https://x.com:abc/p", which Go rejects
 --     and this derives from), and a trailing-dot host ("https://x.com./p",
 --     which Go resolves to "x.com." and domainRFC to '', so this derives
 --     nothing).
 --   - UTM extraction, where extractURLParameter is a byte-scanner and Go's
 --     url.ParseQuery is a parser: a legacy ';' separator
---     ("?utm_source=google;utm_medium=cpc") — Go 1.17+ drops the pair and
+--     ("?utm_source=google;utm_medium=cpc"), Go 1.17+ drops the pair and
 --     yields "", this reads "google;utm_medium=cpc"; a bare '?' inside the
---     query ("?a=1?utm_source=google") — this reads "google", Go yields "";
---     and an encoded key ("?utm%5Fsource=google") — Go decodes it to
+--     query ("?a=1?utm_source=google"), this reads "google", Go yields "";
+--     and an encoded key ("?utm%5Fsource=google"), Go decodes it to
 --     utm_source, this does not. Each mis-books a UTM (hence a channel) into
 --     history that live traffic would never produce, but none occurs in a
 --     real SDK-emitted URL.

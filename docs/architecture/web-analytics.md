@@ -1,7 +1,7 @@
 # Web Analytics
 
 > **Status: SHIPPED.** The code landed in v0.0.4 (2026-07-19) and migrations 008–010 have been
-> applied to production — the deploy runbook below is history, not a plan. The taxonomy has changed
+> applied to production; the deploy runbook below is history, not a plan. The taxonomy has changed
 > once since, in v0.0.18 (2026-08-27, issue #81); what that did to the channel data already stored
 > is in the divergence section. The review amendments are recorded inline (timezone gate, panel
 > scopes, locale normalization, picker widening, UTM column completion in the 008 mutation,
@@ -12,27 +12,27 @@
 
 ## Goal and serving model
 
-Target experience: a stat row — **Users, Sessions, Pageviews,
-Pages/session, Bounce rate, Session duration** — over a bucketed timeseries, plus breakdown panels:
+Target experience: a stat row (**Users, Sessions, Pageviews,
+Pages/session, Bounce rate, Session duration**) over a bucketed timeseries, plus breakdown panels:
 **Pages, Entry/Exit pages, Referrers, Channels, Countries/Regions/Cities, Languages,
 Browsers/OS/Devices (+versions), Screen sizes, UTM ×5, Events**. Every panel is a single-dimension,
-initially-unfiltered query — exactly the shape the existing rollup fast path serves. Clicking a row
+initially-unfiltered query, exactly the shape the existing rollup fast path serves. Clicking a row
 adds a filter, and filtered queries already fall back to the raw path, which promoted columns keep
 fast. Sub-day granularity (an hourly "today" view) and realtime are raw-path by design (the rollups
 are day-keyed/session-keyed).
 
 Two serving-model caveats, stated once here: **(a) every rollup fast path requires a
-UTC-midnight-aligned window, and the *bucketed* ones additionally require UTC bucketing** — a
+UTC-midnight-aligned window, and the *bucketed* ones additionally require UTC bucketing**. A
 non-UTC `timezone` sends trends/segmentation and the session panels to the raw path, which the
 promoted columns keep fast. Top K (the Pages/Countries/…/UTM row and Events list below) does not
 bucket by time, so `topKQueryForExecution` deliberately does not consult `timezone`; the
 day-alignment guard is the whole gate there. **(b) the session-grain panels (the stat
 row's Sessions/Bounce/Duration/Pages-per-session and Entry/Exit/Referrers/Channels) should scope
-`kind=page_view`** — that makes bounce = single-pageview session (rather than single-event, which
+`kind=page_view`**: that makes bounce = single-pageview session (rather than single-event, which
 any background or custom event would silently un-bounce) and computes entry states over pageviews
 only, so a URL-less first event can't claim a session's first-touch attribution.
 
-Every panel maps onto the existing insights machinery — no new query engine, no new insight type:
+Every panel maps onto the existing insights machinery (no new query engine, no new insight type):
 
 | Panel | Query | Serving path |
 |---|---|---|
@@ -56,19 +56,19 @@ emitted `$referrer`/`$locale`/`$screenWidth`/`$screenHeight`/`$pageTitle`; it ga
 
 | Property | Column | Type | Source | Overwrite policy |
 |---|---|---|---|---|
-| `$pathname` | `pathname` | `String` | derived: `url.Parse($url).Path` (decoded, not `EscapedPath` — so the SQL mirror's `decodeURLComponent(path(...))` can reproduce it), empty → `/` | derive-if-absent (SDK may send logical/route paths) |
+| `$pathname` | `pathname` | `String` | derived: `url.Parse($url).Path` (decoded, not `EscapedPath`, so the SQL mirror's `decodeURLComponent(path(...))` can reproduce it), empty → `/` | derive-if-absent (SDK may send logical/route paths) |
 | `$hostname` | `hostname` | `LowCardinality(String)` | derived: URL host, lowercased, port stripped | derive-if-absent |
 | `$referrer` | `referrer` | `String` | SDK (`document.referrer`) | as sent, never derived |
 | `$referrerDomain` | `referrer_domain` | `LowCardinality(String)` | derived: referrer host, lowercased, one leading `www.` stripped; **blanked on self-referral** (equals own hostname after `www.`-strip) **or an auth-intermediary host** (`authIntermediaryHosts`, see the channel section) | **always server-derived** (client value stripped first, like `$bot_score`) |
 | `$channel` | `channel` | `LowCardinality(String)` | derived: rule table over (referrerDomain, `$utmSource`, `$utmMedium`); only when `$url` present | **always server-derived** |
-| `$locale` | `locale` | `LowCardinality(String)` | SDK | casing/separator normalized before storage (`en-us`/`en_US` → `en-US`) — rollup rows are permanent, so variants must never fragment the Languages panel |
+| `$locale` | `locale` | `LowCardinality(String)` | SDK | casing/separator normalized before storage (`en-us`/`en_US` → `en-US`): rollup rows are permanent, so variants must never fragment the Languages panel |
 | `$screenSize` | `screen_size` | `LowCardinality(String)` | derived: `"{w}x{h}"` when `$screenWidth`/`$screenHeight` both parse > 0 | derive-if-absent |
 | `$utmTerm` | `utm_term` | `LowCardinality(String)` | SDK, or parsed from `$url` query | only-if-absent |
 | `$utmContent` | `utm_content` | `LowCardinality(String)` | SDK, or parsed from `$url` query | only-if-absent |
 | `$pageTitle` | `page_title` | `String` | SDK | as sent |
 
 Also new behavior on **existing** UTM properties: `$utmSource`/`$utmMedium`/`$utmCampaign` are
-completed from `$url` query params (`utm_source=`…) when the SDK didn't send them — removes any SDK
+completed from `$url` query params (`utm_source=`…) when the SDK didn't send them. Removes any SDK
 dependency for UTM. (The 008 mutation applies the same completion to the historical
 `utm_source`/`utm_medium`/`utm_campaign` columns, guarded if-absent, so history classifies channel
 identically to the live enricher.)
@@ -76,7 +76,7 @@ identically to the live enricher.)
 All ten are `PromotedString` in `promotedAutoColumns`. LowCardinality follows the `utm_campaign`
 precedent (arbitrary-but-bounded tenant text); `pathname`/`referrer`/`page_title` stay plain
 `String` (genuinely high cardinality, like `url`/`city`). `utm_term` is the most aggressive LC
-choice (freeform paid keywords) — accepted under the same precedent, revisit if part dictionaries
+choice (freeform paid keywords): accepted under the same precedent, revisit if part dictionaries
 bloat.
 
 ### Event-rollup dimensions (migration 009): 10 → 20
@@ -88,10 +88,10 @@ $pathname  $hostname  $referrerDomain  $channel  $locale
 $screenSize  $utmTerm  $utmContent  $browserVersion  $osVersion
 ```
 
-`$browserVersion`/`$osVersion` are already promoted columns — they only join the dim list. Caveat,
+`$browserVersion`/`$osVersion` are already promoted columns; they only join the dim list. Caveat,
 accepted: an unfiltered versions panel shows bare majors ("126") mixed across browsers; the
 sharper view (filter `$browser = Chrome`, then break down) goes raw anyway. MV insert amplification
-goes 11 → 21 rows/event (EAV is linear per dim; post-merge storage = Σ per-dim daily cardinality —
+goes 11 → 21 rows/event (EAV is linear per dim; post-merge storage = Σ per-dim daily cardinality,
 dominated by `$pathname`, bounded by site page count).
 
 ### Session-rollup dimensions (migration 010): 11 → 16
@@ -120,11 +120,11 @@ acquisition panels.
 
 ### New session metric
 
-`SESSION_METRIC_AVG_EVENTS_PER_SESSION` — `avg(event_count)` over session rows; with scope
+`SESSION_METRIC_AVG_EVENTS_PER_SESSION`: `avg(event_count)` over session rows; with scope
 `kind=page_view` this is **pages per session**. Rollup-eligible via the existing
 `event_count_state`; raw form `avg(event_count)` over `buildSessionRowsCTE`. A first-class metric
 rather than an FE division of two tiles because pageviews are occur-day-windowed while sessions are
-keyed on session start and never clipped — dividing tiles disagrees visibly on boundary days.
+keyed on session start and never clipped: dividing tiles disagrees visibly on boundary days.
 
 ## Derivation: `internal/attribution`
 
@@ -171,27 +171,27 @@ Domain sets live as Go consts in `internal/attribution/channel.go` (search: goog
 matched structurally by a TLD-shaped-tail check rather than enumeration, bing, duckduckgo, yahoo,
 baidu, yandex, ecosia, brave, startpage, perplexity…; social: facebook, instagram, x/twitter,
 t.co, linkedin, tiktok, pinterest, reddit, threads, bsky, news.ycombinator…; video: youtube,
-youtu.be, vimeo, twitch, dailymotion…). That file is the **single normative taxonomy** — this satisfies
+youtu.be, vimeo, twitch, dailymotion…). That file is the **single normative taxonomy**: this satisfies
 `profiles.md`'s "no ad hoc channel" rule by defining the stable derivation it demanded; the
 profile API still exposes no channel field.
 
 **Which google host is Search** (issue #81). The ccTLD matcher is structural, so it needs a second
 gate on the subdomain or the whole google product estate books as Organic Search:
-`accounts.google.com` (the OAuth bounce; ~11% of google-referred events on a production project —
+`accounts.google.com` (the OAuth bounce; ~11% of google-referred events on a production project,
 now blanked outright, see **Auth intermediaries** below), `mail.google.com`,
 `search.google.com` (Search Console). `googleSearchSubdomains` is the gate, and it is an
-**allow-list** — apex, `www`, `m`, `images`, `news`, `maps`, `scholar`, `books`, `video`, `cse`
+**allow-list**: apex, `www`, `m`, `images`, `news`, `maps`, `scholar`, `books`, `video`, `cse`
 (GA4's own enumerated google hosts collapsed over the ccTLDs), plus `gemini` and `lens`, which cite
 and link out exactly like `perplexity.ai` already does from `searchDomains`. Failing closed is the point: an
 unlisted subdomain books a visible Referral, where an exceptions set would silently re-inflate
 Organic Search every time google ships a product. Unchanged: `android-app://com.google.android.gm`
-(Gmail app) stays Referral — its `google.android.gm` tail is not TLD-shaped.
+(Gmail app) stays Referral; its `google.android.gm` tail is not TLD-shaped.
 
 **Webmail is Email, not Search.** `webmailDomains` (gmail, yahoo/aol/proton/zoho/yandex mail,
 outlook web) routes a referrer that is an email client to rule 9. `mail.yahoo.com`,
 `mail.yahoo.co.jp`, `mail.yandex.ru` and `mail.yandex.com` suffix-match a search domain, so for
-those four the set is what stops Organic Search — the same defect as the google one, in the
-yahoo/yandex portals; gmail is already out of Search via `googleSearchSubdomains` and is in the set
+those four the set is what stops Organic Search (the same defect as the google one, in the
+yahoo/yandex portals); gmail is already out of Search via `googleSearchSubdomains` and is in the set
 to reach Email rather than a bare Referral. **Every `searchDomains` entry with a webmail sibling
 needs its own entry**, or the defect simply survives on the host that was left out. The webmail
 guard covers the referrer side only: a search `utm_source` still takes rule 6. The remaining
@@ -199,10 +199,10 @@ webmail hosts move Referral → Email so this reads as one rule rather than a go
 untagged newsletter clicks land in Email beside the UTM-tagged ones.
 
 **Auth intermediaries blank to Direct.** `authIntermediaryHosts` (`attribution.go`) lists hosts that
-serve nothing but a sign-in redirect — `accounts.google.com`, `login.microsoftonline.com`,
+serve nothing but a sign-in redirect: `accounts.google.com`, `login.microsoftonline.com`,
 `appleid.apple.com`, `login.yahoo.com`, … A referrer from one is a visitor who bounced out to
 authenticate and came straight back, the same non-acquisition as a self-referral, so `referrerDomain`
-blanks it before classification and the event books Direct (resolved, not Unassigned — the blank is
+blanks it before classification and the event books Direct (resolved, not Unassigned: the blank is
 deliberate). Membership test: the host must serve no page anyone could link from. `github.com`,
 `facebook.com`, `linkedin.com` and `x.com` run OAuth on their content hosts and stay out, since
 blanking them would delete real referrals. Matching is exact after lowercasing and the `www.` strip,
@@ -231,17 +231,16 @@ no webmail concept at all, and blanks no auth intermediary:
 008's mutation is one-shot over pre-008 rows and **has already run in production**, so that
 rewrite is history rather than a choice: pre-008 rows carry the inflated Organic Search bucket, and
 the 009/010 backfills copied it into the rollups, where it is not repairable in place. So does
-everything Go ingested between v0.0.4 (2026-07-19) and v0.0.18 (2026-08-27) — the classifier of
+everything Go ingested between v0.0.4 (2026-07-19) and v0.0.18 (2026-08-27): the classifier of
 that era had no subdomain gate and no webmail set either. **The boundary in the stored data is the
 v0.0.18 deploy, not 008's mutation**: every channel value written before it follows the left-hand
 column, every one after it the right. `authIntermediaryHosts` adds a second boundary of the same
-kind at the release carrying it — before it those hosts follow the pre-list column (Referral, or
-Organic Search/Video/Social for the three suffix-matched ones), after it Direct — under the same
+kind at the release carrying it: before it those hosts follow the pre-list column (Referral, or
+Organic Search/Video/Social for the three suffix-matched ones), after it Direct, under the same
 decision. Repairing the history means a NEW migration re-deriving
 `channel` over the events table plus a rollup rebuild from it. **Decided 2026-08-27: not worth
-doing** — pug is in open beta, so the inflated bucket stays in the history and the split is simply
-a known one. The mutation→DELETE→backfill repair runbook below still re-derives gap rows the old
-way.
+doing.** The inflated bucket stays in the history and the split is simply a known one. The
+mutation→DELETE→backfill repair runbook below still re-derives gap rows the old way.
 
 008's own header still says the `multiIf` "must be kept in sync" and that a taxonomy edit means
 updating it. That instruction is **stale as of #81** and cannot be edited out of a shipped
@@ -253,13 +252,13 @@ migration; `TestMutationCorpusStaysWithin008Semantics` is the guard instead, fai
 Only a session's **landing** event carries the external referrer; mid-session pageviews have a
 self-referrer (blanked) and usually no UTM, so per-event classification degrades to `Direct`
 mid-session. (The direction flips for SPAs whose route changes keep `document.referrer` pinned to
-the external referrer — confirm the browser SDK's virtual-pageview referrer behavior; the
+the external referrer. Confirm the browser SDK's virtual-pageview referrer behavior; the
 session-grain panels are correct either way.) Therefore the Referrers and Channels **panels must
 be session-grain** (`SESSIONS` + entry-state breakdown = first-touch attribution). The event-grain
-`$channel` dim still exists in the event rollup — it is what makes the property discoverable in
-the picker and supports kind-scoped exploration — but any event-grain channel widget carries this
+`$channel` dim still exists in the event rollup (it is what makes the property discoverable in
+the picker and supports kind-scoped exploration), but any event-grain channel widget carries this
 caveat. Resolved: v1 keeps `Direct` (not an `Internal` bucket) for self-referred mid-session
-events — the session-grain panels make the distinction invisible, and `Internal` would need the
+events. The session-grain panels make the distinction invisible, and `Internal` would need the
 pre-blank referrer signal threaded through the rule table; revisit if event-grain channel widgets
 get real use.
 
@@ -267,7 +266,7 @@ get real use.
 from any referrer with a host, but `$channel` derives **only when a valid http(s) `$url` is
 present** (`Derive`). So an event with a non-web `$url` (a native/hybrid app sending
 `capacitor://…`/`myapp://…`) but a resolvable `$referrer` stores a `referrer_domain` with an empty
-`channel` — `sum(channel) < sum(referrer_domain)` on such traffic. This is deliberate: a channel
+`channel`: `sum(channel) < sum(referrer_domain)` on such traffic. This is deliberate: a channel
 for a non-web event would be a guess, and `Unassigned` is not obviously better than absent. The
 event is still visible in the Referrers panel; it is simply absent from Channels. A spike in this
 shape (a `$url` present but nothing derived) is observable via the
@@ -277,45 +276,45 @@ tenant needs channel attribution for non-web events.
 ## Migrations, backfill, and live-deploy safety
 
 The app is live (since 2026-07-13), so all three migrations are written for a hot system. Three
-backfills are required — history would otherwise render as `''` in every new panel — and each uses
+backfills are required (history would otherwise render as `''` in every new panel), and each uses
 a different pattern because each has a different merge hazard:
 
-1. **008 — columns + derivation backfill.** `ALTER TABLE events ADD COLUMN … DEFAULT ''` ×10
+1. **008: columns + derivation backfill.** `ALTER TABLE events ADD COLUMN … DEFAULT ''` ×10
    (metadata-only, instant), then one `ALTER TABLE events UPDATE … SETTINGS mutations_sync = 2`
    (waits on every replica; equivalent to 1 on a single node) deriving values for pre-008 rows:
    pathname/hostname from the `url` column (ClickHouse `path()`,
    `domain()`/`domainWithoutWWW()`), referrer/locale/utm_term/utm_content/page_title from the
-   residual `auto_properties` map keys (legitimate here — historical rows were never split),
+   residual `auto_properties` map keys (legitimate here: historical rows were never split),
    screen_size from the typed map slots, UTM column completion from the `url` query string,
    channel via a frozen nested-`multiIf` mirror of the Go rule table (one-shot; applies only to
    pre-deploy rows, and frozen means it no longer mirrors the google-subdomain gate or the webmail
-   rule — see the taxonomy section). The mutation is **not** merely an approximation where it can be exact:
+   rule; see the taxonomy section). The mutation is **not** merely an approximation where it can be exact:
    `TestIntegrationWebAnalytics/mutation_008_matches_attribution_derive` runs the
    migration file's own statement over a pre-008-style corpus (twice, pinning the idempotency guards) and
-   asserts byte-equality with `attribution.Derive` — including `path('') → '/'`,
+   asserts byte-equality with `attribution.Derive`, including `path('') → '/'`,
    `lower(domain())`, `+`-as-space query decoding, and the locale re-caser. Every assignment is
    guarded `if(col != '', col, <derived>)`, making the mutation **idempotent** and safe to re-run.
-   The map residue is deliberately left in place — `PropertyExpr` reads columns for promoted keys,
+   The map residue is deliberately left in place: `PropertyExpr` reads columns for promoted keys,
    and the map-wins merge on read yields identical values; a cleanup mutation adds risk for zero
    benefit.
-2. **009 — event rollup.** `ALTER TABLE dashboard_event_rollup_daily_mv MODIFY QUERY` with the
-   21-tuple ARRAY JOIN — **never DROP→CREATE**, which would lose *all* dims (including
+2. **009: event rollup.** `ALTER TABLE dashboard_event_rollup_daily_mv MODIFY QUERY` with the
+   21-tuple ARRAY JOIN, **never DROP→CREATE**, which would lose *all* dims (including
    `$__total__`) for events inserted in the gap; ClickHouse 26.5 (dev/test/prod) supports
-   MODIFY QUERY on TO-table MVs (exercised in CI — the parity suites run the real migrations).
-   Carries **no derivation mutation of its own** — 008's already ran in the same PreSync job, so
+   MODIFY QUERY on TO-table MVs (exercised in CI: the parity suites run the real migrations).
+   Carries **no derivation mutation of its own**: 008's already ran in the same PreSync job, so
    009's backfill reads an already-derived `events` and a second copy would be a no-op full-table
    rewrite (see the deploy runbook). Followed by a **delta backfill INSERT restricted
-   to the new `dim_name`s** — new EAV key rows are disjoint from every existing row, so there is
+   to the new `dim_name`s**: new EAV key rows are disjoint from every existing row, so there is
    no merge hazard and existing dims must NOT be re-inserted (a full-list backfill would double
    `cnt` for the old dims). The sub-second MODIFY→INSERT overlap can double-count new-dim `cnt`
-   only (`uniq_state` is idempotent) — same accepted class as the documented redelivery
+   only (`uniq_state` is idempotent): same accepted class as the documented redelivery
    over-count, noted in-file like migration 006 does; a cutoff cannot fully close it (an insert in
    flight during MODIFY is ambiguous either way).
-3. **010 — session rollup.** `ADD COLUMN` ×10 `AggregateFunction(argMin/argMax, String,
+3. **010: session rollup.** `ADD COLUMN` ×10 `AggregateFunction(argMin/argMax, String,
    DateTime64(3))` states, `MODIFY QUERY` restating all 32 states, then a **partial-column
    backfill INSERT** listing only the key columns + the ten new states. Omitted
-   `AggregateFunction` columns take their implicit default — the **empty aggregate state, which is
-   the merge identity** — so `event_count_state`/`start`/`end` and existing entry/exit states are
+   `AggregateFunction` columns take their implicit default (the **empty aggregate state, which is
+   the merge identity**), so `event_count_state`/`start`/`end` and existing entry/exit states are
    untouched and bounce/duration cannot double. This is the one backfill that is silently
    catastrophic if done naively (re-inserting `countState()` doubles every session's event count);
    the merge-identity behavior is pinned by
@@ -329,52 +328,52 @@ a different pattern because each has a different merge hazard:
 is already erasure-exempt by documented decision (anonymous aggregates), and the session rollup is
 deleted row-level by `session_id`, so new state columns ride along.
 
-**Deploy runbook (single-step — one normal release).** Ship 008+009+010 and the binaries in one
+**Deploy runbook (single-step: one normal release).** Ship 008+009+010 and the binaries in one
 gitops commit and sync once. Order is not a choice: `migrate-clickhouse.job.yaml` is an ArgoCD
 `PreSync` hook running `pug clickhouse migrate` with no bound (`goose.UpContext` = all pending), so
 every migration completes before the server/worker Deployments sync. That is also the required
-order — the new binary's INSERT lists all 26 promoted columns and hard-fails on a pre-008 schema,
+order: the new binary's INSERT lists all 26 promoted columns and hard-fails on a pre-008 schema,
 while the old binary tolerates 008 via the column DEFAULTs.
 
 **Bump the `pug-migrate-clickhouse` digest in that same commit.** The migrations are *files* baked
 into that image (`COPY --from=build /src/schema/clickhouse/migrations`, read from WORKDIR), not
 embedded in the binary the server ships. Leave it pinned at its old digest while bumping
 server/worker and the PreSync hook runs an image that has never heard of 008: it finds nothing
-pending, **succeeds**, and then the new server meets a 16-column table with a 26-column INSERT —
-every event ingest hard-fails, from a green sync. This is the one deploy step that fails silently
+pending, **succeeds**, and then the new server meets a 16-column table with a 26-column INSERT.
+Every event ingest hard-fails, from a green sync. This is the one deploy step that fails silently
 one stage before it detonates.
 
 **Do NOT split this into two releases** (migrate 008 → deploy → migrate 009+010). Beyond the
 PreSync hook not being able to express it, the middle window is broken: the deployed binary already
 lists `$pathname` in `sessionMaterializedDims`, and `canUseSessionRollup` inspects only the
-request — never the schema — so a session breakdown emits `argMinMerge(entry_pathname_state)`
+request, never the schema, so a session breakdown emits `argMinMerge(entry_pathname_state)`
 against a column 010 has not created yet (`Code: 47 UNKNOWN_IDENTIFIER`), with no raw fallback. The
 event rollup fails the same way but silently: `$locale` routes to `WHERE dim_name = '$locale'`,
-finds no rows, and renders flat zero — a breakdown that works today on the raw path. Splitting is
+finds no rows, and renders flat zero, a breakdown that works today on the raw path. Splitting is
 strictly worse than the window it tries to avoid.
 
 **Accepted cost, and its repair.** 009/010's MVs go live during PreSync; the rollout then takes
 ~30–90s (`maxSurge: 100%`, `maxUnavailable: 0`, `terminationGracePeriodSeconds: 30`), and old pods
 keep ingesting throughout with no `enrichAttribution`. Those events land `''` in the new columns
 *and* the live MV writes them `dim_value=''` rollup rows. Re-deriving `events` afterwards does not
-fix the rollup — an MV fires only on INSERT — so the blank rows are permanent unless rebuilt.
+fix the rollup (an MV fires only on INSERT), so the blank rows are permanent unless rebuilt.
 
 **Repair (one procedure, covers every case).** Optional, and sized by the window's traffic rather
 than the table: run migration 008's derivation mutation, then migration 009's `DELETE` of the new
 `dim_name`s followed by its delta backfill INSERT. **Post-011 addendum:** once migration 011 has
 run, the rollup carries a `cookieless` key column, so 009's positional INSERT no longer matches
-the table — a manual repair must name the columns AND compute the flag: use 009's backfill body
+the table. A manual repair must name the columns AND compute the flag: use 009's backfill body
 with `INSERT INTO dashboard_event_rollup_daily (project_id, day, kind, dim_name, dim_value, cnt,
 uniq_state, cookieless) SELECT …, toUInt8(startsWith(distinct_id, 'cookieless-')) AS cookieless …
 GROUP BY project_id, day, kind, dim_name, dim_value, cookieless`. (Goose itself never hits this:
-a retried 009 always executes before 011 in migration order —
+a retried 009 always executes before 011 in migration order;
 `TestIntegrationWebAnalytics/event_rollup_backfill_009_rerunnable` pins the shipped statement's
 idempotency with the seven-column list.) That rebuilds the new dims from `events`, the
-source of truth, and is re-runnable by construction — the same property that makes 009 safe to
+source of truth, and is re-runnable by construction: the same property that makes 009 safe to
 retry. This is deliberately the *only* recovery path: it covers the rollout window above, and it
 covers a 009 retried after a long gap (old-binary rows landing between 008's mutation and the
 backfill), so neither case needs a special case inside the migration. 009 therefore carries no
-catch-up mutation of its own — a second copy of 008's mutation would be a guaranteed no-op
+catch-up mutation of its own: a second copy of 008's mutation would be a guaranteed no-op
 full-table rewrite on the PreSync path, and a second copy of the repo's hairiest SQL to keep in
 sync, to automate a case a human is already present for.
 
@@ -383,10 +382,10 @@ sync, to automate a case a human is already present for.
 - **Redelivery caveats** extend to the new surfaces unchanged: rollup-served TOTAL/PER_USER_AVG
   over-count by the redelivery rate on new dims exactly as on old ones; the new
   AVG_EVENTS_PER_SESSION inflates under duplicates on the rollup path (countState) while the raw
-  path self-corrects — same class as the documented BOUNCE_RATE caveat, pinned by a matching
+  path self-corrects, same class as the documented BOUNCE_RATE caveat, pinned by a matching
   documentation test.
 - **Privacy:** pathnames can embed user identifiers (e.g. `/users/jane`); they enter the
-  erasure-exempt event rollup as anonymous aggregates with no per-person keys — the same accepted
+  erasure-exempt event rollup as anonymous aggregates with no per-person keys, the same accepted
   stance as `$city`/`$utmCampaign` today, now stated explicitly rather than implied. `$ip` handling
   is unchanged (stripped, never persisted). Visitor identity remains cookieless per the separate
   compliance 4.10 design; nothing here adds fingerprinting.
@@ -395,41 +394,41 @@ sync, to automate a case a human is already present for.
 
 Promoted keys are stripped from the map at ingest, so the `property_keys` MV never observes them.
 `mergePromotedAutoDimensions` now injects **all promoted string columns**
-(`clickhouse.PromotedStringAutoProperties` — the twenty `materializedDims` plus `$url`,
+(`clickhouse.PromotedStringAutoProperties`: the twenty `materializedDims` plus `$url`,
 `$referrer`, `$pageTitle`) into `GetFilterSchema`, with rollup-sourced counts where a dim exists
 and count 0 otherwise; the dedup drop-predicate widened symmetrically so a frozen pre-promotion
 `property_keys` entry can't duplicate an injected key. Still invisible by design: the
-bool/numeric promoted keys (`$mobile`, `$bot_score`, `$verified_bot`) — typed injection would
+bool/numeric promoted keys (`$mobile`, `$bot_score`, `$verified_bot`); typed injection would
 need per-key value types (`promotedAutoDimValueType` is a blanket `String`) and stays out of
 scope. → [`insights.md`](insights.md) (Property discovery).
 
 ## Testing strategy (as implemented)
 
 - **Contract pins, repointed at the latest MV definition:** `TestMaterializedDimsMatchMigration`
-  and `TestMigration012PromotedDimExprsMatch` parse **012's** Up section — the migration that
-  currently defines the MV. 011 and 012 restate the MODIFY QUERY block only (full 21-tuple ↔
+  and `TestMigration012PromotedDimExprsMatch` parse **012's** Up section (the migration that
+  currently defines the MV). 011 and 012 restate the MODIFY QUERY block only (full 21-tuple ↔
   `materializedDims`+`$__total__`) and carry **no backfill**, which the tests assert by
-  requiring exactly one `ARRAY JOIN` block; 009's two-block shape — MODIFY QUERY plus a delta
-  backfill of `eventRollupDims009` exactly — is pinned by `TestMigration009Frozen`, and 011 by
+  requiring exactly one `ARRAY JOIN` block; 009's two-block shape (MODIFY QUERY plus a delta
+  backfill of `eventRollupDims009` exactly) is pinned by `TestMigration009Frozen`, and 011 by
   `TestMigration011Frozen`.
   `TestMigration006Frozen` / `TestMigration007Frozen` pin the shipped migrations to their
   historical content (guards against editing them). `TestMigration010SessionRollup
   {ColumnsMatchDims,DimExprsMatch}` do the same for the session rollup (old dims stated once in
   the MODIFY QUERY, new dims twice, backfill column list = key columns + new states exactly).
-  The `auto_properties['$` ban applies to the 009/010 rollup blocks only — 008's mutation
+  The `auto_properties['$` ban applies to the 009/010 rollup blocks only; 008's mutation
   legitimately reads the map (historical rows were never split).
 - **Mutation↔Derive parity:** `TestIntegrationWebAnalytics/mutation_008_matches_attribution_derive`
   inserts a pre-008-style corpus (map-resident keys, empty new columns), executes the migration
   file's OWN mutation statement twice (idempotency), and asserts exact equality with `attribution.Derive` on
-  every derived column — the mutation's output becomes permanent rollup history via the 009/010
+  every derived column; the mutation's output becomes permanent rollup history via the 009/010
   backfills, so exactness matters beyond the channel `multiIf`. Parity is corpus-scoped, not total:
   the frozen mutation predates the google-subdomain gate and the webmail rule, and diverges on hosts
-  the corpus does not contain — `TestMutationCorpusStaysWithin008Semantics` (no container) keeps it
+  the corpus does not contain; `TestMutationCorpusStaysWithin008Semantics` (no container) keeps it
   that way (see the taxonomy section).
 - **Merge-identity gate for 010:**
-  `TestIntegrationWebAnalytics/session_rollup_partial_insert_merge_identity` — full-state session
+  `TestIntegrationWebAnalytics/session_rollup_partial_insert_merge_identity` (full-state session
   via the live MV → re-run the migration file's own partial-column backfill → `countMerge`/duration/`entry_url`
-  unchanged, new `argMin/MaxMerge` correct.
+  unchanged, new `argMin/MaxMerge` correct).
 - **Parity:** `TestIntegrationWebAnalytics/rollup_parity_*` extend the rollup-vs-raw suites
   (trends/top-K on `$pathname`/`$channel`; ENTRY/EXIT on `$pathname`; SESSIONS by `$channel` and
   `$referrerDomain`; AVG_EVENTS_PER_SESSION trends + segmentation with a pages-per-session sanity
@@ -456,7 +455,7 @@ entries in lockstep: slice / `EventsInsertPromotedColumns` / `PromotedAutoRow` /
 `sessionRollupDimSuffix`, `canUseSessionRollup` + AVG_EVENTS_PER_SESSION) + `builder.go`
 (`sessionMetricAggExpr` = `if(count()=0, 0, avg(toFloat64(event_count)))`) + `service.go`
 (picker widening) · `proto/shared/insights/v1/insights.proto`
-(`SESSION_METRIC_AVG_EVENTS_PER_SESSION = 6`; only the enum NAME reaches the MCP input schema —
+(`SESSION_METRIC_AVG_EVENTS_PER_SESSION = 6`; only the enum NAME reaches the MCP input schema:
 protoc-gen-mcp drops value comments, so model-facing semantics belong on the `Query` RPC's
 leading comment, not here) ·
 contract-test surgery per Testing strategy · seeder (`session.go`/`factory.go` route props
@@ -467,30 +466,30 @@ term/content + video/social/self-referral cases) · stale snake_case comment fix
 session rollup deleted row-level by `session_id`, new states ride along), protovalidate
 (`defined_only` admits the new enum value), MCP tool wiring (proto-generated).
 
-## Open questions — resolved
+## Open questions: resolved
 
-1. **`Internal` vs `Direct` for self-referred mid-session events** — keep `Direct` in v1; the
+1. **`Internal` vs `Direct` for self-referred mid-session events**. Keep `Direct` in v1; the
    session-grain panels make the distinction invisible and `Internal` needs the pre-blank signal
    threaded through. Documented in [Channel semantics](#channel-semantics-session-grain-not-event-grain).
-2. **publicsuffix (eTLD+1) subdomain collapsing** — deferred; cross-subdomain traffic is
+2. **publicsuffix (eTLD+1) subdomain collapsing**. Deferred; cross-subdomain traffic is
    genuinely ambiguous per tenant. The not-collapsed case is pinned in `attribution_test.go`.
-3. **Hostname `www.`-normalization on the stored column** — stays as-sent; most sites 301 to one
+3. **Hostname `www.`-normalization on the stored column**. Stays as-sent; most sites 301 to one
    canonical host, and staging/app subdomains staying distinct is a feature.
-4. **Locale normalization** — YES, shipped in v1 (`NormalizeLocale`, mirrored in the 008
+4. **Locale normalization**. YES, shipped in v1 (`NormalizeLocale`, mirrored in the 008
    mutation): un-normalized values entering the rollup would fragment the Languages panel
    permanently.
-5. **Picker widening** — YES for all promoted string columns
+5. **Picker widening**. YES for all promoted string columns
    (`clickhouse.PromotedStringAutoProperties` + a symmetrically widened dedup predicate in
    `mergePromotedAutoDimensions`); typed injection for the bool/numeric bot fields stays out of
    scope.
-6. **"Web analytics" demo dashboard** — deferred: dashboard tiles can't render session insights
+6. **"Web analytics" demo dashboard**. Deferred: dashboard tiles can't render session insights
    yet, so a seeded board could only carry the event-rollup panels; revisit with the FE page.
 
 ## Out of scope
 
-The FE web-analytics page itself (`../app` — the BE contracts it needs are exactly this design);
+The FE web-analytics page itself (`../app`: the BE contracts it needs are exactly this design);
 browser-SDK additions (confirm `@pug-sh/browser` sends `$referrer`/`$locale`/`$screenWidth`/
 `$screenHeight`/`$pageTitle`; UTM becomes server-derived either way); per-tile bot-exclusion
-toggles — now the spec-level `include_bots` (migration 012, → [insights.md](insights.md)), fast-path in both states. Cookieless visitor identity — formerly deferred here
-as "compliance 4.10" — is now implemented (migration 011, `internal/cookieless`,
+toggles, now the spec-level `include_bots` (migration 012, → [insights.md](insights.md)), fast-path in both states. Cookieless visitor identity, formerly deferred here
+as "compliance 4.10", is now implemented (migration 011, `internal/cookieless`,
 `include_cookieless`; → [ingestion.md](ingestion.md), [insights.md](insights.md)).

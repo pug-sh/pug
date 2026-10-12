@@ -105,19 +105,19 @@ func TestEnrichGeo(t *testing.T) {
 			},
 		},
 		{
-			"partial geo — country only",
+			"partial geo: country only",
 			geo.Location{geo.PropCountry: "DE"},
 			[]*eventsv1.Event{{}},
 			map[string]string{geo.PropCountry: "DE"},
 		},
 		{
-			"empty location — no properties set",
+			"empty location: no properties set",
 			geo.Location{},
 			[]*eventsv1.Event{{}},
 			nil,
 		},
 		{
-			"nil location — no properties set",
+			"nil location: no properties set",
 			nil,
 			[]*eventsv1.Event{{}},
 			nil,
@@ -142,7 +142,7 @@ func TestEnrichGeo(t *testing.T) {
 		},
 		{
 			// $ip is personal data and is never stored. Our SDKs never send it, but
-			// the SDK endpoint assumes untrusted callers — a hand-crafted request
+			// the SDK endpoint assumes untrusted callers: a hand-crafted request
 			// must not be able to smuggle an IP into storage via auto_properties.
 			"client-supplied $ip is stripped",
 			geo.Location{geo.PropCountry: "US"},
@@ -219,7 +219,7 @@ func TestEnrichGeoPrivateKeyIgnoresHeaderGeo(t *testing.T) {
 			map[string]string{geo.PropCountry: "DE", geo.PropCity: "Berlin"},
 		},
 		{
-			"no caller location — the event stores none",
+			"no caller location: the event stores none",
 			[]*eventsv1.Event{{}},
 			nil,
 		},
@@ -310,10 +310,10 @@ func TestBatchCreateWiresAuthTypedEnrichers(t *testing.T) {
 			}
 			published := batch.GetEvents()[0].AutoProperties
 			if got := propString(published[geo.PropCountry]); got != tt.want {
-				t.Errorf("published $country = %q, want %q — is principal.AuthType still passed to enrichGeo?", got, tt.want)
+				t.Errorf("published $country = %q, want %q; is principal.AuthType still passed to enrichGeo?", got, tt.want)
 			}
 			if got := propString(published[useragent.PropBrowser]); got != tt.wantBrowser {
-				t.Errorf("published $browser = %q, want %q — is principal.AuthType still passed to enrichUserAgent?", got, tt.wantBrowser)
+				t.Errorf("published $browser = %q, want %q; is principal.AuthType still passed to enrichUserAgent?", got, tt.wantBrowser)
 			}
 		})
 	}
@@ -360,13 +360,13 @@ func TestEnrichUserAgent(t *testing.T) {
 		want     map[string]string // expected auto-properties on each event (nil = no UA props)
 	}{
 		{
-			name:     "chrome desktop — browser, os, osVersion set (no device for desktop)",
+			name:     "chrome desktop: browser, os, osVersion set (no device for desktop)",
 			uaHeader: chromeWindowsUA,
 			events:   []*eventsv1.Event{{}},
 			want:     chromeProps,
 		},
 		{
-			name:     "no user-agent header — no properties set",
+			name:     "no user-agent header: no properties set",
 			uaHeader: "",
 			events:   []*eventsv1.Event{{}},
 			want:     nil,
@@ -464,25 +464,25 @@ func TestEnrichBotScore(t *testing.T) {
 			wantScore: "99",
 		},
 		{
-			name:      "no header — client-supplied bot_score stripped",
+			name:      "no header: client-supplied bot_score stripped",
 			header:    "",
 			events:    []*eventsv1.Event{{AutoProperties: propMap(map[string]string{"$bot_score": "50"})}},
 			wantScore: "",
 		},
 		{
-			name:      "invalid header — bot_score absent",
+			name:      "invalid header: bot_score absent",
 			header:    "not-a-number",
 			events:    []*eventsv1.Event{{AutoProperties: propMap(map[string]string{"$bot_score": "10"})}},
 			wantScore: "",
 		},
 		{
-			name:      "out of range for UInt8 — bot_score absent",
+			name:      "out of range for UInt8: bot_score absent",
 			header:    "256",
 			events:    []*eventsv1.Event{{AutoProperties: propMap(map[string]string{"$bot_score": "10"})}},
 			wantScore: "",
 		},
 		{
-			name:      "negative value — bot_score absent",
+			name:      "negative value: bot_score absent",
 			header:    "-1",
 			events:    []*eventsv1.Event{{}},
 			wantScore: "",
@@ -512,7 +512,7 @@ func TestEnrichBotScore(t *testing.T) {
 			wantScore: "42",
 		},
 		{
-			name:      "no header, nil AutoProperties — no panic",
+			name:      "no header, nil AutoProperties: no panic",
 			header:    "",
 			events:    []*eventsv1.Event{{}},
 			wantScore: "",
@@ -564,13 +564,13 @@ func TestEnrichVerifiedBot(t *testing.T) {
 			want:   "false",
 		},
 		{
-			name:   "no header — client-supplied value stripped",
+			name:   "no header: client-supplied value stripped",
 			header: "",
 			events: []*eventsv1.Event{{AutoProperties: propMap(map[string]string{"$verified_bot": "true"})}},
 			want:   "",
 		},
 		{
-			name:   "invalid header — value absent",
+			name:   "invalid header: value absent",
 			header: "yes",
 			events: []*eventsv1.Event{{}},
 			want:   "",
@@ -588,13 +588,13 @@ func TestEnrichVerifiedBot(t *testing.T) {
 			want:   "true",
 		},
 		{
-			name:   "no header, nil AutoProperties — no panic",
+			name:   "no header, nil AutoProperties: no panic",
 			header: "",
 			events: []*eventsv1.Event{{}},
 			want:   "",
 		},
 		{
-			name:   "case-sensitive — True rejected",
+			name:   "case-sensitive: True rejected",
 			header: "True",
 			events: []*eventsv1.Event{{}},
 			want:   "",
@@ -654,7 +654,7 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 		// Geo props (public key → always overwrite).
 		geo.PropCountry: "US",
 		geo.PropCity:    "San Francisco",
-		// UA props (skip existing keys — client-supplied OS preserved).
+		// UA props (skip existing keys, client-supplied OS preserved).
 		useragent.PropOS:             "iOS",
 		useragent.PropBrowser:        "Google Chrome",
 		useragent.PropBrowserVersion: "118",
@@ -679,7 +679,7 @@ func ctxWithProject(ctx context.Context) context.Context {
 // is rejected with CodeInvalidArgument and ReasonInvalidEventBatch.
 func TestBatchCreate_DuplicateEventID(t *testing.T) {
 	s := &Server{
-		publisher:   nil, // not reached — validation fails first
+		publisher:   nil, // not reached: validation fails first
 		geoProvider: stubProvider{},
 		uaParser:    nil,
 	}
@@ -749,9 +749,9 @@ func TestEnrichBotAndVerified_TypedSlots(t *testing.T) {
 
 // TestBatchCreateWiresAttributionEnricher pins that BatchCreate actually RUNS
 // enrichAttribution, by asserting on what reaches the publisher. Every other
-// attribution test invokes the enricher itself — TestEnrichAttribution calls
+// attribution test invokes the enricher itself (TestEnrichAttribution calls
 // the method directly, and TestEnrichGeoAndUserAgentAndBotScore replays the
-// chain by hand — so all of them keep passing if the call is dropped from the
+// chain by hand), so all of them keep passing if the call is dropped from the
 // handler, leaving every ingested event with no $channel/$pathname/
 // $referrerDomain forever and no error anywhere. This is the only test that
 // fails when the wiring goes.
@@ -793,7 +793,7 @@ func TestBatchCreateWiresAttributionEnricher(t *testing.T) {
 		"$channel":        "Organic Search",
 	} {
 		if got := propString(batch.GetEvents()[0].AutoProperties[key]); got != want {
-			t.Errorf("published event %s = %q, want %q — is enrichAttribution still wired into BatchCreate?", key, got, want)
+			t.Errorf("published event %s = %q, want %q; is enrichAttribution still wired into BatchCreate?", key, got, want)
 		}
 	}
 }
@@ -811,7 +811,7 @@ func TestAttributionDegraded(t *testing.T) {
 		want bool
 	}{
 		// A $url was sent but did not parse as an http(s) URL with a host, so no
-		// hostname/channel could be derived — the exact condition the
+		// hostname/channel could be derived, the exact condition the
 		// events.attribution_derive_degraded_total counter exists to catch.
 		{"non-web url scheme", attribution.Input{URL: "myapp://screen/home"}, true},
 		{"garbage url", attribution.Input{URL: "not a url"}, true},
@@ -823,7 +823,7 @@ func TestAttributionDegraded(t *testing.T) {
 		{"non-web url with client pathname", attribution.Input{URL: "myapp://x", Pathname: "/route"}, true},
 		// No $url at all is a native/non-web event, not a degradation.
 		{"no url", attribution.Input{Referrer: "https://google.com"}, false},
-		// A parseable web URL always classifies (at least Direct) — not degraded.
+		// A parseable web URL always classifies (at least Direct), not degraded.
 		{"valid web url", attribution.Input{URL: "https://x.com/p"}, false},
 	}
 	for _, c := range cases {
@@ -877,7 +877,7 @@ func TestEnrichAttribution(t *testing.T) {
 	// A JavaScript SDK has no int/double distinction, so a generic
 	// "any JS number → PropertyValue" helper maps window.screen.width to the
 	// DoubleValue slot. That must derive $screenSize exactly as the IntValue
-	// slot does — reading it the way autoprop.String (the promotion layer's
+	// slot does: reading it the way autoprop.String (the promotion layer's
 	// coercion) renders it, not a hand-rolled slot switch that forgets Double.
 	t.Run("screen dims in the double slot still derive", func(t *testing.T) {
 		events := []*eventsv1.Event{{AutoProperties: map[string]*commonv1.PropertyValue{
@@ -891,7 +891,7 @@ func TestEnrichAttribution(t *testing.T) {
 	})
 
 	// NormalizeLocale blanks a whitespace-only tag, and the write loop cannot
-	// clear a key — so without the pre-delete the raw client value would reach
+	// clear a key, so without the pre-delete the raw client value would reach
 	// the locale column and become a permanent rollup dimension value.
 	t.Run("unnormalizable locale is dropped not stored", func(t *testing.T) {
 		events := []*eventsv1.Event{{
@@ -1154,7 +1154,7 @@ func TestBatchCreateWiresBotEnricher(t *testing.T) {
 			}
 			for key, want := range tt.want {
 				if got := propString(batch.GetEvents()[0].AutoProperties[key]); got != want {
-					t.Errorf("published event %s = %q, want %q — is enrichBot still wired into BatchCreate?", key, got, want)
+					t.Errorf("published event %s = %q, want %q; is enrichBot still wired into BatchCreate?", key, got, want)
 				}
 			}
 		})

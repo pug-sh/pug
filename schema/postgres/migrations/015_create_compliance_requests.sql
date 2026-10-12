@@ -1,7 +1,7 @@
 -- +goose Up
 -- compliance_requests is the unified DSAR ledger for GDPR/DPDP data-subject
--- rights (roadmap §4). Each row records one request — erasure (§4.1) or export
--- (§4.2) — discriminated by `kind`. A row is created synchronously when the
+-- rights (roadmap §4). Each row records one request, erasure (§4.1) or export
+-- (§4.2), discriminated by `kind`. A row is created synchronously when the
 -- request is made; for erasure the worker then freezes the resolved identifiers,
 -- performs the hard deletes, and marks it completed. Rows are retained after the
 -- subject is gone as proof of what was done and when.
@@ -24,7 +24,7 @@ create table compliance_requests (
   session_ids     text[],
   -- Events erased (erase) or exported (export), disambiguated by `kind`. For erase
   -- this is a PRE-delete snapshot counted at freeze time (no FINAL), so it can exceed
-  -- the rows physically removed by the un-merged ReplacingMergeTree duplicate rate —
+  -- the rows physically removed by the un-merged ReplacingMergeTree duplicate rate:
   -- an "identified" count, not a reconciled "deleted" count.
   events_affected bigint      not null default 0,
   -- Accountability: customer id for JWT callers, NULL for private-API-key callers.

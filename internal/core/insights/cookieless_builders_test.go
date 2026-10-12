@@ -71,7 +71,7 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 
 	t.Run("multi_event_mixed_scopes_per_branch", func(t *testing.T) {
 		// TOTAL + UNIQUE_USERS in one scan: the exclusion must live inside the
-		// uniqIf condition only — exactly one occurrence, and the TOTAL branch's
+		// uniqIf condition only; exactly one occurrence, and the TOTAL branch's
 		// countIf stays clean.
 		req := cookielessTestReq(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL)
 		req.Spec.Events = append(req.Spec.Events, &insightsv1.EventQuery{
@@ -140,14 +140,14 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 	// buildFunnelWithTiming is a SEPARATE entry point from the counts builder,
 	// taken whenever include_step_timing is set, and it scans events TWICE: the
 	// windowFunnel pre-filter (built only when len(steps) >= 2) and the tagged CTE.
-	// Both need the predicate, so this asserts the count rather than mere presence
-	// — covering one scan and not the other leaves cookieless events in the arrays
+	// Both need the predicate, so this asserts the count rather than mere presence:
+	// covering one scan and not the other leaves cookieless events in the arrays
 	// the timing percentiles are computed from.
 	//
 	// Untested until round 3: deleting BOTH predicates left the whole insights
 	// suite green. The shipping bug was that one consent-rejecting visitor who
 	// enters a funnel before midnight and converts after gets a new daily id, so
-	// they appear as two people — an instant converter and a never-converter —
+	// they appear as two people, an instant converter and a never-converter,
 	// skewing p50/p90 toward zero and inflating step counts, while the SAME funnel
 	// with the timing checkbox off returned the correct population. One toggle,
 	// two answers.
@@ -272,7 +272,7 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 //
 // SegmentUsers is "the who behind a number on a chart": it returns the raw
 // distinct_id list for a window. Without the predicate it returned
-// cookieless- ids that every other read surface says do not exist as people —
+// cookieless- ids that every other read surface says do not exist as people:
 // migration 011 keeps them out of distinct_id_activity_states_mv, so
 // profiles.GetByID on one returns ErrProfileNotFound. A UI listing segment users
 // and linking to profiles therefore rendered dead links.

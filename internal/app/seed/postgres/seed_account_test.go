@@ -54,7 +54,7 @@ func TestSeedAccountApiKeys(t *testing.T) {
 	// The private key is only reachable as a digest here; that it exists at all is
 	// what `pug worker demo` and local SDK calls need.
 	if _, ok := byKind[string(projects.KindPrivate)]; !ok {
-		t.Error("the seeded project has no private key — local dev has nothing to call the SDK/MCP endpoints with")
+		t.Error("the seeded project has no private key: local dev has nothing to call the SDK/MCP endpoints with")
 	}
 
 	t.Run("re-seeding resolves the same project", func(t *testing.T) {

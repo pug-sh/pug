@@ -25,7 +25,7 @@ import (
 // subject and then terminated (not nacked for redelivery). Use for unrecoverable
 // failures such as corrupt protobuf data. Use NewPermanentError to construct.
 //
-// Attach structured context via With() — these key-value pairs are written as
+// Attach structured context via With(): these key-value pairs are written as
 // individual DLQ message headers for filtering and inspection without
 // deserializing the payload.
 type PermanentError struct {
@@ -82,7 +82,7 @@ type WorkerConfig struct {
 	// last entry reused for any further attempts. It is applied worker-side rather
 	// than via the consumer's BackOff field because that field overrides AckWait
 	// (letting the server redeliver mid-processing) and is bypassed for nack'ed
-	// messages — and this worker always Naks explicitly. Leave it unset and
+	// messages, and this worker always Naks explicitly. Leave it unset and
 	// NewWorker fills in defaultBackOff(); a custom schedule must be non-empty with
 	// positive entries (NewWorker validates this).
 	BackOff    []time.Duration
@@ -215,7 +215,7 @@ func (w *natsWorker) Start(ctx context.Context) error {
 	w.healthy.Store(true)
 
 	// Expose this worker on the process-wide /healthz (liveness) and /readyz
-	// (readiness) endpoints. Registering here — after the consumer is created —
+	// (readiness) endpoints. Registering here, after the consumer is created,
 	// means a worker only appears on the endpoints once it is genuinely consuming.
 	registerHealth(ctx, w)
 
@@ -273,7 +273,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 		slog.ErrorContext(ctx, "failed to start message iterator",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err)) // puglint:exempt — the message loop runs outside any span
+			slogx.Error(err)) // puglint:exempt (the message loop runs outside any span)
 		w.healthy.Store(false)
 		return
 	}
@@ -311,7 +311,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 				slog.ErrorContext(ctx, "too many consecutive message errors, restarting worker goroutine",
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
-					slogx.Error(err)) // puglint:exempt — the message loop runs outside any span
+					slogx.Error(err)) // puglint:exempt (the message loop runs outside any span)
 				w.healthy.Store(false)
 				return
 			}
@@ -360,7 +360,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 	// processor logs+records its own errors per the log-at-source convention.
 	// The wrapper logs the disposition (term/nak/ack/DLQ) it decided on plus
 	// any wrapper-detected secondary failures. The disposition log includes
-	// slogx.Error(err) as annotation — it is a different log line than the
+	// slogx.Error(err) as annotation: it is a different log line than the
 	// processor's source log (different message, different fact), so attaching
 	// the cause is not "re-logging the same error" per the convention.
 	switch err := w.processor(procCtx, msg); {
@@ -368,7 +368,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		slog.ErrorContext(procCtx, "terminating poison message",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err)) // puglint:exempt — disposition log; the processor recorded the cause
+			slogx.Error(err)) // puglint:exempt (disposition log; the processor recorded the cause)
 		dlqCtx, dlqCancel := dlqContext(procCtx)
 		published := w.publishToDLQ(dlqCtx, msg, meta, err)
 		dlqCancel()
@@ -389,7 +389,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		slog.ErrorContext(procCtx, "message processing failed",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err)) // puglint:exempt — disposition log; the processor recorded the cause
+			slogx.Error(err)) // puglint:exempt (disposition log; the processor recorded the cause)
 
 		if w.isLastDelivery(numDelivered, metaOK) {
 			// Distinguish "burned all retries" from "couldn't read metadata, so
@@ -482,13 +482,13 @@ const (
 // dlqMessageCounter counts every attempt to route a message to a DLQ.
 // outcome="published" is a dead-letter that safely landed; outcome="dropped" is
 // a message LOST because the DLQ publish itself failed (it is Term'd afterward).
-// Operators should alert on any outcome="dropped" — it is unrecoverable data loss.
+// Operators should alert on any outcome="dropped": it is unrecoverable data loss.
 var dlqMessageCounter metric.Int64Counter
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/deps/nats")
 	// Defensive: instrument creation on the global meter does not error in
-	// practice, but should it ever, panic rather than run on with a nil counter —
+	// practice, but should it ever, panic rather than run on with a nil counter;
 	// this counter is the only machine signal for dropped (lost) dead-letters.
 	c, err := meter.Int64Counter(
 		"nats.dlq_messages_total",
@@ -502,7 +502,7 @@ func init() {
 
 // outcomeLabel maps a DLQ publish result to its nats.dlq_messages_total outcome
 // label. A published dead-letter landed safely; a failed publish means the
-// message was lost (and is Term'd afterward) — the value operators alert on.
+// message was lost (and is Term'd afterward), the value operators alert on.
 // Inverting this mapping would make the data-loss alert fire on every success.
 func outcomeLabel(published bool) string {
 	if published {
@@ -562,7 +562,7 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, meta *
 	dlqMsg.Header.Set("dlq_timestamp", time.Now().UTC().Format(time.RFC3339))
 	// Stamp delivery diagnostics from the snapshot handleMessage already captured.
 	// A nil meta means that single read failed (and was logged + recorded there),
-	// so skip these headers rather than re-read and double-log — the message still
+	// so skip these headers rather than re-read and double-log; the message still
 	// gets DLQ'd either way.
 	if meta != nil {
 		dlqMsg.Header.Set("delivery_count", strconv.FormatUint(meta.NumDelivered, 10))
@@ -593,7 +593,7 @@ func (w *natsWorker) HealthCheck() (bool, error) {
 }
 
 // Ready reports readiness: the worker has started AND its NATS connection is live.
-// `started` is set at the top of Start(), before the consumer exists — but a
+// `started` is set at the top of Start(), before the consumer exists, but a
 // worker is only added to the registry (and so only reachable via /readyz) after
 // CreateOrUpdateConsumer succeeds, so any Ready() served by the endpoint is for a
 // worker that is genuinely consuming. A nil connected check fails closed.

@@ -261,7 +261,7 @@ func countSessionDimStateExprs(t *testing.T, sql, dim string) int {
 	}
 	entry, exit := count("entry", "argMinState"), count("exit", "argMaxState")
 	if entry != exit {
-		t.Errorf("dim %s: %d entry state(s) but %d exit state(s) — a dim must gain both or neither", dim, entry, exit)
+		t.Errorf("dim %s: %d entry state(s) but %d exit state(s); a dim must gain both or neither", dim, entry, exit)
 	}
 	return entry
 }
@@ -294,7 +294,7 @@ func TestMigration007Frozen(t *testing.T) {
 // migration 010's Up section: every current dim's entry/exit state columns are
 // stated by the MODIFY QUERY, and the NEW dims' state columns appear in both
 // the ADD COLUMN block and the partial backfill's explicit column list (the
-// backfill must list ONLY key columns + new states — an old state column there
+// backfill must list ONLY key columns + new states; an old state column there
 // would corrupt merged history, see the migration header).
 func TestMigration010SessionRollupColumnsMatchDims(t *testing.T) {
 	up := migrationUpSection(t, migration010Path)
@@ -336,7 +336,7 @@ func TestMigration010SessionRollupColumnsMatchDims(t *testing.T) {
 	// The per-migration groups must not overlap: an older group's state listed
 	// in 010's partial backfill would be re-inserted over merged history
 	// instead of relying on empty-state merge identity. (sessionMaterializedDims
-	// being their union needs no assertion — slices.Concat makes it so.)
+	// being their union needs no assertion: slices.Concat makes it so.)
 	for _, dim := range sessionRollupDims010 {
 		if slices.Contains(sessionRollupDims007, dim) {
 			t.Errorf("dim %s is in both the 007 and 010 groups; 010's backfill would corrupt its merged state", dim)
@@ -365,12 +365,12 @@ func TestMigration010SessionRollupDimExprsMatch(t *testing.T) {
 	}
 	// 010 predates the bot key column; its file must not grow one.
 	if botWord.MatchString(up) {
-		t.Error("migration 010 is frozen and must not mention bot — that is 012's job")
+		t.Error("migration 010 is frozen and must not mention bot; that is 012's job")
 	}
 }
 
 // TestMigration012SessionRollupRestatesStates pins the LATEST session-rollup MV
-// definition — migration 012's MODIFY QUERY — to sessionMaterializedDims: every
+// definition, migration 012's MODIFY QUERY, to sessionMaterializedDims: every
 // dim's entry/exit pair stated exactly once with the correct source expression,
 // plus the start/end/count states, so adding the bot key could not have
 // dropped a state on the floor.
@@ -391,6 +391,6 @@ func TestMigration012SessionRollupRestatesStates(t *testing.T) {
 		}
 	}
 	if strings.Contains(up, "INSERT INTO dashboard_session_rollup") {
-		t.Error("012 adds a key column, not states — there is nothing to backfill")
+		t.Error("012 adds a key column, not states; there is nothing to backfill")
 	}
 }

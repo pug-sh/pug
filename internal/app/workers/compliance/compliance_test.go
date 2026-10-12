@@ -54,7 +54,7 @@ func mustMarshalErase(t *testing.T, projectID, requestID string) []byte {
 // retried, and the service must not be touched.
 func TestHandleErase_GarbageData_IsPermanentAndSkipsExecute(t *testing.T) {
 	exec := &fakeExecutor{}
-	// 0xFF is an incomplete protobuf varint tag — guaranteed to fail Unmarshal.
+	// 0xFF is an incomplete protobuf varint tag, guaranteed to fail Unmarshal.
 	err := handleErase(context.Background(), exec, []byte{0xFF}, false)
 	if !natsworker.IsPermanentError(err) {
 		t.Fatalf("err = %v, want PermanentError", err)
@@ -65,7 +65,7 @@ func TestHandleErase_GarbageData_IsPermanentAndSkipsExecute(t *testing.T) {
 }
 
 // A well-formed message missing a required field fails protovalidate and is
-// permanent — it can never succeed on retry.
+// permanent: it can never succeed on retry.
 func TestHandleErase_InvalidMessage_IsPermanentAndSkipsExecute(t *testing.T) {
 	exec := &fakeExecutor{}
 	data := mustMarshalErase(t, "proj-1", "") // request_id is required + min_len=1
@@ -113,7 +113,7 @@ func TestHandleErase_TransientNotLastDelivery_RetriesWithoutMarking(t *testing.T
 }
 
 // On the final delivery a transient failure is about to be dead-lettered forever,
-// so the row must be marked failed — but the returned error must stay transient
+// so the row must be marked failed, but the returned error must stay transient
 // so the framework still routes the message to the DLQ.
 func TestHandleErase_TransientLastDelivery_MarksFailed(t *testing.T) {
 	cause := errors.New("clickhouse unavailable")

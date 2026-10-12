@@ -184,7 +184,7 @@ func TestWebAnalyticsPromotedKeysRoundTrip(t *testing.T) {
 		"$screenSize":     "1920x1080",
 		"$utmTerm":        "dog food",
 		"$utmContent":     "ad-1",
-		"$pageTitle":      "Tennis Ball — Pug & Pals",
+		"$pageTitle":      "Tennis Ball · Pug & Pals",
 	}
 	src := make(map[string]*commonv1.PropertyValue, len(vals))
 	for k, v := range vals {
@@ -222,7 +222,7 @@ func TestWebAnalyticsPromotedKeysRoundTrip(t *testing.T) {
 // TestScanDestAndAppendArgsAddressTheSameFields pins the read path to the write
 // path, slot by slot. Both are indexed by EventsInsertPromotedColumns, so a
 // field addressed in one slot by ScanDest and emitted from another by
-// AppendArgs would still round-trip self-consistently through pug — every
+// AppendArgs would still round-trip self-consistently through pug: every
 // promoted column is string-ish to ClickHouse, so the INSERT and the SELECT
 // would both succeed while filing each value under the neighbouring column.
 // Writing each column's own NAME through ScanDest and reading it back through
@@ -254,7 +254,7 @@ func TestScanDestAndAppendArgsAddressTheSameFields(t *testing.T) {
 			continue // bot_score / verified_bot / mobile / bot are not string columns
 		}
 		if s != col {
-			t.Errorf("slot %d is column %q: wrote it via ScanDest but AppendArgs emits %q there — the two address different fields", i, col, s)
+			t.Errorf("slot %d is column %q: wrote it via ScanDest but AppendArgs emits %q there; the two address different fields", i, col, s)
 		}
 	}
 }

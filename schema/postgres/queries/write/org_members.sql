@@ -13,7 +13,7 @@ delete from org_members where org_id = @org_id and customer_id = @customer_id;
 
 -- name: DeleteOrgMemberIfNotLastAdmin :execrows
 -- 'locked' acquires row-level locks on every member of the org so concurrent
--- callers serialize on the admin set — without it, two snapshots could both
+-- callers serialize on the admin set: without it, two snapshots could both
 -- see admin_count = 2 and both succeed, leaving the org with zero admins.
 with locked as (
   select customer_id, role from org_members

@@ -5,12 +5,12 @@ import "testing"
 // TestApplyAttributionDerivesLikeHandler pins the seeder's enrichment to the SDK
 // ingest handler's. applyAttribution routes the seeder's map[string]any through
 // the SAME attribution.Derive the server uses, so demo data and production
-// traffic must classify identically — but the two paths reach Derive through
+// traffic must classify identically, but the two paths reach Derive through
 // different Source adapters (the handler's eventProps over *PropertyValue vs the
 // seeder's seedProps over any), and adapter coercion is the one place they can
 // silently diverge. This mirrors the handler's
 // TestEnrichAttribution/"full web pageview derives everything" case field for
-// field — same input, same expected output — so a coercion drift in seedProps
+// field (same input, same expected output) so a coercion drift in seedProps
 // (e.g. the bare `.(string)` or the int/int64-only ScreenDims) surfaces here
 // instead of shipping demo analytics that disagree with production.
 func TestApplyAttributionDerivesLikeHandler(t *testing.T) {
@@ -51,7 +51,7 @@ func TestApplyAttributionDerivesLikeHandler(t *testing.T) {
 // "unrenderable locale slot is preserved not destroyed" case. The
 // delete-then-readd dance only makes sense for a $locale Derive actually read;
 // a value the seed adapter cannot render (a non-string) must survive, since
-// storage would keep it — dropping it unconditionally would leave it in neither
+// storage would keep it: dropping it unconditionally would leave it in neither
 // the normalized column nor the map, diverging from enrichAttribution.
 func TestApplyAttributionPreservesUnrenderableLocale(t *testing.T) {
 	props := map[string]any{

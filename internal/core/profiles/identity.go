@@ -6,7 +6,7 @@ import (
 
 // IdentityUnionCTE is the definition of "which distinct_ids are this person"
 // for SQL read paths: one (project_id, distinct_id, profile_id) row per
-// distinct_id owned by a non-deleted profile — id, external_id, alias ids.
+// distinct_id owned by a non-deleted profile (id, external_id, alias ids).
 // Join it onto an events scan (IdentityJoinedEvents) and group by
 // IdentityUserKeyExpr to stitch a person across the identify() boundary.
 //
@@ -18,7 +18,7 @@ import (
 // ClickHouse inlines a CTE per reference, so every reference re-runs both
 // aggregations; keep references per query to the minimum the shape needs.
 //
-// The alias join carries project_id because this reads the CTEs by name — the
+// The alias join carries project_id because this reads the CTEs by name: the
 // predicate is what scopes whatever the caller actually registered.
 //
 // A cookieless id can never appear here: Identify's anonymous_id is pinned to
@@ -61,7 +61,7 @@ func WithIdentityUnion(q *chq.Query, projectID string) *chq.Query {
 // left table silently, so a missed alias is right by luck, not caught.
 //
 // The join carries project_id for the same reason the CTE's own alias join
-// does — identity_union is registered by name, so the predicate is what keeps
+// does: identity_union is registered by name, so the predicate is what keeps
 // resolution inside one tenant.
 func IdentityJoinedEvents() string {
 	return "events e LEFT ANY JOIN identity_union i ON i.project_id = e.project_id AND i.distinct_id = e.distinct_id"

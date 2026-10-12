@@ -46,7 +46,7 @@ func TestIdentify_RejectsCookielessAnonymousID(t *testing.T) {
 //
 // The concrete failure it allows: a tenant whose external_id is user-supplied (a
 // username, not an email) lets someone register as "cookieless-x". Identify
-// succeeds, and post-identify events are keyed by external_id — so every later
+// succeeds, and post-identify events are keyed by external_id, so every later
 // BatchCreate carrying that user trips the reserved-prefix rule. Because that CEL
 // is `this.events.all(...)`, the WHOLE batch is rejected, taking unrelated users'
 // events down with it on a server-side SDK.
@@ -56,7 +56,7 @@ func TestIdentify_RejectsCookielessExternalID(t *testing.T) {
 	}
 	err := protovalidate.Validate(req)
 	if err == nil {
-		t.Fatal("cookieless- external_id must fail validation — the prefix is server-reserved")
+		t.Fatal("cookieless- external_id must fail validation: the prefix is server-reserved")
 	}
 	if !strings.Contains(err.Error(), "external_id") {
 		t.Errorf("violation should name external_id, got: %v", err)

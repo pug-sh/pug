@@ -10,7 +10,7 @@ import (
 
 // carry is what a finished window still owes each tier: its final split minus what
 // was already stated for it, never negative. It lands in the same tier next period,
-// on the product the org holds then and at that product's rate for the tier — the
+// on the product the org holds then and at that product's rate for the tier, the
 // same rate when the product has not changed.
 func carry(final, stated []int64) []int64 {
 	out := make([]int64, len(final))
@@ -40,8 +40,8 @@ func sumEach(a, b []int64) []int64 {
 
 // eventID is derived from exactly what is stated, so a statement can be traced from
 // the provider's event log to its ledger row. Nothing relies on the provider
-// deduplicating on it — Dodo documents a repeat as ignored, yet in test mode stored
-// one twice — so what makes a re-send harmless is the max meter, which ignores a
+// deduplicating on it (Dodo documents a repeat as ignored, yet in test mode stored
+// one twice), so what makes a re-send harmless is the max meter, which ignores a
 // value it already holds. Hashed because the provider documents no length limit
 // and six counts written out run long.
 func eventID(orgID string, periodStart time.Time, tiers []int64) string {

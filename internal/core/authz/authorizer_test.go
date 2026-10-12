@@ -32,7 +32,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 		action   Action
 		want     bool
 	}{
-		// member — full CRUD on project-scoped resources.
+		// member: full CRUD on project-scoped resources.
 		{"member dashboard read", roleMember, ResourceDashboard, ActionRead, true},
 		{"member dashboard create", roleMember, ResourceDashboard, ActionCreate, true},
 		{"member dashboard update", roleMember, ResourceDashboard, ActionUpdate, true},
@@ -41,12 +41,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"member activity read", roleMember, ResourceActivity, ActionRead, true},
 		{"member profile delete", roleMember, ResourceProfile, ActionDelete, true},
 
-		// member — read-only on org-level entities.
+		// member: read-only on org-level entities.
 		{"member org read", roleMember, ResourceOrg, ActionRead, true},
 		{"member member read", roleMember, ResourceMember, ActionRead, true},
 		{"member project read", roleMember, ResourceProject, ActionRead, true},
 
-		// member — denied org administration.
+		// member: denied org administration.
 		{"member org update", roleMember, ResourceOrg, ActionUpdate, false},
 		{"member org delete", roleMember, ResourceOrg, ActionDelete, false},
 		{"member org create", roleMember, ResourceOrg, ActionCreate, false},
@@ -58,7 +58,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"member project create", roleMember, ResourceProject, ActionCreate, false},
 		{"member project delete", roleMember, ResourceProject, ActionDelete, false},
 
-		// admin — org administration.
+		// admin: org administration.
 		{"admin org update", roleAdmin, ResourceOrg, ActionUpdate, true},
 		{"admin org delete", roleAdmin, ResourceOrg, ActionDelete, true},
 		{"admin org create", roleAdmin, ResourceOrg, ActionCreate, true},
@@ -73,12 +73,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"admin project create", roleAdmin, ResourceProject, ActionCreate, true},
 		{"admin project delete", roleAdmin, ResourceProject, ActionDelete, true},
 
-		// admin — inherits member's project-scoped CRUD via the role hierarchy.
+		// admin: inherits member's project-scoped CRUD via the role hierarchy.
 		{"admin dashboard read", roleAdmin, ResourceDashboard, ActionRead, true},
 		{"admin dashboard delete", roleAdmin, ResourceDashboard, ActionDelete, true},
 		{"admin profile delete", roleAdmin, ResourceProfile, ActionDelete, true},
 
-		// viewer — read-only floor: project-scoped reads + the org-level view.
+		// viewer (read-only floor): project-scoped reads + the org-level view.
 		{"viewer dashboard read", roleViewer, ResourceDashboard, ActionRead, true},
 		{"viewer insight read", roleViewer, ResourceInsight, ActionRead, true},
 		{"viewer activity read", roleViewer, ResourceActivity, ActionRead, true},
@@ -90,7 +90,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"viewer usage read", roleViewer, ResourceUsage, ActionRead, true},
 		{"viewer billing read", roleViewer, ResourceBilling, ActionRead, true},
 
-		// viewer — denied every write, plus the admin-only org reads.
+		// viewer: denied every write, plus the admin-only org reads.
 		{"viewer dashboard create", roleViewer, ResourceDashboard, ActionCreate, false},
 		{"viewer dashboard update", roleViewer, ResourceDashboard, ActionUpdate, false},
 		{"viewer dashboard delete", roleViewer, ResourceDashboard, ActionDelete, false},
@@ -133,7 +133,7 @@ func TestAuthorizeEmptyRoleDenies(t *testing.T) {
 
 // TestManageDoesNotConferSpecialActions locks in the resources.go contract that
 // the "manage" umbrella grants ONLY CRUD: a future non-CRUD action (erase,
-// export, send) must be granted explicitly and stays denied until then — even to
+// export, send) must be granted explicitly and stays denied until then, even to
 // a role that "manages" the resource. Raw Action stand-ins pin the invariant now,
 // before any such action is declared.
 func TestManageDoesNotConferSpecialActions(t *testing.T) {

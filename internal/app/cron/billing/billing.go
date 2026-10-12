@@ -23,7 +23,7 @@ import (
 )
 
 // passTimeout bounds one pass end to end. The advisory lock is held for the whole
-// duration, so a hang leaves every later pod exiting 0 on a held lock — a green
+// duration, so a hang leaves every later pod exiting 0 on a held lock: a green
 // CronJob and no reconcile. Generous: one provider round-trip per subscription.
 const passTimeout = 30 * time.Minute
 

@@ -1,6 +1,6 @@
 // Package lint holds the pug conventions from CLAUDE.md that no off-the-shelf
-// linter covers. Anything an upstream linter already enforces — context-aware
-// slog variants, error wrapping, span hygiene, layering — belongs in
+// linter covers. Anything an upstream linter already enforces (context-aware
+// slog variants, error wrapping, span hygiene, layering) belongs in
 // .golangci.yml instead. Both halves are enforced by this package's tests, not
 // by a separate binary.
 package lint

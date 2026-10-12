@@ -5,12 +5,12 @@ import "google/protobuf/descriptor.proto";
 
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
 
-// Well-known event property schemas — package overview.
+// Well-known event property schemas: package overview.
 //
 // These messages define typed properties for common Event.kind values. They
 // are SDK hints: language-level structs that give autocomplete, shape
 // consistency, and a registry that maps Event.kind strings to property
-// shapes. The server does not enforce them — events with extra keys in
+// shapes. The server does not enforce them: events with extra keys in
 // Event.custom_properties are accepted.
 //
 // ──────────────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // A well-known message describes the curated set of typed fields for a
 // kind; it does not restrict the wire format. SDKs SHOULD expose an API
 // that lets the caller attach extra map<string, string> entries alongside
-// the typed ones — e.g. track("page_view", PageViewProperties{...}, {extra}).
+// the typed ones, e.g. track("page_view", PageViewProperties{...}, {extra}).
 // The server never rejects an event for carrying additional keys.
 //
 // ──────────────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 //
 // `amount` and `price` fields use `double` in the major currency unit
 // (dollars, euros, yen). These events are revenue *signals* for analytics;
-// they are not authoritative for accounting or reconciliation — your
+// they are not authoritative for accounting or reconciliation: your
 // order/invoice/ledger systems are the source of truth. Aggregations over
 // many events drift in the ~14th significant digit, well below the unit of
 // measurement.
@@ -94,7 +94,7 @@ extend google.protobuf.MessageOptions {
 // pii marks a field as containing personally identifiable information.
 // Downstream consumers (data warehouses, GDPR scrubbing tools, access
 // controls) use this annotation to identify fields that need special
-// handling — redaction, encryption at rest, restricted query access, etc.
+// handling: redaction, encryption at rest, restricted query access, etc.
 //
 // Be conservative: mark fields that commonly contain directly identifying
 // data (emails, phone numbers, names) or sensitive free-text user input
@@ -110,7 +110,7 @@ extend google.protobuf.FieldOptions {
 
 // Platform identifies the client/runtime an event is intended for.
 // Used by SDK codegen tooling to decide which language targets should
-// surface a given well-known event. Like `kind`, this is an SDK hint —
+// surface a given well-known event. Like `kind`, this is an SDK hint:
 // the server does not enforce it.
 //
 // Naming note: a separate `Platform` enum exists in
@@ -118,7 +118,7 @@ extend google.protobuf.FieldOptions {
 // targets (ANDROID/IOS only). The two enums describe different concepts
 // (event source vs push transport) and intentionally coexist; in Go
 // they are `commoneventsv1.Platform` vs `deliveryv1.Platform`. Their
-// ordinal integers are independent — do not assume a value name shared
+// ordinal integers are independent; do not assume a value name shared
 // between them encodes to the same wire integer in both packages.
 enum Platform {
   PLATFORM_UNSPECIFIED = 0;
@@ -132,7 +132,7 @@ enum Platform {
 // platforms restricts a well-known event to a set of client platforms.
 // Codegen tooling uses this to decide which language SDKs expose typed
 // helpers for the event. An empty/absent list means "all platforms"
-// (cross-platform event — the default for events without this option).
+// (cross-platform event, the default for events without this option).
 //
 // Consumer contract:
 //   * Empty/nil slice → treat as "all platforms."
@@ -140,7 +140,7 @@ enum Platform {
 //   * PLATFORM_UNSPECIFIED MUST NOT appear. Treat as a hard error if it does.
 //   * The set is unordered; consumers MUST NOT depend on declaration order.
 //   * Cross-platform SDKs (Flutter, React Native, KMP) include any event
-//     whose platforms list intersects their target runtimes — e.g. a
+//     whose platforms list intersects their target runtimes, e.g. a
 //     Flutter SDK includes events tagged with any of
 //     {WEB, IOS, ANDROID, DESKTOP}.
 //

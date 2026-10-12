@@ -106,7 +106,7 @@ func seedDemoData(ctx context.Context, count int64, batchSize int, clearDemoRows
 
 	if clearDemoRows {
 		// events and profiles are shared tables keyed by project_id, so scope the
-		// wipe to the demo project — a blanket TRUNCATE would delete every other
+		// wipe to the demo project: a blanket TRUNCATE would delete every other
 		// project's data. ALTER ... DELETE WHERE project_id mirrors the Postgres
 		// ResetDemoProfiles below and the compliance worker's erasure path;
 		// mutations_sync = 1 blocks until the rows are physically gone so the

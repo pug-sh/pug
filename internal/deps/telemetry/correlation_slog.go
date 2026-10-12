@@ -27,7 +27,7 @@ func (h *correlationHandler) Handle(ctx context.Context, r slog.Record) error {
 	// attr because in stdout mode (no OTLP endpoint configured) the inner handler is
 	// a plain slog text handler with no native trace correlation, so this attr is the
 	// only way the trace id reaches the log. Under the otelslog inner handler (OTLP
-	// mode) it is redundant with the SDK-set native trace id — harmless. (The
+	// mode) it is redundant with the SDK-set native trace id, harmless. (The
 	// shutdown fallback text handler in otel.go is not wrapped by this handler, so it
 	// does not receive these attrs.)
 	if id := correlation.IDFromContext(ctx); id != "" {

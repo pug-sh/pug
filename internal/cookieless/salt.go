@@ -19,7 +19,7 @@ import (
 // It is separated from a transient fetch failure because the two need opposite
 // operator responses. A Redis outage clears itself and the same events succeed
 // on retry; a corrupt value is re-read and re-rejected for the life of the key,
-// because SETNX only mints when GET reports the key absent — so nothing
+// because SETNX only mints when GET reports the key absent, so nothing
 // overwrites it. Only this package writes these keys, so a corrupt one implies
 // an external writer or a saltLen change during a rolling deploy. Either needs a
 // human, and folding it into the generic drop reason told operators to retry.
@@ -48,14 +48,14 @@ func init() {
 // The TTL is the deletion mechanism the whole privacy guarantee rests on, so it
 // is anchored to the DAY rather than to mint time. SETNX stamps expiry when the
 // key is first written and never refreshes it, and a salt is minted lazily on
-// the first event attributed to its day — which an offline-buffered flush (the
+// the first event attributed to its day, which an offline-buffered flush (the
 // case the two-day window exists to serve) can push to nearly D+2. A flat
 // duration therefore floats with traffic: a 72h TTL kept a salt re-derivable
 // until as late as D+5, three days after any code path could still use it, and
 // left up to five salts coexisting rather than the two DayOf's doc claims.
 //
 // A non-positive or over-long result means the day is outside the accepted
-// window, which makes this the boundary guard for saltForDay as well — the
+// window, which makes this the boundary guard for saltForDay as well: the
 // window and the salt's lifetime become the same fact, computed once.
 func (r *Resolver) saltTTLFor(day Day) (time.Duration, error) {
 	d, err := time.ParseInLocation(dayFormat, string(day), time.UTC)
@@ -70,14 +70,14 @@ func (r *Resolver) saltTTLFor(day Day) (time.Duration, error) {
 }
 
 // saltForDay returns the day's salt: in-process cache, then Redis, then a
-// SETNX mint race that every pod can enter safely — the first writer wins and
+// SETNX mint race that every pod can enter safely; the first writer wins and
 // losers re-read the winner's value. The Redis TTL is the deletion mechanism
 // that makes rotated-out hashes permanently unlinkable.
 //
 // The in-process cache is pruned for the same reason, but note the prune is
 // LAZY: it runs inside cacheSalt, i.e. only on a miss. That is sufficient rather
-// than incidental — a day enters the map only via cacheSalt, so the first event
-// of any new day is necessarily a miss and necessarily prunes — but a pod that
+// than incidental (a day enters the map only via cacheSalt, so the first event
+// of any new day is necessarily a miss and necessarily prunes), but a pod that
 // stops seeing cookieless traffic keeps its last two salts (64 bytes) in RAM
 // until its next one. Unreachable for minting either way, since the caller
 // rejects an out-of-window day before it gets here.
@@ -124,7 +124,7 @@ func (r *Resolver) saltForDay(ctx context.Context, day Day) ([]byte, error) {
 		r.cacheSalt(day, fresh)
 		return fresh, nil
 	}
-	// Lost the mint race — another pod's salt is authoritative.
+	// Lost the mint race: another pod's salt is authoritative.
 	val, err = r.rdb.Get(ctx, key).Result()
 	if err != nil {
 		return nil, fmt.Errorf("cookieless: re-read raced salt: %w", err)

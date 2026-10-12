@@ -358,7 +358,7 @@ func TestFunnelWithStepTiming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Pin window propagation alongside SQL shape — a regression that wires the wrong window
+	// Pin window propagation alongside SQL shape: a regression that wires the wrong window
 	// into FunnelTimingQuery would silently disable the conversion-window check in the timing
 	// path while the SQL substring assertions below still pass.
 	if got, want := q.WindowSec(), int64(2*60*60); got != want {
@@ -433,7 +433,7 @@ func TestFunnelWithFilterGroups(t *testing.T) {
 // TestRetention_NonUTCTimezoneWrapsBothBucketColumns guards the one place bucketExpr
 // is called twice with different columns: the cohort CTE buckets e.occur_time and the
 // retained CTE buckets re.occur_time (the return_events scan). Both must be wrapped in
-// toTimeZone() for the requested zone — wrapping only one would bucket cohorts and their
+// toTimeZone() for the requested zone: wrapping only one would bucket cohorts and their
 // return windows on different calendars and silently distort every retention curve.
 func TestRetention_NonUTCTimezoneWrapsBothBucketColumns(t *testing.T) {
 	req := &insightsv1.QueryRequest{
@@ -2004,7 +2004,7 @@ func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 	// The NOT BETWEEN clause must be parenthesized so that AND binds the kind filter
 	// to the full (< OR >) expression, not just its first branch.
 	// Without parens the SQL reads: kind = ? AND amount < ? OR amount > ?
-	// which is: (kind = ? AND amount < ?) OR (amount > ?) — leaking other event kinds.
+	// which is: (kind = ? AND amount < ?) OR (amount > ?), leaking other event kinds.
 	if !strings.Contains(q.SQL(), "(if(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL,") {
 		t.Errorf("expected NOT BETWEEN clause to be parenthesized in SQL, got: %s", q.SQL())
 	}
@@ -2699,7 +2699,7 @@ func TestGroupRetentionSeries_MultiCohortWithBreakdown(t *testing.T) {
 }
 
 // TestGroupFunnelSeries_SortedInputPreservesOrder verifies that GroupFunnelSeries correctly
-// groups pre-sorted rows (sorted by breakdown, then step_index — as QueryFunnel produces).
+// groups pre-sorted rows (sorted by breakdown, then step_index, as QueryFunnel produces).
 func TestGroupFunnelSeries_SortedInputPreservesOrder(t *testing.T) {
 	// Rows arrive sorted: GB steps first (sorted by step_index), then US steps.
 	rows := []insights.FunnelRow{
@@ -3211,7 +3211,7 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 				t.Fatalf("expected SETTINGS clause, got: %s", sql)
 			}
 
-			// SETTINGS must appear after the LAST occurrence of every relevant clause —
+			// SETTINGS must appear after the LAST occurrence of every relevant clause:
 			// strings.Index returns the first occurrence, which is misleading for queries
 			// with multiple SELECT/FROM/WHERE/ORDER BY (UNIONs and CTEs).
 			for _, clause := range []string{"SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY"} {
@@ -3227,7 +3227,7 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			}
 
 			// Args survived the wrapper. Every insight binds project_id "proj_test"
-			// somewhere in its args slice — exact position varies by insight (funnel uses
+			// somewhere in its args slice; exact position varies by insight (funnel uses
 			// SelectExpr for windowFunnel kind args which emit before WHERE), so we assert
 			// presence rather than position. Catches a regression that drops args after
 			// WithQueryCache(...).Build().
@@ -3378,9 +3378,9 @@ func TestGroupFunnelSeries_TimingFieldsSubSecondTranslation(t *testing.T) {
 func TestComputeFunnelTimingMatchesCountsAtBoundary(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	users := []insights.FunnelUserEvents{
-		// Exactly at the 1-hour boundary — both paths must include this user at step 1.
+		// Exactly at the 1-hour boundary: both paths must include this user at step 1.
 		{UserKey: "u-boundary", Times: []time.Time{t0, t0.Add(1 * time.Hour)}, StepMatches: []int64{0, 1}},
-		// One nanosecond past the boundary — both paths must exclude this user at step 1.
+		// One nanosecond past the boundary: both paths must exclude this user at step 1.
 		{UserKey: "u-just-past", Times: []time.Time{t0, t0.Add(1*time.Hour + time.Nanosecond)}, StepMatches: []int64{0, 1}},
 	}
 	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 3600, 0)
@@ -3394,7 +3394,7 @@ func TestComputeFunnelTimingMatchesCountsAtBoundary(t *testing.T) {
 	if rows[1].Value != 1 {
 		t.Errorf("timing path step 1 at boundary: got %v, want 1 (boundary inclusive)", rows[1].Value)
 	}
-	// windowFunnel uses `<=` for window inclusion — same result.
+	// windowFunnel uses `<=` for window inclusion: same result.
 	// We can't easily run windowFunnel from a unit test, but TestComputeFunnelTiming_WindowExactBoundary
 	// pins the timing-path side; this test pairs with that to cement boundary semantics.
 	// See integration_test.go for the end-to-end CH-side equivalence.

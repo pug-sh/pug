@@ -6,7 +6,7 @@ import (
 )
 
 // DemoUser exposes a demo user's stable, deterministically-derived
-// attributes to other seeders — the postgres profile seeder uses this so
+// attributes to other seeders: the postgres profile seeder uses this so
 // profile properties (home city, membership, signup date) agree with the
 // user's event data.
 type DemoUser struct {
@@ -25,7 +25,7 @@ type DemoUser struct {
 func DemoUsers(n int) []DemoUser {
 	if n > DistinctIDPool {
 		// Over-asking would fabricate profiles for distinct ids the event
-		// generator never emits — fail loudly rather than silently drift.
+		// generator never emits; fail loudly rather than silently drift.
 		panic(fmt.Sprintf("seed: DemoUsers(%d) exceeds the user pool of %d", n, DistinctIDPool))
 	}
 	out := make([]DemoUser, n)

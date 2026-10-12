@@ -82,7 +82,7 @@ func TestCompleteOIDCSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	}
 
 	// The browser timezone passed to sign-in must seed the new default project's
-	// reporting zone — the regression this covers is OAuth signup silently
+	// reporting zone: the regression this covers is OAuth signup silently
 	// defaulting every project to UTC.
 	projects, err := read.GetProjectsByOrgID(ctx, orgs[0].ID)
 	if err != nil || len(projects) != 1 {

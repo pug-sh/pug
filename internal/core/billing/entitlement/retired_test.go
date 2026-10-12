@@ -28,7 +28,7 @@ func withRetiredPlan(t *testing.T) {
 
 // Plans() must keep listing a retired plan: that list is what the product map is
 // built from, so dropping it rejects its holders' renewals AND cancellations
-// permanently — one reprice freezes every incumbent's subscription.
+// permanently; one reprice freezes every incumbent's subscription.
 func TestRetiredPlanStaysInThePlanList(t *testing.T) {
 	withRetiredPlan(t)
 	var found bool
@@ -106,8 +106,8 @@ func withRepricedCatalog(t *testing.T) Plan {
 	return next
 }
 
-// A renewal on the same product keeps a deal's pin through a reprice — the product
-// still carries the old plan's meters — and a new product, made against the current
+// A renewal on the same product keeps a deal's pin through a reprice (the product
+// still carries the old plan's meters), and a new product, made against the current
 // plan, moves it.
 func TestADealKeepsItsPinUntilItsProductChanges(t *testing.T) {
 	if testing.Short() {

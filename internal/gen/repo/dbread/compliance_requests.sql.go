@@ -23,7 +23,7 @@ type GetEraseRequestByIDParams struct {
 
 // Erase-path load. Scoped to kind = 'erase' so the erasure executor and the
 // erasure-status RPC structurally cannot load (and the executor cannot hard-delete
-// against) an 'export' row once the unified ledger holds both kinds — an export row
+// against) an 'export' row once the unified ledger holds both kinds: an export row
 // simply reads as not-found here. Export gets its own GetExportRequestByID.
 func (q *Queries) GetEraseRequestByID(ctx context.Context, arg GetEraseRequestByIDParams) (ComplianceRequest, error) {
 	row := q.db.QueryRow(ctx, getEraseRequestByID, arg.ID, arg.ProjectID)

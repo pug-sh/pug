@@ -129,7 +129,7 @@ func TestApiKeyToRPCMsg(t *testing.T) {
 			wantKnd: projectsv1.ApiKeyKind_API_KEY_KIND_PUBLIC,
 		},
 		{
-			// The token of a private key is its digest — returning it would leak the
+			// The token of a private key is its digest: returning it would leak the
 			// stored secret, and it is useless to the client either way.
 			name: "private key never returns its token",
 			input: dbread.ApiKey{

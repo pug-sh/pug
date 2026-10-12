@@ -15,7 +15,7 @@ services:
 
 See [`config.example.json`](../config.example.json) for Google and another OIDC provider. Google uses the same generic OIDC path as every other provider. Unknown fields, unsupported versions, duplicate IDs, missing values, and non-HTTPS remote issuers stop the server at startup with a configuration error. `http://localhost` issuers are accepted for development.
 
-A provider `id` must be a unique lowercase identifier, and it is **permanent**: it is stored as the `provider` value on every account linked through it. Renaming an `id` orphans those links — affected users fall back to matching on their verified email, which signs them in but leaves a stale row behind. Pick the id once (`google`, `okta`, `company_sso`) and change the `displayName` instead when you want different wording on the sign-in button.
+A provider `id` must be a unique lowercase identifier, and it is **permanent**: it is stored as the `provider` value on every account linked through it. Renaming an `id` orphans those links: affected users fall back to matching on their verified email, which signs them in but leaves a stale row behind. Pick the id once (`google`, `okta`, `company_sso`) and change the `displayName` instead when you want different wording on the sign-in button.
 
 ## Generic OIDC
 
@@ -25,7 +25,7 @@ Create an OIDC client in the identity provider and configure this exact redirect
 https://YOUR_PUG_DASHBOARD/oauth/callback
 ```
 
-Enable Authorization Code flow and PKCE (`S256`). Configure `clientSecret` only when the provider requires a confidential client. Pug keeps it in the server configuration, never returns it from `GetAuthConfig`, and performs the code exchange on the server. Public clients such as a typical Keycloak SPA omit it. The provider must expose standard OIDC discovery metadata and return these claims in its ID token. Discovery runs on the first sign-in rather than at startup, so an issuer that is unreachable when the server boots does not stop it from starting, and starts working again on its own once it recovers — sign-ins against it fail with `OAUTH_PROVIDER_UNAVAILABLE` meanwhile:
+Enable Authorization Code flow and PKCE (`S256`). Configure `clientSecret` only when the provider requires a confidential client. Pug keeps it in the server configuration, never returns it from `GetAuthConfig`, and performs the code exchange on the server. Public clients such as a typical Keycloak SPA omit it. The provider must expose standard OIDC discovery metadata and return these claims in its ID token. Discovery runs on the first sign-in rather than at startup, so an issuer that is unreachable when the server boots does not stop it from starting, and starts working again on its own once it recovers; sign-ins against it fail with `OAUTH_PROVIDER_UNAVAILABLE` meanwhile:
 
 - `sub`
 - `email`
@@ -39,7 +39,7 @@ Pug refuses to create or link an account from an `email` with non-ASCII characte
 
 The dashboard fetches the discovery document from the browser, so the issuer must allow cross-origin requests to it. Okta, Entra ID, Auth0 and Google do.
 
-The browser must send a `nonce` on the authorization request and pass the same value to `CompleteOIDCSignIn`; Pug rejects the sign-in if it does not match the ID token's `nonce` claim. Pug does not mint or store the nonce, so that check confirms the token belongs to the request that carried it — the binding to the browser that started the flow comes from PKCE and from the `state` value the browser must generate, store, and re-check on the callback.
+The browser must send a `nonce` on the authorization request and pass the same value to `CompleteOIDCSignIn`; Pug rejects the sign-in if it does not match the ID token's `nonce` claim. Pug does not mint or store the nonce, so that check confirms the token belongs to the request that carried it; the binding to the browser that started the flow comes from PKCE and from the `state` value the browser must generate, store, and re-check on the callback.
 
 Pug requires the `redirect_uri` to use the path `/oauth/callback`, with no query or fragment, over HTTPS except on `localhost`/`127.0.0.1`/`::1`; when the browser sends an `Origin` header it must be same-origin with that URI. The host itself is pinned by the redirect URI you register at the IdP, not by Pug.
 
@@ -101,9 +101,9 @@ Configure Google as an OIDC provider with issuer `https://accounts.google.com`, 
 
 A Google Workspace account's ID token carries an `hd` claim naming its domain, and Pug treats it as proof of that domain. It reads `hd` only from a provider whose configured issuer is `https://accounts.google.com`. A personal Google account has no `hd` and proves nothing.
 
-The legacy `PUG_OAUTH_GOOGLE_CLIENT_ID` configuration and Google-specific ID-token endpoint have been removed. This is a breaking change, and the variable is now ignored rather than rejected — an install that upgrades without setting `PUG_CONFIG_FILE` starts cleanly with no external providers and Google sign-in absent — the server logs a startup warning naming the ignored variable.
+The legacy `PUG_OAUTH_GOOGLE_CLIENT_ID` configuration and Google-specific ID-token endpoint have been removed. This is a breaking change, and the variable is now ignored rather than rejected: an install that upgrades without setting `PUG_CONFIG_FILE` starts cleanly with no external providers and Google sign-in absent. The server logs a startup warning naming the ignored variable.
 
-Name the Google entry `"id": "google"` to keep existing Google accounts linked: that is the value they were already stored under, so they resolve directly with no migration. Under any other id they still sign in — via the verified-email fallback — but pick up a second identity row.
+Name the Google entry `"id": "google"` to keep existing Google accounts linked: that is the value they were already stored under, so they resolve directly with no migration. Under any other id they still sign in, via the verified-email fallback, but pick up a second identity row.
 
 ## Turnstile
 

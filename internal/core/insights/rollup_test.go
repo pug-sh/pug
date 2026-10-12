@@ -54,7 +54,7 @@ func rollupMultiEventTrendsSpec(kinds ...string) *insightsv1.InsightQuerySpec {
 
 // rollupEventSpec names one event of a multi-event trends spec. Unlike
 // rollupMultiEventTrendsSpec (which hardcodes TOTAL everywhere) it lets a test
-// vary aggregation ACROSS events — the shape nothing in InsightQuerySpec's CEL
+// vary aggregation ACROSS events: the shape nothing in InsightQuerySpec's CEL
 // rules forbids, and the one the shared top_vals CTE mis-ranked.
 type rollupEventSpec struct {
 	kind string
@@ -78,7 +78,7 @@ func rollupTrendsSpecFor(breakdown string, evs ...rollupEventSpec) *insightsv1.I
 // cteBody returns the text of the named CTE so an assertion can bind a predicate
 // to the specific event whose ranking it governs, rather than counting
 // occurrences across the whole statement (which cannot tell WHICH event a
-// predicate landed on — exactly the confusion that let C-1 ship).
+// predicate landed on, exactly the confusion that let C-1 ship).
 func cteBody(t *testing.T, sql, name string) string {
 	t.Helper()
 	open := name + " AS ("
@@ -113,7 +113,7 @@ func TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN(t *testing.T) {
 		// the rollup must (a) evaluate this event's metric at the query's own bucket
 		// grain and (b) rank by the SUM of those values.
 		//
-		// Ranking by sum(cnt) would order countries by page views — a plain "unique
+		// Ranking by sum(cnt) would order countries by page views: a plain "unique
 		// users by country" tile naming wrong values. Ranking by a WINDOW-WIDE
 		// uniqMerge is subtler and was the last axis to be fixed: it equals the
 		// per-bucket sum for TOTAL, so only a multi-day non-additive-metric corpus
@@ -355,7 +355,7 @@ func TestFillMultiEventTrendZeros(t *testing.T) {
 			"signup|$others|2024-01-01":    3,
 		}
 		if !reflect.DeepEqual(got, want) {
-			t.Errorf("got %v, want %v — signup|GB and page_view|US are inside each kind's $others", got, want)
+			t.Errorf("got %v, want %v: signup|GB and page_view|US are inside each kind's $others", got, want)
 		}
 	})
 
@@ -378,7 +378,7 @@ func TestFillMultiEventTrendZeros(t *testing.T) {
 	t.Run("preserves_empty_string_breakdown_value", func(t *testing.T) {
 		// A breakdown column whose value is the empty string is a legitimate, single-
 		// element slice ([]string{""}). It must NOT be collapsed to a nil breakdown
-		// slice on the synthesized zero row — GroupSeries fails the length check
+		// slice on the synthesized zero row: GroupSeries fails the length check
 		// against properties otherwise.
 		rows := []TrendRow{
 			{Time: t1, EventKind: "page_view", Breakdowns: []string{""}, Value: 1},
@@ -737,7 +737,7 @@ func TestCheckDimListHelpers(t *testing.T) {
 }
 
 // TestMaterializedDimsMatchMigration pins the Go dimension lists to the LATEST
-// event-rollup MV definition — migration 012's restated MODIFY QUERY, which
+// event-rollup MV definition: migration 012's restated MODIFY QUERY, which
 // must carry exactly materializedDims + $__total__ (012 changes no dims; it
 // adds the bot key column, so it has no backfill block). Also pins the
 // internal coherence of the per-migration Go groups.
@@ -752,7 +752,7 @@ func TestMaterializedDimsMatchMigration(t *testing.T) {
 	}
 	// The per-migration groups must not overlap: a dim in two groups would be
 	// backfilled by both, doubling its cnt. (materializedDims being their
-	// union needs no assertion — slices.Concat makes it so.)
+	// union needs no assertion: slices.Concat makes it so.)
 	for _, dim := range eventRollupDims009 {
 		if slices.Contains(eventRollupDims006, dim) {
 			t.Errorf("dim %s is in both the 006 and 009 groups; 009's backfill would double its cnt", dim)
@@ -776,7 +776,7 @@ func deleteDimNames(sql string) []string {
 
 // TestMigration009BackfillDeleteCoversNewDims pins the delete-before-backfill
 // guard to eventRollupDims009. That DELETE is the only thing making the delta
-// backfill re-runnable — cnt is SimpleAggregateFunction(sum), so a partial
+// backfill re-runnable: cnt is SimpleAggregateFunction(sum), so a partial
 // INSERT plus the natural re-run would double it permanently. A dim added to
 // the backfill but missed here would silently lose that protection for itself.
 func TestMigration009BackfillDeleteCoversNewDims(t *testing.T) {
@@ -817,7 +817,7 @@ func TestMigration006Frozen(t *testing.T) {
 
 // checkDimExprs verifies every given dim appears in every given block as a
 // tuple with its PropertyExpr-compatible promoted-column expression (not an
-// auto_properties map lookup) — the same SQL raw insights queries use.
+// auto_properties map lookup), the same SQL raw insights queries use.
 func checkDimExprs(blocks []string, dims []string) error {
 	for _, prop := range dims {
 		expr := chq.AutoPropertyProjectionFor(prop, "").StringSQL
@@ -879,7 +879,7 @@ func TestMigration011Frozen(t *testing.T) {
 		t.Error("ARRAY JOIN block reads promoted keys from the auto_properties map")
 	}
 	if botWord.MatchString(up) {
-		t.Error("migration 011 is frozen and must not mention bot — that is 012's job")
+		t.Error("migration 011 is frozen and must not mention bot; that is 012's job")
 	}
 }
 
@@ -944,12 +944,12 @@ func TestMigration009Frozen(t *testing.T) {
 	}
 	// 009 predates the cookieless key column; its file must not grow one.
 	if strings.Contains(up, "cookieless") {
-		t.Error("migration 009 is frozen and must not mention cookieless — that is 011's job")
+		t.Error("migration 009 is frozen and must not mention cookieless; that is 011's job")
 	}
 }
 
 // TestMigration011CookielessPrefixMatchesGo pins the SQL prefix literals to
-// cookieless.IDPrefix — the id format is permanent storage, so drift between
+// cookieless.IDPrefix: the id format is permanent storage, so drift between
 // the Go constant and the migration would silently corrupt exclusion.
 func TestMigration011CookielessPrefixMatchesGo(t *testing.T) {
 	up := migrationUpSection(t, migration011Path)
@@ -1132,7 +1132,7 @@ func TestBuildTopKFromRollup(t *testing.T) {
 		// buildTopKFromRollup carries its own limit==0 → defaultTopKLimit block,
 		// independent of the raw BuildTopKQuery copy. Pin it: a regression dropping
 		// it would send LIMIT 0 to the rollup (zero ranked rows) on the fast path
-		// only, while the raw path stayed correct — exactly the kind of divergence
+		// only, while the raw path stayed correct, exactly the kind of divergence
 		// rollup_parity (which uses an explicit limit) would not catch.
 		req := rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "page_view", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL))
 		// Limit deliberately left unset (0).

@@ -1,5 +1,5 @@
-// Package botdetect recognises automated visitors that run the browser SDK —
-// headless browsers, synthetic monitors, scrapers on cloud IPs — from what the
+// Package botdetect recognises automated visitors that run the browser SDK
+// (headless browsers, synthetic monitors, scrapers on cloud IPs) from what the
 // server can see: the User-Agent and the origin network. Rationale, false
 // positives and the tag-don't-drop policy: docs/architecture/bot-detection.md.
 package botdetect

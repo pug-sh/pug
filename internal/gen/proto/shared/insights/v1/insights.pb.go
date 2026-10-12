@@ -92,7 +92,7 @@ func (InsightType) EnumDescriptor() ([]byte, []int) {
 
 // Granularity values are listed finest → coarsest by source-order convention.
 // Going forward (post-deployment of this enum): do not reorder or renumber existing
-// values — protobuf identity is the numeric tag, not the symbol. Add new values at
+// values; protobuf identity is the numeric tag, not the symbol. Add new values at
 // the next free ordinal.
 type Granularity int32
 
@@ -236,7 +236,7 @@ const (
 	// is pages per session. A first-class metric (not a client-side division of
 	// a pageview tile by a session tile) because pageviews are windowed on
 	// occurrence day while sessions are keyed on session start and never
-	// clipped — dividing two tiles disagrees visibly on boundary days.
+	// clipped: dividing two tiles disagrees visibly on boundary days.
 	SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION SessionMetric = 6
 )
 
@@ -340,7 +340,7 @@ func (UserFlowQuery_NodeKind) EnumDescriptor() ([]byte, []int) {
 }
 
 // Traversal unit. UNSPECIFIED resolves to SESSION in the builder.
-// Per-user (cross-session) grouping is not in the API yet — add a new enum
+// Per-user (cross-session) grouping is not in the API yet; add a new enum
 // value when semantics are defined.
 type UserFlowQuery_GroupBy int32
 
@@ -459,7 +459,7 @@ type InsightQuerySpec struct {
 	// Funnel conversion window. Only used for INSIGHT_TYPE_FUNNEL.
 	// The maximum time allowed from the first step to the last step per user.
 	// Absent means use the full time range as the window (no constraint).
-	// Must be a whole-second value of at least 1 second — windowFunnel only accepts
+	// Must be a whole-second value of at least 1 second: windowFunnel only accepts
 	// integer-second windows, so sub-second precision would be silently truncated.
 	ConversionWindow *durationpb.Duration `protobuf:"bytes,7,opt,name=conversion_window,json=conversionWindow" json:"conversion_window,omitempty"`
 	// When true, funnel queries include per-step conversion-time statistics:
@@ -473,7 +473,7 @@ type InsightQuerySpec struct {
 	// with exactly one breakdown (they bucket sessions by an entry/exit attribute);
 	// SESSIONS, AVG_DURATION, and BOUNCE_RATE work with either insight_type and
 	// any breakdown count. Each session is measured over its full set of (scoped)
-	// events and attributed to its start instant — the time window selects sessions
+	// events and attributed to its start instant: the time window selects sessions
 	// by start time, it does not clip a session's events.
 	Session *SessionQuery `protobuf:"bytes,9,opt,name=session" json:"session,omitempty"`
 	// User-flow graph query. Only valid when insight_type == USER_FLOW.
@@ -484,8 +484,8 @@ type InsightQuerySpec struct {
 	// daily, so one returning human counts as a new user every day. By default
 	// they are EXCLUDED from user-counting metrics (UNIQUE_USERS and
 	// PER_USER_AVG, numerator and denominator alike, wherever those metrics
-	// appear — trends, segmentation, top K) and from person-based insights
-	// (funnel, retention, user flow, and USER-dimension top K — these resolve
+	// appear: trends, segmentation, top K) and from person-based insights
+	// (funnel, retention, user flow, and USER-dimension top K; these resolve
 	// people rather than events, so they exclude regardless of which metric is
 	// selected). Set true to include them. Event totals, numeric aggregations,
 	// and all session metrics always count all traffic regardless of this flag.
@@ -636,13 +636,13 @@ type QueryRequest struct {
 	Granularity *Granularity           `protobuf:"varint,3,opt,name=granularity,enum=shared.insights.v1.Granularity" json:"granularity,omitempty"`
 	// IANA timezone name (e.g. "Asia/Kolkata") used to align time-bucket boundaries
 	// to the viewer's local day/week/month instead of UTC. Empty (or "UTC") buckets on
-	// UTC boundaries — the historical behavior. The charset is restricted so the value
+	// UTC boundaries, the historical behavior. The charset is restricted so the value
 	// can be embedded in the ClickHouse toTimeZone() call without an injection surface;
 	// the zone is otherwise validated server-side.
 	//
 	// SERVER-OVERWRITTEN, IGNORED ON INPUT: the InsightsService.Query handler replaces
 	// any client-supplied value with the project's stored reporting_timezone, so
-	// bucketing is server-authoritative. Do not set it on the request — it has no
+	// bucketing is server-authoritative. Do not set it on the request: it has no
 	// effect. (The field is retained rather than reserved because the executor and the
 	// dashboard render path both populate it internally.)
 	Timezone      *string `protobuf:"bytes,12,opt,name=timezone" json:"timezone,omitempty"`
@@ -1054,7 +1054,7 @@ type UserFlowQuery struct {
 	NodeProperty *string                `protobuf:"bytes,2,opt,name=node_property,json=nodeProperty" json:"node_property,omitempty"`
 	GroupBy      *UserFlowQuery_GroupBy `protobuf:"varint,3,opt,name=group_by,json=groupBy,enum=shared.insights.v1.UserFlowQuery_GroupBy" json:"group_by,omitempty"`
 	// Event-level filter: restricts which events are eligible to become nodes.
-	// Not a session filter — sessions with no eligible events emit no transitions.
+	// Not a session filter: sessions with no eligible events emit no transitions.
 	Scope *v1.EventFilter `protobuf:"bytes,4,opt,name=scope" json:"scope,omitempty"`
 	// Maximum transitions (edges) per session/user, i.e. the number of Sankey
 	// steps. A max_hops = N flow touches at most N+1 nodes (depths 0..N).
@@ -1156,7 +1156,7 @@ func (x *UserFlowQuery) GetMaxLinks() int32 {
 // Granularity note: top K has no time bucketing, so QueryRequest.granularity
 // does not affect a top-K result. It is still required (every QueryRequest
 // requires one) and, for top K, serves only to select which time-range cap
-// applies — see the query_request.granularity_*_max_range rules: e.g.
+// applies; see the query_request.granularity_*_max_range rules: e.g.
 // GRANULARITY_MINUTE caps the window at 6h, GRANULARITY_MONTH at ~10y. Send the
 // coarsest granularity whose cap admits your intended window; the value is
 // otherwise inert for top K.
@@ -1319,7 +1319,7 @@ type TopKRow struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Dimension value: property value, event kind, or user key (canonical
 	// profile id when resolved, else the raw distinct_id). "$others" for the
-	// overflow bucket — but identify the bucket by is_others, NOT by matching
+	// overflow bucket, but identify the bucket by is_others, NOT by matching
 	// this string: a real value can legitimately be the literal "$others"
 	// (same contract as UserFlowNode).
 	DimensionValue *string  `protobuf:"bytes,1,opt,name=dimension_value,json=dimensionValue" json:"dimension_value,omitempty"`
@@ -1397,8 +1397,8 @@ func (x *TopKRow) GetProfile() *TopKProfile {
 //
 // Results arrive as QueryResponse.top_k, with no $others bucket. Every key is an
 // assigned ISO 3166-1 alpha-2 code; rows the server cannot confirm as one are
-// dropped — unresolved traffic, and any value a client wrote to $country
-// directly — so the rows do not sum to the project's total.
+// dropped (unresolved traffic, and any value a client wrote to $country
+// directly), so the rows do not sum to the project's total.
 type MapQuery struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional event scope (kind and/or per-event filters), same reuse as
@@ -1531,15 +1531,15 @@ type UserFlowNode struct {
 	// Opaque unique key, referenced by UserFlowLink.source/target. Unique per
 	// (depth, label): the same event kind or property value at two different steps
 	// is two distinct nodes (e.g. "page_view" at step 0 and step 2). Treat as an
-	// opaque token — do not parse it; use label for display and depth for column.
+	// opaque token: do not parse it; use label for display and depth for column.
 	Id *string `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	// is_others marks the synthetic per-step overflow bucket that aggregates the
 	// nodes pruned by max_nodes at that depth. Real nodes have is_others=false.
 	// Clients must identify the bucket by this flag, NOT by matching id/label
-	// against "$others" — a real event kind or property value can legitimately be
+	// against "$others": a real event kind or property value can legitimately be
 	// the literal string "$others".
 	IsOthers *bool `protobuf:"varint,2,opt,name=is_others,json=isOthers" json:"is_others,omitempty"`
-	// depth is the 0-based step index — the Sankey column. It is the node's
+	// depth is the 0-based step index, the Sankey column. It is the node's
 	// position in each session's time-ordered event sequence. Every link connects
 	// a node at depth d to a node at depth d+1, so the graph is a layered DAG.
 	Depth *int32 `protobuf:"varint,3,opt,name=depth" json:"depth,omitempty"`

@@ -217,7 +217,7 @@ func TestIntegrationBotTagging(t *testing.T) {
 		}
 	})
 
-	// A session that straddles the tag — two human-looking hits, then a tagged
+	// A session that straddles the tag: two human-looking hits, then a tagged
 	// one (client-supplied $platform, a per-request ASN, or a deploy mid-session
 	// all produce this). One tagged event excludes the session.
 	t.Run("sessions_judged_whole", func(t *testing.T) {

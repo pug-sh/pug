@@ -22,7 +22,7 @@ import (
 )
 
 // TestIntegration_FunnelHandlerIncludeStepTimingDispatch verifies the handler-level
-// dispatch through ExecuteQuery — the `if req.GetSpec().GetIncludeStepTiming()` branch must
+// dispatch through ExecuteQuery: the `if req.GetSpec().GetIncludeStepTiming()` branch must
 // route to the timing-aware path (parallel windowFunnel counts + ComputeFunnelTiming merge).
 // A regression that drops the check (or wires the wrong builder) would silently downgrade
 // timing requests to the counts-only path, returning zero medians/p95s and an empty
@@ -84,7 +84,7 @@ func TestIntegration_FunnelHandlerIncludeStepTimingDispatch(t *testing.T) {
 			t.Errorf("step 0 timing: expected nil (entry step), got %+v", steps[0].GetTiming())
 		}
 
-		// Step 1 has converters (alice, bob) — timing must be present with the full 8-bucket
+		// Step 1 has converters (alice, bob); timing must be present with the full 8-bucket
 		// histogram and a positive median. If the dispatch silently routed to the counts-only
 		// path, Timing would be nil.
 		timing := steps[1].GetTiming()
@@ -198,7 +198,7 @@ func TestIntegration_UserFlowHandler(t *testing.T) {
 // TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes verifies the
 // handler reads req.Msg.GetAllowedTypes() and forwards it to the service. The
 // service-level test (TestServiceGetFilterSchema/allowed_types_filters_custom_keys)
-// exercises the same path but bypasses the handler — a regression that drops
+// exercises the same path but bypasses the handler: a regression that drops
 // the field forwarding (e.g., passing nil) would silently disable filtering on
 // every dashboard request and the service-level test would not catch it.
 func TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes(t *testing.T) {
@@ -245,7 +245,7 @@ func TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes(t *testing.T) {
 	}
 	for _, name := range []string{"is_cached", "plan_name", "shipped_at", "coupon"} {
 		if got[name] {
-			t.Errorf("did not expect %q in INTEGER+FLOAT-filtered response — handler may be passing nil for allowed_types", name)
+			t.Errorf("did not expect %q in INTEGER+FLOAT-filtered response; handler may be passing nil for allowed_types", name)
 		}
 	}
 }
@@ -315,7 +315,7 @@ func TestIntegration_TopKHandler(t *testing.T) {
 
 	// PROPERTY dimension without a property fails in the builder (the proto CEL
 	// rule is bypassed because the handler is called directly, without the
-	// validate interceptor) and must surface as an invalid-argument apperr —
+	// validate interceptor) and must surface as an invalid-argument apperr,
 	// translated to CodeInvalidArgument by the apperr interceptor in the served
 	// stack, which a direct handler call bypasses.
 	_, err = srv.Query(authedCtx, makeReq(&insightsv1.TopKQuery{

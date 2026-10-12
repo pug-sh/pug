@@ -29,7 +29,7 @@ type GetUsageRequest struct {
 	OrgId *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	// Bounds the daily series only; used_events always covers the current period.
 	// Absent means the current period. The bounds snap outwards to whole UTC days,
-	// since that is the grain the counts are stored at — asking for half a day
+	// since that is the grain the counts are stored at: asking for half a day
 	// returns that day's whole cell. Metered days are pruned once they age past the
 	// retention window, so a longer range simply returns fewer rows than it asked
 	// for rather than failing.
@@ -152,7 +152,7 @@ func (x *UsageDay) GetEventCount() int64 {
 type GetUsageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Distinct events recorded across all of the org's projects this period.
-	// MEANINGLESS unless `counted` is true — never render it as 0 on its own.
+	// MEANINGLESS unless `counted` is true; never render it as 0 on its own.
 	//
 	// It is absent on the wire until the meter has summed this period, but do not
 	// rely on that: protoc-gen-es renders an edition-2023 singular scalar as a
@@ -161,7 +161,7 @@ type GetUsageResponse struct {
 	PeriodStart *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=period_start,json=periodStart" json:"period_start,omitempty"`
 	PeriodEnd   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=period_end,json=periodEnd" json:"period_end,omitempty"`
 	// When the meter last ran for this org, in any period. ABSENT means it never
-	// has — there is no answer at all, which a deployment not running
+	// has: there is no answer at all, which a deployment not running
 	// `pug cron usage` must render as "unknown" rather than "0".
 	UsageComputedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=usage_computed_at,json=usageComputedAt" json:"usage_computed_at,omitempty"`
 	// Per-project daily counts over the requested window, oldest first, capped at
@@ -180,7 +180,7 @@ type GetUsageResponse struct {
 	// Read this rather than comparing usage_computed_at against period_start.
 	//
 	// A plain bool rather than a wrapper: it is only ever emitted true, so a
-	// generator that drops the presence bit reads absence as false — which is the
+	// generator that drops the presence bit reads absence as false, which is the
 	// right answer, unlike the 0 the same erasure makes of used_events.
 	Counted       *bool `protobuf:"varint,6,opt,name=counted" json:"counted,omitempty"`
 	unknownFields protoimpl.UnknownFields

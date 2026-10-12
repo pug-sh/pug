@@ -36,7 +36,7 @@ func mustAuthorizer(t *testing.T) *authz.Authorizer {
 }
 
 // apperrCode extracts a connect.Code from either an *apperr.Error (the authz
-// path) or a plain *connect.Error — connect.CodeOf alone returns Unknown for the
+// path) or a plain *connect.Error: connect.CodeOf alone returns Unknown for the
 // former.
 func apperrCode(err error) connect.Code {
 	if ae, ok := errors.AsType[*apperr.Error](err); ok {
@@ -45,7 +45,7 @@ func apperrCode(err error) connect.Code {
 	return connect.CodeOf(err)
 }
 
-// jwtProjectCtx is the JWT/customer path WITH an x-project-id project resolved —
+// jwtProjectCtx is the JWT/customer path WITH an x-project-id project resolved:
 // the principal a dashboard/shared RPC sees on the customer path.
 func jwtProjectCtx() context.Context {
 	return authn.SetInfo(context.Background(), &Principal{
@@ -65,13 +65,13 @@ func apiKeyCtx() context.Context {
 }
 
 // msgReq builds an org-control request whose message carries org_id, for the
-// orgFromMessage path (any such message works — the interceptor only reads
+// orgFromMessage path (any such message works: the interceptor only reads
 // GetOrgId()).
 func msgReq(orgID string) connect.AnyRequest {
 	return connect.NewRequest(&orgsv1.ListMembersRequest{OrgId: proto.String(orgID)})
 }
 
-// emptyReq builds a request whose message carries no org_id — fine for
+// emptyReq builds a request whose message carries no org_id: fine for
 // orgFromProject (org comes from the principal) and used to prove the
 // orgFromMessage assertion fails closed.
 func emptyReq() connect.AnyRequest { return connect.NewRequest(&emptypb.Empty{}) }
@@ -110,7 +110,7 @@ func TestAuthorizeRoleGated(t *testing.T) {
 			// (orgFromMessage) RPC reached without a customer fails closed rather than
 			// skipping the role gate. Those services are JWT-only, so this guards a
 			// wiring regression (a control-plane RPC exposed over an API key).
-			name:     "api-key path is denied an org-control (orgFromMessage) RPC — must not hit the coarse bypass",
+			name:     "api-key path is denied an org-control (orgFromMessage) RPC: must not hit the coarse bypass",
 			ctx:      apiKeyCtx(),
 			lookup:   fakeRoleLookup{err: errors.New("lookup must not be called on the api-key path")},
 			req:      msgReq("org-1"),
@@ -165,7 +165,7 @@ func TestAuthorizeRoleGated(t *testing.T) {
 		},
 		{
 			name:     "orgFromMessage: viewer denied an admin-only invite",
-			ctx:      customerCtx(), // no project — org comes from the message
+			ctx:      customerCtx(), // no project: org comes from the message
 			lookup:   fakeRoleLookup{role: coreorgs.RoleViewer},
 			req:      msgReq("org-1"),
 			spec:     authzspec.OrgGated(authz.ResourceInvitation, authz.ActionCreate),
@@ -255,7 +255,7 @@ func TestResolveOrgID(t *testing.T) {
 // when enforced, (a) lets an admin through, (b) denies a non-member, (c) denies a
 // viewer on writes (viewer is the read-only floor), and (d) never allows a viewer
 // where it denies a member (no privilege inversion). This is the guarantee that
-// makes the registry the source of truth — every role-gated RPC is gated and a
+// makes the registry the source of truth: every role-gated RPC is gated and a
 // drifted (resource, action) is caught here, not in production.
 func TestAuthzInterceptorRegistryEntriesEnforced(t *testing.T) {
 	authorizer := mustAuthorizer(t)
@@ -289,23 +289,23 @@ func TestAuthzInterceptorRegistryEntriesEnforced(t *testing.T) {
 
 		// (c) viewer is read-only: it must hold NO write anywhere.
 		if spec.Action() != authz.ActionRead && viewerOK {
-			t.Errorf("%s: viewer allowed write %s:%s — viewer must be read-only", proc, spec.Resource(), spec.Action())
+			t.Errorf("%s: viewer allowed write %s:%s; viewer must be read-only", proc, spec.Resource(), spec.Action())
 		}
 		// (d) no privilege inversion: a higher role is never more restricted.
 		if viewerOK && !memberOK {
-			t.Errorf("%s: viewer allowed but member denied %s:%s — privilege inversion", proc, spec.Resource(), spec.Action())
+			t.Errorf("%s: viewer allowed but member denied %s:%s (privilege inversion)", proc, spec.Resource(), spec.Action())
 		}
 	}
 
 	if got == 0 {
-		t.Fatal("no domainRoleGated entries found — the registry is empty?")
+		t.Fatal("no domainRoleGated entries found: the registry is empty?")
 	}
 }
 
 // TestRoleGatedAdminOnlyRPCs pins the admin-only control-plane RPCs: a member is
 // denied and an admin allowed. adminOnly is an INDEPENDENT oracle (separate from
 // the policy), so a (resource, action) drift that downgrades one of these to
-// member-accessible is caught — which the generic monotonicity check in the test
+// member-accessible is caught, which the generic monotonicity check in the test
 // above cannot, since it does not know an RPC's intended privilege level.
 //
 // The loop iterates the whole registry so the oracle is checked for completeness
@@ -314,7 +314,7 @@ func TestAuthzInterceptorRegistryEntriesEnforced(t *testing.T) {
 // must be added here, not silently escape the oracle). A trailing pass catches a
 // listed proc that is not a real role-gated entry (a typo or removed RPC).
 // Every other oracle in this file iterates the registry and `continue`s on
-// !IsRoleGated, so downgrading an entry — OrgGated to SelfRead(), say — does not fail
+// !IsRoleGated, so downgrading an entry (OrgGated to SelfRead(), say) does not fail
 // a check, it REMOVES the RPC from every check. Nothing else notices, and the RPC
 // silently becomes callable by any signed-in customer with a caller-supplied
 // org_id.
@@ -394,14 +394,14 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 			continue
 		}
 		if !spec.IsRoleGated() {
-			t.Errorf("%s: DOWNGRADED — listed as role-gated but its registry entry no longer is, "+
+			t.Errorf("%s: DOWNGRADED; listed as role-gated but its registry entry no longer is, "+
 				"so every role oracle now skips it", proc)
 		}
 	}
 
 	for proc, spec := range permissionRegistry {
 		if spec.IsRoleGated() && !roleGated[proc] {
-			t.Errorf("%s: role-gated but not listed — add it here so a later downgrade is caught", proc)
+			t.Errorf("%s: role-gated but not listed; add it here so a later downgrade is caught", proc)
 		}
 	}
 }
@@ -453,11 +453,11 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 
 		if adminOnly[proc] {
 			if apperrCode(memberErr) != connect.CodePermissionDenied {
-				t.Errorf("%s: member NOT denied (got %v) — this admin-only RPC must reject a member", proc, memberErr)
+				t.Errorf("%s: member NOT denied (got %v); this admin-only RPC must reject a member", proc, memberErr)
 			}
 			if err := authorizeRoleGated(jwtProjectCtx(), authorizer,
 				fakeRoleLookup{role: coreorgs.RoleAdmin}, req, spec); err != nil {
-				t.Errorf("%s: admin denied (%v) — this admin-only RPC must allow an admin", proc, err)
+				t.Errorf("%s: admin denied (%v); this admin-only RPC must allow an admin", proc, err)
 			}
 			continue
 		}
@@ -465,7 +465,7 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 		// Completeness: a role-gated RPC that denies a member but is NOT listed is a
 		// new admin-only RPC missing from adminOnly (or one that is wrongly gated).
 		if memberErr != nil {
-			t.Errorf("%s: denies a member but is not in adminOnly — add it there (or it is wrongly gated)", proc)
+			t.Errorf("%s: denies a member but is not in adminOnly; add it there (or it is wrongly gated)", proc)
 		}
 	}
 
@@ -482,7 +482,7 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 // backstop: a procedure with NO permissionRegistry entry is DENIED (CodeInternal)
 // and never reaches next. TestPermissionRegistryCoversAllProcedures keeps the
 // registry complete, so this only fires for a procedure that shipped without an
-// authz decision — including a new procedure added to an already-mounted service,
+// authz decision, including a new procedure added to an already-mounted service,
 // which the service-level startup check (assertServedServicesMatch) does not catch.
 // The interceptor refuses to serve it rather than passing it through with
 // authentication but no authorization.
@@ -506,7 +506,7 @@ func TestAuthzInterceptorFailsClosedOnUnknownProcedure(t *testing.T) {
 		t.Fatalf("code = %v, want Internal (an unregistered procedure must fail closed)", apperrCode(err))
 	}
 	if called {
-		t.Fatal("next was called for an unregistered procedure — the interceptor must fail closed")
+		t.Fatal("next was called for an unregistered procedure; the interceptor must fail closed")
 	}
 }
 
@@ -548,7 +548,7 @@ func TestSelfWriteRPCs(t *testing.T) {
 
 	for proc, spec := range permissionRegistry {
 		if _, ok := selfWrite[proc]; !ok && !spec.IsRoleGated() {
-			t.Errorf("%s: not role-gated and not listed — add it here, deciding whether it is a self-write", proc)
+			t.Errorf("%s: not role-gated and not listed; add it here, deciding whether it is a self-write", proc)
 		}
 	}
 }

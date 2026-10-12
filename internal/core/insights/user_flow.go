@@ -19,7 +19,7 @@ const (
 	defaultUserFlowMaxLinks = 250
 
 	// defaultUserFlowNodeKind is the resolved value when NodeKind is UNSPECIFIED.
-	// Not a silent fallback — resolved explicitly in resolveUserFlowParams, not via
+	// Not a silent fallback: resolved explicitly in resolveUserFlowParams, not via
 	// a switch fallthrough.
 	defaultUserFlowNodeKind = insightsv1.UserFlowQuery_NODE_KIND_EVENT_KIND
 
@@ -95,7 +95,7 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 	botSessionHaving(sessionNodesCTE, excludeBots(req.GetSpec()))
 
 	// idx is 1-based (arrayEnumerate); toInt32(idx-1) is the 0-based depth of the
-	// source node — the Sankey column. The edge connects depth (idx-1) → idx.
+	// source node, the Sankey column. The edge connects depth (idx-1) → idx.
 	pairsCTE := chq.NewQuery().
 		Select(
 			"group_key",
@@ -108,7 +108,7 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 
 	// Group by step as well as source/target: the same label at two positions is
 	// two distinct nodes, so transitions are position-scoped.
-	// No "source != target" filter — a session that fires the same event twice in a
+	// No "source != target" filter: a session that fires the same event twice in a
 	// row is a legitimate depth d → d+1 step, never a self-loop (the endpoints sit
 	// at different depths).
 	return chq.NewQuery().
@@ -127,7 +127,7 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 // userFlowNodesArrayExpr returns the arraySlice/arraySort/groupArray expression.
 // maxHopsP1 is max_hops+1 (edges → nodes). arraySlice offset is 1-indexed.
 // Collect all (occur_time, node) tuples, sort by time, slice to first maxHopsP1.
-// Do NOT use groupArray(N)(...) before sorting — size-limited groupArray retains
+// Do NOT use groupArray(N)(...) before sorting: size-limited groupArray retains
 // arbitrary rows, not earliest by time.
 func userFlowNodesArrayExpr(nodeExpr string, maxHopsP1 int) string {
 	return fmt.Sprintf(
@@ -163,7 +163,7 @@ func userFlowScopeCondition(uf *insightsv1.UserFlowQuery, projectID string) (chq
 }
 
 // depthLabel keys a real node by its (0-based depth, label). The same label at
-// two depths is two distinct nodes — that layering is what makes the graph a
+// two depths is two distinct nodes; that layering is what makes the graph a
 // clean DAG (every edge goes depth d → d+1), the property a Sankey needs.
 type depthLabel struct {
 	depth int32
@@ -173,7 +173,7 @@ type depthLabel struct {
 // stepNodeRef is the internal identity of a flow-graph node: a label at a
 // specific depth, plus whether it is that depth's synthetic overflow bucket.
 // The bucket (others=true) is a DISTINCT identity from every real node at the
-// same depth — including a real node literally named userFlowOthersNodeID — so
+// same depth, including a real node literally named userFlowOthersNodeID, so
 // collapsing pruned nodes never merges their traffic with a real "$others" node.
 type stepNodeRef struct {
 	depth  int32
@@ -191,7 +191,7 @@ type stepNodeRef struct {
 // step still survives in that column).
 //
 // The overflow bucket is tracked as a distinct identity (see stepNodeRef) and
-// reported to clients via UserFlowNode.is_others — never by matching the id or
+// reported to clients via UserFlowNode.is_others, never by matching the id or
 // label string. Each node also carries its depth so the client lays out columns
 // directly instead of inferring them from the graph.
 //
@@ -243,7 +243,7 @@ func GroupUserFlowResult(_ context.Context, rows []UserFlowRow, maxNodes, maxLin
 		return stepNodeRef{depth: depth, label: userFlowOthersNodeID, others: true}
 	}
 
-	// Source sits at depth Step, target at depth Step+1 — always different depths,
+	// Source sits at depth Step, target at depth Step+1: always different depths,
 	// so a remapped edge can never be a self-loop. Nothing to drop.
 	aggregated := map[[2]stepNodeRef]int64{}
 	for _, row := range rows {

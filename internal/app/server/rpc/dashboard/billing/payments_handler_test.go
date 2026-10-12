@@ -170,7 +170,7 @@ func TestProviderFailuresAreInternalAndSayNothing(t *testing.T) {
 }
 
 // A provider that is fully configured except that no catalog tier has a product
-// id — the deploy variable is missing. Nothing is purchasable.
+// id: the deploy variable is missing. Nothing is purchasable.
 func newProductlessServer(t *testing.T, pg *testutil.TestPostgres) *Server {
 	t.Helper()
 	return newServerWith(t, pg, true, &corebilling.Payments{
@@ -223,7 +223,7 @@ func checkout(t *testing.T, srv *Server, orgID, slug string) (string, error) {
 }
 
 // purchasable is what the dashboard renders the buy button from, and it must agree
-// with what CreateCheckoutSession does — a button that cannot work is worse than
+// with what CreateCheckoutSession does: a button that cannot work is worse than
 // none. Both read one helper; this asserts they agree in every configuration.
 func TestPurchasableAgreesWithCheckout(t *testing.T) {
 	if testing.Short() {
@@ -341,7 +341,7 @@ func TestCheckoutReturnsAURL(t *testing.T) {
 	if got := resp.Msg.GetCheckoutUrl(); got != checkoutURL {
 		t.Errorf("checkout_url = %q, want %q", got, checkoutURL)
 	}
-	// Without this the buyer confirms with "", which min_len rejects — the feature
+	// Without this the buyer confirms with "", which min_len rejects; the feature
 	// dies silently and every other assertion here still passes.
 	if got := resp.Msg.GetSessionId(); got != checkoutSessionID {
 		t.Errorf("session_id = %q, want %q", got, checkoutSessionID)
@@ -513,7 +513,7 @@ func TestCancelledOrgIsStillManageable(t *testing.T) {
 
 	status := getStatus(t, srv, orgID)
 	if status.GetSubscriptionStatus() != billingv1.SubscriptionStatus_SUBSCRIPTION_STATUS_UNSPECIFIED {
-		t.Errorf("subscription_status = %s, want UNSPECIFIED — a dead subscription supplies nothing",
+		t.Errorf("subscription_status = %s, want UNSPECIFIED: a dead subscription supplies nothing",
 			status.GetSubscriptionStatus())
 	}
 	if status.GetPlan().GetSlug() != entitlement.SlugFree {
@@ -632,7 +632,7 @@ func TestListPlansOffersOnlySellableTiers(t *testing.T) {
 }
 
 // A negotiated deal is buyable from the dashboard by the org whose row records its
-// product and by nobody else — one pasted id instead of an emailed payment link.
+// product and by nobody else: one pasted id instead of an emailed payment link.
 func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -661,13 +661,13 @@ func TestListPlansOffersCustomOnlyToItsOwnOrg(t *testing.T) {
 	if !custom.GetPurchasable() {
 		t.Error("custom is not purchasable for the org that has its product id")
 	}
-	// Not this org's negotiated terms — those belong to the entitlement, which
+	// Not this org's negotiated terms: those belong to the entitlement, which
 	// GetBillingStatus reports.
 	if custom.GetIncludedEvents() != nil {
 		t.Errorf("custom quota = %v, want absent on the catalog entry", custom.GetIncludedEvents())
 	}
 	if custom.GetRetentionDays() != nil {
-		t.Errorf("custom retention = %v, want absent — a deal's term is on its own row", custom.GetRetentionDays())
+		t.Errorf("custom retention = %v, want absent: a deal's term is on its own row", custom.GetRetentionDays())
 	}
 }
 

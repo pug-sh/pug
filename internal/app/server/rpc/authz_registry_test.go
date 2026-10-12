@@ -19,7 +19,7 @@ func TestPermissionRegistryCoversAllProcedures(t *testing.T) {
 
 	for proc := range served {
 		if _, ok := permissionRegistry[proc]; !ok {
-			t.Errorf("served RPC %q has no permissionRegistry entry — add an explicit authz decision", proc)
+			t.Errorf("served RPC %q has no permissionRegistry entry; add an explicit authz decision", proc)
 		}
 	}
 	for proc := range permissionRegistry {
@@ -66,13 +66,13 @@ func TestAssertRegistryCoversProcedures(t *testing.T) {
 // TestPermissionRegistryRoleEntriesAreComplete asserts every entry is built by an
 // authzspec constructor (not a bare Spec{}) and that every role-gated entry
 // carries the full triple the interceptor enforces (resource + action +
-// orgSource). The reverse — a non-role-gated entry carrying a stray triple — is
+// orgSource). The reverse, a non-role-gated entry carrying a stray triple, is
 // now impossible to express (authzspec.Spec's fields are unexported and only the
 // constructors set them), so it needs no check.
 func TestPermissionRegistryRoleEntriesAreComplete(t *testing.T) {
 	for proc, spec := range permissionRegistry {
 		if !spec.Defined() {
-			t.Errorf("registry entry %q is an undefined (zero) Spec — build it with an authzspec constructor", proc)
+			t.Errorf("registry entry %q is an undefined (zero) Spec; build it with an authzspec constructor", proc)
 		}
 		if !spec.IsRoleGated() {
 			continue

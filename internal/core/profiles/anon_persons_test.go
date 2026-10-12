@@ -24,8 +24,8 @@ import (
 
 // TestProfilesList_IncludesAnonymousPersons pins the core derived-person
 // contract: a distinct_id that only ever produced events (no identify call)
-// lists as a first-class person — id = distinct_id, empty external_id, no
-// traits — with its activity summary, create_time = first seen, and
+// lists as a first-class person (id = distinct_id, empty external_id, no
+// traits) with its activity summary, create_time = first seen, and
 // update_time = last seen. Get resolves the same person; GetByExternalID("")
 // must never match one.
 func TestProfilesList_IncludesAnonymousPersons(t *testing.T) {
@@ -122,7 +122,7 @@ func TestProfilesList_IncludesAnonymousPersons(t *testing.T) {
 // TestProfilesList_ClaimedIdentityExclusion pins the three claim rules and the
 // non-resurrection property. After an identify merge (canonical profile +
 // alias + soft-deleted anon tombstone), neither the anon distinct_id nor the
-// external_id lists as its own person — and a LATE event for the merged anon
+// external_id lists as its own person, and a LATE event for the merged anon
 // id must not resurrect it (the alias keeps it claimed; persons are derived,
 // so there is no row to un-delete). GetByID on the claimed id redirects to the
 // canonical profile.
@@ -317,7 +317,7 @@ func TestProfilesList_FiltersApplyToAnonymousPersons(t *testing.T) {
 		return ids
 	}
 
-	// Activity filter ($browser = Chrome) — the same expression the profiles
+	// Activity filter ($browser = Chrome): the same expression the profiles
 	// RPC handler builds for PROPERTY_SOURCE_AUTO list filters.
 	browserCond, err := chq.AutoPropertyConditionForColumns(&commonv1.PropertyFilter{
 		Source:   commonv1.PropertySource_PROPERTY_SOURCE_AUTO.Enum(),
@@ -468,7 +468,7 @@ func TestErasure_ByID_AnonymousPerson(t *testing.T) {
 // TestErasure_ByID_AliasResolvesToCanonicalSubject pins two behaviors: a
 // by-id erasure of a claimed (merged) anonymous id erases the CANONICAL data
 // subject with its full fan-out, and the profiles delete covers every frozen
-// distinct_id — the merge tombstone row keyed by the anon id is physically
+// distinct_id; the merge tombstone row keyed by the anon id is physically
 // removed, not just the canonical profile row.
 func TestErasure_ByID_AliasResolvesToCanonicalSubject(t *testing.T) {
 	if testing.Short() {
@@ -508,7 +508,7 @@ func TestErasure_ByID_AliasResolvesToCanonicalSubject(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seed ch profile: %v", err)
 	}
-	// The merge tombstone for the absorbed anon id — physically present in the
+	// The merge tombstone for the absorbed anon id, physically present in the
 	// ReplacingMergeTree even though reads hide it.
 	if err := ch.Conn.Exec(ctx,
 		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -529,7 +529,7 @@ func TestErasure_ByID_AliasResolvesToCanonicalSubject(t *testing.T) {
 
 	svc := profiles.NewService(pg.PgW, ch.Conn, natsClient)
 
-	// Erase by the ALIAS id — the request must record the canonical subject.
+	// Erase by the ALIAS id: the request must record the canonical subject.
 	requestID, _, err := svc.RequestErasureByID(ctx, projectID, anonID, "")
 	if err != nil {
 		t.Fatalf("RequestErasureByID(alias): %v", err)
@@ -676,7 +676,7 @@ func TestProfilesList_CrossProjectIsolation(t *testing.T) {
 		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectB, sharedAnon, "page_view", uuid.NewString(),
 			map[string]string{}, map[string]string{}, now)
 	}
-	// An identified profile in B only — must not appear in A's list.
+	// An identified profile in B only: must not appear in A's list.
 	if err := ch.Conn.Exec(ctx,
 		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"u-b", projectB, "ext-b", map[string]any{}, uint8(0), now, now,
@@ -728,7 +728,7 @@ func TestProfilesList_CrossProjectIsolation(t *testing.T) {
 // TestProfilesList_PaginationTieBreakAtEqualCreateTime exercises the cursor's
 // secondary key. The mixed-pagination test uses all-distinct create_times, so
 // the `create_time = ? AND id < ?` tie-break clause is never hit. Here three
-// persons — two anonymous, one identified — share one create_time, forcing the
+// persons (two anonymous, one identified) share one create_time, forcing the
 // tie-break across a page boundary. A broken secondary key drops or duplicates
 // a person; every person must appear exactly once, in id-DESC order.
 func TestProfilesList_PaginationTieBreakAtEqualCreateTime(t *testing.T) {
@@ -800,7 +800,7 @@ func TestProfilesList_PaginationTieBreakAtEqualCreateTime(t *testing.T) {
 // distinct_id guard: an event stream carrying a blank distinct_id must not
 // materialize a single anonymous person keyed by the empty string.
 //
-// (Phrased without a doubled single-quote on purpose — gofmt rewrites that pair
+// (Phrased without a doubled single-quote on purpose: gofmt rewrites that pair
 // into a Unicode right-quote in doc comments, which silently turned this very
 // sentence into a citation of a predicate that does not exist.)
 func TestProfilesList_ExcludesEmptyDistinctID(t *testing.T) {
@@ -837,7 +837,7 @@ func TestProfilesList_ExcludesEmptyDistinctID(t *testing.T) {
 // The main claim-exclusion test seeds BOTH a soft-delete tombstone profile row
 // AND an alias for the anon id, so either claimed_ids branch alone would pass
 // it. Here the anon id is claimed ONLY by an alias (no tombstone profile row),
-// so this pins that the alias branch by itself excludes the id — and that a
+// so this pins that the alias branch by itself excludes the id, and that a
 // late event still does not resurrect it.
 func TestProfilesList_ClaimedByAliasOnly(t *testing.T) {
 	if testing.Short() {
@@ -890,7 +890,7 @@ func TestProfilesList_ClaimedByAliasOnly(t *testing.T) {
 	assertOnlyCanonical("alias-only", 2)
 
 	// A late event for the alias-claimed anon must fold into the canonical, not
-	// resurrect a standalone person — with no tombstone row to lean on.
+	// resurrect a standalone person, with no tombstone row to lean on.
 	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "anon-1", "page_view", uuid.NewString(),
 		map[string]string{}, map[string]string{}, now.Add(time.Minute))
 	assertOnlyCanonical("alias-only after late event", 3)
@@ -933,7 +933,7 @@ func TestErasure_ByID_EmptyIDReturnsNotFound(t *testing.T) {
 // live Postgres row (soft-deleted as a later merge source) yet is itself an
 // alias to C. Single-level fan-out cannot freeze the whole chain from A, so
 // erasing by A must NOT silently erase only A's residual events and report the
-// DSAR completed — it must fail closed with ErrDegradedAliasErasure and write
+// DSAR completed; it must fail closed with ErrDegradedAliasErasure and write
 // no ledger row, surfacing the inconsistency for manual reconciliation.
 func TestErasure_ByID_ChainedAliasFailsClosed(t *testing.T) {
 	if testing.Short() {
@@ -1056,7 +1056,7 @@ func TestErasure_ByID_TerminalAliasResidualCleanup(t *testing.T) {
 // TestErasureByExternalID_EmptyReturnsNotFound closes the asymmetry with the
 // read path's GetByExternalID(""): an empty external_id can never name a
 // subject, so DeleteDataSubject("") must return a clean ErrProfileNotFound and
-// write no ledger row — not trip the compliance_requests CHECK constraint and
+// write no ledger row, not trip the compliance_requests CHECK constraint and
 // surface as an opaque internal error.
 func TestErasureByExternalID_EmptyReturnsNotFound(t *testing.T) {
 	if testing.Short() {
@@ -1081,7 +1081,7 @@ func TestErasureByExternalID_EmptyReturnsNotFound(t *testing.T) {
 // TestProfilesList_TombstoneClaimExclusionNoAlias isolates the profile-id
 // branch of claimedIDsCTE. A soft-deleted (is_deleted=1) profile row whose
 // distinct_id still has residual events, and which carries NO alias, must not
-// resurface as a derived anonymous person — the tombstoned id is claimed by
+// resurface as a derived anonymous person: the tombstoned id is claimed by
 // virtue of being a profile id (is_deleted is not consulted by claimedIDsCTE).
 // Without this the "deleted user reappears" regression would pass unnoticed.
 func TestProfilesList_TombstoneClaimExclusionNoAlias(t *testing.T) {
@@ -1135,7 +1135,7 @@ func TestProfilesList_TombstoneClaimExclusionNoAlias(t *testing.T) {
 // TestErasure_ByID_NilClickHouseFailsLoud pins the deliberate removal of the
 // nil-ClickHouse shortcut: an id with no Postgres profile row can only be
 // resolved against the derived-person store, so with no ClickHouse conn the
-// erasure must fail loudly rather than misreport ErrProfileNotFound — a false
+// erasure must fail loudly rather than misreport ErrProfileNotFound; a false
 // "not found" on a DSAR would tell a controller the subject has no data when
 // the system merely could not check.
 func TestErasure_ByID_NilClickHouseFailsLoud(t *testing.T) {
@@ -1163,7 +1163,7 @@ func TestErasure_ByID_NilClickHouseFailsLoud(t *testing.T) {
 
 // TestAnonPersons_CookielessIDsNeverBecomePersons pins migration 011's
 // derived-persons exclusion: a cookieless- prefixed distinct_id (rotating
-// daily, see internal/cookieless) must never surface as a person — without the
+// daily, see internal/cookieless) must never surface as a person; without the
 // activity-MV WHERE, every visitor-day would mint a ghost. The consented
 // anon- visitor next to it proves the filter is prefix-scoped, not blanket.
 func TestAnonPersons_CookielessIDsNeverBecomePersons(t *testing.T) {
@@ -1189,7 +1189,7 @@ func TestAnonPersons_CookielessIDsNeverBecomePersons(t *testing.T) {
 	}
 	for _, p := range got {
 		if strings.HasPrefix(p.ID, cookieless.IDPrefix) {
-			t.Errorf("cookieless id %q surfaced as a person — is migration 011's activity-MV WHERE intact?", p.ID)
+			t.Errorf("cookieless id %q surfaced as a person; is migration 011's activity-MV WHERE intact?", p.ID)
 		}
 	}
 	if len(got) != 1 || got[0].ID != "anon-real" {

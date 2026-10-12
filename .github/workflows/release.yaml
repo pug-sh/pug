@@ -2,7 +2,7 @@ name: Release
 
 # Releases are deliberate, not every push. Pushing a SemVer tag (vX.Y.Z) builds the
 # fifteen per-role images and pushes them to GHCR (GitHub Container Registry). Plain branch
-# pushes never trigger this — they only run CI (ci.yaml).
+# pushes never trigger this; they only run CI (ci.yaml).
 on:
   push:
     tags:

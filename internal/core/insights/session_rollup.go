@@ -34,7 +34,7 @@ var (
 
 // sessionMaterializedDims are the entry/exit breakdown dimensions backed by
 // the session-grain rollup MV: the union of every applied migration's group,
-// matching the newest MV restatement (012's MODIFY QUERY — 010's states plus
+// matching the newest MV restatement (012's MODIFY QUERY; 010's states plus
 // the bot key column, TestMigration012SessionRollupRestatesStates) by
 // construction. The 010 tests pin 010's own file:
 // TestMigration010SessionRollupColumnsMatchDims the column names,
@@ -58,14 +58,14 @@ func isSessionMaterializedDim(prop string) bool {
 // count() per session self-corrects; the rollup's event_count_state is countState()
 // keyed on (project_id, kind, session_id, bot) WITHOUT event_id (007, bot via 012), so a
 // duplicate insert is retained permanently and a genuinely single-event session can
-// read event_count > 1 — i.e. no longer counted as a bounce. The drift equals the
+// read event_count > 1, i.e. no longer counted as a bounce. The drift equals the
 // pipeline's redelivery rate (monotonic, never self-correcting). SESSIONS, ENTRY,
 // and EXIT are immune (they count session-id groups, not events); AVG_DURATION is
 // immune (min/max occur_time are idempotent under duplicates);
 // AVG_EVENTS_PER_SESSION inflates on the rollup path for the same countState
 // reason while the raw path self-corrects. This is an accepted, bounded
-// inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
-// pinned by TestIntegration/session_rollup_bounce_duplicate_overcount_documented.
+// inaccuracy for dashboard visualization (see docs/architecture/clickhouse.md;
+// pinned by TestIntegration/session_rollup_bounce_duplicate_overcount_documented).
 func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granularity) bool {
 	session := spec.GetSession()
 	if session == nil {

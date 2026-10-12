@@ -18,7 +18,7 @@ import (
 
 // A person split across an anon id and their external_id must read as one
 // person to funnel, retention, funnel timing, top K and profile filters.
-// `whole` is the control throughout — same behavior under one id, so a failure
+// `whole` is the control throughout: same behavior under one id, so a failure
 // on it means the seed is wrong, not the stitching.
 func TestIdentityResolution(t *testing.T) {
 	if testing.Short() {
@@ -66,7 +66,7 @@ func TestIdentityResolution(t *testing.T) {
 			t.Errorf("step 1 (ir_add_to_cart): expected 2 users, got %v", rows[1].Value)
 		}
 		if rows[2].Value != 2 {
-			t.Errorf("step 2 (ir_purchase): expected 2 users, got %v — split's purchase under "+
+			t.Errorf("step 2 (ir_purchase): expected 2 users, got %v; split's purchase under "+
 				"\"split_ext\" must join the earlier \"anon-split\" steps into one windowFunnel "+
 				"chain", rows[2].Value)
 		}
@@ -121,7 +121,7 @@ func TestIdentityResolution(t *testing.T) {
 			t.Fatalf("no Jun 11 retention point in %d points", len(cohort.Points))
 		}
 		if dayOne != 100 {
-			t.Errorf("day-1 retention: expected 100%%, got %v%% — split enters the cohort as "+
+			t.Errorf("day-1 retention: expected 100%%, got %v%%; split enters the cohort as "+
 				"\"anon-split\" and returns as \"split_ext\"; both must resolve to one user_key", dayOne)
 		}
 	})
@@ -164,7 +164,7 @@ func TestIdentityResolution(t *testing.T) {
 			}
 		}
 		if reachedFinal != 2 {
-			t.Errorf("expected 2 users reaching ir_purchase, got %d — split's purchase sits "+
+			t.Errorf("expected 2 users reaching ir_purchase, got %d: split's purchase sits "+
 				"under \"split_ext\", whose own chain matches one step; only the stitched "+
 				"key reaches the final step", reachedFinal)
 		}
@@ -192,11 +192,11 @@ func TestIdentityResolution(t *testing.T) {
 		rows := runIdentityTopK(t, ctx, executor, true)
 
 		if got, ok := topKValue(rows, "cookieless-abc"); !ok || got != 1 {
-			t.Errorf("cookieless-abc: expected its own row with 1 event, got %v (present=%v) — "+
+			t.Errorf("cookieless-abc: expected its own row with 1 event, got %v (present=%v); "+
 				"a cookieless id must never resolve onto a person", got, ok)
 		}
 		if got, ok := topKValue(rows, "split"); !ok || got != 2 {
-			t.Errorf("profile \"split\": expected 2 with cookieless included, got %v (present=%v) — "+
+			t.Errorf("profile \"split\": expected 2 with cookieless included, got %v (present=%v); "+
 				"cookieless traffic must not be absorbed into a profile", got, ok)
 		}
 	})
@@ -246,16 +246,16 @@ func TestIdentityResolution(t *testing.T) {
 		// split and whole both attribute to US and both reach the final step.
 		want := []float64{2, 2, 2}
 		if got := byBucket["US"]; !slices.Equal(got, want) {
-			t.Errorf("US bucket = %v, want %v — first-touch must follow the person, "+
+			t.Errorf("US bucket = %v, want %v: first-touch must follow the person, "+
 				"so split's DE purchase counts under its US landing", got, want)
 		}
 		if got, ok := byBucket["DE"]; ok {
-			t.Errorf("DE bucket = %v, want absent — split_ext's purchase belongs to the "+
+			t.Errorf("DE bucket = %v, want absent: split_ext's purchase belongs to the "+
 				"person attributed at anon-split's first touch, not its own value", got)
 		}
 	})
 
-	// Trends UNIQUE_USERS deliberately does NOT stitch — the hottest path, where
+	// Trends UNIQUE_USERS deliberately does NOT stitch: the hottest path, where
 	// pre- and post-signup sessions arguably should count separately. Pinned so
 	// extending the identity join to trends is a decision, not an accident.
 	t.Run("trends_unique_users_deliberately_unstitched", func(t *testing.T) {
@@ -289,7 +289,7 @@ func TestIdentityResolution(t *testing.T) {
 		// Raw distinct_ids: anon-split, split_ext, whole_ext, other_ext
 		// (cookieless-abc excluded by default). Stitching would report 3.
 		if total != 4 {
-			t.Errorf("trends UNIQUE_USERS: expected 4 raw distinct_ids, got %v — trends counts "+
+			t.Errorf("trends UNIQUE_USERS: expected 4 raw distinct_ids, got %v; trends counts "+
 				"distinct_id, not the canonical person; see the identity-resolution docs", total)
 		}
 	})
@@ -329,7 +329,7 @@ func TestIdentityResolution(t *testing.T) {
 			t.Fatalf("expected 1 user, got %d: %+v", len(users), users)
 		}
 		if users[0].UserKey != "split" {
-			t.Errorf("UserKey = %q, want \"split\" — the filter must apply to both scans "+
+			t.Errorf("UserKey = %q, want \"split\": the filter must apply to both scans "+
 				"and both must key on the canonical person", users[0].UserKey)
 		}
 		if len(users[0].Times) != 2 {
@@ -370,7 +370,7 @@ func TestIdentityResolution(t *testing.T) {
 		// 3 pro events (anon-split, split_ext, whole_ext); other_ext is plan=free.
 		// A count of 4 would mean the filter stopped filtering.
 		if total != 3 {
-			t.Errorf("plan=pro ir_view: expected 3 events, got %v — the filter must match "+
+			t.Errorf("plan=pro ir_view: expected 3 events, got %v; the filter must match "+
 				"distinct_id against the full identity set, external_id included", total)
 		}
 	})
@@ -411,13 +411,13 @@ func TestIdentityResolution(t *testing.T) {
 		}
 
 		if got := run(t, nil); got != 3 {
-			t.Fatalf("unfiltered ira_view: expected 3 (anon-only + anon-alias + anon-free), got %v — seed is wrong", got)
+			t.Fatalf("unfiltered ira_view: expected 3 (anon-only + anon-alias + anon-free), got %v; seed is wrong", got)
 		}
 
 		// 2 = the profile's own id + its alias. 0 would mean the external_id
 		// guard excluded the profile outright; 3 would mean no filtering.
 		if got := run(t, planProGroups()); got != 2 {
-			t.Errorf("plan=pro ira_view: expected 2 events, got %v — a profile with no "+
+			t.Errorf("plan=pro ira_view: expected 2 events, got %v; a profile with no "+
 				"external_id must still resolve by profile id and by alias", got)
 		}
 	})
@@ -461,12 +461,12 @@ func TestIdentityResolution(t *testing.T) {
 
 		unfiltered := run(t, nil)
 		if unfiltered[1].Value != 2 {
-			t.Fatalf("unfiltered step 1: expected 2 (split + other), got %v — seed is wrong", unfiltered[1].Value)
+			t.Fatalf("unfiltered step 1: expected 2 (split + other), got %v; seed is wrong", unfiltered[1].Value)
 		}
 
 		filtered := run(t, planProGroups())
 		if filtered[0].Value != 1 || filtered[1].Value != 1 {
-			t.Errorf("plan=pro funnel: expected 1/1 (split only), got %v/%v — the filter must match "+
+			t.Errorf("plan=pro funnel: expected 1/1 (split only), got %v/%v; the filter must match "+
 				"both anon-split and split_ext, and only those", filtered[0].Value, filtered[1].Value)
 		}
 	})
@@ -511,7 +511,7 @@ func TestIdentityResolution(t *testing.T) {
 		}
 
 		if got := run(t, nil).GetCohortSize(); got != 2 {
-			t.Fatalf("unfiltered cohort: expected 2 (split + other), got %v — seed is wrong", got)
+			t.Fatalf("unfiltered cohort: expected 2 (split + other), got %v; seed is wrong", got)
 		}
 
 		cohort := run(t, planProGroups())
@@ -525,13 +525,13 @@ func TestIdentityResolution(t *testing.T) {
 			}
 		}
 		if dayOne != 100 {
-			t.Errorf("plan=pro day-1 retention: expected 100%%, got %v%% — split's irf_login under "+
+			t.Errorf("plan=pro day-1 retention: expected 100%%, got %v%%; split's irf_login under "+
 				"split_ext must pass the filter and rejoin the anon-split cohort entry", dayOne)
 		}
 	})
 
 	// A soft-deleted profile drops out of identity_union, so its ids must rank
-	// as themselves — a tombstoned person must not reassemble under erasure.
+	// as themselves: a tombstoned person must not reassemble under erasure.
 	t.Run("soft_deleted_profile_never_resolves", func(t *testing.T) {
 		rows := runIdentityTopKScope(t, ctx, executor, false, "ird_view", 21)
 
@@ -724,12 +724,12 @@ func seedIdentitySplit(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	}
 }
 
-// A distinct_id can be claimed by two profiles — one's external_id is the
+// A distinct_id can be claimed by two profiles: one's external_id is the
 // other's alias. identity_union resolves that to the lowest profile id, which
 // matters because the builders run two independent identity joins per query
 // (retention: cohorts + return_events; funnel timing: pre-filter + tagged):
 // were the winner arbitrary, the two could disagree and the failure would be
-// silent and total — retention drops to 0%, the person vanishes from timing.
+// silent and total (retention drops to 0%, the person vanishes from timing).
 func TestIdentityResolutionCollision(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -801,7 +801,7 @@ func TestIdentityResolutionCollision(t *testing.T) {
 		// 2 events. Without ANY, "shared" matches two identity rows and the
 		// join emits each event twice.
 		if total != 2 {
-			t.Errorf("total = %v, want 2 — a colliding distinct_id must not multiply "+
+			t.Errorf("total = %v, want 2: a colliding distinct_id must not multiply "+
 				"event rows; is the join still LEFT ANY JOIN?", total)
 		}
 		if len(rows) != 1 {
@@ -809,7 +809,7 @@ func TestIdentityResolutionCollision(t *testing.T) {
 		}
 		// min(profile_id) over the two claimants.
 		if rows[0].DimensionValue != "pa" {
-			t.Errorf("collision resolved to %q, want \"pa\" — the owner must be the lowest "+
+			t.Errorf("collision resolved to %q, want \"pa\": the owner must be the lowest "+
 				"profile id, not whichever row the join happened to pick", rows[0].DimensionValue)
 		}
 	})
@@ -845,7 +845,7 @@ func TestIdentityResolutionCollision(t *testing.T) {
 			}
 		}
 		if day1 != 100 {
-			t.Errorf("day-1 retention = %v, want 100 — the cohorts and return_events "+
+			t.Errorf("day-1 retention = %v, want 100: the cohorts and return_events "+
 				"joins must resolve a colliding distinct_id to the same person", day1)
 		}
 	})

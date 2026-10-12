@@ -14,7 +14,7 @@ import (
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 )
 
-// fakeChConn embeds a nil driver.Conn — only PrepareBatch is overridden. Any
+// fakeChConn embeds a nil driver.Conn; only PrepareBatch is overridden. Any
 // other method will panic via nil-interface dispatch, which is what we want
 // for a failing-path test (the processor only calls PrepareBatch).
 type fakeChConn struct {

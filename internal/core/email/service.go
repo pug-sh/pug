@@ -24,7 +24,7 @@ type Config struct {
 
 // Message, Provider, PermanentError, and the permanent-error helpers are
 // re-exported from spec so internal/deps/email/* can implement the Provider
-// contract without importing core/email — core/email constructs per-tenant
+// contract without importing core/email: core/email constructs per-tenant
 // providers from these types, which would otherwise create an import cycle.
 type Message = spec.Message
 

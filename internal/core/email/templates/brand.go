@@ -21,7 +21,7 @@ type Brand struct {
 // ProductName is the wordmark shown in the header and footer.
 const ProductName = "Pug"
 
-// Palette — the exact sRGB conversion of the app's light-theme OKLCH tokens
+// Palette: the exact sRGB conversion of the app's light-theme OKLCH tokens
 // (the CSS var each maps to is named in the trailing comment). Regenerate with
 // the same OKLab→sRGB math whenever :root in src/index.css moves.
 const (

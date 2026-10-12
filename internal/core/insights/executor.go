@@ -81,7 +81,7 @@ func truncateSQL(sql string) string {
 	return sql[:maxLoggedSQLLen] + "...[truncated]"
 }
 
-// isContextError reports whether err is a context cancellation or deadline — a
+// isContextError reports whether err is a context cancellation or deadline: a
 // client/request-lifecycle condition, not a ClickHouse fault. Such errors are
 // not logged or recorded (a disconnected or timed-out caller would otherwise
 // manufacture error-rate noise); the wrapped error still propagates so the
@@ -219,7 +219,7 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, projectID string, sql
 		}
 	}()
 
-	// Dispatch on the presence of the value_type column rather than column count —
+	// Dispatch on the presence of the value_type column rather than column count:
 	// less brittle if either query ever adds an unrelated projection.
 	hasValueType := slices.Contains(rows.Columns(), "value_type")
 
@@ -422,7 +422,7 @@ func (e *Executor) QueryTopK(ctx context.Context, projectID string, q TopKQuery)
 	var result []TopKRow
 	for rows.Next() {
 		var row TopKRow
-		// is_others is a UInt8 in ClickHouse — if(..., 0, 1) on the default
+		// is_others is a UInt8 in ClickHouse: if(..., 0, 1) on the default
 		// path, a constant 0 on the omit_others fast path.
 		var isOthers uint8
 		if err := rows.Scan(&row.DimensionValue, &isOthers, &row.Value); err != nil {
@@ -693,7 +693,7 @@ func applyTrendsTopN(
 			if c := cmp.Compare(entriesByKey[b].total, entriesByKey[a].total); c != 0 {
 				return c
 			}
-			// Tie-break on breakdown value ascending — matches rollup SQL
+			// Tie-break on breakdown value ascending: matches rollup SQL
 			// (sum(cnt) DESC, dim_value ASC) so $others bucketing is identical.
 			return cmp.Compare(a.breakdown, b.breakdown)
 		})

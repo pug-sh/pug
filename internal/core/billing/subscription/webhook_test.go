@@ -114,7 +114,7 @@ func TestOutOfOrderDeliveryIsRefusedByTheCAS(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — a stale delivery revived a cancelled subscription", ent.Slug)
+		t.Errorf("slug = %q, want free: a stale delivery revived a cancelled subscription", ent.Slug)
 	}
 	// Accepted, not retried: the provider is not at fault for delivering in any
 	// order it likes.
@@ -215,12 +215,12 @@ func TestPastDueHoldsTheOneLiveSlot(t *testing.T) {
 	provider.event = subEvent(f.orgID, "sub00000000000000061", "prod_u", corebilling.SubStatusActive)
 	err := f.svc.HandleDelivery(t.Context(), delivery("wh_past_due", time.Now()))
 	if !errors.Is(err, subscription.ErrTwoLiveSubscriptions) {
-		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions — past_due did not hold the slot", err)
+		t.Fatalf("err = %v, want ErrTwoLiveSubscriptions: past_due did not hold the slot", err)
 	}
 }
 
 // A live custom subscription resolves its terms from the entitlement row, so
-// deleting it drops an org still being charged — and reconcile looks for the inverse.
+// deleting it drops an org still being charged, and reconcile looks for the inverse.
 func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -248,7 +248,7 @@ func TestClearIsRefusedUnderALiveCustomSubscription(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if got := ent.IncludedEvents; got == nil || *got != 5_000_000 {
-		t.Errorf("quota = %v, want the deal's 5000000 — the org is still being charged", got)
+		t.Errorf("quota = %v, want the deal's 5000000: the org is still being charged", got)
 	}
 }
 
@@ -276,7 +276,7 @@ func TestASameSecondDeliveryCannotReviveACancelledSubscription(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — a same-second delivery revived a cancelled subscription", ent.Slug)
+		t.Errorf("slug = %q, want free: a same-second delivery revived a cancelled subscription", ent.Slug)
 	}
 }
 
@@ -304,7 +304,7 @@ func TestASameSecondCancellationEndsAnActiveSubscription(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — a same-second cancellation was dropped", ent.Slug)
+		t.Errorf("slug = %q, want free: a same-second cancellation was dropped", ent.Slug)
 	}
 	// Applied, not skipped: a reason here would file it as a lost payment.
 	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {
@@ -357,7 +357,7 @@ func TestRetryOfAnUnprocessedDeliveryReapplies(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugUsage {
-		t.Errorf("slug = %q, want the usage plan — the retry did not re-apply", ent.Slug)
+		t.Errorf("slug = %q, want the usage plan: the retry did not re-apply", ent.Slug)
 	}
 }
 
@@ -385,13 +385,13 @@ func TestRetryOfAProcessedDeliveryIsANoop(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Status != entitlement.StatusActive || ent.Slug != entitlement.SlugUsage {
-		t.Errorf("resolved %s/%s, want ACTIVE on the usage plan — a processed delivery was applied twice",
+		t.Errorf("resolved %s/%s, want ACTIVE on the usage plan: a processed delivery was applied twice",
 			ent.Status, ent.Slug)
 	}
 }
 
 // Every unapplicable delivery has one disposition: stored, marked processed with a
-// reason, never retried — retrying fixes none of them.
+// reason, never retried; retrying fixes none of them.
 func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -488,14 +488,14 @@ func TestUnapplicableDeliveriesAreAcceptedAndRecorded(t *testing.T) {
 				t.Fatalf("GetEntitlement: %v", err)
 			}
 			if ent.Slug != entitlement.SlugFree {
-				t.Errorf("slug = %q, want free — an unapplicable delivery changed the entitlement", ent.Slug)
+				t.Errorf("slug = %q, want free: an unapplicable delivery changed the entitlement", ent.Slug)
 			}
 		})
 	}
 }
 
 // Attribution falls back to the provider customer when a delivery carries no
-// org metadata — a renewal, say, which Dodo need not echo metadata onto.
+// org metadata: a renewal, say, which Dodo need not echo metadata onto.
 func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -521,10 +521,10 @@ func TestAttributionFallsBackToTheProviderCustomer(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.SubStatus != corebilling.SubStatusPastDue {
-		t.Errorf("sub_status = %q, want past_due — the fallback did not attribute the renewal", ent.SubStatus)
+		t.Errorf("sub_status = %q, want past_due: the fallback did not attribute the renewal", ent.SubStatus)
 	}
 	if ent.Slug != entitlement.SlugUsage {
-		t.Errorf("slug = %q, want the usage plan — past_due must keep the plan", ent.Slug)
+		t.Errorf("slug = %q, want the usage plan: past_due must keep the plan", ent.Slug)
 	}
 }
 
@@ -603,7 +603,7 @@ func TestCustomProductResolvesFromTheOrgRow(t *testing.T) {
 		t.Errorf("slug = %q, want custom", ent.Slug)
 	}
 	if ent.IncludedEvents == nil || *ent.IncludedEvents != quota {
-		t.Errorf("quota = %v, want %d — a deal's quota comes from pug, not the provider", ent.IncludedEvents, quota)
+		t.Errorf("quota = %v, want %d: a deal's quota comes from pug, not the provider", ent.IncludedEvents, quota)
 	}
 }
 
@@ -705,7 +705,7 @@ func TestSecondLiveSubscriptionIsRetriedNotConsumed(t *testing.T) {
 		t.Fatalf("read the live subscription: %v", err)
 	}
 	if live != "sub00000000000000032" {
-		t.Errorf("live subscription = %s, want the new sub00000000000000032 — the cutover completed", live)
+		t.Errorf("live subscription = %s, want the new sub00000000000000032: the cutover completed", live)
 	}
 }
 
@@ -768,7 +768,7 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 		t.Fatalf("count subscriptions: %v", err)
 	}
 	if subs != 0 {
-		t.Errorf("stored %d subscriptions, want 0 — a custom subscription maps through its row's product", subs)
+		t.Errorf("stored %d subscriptions, want 0: a custom subscription maps through its row's product", subs)
 	}
 	if got := storedDelivery(t, f, "evt_1").Error; !strings.HasPrefix(got, "product:") {
 		t.Errorf("delivery error = %q, want a product rejection", got)
@@ -776,7 +776,7 @@ func TestClearCannotStrandADeliveryInFlight(t *testing.T) {
 }
 
 // A product dropped from the config must not refuse a CANCELLATION. Refusing it
-// leaves the row active and the org on a tier it stopped paying for — an unmapped
+// leaves the row active and the org on a tier it stopped paying for: an unmapped
 // product may withhold a plan, never preserve one.
 func TestCancellationLandsWhenTheProductIsUnmapped(t *testing.T) {
 	if testing.Short() {
@@ -800,7 +800,7 @@ func TestCancellationLandsWhenTheProductIsUnmapped(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — an unmapped product kept a cancelled plan alive", ent.Slug)
+		t.Errorf("slug = %q, want free: an unmapped product kept a cancelled plan alive", ent.Slug)
 	}
 	if d := storedDelivery(t, f, "evt_cancel"); !d.ProcessedAt.Valid || d.Error != "" {
 		t.Errorf("cancellation processed=%v error=%q, want processed with no error", d.ProcessedAt.Valid, d.Error)
@@ -828,7 +828,7 @@ func TestPayloadOrgIDDoesNotAttributeADelivery(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugFree {
-		t.Errorf("slug = %q, want free — metadata.org_id attributed a subscription", ent.Slug)
+		t.Errorf("slug = %q, want free: metadata.org_id attributed a subscription", ent.Slug)
 	}
 	d := storedDelivery(t, f, "evt_forged")
 	if !strings.HasPrefix(d.Error, "attribution") {
@@ -863,7 +863,7 @@ func TestAnUnknownCheckoutRefDoesNotAttribute(t *testing.T) {
 
 // The negotiated-deal payment link: no checkout pug opened, so no ref. It
 // attributes on metadata.org_id paired with the product an operator staged for
-// that org — which is the only thing a buyer cannot set from a URL.
+// that org, which is the only thing a buyer cannot set from a URL.
 func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -891,7 +891,7 @@ func TestAStagedDealProductAttributesAPaymentLink(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.SubStatus != corebilling.SubStatusActive {
-		t.Errorf("sub_status = %q, want active — the staged deal did not attribute", ent.SubStatus)
+		t.Errorf("sub_status = %q, want active: the staged deal did not attribute", ent.SubStatus)
 	}
 }
 
@@ -999,11 +999,11 @@ func TestAttributionPrefersTheRefOverEverythingElse(t *testing.T) {
 		t.Fatalf("GetEntitlement: %v", err)
 	}
 	if ent.Slug != entitlement.SlugUsage {
-		t.Errorf("the ref's org resolved %q, want the usage plan — attribution did not prefer the ref", ent.Slug)
+		t.Errorf("the ref's org resolved %q, want the usage plan: attribution did not prefer the ref", ent.Slug)
 	}
 }
 
-// A dropped product must not refuse a cancellation — but with no stored row there
+// A dropped product must not refuse a cancellation, but with no stored row there
 // is no grant to end, so the refusal stands.
 func TestCancellationWithNoStoredRowKeepsTheProductRefusal(t *testing.T) {
 	if testing.Short() {

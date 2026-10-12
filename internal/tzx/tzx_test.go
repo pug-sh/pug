@@ -31,8 +31,8 @@ func TestValidate(t *testing.T) {
 	}
 	invalid := []string{
 		"Not/A/Zone",                // well-formed charset but unknown to tzdata
-		"Asia/Kolkata'; drop table", // injection attempt — fails charset
-		"Asia/Kolkata\"",            // quote — fails charset
+		"Asia/Kolkata'; drop table", // injection attempt: fails charset
+		"Asia/Kolkata\"",            // quote: fails charset
 		"a much too long timezone name that exceeds the sixty four character cap zzz",
 	}
 	for _, name := range invalid {
@@ -69,7 +69,7 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(Asia/Kolkata) error: %v", err)
 	}
-	// Asia/Kolkata is UTC+05:30 with no DST — a stable offset to assert on.
+	// Asia/Kolkata is UTC+05:30 with no DST, a stable offset to assert on.
 	_, offset := time.Date(2026, 6, 10, 0, 0, 0, 0, loc).Zone()
 	if offset != int((5*time.Hour+30*time.Minute)/time.Second) {
 		t.Errorf("Asia/Kolkata offset = %ds, want 19800s", offset)

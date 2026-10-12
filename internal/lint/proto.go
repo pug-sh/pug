@@ -10,7 +10,7 @@ import (
 )
 
 // propertyField matches a proto property field whose value is interpolated into
-// SQL text — ClickHouse map keys and JSON paths cannot be parameterized — so
+// SQL text (ClickHouse map keys and JSON paths cannot be parameterized), so
 // the proto pattern is the only thing between a client and the query.
 var (
 	propertyField  = regexp.MustCompile(`(?m)^\s*(?:repeated\s+|optional\s+)?(?:string|map<\s*string\s*,\s*string\s*>)\s+(\w*propert\w*)\s*=\s*\d+([^;]*);`)
@@ -18,7 +18,7 @@ var (
 )
 
 // The approved patterns admit only alphanumerics, underscore, dot and dash with
-// an optional leading $ — no quote or backslash can reach the SQL string. A new
+// an optional leading $: no quote or backslash can reach the SQL string. A new
 // pattern must be added here deliberately, which is the review this rule exists
 // to force.
 var safePropertyPatterns = map[string]bool{

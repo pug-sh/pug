@@ -353,7 +353,7 @@ func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFC
 func (s *Service) invalidateProject(ctx context.Context, project dbwrite.Project) {
 	// Detached here as well as inside invalidateTokens: the token listing is part
 	// of this post-commit work, and on the caller's cancelled context it would
-	// fail — invalidating none of the project's keys.
+	// fail, invalidating none of the project's keys.
 	ctx, cancel := detachedInvalidateCtx(ctx)
 	defer cancel()
 

@@ -43,7 +43,7 @@ func TestProviderSendWrapsClientErrorsAsPermanent(t *testing.T) {
 }
 
 // TestProviderSendEmptyResponseIsPermanent pins resend.go:53. A 200 with an
-// empty id is anomalous — likely an API surface drift or a proxy stripping
+// empty id is anomalous: likely an API surface drift or a proxy stripping
 // the body. Retrying won't help, so the worker must DLQ.
 func TestProviderSendEmptyResponseIsPermanent(t *testing.T) {
 	cases := []struct {
@@ -79,7 +79,7 @@ func TestProviderSendEmptyResponseIsPermanent(t *testing.T) {
 // means "already sent": a concurrent send clears on retry, a payload mismatch
 // never will, and an unrecognized code falls back to 4xx-is-permanent.
 //
-// wantMessage also pins that errorNameFromBody restores the body — consuming it
+// wantMessage also pins that errorNameFromBody restores the body: consuming it
 // would leave the SDK decoding nothing and reporting a bare "Conflict".
 func TestProviderSendSplitsIdempotencyConflicts(t *testing.T) {
 	cases := []struct {
@@ -136,7 +136,7 @@ func TestProviderSendSplitsIdempotencyConflicts(t *testing.T) {
 // TestProviderSendConflictBodyFallbacks pins the classifier's failure modes.
 // errorNameFromBody can't tell "not a conflict I know" from "couldn't read the
 // body", and both must land on the 4xx-is-permanent default rather than the
-// retry branch — an unbounded retry on an unreadable body would just spin.
+// retry branch: an unbounded retry on an unreadable body would just spin.
 func TestProviderSendConflictBodyFallbacks(t *testing.T) {
 	cases := []struct {
 		name string
@@ -167,8 +167,8 @@ func TestProviderSendConflictBodyFallbacks(t *testing.T) {
 	}
 }
 
-// TestProviderSendSurvivesTransportError pins that a transport failure — where
-// RoundTrip returns a nil response — classifies off a zero status instead of
+// TestProviderSendSurvivesTransportError pins that a transport failure, where
+// RoundTrip returns a nil response, classifies off a zero status instead of
 // dereferencing nil. A panic here would take down the worker.
 func TestProviderSendSurvivesTransportError(t *testing.T) {
 	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {

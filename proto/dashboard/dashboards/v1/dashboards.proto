@@ -40,7 +40,7 @@ message Dashboard {
   // Dashboard-level time window applied to every insight tile at render time.
   common.v1.TimeRangePreset default_time_range = 8 [(buf.validate.field).enum.defined_only = true];
   shared.insights.v1.Granularity default_granularity = 9 [(buf.validate.field).enum.defined_only = true];
-  // share_id is the crypto-random public share token — treat it as a secret
+  // share_id is the crypto-random public share token; treat it as a secret
   // (anyone with it can read the dashboard via SharedDashboardsService). Set
   // only while public sharing is enabled; empty when the dashboard has never
   // been shared OR sharing is currently disabled.
@@ -133,7 +133,7 @@ message ThresholdRule {
 
 // TileHeader customizes the tile's header rendering. All fields are optional.
 message TileHeader {
-  // Short label rendered in the tile header — typically a single grapheme
+  // Short label rendered in the tile header, typically a single grapheme
   // cluster (one emoji or character). Capped at 8 bytes, so multi-codepoint
   // emoji (flags, ZWJ-joined family sequences) may not fit; the FE should
   // fall back to no icon when the client-side grapheme count exceeds 1.
@@ -190,7 +190,7 @@ message VisualizationOptions {
 message GridPosition {
   // A position is optional, but when set it must be fully specified. A per-field
   // floor (w/h >= 1) can't fire on an unset field under edition-2023 explicit
-  // presence, so require both via message-level CEL — otherwise a partial
+  // presence, so require both via message-level CEL; otherwise a partial
   // position (x/y only) would store as a zero-size tile.
   option (buf.validate.message).cel = {
     id: "grid_position.complete"
@@ -249,7 +249,7 @@ message DashboardsServiceUpdateRequest {
   // Public sharing toggle, presence-aware (edition-2023 explicit presence):
   // OMIT to leave the current sharing state unchanged, true to enable, false to
   // disable. A client doing a partial update (e.g. renaming) should not send
-  // this field unless it intends to change sharing — sending false disables an
+  // this field unless it intends to change sharing: sending false disables an
   // active share.
   bool is_public = 6;
 }

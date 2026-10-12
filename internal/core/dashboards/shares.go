@@ -18,7 +18,7 @@ import (
 
 // newShareToken returns a 32-byte cryptographically-random token, hex-encoded
 // (64 chars). It is the sole secret gating the unauthenticated
-// SharedDashboardsService.Query, so it must come from crypto/rand — not a
+// SharedDashboardsService.Query, so it must come from crypto/rand, not a
 // monotonic id generator like xid (mirrors auth.newActionToken).
 func newShareToken() (string, error) {
 	b := make([]byte, 32)
@@ -31,7 +31,7 @@ func newShareToken() (string, error) {
 // dbwriteShareToDbread bridges the independently-generated write/read structs
 // for dashboard_shares (the columns match 1:1 but the Go types are distinct, per
 // the sqlc read/write split). Keep the field list in sync when a column is
-// added — a forgotten field compiles cleanly but silently zeroes the column on
+// added: a forgotten field compiles cleanly but silently zeroes the column on
 // the write-return path. TestDbwriteShareToDbread_FieldParity pins the count.
 func dbwriteShareToDbread(share dbwrite.DashboardShare) dbread.DashboardShare {
 	return dbread.DashboardShare{

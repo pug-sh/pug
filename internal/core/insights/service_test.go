@@ -176,7 +176,7 @@ func TestServiceGetFilterSchema(t *testing.T) {
 		if country.GetValueType() != commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING {
 			t.Errorf("$country value_type = %v, want STRING", country.GetValueType())
 		}
-		// Seeded with US, US, GB — three non-empty country events.
+		// Seeded with US, US, GB: three non-empty country events.
 		if country.GetCount() != 3 {
 			t.Errorf("$country count = %d, want 3", country.GetCount())
 		}
@@ -264,7 +264,7 @@ func TestServiceGetFilterSchema(t *testing.T) {
 
 // TestServiceGetFilterSchemaRollupDegraded pins the rollup-failure degradation
 // contract. When the dashboard_event_rollup_daily fast-path table is unavailable
-// (here simulated by dropping it — modelling migration 006 not applied, or a
+// (here simulated by dropping it, modelling migration 006 not applied, or a
 // transient ClickHouse failure), GetFilterSchema must:
 //   - still succeed (a rollup failure must NOT fail the whole schema),
 //   - keep the foundational sibling fetches populated (the rollup error must not
@@ -606,7 +606,7 @@ func TestProfilePropertyKeysMV_TypeInference(t *testing.T) {
 		"ltv":      "Int64",
 		"score":    "Float64",
 		"verified": "Bool",
-		// Array(Nullable(String)) is structured — surfaces verbatim and the Go
+		// Array(Nullable(String)) is structured: surfaces verbatim and the Go
 		// switch falls it through to OTHER. Pinned here so a refactor that
 		// changes the CH type name updates both sides together.
 		"tags": "Array(Nullable(String))",

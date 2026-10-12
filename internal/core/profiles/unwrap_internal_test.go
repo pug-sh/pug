@@ -158,7 +158,7 @@ func TestUnwrapJSONProperties(t *testing.T) {
 	})
 
 	t.Run("array_of_json_objects_recurses", func(t *testing.T) {
-		// CH type Array(JSON(...)) — the driver delivers []chcol.JSON and
+		// CH type Array(JSON(...)): the driver delivers []chcol.JSON and
 		// unwrap recurses element-wise so each nested map is materialized.
 		c1 := chcol.NewJSON()
 		c1.SetValueAtPath("email", chcol.NewVariantWithType("a@x", "String"))
@@ -221,7 +221,7 @@ func TestUnwrapJSONProperties(t *testing.T) {
 		// Profile.Properties rather than surfacing as debug strings to API
 		// consumers. The WARN log + counter side effects are not asserted
 		// here (would require slog/meter capture infrastructure not yet in
-		// the codebase) — the counter rate is the operator drift signal.
+		// the codebase); the counter rate is the operator drift signal.
 		j := chcol.NewJSON()
 		j.SetValueAtPath("weird", chcol.NewVariantWithType([]int{1, 2, 3}, "Array(Int32)"))
 		j.SetValueAtPath("kept", chcol.NewVariantWithType("hello", "String"))

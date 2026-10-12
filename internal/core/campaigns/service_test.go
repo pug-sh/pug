@@ -24,7 +24,7 @@ func TestCampaignsService(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 
-	// Create an org and project — campaigns have a foreign key to projects.
+	// Create an org and project: campaigns have a foreign key to projects.
 	write := dbwrite.New(db.PgW)
 	if _, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID:          "org-camp-test",
@@ -39,7 +39,7 @@ func TestCampaignsService(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	// Use nil for NATS producer — all campaigns use a future scheduled time,
+	// Use nil for NATS producer: all campaigns use a future scheduled time,
 	// so sendCampaignToNATS returns early without touching the producer.
 	svc := campaigns.NewService(db.PgRO, db.PgW, projectsSvc, nil)
 
@@ -157,7 +157,7 @@ func TestCampaignsService(t *testing.T) {
 		}
 		newFuture := time.Now().Add(48 * time.Hour)
 
-		// Use raw SQL to update — the sqlc-generated UpdateCampaign uses
+		// Use raw SQL to update: the sqlc-generated UpdateCampaign uses
 		// coalesce(nullif($2, ''), notification_data) which forces $2 to text type,
 		// conflicting with the jsonb column when called through pgx's extended protocol.
 		// The RPC handler works because Connect RPC uses the simple protocol.

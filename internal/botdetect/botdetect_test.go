@@ -25,8 +25,8 @@ func TestMatchUserAgent(t *testing.T) {
 		{"googlebot", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "Googlebot"},
 		{"curl", "curl/8.4.0", "curl"},
 		{"oversized", strings.Repeat("x", maxUALen) + headlessUA, ""},
-		// HTTP-client libraries are on the list too — what native and server
-		// SDKs send — which is why the enricher only tags $platform=web events.
+		// HTTP-client libraries are on the list too (what native and server
+		// SDKs send), which is why the enricher only tags $platform=web events.
 		{"okhttp (React Native Android)", "okhttp/4.12.0", "okhttp"},
 		{"go http client", "Go-http-client/2.0", "Go-http-client"},
 	}

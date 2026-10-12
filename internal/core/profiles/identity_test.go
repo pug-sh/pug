@@ -42,7 +42,7 @@ func TestIdentityUnionCTE_ReadsEachSourceOnce(t *testing.T) {
 }
 
 // arrayDistinct over the concatenated sources is what keeps a value repeated
-// between id, external_id and an alias_id from emitting two rows — an INNER
+// between id, external_id and an alias_id from emitting two rows: an INNER
 // JOIN consumer (profileActivitySummaryCTE) would merge its state twice.
 func TestIdentityUnionCTE_DedupsAcrossIDSources(t *testing.T) {
 	sql, _, err := profiles.IdentityUnionCTE().Build()

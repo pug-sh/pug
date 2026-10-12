@@ -18,7 +18,7 @@ import (
 // 'erase' and 'export' rows, and the erase path is scoped to kind = 'erase' in SQL
 // (GetEraseRequestByID). A stray/redelivered EraseMessage carrying an export row's
 // id must NOT hard-delete the subject, and the erasure-status RPC must not surface
-// an export row — both collapse to ErrDeletionRequestNotFound, and the export row
+// an export row: both collapse to ErrDeletionRequestNotFound, and the export row
 // is left untouched.
 func TestErasure_ExportRowIsNotErasable(t *testing.T) {
 	if testing.Short() {
@@ -145,7 +145,7 @@ func TestErasure_MultiSubjectReopenMatching(t *testing.T) {
 // TestComplianceRequests_IdentifierPresentConstraint pins finding I4: a request that
 // identifies no subject (both profile_id and external_id NULL) is unrepresentable
 // at the storage layer, so the illegal "recorded erasure that can identify nothing"
-// state can never be persisted — the runtime ErrNoErasableIdentifiers guard is only
+// state can never be persisted; the runtime ErrNoErasableIdentifiers guard is only
 // a backstop.
 func TestComplianceRequests_IdentifierPresentConstraint(t *testing.T) {
 	if testing.Short() {

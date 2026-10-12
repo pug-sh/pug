@@ -16,7 +16,7 @@ import (
 // Each DegradeReason drives a distinct operator response and ships to
 // events.cookieless_session_degraded_total as its `reason` label. DegradeReason
 // is a plain Go string type, not a proto enum, so there is no generated _name map
-// to range over — this test reads the constant declarations straight out of
+// to range over. This test reads the constant declarations straight out of
 // session.go with go/ast and requires every one to carry an explicit decision in
 // the table below. A new Degrade* constant added in code but not classified here
 // fails the build, forcing the author to state the one thing the type cannot:
@@ -41,14 +41,14 @@ func TestDegradeReasons_AreExhaustivelyClassified(t *testing.T) {
 
 	declared := degradeReasonConstsFromSource(t)
 	if len(declared) == 0 {
-		t.Fatal("found no Degrade* DegradeReason constants in session.go — the AST scan broke, not the code")
+		t.Fatal("found no Degrade* DegradeReason constants in session.go: the AST scan broke, not the code")
 	}
 
 	byValue := map[string]string{} // value -> const name, for duplicate detection
 	for name, value := range declared {
 		if _, ok := coarseFallback[DegradeReason(value)]; !ok {
-			t.Errorf("const %s = %q has no classification: add it to coarseFallback and decide — "+
-				"does SessionID return the coarse visitor-day fallback for it (true) or a real id (false)?",
+			t.Errorf("const %s = %q has no classification: add it to coarseFallback and decide. "+
+				"Does SessionID return the coarse visitor-day fallback for it (true) or a real id (false)?",
 				name, value)
 		}
 		if value == "" && name != "DegradeNone" {
@@ -61,7 +61,7 @@ func TestDegradeReasons_AreExhaustivelyClassified(t *testing.T) {
 		byValue[value] = name
 	}
 
-	// Reverse direction: the table must not drift ahead of the code either — every
+	// Reverse direction: the table must not drift ahead of the code either; every
 	// classified reason has to be a constant that actually exists in session.go.
 	for r := range coarseFallback {
 		if _, ok := byValue[string(r)]; !ok {
@@ -70,8 +70,8 @@ func TestDegradeReasons_AreExhaustivelyClassified(t *testing.T) {
 	}
 }
 
-// TestCorruptOrNone_IsTotal pins the None/Corrupt selector — the one place the
-// classification above is computed in production — as a total function, and pins
+// TestCorruptOrNone_IsTotal pins the None/Corrupt selector (the one place the
+// classification above is computed in production) as a total function, and pins
 // DegradeNone as the empty sentinel the throttle map and the handler rely on.
 func TestCorruptOrNone_IsTotal(t *testing.T) {
 	if got := corruptOrNone(true); got != DegradeCorruptState {

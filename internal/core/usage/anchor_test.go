@@ -75,7 +75,7 @@ func TestOrgPeriodsUsesEachOrgsOwnAnchor(t *testing.T) {
 
 	// What the cron widens its full recompute to: the February start, not March's.
 	if want := utc(2026, time.February, 17); !coreusage.EarliestPeriodStart(periods).Equal(want) {
-		t.Errorf("earliest = %s, want %s — a rescan stopping at the month boundary "+
+		t.Errorf("earliest = %s, want %s: a rescan stopping at the month boundary "+
 			"would silently under-count the anchored org", coreusage.EarliestPeriodStart(periods), want)
 	}
 }

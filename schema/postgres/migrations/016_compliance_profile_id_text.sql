@@ -11,8 +11,8 @@ alter table compliance_requests alter column profile_id type text;
 -- Intentionally a no-op. text is a superset of char(20), so the widening loses
 -- no data and needs no structural revert. The literal reverse (type char(20))
 -- is unsafe: it ERRORs ("value too long for type character(20)") on any
--- profile_id a post-widening erasure recorded that exceeds 20 chars — e.g. a
--- 41-char anon-<uuid> — which would make `goose down` past this migration
+-- profile_id a post-widening erasure recorded that exceeds 20 chars, e.g. a
+-- 41-char anon-<uuid>, which would make `goose down` past this migration
 -- un-runnable on real data. Leaving the column as text keeps rollback safe;
 -- re-narrowing is deliberately not offered.
 select 1;

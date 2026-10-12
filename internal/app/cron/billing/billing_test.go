@@ -97,7 +97,7 @@ func TestPassPrunesOnlyPastRetention(t *testing.T) {
 }
 
 // unreachableProvider fails every re-read, which is what makes Reconcile report
-// an unreadable subscription — the pass's failure exit.
+// an unreadable subscription: the pass's failure exit.
 type unreachableProvider struct{}
 
 func (unreachableProvider) Name() string { return dodo.Name }
@@ -170,7 +170,7 @@ func TestPassPrunesEvenWhenTheProviderIsUnreadable(t *testing.T) {
 		t.Fatal("pass returned nil though the provider could not be read")
 	}
 	if got := deliveryIDs(t, pg.PgRO); len(got) != 0 {
-		t.Errorf("deliveries = %v, want none — the failure skipped the prune", got)
+		t.Errorf("deliveries = %v, want none: the failure skipped the prune", got)
 	}
 }
 
@@ -252,7 +252,7 @@ func TestRunPrunesWithNoProviderConfigured(t *testing.T) {
 	}
 }
 
-// Contention is not failure — but the pass must also not have run. The stale
+// Contention is not failure, but the pass must also not have run. The stale
 // delivery surviving is what proves the lock was respected.
 func TestRunExitsZeroWhenAnotherPassHoldsTheLock(t *testing.T) {
 	if testing.Short() {

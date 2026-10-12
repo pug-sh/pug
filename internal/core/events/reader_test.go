@@ -459,7 +459,7 @@ func TestGetActivityFeed(t *testing.T) {
 	})
 
 	t.Run("filters by property", func(t *testing.T) {
-		// Filter for $country = US — only user-1 events have this, not anon-1
+		// Filter for $country = US: only user-1 events have this, not anon-1
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
@@ -482,7 +482,7 @@ func TestGetActivityFeed(t *testing.T) {
 	})
 
 	t.Run("filters by custom property", func(t *testing.T) {
-		// Filter for plan = pro — only user-1 events have this
+		// Filter for plan = pro: only user-1 events have this
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
@@ -777,7 +777,7 @@ func TestActivityFeed_AliasReassignment(t *testing.T) {
 		t.Fatalf("expected both direct and alias events for current profile, got direct=%v alias=%v", foundDirect, foundAlias)
 	}
 
-	// Reverse direction: querying user-1 must not surface moved_alias_event —
+	// Reverse direction: querying user-1 must not surface moved_alias_event;
 	// getAliasIDs must exclude moved-alias since its argMax row now points to
 	// user-2. A regression to a non-argMax query would leak the alias event
 	// here, which the forward direction alone cannot detect.
@@ -904,7 +904,7 @@ func TestActivityFeed_LookupPrecedence(t *testing.T) {
 // profile P (e.g., a race where P was tombstoned after the alias was
 // recorded). Events keyed by P's stale external_id exist. The guard at
 // reader.go's getExternalIDForProfile must exclude those events from the
-// resolved IN (...) filter — without it, the stale external_id leaks through.
+// resolved IN (...) filter: without it, the stale external_id leaks through.
 func TestActivityFeed_AliasToTombstoneExternalIDGuard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -938,7 +938,7 @@ func TestActivityFeed_AliasToTombstoneExternalIDGuard(t *testing.T) {
 		now.Add(-30*time.Minute),
 	)
 
-	// Event keyed by the alias itself. This SHOULD surface — alias resolution
+	// Event keyed by the alias itself. This SHOULD surface: alias resolution
 	// doesn't filter by profile-alive status (only the external-id lookup does).
 	aliasEID := uuid.NewString()
 	testutil.InsertEvent(ctx, t, ch.Conn, aliasEID, "proj-1", "alias-X", "alias_event", uuid.NewString(),
@@ -962,7 +962,7 @@ func TestActivityFeed_AliasToTombstoneExternalIDGuard(t *testing.T) {
 			t.Fatal("getExternalIDForProfile leaked the soft-deleted profile's external_id into the IN filter")
 		}
 	}
-	// Only the alias event should be present — the events for P (its id) and
+	// Only the alias event should be present: the events for P (its id) and
 	// ext-stale (its external_id) are filtered by the is_deleted=0 guard, and
 	// there are no other aliases of P.
 	if len(evts) != 1 {
@@ -1016,9 +1016,9 @@ func TestActivityFeed_CrossProjectIdentifierCollision(t *testing.T) {
 	}
 
 	// Three proj-1 events that distinguish correct vs regression resolution.
-	// Correct path: ids resolved to ("proj1-user", "proj1-ext", "shared-id") —
+	// Correct path: ids resolved to ("proj1-user", "proj1-ext", "shared-id"),
 	// matches all three direct/external/alias events.
-	// Regression path: ids resolved to ("shared-id", "proj2-ext") — misses the
+	// Regression path: ids resolved to ("shared-id", "proj2-ext"), misses the
 	// proj1-user and proj1-ext events, and surfaces the unrelated proj2-ext
 	// event that doesn't belong to proj1-user.
 	directEID := uuid.NewString()
@@ -1174,7 +1174,7 @@ func TestGetEventExplorer(t *testing.T) {
 	})
 
 	t.Run("does not resolve aliases", func(t *testing.T) {
-		// Query for user-1 — should NOT include anon-1 events
+		// Query for user-1, should NOT include anon-1 events
 		distinctID := "user-1"
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
 			ProjectID:  "proj-1",
@@ -1571,7 +1571,7 @@ func TestGetActivityHeatmap(t *testing.T) {
 	})
 
 	t.Run("time range boundary is half-open", func(t *testing.T) {
-		// [from, to) — from inclusive, to exclusive
+		// [from, to): from inclusive, to exclusive
 		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
@@ -1724,7 +1724,7 @@ func TestGetProfileStats(t *testing.T) {
 
 	// Seed events with auto_properties for user-1 in proj-1.
 	// Oldest event (day -5): browser=Firefox.
-	// Latest event (day 0): browser=Chrome — should be picked by argMax.
+	// Latest event (day 0): browser=Chrome, should be picked by argMax.
 	oldProps := map[string]string{
 		"$browser":        "Firefox",
 		"$browserVersion": "120",
@@ -1870,7 +1870,7 @@ func TestGetProfileStats(t *testing.T) {
 	})
 
 	t.Run("heatmap covers last 60 days only", func(t *testing.T) {
-		// Seed an event older than 60 days — should appear in stats but not heatmap.
+		// Seed an event older than 60 days, should appear in stats but not heatmap.
 		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "old_event", uuid.NewString(),
 			map[string]string{},
 			map[string]string{},
@@ -1900,7 +1900,7 @@ func TestGetProfileStats(t *testing.T) {
 	})
 
 	t.Run("sparse auto_properties returns empty strings for missing keys", func(t *testing.T) {
-		// Seed a newer event with only $os and $device — no $browser, $country, etc.
+		// Seed a newer event with only $os and $device: no $browser, $country, etc.
 		sparseProps := map[string]string{
 			"$os":     "Android",
 			"$device": "Pixel 8",

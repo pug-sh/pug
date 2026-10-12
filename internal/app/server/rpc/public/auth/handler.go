@@ -86,7 +86,7 @@ func logExternalProviders(ctx context.Context, cfg coreoauth.Config) {
 	if len(ids) == 0 {
 		msg := "no external sign-in providers configured"
 		if os.Getenv(legacyGoogleClientIDVar) != "" {
-			msg += "; " + legacyGoogleClientIDVar + " is set but no longer read — move Google into PUG_CONFIG_FILE"
+			msg += "; " + legacyGoogleClientIDVar + " is set but no longer read: move Google into PUG_CONFIG_FILE"
 		}
 		slog.WarnContext(ctx, msg)
 		return
@@ -433,7 +433,7 @@ func mapOAuthHandlerError(err error) error {
 		return apperr.PermissionDenied(apperr.ReasonInvitationWrongEmail, "this invite was sent to another email address")
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
 		// A failed/expired credential is an authentication failure, not a
-		// malformed request — return Unauthenticated so clients prompt re-auth
+		// malformed request; return Unauthenticated so clients prompt re-auth
 		// (mirrors SignInWithEmail). Message stays vague for anti-enumeration.
 		return apperr.Unauthenticated(apperr.ReasonOAuthCredentialInvalid, "oauth sign-in failed")
 	default:

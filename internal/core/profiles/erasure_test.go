@@ -230,7 +230,7 @@ func TestErasure_ByExternalIDWithNoProfile(t *testing.T) {
 	const ghostID = "ghost@example.com"
 	session := uuid.NewString()
 
-	// Events only — no profile row, no alias.
+	// Events only: no profile row, no alias.
 	for range 4 {
 		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, ghostID, "page_view", session,
 			map[string]string{}, map[string]string{}, now)
@@ -270,7 +270,7 @@ func TestErasure_ByExternalIDWithNoProfile(t *testing.T) {
 // TestErasure_ByID_FullErase pins the dashboard "delete this profile" entry
 // point (RequestErasureByID): the hard erasure must reach the events across the
 // full distinct_id fan-out (profile id + external_id + alias), the profile, and
-// the alias — not just the synchronous prelude.
+// the alias, not just the synchronous prelude.
 func TestErasure_ByID_FullErase(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -567,7 +567,7 @@ func pgCount(t *testing.T, ctx context.Context, pg *testutil.TestPostgres, query
 // cookieless id it can see.
 //
 // Migration 011 keeps cookieless- ids out of distinct_id_activity_states_mv, and
-// hasActivity probes exactly that rollup — so bare-id erasure used to report
+// hasActivity probes exactly that rollup, so bare-id erasure used to report
 // ErrProfileNotFound for an id whose events demonstrably exist. The original
 // rationale ("a cookieless id is unknowable to its own visitor, so no data
 // subject can present one") is true of a VISITOR-initiated DSAR but says nothing
@@ -608,7 +608,7 @@ func TestErasure_ByID_CookielessIsErasable(t *testing.T) {
 			sessions[did], map[string]string{}, map[string]string{}, now)
 	}
 
-	// Migration 011's WHERE still holds — the id is invisible to the activity
+	// Migration 011's WHERE still holds: the id is invisible to the activity
 	// rollup. Erasure must succeed anyway, which is the whole point.
 	if got := chCount(t, ctx, ch,
 		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?",
@@ -621,7 +621,7 @@ func TestErasure_ByID_CookielessIsErasable(t *testing.T) {
 		t.Fatalf("control activity rows = %d, want 1", got)
 	}
 	// Migration 011 deliberately leaves the session rollup unfiltered, so a
-	// cookieless visitor DOES have rows there — the one store where 011's
+	// cookieless visitor DOES have rows there: the one store where 011's
 	// "deliberately untouched" decision creates cookieless-specific residue on a
 	// compliance surface. Erasure has to clear it.
 	if got := chCount(t, ctx, ch,
@@ -634,7 +634,7 @@ func TestErasure_ByID_CookielessIsErasable(t *testing.T) {
 
 	requestID, status, err := svc.RequestErasureByID(ctx, projectID, cookielessID, "")
 	if err != nil {
-		t.Fatalf("RequestErasureByID(cookieless) = %v, want success — an id an admin can SEE must be erasable", err)
+		t.Fatalf("RequestErasureByID(cookieless) = %v, want success: an id an admin can SEE must be erasable", err)
 	}
 	if status != profiles.ComplianceStatusPending {
 		t.Errorf("status = %q, want pending", status)
@@ -712,7 +712,7 @@ func TestErasure_ByID_BotTaggedIsErasable(t *testing.T) {
 
 	requestID, status, err := svc.RequestErasureByID(ctx, projectID, botID, "")
 	if err != nil {
-		t.Fatalf("RequestErasureByID(bot-tagged) = %v, want success — erasure must stay bot-blind", err)
+		t.Fatalf("RequestErasureByID(bot-tagged) = %v, want success: erasure must stay bot-blind", err)
 	}
 	if status != profiles.ComplianceStatusPending {
 		t.Errorf("status = %q, want pending", status)

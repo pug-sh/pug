@@ -49,7 +49,7 @@ func TestSaltForDay_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Minted at 10:00 on day D, so it must die at D+2 00:00 — 38h later,
+		// Minted at 10:00 on day D, so it must die at D+2 00:00, 38h later,
 		// not saltMaxTTL after the mint. Anchored to the day, not to traffic.
 		want := 38 * time.Hour
 		if ttl > want || ttl < want-time.Minute {
@@ -174,13 +174,13 @@ func TestSessionID_Integration(t *testing.T) {
 // TestSessionID_OutOfOrderDoesNotFragment pins the watermark's monotonicity.
 //
 // An event landing more than sessionInactivity BEFORE the recorded last activity
-// belongs to a genuinely different (earlier) session — but recording ITS time as
+// belongs to a genuinely different (earlier) session, but recording ITS time as
 // the new last-activity rewrites the watermark backwards. The next event at the
 // original time then measures its gap against the rewound watermark, sees a fresh
 // gap, and mints again: two events with the SAME occur_time land in different
 // sessions, which no session model permits.
 //
-// Cross-batch by construction — each call is its own request. Sorting a batch by
+// Cross-batch by construction: each call is its own request. Sorting a batch by
 // occur_time cannot fix this, since batch 2 cannot be sorted against batch 1's
 // already-committed watermark. The guard has to live on the write.
 func TestSessionID_OutOfOrderDoesNotFragment(t *testing.T) {
@@ -218,7 +218,7 @@ func TestSessionID_OutOfOrderDoesNotFragment(t *testing.T) {
 // that lands INSIDE the window but BEHIND the watermark takes the slide path
 // instead, and slideSession must refuse to move the mark backwards.
 //
-// Mutation-verified — the suite was green against both of:
+// Mutation-verified. The suite was green against both of:
 //   - slideSession writing unconditionally (dropping `if occur.After(last)`)
 //   - withinInactivity comparing forward-only (dropping the abs)
 //
@@ -248,11 +248,11 @@ func TestSessionID_InWindowOutOfOrderKeepsOneSession(t *testing.T) {
 		t.Errorf("event 15min BEFORE last activity is within the window and must stay in the session: %q vs %q", got, first)
 	}
 
-	// 25min past the true watermark (base+20m) — inside the window. If the
+	// 25min past the true watermark (base+20m), inside the window. If the
 	// backward event above had been allowed to rewind the mark to base+5m, this
 	// would measure a 40min gap and mint a second session.
 	if got, _ := r.SessionID(ctx, "p1", did, "20260720", base.Add(45*time.Minute)); got != first {
-		t.Errorf("25min after the true watermark must stay in the session: %q vs %q — a backward event rewound the mark", got, first)
+		t.Errorf("25min after the true watermark must stay in the session: %q vs %q; a backward event rewound the mark", got, first)
 	}
 }
 
@@ -292,7 +292,7 @@ func (h *raceHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 // TestSaltForDay_LostMintRace_AdoptsWinner covers the SETNX-loser branch: when
 // two pods both observe an absent salt, the loser must adopt the winner's value
 // rather than keep the one it minted locally. A fork here means the same visitor
-// hashes to two different cookieless ids on the same day — one person counted as
+// hashes to two different cookieless ids on the same day: one person counted as
 // two, on every pod that lost, for a whole day.
 func TestSaltForDay_LostMintRace_AdoptsWinner(t *testing.T) {
 	if testing.Short() {
@@ -322,7 +322,7 @@ func TestSaltForDay_LostMintRace_AdoptsWinner(t *testing.T) {
 		t.Fatalf("losing the mint race must adopt the winner, not error: %v", err)
 	}
 	if !bytes.Equal(got, winner) {
-		t.Fatalf("adopted salt = %x, want the winner's %x — the fleet forked", got, winner)
+		t.Fatalf("adopted salt = %x, want the winner's %x: the fleet forked", got, winner)
 	}
 
 	// The adopted value must also be what lands in the cache, or the next call
@@ -377,7 +377,7 @@ func (h *sessionRaceHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook 
 // both try to mint. The loser's SetArgs returns the winner's value instead of
 // nil, and it must ADOPT that session rather than keep the one it just
 // generated. Without this, every pod that loses the race starts its own session
-// for a visitor who is mid-visit — one visit becomes N sessions under any
+// for a visitor who is mid-visit: one visit becomes N sessions under any
 // multi-replica deploy, and no single-pod test can see it.
 func TestSessionID_LostMintRaceAdoptsPriorSession(t *testing.T) {
 	if testing.Short() {
@@ -404,7 +404,7 @@ func TestSessionID_LostMintRaceAdoptsPriorSession(t *testing.T) {
 		t.Fatalf("losing a mint race is not a degradation, got reason %q", degraded)
 	}
 	if got != winner {
-		t.Errorf("session = %q, want the winner's %q — the loser kept its own session and the visit forked", got, winner)
+		t.Errorf("session = %q, want the winner's %q: the loser kept its own session and the visit forked", got, winner)
 	}
 }
 
@@ -444,16 +444,16 @@ func TestResolver_ConcurrentUse(t *testing.T) {
 	wg.Wait()
 
 	// Same inputs must have produced the same id on every goroutine that used
-	// the same day — a torn read of the salt map would show up as a fork.
+	// the same day: a torn read of the salt map would show up as a fork.
 	for i := 2; i < goroutines; i++ {
 		if ids[i] != ids[i%2] {
-			t.Errorf("goroutine %d id = %q, want %q — concurrent salt access forked the fleet", i, ids[i], ids[i%2])
+			t.Errorf("goroutine %d id = %q, want %q: concurrent salt access forked the fleet", i, ids[i], ids[i%2])
 		}
 	}
 }
 
 // failReadsHook makes every GET fail, driving SessionID down the get_failed
-// degrade path on every single call — the shape of a persistent fault.
+// degrade path on every single call: the shape of a persistent fault.
 type failReadsHook struct{ err error }
 
 func (h *failReadsHook) DialHook(next redis.DialHook) redis.DialHook { return next }
@@ -478,7 +478,7 @@ func (h *failReadsHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 // construction the ones that affect every event: a read-only replica after
 // failover, OOM under noeviction, or `SET NX GET` rejected outright by a Redis
 // older than 7.0. At ingest volume that is log-pipeline saturation, exception
-// spam, and every other error in the service buried — the counter is the alerting
+// spam, and every other error in the service buried; the counter is the alerting
 // signal, the log is not.
 //
 // The handler already solved exactly this for the salt path with its
@@ -488,7 +488,7 @@ func (h *failReadsHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 // reported, recurrence is throttled, and a new reason is never suppressed by a
 // different one.
 //
-// The returned DegradeReason is deliberately NOT throttled — the handler's
+// The returned DegradeReason is deliberately NOT throttled: the handler's
 // per-event counter must stay exact.
 func TestSessionID_RepeatedDegradeIsLoggedOnce(t *testing.T) {
 	if testing.Short() {
@@ -511,13 +511,13 @@ func TestSessionID_RepeatedDegradeIsLoggedOnce(t *testing.T) {
 		_, reason := r.SessionID(ctx, "p1", IDPrefix+"noisy", "20260720",
 			base.Add(time.Duration(i)*time.Second))
 		if reason != DegradeGetFailed {
-			t.Fatalf("event %d reason = %q, want %q — the per-event signal must survive throttling",
+			t.Fatalf("event %d reason = %q, want %q: the per-event signal must survive throttling",
 				i, reason, DegradeGetFailed)
 		}
 	}
 
 	if got := strings.Count(buf.String(), "cookieless session state unavailable"); got != 1 {
-		t.Errorf("logged %d times for %d events, want 1 — a persistent fault must not emit "+
+		t.Errorf("logged %d times for %d events, want 1: a persistent fault must not emit "+
 			"an ERROR line and a span exception per event", got, events)
 	}
 }
@@ -549,14 +549,14 @@ func (h *failWritesHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 //
 // This is the failure mode a plain "is Redis up?" check misses entirely. Reads
 // keep working, so the stitch path takes its happy branch and returns the RIGHT
-// session id — but the last-activity watermark freezes, and every later event
+// session id, but the last-activity watermark freezes, and every later event
 // measures its gap from the frozen mark until one exceeds sessionInactivity and
 // mints. One visit silently becomes several. Before this, slideSession discarded
 // the error and both callers reported healthy.
 // TestSessionID_CorruptStateIsReported pins that an unparseable stored session is
 // distinguished from an ordinary inactivity expiry.
 //
-// Both take the mint path, so the two were previously indistinguishable — no log,
+// Both take the mint path, so the two were previously indistinguishable: no log,
 // no counter, no DegradeReason, only the comment "Present but expired-by-inactivity
 // (or corrupt): mint below" naming the ambiguity and doing nothing with it. That
 // matters because the failure is silent AND permanent: dashboard_session_rollup is
@@ -586,7 +586,7 @@ func TestSessionID_CorruptStateIsReported(t *testing.T) {
 
 	sid, reason := r.SessionID(ctx, "p1", did, "20260720", base)
 	if reason != DegradeCorruptState {
-		t.Errorf("reason = %q, want %q — a corrupt value must not be reported as a clean mint",
+		t.Errorf("reason = %q, want %q: a corrupt value must not be reported as a clean mint",
 			reason, DegradeCorruptState)
 	}
 	if sid == "" {
@@ -597,10 +597,10 @@ func TestSessionID_CorruptStateIsReported(t *testing.T) {
 	// event in the same window rejoins the freshly minted session cleanly.
 	sid2, reason2 := r.SessionID(ctx, "p1", did, "20260720", base.Add(time.Minute))
 	if sid2 != sid {
-		t.Errorf("second event = %q, want the minted session %q — corrupt state was not overwritten", sid2, sid)
+		t.Errorf("second event = %q, want the minted session %q: corrupt state was not overwritten", sid2, sid)
 	}
 	if reason2 != DegradeNone {
-		t.Errorf("second event reason = %q, want none — the corrupt value should be gone", reason2)
+		t.Errorf("second event reason = %q, want none: the corrupt value should be gone", reason2)
 	}
 }
 
@@ -628,9 +628,9 @@ func TestSessionID_SlideFailureIsReported(t *testing.T) {
 	// slide could not persist and that has to be visible.
 	got, reason := r.SessionID(ctx, "p1", did, "20260720", base.Add(10*time.Minute))
 	if got != first {
-		t.Errorf("session = %q, want %q — a failed slide must not change which session the event joins", got, first)
+		t.Errorf("session = %q, want %q: a failed slide must not change which session the event joins", got, first)
 	}
 	if reason != DegradeSlideFailed {
-		t.Errorf("degrade reason = %q, want %q — a frozen watermark re-splits the session on later events and must not read as healthy", reason, DegradeSlideFailed)
+		t.Errorf("degrade reason = %q, want %q: a frozen watermark re-splits the session on later events and must not read as healthy", reason, DegradeSlideFailed)
 	}
 }

@@ -110,7 +110,7 @@ func TestUserPoolDeterministic(t *testing.T) {
 
 // DemoUsers (the postgres profile seeder's view of a user) must agree with the
 // event generator's view, or seeded profiles drift from the events they belong
-// to — same city, membership, and join date for the same distinct id.
+// to: same city, membership, and join date for the same distinct id.
 func TestDemoUsersMatchFactory(t *testing.T) {
 	f := newSessionFactory()
 	users := DemoUsers(len(f.users))
@@ -489,7 +489,7 @@ func TestPickJourneyMemberOnly(t *testing.T) {
 }
 
 // TestBotSessionShape pins that crawler sessions stay web-only, carry a low bot
-// score, use bot- distinct ids, and never emit commerce events — so bot traffic
+// score, use bot- distinct ids, and never emit commerce events, so bot traffic
 // can't pollute revenue/funnel charts.
 func TestBotSessionShape(t *testing.T) {
 	f := newSessionFactory()
@@ -544,7 +544,7 @@ func TestToLiveEventsCopiesAllFields(t *testing.T) {
 		t.Fatalf("property maps not copied: %+v", le)
 	}
 	if ne, nl := reflect.TypeFor[event]().NumField(), reflect.TypeFor[LiveEvent]().NumField(); ne != nl {
-		t.Errorf("event has %d fields, LiveEvent has %d — toLiveEvents must map all of them", ne, nl)
+		t.Errorf("event has %d fields, LiveEvent has %d; toLiveEvents must map all of them", ne, nl)
 	}
 }
 
@@ -604,7 +604,7 @@ func TestRecordActiveUser(t *testing.T) {
 // TestBackfillEventsRejectsBadBatch pins the batch-size guard: a non-positive
 // batch makes the insert loop's size==0 every iteration, so inserted never
 // advances and `for inserted < count` spins until ctx cancel. BackfillEvents
-// must reject it up front — before touching ClickHouse, so a nil conn here
+// must reject it up front, before touching ClickHouse, so a nil conn here
 // returns an error rather than panicking.
 func TestBackfillEventsRejectsBadBatch(t *testing.T) {
 	for _, batch := range []int{0, -1} {
@@ -659,7 +659,7 @@ func TestAutoAnyMapToVariantMap(t *testing.T) {
 
 	// Non-finite floats stay in the Float64 slot (ClickHouse Float64 carries
 	// nan/inf natively). This is a deliberate behavior change from the old proto
-	// path, which coerced them to String — a silent column-type flip here would
+	// path, which coerced them to String; a silent column-type flip here would
 	// mistype the property on every affected event.
 	for _, nf := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
 		got := autoAnyMapToVariantMap(ctx, "proj", map[string]any{"nf": nf})
@@ -751,8 +751,8 @@ func TestDemoUserAtPanics(t *testing.T) {
 }
 
 // TestSignupForcedOnce pins the signup cap: a user's first in-window session is
-// forced onto the signup/install journey, but a second in-window session is not
-// — so a user emits at most one signup and acquisition counts aren't inflated.
+// forced onto the signup/install journey, but a second in-window session is not,
+// so a user emits at most one signup and acquisition counts aren't inflated.
 func TestSignupForcedOnce(t *testing.T) {
 	f := newSessionFactory()
 	u := &f.users[0]
@@ -774,7 +774,7 @@ func TestSignupForcedOnce(t *testing.T) {
 
 // TestActiveSetCollection pins the invariant the no-profile-without-events
 // guarantee rests on: the users a backfill emits events for are all real,
-// in-range pool members that joined before the window end — never a future-join
+// in-range pool members that joined before the window end, never a future-join
 // user and never a bot.
 func TestActiveSetCollection(t *testing.T) {
 	f := newSessionFactory()

@@ -80,8 +80,8 @@ func TestCreateCheckoutSession(t *testing.T) {
 				} `json:"theme_config"`
 			} `json:"customization"`
 			FeatureFlags struct {
-				// A pointer, so the flag going unsent — which is Dodo defaulting it to
-				// true — reads differently from an explicit false.
+				// A pointer, so the flag going unsent, which is Dodo defaulting it to
+				// true, reads differently from an explicit false.
 				AllowCurrencySelection *bool `json:"allow_currency_selection"`
 				// Plain bools: unsent decodes false, which is the case each asserts against.
 				AllowCustomerEditingEmail bool `json:"allow_customer_editing_email"`
@@ -340,7 +340,7 @@ func TestFetchSubscriptionMatchesADelivery(t *testing.T) {
 
 // A read never carries the grace deadline. Inside Dodo's past_due window that makes
 // it unknown, so the stored one is kept; in any other state there is none to keep,
-// and the read says so — or a hold read after its window ended would keep a date
+// and the read says so, or a hold read after its window ended would keep a date
 // already past.
 func TestFetchSubscriptionKnowsTheGraceDeadlineOnlyOutsideAWindow(t *testing.T) {
 	for status, known := range map[string]bool{
@@ -475,7 +475,7 @@ func TestFetchCheckoutOutcome(t *testing.T) {
 		}
 	})
 
-	// pug writes org_id on the checkout — Dodo's PAYMENT metadata — and reads it off
+	// pug writes org_id on the checkout, Dodo's PAYMENT metadata, and reads it off
 	// the subscription; if it does not propagate, every confirmation fails.
 	t.Run("attribution falls back to the payment's metadata", func(t *testing.T) {
 		m := http.NewServeMux()

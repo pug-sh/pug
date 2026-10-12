@@ -336,7 +336,7 @@ func TestCompleteMagicLink_ExpiredInviteTokenRejected(t *testing.T) {
 // A pending invitation must survive the invitee requesting a plain login link
 // for the same email. Invites and login links are distinct token purposes, so
 // RequestMagicLink (which supersedes prior *login* links) must not consume the
-// invite token — otherwise the invitee silently lands in a fresh default org
+// invite token; otherwise the invitee silently lands in a fresh default org
 // instead of the inviting org.
 func TestCompleteMagicLink_PlainRequestPreservesPendingInvite(t *testing.T) {
 	if testing.Short() {
@@ -387,7 +387,7 @@ func TestCompleteMagicLink_PlainRequestPreservesPendingInvite(t *testing.T) {
 
 // A magic link is single-use even under concurrent redemption: firing N
 // completions of the same token (e.g. a double-click) must yield exactly one
-// success, with the rest returning ErrInvalidToken — never a CodeInternal from a
+// success, with the rest returning ErrInvalidToken, never a CodeInternal from a
 // duplicate-customer race. The FOR UPDATE lock on the token row serializes them.
 func TestCompleteMagicLink_ConcurrentRedemptionSerializes(t *testing.T) {
 	if testing.Short() {

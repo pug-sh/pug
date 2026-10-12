@@ -19,7 +19,7 @@ message IdentifyRequest {
   // reserved-prefix rule on BatchCreateRequest.distinct_id already refuses them
   // from clients. external_id needs the same guard because post-identify events
   // are keyed by external_id, so an id accepted here comes back as a distinct_id
-  // that the batch rule then rejects — and because that rule is `all()`, one such
+  // that the batch rule then rejects, and because that rule is `all()`, one such
   // user fails the WHOLE batch, taking unrelated users' events with it.
   string external_id = 1 [
     (buf.validate.field).required = true,
@@ -29,7 +29,7 @@ message IdentifyRequest {
       expression: "!this.startsWith('cookieless-')"
     }
   ];
-  // Profile properties — shallow-merged into existing properties. On key conflict,
+  // Profile properties: shallow-merged into existing properties. On key conflict,
   // these values take precedence over previously stored values.
   google.protobuf.Struct traits = 2;
   // The SDK-generated anonymous ID. The SDK should send this on first identify
@@ -39,7 +39,7 @@ message IdentifyRequest {
     pattern: "^$|^anon-"
   }];
   // The device to assign to this profile. The SDK should send this on first
-  // identify and on account switch (external_id changed) — not on every call,
+  // identify and on account switch (external_id changed), not on every call,
   // to avoid unnecessary DB writes. Omit for web SDKs without push support.
   string device_id = 4 [(buf.validate.field).string = {max_len: 36}];
 }

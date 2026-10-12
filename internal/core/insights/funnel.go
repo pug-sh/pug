@@ -30,12 +30,12 @@ type FunnelUserEvents struct {
 //
 // For each user, it walks events in time order and greedily matches: the first event
 // with step_match == current_step advances the funnel. The conversion window (in seconds)
-// is enforced from step 0's timestamp — if a later step exceeds the window, the user's
+// is enforced from step 0's timestamp: if a later step exceeds the window, the user's
 // funnel is truncated there. A windowSec of 0 means no window constraint; negative
 // values are rejected as invalid.
 //
 // projectID is included in log records and attached to the span via telemetry.RecordError
-// for operability. Pass an empty string only from non-RPC paths (unit tests, scripts) — an
+// for operability. Pass an empty string only from non-RPC paths (unit tests, scripts): an
 // empty value will appear as project_id="" on production spans.
 //
 // Users with no breakdowns (empty Breakdowns slice) are all grouped together,
@@ -144,7 +144,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 		}
 	}
 
-	// Seed zero-count rows if no users produced any keys — ensures the timing path
+	// Seed zero-count rows if no users produced any keys: ensures the timing path
 	// returns one row per step (like windowFunnel's countIf=0 rows).
 	// Checked after the loop so users with all-empty breakdown values correctly produce
 	// a real key during the loop, avoiding a spurious duplicate entry for the empty-breakdown key.
@@ -226,7 +226,7 @@ func MergeFunnelCountsAndTiming(countRows, timingRows []FunnelRow) []FunnelRow {
 // EffectiveWindowSec returns the conversion window in seconds for funnel queries.
 // If the request specifies a positive Duration, it is used directly.
 // Otherwise (absent, zero, or negative), defaults to the full time range duration.
-// Returns an error if no usable conversion_window is set and the time range is empty or inverted —
+// Returns an error if no usable conversion_window is set and the time range is empty or inverted:
 // this surfaces what would otherwise silently degrade to "no window constraint".
 func EffectiveWindowSec(req *insightsv1.QueryRequest) (int64, error) {
 	if d := req.GetSpec().GetConversionWindow().AsDuration(); d > 0 {

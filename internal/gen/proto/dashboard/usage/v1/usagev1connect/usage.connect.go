@@ -40,8 +40,8 @@ const (
 // UsageServiceClient is a client for the dashboard.usage.v1.UsageService service.
 type UsageServiceClient interface {
 	// Returns how many events the org's projects recorded in the current billing
-	// period — which runs from the org's billing anchor, defaulting to its signup
-	// anniversary rather than the 1st of the month — plus the per-project daily
+	// period (which runs from the org's billing anchor, defaulting to its signup
+	// anniversary rather than the 1st of the month) plus the per-project daily
 	// series behind it. The numbers come from a scheduled meter whose cadence the
 	// deployment sets, so read usage_computed_at for how stale they are rather than
 	// assuming one, and read counted before rendering used_events at all.
@@ -81,8 +81,8 @@ func (c *usageServiceClient) GetUsage(ctx context.Context, req *connect.Request[
 // UsageServiceHandler is an implementation of the dashboard.usage.v1.UsageService service.
 type UsageServiceHandler interface {
 	// Returns how many events the org's projects recorded in the current billing
-	// period — which runs from the org's billing anchor, defaulting to its signup
-	// anniversary rather than the 1st of the month — plus the per-project daily
+	// period (which runs from the org's billing anchor, defaulting to its signup
+	// anniversary rather than the 1st of the month) plus the per-project daily
 	// series behind it. The numbers come from a scheduled meter whose cadence the
 	// deployment sets, so read usage_computed_at for how stale they are rather than
 	// assuming one, and read counted before rendering used_events at all.

@@ -19,8 +19,8 @@ func opp(o commonv1.FilterOperator) *commonv1.FilterOperator { return &o }
 // matches "property_filter.between_ordered_values"; "not_in" matches "enum.not_in").
 //
 // Falls back to substring match against err.Error() for the case where a CEL
-// expression (e.g. `double(x)` on a non-numeric string) raises a runtime error
-// — protovalidate wraps these as plain errors, not ValidationError, but the
+// expression (e.g. `double(x)` on a non-numeric string) raises a runtime error:
+// protovalidate wraps these as plain errors, not ValidationError, but the
 // failing rule id appears in the message text.
 func hasRule(err error, ruleSubstring string) bool {
 	if ve, ok := errors.AsType[*protovalidate.ValidationError](err); ok {
@@ -45,7 +45,7 @@ func assertValid(t *testing.T, name string, f *commonv1.PropertyFilter) {
 }
 
 // assertInvalid asserts that the given PropertyFilter fails proto validation.
-// If expectedRule is supplied, one of the violations must have a matching rule id —
+// If expectedRule is supplied, one of the violations must have a matching rule id:
 // guards against an unrelated CEL rule firing instead and silently masking a removed/renamed rule.
 func assertInvalid(t *testing.T, name string, f *commonv1.PropertyFilter, expectedRule ...string) {
 	t.Helper()

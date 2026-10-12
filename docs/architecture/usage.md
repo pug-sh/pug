@@ -2,7 +2,7 @@
 
 Detailed reference for event usage metering (`internal/core/usage`,
 `internal/app/cron`, `proto/dashboard/usage`). Linked from the root
-[`CLAUDE.md`](../../CLAUDE.md) — read this when working on the meter, the
+[`CLAUDE.md`](../../CLAUDE.md). Read this when working on the meter, the
 `cron_state` job scaffolding, or the `GetUsage` read.
 
 How many events has an org sent this period? Pug answers that from a small
@@ -20,7 +20,7 @@ Three properties everything below preserves.
    because of a count, and no ingestion path imports `internal/core/usage`.
 2. **The meter is optional only with billing off.** A deployment that never
    schedules `pug cron usage` has no numbers: `GetUsage` reports an absent
-   `usage_computed_at`, which the client renders as "unknown" — never as zero.
+   `usage_computed_at`, which the client renders as "unknown", never as zero.
    With billing on, the billing meter (`cmd/cron/billing-meter`,
    [`payments.md`](payments.md) §4.2) sums the day cells this pass writes and
    states them to the payments provider, so a usage pass that is unscheduled or
@@ -30,8 +30,8 @@ Three properties everything below preserves.
 3. **Counts limit nothing.** No event is refused and there is no over-limit
    state: past its free allowance an org sees a banner, and `anchor_day` is the
    only column of `billing_entitlements` (migration 019) anything here reads. With
-   billing on, though, the counts are what pug bills from — the billing meter
-   splits each subscriber's period into the plan's tiers — so a wrong count is a
+   billing on, though, the counts are what pug bills from (the billing meter
+   splits each subscriber's period into the plan's tiers), so a wrong count is a
    wrong invoice, not only a wrong number on a page.
 
 ## 2. What gets counted
@@ -47,7 +47,7 @@ Three deliberate choices, each of which has a tempting wrong alternative:
   `event_id`, so a redelivered event is indistinguishable from a second event and
   the drift accumulates monotonically. Reading raw costs more and is correct.
 - **No `FINAL`.** `events` is a `ReplacingMergeTree`, so the same `event_id` may
-  physically exist several times before a merge collapses it — but `uniqExact`
+  physically exist several times before a merge collapses it, but `uniqExact`
   counts distinct ids, which is the same number before and after that merge.
   Paying for `FINAL` would buy nothing.
 
@@ -61,19 +61,19 @@ which is what lets a single query serve every org's period.
 
 Two tables (migration `018_create_usage.sql`):
 
-- **`usage_daily`** — `(project_id, day)` primary key, `org_id` denormalized,
+- **`usage_daily`**: `(project_id, day)` primary key, `org_id` denormalized,
   `event_count`. The grain is what makes one metering pass serve every org, what
   bounds `uniqExact`'s memory, and what the dashboard charts. It has no foreign
   key to `projects` (migration 023): the rows are the org's billing record, so
   they outlive a deleted project.
-- **`usage_periods`** — `(org_id, period_start)` primary key, plus `event_count`,
+- **`usage_periods`**: `(org_id, period_start)` primary key, plus `event_count`,
   `period_end` and `usage_computed_at`. A pre-summed total so the dashboard's
   per-page-load read is one row rather than a sum over daily rows.
 
 `period_end` is stored but never read back: `GetUsage` recomputes both bounds from
 the clock and the org's anchor (§3.1), because the period it answers for is always
 the current one. It is kept because the row is a record of what was summed, and
-that matters more now than when it was written — with anniversary periods a row's
+that matters more now than when it was written: with anniversary periods a row's
 window is not inferable from a reader's clock alone, since it depends on an
 `anchor_day` an operator can change afterwards. Do not delete it as unused.
 
@@ -87,21 +87,21 @@ covered in section 5.)
 
 ## 3.1 Timezone
 
-**Usage is UTC end to end** — day boundaries, period boundaries, everything.
+**Usage is UTC end to end**: day boundaries, period boundaries, everything.
 
 Periods are **per-org billing anniversaries**, not calendar months: an org that
 signed up on the 17th is metered 17th to 17th. `PeriodFor(now, anchorDay)`
 derives the window, and `AnchorDay` resolves the anchor from
 `billing_entitlements.anchor_day` when an operator has set one and from
-`orgs.create_time` otherwise — so every org has a window whether or not billing
+`orgs.create_time` otherwise, so every org has a window whether or not billing
 has ever written a row. `ListOrgUsageWindows` returns both inputs with the work
-list; the meter reads that one billing column and nothing else from the table —
-it needs the window, not the entitlement — and `GetOrgPeriod` is the single
+list; the meter reads that one billing column and nothing else from the table
+(it needs the window, not the entitlement), and `GetOrgPeriod` is the single
 derivation the RPC read path and the meter share.
 
 Two consequences worth holding onto. Period starts land on **UTC midnight** and
 never on an instant, because `RefreshPeriodUsage` sums day cells with
-`CeilDayUTC` on both bounds and is exact only for day-aligned windows — which is
+`CeilDayUTC` on both bounds and is exact only for day-aligned windows, which is
 why the anchor is a day-of-month integer. And an anchor past a month's length
 **clamps** (31 January, 28 February, 31 March), which `PeriodFor` re-derives from
 the anchor each month rather than carrying the clamp forward; `time.AddDate`
@@ -117,7 +117,7 @@ eventual "X of Y" would compare two numbers measured over the same one.
 This deliberately differs from insights, which bucket in the **project's**
 `reporting_timezone` (`bucketExpr` wraps the column in `toTimeZone`). An org can
 own several projects in different zones, so there is no single org-level zone to
-bucket by — and a usage number is an accounting figure, not a viewer's local
+bucket by, and a usage number is an accounting figure, not a viewer's local
 calendar. The consequence to be aware of: for a project on a non-UTC reporting
 timezone, its insights daily buckets and the usage daily series will disagree at
 the edges. They are answering different questions.
@@ -127,7 +127,7 @@ The meter's `toDate(occur_time, 'UTC')` names the zone explicitly.
 carries no zone of its own and every bare date function resolves against the
 ClickHouse **server's** timezone -- read from its config at **server start**, not
 frozen at `CREATE TABLE` time, so a later `TZ` change moves it under an existing
-table — a bare
+table. A bare
 `toDate()` would silently cut days on local midnight for anyone running ClickHouse
 with `TZ` set. No test covers that case: the shared test container is UTC, where
 bare and explicit `toDate` are identical.
@@ -139,9 +139,9 @@ untouched here.
 ## 4. Cadence
 
 `pug cron usage` (image `cron-usage`) meters once and exits. There is no
-long-running meter process — scheduling belongs to the deployment, so the cadence
+long-running meter process: scheduling belongs to the deployment, so the cadence
 is a k8s CronJob's `schedule`, not a constant in this repo. Hourly is the intended
-setting, but nothing enforces it — which is why no surface may state a staleness
+setting, but nothing enforces it, which is why no surface may state a staleness
 bound and every one must date-stamp the number it shows from `usage_computed_at`.
 The one bound anything holds this pass to is the billing meter's three hours,
 which is a refusal to bill from older counts rather than a promise to a viewer.
@@ -156,7 +156,7 @@ Each pass runs inside `cron.WithLock`, which holds a **transaction-scoped** advi
 lock (`pg_try_advisory_xact_lock`) so a slow run overlapping the next schedule
 cannot double-meter. The `xact` variant matters because the pass runs on a pooled
 connection: a session-scoped lock outlives the call that took it, and through a
-pool that cuts both ways — an unlock routed to a different connection silently
+pool that cuts both ways; an unlock routed to a different connection silently
 fails (Postgres only lets the holding session release it), so the lock rides its
 original connection back into the pool never released, while a later caller handed
 that same connection can release a lock it never took. A transaction-scoped one
@@ -179,7 +179,7 @@ bounded by something pug ships.
 
 Under that lock the pass runs two jobs:
 
-- **meter** — re-counts a trailing window (`PUG_USAGE_RESCAN_DAYS`, default 2)
+- **meter**: re-counts a trailing window (`PUG_USAGE_RESCAN_DAYS`, default 2)
   to absorb late arrivals, upserts the day cells, drops live projects' cells
   ClickHouse no longer returns, then re-sums every org's current period. Once
   every 24h it widens the window (`meterFrom`), catching late arrivals that fell
@@ -188,7 +188,7 @@ Under that lock the pass runs two jobs:
   it reaches back further. Both bounds are load-bearing and neither subsumes the
   other: with per-org anchors an org's period can have begun in the previous
   calendar month, and stopping at the month boundary would leave the earlier part
-  of it re-summed over days the pass had not re-read — while an org anchored a day
+  of it re-summed over days the pass had not re-read, while an org anchored a day
   or two ago has a period start *later* than the trailing rescan, so the
   anniversary alone would collapse a full pass back to those two days and stop
   reconciling erasures on older ones.
@@ -235,7 +235,7 @@ Under that lock the pass runs two jobs:
   `*_overflow_mode='break'` and an unavailable shard both return partial results
   with **no error**, and the query succeeding is precisely why no other layer can
   see it.
-- **prune** — daily, drops `usage_daily` rows older than ~13 months. Daily rather
+- **prune**: daily, drops `usage_daily` rows older than ~13 months. Daily rather
   than hourly because the retention boundary only moves once a day, so a more
   frequent pass would re-scan the same range to delete nothing.
 
@@ -254,7 +254,7 @@ makes its passes mutually exclusive, and the `cron_state` prefix its task
 timestamps live under. `cron.State` prefixes that name onto every key
 (`usage.prune`), so two jobs choosing the same task name cannot share a row, and
 passing the `Job` rather than a key plus a bare string is what stops the two
-halves disagreeing — a job taking one lock while stamping another's state.
+halves disagreeing: a job taking one lock while stamping another's state.
 
 The key itself is a hand-picked 64-bit namespace (`0x7075670000000000`) plus iota.
 iota rules out collisions among pug's own jobs; the namespace offset handles
@@ -265,12 +265,12 @@ reads as success: the second job finds the lock held, concludes another pass is
 covering its work, and exits 0 having done nothing.
 
 Task names are a `cron.Task` type rather than bare strings for the same reason a
-typo there is expensive and silent — `LastRun` finds no row, reports the zero time
+typo there is expensive and silent: `LastRun` finds no row, reports the zero time
 forever, and a task meant to run once a day runs on every single pass.
 
 `cron_state` is deliberately **control state, not run history**. It is written only
 on success and read only to gate work. "Did the job run, and did it work?" is not
-its question — see §7.
+its question; see §7.
 
 Day cells are upserted in pipelined batches of 1000: the meter writes one row per
 project per day, so a serial loop would be thousands of round-trips per pass. The
@@ -296,29 +296,29 @@ Two conflict branches, gated differently on purpose:
 
 | Statement | Gate | Why |
 |---|---|---|
-| `UpsertUsageDaily` | `where event_count is distinct from excluded.event_count` | A finished day inside the rescan window would otherwise be rewritten every pass — dead tuples, WAL and index churn for an unchanged number. |
+| `UpsertUsageDaily` | `where event_count is distinct from excluded.event_count` | A finished day inside the rescan window would otherwise be rewritten every pass: dead tuples, WAL and index churn for an unchanged number. |
 | `RefreshUsagePeriod` | ungated | `usage_computed_at` must advance every pass, idle org or not. One dead tuple per org per pass is that stamp's price. |
 
 The work list comes from `orgs`, not from `usage_daily`, so an org that has never
-sent an event still gets a period row — and therefore reads as a metered zero
+sent an event still gets a period row, and therefore reads as a metered zero
 rather than as an unmetered unknown.
 
 ## 5. RPC surface & authorization
 
 One RPC: `dashboard.usage.v1.UsageService/GetUsage` (JWT, org-scoped, **no**
-`x-project-id` — usage spans every project the org owns).
+`x-project-id`; usage spans every project the org owns).
 
 It returns the current period's total, the period bounds, `usage_computed_at`, and
 the per-project daily series. The `range` field bounds the **series only**; the
 headline total always covers the current period. A range is capped at 400 days by
 a protovalidate CEL rule, and retention prunes past ~13 months anyway. The series
 itself is capped at `coreusage.MaxDailyRows` (10,000): the 400-day cap bounds the
-days, nothing bounds projects-per-org, and a row is (day × project) — so without
+days, nothing bounds projects-per-org, and a row is (day × project), so without
 it a large org's wide request materializes the product. Rows come oldest-first, so
 a truncated series loses its newest days rather than an arbitrary slice.
 
 **Two fields, three states**, which is what keeps a client from ever reading a
-count the server has no basis for — invariant 2 is enforced by the wire shape
+count the server has no basis for. Invariant 2 is enforced by the wire shape
 rather than by client discipline:
 
 | `usage_computed_at` | `counted` | Meaning |
@@ -341,8 +341,8 @@ count as "computing". Roll the server out before the dashboard that reads it.
 The middle state is the wrinkle the meter creates: at a period rollover the new
 period has no `usage_periods` row until the next pass, which is *not* "never
 metered". `GetPeriodUsage` falls back to the org's most recent stamp so an org
-crossing its anniversary does not flip to "unknown" for a whole schedule interval
-— but it leaves `Counted` false, so no count goes out beside that stamp. Because
+crossing its anniversary does not flip to "unknown" for a whole schedule interval,
+but it leaves `Counted` false, so no count goes out beside that stamp. Because
 anchors are per-org these rollovers are spread across the month rather than
 hitting every dashboard on the 1st.
 An earlier revision emitted a placeholder `used_events: 0` there and asked clients
@@ -355,25 +355,25 @@ because the field's absence is invisible to it.
 Authorization is `authz.ResourceUsage` + `ActionRead`, recorded in
 `authz_registry.go` and enforced by `rpc.AuthzInterceptor` before the handler
 runs. It sits on the **viewer floor**: the person who notices a spike is rarely
-the admin. There are no create/update/delete actions — the meter writes these
+the admin. There are no create/update/delete actions: the meter writes these
 tables, no RPC does.
 
 Because the interceptor has already resolved the caller's role in the org, a
 request that reaches the handler is proof the caller belongs to it. The handler
 still resolves the org's anniversary window, which returns `NotFound` if the org
-row has since gone — reachable only through the positive role cache outliving a
+row has since gone, reachable only through the positive role cache outliving a
 deleted org, since no RPC deletes one.
 
 ## 6. Configuration
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2 — the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. |
+| `PUG_USAGE_RESCAN_DAYS` | `2` | Trailing window the meter recomputes each pass. Unset, `0` and negative all fall back to 2: the trailing rescan cannot be turned off. Above the 390-day retention window it clamps to it, since a wider scan re-inserts cells the same pass's prune deletes. |
 
 That is the whole surface. There is no enable flag: scheduling `pug cron usage` is
 the switch, and the RPC serves whatever it stored.
 
-Nothing runs the meter implicitly — not `pug server`, not `pug dev`. A deployment
+Nothing runs the meter implicitly: not `pug server`, not `pug dev`. A deployment
 (or a developer) that wants numbers schedules the job; until then `GetUsage`
 answers with an absent `usage_computed_at`, never a fabricated zero. A deployment
 with billing on must schedule it (invariant 2).
@@ -381,9 +381,9 @@ with billing on must schedule it (invariant 2).
 ## 7. Knowing whether the meter ran
 
 Deliberately not a table in this database. A job can only record failures it
-survives long enough to write, and the failure modes that actually bite — OOM kill,
+survives long enough to write, and the failure modes that actually bite (OOM kill,
 image pull failure, node eviction, a wrong `schedule`, the CronJob never being
-applied at all — are exactly the ones where nothing gets written. A run-history
+applied at all) are exactly the ones where nothing gets written. A run-history
 table is blind precisely where you need it, and it disagrees with k8s the moment a
 pod dies mid-pass (the table says "running", the Job says failed).
 
@@ -402,19 +402,19 @@ Three layers that do work, in order of usefulness:
    already stops the pass before it refreshes. Its idle twin -- empty with nothing
    stored -- does refresh, because a zero cross-checked against no stored cells is
    a verified count rather than a missing one.
-2. **The CronJob's own Job objects** — start/completion times and exit codes, which
+2. **The CronJob's own Job objects**: start/completion times and exit codes, which
    is why `Run` propagates the error rather than swallowing it.
-3. **OTLP** — the pass logs and `telemetry.RecordError`s at source, and emits four
+3. **OTLP**: the pass logs and `telemetry.RecordError`s at source, and emits four
    instruments from `internal/app/cron/usage`:
 
    | Metric | What it says |
    | --- | --- |
    | `usage.pass_total{outcome}` | `metered` \| `unverified` \| `lock_held` \| `setup_failed` \| `failed`. The first three exit 0, the last two exit non-zero. `unverified` is a pass that refreshed nothing, so a green `metered` never covers for one. |
    | `usage.pass_duration_seconds{outcome}` | Wall time. Approaching `passTimeout` means every later pass finds the lock held and exits 0. |
-   | `usage.unrefreshed_total{reason}` | `unverified_read` \| `unknown_projects` — the two section-4 dispositions that refresh nothing. The pass still exits 0 unless the prune half also failed. A sustained non-zero rate means layer 1 is about to fire; this says why, a stale-stamp window earlier. |
+   | `usage.unrefreshed_total{reason}` | `unverified_read` \| `unknown_projects`: the two section-4 dispositions that refresh nothing. The pass still exits 0 unless the prune half also failed. A sustained non-zero rate means layer 1 is about to fire; this says why, a stale-stamp window earlier. |
    | `usage.dropped_days_total` | Day cells reconciled away (section 4). Expected on erasure; also what a truncated read looks like. |
 
-   These explain layer 1, they do not replace it — and a missing series is not
+   These explain layer 1, they do not replace it, and a missing series is not
    proof of a missing run. Instrument registration errors are discarded, a
    binding failure at SDK startup silently leaves an instrument inert, and a
    `SetupSDK` failure returns before the pass emits anything at all.
@@ -433,7 +433,7 @@ Three layers that do work, in order of usefulness:
   floor are the mirror image: the reconcile drops day cells by date alone, while
   `OrgPeriods` re-sums only each org's *current* period, so an erasure landing in
   a closed period shrinks the daily series and leaves that period's stored total
-  standing. Anniversary anchors make that routine rather than rare — the floor now
+  standing. Anniversary anchors make that routine rather than rare: the floor now
   reaches back up to a full period on every full pass, where month-to-date crossed
   the boundary only on the first `PUG_USAGE_RESCAN_DAYS` of a month. Raising
   `PUG_USAGE_RESCAN_DAYS` widens the same gap.
@@ -444,7 +444,7 @@ Three layers that do work, in order of usefulness:
 - **An all-empty window is never reconciled** (§4), so a window whose events
   really were all erased keeps its stale day cells, and the period stays
   over-counted until a later window comes back with cells. That is the cost of
-  not letting one suspicious ClickHouse read wipe stored days — a wipe the next
+  not letting one suspicious ClickHouse read wipe stored days, a wipe the next
   pass repairs only for days still inside the widest window. The same window also
   refreshes no period, so the counts freeze **visibly**: the stamp stops advancing
   rather than reporting fresh-but-frozen numbers.
@@ -458,17 +458,17 @@ Three layers that do work, in order of usefulness:
   overflow settings, so the server profile governs.
 - **`usage_daily` is pruned; `usage_periods` is not.** Roughly 12 rows per org per
   year, kept indefinitely, so the daily series can age out from under a period
-  total that survives. Deliberate — the period row is the cheap answer the
+  total that survives. Deliberate: the period row is the cheap answer the
   dashboard reads, and re-deriving it after its days are gone is impossible.
 - **An idle deployment re-runs the full recompute on every pass**, because
   `full_recompute` is stamped only when the pass actually metered cells
-  (`len(usage) > 0`). Cheap by construction — there is nothing to scan — and the
+  (`len(usage) > 0`). Cheap by construction (there is nothing to scan), and the
   alternative stamps a window the meter never verified.
 - **The per-org period refresh is a serial loop**, one `RefreshUsagePeriod` round
   trip per org per pass, where the daily upserts are batched. Fine at hundreds of
   orgs, worth batching at tens of thousands.
-- **A systemic Postgres failure logs once per org.** Continue-on-error is right —
-  one org's failure should not cost the rest their refresh — but the tally is
+- **A systemic Postgres failure logs once per org.** Continue-on-error is right
+  (one org's failure should not cost the rest their refresh), but the tally is
   reported after N logs and N recorded exceptions, not instead of them.
 - **`stored == 0` is read as proof of idleness**, so the very first pass against a
   wiped `usage_daily`, or a fresh Postgres paired with an empty-but-healthy
@@ -484,16 +484,16 @@ Three layers that do work, in order of usefulness:
 
 ## 9. Out of scope
 
-- **Plans, quotas, limits and enforcement.** There is no tier model here — see
+- **Plans, quotas, limits and enforcement.** There is no tier model here; see
   invariant 3.
 - **An operator alert on runaway volume.** Nothing tells *us* when one project
   starts sending orders of magnitude more than it used to, so the first signal is
-  the ClickHouse bill. This is the natural home for one — the pass already visits
-  every project on a schedule and holds the day's counts in memory — and it needs
+  the ClickHouse bill. This is the natural home for one (the pass already visits
+  every project on a schedule and holds the day's counts in memory), and it needs
   no quota to be useful: "any project over N events/day, or M× its trailing
   median" catches the same traffic without importing an entitlement. Deliberately
   absent rather than forgotten. Note that an alert would be the first thing
-  here to *act* on a count, so it must stay on the read side of invariant 1 —
+  here to *act* on a count, so it must stay on the read side of invariant 1:
   telling someone, never throttling anyone.
 - **Payments of any kind.** No provider, no checkout, no ledger, no webhooks.
 - **Per-period usage history in the API.** `GetUsage` answers for the current

@@ -96,7 +96,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		afterID = devices[len(devices)-1].ID
 	}
 
-	// All deliveries failed — return error to retry via Nak (campaign stays InProgress).
+	// All deliveries failed; return error to retry via Nak (campaign stays InProgress).
 	if failCount > 0 && failCount == totalCount {
 		err := fmt.Errorf("campaign %s: all %d deliveries failed", campaign.ID, totalCount)
 		slog.ErrorContext(ctx, "all campaign deliveries failed", slogx.Error(err), slog.String("campaign_id", campaign.ID), slog.Int("total_count", totalCount))

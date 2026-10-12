@@ -94,7 +94,7 @@ func DecodeProfileSessionCursor(token string) (*ProfileSessionCursor, error) {
 			return nil, fmt.Errorf("invalid page token: non-positive event_count value %d", c.Value)
 		}
 	case ProfileSessionSortDuration:
-		// 0 is legitimate here — a single-event session.
+		// 0 is legitimate here: a single-event session.
 		if c.Value < 0 {
 			return nil, fmt.Errorf("invalid page token: negative duration value %d", c.Value)
 		}
@@ -119,7 +119,7 @@ type ProfileSessionsParams struct {
 // profileSessionColumns is the SELECT list; order must match scanProfileSession,
 // and profileSessionOrderExpr references these aliases.
 //
-// all_bot must not alias `bot` — HAVING max(bot) would bind the alias and fail as
+// all_bot must not alias `bot`: HAVING max(bot) would bind the alias and fail as
 // max(min(bot)); `session` must stay a String alias because the cursor compares as
 // a string and ClickHouse orders UUIDs differently from their text.
 //
@@ -154,7 +154,7 @@ func profileSessionOrderExpr(sort ProfileSessionSort) string {
 
 // profileSessionSortValue is the Go side of profileSessionOrderExpr; the two must
 // agree or a page seeks on a value the previous page never ordered by. They agree
-// only because occur_time is DateTime64(3) — at finer precision SQL's
+// only because occur_time is DateTime64(3): at finer precision SQL's
 // difference-of-truncations and Go's truncation-of-difference drift by up to 1ms.
 func profileSessionSortValue(sort ProfileSessionSort, s ProfileSession) int64 {
 	switch sort {
@@ -203,8 +203,8 @@ func scanProfileSession(rows driver.Rows) (ProfileSession, error) {
 // anonymous events are included. PageSize defaults to 100, capped at 1000; a nil
 // returned cursor means no more pages.
 //
-// Every page aggregates the profile's history over TimeRange — the keyset seek
-// filters sessions, not the events they are built from — so start, duration and
+// Every page aggregates the profile's history over TimeRange (the keyset seek
+// filters sessions, not the events they are built from), so start, duration and
 // count are exact however many events the profile has.
 //
 // Bot exclusion is session-level: a session with any tagged event is dropped whole
@@ -256,7 +256,7 @@ func (r *Reader) GetProfileSessions(
 			params.PageToken.Value, params.PageToken.SessionID)
 	}
 
-	// One row past the page so a cursor is emitted only when a further row exists —
+	// One row past the page so a cursor is emitted only when a further row exists:
 	// an exactly-full final page must not hand back a token to an empty page.
 	sql, args, err := q.
 		OrderBy(orderExpr+" DESC", "session DESC").

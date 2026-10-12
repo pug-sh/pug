@@ -28,7 +28,7 @@ import (
 
 // passTimeout bounds one pass end to end, like the reconcile's: the advisory lock is
 // held throughout, so a hang would turn every later tick into a green no-op. It also
-// bounds every statement's timestamp — the tick's start — which the provider
+// bounds every statement's timestamp, the tick's start, which the provider
 // rejects once it is an hour old.
 const passTimeout = 30 * time.Minute
 
@@ -148,8 +148,8 @@ func Run(ctx context.Context) error {
 		return setupFailed(ctx, "payments provider", err)
 	}
 	if !pay.Configured() || pay.Usage == nil {
-		// Billing on with no provider is a supported mode — allowances with no buy
-		// button — while nobody pays. A subscriber whose usage nothing states pays the
+		// Billing on with no provider is a supported mode (allowances with no buy
+		// button) while nobody pays. A subscriber whose usage nothing states pays the
 		// fee alone.
 		if live == 0 {
 			outcome = outcomeIdle
@@ -182,7 +182,7 @@ func Run(ctx context.Context) error {
 // verifyCatalog checks every catalog product before anything is stated: a product
 // missing a meter bills that tier at zero, one with a free threshold applies the
 // allowance twice, and one with any other meter attached bills what pug never
-// states — all silently. A deal's product is reconcile's to check.
+// states, all silently. A deal's product is reconcile's to check.
 func verifyCatalog(ctx context.Context, pay *corebilling.Payments) error {
 	for slug, productID := range pay.ProductBySlug {
 		plan, ok := entitlement.PlanBySlug(slug)

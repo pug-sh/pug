@@ -13,8 +13,8 @@ import (
 // cleanupDropTimeout bounds the per-test cleanup that drops a database or flushes
 // a Redis index once a test finishes. Those run on context.Background (t.Context
 // is already cancelled by cleanup time), which without a deadline would let a
-// wedged connection block the drop — and with it the rest of the sequentially run
-// package — until go test -timeout fired with a generic goroutine dump. This is
+// wedged connection block the drop, and with it the rest of the sequentially run
+// package, until go test -timeout fired with a generic goroutine dump. This is
 // the backstop against that hang: deliberately far longer than any real drop (a
 // ClickHouse sync drop under a saturated daemon must have room to finish, or it
 // fails and leaves its data behind) and far shorter than the suite timeout.
@@ -86,8 +86,8 @@ type lazyContainer[T any] struct {
 // get returns the shared container, starting it if this is the first call.
 //
 // A failed start is deliberately not memoized. Container starts time out when
-// the Docker daemon is saturated — which is exactly when a whole-suite run is
-// underway — and that is transient: the next test may well get its container.
+// the Docker daemon is saturated, which is exactly when a whole-suite run is
+// underway, and that is transient: the next test may well get its container.
 // Caching the error would turn one unlucky start into a failure for every
 // remaining test in the package, each reported against a stale message that
 // points at the daemon rather than at the test that actually tripped.
@@ -118,7 +118,7 @@ type teardownRegistry struct {
 // framework offers nowhere else to put it: TestMain cannot hand a value to the
 // tests that register against it, so the one process-wide instance is the only
 // thing both ends can reach. The type keeps that reachability from also meaning
-// the mutex and the slice are separately addressable — every caller goes through
+// the mutex and the slice are separately addressable: every caller goes through
 // a method that holds the right lock.
 var teardowns teardownRegistry
 
@@ -156,7 +156,7 @@ func (r *teardownRegistry) run() error {
 
 // runTeardown contains a panicking teardown, which would otherwise strand every
 // container still queued behind it and escape Main before it could exit with the
-// suite's own status — reporting a green run as a crash, under a stack through
+// suite's own status, reporting a green run as a crash, under a stack through
 // teardown plumbing.
 func runTeardown(fn func() error) (err error) {
 	defer func() {

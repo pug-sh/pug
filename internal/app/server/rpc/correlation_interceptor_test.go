@@ -28,7 +28,7 @@ func TestCorrelationInterceptor_SetsID(t *testing.T) {
 
 func TestCorrelationInterceptor_reusesExistingID(t *testing.T) {
 	// When an id is already in context (e.g. minted by WithCorrelationID outside
-	// the Connect chain), the interceptor must reuse it, not overwrite it — so the
+	// the Connect chain), the interceptor must reuse it, not overwrite it, so the
 	// id an authn rejection used matches the one a successful request logs.
 	var seen string
 	next := connect.UnaryFunc(func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {

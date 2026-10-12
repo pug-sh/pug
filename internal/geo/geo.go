@@ -9,8 +9,8 @@ import (
 // Auto-property keys used by geo providers.
 const (
 	// PropIP is the canonical visitor-IP key. The IP is personal data and is
-	// never persisted: the SDK ingestion handlers strip it before publishing —
-	// events in enrichGeo, identify traits in Identify — so it cannot reach NATS
+	// never persisted: the SDK ingestion handlers strip it before publishing
+	// (events in enrichGeo, identify traits in Identify), so it cannot reach NATS
 	// or ClickHouse, and providers must not emit it in their Location. The strip
 	// targets this canonical key (the only one our enrichment and SDKs produce).
 	// Kept only so the strip logic and IP-lookup providers can refer to it.
@@ -28,7 +28,7 @@ const (
 
 // Location is a set of geo properties resolved for a request.
 // Keys are auto-property names (e.g. "$country", "$city").
-// Providers decide which keys to populate — different providers may
+// Providers decide which keys to populate: different providers may
 // return different sets of keys.
 type Location map[string]string
 
@@ -46,8 +46,8 @@ const (
 // No Provider calls it, and neither does anything else: the Cloudflare provider
 // resolves geo from CF-* headers and never reads the IP, and cookieless identity
 // resolution needs the source too, so it calls ClientIPWithSource. This is the
-// bare extraction primitive a future IP-lookup Provider (see Provider) would use
-// — such a provider must hash/use the IP transiently and keep it out of the
+// bare extraction primitive a future IP-lookup Provider (see Provider) would use;
+// such a provider must hash/use the IP transiently and keep it out of the
 // returned Location, as the raw IP must never be persisted (see PropIP).
 //
 // Every candidate is parsed and re-serialised, and anything unparseable is
@@ -55,14 +55,14 @@ const (
 //
 //   - Framing. The hash is project ‖ 0x00 ‖ ip ‖ 0x00 ‖ ua, which is injective
 //     only while no field before the last can contain the separator. Parsing is
-//     what makes that true of ip by construction instead of by accident — Go's
+//     what makes that true of ip by construction instead of by accident: Go's
 //     HTTP/1.1 and HTTP/2 header validation happen to reject NUL today, so the
 //     property rested on the transport rather than on this function.
 //   - Canonical form. "2001:0DB8::0001" and "2001:db8::1" are one address; left
 //     as written they hash to two different visitors.
 //
 // NOTE: these headers are still CLIENT-SUPPLIED and are not authenticated here.
-// Validation makes the value well-formed, not trustworthy — an origin reachable
+// Validation makes the value well-formed, not trustworthy: an origin reachable
 // outside the CDN can be fed any address. Restricting who may set them belongs
 // at the edge (a trusted-proxy allowlist), not in this function.
 func ClientIP(h http.Header) string {
@@ -103,7 +103,7 @@ const (
 // The source exists for one reason: an empty IP is ambiguous, and its two causes
 // need different responses. No proxy header at all is normal for a direct-to-origin
 // deployment. A header that was present and failed to parse is a misconfiguration,
-// and a silent one — the caller falls back to the connection peer, which behind a
+// and a silent one: the caller falls back to the connection peer, which behind a
 // proxy is one address shared by every visitor, so an entire tenant's cookieless
 // population collapses onto a single identity per (peer, UA) per day while the
 // requests keep returning 200.
@@ -154,8 +154,8 @@ func ClientIPWithSource(h http.Header) (ip string, source IPSource) {
 //
 // Two spellings are collapsed because each would otherwise hash one client to
 // two visitors: the zone on "fe80::1%eth0" (names a local interface, not the
-// visitor), and IPv4-mapped IPv6 — netip renders "::ffff:203.0.113.7" in that
-// form, and dual-stack proxies emit it in X-Forwarded-For beside plain v4.
+// visitor), and IPv4-mapped IPv6 (netip renders "::ffff:203.0.113.7" in that
+// form, and dual-stack proxies emit it in X-Forwarded-For beside plain v4).
 // Pinned by TestParseClientIP_UnmapsIPv4InIPv6.
 func ParseClientIP(raw string) (string, bool) {
 	addr, err := netip.ParseAddr(strings.TrimSpace(raw))

@@ -99,7 +99,7 @@ func TestHandleSubscribe_RelinkOnResubscribe(t *testing.T) {
 
 	deviceID := xid.New().String()
 
-	// Step 1: Subscribe anonymously — no profile.
+	// Step 1: Subscribe anonymously, no profile.
 	anonData := makeSubscribeData(t, deviceID, projectID, "ios", "test-token", "")
 	if err := worker.ProcessMessage(ctx, anonData); err != nil {
 		t.Fatalf("anonymous ProcessMessage: %v", err)

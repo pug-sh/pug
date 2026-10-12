@@ -29,7 +29,7 @@ func sessionMetricReq(metric insightsv1.SessionMetric) *insightsv1.QueryRequest 
 // metrics ALWAYS count cookieless visitors.
 //
 // Unlike the count/agg metrics there is no include_cookieless branch to flip for
-// sessions — session builders measure per-session state and never read
+// sessions: session builders measure per-session state and never read
 // distinct_id, so cookieless traffic is counted unconditionally. The ingest
 // layer's events.cookieless_session_degraded_total metric description leans on
 // exactly this ("session metrics coarsen ... data is intact either way"); no
@@ -40,7 +40,7 @@ func sessionMetricReq(metric insightsv1.SessionMetric) *insightsv1.QueryRequest 
 // green.
 //
 // The table ranges over every SessionMetric the proto defines, so adding a new
-// one without a decision here fails the build — forcing the "does this read
+// one without a decision here fails the build, forcing the "does this read
 // distinct_id?" question whose only acceptable answer for a session metric is no.
 func TestSessionMetrics_NeverExcludeCookieless(t *testing.T) {
 	// buildable == an aggregatable session metric (sessionMetricAggExpr returns

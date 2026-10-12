@@ -30,17 +30,17 @@ type IdentifyRequest struct {
 	// reserved-prefix rule on BatchCreateRequest.distinct_id already refuses them
 	// from clients. external_id needs the same guard because post-identify events
 	// are keyed by external_id, so an id accepted here comes back as a distinct_id
-	// that the batch rule then rejects — and because that rule is `all()`, one such
+	// that the batch rule then rejects, and because that rule is `all()`, one such
 	// user fails the WHOLE batch, taking unrelated users' events with it.
 	ExternalId *string `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	// Profile properties — shallow-merged into existing properties. On key conflict,
+	// Profile properties: shallow-merged into existing properties. On key conflict,
 	// these values take precedence over previously stored values.
 	Traits *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
 	// The SDK-generated anonymous ID. The SDK should send this on first identify
 	// to trigger merge-and-soft-delete of the anonymous profile. Must start with "anon-".
 	AnonymousId *string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
 	// The device to assign to this profile. The SDK should send this on first
-	// identify and on account switch (external_id changed) — not on every call,
+	// identify and on account switch (external_id changed), not on every call,
 	// to avoid unnecessary DB writes. Omit for web SDKs without push support.
 	DeviceId      *string `protobuf:"bytes,4,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields

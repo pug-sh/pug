@@ -55,7 +55,7 @@ func validDate(s string) bool {
 
 // validate rejects a signature file that records agreement to nothing: an entry
 // with no id names nobody. The version is held to versionRe for the reason given
-// at its declaration — report.go interpolates it into an annotation unescaped.
+// at its declaration: report.go interpolates it into an annotation unescaped.
 func (f *SignatureFile) validate() error {
 	if f.CLAVersion == "" {
 		return errors.New("cla_version is missing or empty")
@@ -115,7 +115,7 @@ func (f *SignatureFile) signedAt(id int64, version string) bool {
 const webFlowID int64 = 19864447
 
 // principals reads the author and the committer of every commit. Both are
-// self-asserted — `--author=` and GIT_COMMITTER_EMAIL are free to set — so
+// self-asserted (`--author=` and GIT_COMMITTER_EMAIL are free to set), so
 // neither proves who pushed; they are collected because each names a distinct
 // copyright holder. The opener comes from the webhook and cannot be forged.
 func principals(commits []Commit, opener Principal) (found []Principal, unlinked []string) {

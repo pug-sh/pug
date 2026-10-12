@@ -79,7 +79,7 @@ func (s *Service) handleIdentityResult(ctx context.Context, provider ProviderNam
 		// them precisely; the handler keeps the client-facing message vague.
 		// Logged at Warn because per request they are the caller's fault, but a
 		// sustained rate means a misregistered redirect URI or a missing
-		// email_verified claim mapping — both otherwise invisible.
+		// email_verified claim mapping, both otherwise invisible.
 		if errors.Is(err, ErrInvalidCredential) || errors.Is(err, ErrUnverifiedEmail) || errors.Is(err, ErrEmailNotOnConnection) {
 			slog.WarnContext(ctx, "oidc sign-in rejected", slog.String("provider", string(provider)), slogx.Error(logged))
 			return nil, err

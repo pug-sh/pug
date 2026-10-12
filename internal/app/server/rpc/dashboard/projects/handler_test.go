@@ -332,9 +332,9 @@ func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
 // ----- Create: admin required → CodePermissionDenied + ReasonOrgAdminRequired ----
 
 // TestHandler_Create_NonAdminReturnsPermissionDenied verifies the admin gate on
-// project Create that lives in the CreateProjectAsAdmin SQL CTE — a race-safe,
+// project Create that lives in the CreateProjectAsAdmin SQL CTE: a race-safe,
 // service-level check distinct from (and defense-in-depth behind) the
-// AuthzInterceptor. Every non-admin role — member AND viewer — is rejected at the
+// AuthzInterceptor. Every non-admin role, member AND viewer, is rejected at the
 // CTE with ORG_ADMIN_REQUIRED.
 func TestHandler_Create_NonAdminReturnsPermissionDenied(t *testing.T) {
 	if testing.Short() {
@@ -528,7 +528,7 @@ func TestHandler_UpdateMeta_TimezoneOnlyPreservesName(t *testing.T) {
 //
 // Distinct code path from the "UTC" string (TestHandler_UpdateMeta_ClearsTimezoneToUTC):
 // a present "" is a non-nil pointer to empty, so it must enter the presence branch
-// (req.Msg.ReportingTimezone != nil), pass tzx.Validate(""), and be WRITTEN as "" —
+// (req.Msg.ReportingTimezone != nil), pass tzx.Validate(""), and be WRITTEN as "",
 // not treated as omitted (which would preserve the old zone). Re-reads via
 // GetProjectByID to assert persistence, not just the echoed RETURNING row.
 func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
@@ -600,7 +600,7 @@ func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
 // TestHandler_ProjectLifecycle_AdminAllowed exercises the admin happy path for the
 // project-lifecycle handlers (Delete / UpdateMeta / UpdateFCMServiceJSON). The
 // admin-only ROLE gate now lives in the AuthzInterceptor (see
-// rpc.TestRoleGatedAdminOnlyRPCs), so this no longer asserts denials — it only
+// rpc.TestRoleGatedAdminOnlyRPCs), so this no longer asserts denials; it only
 // confirms the handlers themselves run for an authorized caller.
 func TestHandler_ProjectLifecycle_AdminAllowed(t *testing.T) {
 	if testing.Short() {
@@ -666,7 +666,7 @@ func TestHandler_ApiKeys_Lifecycle(t *testing.T) {
 		if keys[0].GetKind() != projectsv1.ApiKeyKind_API_KEY_KIND_PUBLIC {
 			t.Errorf("starter key kind = %v, want PUBLIC", keys[0].GetKind())
 		}
-		// ListApiKeys is the only way to read a project's keys — Project carries none.
+		// ListApiKeys is the only way to read a project's keys: Project carries none.
 		if !strings.HasPrefix(keys[0].GetKey(), "pub_") {
 			t.Errorf("starter key = %q, want a pub_ key", keys[0].GetKey())
 		}
@@ -686,7 +686,7 @@ func TestHandler_ApiKeys_Lifecycle(t *testing.T) {
 		if !strings.HasPrefix(res.Msg.GetKey(), "prv_") {
 			t.Errorf("returned key = %q, want a prv_ key", res.Msg.GetKey())
 		}
-		// The response message itself must not carry the secret — only the
+		// The response message itself must not carry the secret; only the
 		// top-level key field does, and only here.
 		if got := res.Msg.GetApiKey().GetKey(); got != "" {
 			t.Errorf("ApiKey.key = %q, want empty for a private key", got)
@@ -796,12 +796,12 @@ func TestHandler_DeleteApiKey_IsProjectScoped(t *testing.T) {
 		t.Fatalf("ListApiKeys after: %v", err)
 	}
 	if len(after.Msg.GetApiKeys()) != 1 {
-		t.Errorf("victim now has %d keys — its key was deleted from another project's context", len(after.Msg.GetApiKeys()))
+		t.Errorf("victim now has %d keys: its key was deleted from another project's context", len(after.Msg.GetApiKeys()))
 	}
 }
 
 // Every key RPC scopes to the x-project-id project. A principal without one is
-// rejected before the service is reached — hence the nil service here, which
+// rejected before the service is reached, hence the nil service here, which
 // would panic if a handler ever stopped resolving the project first.
 func TestHandler_ApiKeys_RequireProjectScope(t *testing.T) {
 	srv := NewServer(nil)

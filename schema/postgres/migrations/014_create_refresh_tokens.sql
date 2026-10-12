@@ -7,7 +7,7 @@
 -- family_id groups one rotation chain: every issue() starts a new family, and each
 -- refresh consumes the current token and inserts its successor in the same family.
 -- If a token that has ALREADY been consumed is presented again (replay of a stolen
--- or leaked token), the whole family is revoked — a standard refresh-token
+-- or leaked token), the whole family is revoked, a standard refresh-token
 -- reuse-detection scheme.
 create table refresh_tokens (
   id char(20) primary key,

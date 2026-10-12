@@ -2,7 +2,7 @@ package authz
 
 // modelText is the Casbin model: RBAC with a role hierarchy and no domains.
 //
-//   - g(r.sub, p.sub): role hierarchy — a higher role inherits a lower role's
+//   - g(r.sub, p.sub): role hierarchy; a higher role inherits a lower role's
 //     permissions. Used ONLY for role->role links, never per-user, so nothing
 //     here depends on the database.
 //   - keyMatch(r.obj, p.obj): exact resource match today; also lets a future
@@ -41,7 +41,7 @@ const (
 	//   roleOwner = "ORG_ROLE_OWNER" // inherits admin; + org:delete, billing:manage
 )
 
-// crudActions are the actions "manage" grants — the only actions today. A future
+// crudActions are the actions "manage" grants, the only actions today. A future
 // non-CRUD action must be granted explicitly, never added here; see Action docs.
 var crudActions = []Action{ActionCreate, ActionRead, ActionUpdate, ActionDelete}
 
@@ -65,7 +65,7 @@ func read(role string, resources ...Resource) [][]string {
 	return rules
 }
 
-// grant builds explicit (role, resource, action) rules — the primitive read and
+// grant builds explicit (role, resource, action) rules: the primitive read and
 // manage are built from, and what a partial grant like create+delete uses.
 func grant(role string, res Resource, acts ...Action) [][]string {
 	rules := make([][]string, 0, len(acts))
@@ -90,7 +90,7 @@ var policyRules = buildPolicyRules()
 func buildPolicyRules() [][]string {
 	var rules [][]string
 
-	// viewer — the read-only floor member and admin inherit: every project-scoped
+	// viewer (the read-only floor member and admin inherit): every project-scoped
 	// resource plus the org-level entities any member can see.
 	rules = append(rules, read(roleViewer,
 		ResourceDashboard,
@@ -105,7 +105,7 @@ func buildPolicyRules() [][]string {
 		ResourceBilling,
 	)...)
 
-	// member — full CRUD on all project-scoped resources. The read half overlaps
+	// member: full CRUD on all project-scoped resources. The read half overlaps
 	// the viewer floor member inherits; the overlap is inert.
 	rules = append(rules, manage(roleMember,
 		ResourceDashboard,
@@ -114,7 +114,7 @@ func buildPolicyRules() [][]string {
 		ResourceProfile,
 	)...)
 
-	// admin — org administration (member perms inherited via groupingRules).
+	// admin: org administration (member perms inherited via groupingRules).
 	rules = append(rules, manage(roleAdmin,
 		ResourceOrg,
 		ResourceMember,
@@ -124,11 +124,11 @@ func buildPolicyRules() [][]string {
 		ResourceDomain,
 	)...)
 
-	// admin — minting and revoking a project's API keys. Explicit rather than
+	// admin: minting and revoking a project's API keys. Explicit rather than
 	// manage(): there is no update action to confer, and read is already the floor.
 	rules = append(rules, grant(roleAdmin, ResourceAPIKey, ActionCreate, ActionDelete)...)
 
-	// admin — starting a checkout or opening the payments portal. Create rather than
+	// admin: starting a checkout or opening the payments portal. Create rather than
 	// a new verb: both mint a provider session. The READ half stays on the floor.
 	rules = append(rules, grant(roleAdmin, ResourceBilling, ActionCreate)...)
 

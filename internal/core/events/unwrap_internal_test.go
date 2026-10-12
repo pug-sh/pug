@@ -13,7 +13,7 @@ import (
 // map[string]chcol.Variant into native Go values plus RFC3339Nano timestamp
 // strings. The activity-feed and event-explorer responses round-trip these
 // values through structpb.NewStruct, so any value type that structpb cannot
-// encode (e.g. raw time.Time) would 500 those handlers — pin both the type
+// encode (e.g. raw time.Time) would 500 those handlers; pin both the type
 // and the format.
 func TestUnwrapCustomProperties(t *testing.T) {
 	t.Run("nil_input_returns_nil", func(t *testing.T) {
@@ -46,7 +46,7 @@ func TestUnwrapCustomProperties(t *testing.T) {
 	t.Run("timestamp_normalised_to_rfc3339nano_utc", func(t *testing.T) {
 		// Construct a value in a non-UTC zone with sub-second precision; the
 		// helper must coerce to UTC and emit RFC3339Nano (the format is what
-		// JSON/structpb consumers downstream rely on — pin it).
+		// JSON/structpb consumers downstream rely on; pin it).
 		zone := time.FixedZone("PST", -8*3600)
 		ts := time.Date(2026, 4, 30, 2, 0, 0, 123456789, zone)
 		raw := map[string]chcol.Variant{

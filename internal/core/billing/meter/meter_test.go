@@ -331,7 +331,7 @@ func TestFreezesFromTheNominalRenewal(t *testing.T) {
 
 // An un-acked statement is re-sent only while its period is open. Past the nominal
 // renewal the provider is processing the new period, and a statement stamped now
-// could land in it — billing the old period's whole count a second time. What this
+// could land in it, billing the old period's whole count a second time. What this
 // costs is the accepted under-bill: the next period counts the statement as sent.
 func TestAnUnackedStatementIsNotResentPastTheRenewal(t *testing.T) {
 	f := setup(t)
@@ -466,7 +466,7 @@ func TestACutoversOverlapIsStatedOnce(t *testing.T) {
 // The deal is bought on 13 October and refused while the usage subscription is
 // live; that one renews on 15 October and is metered once in its new period before
 // it is cancelled, and the deal goes live. The deal's first window follows the
-// days the old subscription was seen live, not the old window's nominal end — so
+// days the old subscription was seen live, not the old window's nominal end, so
 // its second period follows its first, rather than re-billing the old window.
 func TestACutoverStraddlingTheOldRenewalIsStatedOnce(t *testing.T) {
 	f := setup(t)
@@ -506,7 +506,7 @@ func TestACutoverStraddlingTheOldRenewalIsStatedOnce(t *testing.T) {
 	}
 
 	// The deal's first window ends short of what it stated as its own, and its
-	// renewal follows that window — not the old subscription's, whose days were
+	// renewal follows that window, not the old subscription's, whose days were
 	// carried once already.
 	f.usage(t, d(11, 1), 400_000)
 	f.renew(t, d(11, 13), d(12, 13))
@@ -529,7 +529,7 @@ func TestACutoverStraddlingTheOldRenewalIsStatedOnce(t *testing.T) {
 
 // Cancelled at once and bought again before the old period's nominal end: the days
 // between were the org's on no subscription, and the new subscription's are its
-// own — neither reaches the provider through a carry of the old window.
+// own; neither reaches the provider through a carry of the old window.
 func TestAGapIsNotBilledThroughTheCarry(t *testing.T) {
 	f := setup(t)
 	f.subscribe(t, entitlement.SlugUsage, "cus_a", d(10, 3), d(11, 3))

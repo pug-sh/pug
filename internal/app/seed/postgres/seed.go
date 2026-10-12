@@ -71,7 +71,7 @@ func (s *Seeder) seedAccount(ctx context.Context) (dbread.Project, error) {
 	// Only the private key's digest is stored, so this log is the one and only
 	// place it appears. If it is missed, mint another from the project settings
 	// page rather than reaching for the database. The project's public key is not
-	// logged — unlike this one it stays readable, via ListApiKeys.
+	// logged: unlike this one it stays readable, via ListApiKeys.
 	slog.DebugContext(ctx, "account seed complete",
 		slog.String("project_id", project.ID),
 		slog.String("private_api_key", privateKey),
@@ -94,13 +94,13 @@ func (s *Seeder) seedProfilesForUsers(ctx context.Context, projectID string, ind
 	//     and a profile never exists without events). A crash after events commit
 	//     but before/during the ClickHouse copy is reconciled one level up by
 	//     ensureSeed (healDemoProfiles re-drives the idempotent copy from the
-	//     Postgres set) rather than looping back through here — so the worker
+	//     Postgres set) rather than looping back through here, so the worker
 	//     never re-seeds Postgres against a stale partial set.
 	//   - The CLI `seed --no-reset` path clears the demo profiles first
 	//     (ResetDemoProfiles), so it falls through to a real re-seed.
 	// A finer completion marker wouldn't help: synthetic events/merges carry
 	// random ids the ReplacingMergeTree can't dedup across runs, so re-running
-	// repairs nothing — a manual reset (`pug seed`) is the documented recovery.
+	// repairs nothing; a manual reset (`pug seed`) is the documented recovery.
 	var existing int64
 	if err := s.deps.pg.QueryRow(ctx,
 		"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", projectID,
@@ -258,7 +258,7 @@ var streetNames = []string{
 	"Elm St", "Pine Rd", "Washington Ave", "Lake Dr", "Hill Ct",
 }
 
-// Weighted breeds — this is a pug company, the demo skews accordingly.
+// Weighted breeds: this is a pug company, the demo skews accordingly.
 var breeds = []struct {
 	name   string
 	size   string
@@ -315,7 +315,7 @@ const profileSeed = 0xC0FFEE
 // (same home city/country the event generator gives this distinct id, and
 // pug_club membership matching the journeys the user runs) plus a deterministic
 // identified/anonymous split. Returns the properties and the external id, which
-// is "" for anonymous-only users — so the caller derives identified as
+// is "" for anonymous-only users, so the caller derives identified as
 // externalID != "". Keyed only on i (the DemoUser is derived internally from the
 // same index) so a mismatched (i, du) pair can't produce a Frankenstein profile.
 // Deterministic in i so every caller agrees.
@@ -412,7 +412,7 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string, indices []i
 
 // seedMerges simulates the identify-time merge flow for ~30% of identified profiles.
 // For each chosen profile, an anonymous profile is created with some properties,
-// given a device, merged into the identified profile, devices reassigned, then deleted —
+// given a device, merged into the identified profile, devices reassigned, then deleted,
 // mirroring the core merge steps from the identify worker (merge properties,
 // reassign devices, delete source).
 func (s *Seeder) seedMerges(ctx context.Context, projectID string, identifiedIDs []string) error {
@@ -616,8 +616,8 @@ func ResetDemoProfiles(ctx context.Context, pg *pgxpool.Pool, projectID string) 
 // CountDemoProfiles returns how many live (non-deleted) profiles exist for the
 // demo project. The demo worker compares this against the ClickHouse profile
 // count to detect a CopyProfilesToClickHouse that didn't finish (ClickHouse
-// behind Postgres) and re-drive it. It counts every demo profile — the
-// user-%05d rows and the xid-keyed merge artifacts — and excludes soft-deleted
+// behind Postgres) and re-drive it. It counts every demo profile (the
+// user-%05d rows and the xid-keyed merge artifacts) and excludes soft-deleted
 // rows, matching exactly what the copy moves (GetAllProfilesByProjectID filters
 // `deletion_time is null`), so a fully-copied project reads equal on both sides.
 func CountDemoProfiles(ctx context.Context, pg *pgxpool.Pool, projectID string) (int64, error) {

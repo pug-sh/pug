@@ -48,7 +48,7 @@ func TestOrgProviderRepoCacheHitAndMiss(t *testing.T) {
 		t.Fatalf("unexpected entry on miss: %+v", entry)
 	}
 
-	// Delete from DB, then call again — cache should still serve it.
+	// Delete from DB, then call again; cache should still serve it.
 	if _, err := write.DeleteOrgEmailProvider(ctx, org.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestOrgProviderRepoCacheHitAndMiss(t *testing.T) {
 		t.Fatal("expected cache hit, got miss after deletion")
 	}
 
-	// Invalidate, then call — should now reflect deletion.
+	// Invalidate, then call; should now reflect deletion.
 	if err := repo.Invalidate(ctx, org.ID); err != nil {
 		t.Fatalf("Invalidate: %v", err)
 	}
@@ -125,8 +125,8 @@ func TestOrgProviderRepoCorruptCacheEntry(t *testing.T) {
 // TestOrgProviderRepoIsolatesAcrossOrgs pins that the cache key carries the
 // orgID through correctly: two orgs with different providers must each
 // resolve to their own entry. A regression that built the cache key from a
-// captured constant — or that returned one org's cached entry for another's
-// query — would cause cross-tenant provider bleed and not fail today.
+// captured constant, or that returned one org's cached entry for another's
+// query, would cause cross-tenant provider bleed and not fail today.
 //
 // After deleting org-a's DB row, we ask for org-b: org-b's Get must still
 // return its own (non-deleted) entry. This is stronger than "different

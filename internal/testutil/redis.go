@@ -36,7 +36,7 @@ type sharedRedis struct {
 var redisContainer = &lazyContainer[sharedRedis]{kind: "redis", start: startRedis}
 
 // redisDBSeq hands out logical database indexes. It wraps at redisDBCount, so
-// an index can be reused by a later test in the same package — hence the flush
+// an index can be reused by a later test in the same package, hence the flush
 // on the way in as well as the way out.
 var redisDBSeq atomic.Uint64
 
@@ -45,7 +45,7 @@ var redisDBSeq atomic.Uint64
 // registered via t.Cleanup; the container is torn down by Main.
 func SetupRedis(t *testing.T) *TestRedis {
 	t.Helper()
-	// Scoped to the test — see the note in SetupPostgres for why the shared
+	// Scoped to the test; see the note in SetupPostgres for why the shared
 	// container and the cleanup below use context.Background instead.
 	ctx := t.Context()
 
@@ -72,8 +72,8 @@ func SetupRedis(t *testing.T) *TestRedis {
 		// Background, not t.Context: the test's context is already cancelled once
 		// cleanups run, so the flush would never be sent and this index would hand
 		// stale keys to whichever later test recycles it. The timeout backstops a
-		// wedged connection hanging the flush — and with it the rest of the
-		// sequential package — until go test -timeout (cleanupDropTimeout).
+		// wedged connection hanging the flush, and with it the rest of the
+		// sequential package, until go test -timeout (cleanupDropTimeout).
 		dropCtx, cancel := context.WithTimeout(context.Background(), cleanupDropTimeout)
 		defer cancel()
 		if err := client.FlushDB(dropCtx).Err(); err != nil {

@@ -20,7 +20,7 @@ import (
 // toolCallTimeout bounds a single in-process tool call.
 //
 // It exists because the go-sdk dispatches tool handlers on a jsonrpc2 context with
-// cancellation detached — Values still resolve, but Done and Deadline do not — so
+// cancellation detached (Values still resolve, but Done and Deadline do not), so
 // an agent that hangs up mid-call cancels nothing, and a wide query_insights would
 // keep a ClickHouse query running with nobody waiting for the answer. Every insight
 // and profile handler threads its context into the query, so this deadline is what
@@ -32,14 +32,14 @@ const toolCallTimeout = 2 * time.Minute
 // through the server's own mux instead of over TCP. It injects the caller's
 // private API key (stashed in the request context by withAPIKeyPassthrough) as an
 // x-api-key header so the inner Connect handler chain re-authenticates and
-// re-authorizes the tool call exactly like an external private-key API request —
+// re-authorizes the tool call exactly like an external private-key API request:
 // validation, authz, otel and logging interceptors all run unchanged, and the
 // request context carries the same correlation id end to end (it rides context
 // values, which survive the go-sdk's jsonrpc2 hop, rather than the middleware,
 // which the loopback re-enters beneath).
 //
 // The client is a singleton shared by every generated tool closure, so the caller's
-// key cannot be a field on it — that would be shared mutable state across
+// key cannot be a field on it: that would be shared mutable state across
 // concurrent tool calls from different projects, i.e. a cross-tenant credential
 // leak. Per-request state rides the per-request context, as Principal does.
 type loopbackClient struct {
@@ -53,10 +53,10 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 	// A panic escaping the in-process handler would be fatal. On the network path
 	// net/http recovers handler panics per connection, but a tool call runs the
 	// handler on a go-sdk jsonrpc2 goroutine that recover never reaches, so the panic
-	// would kill the process — a multi-tenant outage any private-key holder could
+	// would kill the process: a multi-tenant outage any private-key holder could
 	// trigger. rpc.RecoverHandlerPanic (wired via connect.WithRecover in server.start)
 	// is the first line of defence and contains panics inside the Connect chain with a
-	// proper code and telemetry; this is the backstop for everything outside it — the
+	// proper code and telemetry; this is the backstop for everything outside it: the
 	// authn middleware, mux routing, and the http.ErrAbortHandler panics connect
 	// deliberately re-panics. Reporting an error surfaces a failed tool to the model
 	// rather than a dropped connection.
@@ -64,8 +64,8 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 		if r := recover(); r != nil {
 			// The panic value stays server-side. protoc-gen-go-mcp's runtime.HandleError
 			// prefers the full wrapped chain over the connect.Error's own message, so
-			// whatever is assigned to err here becomes the tool error text the model reads
-			// — and a panic value can carry internal detail (a query fragment, a struct
+			// whatever is assigned to err here becomes the tool error text the model reads,
+			// and a panic value can carry internal detail (a query fragment, a struct
 			// dump). This layer is the one that catches panics from the authn middleware,
 			// where that detail is the most likely to be credential-adjacent.
 			detail := fmt.Errorf("mcp loopback: recovered panic serving %s: %v", req.URL.Path, r)
@@ -108,12 +108,12 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 // panicToolError is everything a recovered panic reports to the caller: a static
 // message, plus the correlation id that leads an operator back to the log line
 // holding the panic value and stack. It mirrors rpc.RecoverHandlerPanic's bare
-// "internal error" — the same sanitisation, one layer up — while keeping that handle.
+// "internal error" (the same sanitisation, one layer up) while keeping that handle.
 //
 // The id rides the message rather than the google.rpc.RequestInfo detail that
 // rpc.attachDetails would normally carry it in: this is a transport error, so it
 // never becomes a connect.Error and no details survive into the tool result.
-// Disclosing it costs nothing and is already the contract everywhere else — it is a
+// Disclosing it costs nothing and is already the contract everywhere else: it is a
 // random xid, and every RPC error returns one today.
 //
 // WithCorrelationID wraps the whole mux, outside authn, so a real /mcp request always
@@ -133,7 +133,7 @@ func panicToolError(ctx context.Context) error {
 //
 // code doubles as the commit flag: 0 means the status has not been written yet, so
 // the zero value is already valid and only the first WriteHeader (or the implicit
-// commit on the first Write) takes effect — both matching net/http.
+// commit on the first Write) takes effect, both matching net/http.
 //
 // It deliberately does NOT implement http.Flusher, and that omission is
 // load-bearing rather than an oversight. connect requires a Flusher only for
@@ -178,7 +178,7 @@ func (r *responseRecorder) result(req *http.Request) *http.Response {
 		StatusCode: code,
 		// The numeric code belongs in Status: connect surfaces this string verbatim as
 		// the error message whenever the body is not connect-wire JSON (an inner-mux 404,
-		// say), and on that path nothing else is logged — "404 Not Found" is far more
+		// say), and on that path nothing else is logged; "404 Not Found" is far more
 		// actionable to an operator, and to the model, than a bare "Not Found".
 		Status:        fmt.Sprintf("%d %s", code, http.StatusText(code)),
 		Proto:         "HTTP/1.1",

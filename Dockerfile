@@ -46,7 +46,7 @@ ENTRYPOINT ["/app/app"]
 
 # ---- worker runtime: binary + nats config (schema/nats) ----
 # Workers are NATS consumers (no HTTP port). Each reads schema/nats/consumers.yaml at
-# startup (GetConsumerConfigByName), resolved relative to cwd — so WORKDIR must stay /app.
+# startup (GetConsumerConfigByName), resolved relative to cwd, so WORKDIR must stay /app.
 # The whole schema/nats dir is copied for simplicity; streams.yaml rides along but is read
 # only by the migrate/nats role, not by workers.
 FROM gcr.io/distroless/static-debian13:nonroot AS worker

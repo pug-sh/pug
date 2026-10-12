@@ -342,7 +342,7 @@ func (r *Reader) getProfileIDForIdentifier(ctx context.Context, projectID, disti
 // getExternalIDForProfile returns the current external ID for a non-deleted
 // profile. Empty string means the profile is not found, is soft-deleted, or
 // has no external ID set. Soft-deleted profiles are excluded so their stale
-// external IDs do not feed back into the events IN (...) filter — matching
+// external IDs do not feed back into the events IN (...) filter, matching
 // the is_deleted=0 guard in getProfileIDForIdentifier.
 func (r *Reader) getExternalIDForProfile(ctx context.Context, projectID, profileID string) (string, error) {
 	sql, args, err := chq.NewQuery().
@@ -436,7 +436,7 @@ type EventCursor struct {
 }
 
 // Encode returns the cursor as a base64-encoded JSON string for use as a page token.
-// NOTE: Does not validate cursor fields — all call sites construct cursors from
+// NOTE: Does not validate cursor fields; all call sites construct cursors from
 // valid ClickHouse query results. DecodeEventCursor validates on the decode side.
 func (c *EventCursor) Encode() (string, error) {
 	b, err := json.Marshal(c)
@@ -464,7 +464,7 @@ func DecodeEventCursor(token string) (*EventCursor, error) {
 }
 
 // EventExplorerParams configures the GetEventExplorer query.
-// String filter fields are optional — empty means no filter.
+// String filter fields are optional: empty means no filter.
 type EventExplorerParams struct {
 	ProjectID       string
 	DistinctID      string
@@ -612,7 +612,7 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 }
 
 // ActivityFeedParams configures the GetActivityFeed query.
-// String filter fields are optional — empty means no filter. TimeRange and PageToken use nil.
+// String filter fields are optional: empty means no filter. TimeRange and PageToken use nil.
 type ActivityFeedParams struct {
 	ProjectID       string
 	DistinctID      string
@@ -632,7 +632,7 @@ type ActivityFeedParams struct {
 //
 // ProjectID and DistinctID are required. At the RPC boundary these are guaranteed by
 // MustGetPrincipalWithProject (non-empty project ID) and proto validation (required = true).
-// Internal callers must ensure both are non-empty — empty values return an error.
+// Internal callers must ensure both are non-empty: empty values return an error.
 func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams) ([]Event, *EventCursor, error) {
 	ids, err := r.resolveProfileIDs(ctx, params.ProjectID, params.DistinctID)
 	if err != nil {
@@ -802,7 +802,7 @@ type ActivityHeatmapParams struct {
 //
 // ProjectID and DistinctID are required. At the RPC boundary these are guaranteed by
 // MustGetPrincipalWithProject (non-empty project ID) and proto validation (required = true).
-// Internal callers must ensure both are non-empty — empty values return an error.
+// Internal callers must ensure both are non-empty: empty values return an error.
 func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapParams) ([]HeatmapDay, error) {
 	ids, err := r.resolveProfileIDs(ctx, params.ProjectID, params.DistinctID)
 	if err != nil {
@@ -892,7 +892,7 @@ func (r *Reader) queryProfileStats(
 	}()
 
 	// ClickHouse aggregates without GROUP BY always return one row. Zero rows
-	// indicates a driver bug or connection issue — return an error.
+	// indicates a driver bug or connection issue; return an error.
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			slog.ErrorContext(ctx, "queryProfileStats: row iteration failed", slogx.Error(err),
@@ -965,7 +965,7 @@ type ProfileStatsParams struct {
 //
 // ProjectID and DistinctID are required. At the RPC boundary these are guaranteed by
 // MustGetPrincipalWithProject (non-empty project ID) and proto validation (required = true).
-// Internal callers must ensure both are non-empty — empty values return an error.
+// Internal callers must ensure both are non-empty: empty values return an error.
 func (r *Reader) GetProfileStats(ctx context.Context, params ProfileStatsParams) (*ProfileStats, []HeatmapDay, error) {
 	ids, err := r.resolveProfileIDs(ctx, params.ProjectID, params.DistinctID)
 	if err != nil {

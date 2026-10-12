@@ -49,7 +49,7 @@ var natsContainer = &lazyContainer[sharedNATS]{kind: "nats", start: startNATS}
 // is the state a test could otherwise inherit from the one before it.
 func SetupNATS(t *testing.T) *TestNATS {
 	t.Helper()
-	// Scoped to the test — see the note in SetupPostgres for why the shared
+	// Scoped to the test; see the note in SetupPostgres for why the shared
 	// container uses context.Background instead.
 	ctx := t.Context()
 

@@ -60,7 +60,7 @@ func TestCookielessExclusionCond(t *testing.T) {
 // excludeCookielessForAgg's switch: it ranges over every AggregationType the
 // proto defines and requires an explicit decision for each.
 //
-// The helper previously used a two-member inclusion list, which failed open — a
+// The helper previously used a two-member inclusion list, which failed open: a
 // new aggregation returned false and silently admitted cookieless ids into a
 // metric that might count people. No other layer catches that: protovalidate's
 // enum.defined_only accepts any defined member, and both rollupAggExpr and
@@ -85,7 +85,7 @@ func TestExcludeCookielessForAgg_IsExhaustive(t *testing.T) {
 		agg := insightsv1.AggregationType(num)
 		want, ok := decided[agg]
 		if !ok {
-			t.Errorf("%s has no cookieless decision: add it to excludeCookielessForAgg's switch AND to this table — does it count people?", name)
+			t.Errorf("%s has no cookieless decision: add it to excludeCookielessForAgg's switch AND to this table. Does it count people?", name)
 			continue
 		}
 		if got := excludeCookielessForAgg(spec, agg); got != want {

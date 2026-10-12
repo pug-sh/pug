@@ -22,7 +22,7 @@ import (
 const defaultTopKLimit = 10
 
 // topKOthersValue is the synthetic dimension value for the overflow bucket.
-// Clients identify the bucket by TopKRow.is_others, not this literal — a real
+// Clients identify the bucket by TopKRow.is_others, not this literal: a real
 // dimension value can legitimately be the string "$others".
 const topKOthersValue = "$others"
 
@@ -47,7 +47,7 @@ func (q TopKQuery) Dimension() insightsv1.TopKQuery_Dimension { return q.dimensi
 // Each shape documents its own structure and $others handling.
 //
 // The top_vals sort key is numeric (Float64 aggExpr) with a String dim_value
-// tie-break, never DateTime64/UUID — that sidesteps the mixed-type
+// tie-break, never DateTime64/UUID; that sidesteps the mixed-type
 // __topKFilter dynamic-filtering issue, so DisableTopKDynamicFiltering is not
 // needed. TestBuildTopKQuery_PropertyPromoted pins the numeric inner ORDER BY.
 func BuildTopKQuery(req *insightsv1.QueryRequest, projectID string) (TopKQuery, error) {
@@ -137,7 +137,7 @@ func topKBaseConditions(req *insightsv1.QueryRequest, projectID, alias string) (
 // collapsed to $others outside the top K.
 //
 // This shape is deliberately two-pass (top_vals CTE scans events, then the outer
-// query scans them again) — the opposite choice from buildTopKUsers' single-pass
+// query scans them again), the opposite choice from buildTopKUsers' single-pass
 // row_number ranking. The asymmetry is intentional: there is no join or
 // latest_profiles aggregation to repeat here, so the second scan is just a scan,
 // and re-scanning yields an exact UNIQUE_USERS for $others "for free" (a true
@@ -148,7 +148,7 @@ func topKBaseConditions(req *insightsv1.QueryRequest, projectID, alias string) (
 // single-pass technique (and add uniqState partials for exact UNIQUE_USERS).
 //
 // Empty-string dimension values participate as a real row (consistent with
-// breakdown behavior — for "top referrers" the empty/direct bucket is usually
+// breakdown behavior: for "top referrers" the empty/direct bucket is usually
 // the largest and hiding it would mislead).
 func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) (*chq.Query, error) {
 	tk := req.GetSpec().GetTopK()
@@ -180,7 +180,7 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 	}
 
 	// Omit-$others fast path: a single aggregation with LIMIT is the natural
-	// "top K, no overflow", so the two-pass top_vals CTE is skipped entirely —
+	// "top K, no overflow", so the two-pass top_vals CTE is skipped entirely;
 	// there is no tail to re-aggregate. is_others stays projected (always 0) so
 	// the executor scan and the TopKRow contract are unchanged.
 	if tk.GetOmitOthers() {
@@ -227,13 +227,13 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 //	          canonical user key, emitting re-mergeable partial aggregates
 //	ranked:   row_number() over per_user by the per-user metric value
 //	outer:    rank-split into top-K rows vs the $others bucket, re-merging the
-//	          partials (exact for every supported metric — see topKUserMetric)
+//	          partials (exact for every supported metric; see topKUserMetric)
 //
 // Unlike the two-pass top_vals shape, nothing here is referenced twice:
 // ClickHouse inlines a CTE per reference, so a top_vals CTE over the joined
 // scan would re-execute the events scan, the latest_profiles aggregation, and
 // the join hash-table build. The ranking sort costs O(users log users) over
-// already-aggregated rows — far cheaper than a second scan+join — and spills
+// already-aggregated rows, far cheaper than a second scan+join, and spills
 // past insightsSpillThresholdBytes. TestBuildTopKQuery_UserDimension pins the
 // single-reference shape (one events scan, one profiles read, one join) so a
 // regression to a twice-referenced CTE is caught.
@@ -320,8 +320,8 @@ func topKMetric(tk *insightsv1.TopKQuery) insightsv1.AggregationType {
 // topKPartial is one re-mergeable per-user aggregate: its expression and the
 // column alias it is projected as. Pairing expr+col in a single struct makes the
 // per_user-projection and ranked-carry-through slices share one source, so a
-// *length* mismatch between them can no longer arise. It does not — and cannot,
-// for string-built SQL — guarantee that a metric's rankExpr/mergeExpr reference
+// *length* mismatch between them can no longer arise. It does not (and cannot,
+// for string-built SQL) guarantee that a metric's rankExpr/mergeExpr reference
 // only the cols declared here; that coupling stays prose- and test-enforced.
 type topKPartial struct {
 	expr string // aggregate projection in per_user, e.g. "sum(...)"
@@ -407,7 +407,7 @@ func topKUserMetricExprs(tk *insightsv1.TopKQuery) (topKUserMetric, error) {
 // BuildTopKProfilesQuery builds the enrichment lookup for the winning user
 // keys: the latest external_id and properties of each (non-deleted) profile
 // whose id is in ids. Keys that are raw distinct_ids (no profile) simply match
-// no row. Returns empty SQL when ids is empty — callers skip the query.
+// no row. Returns empty SQL when ids is empty; callers skip the query.
 //
 // Intentionally not query-cached: freshness over compute at K ≤ 100, matching
 // the property-values / segment-users cache policy.
@@ -415,7 +415,7 @@ func topKUserMetricExprs(tk *insightsv1.TopKQuery) (topKUserMetric, error) {
 // This deliberately re-derives the "latest profile row" semantics inline (argMax
 // by insert_time + an is_deleted HAVING over the raw `profiles` table) instead of
 // reusing profiles.LatestProfilesCTE, so the `id IN (...)` filter is pushed into
-// the scan and only the ≤K winning ids are grouped — far cheaper than
+// the scan and only the ≤K winning ids are grouped, far cheaper than
 // materializing every project profile through the CTE just to keep K of them. The
 // cost is a second copy of the ReplacingMergeTree "latest" rule: if that
 // dedup/tie-break convention changes, update LatestProfilesCTE AND this query.
@@ -486,7 +486,7 @@ func buildTopKResult(ctx context.Context, executor *Executor, projectID string, 
 				// external_id / properties only decorate the USER rows. A transient
 				// failure of this second query (already logged+recorded inside
 				// QueryTopKProfiles) degrades to un-enriched rows rather than
-				// discarding a good ranking — matching the per-row property-decode
+				// discarding a good ranking, matching the per-row property-decode
 				// degradation below. The BuildTopKProfilesQuery failure above stays
 				// fatal on purpose: it builds from our own query output, so a failure
 				// there signals a code bug, not a transient operational fault.

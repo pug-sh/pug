@@ -121,7 +121,7 @@ func (x *GetMeResponse) GetEmailVerified() bool {
 type SetPasswordRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// min_len is a character count (>= 6); max_bytes is bcrypt's 72-byte input
-	// ceiling. Enforced here on the password-creation path — SignInWithEmail
+	// ceiling. Enforced here on the password-creation path; SignInWithEmail
 	// deliberately omits a min so a tightened policy never locks out an account
 	// whose password predates it.
 	Password      *string `protobuf:"bytes,1,opt,name=password" json:"password,omitempty"`

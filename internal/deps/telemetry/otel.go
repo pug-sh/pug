@@ -19,7 +19,7 @@ import (
 const shutdownTimeout = 5 * time.Second
 
 // An exit flush arrives with this deadline already set, which shutdownContext
-// preserves — so it outranks that function's 5s no-deadline fallback.
+// preserves, so it outranks that function's 5s no-deadline fallback.
 const exitShutdownTimeout = 10 * time.Second
 
 var (
@@ -34,14 +34,14 @@ var (
 //
 // The returned shutdown is idempotent: only the first call performs the actual
 // shutdown; later calls do not re-run it and return the result (including any
-// error) cached from the first call — so they return nil only if that first
+// error) cached from the first call, so they return nil only if that first
 // shutdown succeeded. The first caller's context governs the shutdown, so pass a
 // context with a live deadline; the cached result is reused for the rest of the
 // process lifetime.
 //
 // On failure (only the OTLP path can fail, during exporter/provider init; the
 // stdout path is infallible), returns a non-nil error and a nil shutdown
-// function — do not invoke shutdown when err != nil.
+// function; do not invoke shutdown when err != nil.
 //
 // The export mode is detected from the standard OTLP endpoint environment
 // variables on the first call only (sync.Once): a configured OTLP endpoint

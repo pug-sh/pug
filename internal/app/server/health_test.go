@@ -112,7 +112,7 @@ func TestWriteReadinessTimeout(t *testing.T) {
 		t.Errorf("dependencies[slow] = %q, want unavailable", got)
 	}
 	if got := body.Dependencies["redis"]; got != "ok" {
-		t.Errorf("dependencies[redis] = %q, want ok — healthy dep was starved by the slow one", got)
+		t.Errorf("dependencies[redis] = %q, want ok: healthy dep was starved by the slow one", got)
 	}
 	if _, ok := failures["slow"]; !ok {
 		t.Error("failures must record the timed-out dependency for the operator log")
@@ -123,7 +123,7 @@ func TestWriteReadinessTimeout(t *testing.T) {
 // increment the streak, crossing the threshold takes the escalation branch
 // without panicking (RecordError is a no-op absent an active span), and a single
 // healthy probe resets the streak. It does not assert that telemetry.RecordError
-// fired — that would need a telemetry seam this package doesn't expose.
+// fired: that would need a telemetry seam this package doesn't expose.
 func TestRecordReadiness(t *testing.T) {
 	d := &deps{}
 	failures := map[string]string{"redis": "connection refused"}

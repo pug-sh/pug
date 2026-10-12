@@ -90,8 +90,8 @@ func TestRefreshSession(t *testing.T) {
 		// consumes+rotates; every later txn re-reads the row with consumed_at now set,
 		// so it takes the reuse-detection branch (NOT the defensive ConsumeRefreshToken
 		// lost-race branch, which is unreachable while the row lock is held) and revokes
-		// the whole family. Net: exactly one immediate success, but the family — including
-		// the winner's freshly minted successor — is dead afterward.
+		// the whole family. Net: exactly one immediate success, but the family, including
+		// the winner's freshly minted successor, is dead afterward.
 		svc := mustNewTestAuthService(t, db, &stubPublisher{})
 		session := seedSignedInCustomer(t, svc, write, "rt-concurrent", "rt-concurrent@example.com")
 

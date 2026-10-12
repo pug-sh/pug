@@ -22,7 +22,7 @@ import (
 // Connect handler is wired with `validate.NewInterceptor()`, a malformed request is rejected
 // at the interceptor layer before ever reaching the handler business logic. All other
 // `*_validate_test.go` files call `protovalidate.Validate` directly, which proves the CEL
-// annotations work but not that the interceptor is actually wired — that is the contract this
+// annotations work but not that the interceptor is actually wired; that is the contract this
 // test pins.
 func TestValidateInterceptor_RejectsInvalidQueryRequest(t *testing.T) {
 	interceptor := protovalidatemw.NewInterceptor()
@@ -57,7 +57,7 @@ func TestValidateInterceptor_RejectsInvalidQueryRequest(t *testing.T) {
 		t.Errorf("got code %v, want CodeInvalidArgument", got)
 	}
 	if handlerCalled {
-		t.Error("handler was called — interceptor did not short-circuit")
+		t.Error("handler was called: interceptor did not short-circuit")
 	}
 
 	// Sanity-check: the rejection is from the CEL validation rule, not some other arbitrary
@@ -70,7 +70,7 @@ func TestValidateInterceptor_RejectsInvalidQueryRequest(t *testing.T) {
 }
 
 // interceptorTestServer is a minimal InsightsServiceHandler stub used only by the interceptor
-// seam test — it records whether the Query handler was invoked. Other methods are inherited
+// seam test: it records whether the Query handler was invoked. Other methods are inherited
 // from UnimplementedInsightsServiceHandler, which returns unimplemented.
 type interceptorTestServer struct {
 	onQuery func()

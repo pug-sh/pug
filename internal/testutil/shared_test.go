@@ -28,7 +28,7 @@ func TestForceRyukEnablesReaperByDefault(t *testing.T) {
 
 // TestForceRyukRespectsExplicitOptOut pins the escape hatch. Ryuk cannot drive
 // every Docker setup, and a run that cannot start it at all is worse than one
-// that leaks on an abnormal exit — so an explicit opt-out has to survive.
+// that leaks on an abnormal exit, so an explicit opt-out has to survive.
 func TestForceRyukRespectsExplicitOptOut(t *testing.T) {
 	t.Setenv(ryukDisabledEnv, "true")
 
@@ -47,7 +47,7 @@ func TestTeardownRegistryContainsPanickingTeardown(t *testing.T) {
 	var r teardownRegistry
 
 	var ranAfter bool
-	// Registered first, so LIFO runs it last — after the panicking one.
+	// Registered first, so LIFO runs it last, after the panicking one.
 	r.add(func() error {
 		ranAfter = true
 		return nil

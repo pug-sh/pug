@@ -26,7 +26,7 @@ const PropertyValuesLimit = 100
 // BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery,
 // BuildUserFlowQuery, BuildTopKQuery. Other public
 // builders in this package (property keys/values, segment users, event names,
-// top-K profile enrichment) intentionally omit WithQueryCache — they either
+// top-K profile enrichment) intentionally omit WithQueryCache: they either
 // include `now()` (BuildAutoPropertyValuesQuery) or back dashboard typeahead /
 // small enrichment lookups where freshness matters more than the saved compute.
 //
@@ -34,7 +34,7 @@ const PropertyValuesLimit = 100
 // project_id as a positional parameter on every cached builder, so per-project isolation
 // holds as long as project_id is in the parameter set (verified by the BuildXxxQuery tests).
 // Because Pug uses a single ClickHouse user, the server-level per-user partitioning of
-// the cache does not provide additional tenant isolation — project_id binding is the
+// the cache does not provide additional tenant isolation; project_id binding is the
 // load-bearing mechanism.
 //
 // Ops tuning: with multi-tenant traffic and breakdown queries the default 1 GB cache may
@@ -52,7 +52,7 @@ const analyticsCacheTTL = 60
 // insightsSpillThresholdBytes is the in-memory threshold (1 GiB) past which a
 // query's aggregation/sort state spills to disk via WithSpillThreshold instead
 // of failing at the ClickHouse memory limit. Applied to the builders whose
-// GROUP BY / ORDER BY cardinality is data-dependent and unbounded — they group
+// GROUP BY / ORDER BY cardinality is data-dependent and unbounded; they group
 // one row per user (or per arbitrary dimension value), so a high-cardinality
 // project degrades to a slower spilling query rather than OOMing:
 // BuildTopKQuery, BuildFunnelCountsQuery, BuildFunnelTimingQuery,
@@ -64,7 +64,7 @@ const analyticsCacheTTL = 60
 // that lives in each builder's aggregation CTE.
 //
 // Ops tuning: this is a per-query ceiling, so N concurrent spilling queries can
-// hold up to N × this resident — size relative to max_memory_usage and expected
+// hold up to N × this resident; size relative to max_memory_usage and expected
 // parallelism.
 const insightsSpillThresholdBytes = 1 << 30
 
@@ -454,7 +454,7 @@ func buildTrendsBranchQuery(
 
 // buildTrendsMultiEvent compiles a multi-event trends query as a single events scan
 // with conditional aggregates (countIf/uniqIf/…) per event, unpivoted via CROSS JOIN
-// against a compact event-index table — same pattern as funnel counts.
+// against a compact event-index table, same pattern as funnel counts.
 func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, events []*insightsv1.EventQuery) (*chq.Query, error) {
 	bucket, err := bucketExpr(req.GetGranularity(), "occur_time", req.GetTimezone())
 	if err != nil {
@@ -664,8 +664,8 @@ func buildSessionSegmentation(req *insightsv1.QueryRequest, projectID string) (*
 
 // buildSessionRowsCTE builds the per-session aggregation CTE shared by the raw
 // session trends and segmentation builders. Each row is one session: its start
-// (min occur_time), end (max occur_time), scoped event_count, and — when a
-// breakdown is requested — the entry (argMin) or exit (argMax) attribute keyed on
+// (min occur_time), end (max occur_time), scoped event_count, and, when a
+// breakdown is requested, the entry (argMin) or exit (argMax) attribute keyed on
 // occur_time.
 //
 // Full-session window semantics: a session is measured over its ENTIRE set of
@@ -675,8 +675,8 @@ func buildSessionSegmentation(req *insightsv1.QueryRequest, projectID string) (*
 // is what keeps the raw path numerically identical to the session rollup
 // (buildSessionRollupRowsCTE), whose merged per-session states span the session's
 // whole lifetime. Clipping events to the window in WHERE instead would truncate a
-// session straddling the boundary — changing its duration, entry/exit page, and
-// bounce classification — and diverge from the rollup. The cost is that the scan
+// session straddling the boundary (changing its duration, entry/exit page, and
+// bounce classification) and diverge from the rollup. The cost is that the scan
 // is not partition-pruned by occur_time; acceptable because this is the fallback
 // path (the rollup serves the common day-aligned case) and correctness outranks
 // the wider scan. See docs/architecture/insights.md (Session insights).
@@ -740,7 +740,7 @@ func buildSessionScopeCondition(session *insightsv1.SessionQuery, projectID, ali
 
 // sessionEventKind returns the label projected as the trends series `event_kind`
 // for a session query. With no scope kind, sessions span all event kinds, so there
-// is no real kind to report — the synthetic literal "$session" labels that series
+// is no real kind to report; the synthetic literal "$session" labels that series
 // (the leading "$" matches the reserved-property convention and can't collide with a
 // customer event kind). With a scope kind, that kind is the label. Segmentation
 // (scalar) does not project a series and ignores this.
@@ -753,7 +753,7 @@ func sessionEventKind(session *insightsv1.SessionQuery) string {
 
 // sessionMetricAggExpr returns the aggregate applied over the per-session CTE rows
 // (one row per session) to produce the metric value. SESSIONS/ENTRY/EXIT all reduce
-// to count() of sessions — ENTRY/EXIT differ only in the breakdown attribute the CTE
+// to count() of sessions: ENTRY/EXIT differ only in the breakdown attribute the CTE
 // already resolved (argMin vs argMax), not in this aggregate. AVG_DURATION,
 // BOUNCE_RATE, and AVG_EVENTS_PER_SESSION guard count()=0 so an empty bucket
 // yields 0 rather than NULL/NaN.
@@ -778,7 +778,7 @@ func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 // buildFunnelWindowFunnel generates a funnel counts query using ClickHouse's windowFunnel() aggregate.
 // windowFunnel scans the events table once and returns the deepest step reached per user
 // within the conversion window. A CROSS JOIN against a compact steps table produces
-// cumulative counts per step in a single pass — no UNION ALL, no repeated CTE evaluation.
+// cumulative counts per step in a single pass: no UNION ALL, no repeated CTE evaluation.
 //
 // The scan is identity-joined and grouped by the canonical user key, so a
 // person split across ids by identify() converts as one windowFunnel chain.
@@ -902,7 +902,7 @@ func sqlStringLiteral(s string) string {
 // CTE to users who actually progressed past step 0. This dramatically reduces groupArray
 // output and data transfer for timing computation.
 //
-// Limitation: multiIf short-circuits — if two steps share the same conditions (e.g., both
+// Limitation: multiIf short-circuits; if two steps share the same conditions (e.g., both
 // match kind='page_view'), events always tag as the earlier step and the later step never
 // matches. This is uncommon in practice (funnel steps are usually distinct events).
 //
@@ -961,7 +961,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 	// Pre-filter: restrict to users who reached at least step 2 in windowFunnel.
 	// Scans events once with windowFunnel (fast), then the tagged CTE only processes
 	// events from users who have timing data to contribute. Grouped by the canonical
-	// user key — a split person reaches step 2 only once stitched.
+	// user key: a split person reaches step 2 only once stitched.
 	var preFilterCond chq.Condition
 	if len(steps) >= 2 {
 		pfStepSQLs := make([]string, len(sc))
@@ -1052,7 +1052,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	}
 
 	// Both scans (cohorts and return_events) are identity-joined, so every
-	// event-scan condition binds "e" (see profiles.IdentityJoinedEvents — a
+	// event-scan condition binds "e" (see profiles.IdentityJoinedEvents: a
 	// missed alias resolves to events silently rather than erroring).
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "e")
 	if err != nil {
@@ -1089,7 +1089,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	// cohorts: assign each user to a time bucket based on their first start event,
 	// keyed by the canonical user key so a person who enters as anon and returns
 	// as external_id stays one cohort member. first_event_time is the precise
-	// timestamp (not bucketed) — used to exclude return events that fall within
+	// timestamp (not bucketed), used to exclude return events that fall within
 	// the same bucket but before the actual start.
 	cohortsAgg := chq.NewQuery().
 		Select(
@@ -1128,8 +1128,8 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 
 	// return_events: the return-side event scan, identity-joined so its user_key
 	// matches the cohort key. A separate CTE because the cohort join must be on
-	// the canonical key, and ClickHouse JOIN ON wants plain columns on each side
-	// — so the key is projected here rather than computed in the join condition.
+	// the canonical key, and ClickHouse JOIN ON wants plain columns on each side,
+	// so the key is projected here rather than computed in the join condition.
 	returnEvents := chq.NewQuery().
 		Select(
 			profiles.IdentityUserKeyExpr()+" AS user_key",
@@ -1237,7 +1237,7 @@ func buildFunnelStepCondition(step *insightsv1.EventQuery, projectID, alias stri
 // SegmentUsersRequest carries no InsightQuerySpec, so there is no toggle to
 // consult and the list matches every insight's default population (an
 // opted-in tile has no matching drill-down). Cookieless ids could not be
-// admitted anyway — migration 011 keeps them out of
+// admitted anyway: migration 011 keeps them out of
 // distinct_id_activity_states_mv, so profiles.GetByID returns ErrProfileNotFound.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
@@ -1274,7 +1274,7 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 }
 
 // BuildAutoPropertyValuesQuery returns a query for distinct auto-property values of a key over the last
-// 30 days. Uses DISTINCT + LIMIT for early exit — no full aggregation, no insert overhead.
+// 30 days. Uses DISTINCT + LIMIT for early exit: no full aggregation, no insert overhead.
 func BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind string) (string, []any, error) {
 	return buildPropertyValuesQuery(projectID, propertyKey, "auto_properties", eventKind)
 }
@@ -1399,8 +1399,8 @@ func BuildCustomPropertyKeysQuery(projectID, eventKind string) (string, []any, e
 // (dashboard_event_rollup_daily), optionally scoped to an event kind.
 //
 // Promoted dimensions are stripped out of the auto_properties map into dedicated
-// events columns at ingest, so the property_keys MV — which only enumerates map
-// keys — never sees them. Without this they are absent from the filter/breakdown
+// events columns at ingest, so the property_keys MV, which only enumerates map
+// keys, never sees them. Without this they are absent from the filter/breakdown
 // picker even though the query engine fully supports filtering and breaking down
 // by them. Only non-empty dimension values are counted, matching the
 // "key is present" semantics of the map-based property_keys queries.
@@ -1435,7 +1435,7 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 // for missing paths.
 //
 // Reads raw `profiles`, not the `latest_profiles` CTE that `getSingle`/`List`
-// use — matches event-side typeahead semantics (BuildPropertyValuesQuery for
+// use: matches event-side typeahead semantics (BuildPropertyValuesQuery for
 // events also reads raw `events`). Typeahead surfaces historical values: a
 // property whose value changed over time appears as multiple distinct entries
 // until ReplacingMergeTree background merges complete. Acceptable for typeahead
@@ -1476,7 +1476,7 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 			// underlying values drift across types over time (rare in practice).
 			// argMin(value_type, last_seen) deterministically returns the
 			// value_type observed at the earliest last_seen timestamp in the
-			// group — first-touch semantics, matching the funnel/retention
+			// group: first-touch semantics, matching the funnel/retention
 			// breakdown rule. Stable across calls so dashboards don't flicker
 			// on every refresh when a key has mixed types.
 			//
@@ -1548,13 +1548,13 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 // auto_properties[EMPTY] returns empty string, nullIf maps empty → NULL, ifNull falls back to
 // custom_properties[EMPTY] (also empty), toFloat64OrNull(empty) returns NULL, sum(NULL,…) = 0.
 // AVG/MIN/MAX wrap the same toFloat64OrNull(...) in ifNull(agg(...), 0) (see switch arms below)
-// so all-NULL inputs collapse to 0 too — same observable result, different mechanism. Pre-validate
+// so all-NULL inputs collapse to 0 too: same observable result, different mechanism. Pre-validate
 // or accept the silent-zero behavior.
 //
 // The AVG/MIN/MAX ifNull(..., 0) wrapper is also load-bearing for non-numeric data: if all
 // property values fail toFloat64OrNull (e.g. strings), the aggregate returns NULL and the wrapper
 // coerces it to 0. SUM doesn't need the wrapper because ClickHouse sum() returns 0 for all-NULL
-// natively. Either way: "no data" and "actual zero" are indistinguishable in the result —
+// natively. Either way: "no data" and "actual zero" are indistinguishable in the result;
 // consumers should check event counts separately if the distinction matters.
 func aggregationExpr(agg insightsv1.AggregationType, property string) (string, error) {
 	switch agg {
@@ -1578,8 +1578,8 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		}
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
 		// uniq() is an approximate distinct count (HyperLogLog, ~0.5–2% error),
-		// chosen over count(DISTINCT) — which resolves to exact uniqExact under the
-		// default count_distinct_implementation — for bounded memory and speed on
+		// chosen over count(DISTINCT), which resolves to exact uniqExact under the
+		// default count_distinct_implementation, for bounded memory and speed on
 		// high-cardinality, breakdown, and long-range queries. uniq() is exact for
 		// small cohorts. Do not reuse these expressions for billing/quota counts.
 		return "toFloat64(uniq(distinct_id))", nil

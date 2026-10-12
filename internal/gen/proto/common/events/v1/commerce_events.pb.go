@@ -114,7 +114,7 @@ func (x *ProductViewedProperties) GetCurrency() string {
 	return ""
 }
 
-// A list/category/search-results impression — fired when the user views a
+// A list/category/search-results impression, fired when the user views a
 // collection of products rather than a single product detail page.
 type ProductListViewedProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`

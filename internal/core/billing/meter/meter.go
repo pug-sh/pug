@@ -21,8 +21,8 @@ import (
 // usageStaleAfter is how old the usage pass's newest verified count may be before
 // the meter refuses to state from the day cells it writes. The usage CronJob is
 // meant to run hourly (docs/architecture/usage.md §4), so this allows a couple of
-// missed runs. Stating stale cells would not over-bill — each statement is a lower
-// bound the next supersedes — but a usage pass that stopped would bill every
+// missed runs. Stating stale cells would not over-bill (each statement is a lower
+// bound the next supersedes), but a usage pass that stopped would bill every
 // subscriber the fee alone, and only the refusal says so.
 const usageStaleAfter = 3 * time.Hour
 
@@ -184,8 +184,8 @@ func (s *Service) meterOrg(ctx context.Context, sub dbread.BillingSubscription, 
 	}
 	resent := false
 	if row != nil && !row.Acked {
-		// The last statement may never have landed: send it again — the same counts
-		// and event id, stamped with this tick.
+		// The last statement may never have landed: send it again (the same counts
+		// and event id, stamped with this tick).
 		if err := s.ingest(ctx, orgID, *row, now, true); err != nil {
 			return 0, false, err
 		}
@@ -207,7 +207,7 @@ func (s *Service) meterOrg(ctx context.Context, sub dbread.BillingSubscription, 
 	}
 	// The subscription was listed when the pass started and the entitlement is read
 	// now. A cancellation, cutover or renewal in between leaves terms that are not
-	// this period's — a free org's, or another subscription's sent to this one's
+	// this period's: a free org's, or another subscription's sent to this one's
 	// customer. The next tick meters whatever is live then.
 	if !ent.SubStatus.Live() || ent.ProviderSubID != sub.ProviderSubID || !ent.SubPeriodStart.Equal(periodStart) {
 		slog.InfoContext(ctx, "org's subscription changed mid-pass; leaving it to the next tick",
@@ -226,8 +226,8 @@ func (s *Service) meterOrg(ctx context.Context, sub dbread.BillingSubscription, 
 	tiers := len(ent.TierUpTo) + 1
 	// A period restates only under the plan it was first split by: another plan's
 	// tiers cover other bounds, so the max of the two splits could state more events
-	// than were sent, and a max meter never comes back down. The allowance may move —
-	// a deal re-set mid-period — and the max then keeps the larger count, as it does
+	// than were sent, and a max meter never comes back down. The allowance may move,
+	// a deal re-set mid-period, and the max then keeps the larger count, as it does
 	// over a recount that went down.
 	if row != nil && (row.PlanSlug != ent.TierPlanSlug || len(row.Own) != tiers) {
 		err := fmt.Errorf("meter: org %s's period was split by %s and now resolves to %s; it cannot be restated",
@@ -315,7 +315,7 @@ func (s *Service) meterOrg(ctx context.Context, sub dbread.BillingSubscription, 
 }
 
 // carryFrom re-splits the days of prev a period follows under the terms prev was
-// stated under — its plan's tiers and its allowance — and returns what they still
+// stated under (its plan's tiers and its allowance) and returns what they still
 // owe each tier. Only within one plan: a carry lands in the same tier of the current
 // product, and another plan's tier covers other bounds. Carrying nothing is the
 // under-billing direction, reported once, when the window opens.

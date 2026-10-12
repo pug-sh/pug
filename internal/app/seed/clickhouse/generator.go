@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// The generator simulates traffic for "Pug & Pals" — a fictional
+// The generator simulates traffic for "Pug & Pals", a fictional
 // direct-to-consumer dog supply store (food, treats, toys, grooming, gear,
 // home) with a web storefront, iOS/Android apps, and a paid "Pug Club"
 // membership.
@@ -19,7 +19,7 @@ import (
 //     level from a fixed per-user seed, so every factory instance (backfill,
 //     live worker, restarts) agrees on who each user is.
 //   - Engagement follows a power law (a few whales, a long tail of
-//     one-timers), users join over time and many churn — signup events fire
+//     one-timers), users join over time and many churn; signup events fire
 //     on a user's first session, so signup cohorts line up with retention
 //     cohorts and the retention grid decays like a real product's.
 //   - Sessions are stateful: a checkout funnel carries one cart through
@@ -57,7 +57,7 @@ func weightedIndexN(intN func(int) int, weights []int) int {
 	if total <= 0 {
 		// All-zero or empty weights have no valid weighted pick; return the
 		// first index rather than panicking in intN(0). Every caller passes a
-		// non-empty, positive-weight table today — this only guards a future
+		// non-empty, positive-weight table today; this only guards a future
 		// degenerate one.
 		return 0
 	}

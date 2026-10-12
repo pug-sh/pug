@@ -42,7 +42,7 @@ func TestInviteMemberRequest_ValidWithRole(t *testing.T) {
 
 // CreateRequest: display_name has required + min_len=1 + max_len=150.
 // Edition 2023 "required" only checks wire presence, so an explicit min_len=1
-// is needed to reject the empty string — pinning that rule keeps a future
+// is needed to reject the empty string; pinning that rule keeps a future
 // removal of min_len from silently regressing empty-name acceptance.
 
 func TestCreateRequest_DisplayNameRequired(t *testing.T) {
