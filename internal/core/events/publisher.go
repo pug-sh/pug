@@ -2,6 +2,8 @@ package events
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 
 	"buf.build/go/protovalidate"
@@ -43,11 +45,23 @@ func (p *Publisher) Publish(ctx context.Context, projectID string, events []*eve
 		return err
 	}
 
-	if _, err = p.producer.Publish(ctx, nats.EventsIngestSubject, data); err != nil {
+	if _, err = p.producer.Publish(ctx, nats.EventsIngestSubject, data, jetstream.WithMsgID(batchMsgID(projectID, events))); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events to NATS", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
 
 	return nil
+}
+
+// batchMsgID names a batch by its events so JetStream drops a re-sent copy, such as
+// one nats.go flushes from its reconnect buffer after the client already retried it.
+func batchMsgID(projectID string, events []*eventsv1.Event) string {
+	h := sha256.New()
+	h.Write([]byte(projectID))
+	for _, e := range events {
+		h.Write([]byte{0})
+		h.Write([]byte(e.GetEventId()))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

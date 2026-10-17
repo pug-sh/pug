@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"connectrpc.com/otelconnect"
@@ -35,16 +34,12 @@ type deps struct {
 	pgW             *pgxpool.Pool
 	redis           *redis.Client
 	port            string
+	drainDelay      time.Duration
 	demoEnabled     bool
 	billing         corebilling.Config
-
-	// readyFailures counts consecutive failed readiness probes. It distinguishes
-	// a transient blip (logged at WARN) from a sustained outage (escalated to
-	// error telemetry); see (*deps).recordReadiness in health.go.
-	readyFailures atomic.Int64
 }
 
-// close shuts down all deps. OTel must shut down last — it owns the slog backend,
+// close shuts down all deps. OTel must shut down last: it owns the slog backend,
 // so earlier components' shutdown logs are still captured. Cancellation is
 // stripped from ctx so cleanup isn't aborted by a cancelled signal context.
 func (d *deps) close(ctx context.Context) {
@@ -61,12 +56,12 @@ func (d *deps) close(ctx context.Context) {
 	}
 	if d.ch != nil {
 		if err := d.ch.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close clickhouse", slogx.Error(err)) // puglint:exempt — no span at shutdown
+			slog.ErrorContext(ctx, "failed to close clickhouse", slogx.Error(err)) // puglint:exempt (no span at shutdown)
 		}
 	}
 	if d.closeOtel != nil {
 		if err := d.closeOtel(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err)) // puglint:exempt — nothing left to record it on
+			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err)) // puglint:exempt (nothing left to record it on)
 		}
 	}
 }
@@ -84,14 +79,14 @@ func newDeps(ctx context.Context) (*deps, error) {
 
 	otelInterceptor, closeOtel, err := telemetry.NewOtelInterceptor(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err)) // puglint:exempt — nothing to record it on yet
+		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err)) // puglint:exempt (nothing to record it on yet)
 		return nil, err
 	}
 	closers = append(closers, func() {
 		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := closeOtel(rollbackCtx); err != nil {
-			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err)) // puglint:exempt — nothing left to record it on
+			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err)) // puglint:exempt (nothing left to record it on)
 		}
 	})
 
@@ -116,6 +111,15 @@ func newDeps(ctx context.Context) (*deps, error) {
 		return nil, err
 	}
 	closers = append(closers, pgW.Close)
+
+	// pgxpool connects lazily, so ping once: an unreachable Postgres then fails
+	// startup and stalls a rollout, as Redis and ClickHouse do. Both pools share a URL.
+	pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelPing()
+	if err := pgW.Ping(pingCtx); err != nil {
+		slog.ErrorContext(ctx, "unable to ping postgres", slogx.Error(err)) // puglint:exempt (no span at startup)
+		return nil, fmt.Errorf("ping postgres: %w", err)
+	}
 
 	natsClient, err := nats.New(ctx)
 	if err != nil {
@@ -149,7 +153,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 	}
 	closers = append(closers, func() {
 		if err := chConn.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close clickhouse during rollback", slogx.Error(err)) // puglint:exempt — no span at startup
+			slog.ErrorContext(ctx, "failed to close clickhouse during rollback", slogx.Error(err)) // puglint:exempt (no span at startup)
 		}
 	})
 
@@ -189,6 +193,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		pgW:             pgW,
 		redis:           redisClient,
 		port:            serverCfg.Port,
+		drainDelay:      serverCfg.DrainDelay,
 		demoEnabled:     serverCfg.DemoEnabled,
 		billing:         billingCfg,
 	}, nil

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -169,6 +170,8 @@ func TestWithSDKAuth(t *testing.T) {
 			t.Fatal("expected error for nonexistent key")
 		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
+		} else if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+			t.Errorf("code = %v, want %v", code, connect.CodeUnauthenticated)
 		}
 	})
 
@@ -177,10 +180,12 @@ func TestWithSDKAuth(t *testing.T) {
 			t.Fatal("expected error for nonexistent private key")
 		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
+		} else if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+			t.Errorf("code = %v, want %v", code, connect.CodeUnauthenticated)
 		}
 	})
 
-	t.Run("database error returns failed to validate", func(t *testing.T) {
+	t.Run("database error returns unavailable", func(t *testing.T) {
 		errStub := &stubProjectKeyLookup{
 			publicProjects:  map[string]dbread.Project{},
 			privateProjects: map[string]dbread.Project{},
@@ -188,10 +193,19 @@ func TestWithSDKAuth(t *testing.T) {
 		}
 		errAuthFunc := WithSDKAuth(errStub)
 
-		if _, err := errAuthFunc(ctx, newRequest("pub_valid123", "")); err == nil {
-			t.Fatal("expected error for database failure")
-		} else if got := err.Error(); !strings.Contains(got, "failed to validate API key") {
-			t.Errorf("error = %q, want to contain %q", got, "failed to validate API key")
+		_, err := errAuthFunc(ctx, newRequest("pub_valid123", ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
+		}
+	})
+
+	t.Run("malformed key is rejected before the lookup", func(t *testing.T) {
+		errAuthFunc := WithSDKAuth(&stubProjectKeyLookup{forceErr: errors.New("invalid byte sequence for encoding UTF8")})
+		for _, req := range []*http.Request{newRequest("pub_valid123\xa0", ""), newRequest("", "pub_\x00")} {
+			_, err := errAuthFunc(ctx, req)
+			if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
+				t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnauthenticated)
+			}
 		}
 	})
 }
@@ -272,6 +286,9 @@ func TestWithJWTAuth(t *testing.T) {
 						return nil
 					}}
 				}
+				if customerID == "cust-dberr" {
+					return &stubPGXRow{scanFn: func(_ ...any) error { return errors.New("connection refused") }}
+				}
 				return &stubPGXRow{scanFn: func(_ ...any) error { return pgx.ErrNoRows }}
 			case strings.Contains(sql, "from projects"):
 				projectID := args[0].(string)
@@ -282,6 +299,9 @@ func TestWithJWTAuth(t *testing.T) {
 						*(dest[4].(*string)) = "org-1"
 						return nil
 					}}
+				}
+				if projectID == "proj-dberr" {
+					return &stubPGXRow{scanFn: func(_ ...any) error { return errors.New("connection refused") }}
 				}
 				return &stubPGXRow{scanFn: func(_ ...any) error { return pgx.ErrNoRows }}
 			default:
@@ -359,6 +379,8 @@ func TestWithJWTAuth(t *testing.T) {
 			t.Fatal("expected error for nonexistent project")
 		} else if got := err.Error(); !strings.Contains(got, "project not found or access denied") {
 			t.Errorf("error = %q, want to contain %q", got, "project not found or access denied")
+		} else if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+			t.Errorf("code = %v, want %v", code, connect.CodeUnauthenticated)
 		}
 	})
 
@@ -368,6 +390,24 @@ func TestWithJWTAuth(t *testing.T) {
 			t.Fatal("expected error for nonexistent customer")
 		} else if got := err.Error(); !strings.Contains(got, "invalid authorization") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
+		} else if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+			t.Errorf("code = %v, want %v", code, connect.CodeUnauthenticated)
+		}
+	})
+
+	t.Run("customer lookup failure returns unavailable", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-dberr"})
+		_, err := authFunc(ctx, newJWTRequest(token, ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
+		}
+	})
+
+	t.Run("project lookup failure returns unavailable", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1"})
+		_, err := authFunc(ctx, newJWTRequest(token, "proj-dberr"))
+		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
 		}
 	})
 
@@ -452,7 +492,7 @@ func TestWithJWTAuth(t *testing.T) {
 	})
 
 	t.Run("non-HS256 algorithm returns error", func(t *testing.T) {
-		// Sign with HS384 — still HMAC, so the keyfunc's SigningMethodHMAC
+		// Sign with HS384: still HMAC, so the keyfunc's SigningMethodHMAC
 		// check passes; only WithValidMethods("HS256") rejects it. This
 		// isolates that the algorithm pin works, not just the keyfunc.
 		raw := jwt.NewWithClaims(jwt.SigningMethodHS384, jwt.MapClaims{
@@ -513,6 +553,8 @@ func TestWithDualAuth(t *testing.T) {
 			t.Fatal("expected error for nonexistent private key")
 		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
+		} else if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+			t.Errorf("code = %v, want %v", code, connect.CodeUnauthenticated)
 		}
 	})
 
@@ -534,7 +576,7 @@ func TestWithDualAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("database error returns failed to validate", func(t *testing.T) {
+	t.Run("database error returns unavailable", func(t *testing.T) {
 		errStub := &stubProjectKeyLookup{
 			publicProjects:  map[string]dbread.Project{},
 			privateProjects: map[string]dbread.Project{},
@@ -542,10 +584,9 @@ func TestWithDualAuth(t *testing.T) {
 		}
 		errAuthFunc := WithDualAuth([]byte("test-jwt-key"), nil, errStub)
 
-		if _, err := errAuthFunc(ctx, newRequest("prv_valid456", "")); err == nil {
-			t.Fatal("expected error for database failure")
-		} else if got := err.Error(); !strings.Contains(got, "failed to validate API key") {
-			t.Errorf("error = %q, want to contain %q", got, "failed to validate API key")
+		_, err := errAuthFunc(ctx, newRequest("prv_valid456", ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
 		}
 	})
 }
@@ -614,10 +655,12 @@ func TestWithPrivateKeyAuth(t *testing.T) {
 			t.Fatal("expected error for nonexistent private key")
 		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
+		} else if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+			t.Errorf("code = %v, want %v", code, connect.CodeUnauthenticated)
 		}
 	})
 
-	t.Run("database error returns failed to validate", func(t *testing.T) {
+	t.Run("database error returns unavailable", func(t *testing.T) {
 		errStub := &stubProjectKeyLookup{
 			publicProjects:  map[string]dbread.Project{},
 			privateProjects: map[string]dbread.Project{},
@@ -625,10 +668,9 @@ func TestWithPrivateKeyAuth(t *testing.T) {
 		}
 		errAuthFunc := WithPrivateKeyAuth(errStub)
 
-		if _, err := errAuthFunc(ctx, newRequest("prv_valid456", "")); err == nil {
-			t.Fatal("expected error for database failure")
-		} else if got := err.Error(); !strings.Contains(got, "failed to validate API key") {
-			t.Errorf("error = %q, want to contain %q", got, "failed to validate API key")
+		_, err := errAuthFunc(ctx, newRequest("prv_valid456", ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
 		}
 	})
 }
@@ -648,7 +690,7 @@ func TestNormalizeBearerAPIKey(t *testing.T) {
 		// separately from want because the two legitimately disagree: a public key is
 		// never an effective credential (want "") yet stays on the request untouched for
 		// the auth boundary to reject. It is the header, not the return value, that the
-		// outer WithPrivateKeyAuth reads — so dropping the Set in NormalizeBearerAPIKey
+		// outer WithPrivateKeyAuth reads, so dropping the Set in NormalizeBearerAPIKey
 		// would break Bearer auth for every MCP client while every want below still held.
 		wantHeader string
 	}{

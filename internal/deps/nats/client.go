@@ -3,11 +3,14 @@ package nats
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/sethvargo/go-envconfig"
 	"gopkg.in/yaml.v3"
 )
@@ -22,7 +25,7 @@ type Config struct {
 	ConsumersConfig string `env:"NATS_CONSUMERS_CONFIG,default=schema/nats/consumers.yaml"`
 	// StreamReplicas is the replica count the migrate job applies to every stream.
 	// It lives in the environment rather than streams.yaml because the correct
-	// value differs per deployment — a standalone server must stay at 1 (enforced
+	// value differs per deployment: a standalone server must stay at 1 (enforced
 	// by checkReplicaSupport, not by the server), and streams.yaml is baked into
 	// the image, so it cannot vary.
 	StreamReplicas int `env:"NATS_STREAM_REPLICAS,default=1"`
@@ -62,6 +65,7 @@ type NATSClient struct {
 	conn      *nats.Conn
 	jetStream jetstream.JetStream
 	config    *Config
+	closed    atomic.Bool
 }
 
 // New creates a new NATS client
@@ -71,7 +75,27 @@ func New(ctx context.Context) (*NATSClient, error) {
 		return nil, fmt.Errorf("failed to process NATS configuration: %w", err)
 	}
 
-	opts := []nats.Option{nats.Name("pug-nats-client")}
+	client := &NATSClient{config: &cfg}
+	opts := []nats.Option{
+		nats.Name("pug-nats-client"),
+		// nats.go's default closes the connection for good after 60 failed reconnects per
+		// server (two minutes or more), and nothing redials it.
+		nats.MaxReconnects(-1),
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			if err != nil {
+				slog.WarnContext(ctx, "nats disconnected", slogx.Error(err))
+			}
+		}),
+		nats.ReconnectHandler(func(*nats.Conn) {
+			slog.InfoContext(ctx, "nats reconnected")
+		}),
+		nats.ClosedHandler(func(c *nats.Conn) {
+			client.closed.Store(true)
+			if err := c.LastError(); err != nil {
+				slog.ErrorContext(ctx, "nats connection closed", slogx.Error(err)) // puglint:exempt (nats callback, no span)
+			}
+		}),
+	}
 
 	if cfg.JWT != "" && cfg.Seed != "" {
 		opts = append(opts, nats.UserJWTAndSeed(cfg.JWT, cfg.Seed))
@@ -90,17 +114,23 @@ func New(ctx context.Context) (*NATSClient, error) {
 		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
 	}
 
-	return &NATSClient{
-		conn:      conn,
-		jetStream: &tracedJetStream{js},
-		config:    &cfg,
-	}, nil
+	client.conn = conn
+	client.jetStream = &tracedJetStream{js}
+	return client, nil
 }
 
 // IsConnected reports whether the underlying NATS connection is currently
-// established. Used by readiness probes; a closed/reconnecting conn is not ready.
+// established. Used by the worker readiness probe; a closed or reconnecting
+// conn is not ready.
 func (nc *NATSClient) IsConnected() bool {
 	return nc.conn != nil && nc.conn.IsConnected()
+}
+
+// IsClosed reports whether the connection has closed for good, which nats.go still does
+// on a repeated auth error or an unknown server error despite unlimited reconnects. It
+// reads a flag since conn.IsClosed waits on a lock a reconnect holds through its dial.
+func (nc *NATSClient) IsClosed() bool {
+	return nc.conn == nil || nc.closed.Load()
 }
 
 // ClusterName returns the connected server's cluster name, or "" when the server

@@ -103,4 +103,32 @@ func TestPublisher(t *testing.T) {
 			t.Fatal("expected validation error for empty project ID, got nil")
 		}
 	})
+
+	t.Run("re-sent batch is stored once", func(t *testing.T) {
+		stream, err := js.Stream(ctx, "events")
+		if err != nil {
+			t.Fatalf("get stream: %v", err)
+		}
+		before, err := stream.Info(ctx)
+		if err != nil {
+			t.Fatalf("stream info: %v", err)
+		}
+
+		batch := []*eventsv1.Event{
+			{EventId: proto.String(uuid.NewString()), DistinctId: proto.String("user-1"), SessionId: proto.String(uuid.NewString()), Kind: proto.String("click"), OccurTime: timestamppb.Now()},
+		}
+		for range 2 {
+			if err := publisher.Publish(ctx, "proj-3", batch); err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+		}
+
+		after, err := stream.Info(ctx)
+		if err != nil {
+			t.Fatalf("stream info: %v", err)
+		}
+		if got := after.State.Msgs - before.State.Msgs; got != 1 {
+			t.Errorf("stored %d messages, want 1", got)
+		}
+	})
 }

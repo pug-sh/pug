@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -30,7 +32,7 @@ func TestProjectsRepo(t *testing.T) {
 	rd := testutil.SetupRedis(t)
 	ctx := context.Background()
 
-	// Seed an org — projects belong to orgs.
+	// Seed an org: projects belong to orgs.
 	write := dbwrite.New(db.PgW)
 	if _, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID:          "org-repo",
@@ -42,7 +44,7 @@ func TestProjectsRepo(t *testing.T) {
 	queries := dbread.New(db.PgRO)
 	repo := projects.NewRepo(queries, rd.Client)
 
-	// Use the service to create a project — generates proper xid (20-char) IDs and
+	// Use the service to create a project, which generates proper xid (20-char) IDs and
 	// its starter public key. A private key is created explicitly, as a user would.
 	svc := projects.NewService(db.PgRO, db.PgW, repo)
 	proj, err := svc.CreateProject(ctx, "org-repo", "Repo Project", "")
@@ -51,7 +53,7 @@ func TestProjectsRepo(t *testing.T) {
 	}
 	projectID := proj.ID
 
-	// The starter public key lives only in api_keys — a project row carries none.
+	// The starter public key lives only in api_keys; a project row carries none.
 	// It is stored whole, so its token is the key itself.
 	starter, err := svc.ListApiKeys(ctx, projectID)
 	if err != nil {
@@ -87,7 +89,7 @@ func TestProjectsRepo(t *testing.T) {
 	})
 
 	// The whole point of hashing: a private key must not be recoverable from
-	// anything we store — Redis included.
+	// anything we store, Redis included.
 	t.Run("private key is cached under its digest, never its plaintext", func(t *testing.T) {
 		if _, err := repo.GetProjectByPrivateApiKey(ctx, prvKey); err != nil {
 			t.Fatalf("populate cache: %v", err)
@@ -135,7 +137,7 @@ func TestProjectsRepo(t *testing.T) {
 			t.Fatal("expected private key cache entry to exist before invalidation")
 		}
 
-		// Callers pass tokens — the stored lookup values, not the raw keys. The
+		// Callers pass tokens (the stored lookup values, not the raw keys). The
 		// project id rides along for the log line a failure emits, not the lookup.
 		repo.InvalidateProjectKeys(ctx, projectID, sha256Hex(prvKey), pubKey)
 
@@ -171,8 +173,8 @@ func TestProjectsRepo(t *testing.T) {
 	})
 
 	t.Run("nonexistent key returns error", func(t *testing.T) {
-		if _, err := repo.GetProjectByPrivateApiKey(ctx, "prv_doesnotexist0000000"); err == nil {
-			t.Fatal("expected error for nonexistent key, got nil")
+		if _, err := repo.GetProjectByPrivateApiKey(ctx, "prv_doesnotexist0000000"); !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("nonexistent key lookup err = %v, want pgx.ErrNoRows", err)
 		}
 	})
 }

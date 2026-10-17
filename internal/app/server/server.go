@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -98,7 +99,7 @@ func start(ctx context.Context, d *deps) error {
 	// otel outside ErrorInterceptor so a span exists for trace_id; ErrorInterceptor
 	// outside validate, which short-circuits a bad request without calling the inner
 	// chain; Logging outside that, so it observes the final resolved code. Authz is
-	// innermost and is the only authorization gate — handlers carry none of their own.
+	// innermost and is the only authorization gate; handlers carry none of their own.
 	//
 	// WithRecover is required, not cosmetic: on the /mcp loopback the handler runs on
 	// a jsonrpc2 goroutine that no net/http recover reaches, so an escaping panic
@@ -114,7 +115,7 @@ func start(ctx context.Context, d *deps) error {
 			pogrpc.AuthzInterceptor(d.authz, orgsSvc),
 		),
 		connect.WithRecover(pogrpc.RecoverHandlerPanic),
-		// The decompressed message — WithRequestLimits only sees the gzipped wire bytes.
+		// The decompressed message: WithRequestLimits only sees the gzipped wire bytes.
 		connect.WithReadMaxBytes(pogrpc.MaxRequestBytes),
 	)
 
@@ -206,10 +207,11 @@ func start(ctx context.Context, d *deps) error {
 
 	// No auth, no CORS. Plain paths cannot collide with the RPC routes, which are
 	// all /<package>.<Service>/...
-	mux.HandleFunc("/healthz", livenessHandler)
-	mux.HandleFunc("/readyz", d.readinessHandler)
+	probes := &health{natsClosed: d.nats.IsClosed}
+	mux.HandleFunc("/healthz", probes.live)
+	mux.HandleFunc("/readyz", probes.ready)
 
-	// AUTHZ CONTRACT: mount every RPC service through handle(), never mux.Handle — it
+	// AUTHZ CONTRACT: mount every RPC service through handle(), never mux.Handle: it
 	// records the service name, and the assertions below fail startup unless the
 	// mounted set exactly equals the authz registry.
 	mounted := map[string]bool{}
@@ -251,7 +253,7 @@ func start(ctx context.Context, d *deps) error {
 		return err
 	}
 
-	// Advertises exactly the authorized services — same source as the check above.
+	// Advertises exactly the authorized services, from the same source as the check above.
 	reflector := grpcreflect.NewStaticReflector(pogrpc.ServedServiceNames()...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
@@ -271,8 +273,8 @@ func start(ctx context.Context, d *deps) error {
 		slog.InfoContext(ctx, "mounted the payments webhook", slog.String("path", webhook.BillingPath(provider)))
 	}
 
-	// WithCorrelationID wraps the whole mux so auth rejections — which happen outside
-	// the interceptor chain — carry an error_id too. ReadTimeout stays unset: it
+	// WithCorrelationID wraps the whole mux so auth rejections (which happen outside
+	// the interceptor chain) carry an error_id too. ReadTimeout stays unset: it
 	// would cap the body as tightly as the headers, and WithRequestLimits already
 	// bounds the body's size and time.
 	server := &http.Server{
@@ -281,20 +283,46 @@ func start(ctx context.Context, d *deps) error {
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err)) // puglint:exempt — no span at shutdown
-		}
-	}()
-
-	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt — no span at startup
+	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", server.Addr)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to listen", slogx.Error(err)) // puglint:exempt (no span at startup)
 		return err
 	}
 
+	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
+	if err := serve(ctx, server, ln, func() { probes.draining.Store(true) }, d.drainDelay); err != nil {
+		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err)) // puglint:exempt (no span at startup)
+		return err
+	}
+
+	return nil
+}
+
+// serve runs srv until ctx is done, then calls drain and keeps serving for drainDelay
+// so the load balancer can stop routing here before the listener closes. In-flight
+// requests then get 10s, after which their connections close and their contexts cancel.
+func serve(ctx context.Context, srv *http.Server, ln net.Listener, drain func(), drainDelay time.Duration) error {
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(ln) }()
+
+	select {
+	case err := <-served:
+		return err
+	case <-ctx.Done():
+	}
+
+	drain()
+	slog.InfoContext(ctx, "draining before shutdown", slog.Duration("delay", drainDelay))
+	time.Sleep(drainDelay)
+
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.ErrorContext(shutdownCtx, "server shutdown incomplete, closing remaining connections", slogx.Error(err)) // puglint:exempt (no span at shutdown)
+		_ = srv.Close()
+	}
+	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
 	return nil
 }
