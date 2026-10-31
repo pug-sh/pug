@@ -1,7 +1,7 @@
 name: Release
 
 # Releases are deliberate, not every push. Pushing a SemVer tag (vX.Y.Z) builds the
-# sixteen per-role images and pushes them to GHCR (GitHub Container Registry). Plain branch
+# seventeen per-role images and pushes them to GHCR (GitHub Container Registry). Plain branch
 # pushes never trigger this — they only run CI (ci.yaml).
 on:
   push:
@@ -39,6 +39,7 @@ jobs:
           - { name: cron-usage,              cmd: cron/usage,               target: app }
           - { name: cron-purge,              cmd: cron/purge,               target: app }
           - { name: cron-retention,          cmd: cron/retention,           target: app }
+          - { name: cron-expired-tokens,     cmd: cron/expired-tokens,      target: app }
           - { name: cron-billing-reconcile,  cmd: cron/billing-reconcile,   target: app }
           - { name: cron-billing-meter,      cmd: cron/billing-meter,       target: app }
           - { name: migrate-postgres,        cmd: migrate/postgres,         target: migrate }
@@ -79,6 +80,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Per-name cache scope so the sixteen parallel builds don't clobber each other.
+          # Per-name cache scope so the seventeen parallel builds don't clobber each other.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,scope=${{ matrix.name }},mode=max

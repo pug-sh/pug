@@ -80,8 +80,8 @@ const (
 	// from a claim.
 	//
 	// The number is therefore set by refresh cost, not leak risk. Every refresh
-	// is a FOR UPDATE-locked tx that inserts a row (see createRefreshToken's
-	// pruning TODO) and rotates the token within its family, and racing rotations
+	// is a FOR UPDATE-locked tx that inserts a row and rotates the token
+	// within its family, and racing rotations
 	// are what trip reuse-detection. 24h puts that at ~once per active user per
 	// day. Keep it far below refreshTokenTTL. Nothing enforces that ratio;
 	// service_test.go pins this constant's absolute value at ~24h.
@@ -650,21 +650,6 @@ func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, custom
 // the given family, and returns the plaintext (shown to the client once). The
 // token is crypto-random for the same reason magic-link tokens are: it is the
 // sole secret needed to mint sessions.
-//
-// TODO(refresh-token-pruning): refresh_tokens grows unbounded. Rotation inserts a
-// new row on every refresh (~daily per active user, given a 24h access TTL) and
-// only marks the predecessor consumed_at; its expires_at stays ~90 days out, so
-// nothing reaps it. Add a periodic prune (e.g. in the scheduler worker, which
-// needs a write pool wired in) deleting rows that can no longer be presented:
-//
-//	delete from refresh_tokens
-//	where expires_at < now()
-//	   or (consumed_at is not null and consumed_at < now() - <reuse-grace>)
-//	   or (revoked_at  is not null and revoked_at  < now() - <reuse-grace>);
-//
-// Keep a reuse-detection grace (~7d) on consumed/revoked rows so a replayed token
-// still trips RevokeRefreshTokenFamily within that window; past it, a replay just
-// reads as not-found (acceptable). Until this lands, the table only ever grows.
 func (s *Service) createRefreshToken(ctx context.Context, w *dbwrite.Queries, customerID, familyID, provenDomain string) (string, error) {
 	rawToken, err := newActionToken()
 	if err != nil {

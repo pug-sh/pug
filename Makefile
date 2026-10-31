@@ -93,6 +93,7 @@ build:
 	go build -o bin/pug-cron-retention ./cmd/cron/retention
 	go build -o bin/pug-cron-billing-reconcile ./cmd/cron/billing-reconcile
 	go build -o bin/pug-cron-billing-meter ./cmd/cron/billing-meter
+	go build -o bin/pug-cron-expired-tokens ./cmd/cron/expired-tokens
 
 .PHONY: fmt
 fmt:

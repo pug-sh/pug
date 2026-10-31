@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	expiredtokenscron "github.com/pug-sh/pug/internal/app/cron/expiredtokens"
 	purgecron "github.com/pug-sh/pug/internal/app/cron/purge"
 	retentioncron "github.com/pug-sh/pug/internal/app/cron/retention"
 	usagecron "github.com/pug-sh/pug/internal/app/cron/usage"
@@ -218,6 +219,13 @@ var cronPurgeCmd = &cobra.Command{
 	Use:   "purge",
 	Short: "Run a pass erasing deleted projects",
 	Run:   run(purgecron.Run),
+}
+
+var cronExpiredTokensCmd = &cobra.Command{
+	Use:   "expired-tokens",
+	Short: "Delete expired refresh and email-action tokens",
+	Args:  cobra.NoArgs,
+	Run:   run(expiredtokenscron.Run),
 }
 
 var cronRetentionCmd = &cobra.Command{
@@ -443,6 +451,7 @@ func init() {
 	cronCmd.AddCommand(cronUsageCmd)
 	cronCmd.AddCommand(cronPurgeCmd)
 	cronCmd.AddCommand(cronRetentionCmd)
+	cronCmd.AddCommand(cronExpiredTokensCmd)
 	rootCmd.AddCommand(cronCmd)
 
 	rootCmd.AddCommand(billingCmd)

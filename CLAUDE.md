@@ -101,6 +101,12 @@ make clickstack
 # what it would delete. Nothing else schedules it.
 ./bin/pug cron retention
 
+# One daily pass deleting expired refresh and email-action tokens, including used
+# and revoked rows, only after expires_at. Deployed as its own CronJob binary
+# (cmd/cron/expired-tokens); used refresh-token rows remain until their 90-day
+# expiry so replay detection keeps working.
+./bin/pug cron expired-tokens
+
 # Rolling demo-traffic generator. Gated by PUG_DEMO_ENABLED everywhere: when off
 # (default), `pug dev` skips it and the standalone `pug worker demo` idles (stays
 # running but generates nothing, so a k8s Deployment doesn't restart-loop on
