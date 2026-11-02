@@ -160,7 +160,7 @@ func (c *Client) CreatePortalSession(ctx context.Context, customerID string) (st
 // Subscription has no past_due_ends_at, so inside a grace window a read cannot date
 // it; if the SDK gains the field, wire it here.
 func (c *Client) FetchSubscription(ctx context.Context, providerSubID string) (corebilling.SubscriptionEvent, error) {
-	sub, err := c.api.Subscriptions.Get(ctx, providerSubID)
+	sub, err := c.api.Subscriptions.Get(ctx, providerSubID, dodopayments.SubscriptionGetParams{})
 	if err != nil {
 		if notFound(err) {
 			return corebilling.SubscriptionEvent{}, fmt.Errorf("%w: %s",

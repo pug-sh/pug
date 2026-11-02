@@ -400,6 +400,69 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("sum_of_absent_property_is_zero", func(t *testing.T) {
+		// purchase events carry no amount, so each sum is over NULLs only.
+		window := &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+			To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
+		}
+		sumAmount := &insightsv1.EventQuery{
+			Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
+			Aggregation:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+			AggregationProperty: proto.String("amount"),
+		}
+
+		trends, err := insights.BuildTrendsQuery(&insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					sumAmount,
+				},
+			},
+			TimeRange:   window,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery: %v", err)
+		}
+		rows, err := executor.QueryTrends(ctx, testProjectID, trends)
+		if err != nil {
+			t.Fatalf("QueryTrends: %v", err)
+		}
+		purchaseRows := 0
+		for _, r := range rows {
+			if r.EventKind != "purchase" {
+				continue
+			}
+			purchaseRows++
+			if r.Value != 0 {
+				t.Errorf("%s: expected purchase sum 0, got %v", r.Time.Format(time.DateOnly), r.Value)
+			}
+		}
+		if purchaseRows == 0 {
+			t.Fatal("expected purchase rows")
+		}
+
+		seg, err := insights.BuildSegmentationQuery(&insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+				Events:      []*insightsv1.EventQuery{sumAmount},
+			},
+			TimeRange: window,
+		}, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildSegmentationQuery: %v", err)
+		}
+		value, err := executor.QueryScalar(ctx, testProjectID, seg)
+		if err != nil {
+			t.Fatalf("QueryScalar: %v", err)
+		}
+		if value != 0 {
+			t.Errorf("segmentation: expected 0, got %v", value)
+		}
+	})
+
 	t.Run("segment_users", func(t *testing.T) {
 		req := &insightsv1.SegmentUsersRequest{
 			TimeRange: &commonv1.TimeRange{
@@ -2190,6 +2253,26 @@ func TestIntegration(t *testing.T) {
 			}
 			if rows[2].GetProfile() != nil {
 				t.Errorf("row 2: $others must not be enriched, got %v", rows[2].GetProfile())
+			}
+		})
+
+		t.Run("sum_of_absent_property_is_zero", func(t *testing.T) {
+			for _, tk := range []*insightsv1.TopKQuery{
+				{Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(), Limit: proto.Int32(2)},
+				{Dimension: insightsv1.TopKQuery_DIMENSION_EVENT_KIND.Enum(), Limit: proto.Int32(2)},
+			} {
+				tk.Scope = &commonv1.EventFilter{Kind: proto.String("tk_purchase")}
+				tk.Metric = insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum()
+				tk.MetricProperty = proto.String("missing_amount")
+				rows := runTopK(t, tk)
+				if len(rows) == 0 {
+					t.Fatalf("%s: expected rows", tk.GetDimension())
+				}
+				for _, r := range rows {
+					if r.Value != 0 {
+						t.Errorf("%s %s: expected 0, got %v", tk.GetDimension(), r.DimensionValue, r.Value)
+					}
+				}
 			}
 		})
 

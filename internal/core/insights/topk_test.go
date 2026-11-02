@@ -220,7 +220,7 @@ func TestBuildTopKQuery_OmitOthers(t *testing.T) {
 			"ranked AS (",
 			"rn <= ?",
 			"0 AS is_others",
-			"sum(sum_num) AS value",
+			"ifNull(sum(sum_num), 0) AS value",
 			"ORDER BY value DESC, dim_value ASC",
 		} {
 			if !strings.Contains(sql, want) {
@@ -369,9 +369,9 @@ func TestBuildTopKQuery_UserDimension(t *testing.T) {
 		"e.project_id = ?",
 		"e.occur_time >= ?",
 		"AS sum_num", // per-user partial
-		"row_number() OVER (ORDER BY sum_num DESC, user_key ASC) AS rn",
+		"row_number() OVER (ORDER BY ifNull(sum_num, 0) DESC, user_key ASC) AS rn",
 		"if(rn <= ?, user_key, '$others') AS dim_value",
-		"sum(sum_num) AS value", // re-merge over partials
+		"ifNull(sum(sum_num), 0) AS value", // re-merge over partials
 		"SETTINGS use_query_cache = 1",
 		// WithSpillThreshold sets both group-by and sort spill thresholds.
 		"max_bytes_before_external_group_by = 1073741824",

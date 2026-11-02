@@ -100,7 +100,7 @@ func (c *Client) VerifyMetering(ctx context.Context, tiers int, productIDs []str
 		want[k], tierOf[id] = id, k
 	}
 	for _, productID := range productIDs {
-		p, err := c.api.Products.Get(ctx, productID)
+		p, err := c.api.Products.Get(ctx, productID, dodopayments.ProductGetParams{})
 		if err != nil {
 			if notFound(err) {
 				return misconfiguredf("product %s does not exist", productID)

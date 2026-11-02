@@ -1537,20 +1537,19 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 // property with any numeric aggregation (SUM/AVG/MIN/MAX) produces valid SQL that silently
 // returns 0 rather than erroring. For SUM the generated expression is:
 //
-//	sum(toFloat64OrNull(ifNull(nullIf(auto_properties[EMPTY], EMPTY), custom_properties[EMPTY])))
+//	ifNull(sum(toFloat64OrNull(ifNull(nullIf(auto_properties[EMPTY], EMPTY), custom_properties[EMPTY]))), 0)
 //
 // where EMPTY is the SQL empty-string literal (two single-quotes). For an empty property name:
 // auto_properties[EMPTY] returns empty string, nullIf maps empty → NULL, ifNull falls back to
-// custom_properties[EMPTY] (also empty), toFloat64OrNull(empty) returns NULL, sum(NULL,…) = 0.
-// AVG/MIN/MAX wrap the same toFloat64OrNull(...) in ifNull(agg(...), 0) (see switch arms below)
-// so all-NULL inputs collapse to 0 too: same observable result, different mechanism. Pre-validate
+// custom_properties[EMPTY] (also empty), toFloat64OrNull(empty) returns NULL, so the sum is NULL
+// and the outer ifNull makes it 0. AVG/MIN/MAX use the same ifNull(agg(...), 0) wrapper. Pre-validate
 // or accept the silent-zero behavior.
 //
-// The AVG/MIN/MAX ifNull(..., 0) wrapper is also load-bearing for non-numeric data: if all
-// property values fail toFloat64OrNull (e.g. strings), the aggregate returns NULL and the wrapper
-// coerces it to 0. SUM doesn't need the wrapper because ClickHouse sum() returns 0 for all-NULL
-// natively. Either way: "no data" and "actual zero" are indistinguishable in the result;
-// consumers should check event counts separately if the distinction matters.
+// The ifNull(..., 0) wrapper is also load-bearing for non-numeric data: if all property values
+// fail toFloat64OrNull (e.g. strings), every aggregate, sum included, returns NULL, and the
+// driver refuses to scan a NULL into a float64. Either way: "no data" and "actual zero" are
+// indistinguishable in the result; consumers should check event counts separately if the
+// distinction matters.
 func aggregationExpr(agg insightsv1.AggregationType, property string) (string, error) {
 	switch agg {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
@@ -1561,7 +1560,7 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		//exhaustive:ignore unreachable: the outer case already narrowed to these four
 		switch agg {
 		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
-			return "sum(" + numeric + ")", nil
+			return "ifNull(sum(" + numeric + "), 0)", nil
 		case insightsv1.AggregationType_AGGREGATION_TYPE_AVG:
 			return "ifNull(avg(" + numeric + "), 0)", nil
 		case insightsv1.AggregationType_AGGREGATION_TYPE_MIN:
@@ -1605,7 +1604,7 @@ func aggregationExprIf(cond chq.Condition, agg insightsv1.AggregationType, prope
 		//exhaustive:ignore unreachable: the outer case already narrowed to these four
 		switch agg {
 		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
-			return "sumIf(" + numeric + ", " + c + ")", a, nil
+			return "ifNull(sumIf(" + numeric + ", " + c + "), 0)", a, nil
 		case insightsv1.AggregationType_AGGREGATION_TYPE_AVG:
 			return "ifNull(avgIf(" + numeric + ", " + c + "), 0)", a, nil
 		case insightsv1.AggregationType_AGGREGATION_TYPE_MIN:
