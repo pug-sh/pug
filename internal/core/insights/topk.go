@@ -336,7 +336,7 @@ type topKPartial struct {
 //     each becomes "expr AS col" in per_user and "col" in the ranked CTE
 //   - rankExpr: the per-user metric value (over partials) used for ranking;
 //     identical in semantics to aggregationExpr's per-group value, including
-//     the AVG/MIN/MAX collapse of all-NULL groups to 0
+//     the collapse of all-NULL groups to 0
 //   - mergeExpr: the metric over a *group* of users (over the same partials).
 //     For a top row the group is one user and mergeExpr reduces to rankExpr;
 //     for $others it is the exact metric over the bucket's raw events: sums
@@ -373,8 +373,8 @@ func topKUserMetricExprs(tk *insightsv1.TopKQuery) (topKUserMetric, error) {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
 		return topKUserMetric{
 			partials:  []topKPartial{{expr: "sum(" + num + ")", col: "sum_num"}},
-			rankExpr:  "sum_num",
-			mergeExpr: "sum(sum_num)",
+			rankExpr:  "ifNull(sum_num, 0)",
+			mergeExpr: "ifNull(sum(sum_num), 0)",
 		}, nil
 	case insightsv1.AggregationType_AGGREGATION_TYPE_AVG:
 		// avg is not re-mergeable from per-user avgs (users contribute different
