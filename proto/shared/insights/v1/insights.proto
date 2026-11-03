@@ -960,6 +960,16 @@ message DataPoint {
 }
 
 message GetPropertyValuesRequest {
+  // An auto property is the one pug fills in itself, and its key always carries the
+  // "$" prefix. Without this a bare "browser" passes validation and only fails in the
+  // query builder, which the handler reports as an internal error.
+  option (buf.validate.message).cel = {
+    id: "get_property_values_request.auto_key_dollar_prefix"
+    message: "auto property keys must start with '$' (for example '$browser')"
+    expression:
+      "this.source != common.v1.PropertySource.PROPERTY_SOURCE_AUTO"
+      "|| this.property_key.startsWith('$')"
+  };
   string property_key = 1 [(buf.validate.field) = {
     required: true
     // See common.v1.PropertyFilter.property for the empty-segment rationale.
