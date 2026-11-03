@@ -165,7 +165,7 @@ self-referral/auth-intermediary blanks, suffix-matched against the domain sets s
 Domain sets live as Go consts in `internal/attribution/channel.go` (search: google's ccTLD family
 matched structurally by a TLD-shaped-tail check rather than enumeration, bing, duckduckgo, yahoo,
 baidu, yandex, ecosia, brave, startpage, perplexity…; social: facebook, instagram, x/twitter,
-t.co, linkedin, tiktok, pinterest, reddit, threads, bsky, news.ycombinator…; video: youtube,
+t.co, linkedin, tiktok, pinterest, reddit, threads (threads.net and threads.com), bsky, news.ycombinator…; video: youtube,
 youtu.be, vimeo, twitch, dailymotion…). That file is the **single normative taxonomy**; this satisfies
 `profiles.md`'s "no ad hoc channel" rule by defining the stable derivation it demanded; the
 profile API still exposes no channel field.

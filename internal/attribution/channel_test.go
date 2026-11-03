@@ -50,6 +50,8 @@ func TestClassifyChannelRules(t *testing.T) {
 		// 7: Organic Social
 		{"organic social via ref", Input{URL: page, Referrer: "https://reddit.com/r/pugs"}, ChannelOrganicSocial},
 		{"organic social via t.co", Input{URL: page, Referrer: "https://t.co/abc"}, ChannelOrganicSocial},
+		{"organic social via threads.com", Input{URL: page, Referrer: "https://www.threads.com/@pug/post/1"}, ChannelOrganicSocial},
+		{"organic social via threads.net", Input{URL: page, Referrer: "https://www.threads.net/@pug/post/1"}, ChannelOrganicSocial},
 		{"organic social via hn", Input{URL: page, Referrer: "https://news.ycombinator.com/item?id=1"}, ChannelOrganicSocial},
 		{"organic social via medium sm", Input{URL: page, UTMSource: "buffer", UTMMedium: "sm"}, ChannelOrganicSocial},
 		{"organic social via source", Input{URL: page, UTMSource: "instagram"}, ChannelOrganicSocial},
