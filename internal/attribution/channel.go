@@ -51,7 +51,7 @@ var (
 		"facebook.com", "fb.com", "fb.me", "messenger.com", "instagram.com",
 		"twitter.com", "x.com", "t.co", "linkedin.com", "lnkd.in",
 		"tiktok.com", "pinterest.com", "pin.it", "reddit.com", "redd.it",
-		"threads.net", "bsky.app", "news.ycombinator.com", "mastodon.social",
+		"threads.net", "threads.com", "bsky.app", "news.ycombinator.com", "mastodon.social",
 		"whatsapp.com", "telegram.org", "t.me",
 	}
 	socialSources = []string{
