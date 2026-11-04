@@ -45,8 +45,19 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
 </p>
 
 <p>
-  <img src="docs/assets/live-light.webp" alt="Pug's live map flying between real-time visitors around the world" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/live-dark.webp" />
+    <img src="docs/assets/live-light.webp" alt="Pug's live map flying between real-time visitors around the world" />
+  </picture>
   <br /><sub><b>Live view</b>: every visitor on a live world map; click one to fly to them and see the page, device, and profile behind it.</sub>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/events-dark.webp" />
+    <img src="docs/assets/events-light.webp" alt="Pug's events explorer listing raw events with location, platform, and properties" />
+  </picture>
+  <br /><sub><b>Events</b>: every raw event as it lands, with its location, platform, properties, and the person behind it.</sub>
 </p>
 
 <p>
@@ -63,6 +74,14 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
     <img src="docs/assets/insights-light.webp" alt="A Pug trends insight broken down by country" />
   </picture>
   <br /><sub><b>Insights</b>: trends, filters, and breakdowns; here product views split by country.</sub>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/funnels-dark.webp" />
+    <img src="docs/assets/funnels-light.webp" alt="A Pug funnel from product view to add to cart, checkout, and purchase" />
+  </picture>
+  <br /><sub><b>Funnels</b>: step-by-step conversion; here product view to purchase.</sub>
 </p>
 
 <p>
