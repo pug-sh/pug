@@ -40,7 +40,9 @@ updates:
 
   # Docker
   - package-ecosystem: "docker"
-    directory: "/infra/dev"
+    directories:
+      - "/"
+      - "/infra/dev"
     schedule:
       interval: "weekly"
       day: "monday"
