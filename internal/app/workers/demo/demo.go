@@ -141,6 +141,9 @@ func Run(ctx context.Context) error {
 
 	projectID, err := ensureSeed(ctx, cfg, chDB.Conn)
 	if err != nil {
+		// main logs it too, but only after telemetry has shut down.
+		slog.ErrorContext(ctx, "demo seed failed", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 
@@ -192,8 +195,8 @@ func decideSeedAction(n uint64, seedCount int64) seedAction {
 // synthetic events carry random ids the events ReplacingMergeTree can't dedup
 // across runs, re-running would duplicate rather than repair, so ensureSeed
 // logs a warning and leaves the partial history in place (recovery is to
-// truncate the events table and restart). Returns the demo project id to play
-// live traffic into.
+// delete the project and restart, which backfills a new one). Returns the demo
+// project id to play live traffic into.
 func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error) {
 	// Postgres is only needed while seeding (account + active-set profiles), so it
 	// is opened and closed here; the caller owns the long-lived ClickHouse conn.
@@ -244,7 +247,7 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 			slog.String("project_id", project.ID),
 			slog.Uint64("events", n),
 			slog.Int64("expected", cfg.SeedCount),
-			slog.String("recovery", "TRUNCATE TABLE events and restart the demo worker to re-seed"),
+			slog.String("recovery", "delete this project with `pug projects delete` and restart the demo worker; it backfills a new one"),
 		)
 		return project.ID, nil
 	case seedBackfill:
@@ -316,7 +319,7 @@ func decideProfileHeal(chProfiles uint64, pgProfiles int64) profileHealAction {
 // by simply re-driving it: already-present rows are untouched and live-created
 // ClickHouse-only profiles are preserved. If Postgres itself has no demo
 // profiles, a prior seed crashed before any profile was written and there is
-// nothing to copy from; warn with the reset recovery and let the event-gated
+// nothing to copy from; warn with the rebuild recovery and let the event-gated
 // live stream lazily re-create profiles for users it re-sees.
 func healDemoProfiles(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string, events uint64) error {
 	chProfiles, err := seed.ProfileCount(ctx, ch, projectID)
@@ -334,7 +337,7 @@ func healDemoProfiles(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, pro
 		slog.WarnContext(ctx, "demo events present but no postgres profiles; a prior seed likely crashed before seeding profiles",
 			slog.String("project_id", projectID),
 			slog.Uint64("events", events),
-			slog.String("recovery", "run `pug seed --no-reset` to clear and re-seed the demo project"),
+			slog.String("recovery", "delete this project with `pug projects delete` and restart the demo worker; it backfills a new one"),
 		)
 	case profileHealRecopy:
 		slog.WarnContext(ctx, "demo clickhouse profiles behind postgres; re-copying to self-heal",

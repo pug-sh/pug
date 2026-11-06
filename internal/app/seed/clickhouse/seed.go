@@ -93,7 +93,8 @@ func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int
 	)
 
 	seedStart := time.Now()
-	start := seedStart.AddDate(0, -4, 0)
+	// Six months covers the longest board window, 180 days.
+	start := seedStart.AddDate(0, -6, 0)
 
 	slog.InfoContext(ctx, "building session factory")
 	factory := newSessionFactory()

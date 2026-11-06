@@ -1,8 +1,8 @@
 # Demo
 
-Status: in progress. Built: the five boards and the generator properties they
-read. Not built yet: the rebuild, the rest of the generator, and the frontend
-asks.
+Status: in progress. Built: the five boards, the generator properties they
+read, six months of history, and the manual rebuild. Not built yet: the rest of
+the generator and the frontend asks.
 
 ## Summary
 
@@ -11,53 +11,55 @@ show every capability Pug renders, on data that reads like a real shop that is
 growing. Today it does neither.
 
 This doc replaces the four demo dashboards with five new ones, fixes the demo data
-so they look right, and rebuilds the production demo with no downtime.
+so they look right, and rebuilds the production demo. The demo is down while it
+backfills.
 
 ## The plan
 
 **Nothing is edited in place.** The demo's events cannot be repaired. ClickHouse
 holds them with random ids, and their history has the wrong shape (see "What is
-wrong today"). The dashboards are seed code, not data. So the release builds a new
-demo project from scratch, next to the live one. Then it deletes the old project
-whole: its four boards, events, profiles and rollups.
+wrong today"). The dashboards are seed code, not data. So the switchover deletes
+the old project whole: its four boards, events, profiles and rollups. Then the
+worker builds a new demo project from scratch.
 
 **No migration.** The demo worker writes boards and events, as it does today.
-Knowing which demo is current needs no new table either: the worker compares the
-demo project's own `create_time` with a date in the code (see "How the rebuild
-works").
+Knowing which demo is current needs no new table either: it is the demo org's
+oldest live project.
 
 Steps:
 
 1. **Generator.** Time-driven backfill, the story, the new properties (see "Data").
 2. **Boards.** Replace the four definitions in
    `internal/app/seed/postgres/dashboards.go` with the five below.
-3. **Rebuild.** The demo worker builds a new project when the current one was
-   created before `demoDataEpoch`, a date constant set to the release day (see
-   "Rebuilding the demo in production").
-4. **Tests.** Every tile renders data, the generator hits its rates, and the
-   rebuild survives a crash.
+3. **Rebuild.** Once the demo project is deleted, the worker gives the demo org a
+   new project and backfills it. The automatic rebuild in "Rebuilding the demo in
+   production" is not built.
+4. **Tests.** Every tile renders data, the generator hits its rates, and a deleted
+   demo project is replaced.
 5. **App repo.** Lay split funnels out three to a row. It is the only FE change the
    boards need.
 6. **Local preview.** You run `pug seed`. I screenshot all five boards in light and
    dark, and we iterate on the board code until they look right.
-7. **Release** as usual: tag, then roll the new digests out. Steps 1 to 3 must ship
-   in the same release. Boards alone would land in the old project, on old data,
-   next to the old boards.
-8. **Switchover**, done by the worker on start. It builds the new project in about
-   5 to 10 minutes while visitors still see the old demo. Then it deletes the old
-   project, and that delete is the switch.
+7. **Release** as usual: tag, then roll the new digests out, except the demo
+   worker's, which waits for step 8. Rolled out on the old project, it would add
+   the new boards beside the old ones, on old data.
+8. **Switchover**, by hand at a quiet hour. Check that the demo org has no other
+   live project, or the oldest one left becomes the demo. Delete the demo project
+   (`pug projects delete d91cn26ml7kc7391f7eg --actor <you>`). Right away, roll
+   the demo worker out with `PUG_DEMO_SEED_COUNT=4500000`, which keeps the
+   backfill near the live rate of about 27k events a day; the old worker writes
+   to the deleted project until it stops. The new worker creates a new project
+   and backfills it. The demo is down until the project exists, then its boards
+   fill in over roughly 10 to 20 minutes. If the backfill is interrupted, delete
+   the new project the same way and restart the worker.
 9. **Cleanup** is automatic. The purge cron erases the old project after
    deletion's usual one-hour wait.
 10. **Verify.** demo.pug.sh shows the five boards. `DemoSignIn` returns a new
     project id. The old project's deletion reaches `done`.
 
-Later refreshes only move `demoDataEpoch` to the new release day.
-
-**Cheaper alternative.** Skip step 3. Add only "create a project when the demo org
-has none". At release you delete the demo project by hand
-(`pug projects delete d91cn26ml7kc7391f7eg --actor <you>`) and restart the demo
-worker. It creates a fresh project and backfills it. The demo is down for a few
-minutes, and every later refresh repeats these manual steps.
+Later refreshes repeat step 8 with the current demo project's id, the one
+`DemoSignIn` returns. If the worker's image and settings are unchanged, restart it
+instead of rolling it out.
 
 ## What is wrong today
 
@@ -444,7 +446,7 @@ Six months of history, then live. A visitor should be able to read these:
 | Change | Fixes or feeds | Priority |
 |---|---|---|
 | Time-driven backfill. Walk every minute from the start to now at the live rate (`PUG_DEMO_PEAK_SESSIONS_PER_MIN` times `TrafficFactor`), with the same session builder as live. `PUG_DEMO_SEED_COUNT` goes away. | The density cliff and the climbing retention | must |
-| Six months of history. The longest board window is 180 days. | Board 4 | must |
+| Six months of history. The longest board window is 180 days. (Done.) | Board 4 | must |
 | A growth factor in `TrafficFactor`, capped so live traffic levels off | KPI deltas, every trend | must |
 | Tamer promos: traffic 1.25x and a smaller purchase boost | No 5x towers | must |
 | Flatten `dayWeights` to about 8% either side of 1. Scale the desktop, mobile and weekend hour tables to the same daily total, so they set when people shop, not how much. | Weekend spikes | must |
@@ -483,10 +485,13 @@ Two smaller fixes ride along:
 
 The worker backfills once, when the demo project has no events. The demo project
 is the demo org's oldest live project, for both the seeder and `DemoSignIn`.
-Nothing ever replaces its data. Purge refuses a live project, so there is no
-supported way to wipe it.
+Purge refuses a live project, so the only way to replace its data is to delete
+it: the worker then gives the demo org a new project and backfills it.
 
 ### How the rebuild works
+
+Not built: the manual rebuild in "The plan" replaced it. The side effects at the
+end of this section apply to the manual rebuild too.
 
 The worker carries a date constant, `demoDataEpoch`. A demo project created before
 it is stale. There is no new table: the project's own `create_time` is the marker.
@@ -537,8 +542,7 @@ Side effects:
 4. The old project is the largest tenant, about 5M events. Purging it rewrites
    every ClickHouse part that holds its rows, so expect some minutes of merge
    load. Release at a quiet hour.
-5. Boards an operator added to the old demo project by hand go with it. So does
-   any other project in the demo org, which a rebuild treats as left over.
+5. Boards an operator added to the old demo project by hand go with it.
 
 ## Tests
 
@@ -552,9 +556,8 @@ Side effects:
 3. Generator tests pin the new rates: channel conversion order, push click rate,
    club conversion, the crash spike on the bad release, the weekly rhythm, and
    bot tags that match `botdetect`.
-4. Rebuild tests: it resumes after a crash mid-build, it never rebuilds a current
-   demo, and it never touches another org. Another test fails if
-   `demoDataEpoch` is later than today.
+4. Rebuild test: a deleted demo project gets a new one in the demo org, which
+   can seed its profiles before the purge runs, and later seeds keep it (done).
 
 ## Frontend asks
 
@@ -585,7 +588,8 @@ optional.
 
 ## Open questions
 
-1. The automatic rebuild, or the one-time manual delete?
+1. The automatic rebuild, or a manual delete? The manual delete, repeated at each
+   refresh (2026-11-06).
 2. 50,000 users and about 35k events a day: is that the size of shop to show?
 3. Board 3 leads with the Sankey and puts the explainer in row 2. Is that
    exception fine?

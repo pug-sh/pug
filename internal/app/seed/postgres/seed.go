@@ -294,9 +294,40 @@ func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, custo
 		return dbread.Project{}, fmt.Errorf("failed to query projects for org %s: %w", orgID, err)
 	}
 	if len(projects) == 0 {
-		return dbread.Project{}, fmt.Errorf("no projects found for org %s", orgID)
+		// Deleting the demo project and restarting the worker rebuilds the demo.
+		return s.createDemoProject(ctx, orgID)
 	}
 	return projects[0], nil
+}
+
+func (s *Seeder) createDemoProject(ctx context.Context, orgID string) (dbread.Project, error) {
+	tx, err := s.deps.pg.Begin(ctx)
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Demo profile ids are fixed and profiles.id is global, so the deleted
+	// project's profiles would block the new one's until the purge erases them.
+	for _, stmt := range []string{
+		"DELETE FROM profile_devices WHERE project_id IN (SELECT id FROM projects WHERE org_id = $1 AND deletion_time IS NOT NULL)",
+		"DELETE FROM profiles WHERE project_id IN (SELECT id FROM projects WHERE org_id = $1 AND deletion_time IS NOT NULL)",
+	} {
+		if _, err := tx.Exec(ctx, stmt, orgID); err != nil {
+			return dbread.Project{}, fmt.Errorf("failed to clear deleted projects' profiles: %w", err)
+		}
+	}
+
+	p, err := projects.CreateProjectInTx(ctx, dbwrite.New(tx), orgID, "default", "")
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to create a project for org %s: %w", orgID, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to commit the new demo project: %w", err)
+	}
+	slog.InfoContext(ctx, "the demo org had no project, so the seeder created one",
+		slog.String("org_id", orgID), slog.String("project_id", p.ID))
+	return dbread.Project{ID: p.ID, OrgID: p.OrgID, DisplayName: p.DisplayName}, nil
 }
 
 // demoOrgID picks the first of the demo user's orgs, oldest first, that also has

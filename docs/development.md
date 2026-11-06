@@ -72,7 +72,7 @@ The seed:
 
 1. Resets Postgres and ClickHouse by migrating them down and back up.
 2. Creates the demo org and its project. Both are named `default`.
-3. Writes about four months of events (500,000 by default) and the profiles
+3. Writes about six months of events (500,000 by default) and the profiles
    behind them.
 4. Adds the demo dashboards.
 5. Creates `admin@pug.example` as the demo org's admin, with

@@ -136,7 +136,7 @@ Google and generic OIDC sign-in are documented in
 
 ### Demo data
 
-`./bin/pug seed` fills a "Pug & Pals" demo project with ~4 months of history, so
+`./bin/pug seed` fills a "Pug & Pals" demo project with ~6 months of history, so
 dashboards, insights, and profiles have something to show. Profiles are seeded
 only for users that produced events, so the data is internally consistent.
 
