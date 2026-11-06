@@ -141,6 +141,8 @@ type userMemory struct {
 	abandonedAt    time.Time
 	trialID        string
 	trialStartedAt time.Time
+	trialPlanIdx   int
+	subscribed     bool
 	orders         []pastOrder // most recent last, capped
 
 	// signedUp caps the forced signup/app-install journey at one per user.
@@ -172,10 +174,12 @@ func (m *userMemory) rememberAbandonedCart(cart []cartLine, at time.Time) {
 	m.abandonedAt = at
 }
 
-// rememberTrial records a started trial so a later session can convert it.
-func (m *userMemory) rememberTrial(id string, at time.Time) {
+// rememberTrial records a started trial so a later session can convert it on
+// the same plan.
+func (m *userMemory) rememberTrial(id string, at time.Time, planIdx int) {
 	m.trialID = id
 	m.trialStartedAt = at
+	m.trialPlanIdx = planIdx
 }
 
 // takeOrderBefore pops the oldest remembered order that predates t.
@@ -199,14 +203,36 @@ func (m *userMemory) takeAbandonedCartBefore(t time.Time) ([]cartLine, bool) {
 	return cart, true
 }
 
-// takeTrialBefore pops the remembered trial id if it predates t.
-func (m *userMemory) takeTrialBefore(t time.Time) (string, bool) {
+// trialConversion is the chance a trial converts once a session settles it.
+const trialConversion = 0.45
+
+// decideTrial settles an open trial when a session lands 3 to 14 days after it
+// started. True means the session runs the conversion journey, which consumes
+// the trial; a trial that doesn't convert lapses, so each is rolled once.
+func (m *userMemory) decideTrial(t time.Time) bool {
+	if m.trialID == "" {
+		return false
+	}
+	age := t.Sub(m.trialStartedAt)
+	if age < 3*24*time.Hour || age > 14*24*time.Hour {
+		return false
+	}
+	if rand.Float64() < trialConversion {
+		m.subscribed = true
+		return true
+	}
+	m.trialID = ""
+	return false
+}
+
+// takeTrialBefore pops the remembered trial id and its plan if it predates t.
+func (m *userMemory) takeTrialBefore(t time.Time) (string, int, bool) {
 	if m.trialID == "" || !m.trialStartedAt.Before(t) {
-		return "", false
+		return "", 0, false
 	}
 	id := m.trialID
 	m.trialID = ""
-	return id, true
+	return id, m.trialPlanIdx, true
 }
 
 // sessionFactory generates sessions on demand. User attributes are derived
@@ -471,7 +497,7 @@ func (f *sessionFactory) sampleStart(ctx context.Context, geo geoEntry, mobile b
 // journeyFor selects a journey. Forced selections, in priority order: the
 // signup/install journey on a user's first session (so signups line up with
 // cohort entry), purchase journeys during promo episodes, push journeys on
-// blast days, and crash/error journeys right after an app release.
+// blast days, crash journeys right after an app release, and trial conversions.
 func (f *sessionFactory) journeyFor(u *userProfile, prof deviceProfile, sessionStart time.Time) journeyDef {
 	app := isApp(prof.platform)
 
@@ -506,7 +532,15 @@ func (f *sessionFactory) journeyFor(u *userProfile, prof deviceProfile, sessionS
 		return journeyByName(appJourneys, "app-crash")
 	}
 
-	return pickJourney(prof.platform, u.member)
+	if !app && u.member && f.memory(u).decideTrial(sessionStart) {
+		return journeyByName(webJourneys, "club-convert")
+	}
+
+	jd := pickJourney(prof.platform, u.member)
+	for jd.name == "club-trial" && f.memory(u).subscribed {
+		jd = pickJourney(prof.platform, u.member)
+	}
+	return jd
 }
 
 // isApp reports whether a platform is one of the native mobile apps (as opposed
@@ -565,6 +599,11 @@ func (f *sessionFactory) botSession(anchor, end time.Time) []event {
 	if bp.verified {
 		props["$verified_bot"] = true
 	}
+	props["$screenWidth"], props["$screenHeight"] = bp.screen[0], bp.screen[1]
+	if reason, ok := botTag(bp); ok {
+		props["$bot"] = true
+		props["$bot_reason"] = reason
+	}
 
 	occur := anchor
 
@@ -575,8 +614,9 @@ func (f *sessionFactory) botSession(anchor, end time.Time) []event {
 			occur = occur.Add(time.Duration(1+rand.Int64N(8)) * time.Second)
 		}
 		p := catalog[rand.IntN(len(catalog))]
+		path := "/products/" + p.slug
 		auto := copyProps(props)
-		auto["$url"] = storeURL + "/products/" + p.slug
+		auto["$url"] = storeURL + path
 		auto["$pageTitle"] = p.name + " — Pug & Pals"
 		applyAttribution(auto)
 		sess = append(sess, event{
@@ -586,7 +626,7 @@ func (f *sessionFactory) botSession(anchor, end time.Time) []event {
 			kind:             "page_view",
 			occurTime:        clampOccurTime(occur, end),
 			autoProperties:   auto,
-			customProperties: map[string]any{},
+			customProperties: map[string]any{"page_type": pageType(path)},
 		})
 	}
 	return sess

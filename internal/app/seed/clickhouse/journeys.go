@@ -79,12 +79,12 @@ var webJourneys = []journeyDef{
 	}},
 	{name: "abandoned-cart", weight: 7, steps: []step{
 		{"page_view", "home"}, {"product_viewed", ""}, {"add_to_cart", ""},
-		{"cart_viewed", ""},
+		{"cart_viewed", ""}, {"scroll", ""},
 	}},
 	{name: "abandoned-checkout", weight: 4, steps: []step{
 		{"page_view", "home"}, {"product_viewed", ""}, {"add_to_cart", ""},
 		{"cart_viewed", ""}, {"checkout_started", ""},
-		{"checkout_step_completed", "shipping"},
+		{"checkout_step_completed", "shipping"}, {"scroll", ""},
 	}},
 	{name: "wishlist", weight: 4, steps: []step{
 		{"page_view", "home"}, {"product_list_viewed", ""}, {"product_viewed", ""},
@@ -121,11 +121,15 @@ var webJourneys = []journeyDef{
 	{name: "share", weight: 1, steps: []step{
 		{"page_view", "home"}, {"product_viewed", ""}, {"share", ""},
 	}},
+	{name: "club-browse", weight: 1, steps: []step{
+		{"page_view", "home"}, {"page_view", "club"}, {"scroll", ""},
+	}},
 	{name: "club-trial", weight: 1, memberOnly: true, steps: []step{
 		{"page_view", "home"}, {"page_view", "club"}, {"scroll", ""},
 		{"trial_started", ""},
 	}},
-	{name: "club-convert", weight: 1, memberOnly: true, steps: []step{
+	// Weight 0: only journeyFor picks it, a few days after a trial.
+	{name: "club-convert", weight: 0, memberOnly: true, steps: []step{
 		{"page_view", "club"}, {"trial_converted", ""}, {"subscription_started", ""},
 		{"invoice_paid", ""},
 	}},
@@ -189,6 +193,10 @@ var appJourneys = []journeyDef{
 	}},
 	{name: "app-crash", weight: 1, steps: []step{
 		{"app_open", ""}, {"screen_view", "Home"}, {"app_crashed", ""},
+	}},
+	{name: "app-error", weight: 1, steps: []step{
+		{"app_open", ""}, {"screen_view", "Home"}, {"product_viewed", ""},
+		{"error_occurred", ""},
 	}},
 	{name: "app-nps", weight: 1, memberOnly: true, steps: []step{
 		{"app_open", ""}, {"screen_view", "Home"}, {"nps_submitted", ""}, {"app_close", ""},

@@ -54,18 +54,18 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 
 	occur := sessionStart
 	sess := make([]event, 0, len(jd.steps)+2)
-	// emit appends one event at the current occur time, stamping the live
-	// web page (url/title) and attaching the referrer to the very first event.
+	// emit appends one event at the current occur time, stamping the live web
+	// page. Every event keeps the landing referrer, as a single-page store's
+	// document.referrer does, so $channel holds for the whole session.
 	emit := func(kind string, customProps map[string]any) {
 		autoProps := copyProps(stableProps)
 		if prof.platform == "web" {
 			autoProps["$url"] = storeURL + st.page
 			autoProps["$pageTitle"] = st.pageTitle
-			if len(sess) == 0 {
-				if r, ok := autoProps["$referrerCandidate"]; ok && r != "" {
-					autoProps["$referrer"] = r
-				}
+			if r, ok := autoProps["$referrerCandidate"]; ok && r != "" {
+				autoProps["$referrer"] = r
 			}
+			customProps["page_type"] = pageType(st.page)
 		}
 		delete(autoProps, "$referrerCandidate")
 		applyAttribution(autoProps)
@@ -81,7 +81,12 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 		})
 	}
 
-	for i, stp := range jd.steps {
+	steps := jd.steps
+	if prof.platform == "web" && steps[0] == (step{"page_view", "home"}) {
+		steps = append([]step{landingStep(stableProps)}, steps[1:]...)
+	}
+
+	for i, stp := range steps {
 		if i > 0 {
 			occur = occur.Add(time.Duration(8+rand.Int64N(95)) * time.Second)
 		}
@@ -322,10 +327,18 @@ func (st *sessionState) apply(stp step) map[string]any {
 		if st.mem != nil {
 			st.mem.rememberOrder(pastOrder{id: orderID, amount: amount, t: st.start})
 		}
+		if st.prof.platform == "web" {
+			st.page, st.pageTitle = "/checkout/confirmation", "Order confirmed"
+		}
+		membership := "Non-member"
+		if st.user.member {
+			membership = "Member"
+		}
 		return map[string]any{
-			"product_id": first.id, "amount": amount, "currency": "USD",
+			"product_id": first.id, "product_name": first.name, "amount": amount, "currency": "USD",
 			"order_id": orderID, "quantity": st.cartCount(),
 			"category": first.category, "brand": first.brand, "sku": first.sku,
+			"payment_method": paymentMethod(st.prof.platform), "membership": membership,
 		}
 
 	case "order_refunded":
@@ -405,7 +418,7 @@ func (st *sessionState) apply(stp step) map[string]any {
 
 	case "nps_submitted":
 		// Skew toward promoters with a detractor tail.
-		scores := []int{10, 10, 9, 9, 9, 8, 8, 7, 6, 5, 3, 2}
+		scores := []int{10, 10, 10, 10, 9, 9, 9, 9, 8, 8, 6, 4}
 		return map[string]any{"score": scores[rand.IntN(len(scores))]}
 
 	case "feedback_submitted":
@@ -438,18 +451,18 @@ func (st *sessionState) apply(stp step) map[string]any {
 		p := st.plan()
 		trialID := "trial-" + shortID()
 		if st.mem != nil {
-			st.mem.rememberTrial(trialID, st.start)
+			st.mem.rememberTrial(trialID, st.start, st.planIdx)
 		}
 		return map[string]any{"trial_id": trialID, "plan_id": p.id, "plan_name": p.name}
 
 	case "trial_converted":
-		p := st.plan()
 		trialID := "trial-" + shortID()
 		if st.mem != nil {
-			if id, ok := st.mem.takeTrialBefore(st.start); ok {
-				trialID = id // convert the trial that was actually started
+			if id, planIdx, ok := st.mem.takeTrialBefore(st.start); ok {
+				trialID, st.planIdx = id, planIdx // convert the trial that was actually started
 			}
 		}
+		p := st.plan()
 		return map[string]any{"trial_id": trialID, "subscription_id": "sub-" + st.user.id, "plan_id": p.id, "plan_name": p.name}
 
 	case "subscription_started":
@@ -458,7 +471,7 @@ func (st *sessionState) apply(stp step) map[string]any {
 
 	case "invoice_paid":
 		p := st.plan()
-		return map[string]any{"invoice_id": "inv-" + shortID(), "subscription_id": "sub-" + st.user.id, "amount": p.amount, "currency": "USD"}
+		return map[string]any{"invoice_id": "inv-" + shortID(), "subscription_id": "sub-" + st.user.id, "plan_id": p.id, "plan_name": p.name, "amount": p.amount, "currency": "USD"}
 
 	case "click":
 		return map[string]any{
@@ -487,7 +500,7 @@ func (st *sessionState) apply(stp step) map[string]any {
 		}
 
 	case "scroll":
-		percent := rand.IntN(101)
+		percent := scrollDepth(st.prof.platform, st.page)
 		return map[string]any{"percent": percent, "scroll_y": percent * 50}
 
 	case "error_occurred":
@@ -506,6 +519,9 @@ func (st *sessionState) apply(stp step) map[string]any {
 		src := map[string]string{"ios": "app_store", "android": "play_store"}[st.prof.platform]
 		return map[string]any{"app_version": latestAppVersionAt(st.start), "install_source": src}
 
+	case "app_open":
+		return map[string]any{"cold_start_ms": coldStartMs(st.prof.platform, st.start)}
+
 	case "app_crashed":
 		msgs := []string{
 			"TooManySquirrelsException: viewport overflow",
@@ -515,10 +531,122 @@ func (st *sessionState) apply(stp step) map[string]any {
 		return map[string]any{"error_message": msgs[rand.IntN(len(msgs))]}
 
 	default:
-		// app_open, app_close, app_backgrounded, app_foregrounded, signup,
-		// signin, signout, share, ... carry no custom properties.
+		// app_close, app_backgrounded, app_foregrounded, signup,
+		// signin, signout, share, ... carry no custom properties of their own.
 		return map[string]any{}
 	}
+}
+
+// pageType names a web page for user-flow and per-page tiles. The labels are
+// picked so each lands on its own colour in the dashboard FE.
+func pageType(path string) string {
+	switch {
+	case path == "/":
+		return "Home"
+	case strings.HasPrefix(path, "/collections/"):
+		return "Collections"
+	case strings.HasPrefix(path, "/products/"):
+		return "Product"
+	case strings.HasPrefix(path, "/search"):
+		return "Search"
+	case path == "/cart":
+		return "Cart"
+	case path == "/checkout/confirmation":
+		return "Confirmation"
+	case strings.HasPrefix(path, "/checkout"):
+		return "Checkout"
+	case strings.HasPrefix(path, "/help"):
+		return "Guide"
+	case path == "/club":
+		return "Club"
+	default:
+		return "Account"
+	}
+}
+
+// landingStep picks where a web session lands from its channel: ads land on
+// products and collections, email on collections, organic search on guides,
+// and some direct visits on search. The rest keep the home page.
+func landingStep(props map[string]any) step {
+	medium, _ := props["$utmMedium"].(string)
+	referrer, _ := props["$referrerCandidate"].(string)
+
+	var product, collection, guide, search float64
+	switch {
+	case medium == "cpc":
+		product, collection = 0.55, 0.30
+	case medium == "paid_social":
+		product, collection = 0.55, 0.25
+	case medium == "email":
+		product, collection = 0.20, 0.60
+	case medium != "":
+		product, collection = 0.35, 0.30
+	case strings.Contains(referrer, "google.") || strings.Contains(referrer, "bing.") || strings.Contains(referrer, "duckduckgo."):
+		product, guide = 0.20, 0.50
+	case referrer != "" && !strings.HasPrefix(referrer, storeURL):
+		product, collection = 0.25, 0.15
+	default:
+		product, collection, search = 0.10, 0.25, 0.18
+	}
+	switch r := rand.Float64(); {
+	case r < product:
+		return step{kind: "product_viewed"}
+	case r < product+collection:
+		return step{kind: "product_list_viewed"}
+	case r < product+collection+guide:
+		return step{kind: "help_article_viewed"}
+	case r < product+collection+guide+search:
+		return step{kind: "search"}
+	default:
+		return step{"page_view", "home"}
+	}
+}
+
+// scrollDepth draws how far down a page a visitor scrolls: long guides get read,
+// carts barely scroll.
+func scrollDepth(platform, path string) int {
+	mean := 55.0
+	if platform == "web" {
+		mean = map[string]float64{
+			"Guide": 74, "Club": 66, "Product": 60, "Collections": 52, "Search": 47,
+			"Home": 41, "Account": 38, "Checkout": 34, "Cart": 29, "Confirmation": 25,
+		}[pageType(path)]
+	}
+	return int(math.Max(0, math.Min(100, mean+rand.NormFloat64()*15)))
+}
+
+func paymentMethod(platform string) string {
+	type option struct {
+		name   string
+		weight int
+	}
+	options := map[string][]option{
+		"web":     {{"Card", 55}, {"PayPal", 20}, {"Apple Pay", 15}, {"Google Pay", 10}},
+		"ios":     {{"Apple Pay", 60}, {"Card", 32}, {"PayPal", 8}},
+		"android": {{"Google Pay", 55}, {"Card", 38}, {"PayPal", 7}},
+	}[platform]
+	if len(options) == 0 {
+		return "Card"
+	}
+	weights := make([]int, len(options))
+	for i, o := range options {
+		weights[i] = o.weight
+	}
+	return options[weightedIndex(weights)].name
+}
+
+// coldStartMs is the time from tap to first screen. App sessions in the 3 days
+// after a release start about a third slower.
+func coldStartMs(platform string, t time.Time) int {
+	base := 700.0
+	if platform == "android" {
+		base = 1100
+	}
+	ms := base * (0.75 + 0.6*rand.Float64())
+	if recentAppRelease(t) {
+		ms *= 1.35
+	}
+	return int(ms)
 }
 
 func (st *sessionState) pickProduct() *product {
