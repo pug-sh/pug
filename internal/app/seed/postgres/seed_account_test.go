@@ -230,6 +230,48 @@ func TestSeedAccountFindsTheSharedDemoOrg(t *testing.T) {
 	}
 }
 
+// TestSeedAccountRebuildsADeletedDemoProject covers the demo rebuild: once the
+// operator deletes the demo project, the next seed gives the demo org a new one,
+// which can seed its profiles before the purge runs, and later seeds keep it.
+func TestSeedAccountRebuildsADeletedDemoProject(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+	users := []int{0, 1, 2}
+
+	old := mustSeedAccount(t, ctx, db, "")
+	if err := pgseed.SeedProfilesForUsers(ctx, db.PgW, old.ID, users); err != nil {
+		t.Fatalf("SeedProfilesForUsers(old): %v", err)
+	}
+	if _, err := projects.NewService(db.PgW, db.PgW, nil).DeleteProjectByOperator(ctx, old.ID, "test"); err != nil {
+		t.Fatalf("DeleteProjectByOperator: %v", err)
+	}
+
+	rebuilt := mustSeedAccount(t, ctx, db, "")
+	if rebuilt.ID == old.ID || rebuilt.OrgID != old.OrgID {
+		t.Fatalf("rebuilt project %+v, want a new project in the demo org %s", rebuilt, old.OrgID)
+	}
+	live, err := dbread.New(db.PgW).GetProjectsByOrgID(ctx, old.OrgID)
+	if err != nil {
+		t.Fatalf("GetProjectsByOrgID: %v", err)
+	}
+	if len(live) != 1 || live[0].ID != rebuilt.ID {
+		t.Fatalf("the demo org's live projects = %+v, want only %s", live, rebuilt.ID)
+	}
+	if err := pgseed.SeedProfilesForUsers(ctx, db.PgW, rebuilt.ID, users); err != nil {
+		t.Fatalf("SeedProfilesForUsers(rebuilt): %v", err)
+	}
+	if n, err := pgseed.CountDemoProfiles(ctx, db.PgW, rebuilt.ID); err != nil || n != int64(len(users)) {
+		t.Fatalf("rebuilt project's demo profiles = %d (err %v), want %d", n, err, len(users))
+	}
+	if again := mustSeedAccount(t, ctx, db, ""); again.ID != rebuilt.ID {
+		t.Fatalf("a later seed resolved %s, want the rebuilt project %s", again.ID, rebuilt.ID)
+	}
+}
+
 // TestSeedAccountWithoutTheDemoViewer covers a seed from before the demo viewer
 // existed. With no viewer account nothing marks the demo org, so the seeder
 // refuses rather than take the demo user's first org.

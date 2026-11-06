@@ -113,8 +113,10 @@ make clickstack
 # running but generates nothing, so a k8s Deployment doesn't restart-loop on
 # exit); when on, it runs. It derives the demo
 # project from the demo user (woof@pug.sh), creating the customer/org/project
-# on a fresh DB, resolving it otherwise. Then, if the project has no events
-# yet, backfills ~4 months of "Pug & Pals" history and seeds a profile only for
+# on a fresh DB and resolving it otherwise. If the demo org has no live project,
+# it creates one, so deleting the demo project (`pug projects delete`) and
+# restarting the worker rebuilds the demo. Then, if the project has no events
+# yet, backfills ~6 months of "Pug & Pals" history and seeds a profile only for
 # the users those events belong to (never for a user with no events). Most of
 # the pool stays profile-less: the ~half whose join date is still in the future
 # (they sign up live as the wall clock crosses their join) plus past users who
