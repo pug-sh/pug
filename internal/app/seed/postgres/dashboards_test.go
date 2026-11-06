@@ -2,13 +2,16 @@ package seed
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/proto"
 
+	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
@@ -156,6 +159,153 @@ func TestDemoDashboardTileLayout(t *testing.T) {
 				}
 			}
 			rects = append(rects, rect{x: x, y: y, w: w, h: h, label: label})
+		}
+	}
+}
+
+// TestDemoTilesReadGeneratedData fails a tile whose event, property or filter
+// value the generator never emits, which would render empty on the demo.
+func TestDemoTilesReadGeneratedData(t *testing.T) {
+	type seen map[string]map[string]map[string]bool // kind, property, values
+	auto, custom := seen{}, seen{}
+	add := func(s seen, kind string, props map[string]any) {
+		if s[kind] == nil {
+			s[kind] = map[string]map[string]bool{}
+		}
+		for p, v := range props {
+			if s[kind][p] == nil {
+				s[kind][p] = map[string]bool{}
+			}
+			s[kind][p][fmt.Sprint(v)] = true
+		}
+	}
+	g := chseed.NewLiveGenerator()
+	start := time.Now().AddDate(0, 0, -60)
+	for i := range 80_000 {
+		now := start.Add(time.Duration(i) * time.Minute)
+		sess := g.LiveSession(now)
+		if i%20 == 0 {
+			sess = append(sess, g.LiveBotSession(now)...)
+		}
+		for _, e := range sess {
+			add(auto, e.Kind, e.AutoProperties)
+			add(custom, e.Kind, e.CustomProperties)
+		}
+	}
+
+	has := func(kinds []string, src commonv1.PropertySource, prop, value string) bool {
+		sources := []seen{auto, custom}
+		switch src {
+		case srcAuto:
+			sources = sources[:1]
+		case srcCustom:
+			sources = sources[1:]
+		case srcProfile:
+			return false
+		}
+		for _, k := range kinds {
+			for _, s := range sources {
+				if vals, ok := s[k][prop]; ok && (value == "" || vals[value]) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	profileHas := func(f *commonv1.PropertyFilter) bool {
+		for i := range chseed.DistinctIDPool {
+			props, _ := DemoProfileProperties(i)
+			v, ok := props[f.GetProperty()]
+			if !ok {
+				continue
+			}
+			if f.GetOperator() != opBetween {
+				return true
+			}
+			n, _ := strconv.ParseFloat(fmt.Sprint(v), 64)
+			lo, _ := strconv.ParseFloat(f.GetValues()[0], 64)
+			hi, _ := strconv.ParseFloat(f.GetValues()[1], 64)
+			if n >= lo && n <= hi {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, d := range demoDashboards() {
+		for _, tile := range d.tiles {
+			content, ok := tile.Payload.Content.(coredashboards.InsightTile)
+			if !ok {
+				continue
+			}
+			spec := content.Spec
+			name := d.displayName + " / " + tile.Payload.DisplayName
+			need := func(kinds []string, src commonv1.PropertySource, prop, value string) {
+				if !has(kinds, src, prop, value) {
+					t.Errorf("%s: no %v event has %s %q", name, kinds, prop, value)
+				}
+			}
+			checkFilter := func(kinds []string, f *commonv1.PropertyFilter) {
+				switch {
+				case f.GetSource() == srcProfile:
+					if !profileHas(f) {
+						t.Errorf("%s: no profile matches %s", name, f.GetProperty())
+					}
+				case f.GetOperator() == opEquals:
+					need(kinds, f.GetSource(), f.GetProperty(), f.GetValue())
+				case f.GetOperator() == opIn:
+					for _, v := range f.GetValues() {
+						need(kinds, f.GetSource(), f.GetProperty(), v)
+					}
+				default:
+					need(kinds, f.GetSource(), f.GetProperty(), "")
+				}
+			}
+
+			var kinds []string
+			for _, q := range spec.GetEvents() {
+				kinds = append(kinds, q.GetEvent().GetKind())
+			}
+			var scopes []*commonv1.EventFilter
+			for _, sc := range []*commonv1.EventFilter{spec.GetTopK().GetScope(), spec.GetMap().GetScope(), spec.GetUserFlow().GetScope()} {
+				if sc != nil {
+					scopes = append(scopes, sc)
+					kinds = append(kinds, sc.GetKind())
+				}
+			}
+			for _, k := range kinds {
+				if _, ok := auto[k]; !ok {
+					t.Errorf("%s: the generator emits no %s events", name, k)
+				}
+			}
+
+			for _, q := range spec.GetEvents() {
+				k := []string{q.GetEvent().GetKind()}
+				for _, f := range q.GetEvent().GetFilters() {
+					checkFilter(k, f)
+				}
+				if p := q.GetAggregationProperty(); p != "" {
+					need(k, 0, p, "")
+				}
+			}
+			for _, sc := range scopes {
+				for _, f := range sc.GetFilters() {
+					checkFilter(kinds, f)
+				}
+			}
+			for _, fg := range spec.GetFilterGroups() {
+				for _, f := range fg.GetFilters() {
+					checkFilter(kinds, f)
+				}
+			}
+			for _, b := range spec.GetBreakdowns() {
+				need(kinds, 0, b.GetProperty(), "")
+			}
+			for _, p := range []string{spec.GetTopK().GetProperty(), spec.GetTopK().GetMetricProperty(), spec.GetMap().GetMetricProperty(), spec.GetUserFlow().GetNodeProperty()} {
+				if p != "" {
+					need(kinds, 0, p, "")
+				}
+			}
 		}
 	}
 }

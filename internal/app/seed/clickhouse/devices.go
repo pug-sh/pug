@@ -1,5 +1,7 @@
 package seed
 
+import "github.com/pug-sh/pug/internal/botdetect"
+
 // ---------------------------------------------------------------------------
 // Device profiles
 // ---------------------------------------------------------------------------
@@ -55,14 +57,37 @@ var sdkVersions = map[string]string{"web": "0.3.2", "ios": "0.2.1", "android": "
 // Bots
 // ---------------------------------------------------------------------------
 
-var botProfiles = []struct {
+// botProfile is what ingest would see from one crawler. botTag runs it through
+// the same botdetect checks, in the same order, as the SDK events handler.
+type botProfile struct {
 	browser  string
 	verified bool
-}{
-	{"Googlebot", true},
-	{"Bingbot", true},
-	{"AhrefsBot", false},
-	{"SemrushBot", false},
-	{"GPTBot", true},
-	{"", false}, // headless scraper, no recognizable UA
+	ua       string
+	asn      uint64
+	screen   [2]int64
+}
+
+// stealthUA is stock Chrome, so only the network or the screen gives these away.
+const stealthUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+
+var botProfiles = []botProfile{
+	{"Googlebot", true, "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", 15169, [2]int64{1920, 1080}},
+	{"Bingbot", true, "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)", 8075, [2]int64{1366, 768}},
+	{"AhrefsBot", false, "Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)", 16276, [2]int64{1920, 1080}},
+	{"SemrushBot", false, "Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)", 24940, [2]int64{1920, 1080}},
+	{"GPTBot", true, "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)", 8075, [2]int64{1280, 720}},
+	{"ClaudeBot", true, "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)", 16509, [2]int64{1280, 720}},
+	{"PerplexityBot", false, "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)", 16509, [2]int64{1280, 720}},
+	{"", false, stealthUA, 16509, [2]int64{1920, 1080}}, // scraper on a cloud network
+	{"", false, stealthUA, 7922, [2]int64{800, 600}},    // headless Chrome's default screen, home network
+}
+
+func botTag(bp botProfile) (string, bool) {
+	if reason, ok := botdetect.MatchUserAgent(bp.ua); ok {
+		return reason, true
+	}
+	if reason, ok := botdetect.MatchASN(bp.asn); ok {
+		return reason, true
+	}
+	return botdetect.MatchScreen(bp.screen[0], bp.screen[1])
 }

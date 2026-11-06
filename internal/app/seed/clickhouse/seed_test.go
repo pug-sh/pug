@@ -398,12 +398,12 @@ func TestUserMemoryCausality(t *testing.T) {
 	}
 
 	m = &userMemory{}
-	m.rememberTrial("trial-1", t0)
-	if _, ok := m.takeTrialBefore(t0.Add(-time.Hour)); ok {
+	m.rememberTrial("trial-1", t0, 2)
+	if _, _, ok := m.takeTrialBefore(t0.Add(-time.Hour)); ok {
 		t.Error("takeTrialBefore released a trial that postdates the cutoff")
 	}
-	if id, ok := m.takeTrialBefore(t0.Add(time.Hour)); !ok || id != "trial-1" {
-		t.Errorf("takeTrialBefore = %q, %v; want trial-1, true", id, ok)
+	if id, planIdx, ok := m.takeTrialBefore(t0.Add(time.Hour)); !ok || id != "trial-1" || planIdx != 2 {
+		t.Errorf("takeTrialBefore = %q, %d, %v; want trial-1, 2, true", id, planIdx, ok)
 	}
 }
 
