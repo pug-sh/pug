@@ -3,29 +3,18 @@ package oauth
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"sync"
 
-	"code.dny.dev/ssrf"
 	"github.com/coreos/go-oidc/v3/oidc"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"github.com/pug-sh/pug/internal/httpx"
 )
 
 // connectionProviderPrefix keys a connection's identities. Config provider ids can't contain ':'.
 const connectionProviderPrefix = "conn:"
 
-// go-oidc reads discovery documents and key sets whole.
-const maxConnectionResponseBytes = 1 << 20
-
-// net/http's default allows 10 MiB of headers.
-const maxConnectionHeaderBytes = 64 << 10
-
 // Bounds the endpoint cache; keys go stale when an issuer or client id changes.
 const maxCachedConnections = 1000
-
-// Company providers often listen on 8443.
-var connectionGuard = ssrf.New(ssrf.WithAnyPort())
 
 type Connection struct {
 	ID           string
@@ -56,40 +45,9 @@ func (c Connection) providerConfig() ProviderConfig {
 	}
 }
 
-// NewConnectionHTTPClient is the client for org-configured issuers. Unless allowPrivate,
-// it refuses private, loopback and metadata addresses at dial time and ignores proxies.
-// Every response body is capped at 1 MiB, and its headers at 64 KiB.
+// NewConnectionHTTPClient is the guarded client for org-configured issuers.
 func NewConnectionHTTPClient(allowPrivate bool) *http.Client {
-	return &http.Client{
-		Timeout:   idpHTTPTimeout,
-		Transport: otelhttp.NewTransport(cappedTransport{base: connectionTransport(allowPrivate)}),
-	}
-}
-
-func connectionTransport(allowPrivate bool) *http.Transport {
-	dialer := &net.Dialer{Timeout: idpHTTPTimeout}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxResponseHeaderBytes = maxConnectionHeaderBytes
-	if !allowPrivate {
-		dialer.Control = connectionGuard.Safe
-		// Behind a proxy the guard would check the proxy's address.
-		transport.Proxy = nil
-	}
-	transport.DialContext = dialer.DialContext
-	return transport
-}
-
-type cappedTransport struct {
-	base http.RoundTripper
-}
-
-func (t cappedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	resp, err := t.base.RoundTrip(r)
-	if err != nil {
-		return nil, err
-	}
-	resp.Body = http.MaxBytesReader(nil, resp.Body, maxConnectionResponseBytes)
-	return resp, nil
+	return httpx.NewGuardedClient(idpHTTPTimeout, allowPrivate)
 }
 
 // DiscoverIssuer fetches the issuer's discovery document, so a wrong issuer fails on save.

@@ -105,7 +105,9 @@ make clickstack
 # as a daily k8s CronJob (image `cron-expired-tokens`, cmd/cron/expired-tokens),
 # under its own advisory lock and a 5m timeout. A row goes only once expires_at
 # passes, used or revoked alike, so a replayed refresh token still revokes its
-# family for the token's whole 90 days. Nothing else schedules it.
+# family for the token's whole 90 days. It also deletes MCP grants that are
+# revoked, never exchanged in time, or out of tokens, and their token rows with
+# them, expired or not. Nothing else schedules it.
 ./bin/pug cron expired-tokens
 
 # Rolling demo-traffic generator. Gated by PUG_DEMO_ENABLED everywhere: when off

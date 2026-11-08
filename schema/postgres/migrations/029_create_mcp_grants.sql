@@ -36,7 +36,9 @@ create index refresh_tokens_mcp_grant_id_idx
   on refresh_tokens (mcp_grant_id) where mcp_grant_id is not null;
 
 -- +goose Down
--- Without the columns these rows would pass for dashboard sessions.
+-- Without the columns these rows would pass for dashboard sessions. The lock stops
+-- a pair minted during the Down from landing after the delete.
+lock table refresh_tokens in exclusive mode;
 delete from refresh_tokens where mcp_grant_id is not null;
 drop index if exists refresh_tokens_mcp_grant_id_idx;
 alter table refresh_tokens

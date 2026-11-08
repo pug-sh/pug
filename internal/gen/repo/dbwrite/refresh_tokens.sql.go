@@ -42,6 +42,55 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, id string) (RefreshTo
 	return i, err
 }
 
+const createMCPTokenPair = `-- name: CreateMCPTokenPair :exec
+insert into refresh_tokens (
+  access_expires_at,
+  access_token_hash,
+  customer_id,
+  expires_at,
+  family_id,
+  id,
+  mcp_grant_id,
+  token_hash
+)
+values (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  $8
+)
+`
+
+type CreateMCPTokenPairParams struct {
+	AccessExpiresAt pgtype.Timestamptz
+	AccessTokenHash pgtype.Text
+	CustomerID      string
+	ExpiresAt       pgtype.Timestamptz
+	FamilyID        string
+	ID              string
+	McpGrantID      pgtype.Text
+	TokenHash       string
+}
+
+// The grant holds the proven domain and the revocation, so both stay null here.
+func (q *Queries) CreateMCPTokenPair(ctx context.Context, arg CreateMCPTokenPairParams) error {
+	_, err := q.db.Exec(ctx, createMCPTokenPair,
+		arg.AccessExpiresAt,
+		arg.AccessTokenHash,
+		arg.CustomerID,
+		arg.ExpiresAt,
+		arg.FamilyID,
+		arg.ID,
+		arg.McpGrantID,
+		arg.TokenHash,
+	)
+	return err
+}
+
 const createRefreshToken = `-- name: CreateRefreshToken :one
 insert into refresh_tokens (
   id,
@@ -94,6 +143,51 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		&i.AccessExpiresAt,
 		&i.AccessTokenHash,
 		&i.McpGrantID,
+	)
+	return i, err
+}
+
+const getMCPRefreshTokenByHashForUpdate = `-- name: GetMCPRefreshTokenByHashForUpdate :one
+select
+  rt.consumed_at,
+  rt.expires_at,
+  rt.id,
+  g.client_id,
+  g.customer_id,
+  g.id as grant_id,
+  g.proven_domain,
+  g.revoke_time
+from refresh_tokens rt
+join mcp_grants g on g.id = rt.mcp_grant_id
+where rt.token_hash = $1
+for update of rt, g
+`
+
+type GetMCPRefreshTokenByHashForUpdateRow struct {
+	ConsumedAt   pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	ID           string
+	ClientID     string
+	CustomerID   string
+	GrantID      string
+	ProvenDomain pgtype.Text
+	RevokeTime   pgtype.Timestamptz
+}
+
+// Unfiltered, like GetRefreshTokenByHashForUpdate, so a reused token is found.
+// The grant is locked too, so a rotation and a revoke serialize.
+func (q *Queries) GetMCPRefreshTokenByHashForUpdate(ctx context.Context, tokenHash string) (GetMCPRefreshTokenByHashForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getMCPRefreshTokenByHashForUpdate, tokenHash)
+	var i GetMCPRefreshTokenByHashForUpdateRow
+	err := row.Scan(
+		&i.ConsumedAt,
+		&i.ExpiresAt,
+		&i.ID,
+		&i.ClientID,
+		&i.CustomerID,
+		&i.GrantID,
+		&i.ProvenDomain,
+		&i.RevokeTime,
 	)
 	return i, err
 }

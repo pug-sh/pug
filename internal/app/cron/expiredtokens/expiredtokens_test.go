@@ -9,6 +9,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/pug-sh/pug/internal/app/cron"
+	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -83,6 +84,78 @@ func TestRunDeletesExpiredTokensRegardlessOfStatus(t *testing.T) {
 	wantEmailHashes := []string{"live-invite", "live-magic-link", "live-superseded-invite"}
 	if !slices.Equal(emailHashes, wantEmailHashes) {
 		t.Errorf("email action token hashes = %v, want %v", emailHashes, wantEmailHashes)
+	}
+}
+
+func TestRunDeletesDeadMCPGrants(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pg := testutil.SetupPostgres(t)
+	t.Setenv("DATABASE_URL", pg.PgW.Config().ConnString())
+	ctx := t.Context()
+	w := dbwrite.New(pg.PgW)
+
+	customerID := xid.New().String()
+	if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: customerID, Email: "mcp-grant-cleanup@example.com"}); err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: xid.New().String(), DisplayName: "MCP"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	project, err := projects.CreateProjectInTx(ctx, w, org.ID, "default", "")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// spent's only pair expired, so the same pass deletes the pair and then the grant.
+	if _, err := pg.PgW.Exec(ctx, `
+		insert into mcp_grants (client_id, client_name, code_challenge, code_expires_at, code_hash, code_used_at,
+			customer_id, id, project_id, redirect_uri, revoke_time)
+		select 'https://claude.ai/oauth/mcp-oauth-client-metadata', 'Claude', 'challenge', code_expires_at, md5(id),
+			code_used_at, $1, id, $2, 'https://claude.ai/api/mcp/auth_callback', revoke_time
+		from (values
+			('awaiting-exchange', now() + interval '4 minutes', null::timestamptz, null::timestamptz),
+			('expired-unused',    now() - interval '1 minute',  null,                 null),
+			('revoked',           now() - interval '1 day',     now() - interval '1 day', now() - interval '1 hour'),
+			('live',              now() - interval '1 day',     now() - interval '1 day', null),
+			('spent',             now() - interval '91 days',   now() - interval '91 days', null)
+		) as t(id, code_expires_at, code_used_at, revoke_time)`,
+		customerID, project.ID); err != nil {
+		t.Fatalf("seed grants: %v", err)
+	}
+	if _, err := pg.PgW.Exec(ctx, `
+		insert into refresh_tokens (access_expires_at, access_token_hash, customer_id, expires_at, family_id, id,
+			mcp_grant_id, token_hash)
+		select now() - interval '1 hour', 'at-' || grant_id, $1, expires_at, grant_id, left(md5(grant_id), 20),
+			grant_id, 'rt-' || grant_id
+		from (values
+			('revoked', now() + interval '89 days'),
+			('live',    now() + interval '89 days'),
+			('spent',   now() - interval '1 day')
+		) as t(grant_id, expires_at)`,
+		customerID); err != nil {
+		t.Fatalf("seed token pairs: %v", err)
+	}
+
+	if err := Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var grants, pairs []string
+	if err := pg.PgRO.QueryRow(ctx, "select array_agg(id::text order by id) from mcp_grants").Scan(&grants); err != nil {
+		t.Fatalf("read grants: %v", err)
+	}
+	if err := pg.PgRO.QueryRow(ctx, "select array_agg(token_hash order by token_hash) from refresh_tokens").Scan(&pairs); err != nil {
+		t.Fatalf("read token pairs: %v", err)
+	}
+	if want := []string{"awaiting-exchange", "live"}; !slices.Equal(grants, want) {
+		t.Errorf("grants = %v, want %v", grants, want)
+	}
+	if want := []string{"rt-live"}; !slices.Equal(pairs, want) {
+		t.Errorf("token pairs = %v, want %v", pairs, want)
 	}
 }
 

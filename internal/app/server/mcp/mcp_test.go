@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -290,6 +291,9 @@ func TestE2E_ToolsAreTitledAndReadOnly(t *testing.T) {
 		if tl.Title == "" {
 			t.Errorf("tool %q has no title", tl.Name)
 		}
+		if tl.Description == "" {
+			t.Errorf("tool %q has no description", tl.Name)
+		}
 		if prev, dup := byTitle[tl.Title]; dup {
 			t.Errorf("tools %q and %q share the title %q", prev, tl.Name, tl.Title)
 		}
@@ -350,6 +354,9 @@ func TestE2E_GetProfileReturnsBody(t *testing.T) {
 	}
 	if text := toolText(res); !strings.Contains(text, "ext-abc") {
 		t.Errorf("tool result %q does not carry the response body (external_id); loopback body round-trip broken", text)
+	}
+	if sc, err := json.Marshal(res.StructuredContent); err != nil || !strings.Contains(string(sc), "ext-abc") {
+		t.Errorf("structured content %s does not carry the response body", sc)
 	}
 }
 

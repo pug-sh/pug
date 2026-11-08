@@ -1,6 +1,7 @@
-// Package expiredtokens removes expired authentication tokens in one pass.
-// Used and revoked tokens are retained until expires_at so refresh-token replay
-// detection and invite resend accounting keep their full retention windows.
+// Package expiredtokens removes expired authentication tokens and dead MCP grants
+// in one pass. Used and revoked tokens are retained until expires_at so
+// refresh-token replay detection and invite resend accounting keep their full
+// retention windows; a dead grant's tokens go with it.
 package expiredtokens
 
 import (
@@ -21,7 +22,7 @@ import (
 
 const passTimeout = 5 * time.Minute
 
-// Run deletes expired tokens once and returns. Lock contention is a successful
+// Run deletes expired tokens and dead MCP grants once and returns. Lock contention is a successful
 // no-op; any setup or deletion failure is returned to the CronJob.
 func Run(ctx context.Context) error {
 	closeOtel, err := telemetry.SetupSDK(ctx)
@@ -53,6 +54,11 @@ func Run(ctx context.Context) error {
 			return fmt.Errorf("delete expired refresh tokens: %w", err)
 		}
 		slog.InfoContext(ctx, "deleted expired refresh tokens", slog.Int64("refresh_tokens_deleted", n))
+		n, err = w.DeleteDeadMCPGrants(ctx)
+		if err != nil {
+			return fmt.Errorf("delete dead mcp grants: %w", err)
+		}
+		slog.InfoContext(ctx, "deleted dead mcp grants", slog.Int64("mcp_grants_deleted", n))
 		n, err = w.DeleteExpiredEmailActionTokens(ctx)
 		if err != nil {
 			return fmt.Errorf("delete expired email action tokens: %w", err)

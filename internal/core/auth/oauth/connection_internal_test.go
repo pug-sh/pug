@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -71,37 +70,6 @@ func TestConfigProviderIdentityAllowsAnyAccount(t *testing.T) {
 	}
 }
 
-func TestConnectionGuard(t *testing.T) {
-	for _, tc := range []struct {
-		network, addr string
-		allowed       bool
-	}{
-		{"tcp4", "93.184.215.14:443", true},
-		{"tcp4", "93.184.215.14:8443", true},
-		{"tcp4", "127.0.0.1:443", false},
-		{"tcp4", "10.1.2.3:443", false},
-		{"tcp4", "192.168.1.1:443", false},
-		{"tcp4", "169.254.169.254:80", false},
-		{"tcp6", "[::1]:443", false},
-		{"tcp6", "[fd00::1]:443", false},
-	} {
-		err := connectionGuard.Safe(tc.network, tc.addr, nil)
-		if (err == nil) != tc.allowed {
-			t.Errorf("Safe(%s) = %v, want allowed = %v", tc.addr, err, tc.allowed)
-		}
-	}
-}
-
-// Behind a proxy the dial guard would check the proxy's address, not the issuer's.
-func TestConnectionTransportSkipsProxies(t *testing.T) {
-	if connectionTransport(false).Proxy != nil {
-		t.Fatal("the guarded transport must not use a proxy")
-	}
-	if connectionTransport(true).Proxy == nil {
-		t.Fatal("with private issuers allowed, the transport keeps the environment's proxy")
-	}
-}
-
 func TestConnectionClientRefusesLoopback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("the guarded client must not reach a loopback server")
@@ -132,7 +100,7 @@ func TestIdentityErrorsAreLoggedTruncated(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	body := strings.Repeat("x", maxConnectionResponseBytes)
+	body := strings.Repeat("x", 1<<20)
 	s := NewService(Config{}, nil)
 	for _, err := range []error{errors.New(body), fmt.Errorf("%w: %s", ErrUnverifiedEmail, body)} {
 		logs.Reset()
@@ -142,31 +110,6 @@ func TestIdentityErrorsAreLoggedTruncated(t *testing.T) {
 		if logs.Len() > 4096 {
 			t.Fatalf("logged %d bytes", logs.Len())
 		}
-	}
-}
-
-func TestConnectionClientCapsResponses(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/headers" {
-			w.Header().Set("X-Big", strings.Repeat("x", maxConnectionHeaderBytes))
-		}
-		_, _ = w.Write(make([]byte, maxConnectionResponseBytes+1))
-	}))
-	defer srv.Close()
-	client := NewConnectionHTTPClient(true)
-
-	resp, err := client.Get(srv.URL + "/body")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	_, err = io.ReadAll(resp.Body)
-	if _, ok := errors.AsType[*http.MaxBytesError](err); !ok {
-		t.Fatalf("body: err = %v, want *http.MaxBytesError", err)
-	}
-	if resp, err := client.Get(srv.URL + "/headers"); err == nil {
-		resp.Body.Close()
-		t.Fatal("headers over the cap: want an error")
 	}
 }
 
