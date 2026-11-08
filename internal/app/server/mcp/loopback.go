@@ -28,20 +28,9 @@ import (
 // abandoned work drains.
 const toolCallTimeout = 2 * time.Minute
 
-// loopbackClient is a connect.HTTPClient that serves each request in-process
-// through the server's own mux instead of over TCP. It injects the caller's
-// private API key (stashed in the request context by withAPIKeyPassthrough) as an
-// x-api-key header so the inner Connect handler chain re-authenticates and
-// re-authorizes the tool call exactly like an external private-key API request —
-// validation, authz, otel and logging interceptors all run unchanged, and the
-// request context carries the same correlation id end to end (it rides context
-// values, which survive the go-sdk's jsonrpc2 hop, rather than the middleware,
-// which the loopback re-enters beneath).
-//
-// The client is a singleton shared by every generated tool closure, so the caller's
-// key cannot be a field on it — that would be shared mutable state across
-// concurrent tool calls from different projects, i.e. a cross-tenant credential
-// leak. Per-request state rides the per-request context, as Principal does.
+// loopbackClient replays each tool call through the server's own mux; its
+// rpc.WithLoopback mark is what admits an MCP access token. The credential rides the
+// request context, since a field on this shared client would leak across tenants.
 type loopbackClient struct {
 	handler http.Handler // the server mux
 }
@@ -58,7 +47,7 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 	// A panic escaping the in-process handler would be fatal. On the network path
 	// net/http recovers handler panics per connection, but a tool call runs the
 	// handler on a go-sdk jsonrpc2 goroutine that recover never reaches, so the panic
-	// would kill the process — a multi-tenant outage any private-key holder could
+	// would kill the process: a multi-tenant outage any key or token holder could
 	// trigger. rpc.RecoverHandlerPanic (wired via connect.WithRecover in rpc.HandlerOptions)
 	// is the first line of defence and contains panics inside the Connect chain with a
 	// proper code and telemetry; this is the backstop for everything outside it — the
@@ -86,23 +75,20 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 		}
 	}()
 
-	// /mcp is private-key-only and withAPIKeyPassthrough stashes the key outside the
-	// authn boundary, so every request reaching a tool handler provably carries one.
-	// An empty key is therefore unreachable in production and means the endpoint was
-	// mounted without the passthrough. Say so: degrading into an anonymous inner
-	// request yields a 401 raised outside the interceptor chain, which logs nothing and
-	// tells an operator who configured a perfectly good API key that it was rejected.
-	key := apiKeyFromContext(ctx)
-	if key == "" {
-		err = errors.New("mcp loopback: no API key in request context; /mcp was mounted without withAPIKeyPassthrough")
-		slog.ErrorContext(ctx, "mcp loopback has no api key to inject", slogx.Error(err))
+	// Only a wiring bug gets here: no passthrough, or one that misses a credential
+	// WithMCPAuth takes. Fail loudly: an anonymous inner call would 401 outside the
+	// interceptors and log nothing.
+	cred, ok := credentialFrom(ctx)
+	if !ok {
+		err = errors.New("mcp loopback: no credential in request context; withCredentialPassthrough did not stash one")
+		slog.ErrorContext(ctx, "mcp loopback has no credential to present", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 
 		return nil, err
 	}
-	req.Header.Set(rpc.HeaderAPIKey, key)
+	req.Header.Set(cred.header, cred.value)
 
-	ctx, cancel := context.WithTimeout(ctx, toolCallTimeout)
+	ctx, cancel := context.WithTimeout(rpc.WithLoopback(ctx), toolCallTimeout)
 	defer cancel()
 	req = req.WithContext(ctx)
 

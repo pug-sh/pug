@@ -6,9 +6,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/pug-sh/pug/internal/core/auth"
+	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -175,4 +177,82 @@ func TestRefreshSession(t *testing.T) {
 			t.Fatalf("RevokeSession(unknown): %v", err)
 		}
 	})
+
+	t.Run("access tokens carry the refresh family as sid", func(t *testing.T) {
+		svc := mustNewTestAuthService(t, db, &stubPublisher{})
+		session := seedSignedInCustomer(t, svc, write, "rt-sid", "rt-sid@example.com")
+		var family string
+		if err := db.PgW.QueryRow(ctx, "select family_id from refresh_tokens where token_hash = $1",
+			hashToken(session.RefreshToken)).Scan(&family); err != nil {
+			t.Fatalf("read family: %v", err)
+		}
+
+		rotated, err := svc.RefreshSession(ctx, session.RefreshToken)
+		if err != nil {
+			t.Fatalf("RefreshSession: %v", err)
+		}
+		if got := sessionIDOf(t, session.AccessToken); got != family {
+			t.Errorf("sign-in sid = %q, want the refresh family %q", got, family)
+		}
+		if got := sessionIDOf(t, rotated.AccessToken); got != family {
+			t.Errorf("refresh sid = %q, want the refresh family %q", got, family)
+		}
+	})
+
+	t.Run("an MCP refresh token gets no session and its sign-out revokes nothing", func(t *testing.T) {
+		svc := mustNewTestAuthService(t, db, &stubPublisher{})
+		seedSignedInCustomer(t, svc, write, "rt-mcp", "rt-mcp@example.com")
+		org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-rt-mcp", DisplayName: "MCP"})
+		if err != nil {
+			t.Fatalf("CreateOrg: %v", err)
+		}
+		project, err := projects.CreateProjectInTx(ctx, write, org.ID, "default", "")
+		if err != nil {
+			t.Fatalf("CreateProject: %v", err)
+		}
+		const refreshToken = "mcp_rt_test"
+		if _, err := db.PgW.Exec(ctx, `insert into mcp_grants
+			(client_id, client_name, code_challenge, code_expires_at, code_hash, code_used_at, customer_id, id, project_id, redirect_uri)
+			values ('https://claude.ai/oauth/mcp-oauth-client-metadata', 'Claude', 'challenge', now(), $1, now(),
+			'rt-mcp', 'grant-rt-mcp', $2, 'https://claude.ai/api/mcp/auth_callback')`,
+			hashToken("mcp_code_test"), project.ID); err != nil {
+			t.Fatalf("insert grant: %v", err)
+		}
+		if _, err := db.PgW.Exec(ctx, `insert into refresh_tokens
+			(access_expires_at, access_token_hash, customer_id, expires_at, family_id, id, mcp_grant_id, token_hash)
+			values (now() + interval '1 hour', $1, 'rt-mcp', now() + interval '90 days', 'grant-rt-mcp', 'rt-mcp-pair',
+			'grant-rt-mcp', $2)`,
+			hashToken("mcp_at_test"), hashToken(refreshToken)); err != nil {
+			t.Fatalf("insert token pair: %v", err)
+		}
+
+		if _, err := svc.RefreshSession(ctx, refreshToken); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("RefreshSession(MCP token) err = %v, want ErrInvalidToken", err)
+		}
+		if err := svc.RevokeSession(ctx, refreshToken); err != nil {
+			t.Fatalf("RevokeSession(MCP token): %v", err)
+		}
+		var consumed, revoked bool
+		if err := db.PgW.QueryRow(ctx,
+			"select consumed_at is not null, revoked_at is not null from refresh_tokens where id = 'rt-mcp-pair'",
+		).Scan(&consumed, &revoked); err != nil {
+			t.Fatalf("read token pair: %v", err)
+		}
+		if consumed || revoked {
+			t.Fatalf("MCP row consumed = %v, revoked = %v; want both untouched", consumed, revoked)
+		}
+	})
+}
+
+// sessionIDOf reads an access token's sid claim.
+func sessionIDOf(t *testing.T, accessToken string) string {
+	t.Helper()
+	var claims struct {
+		jwt.RegisteredClaims
+		SessionID string `json:"sid"`
+	}
+	if _, _, err := jwt.NewParser().ParseUnverified(accessToken, &claims); err != nil {
+		t.Fatalf("parse access token: %v", err)
+	}
+	return claims.SessionID
 }

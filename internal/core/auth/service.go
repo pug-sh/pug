@@ -599,18 +599,25 @@ type UserClaims struct {
 	AdditionalClaims
 }
 
-func (s *Service) generateJWT(id string) (string, error) {
+type accessClaims struct {
+	jwt.RegisteredClaims
+	// The refresh family id.
+	SessionID string `json:"sid"`
+}
+
+func (s *Service) generateJWT(customerID, familyID string) (string, error) {
 	now := time.Now()
-	standardClaims := jwt.RegisteredClaims{
+	claims := accessClaims{
 		Audience:  jwt.ClaimStrings{Audience},
 		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenTTL)),
 		ID:        xid.New().String(),
 		IssuedAt:  jwt.NewNumericDate(now),
 		Issuer:    Issuer,
-		Subject:   id,
+		Subject:   customerID,
+		SessionID: familyID,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, standardClaims)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	tokenString, err := token.SignedString(s.jwtKey)
 	if err != nil {
@@ -633,13 +640,14 @@ func (s *Service) issueSession(ctx context.Context, customerID string) (Session,
 // refresh token atomically with account provisioning. Each call starts a NEW
 // rotation family, which remembers the domain an SSO sign-in proved.
 func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, customerID, provenDomain string) (Session, error) {
-	accessToken, err := s.generateJWT(customerID)
+	familyID := xid.New().String()
+	accessToken, err := s.generateJWT(customerID, familyID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate access token", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return Session{}, err
 	}
-	refreshToken, err := s.createRefreshToken(ctx, w, customerID, xid.New().String(), provenDomain)
+	refreshToken, err := s.createRefreshToken(ctx, w, customerID, familyID, provenDomain)
 	if err != nil {
 		return Session{}, err
 	}
@@ -749,7 +757,7 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Sess
 
 	// Generate the access token before mutating state: a signing failure then
 	// leaves the presented token unconsumed and the client can retry cleanly.
-	accessToken, err := s.generateJWT(row.CustomerID)
+	accessToken, err := s.generateJWT(row.CustomerID, row.FamilyID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate access token on refresh", slogx.Error(err), slog.String("customer_id", row.CustomerID))
 		telemetry.RecordError(ctx, err)

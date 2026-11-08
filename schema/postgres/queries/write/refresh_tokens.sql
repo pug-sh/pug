@@ -22,10 +22,12 @@ returning *;
 -- the first to commit consumes it, and the rest re-read consumed_at set and fall
 -- into the reuse-detection path. Unlike the email-action lookup, this does NOT
 -- filter on consumed_at/revoked_at — the caller MUST see an already-consumed or
--- revoked row to detect token replay and decide invalidity in Go.
+-- revoked row to detect token replay and decide invalidity in Go. It skips MCP
+-- rows, so an MCP refresh token never becomes a dashboard session.
 select *
 from refresh_tokens
 where token_hash = @token_hash
+  and mcp_grant_id is null
 for update;
 
 -- name: ConsumeRefreshToken :one
@@ -45,13 +47,55 @@ set revoked_at = now()
 where family_id = @family_id
   and revoked_at is null;
 
+-- name: CreateMCPTokenPair :exec
+-- The grant holds the proven domain and the revocation, so both stay null here.
+insert into refresh_tokens (
+  access_expires_at,
+  access_token_hash,
+  customer_id,
+  expires_at,
+  family_id,
+  id,
+  mcp_grant_id,
+  token_hash
+)
+values (
+  @access_expires_at,
+  @access_token_hash,
+  @customer_id,
+  @expires_at,
+  @family_id,
+  @id,
+  @mcp_grant_id,
+  @token_hash
+);
+
+-- name: GetMCPRefreshTokenByHashForUpdate :one
+-- Unfiltered, like GetRefreshTokenByHashForUpdate, so a reused token is found.
+-- The grant is locked too, so a rotation and a revoke serialize.
+select
+  rt.consumed_at,
+  rt.expires_at,
+  rt.id,
+  g.client_id,
+  g.customer_id,
+  g.id as grant_id,
+  g.proven_domain,
+  g.revoke_time
+from refresh_tokens rt
+join mcp_grants g on g.id = rt.mcp_grant_id
+where rt.token_hash = @token_hash
+for update of rt, g;
+
 -- name: RevokeRefreshTokenFamilyByHash :execrows
 -- Sign-out: revoke the whole rotation family that the presented token belongs to,
 -- given any (even already-consumed) token in it. A non-matching hash revokes
--- nothing (zero rows) so logout with a stale token is a clean no-op.
+-- nothing (zero rows) so logout with a stale token is a clean no-op. An MCP
+-- token's hash never matches.
 update refresh_tokens
 set revoked_at = now()
 where family_id = (
-    select rt.family_id from refresh_tokens rt where rt.token_hash = @token_hash
+    select rt.family_id from refresh_tokens rt
+    where rt.token_hash = @token_hash and rt.mcp_grant_id is null
   )
   and revoked_at is null;

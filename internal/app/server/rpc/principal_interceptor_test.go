@@ -140,6 +140,22 @@ func TestPrincipalInterceptor_APIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestPrincipalInterceptor_MCPTokenAuth(t *testing.T) {
+	attrs := spanAttrs(enrichedSpan(t, &Principal{
+		AuthType: AuthTypeMCPToken,
+		Customer: &dbread.Customer{ID: "cust-3"},
+		Project:  &dbread.Project{ID: "proj-3", OrgID: "org-3"},
+		GrantID:  "grant-3",
+	}))
+	for key, want := range map[string]string{
+		"auth.type": "mcp_token", "auth.grant_id": "grant-3", "customer.id": "cust-3", "project.id": "proj-3", "org.id": "org-3",
+	} {
+		if got := attrs[key]; got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
 func TestPrincipalInterceptor_JWTWithoutProject(t *testing.T) {
 	principal := &Principal{
 		AuthType: AuthTypeJWT,

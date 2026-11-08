@@ -2,43 +2,86 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"connectrpc.com/authn"
+	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/core/mcpgrants"
 )
 
-// apiKeyCtxKey is the context key under which the edge middleware stashes the
-// caller's private API key so the loopback client can re-inject it as an
-// x-api-key header on each in-process tool call.
-type apiKeyCtxKey struct{}
+// credentialKey is the context key under which the edge middleware stashes the
+// caller's credential so the loopback client can present it again on each
+// in-process tool call.
+type credentialKey struct{}
 
-func withAPIKey(ctx context.Context, key string) context.Context {
-	return context.WithValue(ctx, apiKeyCtxKey{}, key)
+// credential is the header the caller authenticated with: a private key in
+// x-api-key, or an MCP access token in Authorization.
+type credential struct{ header, value string }
+
+func withCredential(ctx context.Context, c credential) context.Context {
+	return context.WithValue(ctx, credentialKey{}, c)
 }
 
-func apiKeyFromContext(ctx context.Context) string {
-	key, _ := ctx.Value(apiKeyCtxKey{}).(string)
-	return key
+func credentialFrom(ctx context.Context) (credential, bool) {
+	c, ok := ctx.Value(credentialKey{}).(credential)
+	return c, ok
 }
 
-// withAPIKeyPassthrough is the outermost /mcp middleware. It normalises a
-// `Authorization: Bearer prv_...` credential (the only header form many MCP
-// clients can send) into the x-api-key header that the WithPrivateKeyAuth authn
-// func expects — via rpc.NormalizeBearerAPIKey, which owns the Bearer scheme and
-// private-key vocabulary — and stashes the resolved private key in the request
-// context for the loopback client to re-inject on each inner tool call.
-//
-// A request that already carries x-api-key is left untouched but still has its
-// key stashed. A non-`prv_` bearer (or no credential at all) is passed through
-// unchanged, so the downstream authn boundary rejects it with a 401.
-func withAPIKeyPassthrough(next http.Handler) http.Handler {
+// withCredentialPassthrough wraps authenticate: it moves a `Bearer prv_` (all many
+// clients can send) into the x-api-key WithMCPAuth reads, and stashes the key, or
+// else an MCP access token, for the loopback. x-api-key wins, as in WithMCPAuth.
+func withCredentialPassthrough(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if key := rpc.NormalizeBearerAPIKey(req); key != "" {
-			req = req.WithContext(withAPIKey(req.Context(), key))
+			req = req.WithContext(withCredential(req.Context(), credential{rpc.HeaderAPIKey, key}))
+		} else if _, ok := rpc.MCPAccessToken(req); ok {
+			req = req.WithContext(withCredential(req.Context(), credential{"Authorization", req.Header.Get("Authorization")}))
 		}
 		next.ServeHTTP(w, req)
 	})
+}
+
+// authenticate is authn.Middleware's Wrap plus, with OAuth on (issuer set), a 401
+// that points at the protected resource metadata: clients start signing in only on
+// a 401 that carries it.
+func authenticate(check authn.AuthFunc, issuer string, next http.Handler) http.Handler {
+	errW := connect.NewErrorWriter()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info, err := check(r.Context(), r)
+		if err != nil {
+			if issuer != "" && connect.CodeOf(err) == connect.CodeUnauthenticated {
+				w.Header().Set("WWW-Authenticate", challenge(r, issuer))
+			}
+			_ = errW.Write(w, r, err)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(authn.SetInfo(r.Context(), info)))
+	})
+}
+
+// challenge names the metadata for the URL as the client was given it, with or
+// without the slash, and error only when a credential was sent and refused.
+func challenge(r *http.Request, issuer string) string {
+	metadata := issuer + protectedResourcePath + "/mcp"
+	if r.URL.Path != "/mcp" {
+		metadata += "/"
+	}
+	params := fmt.Sprintf("resource_metadata=%q, scope=%q", metadata, mcpgrants.Scope)
+	if r.Header.Get(rpc.HeaderAPIKey) != "" || r.Header.Get("Authorization") != "" {
+		params = `error="invalid_token", ` + params
+	}
+	return "Bearer " + params
+}
+
+// OAuth turns on signing in to /mcp. Its zero value leaves OAuth off, and /mcp on
+// private keys only.
+type OAuth struct {
+	Grants *mcpgrants.Service
+	// AuthorizationEndpoint is the dashboard's consent page.
+	AuthorizationEndpoint string
 }
 
 // Mount installs the read-only /mcp endpoint on mux. It is the single entry point
@@ -50,13 +93,9 @@ func withAPIKeyPassthrough(next http.Handler) http.Handler {
 // loopback is the mux each tool call is replayed through in-process (in practice
 // the same mux being mounted on).
 //
-// Auth is private-key-only and is built here from repo rather than accepted as a
-// parameter, so it holds BY CONSTRUCTION: there is no wiring in which /mcp admits
-// a dashboard JWT (MCP clients hold a static credential, so an expiring access
-// token is useless there, and a JWT would widen the endpoint from project- to
-// customer-scoped) or a public key (extractable from client apps). An earlier
-// shape took an authn.AuthFunc, which let the test harness pass its own — so the
-// suite stayed green even when the endpoint was pointed at WithDualAuth.
+// Auth is built here, not passed in, so /mcp takes only a private key or, with
+// OAuth on, an MCP access token, never a dashboard JWT or a public key. With OAuth
+// on, Mount also serves the OAuth metadata and the token endpoint.
 //
 // It returns an error if the generated tool set has drifted from the curated
 // policy table, so a codegen change that adds or renames a shared RPC fails server
@@ -67,14 +106,21 @@ func withAPIKeyPassthrough(next http.Handler) http.Handler {
 // pattern with no trailing slash and only redirects the other way, so a client
 // configured with a trailing slash (or an ingress that appends one) would
 // otherwise get an opaque 404.
-func Mount(mux *http.ServeMux, loopback http.Handler, repo rpc.ProjectKeyLookup) error {
+func Mount(mux *http.ServeMux, loopback http.Handler, repo rpc.ProjectKeyLookup, oauth OAuth) error {
+	if (oauth.Grants == nil) != (oauth.AuthorizationEndpoint == "") {
+		return errors.New("mcp: OAuth needs both Grants and AuthorizationEndpoint, or neither")
+	}
 	handler, err := newHandler(loopback)
 	if err != nil {
 		return err
 	}
 
-	authMW := authn.NewMiddleware(rpc.WithPrivateKeyAuth(repo))
-	mounted := withAPIKeyPassthrough(authMW.Wrap(handler))
+	var issuer string
+	if oauth.Grants != nil {
+		issuer = oauth.Grants.Issuer()
+		mountOAuth(mux, oauth)
+	}
+	mounted := withCredentialPassthrough(authenticate(rpc.WithMCPAuth(repo, oauth.Grants), issuer, handler))
 	mux.Handle("/mcp", mounted)
 	mux.Handle("/mcp/", mounted)
 

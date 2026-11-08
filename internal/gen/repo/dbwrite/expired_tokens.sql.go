@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const deleteDeadMCPGrants = `-- name: DeleteDeadMCPGrants :execrows
+delete from mcp_grants g
+where g.revoke_time is not null
+  or (g.code_used_at is null and g.code_expires_at <= now())
+  or (g.code_used_at is not null
+    and not exists (select 1 from refresh_tokens rt where rt.mcp_grant_id = g.id))
+`
+
+// Revoked, never exchanged in time, or out of tokens. A grant whose code still
+// awaits its exchange stays. Run after DeleteExpiredRefreshTokens.
+func (q *Queries) DeleteDeadMCPGrants(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDeadMCPGrants)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteExpiredEmailActionTokens = `-- name: DeleteExpiredEmailActionTokens :execrows
 delete from email_action_tokens
 where expires_at <= now()

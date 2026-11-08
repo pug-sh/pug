@@ -17,7 +17,7 @@ set consumed_at = now()
 where id = $1
   and consumed_at is null
   and revoked_at is null
-returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain
+returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain, access_expires_at, access_token_hash, mcp_grant_id
 `
 
 // Marks the current token rotated. Gated on consumed_at is null so a lost race
@@ -35,8 +35,60 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, id string) (RefreshTo
 		&i.RevokedAt,
 		&i.CreateTime,
 		&i.ProvenDomain,
+		&i.AccessExpiresAt,
+		&i.AccessTokenHash,
+		&i.McpGrantID,
 	)
 	return i, err
+}
+
+const createMCPTokenPair = `-- name: CreateMCPTokenPair :exec
+insert into refresh_tokens (
+  access_expires_at,
+  access_token_hash,
+  customer_id,
+  expires_at,
+  family_id,
+  id,
+  mcp_grant_id,
+  token_hash
+)
+values (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  $8
+)
+`
+
+type CreateMCPTokenPairParams struct {
+	AccessExpiresAt pgtype.Timestamptz
+	AccessTokenHash pgtype.Text
+	CustomerID      string
+	ExpiresAt       pgtype.Timestamptz
+	FamilyID        string
+	ID              string
+	McpGrantID      pgtype.Text
+	TokenHash       string
+}
+
+// The grant holds the proven domain and the revocation, so both stay null here.
+func (q *Queries) CreateMCPTokenPair(ctx context.Context, arg CreateMCPTokenPairParams) error {
+	_, err := q.db.Exec(ctx, createMCPTokenPair,
+		arg.AccessExpiresAt,
+		arg.AccessTokenHash,
+		arg.CustomerID,
+		arg.ExpiresAt,
+		arg.FamilyID,
+		arg.ID,
+		arg.McpGrantID,
+		arg.TokenHash,
+	)
+	return err
 }
 
 const createRefreshToken = `-- name: CreateRefreshToken :one
@@ -56,7 +108,7 @@ values (
   $5,
   $6
 )
-returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain
+returning id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain, access_expires_at, access_token_hash, mcp_grant_id
 `
 
 type CreateRefreshTokenParams struct {
@@ -88,14 +140,63 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		&i.RevokedAt,
 		&i.CreateTime,
 		&i.ProvenDomain,
+		&i.AccessExpiresAt,
+		&i.AccessTokenHash,
+		&i.McpGrantID,
+	)
+	return i, err
+}
+
+const getMCPRefreshTokenByHashForUpdate = `-- name: GetMCPRefreshTokenByHashForUpdate :one
+select
+  rt.consumed_at,
+  rt.expires_at,
+  rt.id,
+  g.client_id,
+  g.customer_id,
+  g.id as grant_id,
+  g.proven_domain,
+  g.revoke_time
+from refresh_tokens rt
+join mcp_grants g on g.id = rt.mcp_grant_id
+where rt.token_hash = $1
+for update of rt, g
+`
+
+type GetMCPRefreshTokenByHashForUpdateRow struct {
+	ConsumedAt   pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	ID           string
+	ClientID     string
+	CustomerID   string
+	GrantID      string
+	ProvenDomain pgtype.Text
+	RevokeTime   pgtype.Timestamptz
+}
+
+// Unfiltered, like GetRefreshTokenByHashForUpdate, so a reused token is found.
+// The grant is locked too, so a rotation and a revoke serialize.
+func (q *Queries) GetMCPRefreshTokenByHashForUpdate(ctx context.Context, tokenHash string) (GetMCPRefreshTokenByHashForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getMCPRefreshTokenByHashForUpdate, tokenHash)
+	var i GetMCPRefreshTokenByHashForUpdateRow
+	err := row.Scan(
+		&i.ConsumedAt,
+		&i.ExpiresAt,
+		&i.ID,
+		&i.ClientID,
+		&i.CustomerID,
+		&i.GrantID,
+		&i.ProvenDomain,
+		&i.RevokeTime,
 	)
 	return i, err
 }
 
 const getRefreshTokenByHashForUpdate = `-- name: GetRefreshTokenByHashForUpdate :one
-select id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain
+select id, customer_id, family_id, token_hash, expires_at, consumed_at, revoked_at, create_time, proven_domain, access_expires_at, access_token_hash, mcp_grant_id
 from refresh_tokens
 where token_hash = $1
+  and mcp_grant_id is null
 for update
 `
 
@@ -103,7 +204,8 @@ for update
 // the first to commit consumes it, and the rest re-read consumed_at set and fall
 // into the reuse-detection path. Unlike the email-action lookup, this does NOT
 // filter on consumed_at/revoked_at — the caller MUST see an already-consumed or
-// revoked row to detect token replay and decide invalidity in Go.
+// revoked row to detect token replay and decide invalidity in Go. It skips MCP
+// rows, so an MCP refresh token never becomes a dashboard session.
 func (q *Queries) GetRefreshTokenByHashForUpdate(ctx context.Context, tokenHash string) (RefreshToken, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenByHashForUpdate, tokenHash)
 	var i RefreshToken
@@ -117,6 +219,9 @@ func (q *Queries) GetRefreshTokenByHashForUpdate(ctx context.Context, tokenHash 
 		&i.RevokedAt,
 		&i.CreateTime,
 		&i.ProvenDomain,
+		&i.AccessExpiresAt,
+		&i.AccessTokenHash,
+		&i.McpGrantID,
 	)
 	return i, err
 }
@@ -141,14 +246,16 @@ const revokeRefreshTokenFamilyByHash = `-- name: RevokeRefreshTokenFamilyByHash 
 update refresh_tokens
 set revoked_at = now()
 where family_id = (
-    select rt.family_id from refresh_tokens rt where rt.token_hash = $1
+    select rt.family_id from refresh_tokens rt
+    where rt.token_hash = $1 and rt.mcp_grant_id is null
   )
   and revoked_at is null
 `
 
 // Sign-out: revoke the whole rotation family that the presented token belongs to,
 // given any (even already-consumed) token in it. A non-matching hash revokes
-// nothing (zero rows) so logout with a stale token is a clean no-op.
+// nothing (zero rows) so logout with a stale token is a clean no-op. An MCP
+// token's hash never matches.
 func (q *Queries) RevokeRefreshTokenFamilyByHash(ctx context.Context, tokenHash string) (int64, error) {
 	result, err := q.db.Exec(ctx, revokeRefreshTokenFamilyByHash, tokenHash)
 	if err != nil {

@@ -1,0 +1,131 @@
+edition = "2023";
+
+package dashboard.mcpgrants.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/mcpgrants/v1;mcpgrantsv1";
+
+// MCPGrantsService backs the consent page at /oauth/authorize and Connected apps.
+// A grant lets one client, such as Claude, read one project as the person who
+// approved it. With OAuth off, every RPC but ListGrants answers FailedPrecondition
+// with MCP_OAUTH_DISABLED.
+service MCPGrantsService {
+  // Checks an authorization request for the consent page, fetching the client's
+  // metadata document. MCP_CLIENT_INVALID, MCP_CLIENT_UNAVAILABLE and
+  // MCP_REDIRECT_NOT_LISTED mean the redirect can't be trusted, so there is no way
+  // back to the client. Any other bad request is MCP_AUTHORIZATION_INVALID, whose
+  // AuthorizationError detail carries the URL back.
+  rpc DescribeAuthorization(DescribeAuthorizationRequest) returns (DescribeAuthorizationResponse) {}
+
+  // Checks the request again and creates the grant and its code. Unauthenticated
+  // when the session has ended or its token has no sid, and with SSO_REQUIRED when
+  // the person's domain requires an SSO sign-in this session lacks: refreshing the
+  // session then shows the SSO prompt.
+  rpc ApproveAuthorization(ApproveAuthorizationRequest) returns (ApproveAuthorizationResponse) {}
+
+  // Whether OAuth is on, and the person's own live grants.
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse) {}
+
+  // Revokes one of the person's own grants. The client's next call fails.
+  rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse) {}
+}
+
+// AuthorizationRequest is the query of /oauth/authorize, as the client sent it. Its
+// scope is ignored: every grant is read. Validation only caps lengths, because most
+// broken requests must still go back to the client as an OAuth error.
+message AuthorizationRequest {
+  string client_id = 1 [(buf.validate.field).string.max_len = 2048];
+  string redirect_uri = 2 [(buf.validate.field).string.max_len = 2048];
+  string response_type = 3 [(buf.validate.field).string.max_len = 64];
+  string state = 4 [(buf.validate.field).string.max_len = 4096];
+  string code_challenge = 5 [(buf.validate.field).string.max_len = 128];
+  string code_challenge_method = 6 [(buf.validate.field).string.max_len = 64];
+  string resource = 7 [(buf.validate.field).string.max_len = 2048];
+}
+
+// AuthorizationError is the error detail of MCP_AUTHORIZATION_INVALID.
+message AuthorizationError {
+  // The OAuth error, such as invalid_request.
+  string error = 1;
+  // The client's redirect with the error, the state and iss. Follow it only if it
+  // is https, or http on a loopback host.
+  string redirect_uri = 2;
+}
+
+// Project is a project with its org's name, as the consent page's picker shows it.
+message Project {
+  string id = 1;
+  string display_name = 2;
+  string org_id = 3;
+  string org_display_name = 4;
+}
+
+message DescribeAuthorizationRequest {
+  AuthorizationRequest request = 1;
+}
+
+message DescribeAuthorizationResponse {
+  // The host of the client_id URL. It names the app, since only the app can serve a
+  // document there.
+  string client_host = 1;
+  // The app's own name for itself. Anyone can write any name into their document,
+  // so show it only in small text.
+  string client_name = 2;
+  // Where the browser goes back to. The page must always name it.
+  string redirect_host = 3;
+  // The redirect is on a loopback host, so the app runs on the person's computer,
+  // where any program can claim the port. Warn before Allow.
+  bool loopback_redirect = 4;
+  // Every live project in every org the person belongs to, with any role.
+  repeated Project projects = 5;
+  // Where Cancel sends the browser: the redirect with error=access_denied, the
+  // state and iss. Follow it only if it is https, or http on a loopback host.
+  string cancel_uri = 6;
+}
+
+message ApproveAuthorizationRequest {
+  AuthorizationRequest request = 1;
+  // The project picked on the consent page.
+  string project_id = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.len = 20
+  ];
+}
+
+message ApproveAuthorizationResponse {
+  // Where to send the browser: the redirect with the code, the state and iss.
+  // Follow it only if it is https, or http on a loopback host.
+  string redirect_uri = 1;
+}
+
+message ListGrantsRequest {}
+
+message ListGrantsResponse {
+  // False when this server has OAuth off. Hide Connected apps.
+  bool oauth_enabled = 1;
+  // Newest first.
+  repeated Grant grants = 2;
+}
+
+// Grant is one connection: one client reading one project as the person.
+message Grant {
+  string id = 1;
+  string client_host = 2;
+  // The app's name for itself at approval.
+  string client_name = 3;
+  Project project = 4;
+  google.protobuf.Timestamp create_time = 5;
+  // When the client last got a token.
+  google.protobuf.Timestamp last_used_time = 6;
+}
+
+message RevokeGrantRequest {
+  string grant_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.len = 20
+  ];
+}
+
+message RevokeGrantResponse {}

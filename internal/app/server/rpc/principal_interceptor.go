@@ -60,6 +60,9 @@ func enrichSpanWithPrincipal(ctx context.Context, procedure string) {
 	if principal.MaskedAPIKey != "" {
 		attrs = append(attrs, attribute.String("auth.key_id", principal.MaskedAPIKey))
 	}
+	if principal.GrantID != "" {
+		attrs = append(attrs, attribute.String("auth.grant_id", principal.GrantID))
+	}
 	if principal.Customer != nil {
 		attrs = append(attrs, attribute.String("customer.id", principal.Customer.ID))
 	}

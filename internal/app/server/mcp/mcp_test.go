@@ -2,12 +2,14 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/core/authz"
+	"github.com/pug-sh/pug/internal/core/mcpgrants"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/correlation"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
@@ -34,26 +37,30 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const testPrivateKey = "prv_testkey"
+const (
+	testPrivateKey  = "prv_testkey"
+	otherPrivateKey = "prv_otherkey"
+	testAccessToken = "mcp_at_testtoken"
+)
+
+var (
+	keyCredential   = credential{pogrpc.HeaderAPIKey, testPrivateKey}
+	tokenCredential = credential{"Authorization", "Bearer " + testAccessToken}
+)
 
 // testJWTKey signs the dashboard tokens the shared services accept, so the /mcp
 // rejection tests can present a genuinely valid dashboard credential rather than
 // a malformed one.
 var testJWTKey = []byte("test-jwt-key")
 
-// signDashboardJWT mints a real dashboard access token — the exact shape
-// WithJWTAuth accepts. /mcp must refuse it: MCP clients hold a static credential,
-// so an expiring access token is useless there, and admitting JWTs would widen the
-// endpoint from project-scoped to customer-scoped.
-func signDashboardJWT(t *testing.T) string {
+// signDashboardJWT mints a real dashboard access token, the exact shape WithJWTAuth
+// accepts.
+func signDashboardJWT(t *testing.T, claims jwt.MapClaims) string {
 	t.Helper()
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": "cust-mcp",
-		"aud": coreauth.Audience,
-		"iss": coreauth.Issuer,
-		"exp": time.Now().Add(time.Hour).Unix(),
-	})
-	signed, err := token.SignedString(testJWTKey)
+	claims["aud"] = coreauth.Audience
+	claims["iss"] = coreauth.Issuer
+	claims["exp"] = time.Now().Add(time.Hour).Unix()
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(testJWTKey)
 	if err != nil {
 		t.Fatalf("sign dashboard JWT: %v", err)
 	}
@@ -81,11 +88,10 @@ var curatedToolNames = []string{
 
 // ---------- stubs ----------
 
-// stubKeyLookup resolves exactly privateKey to project. A project no longer
-// carries its keys on its own row, so the pairing lives here instead.
+// stubKeyLookup resolves each private key in keys to its project. A project no
+// longer carries its keys on its own row, so the pairing lives here instead.
 type stubKeyLookup struct {
-	privateKey string
-	project    dbread.Project
+	keys map[string]dbread.Project
 }
 
 func (s *stubKeyLookup) GetProjectByPublicApiKey(context.Context, string) (dbread.Project, error) {
@@ -93,13 +99,27 @@ func (s *stubKeyLookup) GetProjectByPublicApiKey(context.Context, string) (dbrea
 }
 
 func (s *stubKeyLookup) GetProjectByPrivateApiKey(_ context.Context, key string) (dbread.Project, error) {
-	if key == s.privateKey {
-		return s.project, nil
+	if p, ok := s.keys[key]; ok {
+		return p, nil
 	}
 	return dbread.Project{}, pgx.ErrNoRows
 }
 
 func (s *stubKeyLookup) InvalidateProjectKeys(context.Context, string, ...string) {}
+
+// stubTokens resolves testAccessToken to a person on proj-mcp.
+type stubTokens struct{}
+
+func (stubTokens) ResolveAccessToken(_ context.Context, token string) (mcpgrants.Access, error) {
+	if token != testAccessToken {
+		return mcpgrants.Access{}, mcpgrants.ErrInvalidToken
+	}
+	return mcpgrants.Access{
+		GrantID:  "grant-mcp",
+		Customer: dbread.Customer{ID: "cust-mcp"},
+		Project:  dbread.Project{ID: "proj-mcp", OrgID: "org-mcp"},
+	}, nil
+}
 
 // stubRoleLookup satisfies the authz interceptor's memberRoleLookup. On the
 // private-key path the interceptor short-circuits without a role lookup, so this
@@ -128,6 +148,7 @@ type stubProfiles struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
 	gotID       string
 	sawProject  bool
+	principal   *pogrpc.Principal
 	sawDeadline bool
 	getResp     *profilesv1.GetResponse // if set, returned from Get
 	getErr      error                   // if set, returned from Get (takes precedence)
@@ -138,6 +159,7 @@ func (s *stubProfiles) Get(ctx context.Context, req *connect.Request[profilesv1.
 	s.gotID = req.Msg.GetId()
 	if p, err := pogrpc.MustGetPrincipalWithProject(ctx); err == nil && p.Project != nil {
 		s.sawProject = true
+		s.principal = p
 	}
 	_, s.sawDeadline = ctx.Deadline()
 	if s.getPanic {
@@ -167,10 +189,18 @@ type testDeps struct {
 
 func newTestServer(t *testing.T) testDeps {
 	t.Helper()
+	return newTestServerWith(t, OAuth{})
+}
+
+func newTestServerWith(t *testing.T, oauth OAuth) testDeps {
+	t.Helper()
 
 	insights := &stubInsights{}
 	profiles := &stubProfiles{}
-	repo := &stubKeyLookup{privateKey: testPrivateKey, project: dbread.Project{ID: "proj-mcp", OrgID: "org-mcp"}}
+	repo := &stubKeyLookup{keys: map[string]dbread.Project{
+		testPrivateKey:  {ID: "proj-mcp", OrgID: "org-mcp"},
+		otherPrivateKey: {ID: "proj-other", OrgID: "org-other"},
+	}}
 
 	authorizer, err := authz.NewAuthorizer()
 	if err != nil {
@@ -189,10 +219,9 @@ func newTestServer(t *testing.T) testDeps {
 	handlerOpts := pogrpc.HandlerOptions(otelInterceptor, authorizer, stubRoleLookup{})
 
 	mux := http.NewServeMux()
-	// The shared services keep dual auth (private key OR dashboard JWT), exactly as
-	// in production — which is what gives the /mcp JWT-rejection test its teeth: the
-	// same JWT that these handlers would accept must still be refused at /mcp.
-	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, nil, repo))
+	// The shared services keep dual auth, as in production, so the /mcp JWT-rejection
+	// test has teeth: a JWT these handlers accept must still be refused at /mcp.
+	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, nil, repo, oauth.Grants))
 
 	ip, ih := insightsv1connect.NewInsightsServiceHandler(insights, handlerOpts)
 	mux.Handle(ip, sharedMW.Wrap(ih))
@@ -201,11 +230,9 @@ func newTestServer(t *testing.T) testDeps {
 	pp, ph := profilesv1connect.NewProfilesServiceHandler(profiles, handlerOpts)
 	mux.Handle(pp, sharedMW.Wrap(ph))
 
-	// Identical to the production call in server.start. Mount builds the handler and
-	// the private-key-only auth boundary itself, so the harness cannot wire /mcp
-	// differently than production does — the bug that let an earlier version of this
-	// suite stay green with the endpoint pointed at WithDualAuth.
-	if err := Mount(mux, mux, repo); err != nil {
+	// Identical to the production call in server.start: Mount builds the handler and
+	// the auth boundary itself, so tests can't wire /mcp differently.
+	if err := Mount(mux, mux, repo, oauth); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
 
@@ -275,6 +302,37 @@ func TestE2E_ToolsListPinsCuratedNames(t *testing.T) {
 	}
 }
 
+// Claude's connector directory requires a title and readOnlyHint on every tool.
+func TestE2E_ToolsAreTitledAndReadOnly(t *testing.T) {
+	deps := newTestServer(t)
+	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
+
+	res, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	byTitle := make(map[string]string)
+	for _, tl := range res.Tools {
+		if tl.Title == "" {
+			t.Errorf("tool %q has no title", tl.Name)
+		}
+		if tl.Description == "" {
+			t.Errorf("tool %q has no description", tl.Name)
+		}
+		if prev, dup := byTitle[tl.Title]; dup {
+			t.Errorf("tools %q and %q share the title %q", prev, tl.Name, tl.Title)
+		}
+		byTitle[tl.Title] = tl.Name
+
+		if tl.Annotations == nil || !tl.Annotations.ReadOnlyHint {
+			t.Errorf("tool %q is not marked read-only", tl.Name)
+		} else if tl.Annotations.Title != tl.Title {
+			t.Errorf("tool %q: annotations.title = %q, want %q", tl.Name, tl.Annotations.Title, tl.Title)
+		}
+	}
+}
+
 func TestE2E_GetProfileHappyPath(t *testing.T) {
 	deps := newTestServer(t)
 	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
@@ -323,6 +381,9 @@ func TestE2E_GetProfileReturnsBody(t *testing.T) {
 	if text := toolText(res); !strings.Contains(text, "ext-abc") {
 		t.Errorf("tool result %q does not carry the response body (external_id); loopback body round-trip broken", text)
 	}
+	if sc, err := json.Marshal(res.StructuredContent); err != nil || !strings.Contains(string(sc), "ext-abc") {
+		t.Errorf("structured content %s does not carry the response body", sc)
+	}
 }
 
 func TestE2E_GetProfileHandlerErrorSurfaces(t *testing.T) {
@@ -354,7 +415,7 @@ func TestE2E_GetProfileHandlerErrorSurfaces(t *testing.T) {
 // contained by net/http's per-connection recover, but a tool call runs the
 // handler on a go-sdk jsonrpc2 goroutine that recover never reaches — so an
 // escaping panic took down the whole process (every tenant), remotely triggerable
-// by any private-key holder. The panic must surface as a tool error and the
+// by any key or token holder. The panic must surface as a tool error and the
 // process must live.
 func TestE2E_HandlerPanicSurfacesAsToolError(t *testing.T) {
 	deps := newTestServer(t)
@@ -395,7 +456,7 @@ func TestLoopbackRecoversPanicOutsideConnect(t *testing.T) {
 	})}
 
 	req, err := http.NewRequestWithContext(
-		correlation.WithID(withAPIKey(context.Background(), testPrivateKey), "test-correlation-id"),
+		correlation.WithID(withCredential(context.Background(), keyCredential), "test-correlation-id"),
 		http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
@@ -443,7 +504,7 @@ func TestLoopbackPanicLogNamesTenant(t *testing.T) {
 	lb := &loopbackClient{handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		panic("boom outside the connect chain")
 	})}
-	ctx := authn.SetInfo(withAPIKey(context.Background(), testPrivateKey), &pogrpc.Principal{
+	ctx := authn.SetInfo(withCredential(context.Background(), keyCredential), &pogrpc.Principal{
 		AuthType: pogrpc.AuthTypePrivateKey,
 		Project:  &dbread.Project{ID: "proj-1", OrgID: "org-1"},
 	})
@@ -473,7 +534,7 @@ func TestLoopbackPanicLogsUnderALiveContext(t *testing.T) {
 		panic("boom outside the connect chain")
 	})}
 	req, err := http.NewRequestWithContext(
-		correlation.WithID(withAPIKey(context.Background(), testPrivateKey), "test-correlation-id"),
+		correlation.WithID(withCredential(context.Background(), keyCredential), "test-correlation-id"),
 		http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
@@ -556,9 +617,9 @@ func TestE2E_UnauthorizedRawPOST(t *testing.T) {
 		{"unknown private key", pogrpc.HeaderAPIKey, "prv_unknown"},
 		{"non-prv bearer", "Authorization", "Bearer pub_something"},
 		// A valid dashboard JWT — one the shared Connect services would accept —
-		// must still be refused at /mcp. Mount builds WithPrivateKeyAuth itself, so
-		// there is no wiring in which this endpoint admits a JWT.
-		{"valid dashboard jwt", "Authorization", "Bearer " + signDashboardJWT(t)},
+		// must still be refused at /mcp. Mount builds WithMCPAuth itself, so there is
+		// no wiring in which this endpoint admits a JWT.
+		{"valid dashboard jwt", "Authorization", "Bearer " + signDashboardJWT(t, jwt.MapClaims{"sub": "cust-mcp"})},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -604,7 +665,7 @@ func TestE2E_TrailingSlashServed(t *testing.T) {
 
 type recordingServer struct{ names []string }
 
-func (r *recordingServer) AddTool(tool mcpruntime.Tool, _ mcpruntime.ToolHandler) {
+func (r *recordingServer) AddTool(tool *gomcp.Tool, _ gomcp.ToolHandler) {
 	r.names = append(r.names, tool.Name)
 }
 
@@ -754,33 +815,39 @@ func TestInstructionsMatchToolPolicy(t *testing.T) {
 	}
 }
 
-func TestWithAPIKeyPassthrough(t *testing.T) {
+func TestWithCredentialPassthrough(t *testing.T) {
+	token := "Bearer " + testAccessToken
 	cases := []struct {
 		name       string
-		apiKey     string // x-api-key header
-		authHeader string // Authorization header
-		wantKey    string // expected x-api-key seen downstream + stashed
+		apiKey     string     // x-api-key header
+		authHeader string     // Authorization header
+		wantKey    string     // expected x-api-key seen downstream
+		want       credential // expected stash
 	}{
-		{"x-api-key passes through", testPrivateKey, "", testPrivateKey},
+		{"x-api-key passes through", testPrivateKey, "", testPrivateKey, keyCredential},
 		// Precedence matters for more than tidiness: NormalizeBearerAPIKey MUTATES the
 		// request header, so if a Bearer could overwrite an explicit x-api-key, anything
 		// able to inject an Authorization header (a proxy, a misconfigured gateway) could
 		// swap the caller onto another project's key. x-api-key must win.
-		{"x-api-key wins over a conflicting bearer", testPrivateKey, "Bearer prv_otherproject", testPrivateKey},
-		{"bearer prv normalized", "", "Bearer " + testPrivateKey, testPrivateKey},
-		{"lowercase bearer prv normalized", "", "bearer " + testPrivateKey, testPrivateKey},
-		{"uppercase BEARER prv normalized", "", "BEARER " + testPrivateKey, testPrivateKey},
-		{"bearer pub not normalized", "", "Bearer pub_x", ""},
-		{"bearer non-key not normalized", "", "Bearer abc123", ""},
-		{"bare bearer scheme not normalized", "", "Bearer", ""},
-		{"no credential", "", "", ""},
+		{"x-api-key wins over a conflicting bearer", testPrivateKey, "Bearer prv_otherproject", testPrivateKey, keyCredential},
+		{"x-api-key wins over an MCP token", testPrivateKey, token, testPrivateKey, keyCredential},
+		{"bearer prv normalized", "", "Bearer " + testPrivateKey, testPrivateKey, keyCredential},
+		{"lowercase bearer prv normalized", "", "bearer " + testPrivateKey, testPrivateKey, keyCredential},
+		{"uppercase BEARER prv normalized", "", "BEARER " + testPrivateKey, testPrivateKey, keyCredential},
+		{"MCP token stashed as it came", "", token, "", credential{"Authorization", token}},
+		{"lowercase bearer MCP token stashed", "", "bearer " + testAccessToken, "", credential{"Authorization", "bearer " + testAccessToken}},
+		{"bearer pub not normalized", "", "Bearer pub_x", "", credential{}},
+		{"bearer non-key not normalized", "", "Bearer abc123", "", credential{}},
+		{"bare bearer scheme not normalized", "", "Bearer", "", credential{}},
+		{"no credential", "", "", "", credential{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var gotHeader, gotCtx string
+			var gotHeader string
+			var got credential
 			next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				gotHeader = r.Header.Get(pogrpc.HeaderAPIKey)
-				gotCtx = apiKeyFromContext(r.Context())
+				got, _ = credentialFrom(r.Context())
 			})
 			req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
 			if tc.apiKey != "" {
@@ -789,13 +856,13 @@ func TestWithAPIKeyPassthrough(t *testing.T) {
 			if tc.authHeader != "" {
 				req.Header.Set("Authorization", tc.authHeader)
 			}
-			withAPIKeyPassthrough(next).ServeHTTP(httptest.NewRecorder(), req)
+			withCredentialPassthrough(next).ServeHTTP(httptest.NewRecorder(), req)
 
 			if gotHeader != tc.wantKey {
 				t.Errorf("downstream x-api-key = %q, want %q", gotHeader, tc.wantKey)
 			}
-			if gotCtx != tc.wantKey {
-				t.Errorf("stashed ctx key = %q, want %q", gotCtx, tc.wantKey)
+			if got != tc.want {
+				t.Errorf("stashed credential = %+v, want %+v", got, tc.want)
 			}
 		})
 	}
@@ -824,16 +891,52 @@ func TestE2E_ToolCallContextIsBounded(t *testing.T) {
 	}
 }
 
-// TestLoopbackFailsLoudWithoutAPIKey covers the wiring-bug path. /mcp is
-// private-key-only and withAPIKeyPassthrough stashes the key outside the authn
-// boundary, so every request that reaches a tool handler provably carries one —
-// key == "" is unreachable in production and therefore means the endpoint was
-// mounted wrong. It must say so, not silently omit the header and let the inner
-// auth answer with a 401 that (being outside the interceptor chain) logs nothing
-// and tells the operator their credential is bad.
-func TestLoopbackFailsLoudWithoutAPIKey(t *testing.T) {
+// keySwitch presents whichever key it holds, so a test can change it mid-session.
+type keySwitch struct{ key atomic.Pointer[string] }
+
+func (k *keySwitch) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set(pogrpc.HeaderAPIKey, *k.key.Load())
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// Each tool call runs as the credential its own request sent, never one an earlier
+// request on the session sent: a connection's token changes every hour.
+func TestE2E_ToolCallUsesItsOwnCredential(t *testing.T) {
+	deps := newTestServer(t)
+	keys := &keySwitch{}
+	first := testPrivateKey
+	keys.key.Store(&first)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	session, err := gomcp.NewClient(&gomcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx,
+		&gomcp.StreamableClientTransport{Endpoint: deps.server.URL + "/mcp", HTTPClient: &http.Client{Transport: keys}, DisableStandaloneSSE: true}, nil)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	for _, want := range []struct{ key, project string }{{testPrivateKey, "proj-mcp"}, {otherPrivateKey, "proj-other"}} {
+		keys.key.Store(&want.key)
+		res, err := session.CallTool(ctx, &gomcp.CallToolParams{Name: "get_profile", Arguments: map[string]any{"id": "user-1"}})
+		if err != nil {
+			t.Fatalf("CallTool: %v", err)
+		}
+		if res.IsError {
+			t.Fatalf("CallTool failed: %s", toolText(res))
+		}
+		if p := deps.profiles.principal; p == nil || p.Project.ID != want.project {
+			t.Errorf("a call sending %s ran as %+v, want %s", want.key, p, want.project)
+		}
+	}
+}
+
+// A missing credential is a wiring bug (no passthrough, or one that misses a
+// credential WithMCPAuth takes). The loopback must say so, not send an anonymous
+// inner call whose 401 logs nothing.
+func TestLoopbackFailsLoudWithoutCredential(t *testing.T) {
 	lb := &loopbackClient{handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		t.Error("inner handler ran without an API key; the loopback must refuse first")
+		t.Error("inner handler ran without a credential; the loopback must refuse first")
 	})}
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
@@ -842,7 +945,7 @@ func TestLoopbackFailsLoudWithoutAPIKey(t *testing.T) {
 	}
 
 	if _, doErr := lb.Do(req); doErr == nil {
-		t.Fatal("Do returned nil error with no API key in context; a missing key is a wiring bug and must not degrade into a mystery 401")
+		t.Fatal("Do returned nil error with no credential in context; a missing one is a wiring bug and must not degrade into a mystery 401")
 	}
 }
 
@@ -915,29 +1018,52 @@ func TestResponseRecorder(t *testing.T) {
 	})
 }
 
-func TestLoopbackInjectsAPIKey(t *testing.T) {
-	var gotKey string
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotKey = r.Header.Get(pogrpc.HeaderAPIKey)
-		w.WriteHeader(http.StatusNoContent)
-	})
-	lb := &loopbackClient{handler: h}
+func TestLoopbackPresentsCredential(t *testing.T) {
+	for _, cred := range []credential{keyCredential, tokenCredential} {
+		var got string
+		lb := &loopbackClient{handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got = r.Header.Get(cred.header)
+			w.WriteHeader(http.StatusNoContent)
+		})}
+		req, err := http.NewRequestWithContext(withCredential(context.Background(), cred), http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
 
-	req, err := http.NewRequest(http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
+		resp, err := lb.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		_ = resp.Body.Close()
+		if got != cred.value {
+			t.Errorf("inner handler saw %s %q, want %q", cred.header, got, cred.value)
+		}
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("status = %d, want 204", resp.StatusCode)
+		}
+	}
+}
+
+// The inner auth takes an MCP token only on a request the loopback marked.
+func TestLoopbackMarksItsRequests(t *testing.T) {
+	var principal *pogrpc.Principal
+	inner := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, nil, &stubKeyLookup{}, stubTokens{})).Wrap(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			principal, _ = pogrpc.MustGetPrincipalWithProject(r.Context())
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	req, err := http.NewRequestWithContext(withCredential(context.Background(), tokenCredential),
+		http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	req = req.WithContext(withAPIKey(context.Background(), "prv_injected"))
 
-	resp, err := lb.Do(req)
+	resp, err := (&loopbackClient{handler: inner}).Do(req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if gotKey != "prv_injected" {
-		t.Errorf("inner handler saw x-api-key %q, want %q", gotKey, "prv_injected")
-	}
-	if resp.StatusCode != http.StatusNoContent {
-		t.Errorf("status = %d, want 204", resp.StatusCode)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent || principal == nil || principal.AuthType != pogrpc.AuthTypeMCPToken {
+		t.Errorf("status = %d, principal = %+v; want the token taken", resp.StatusCode, principal)
 	}
 }
