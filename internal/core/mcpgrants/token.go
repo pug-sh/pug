@@ -131,8 +131,11 @@ func (s *Service) Refresh(ctx context.Context, r TokenRefresh) (Tokens, error) {
 }
 
 // ResolveAccessToken returns ErrInvalidToken unless the token is live and its
-// grant still reaches its project.
+// grant still reaches its project. A nil Service is OAuth off, so no token is live.
 func (s *Service) ResolveAccessToken(ctx context.Context, token string) (Access, error) {
+	if s == nil {
+		return Access{}, ErrInvalidToken
+	}
 	r := dbread.New(s.pgW)
 	ids, err := r.GetMCPAccessByTokenHash(ctx, postgres.NewText(hashToken(token)))
 	if err != nil {

@@ -1,9 +1,10 @@
 // Package mcp mounts pug's read-only shared analytics API as a Model Context
 // Protocol (MCP) endpoint at /mcp. It is a thin adapter: every MCP tool call is
 // forwarded back through the server's own Connect stack in-process (see
-// loopbackClient), so validation, authentication and authorization run exactly
-// as they do for an external private-key API request. No business logic, auth or
-// validation is duplicated here.
+// loopbackClient), so validation, authentication and authorization run as for an
+// external API request, except that only the loopback admits an MCP access token.
+// No business logic, auth or validation is duplicated here. With OAuth on, it also
+// serves the token endpoint and the metadata clients discover it from (oauth.go).
 //
 // Tools are generated from the shared protos by protoc-gen-go-mcp (the *v1mcp
 // packages); this package selects the read-only subset, gives each a curated
@@ -43,7 +44,7 @@ const (
 // Every exposed tool must be named here and no hidden one may be:
 // TestInstructionsMatchToolPolicy pins this against toolPolicy, since prose has no
 // compile-time link to the tool table.
-const instructions = `pug is a product-analytics platform. These tools are read-only and scoped to a single project (the one your private API key belongs to).
+const instructions = `pug is a product-analytics platform. These tools are read-only and scoped to a single project (the one your API key or connection belongs to).
 
 Start by discovering what data exists:
 - get_insights_filter_schema (or get_activity_filter_schema) lists the event kinds and the property keys/types available to filter and break down by.
@@ -74,10 +75,10 @@ Time windows and granularity are arguments on the query tools; call the schema t
 //
 // Stateless is load-bearing, not a tuning knob: it makes the go-sdk build a fresh
 // session per HTTP request and thread that request's context into the tool
-// handler, which is how loopbackClient resolves the caller's own API key. In
+// handler, which is how loopbackClient resolves the caller's own credential. In
 // stateful mode the session context is captured once at initialize and reused for
-// every later call on that session, which would turn per-request key scoping into
-// a stale-credential bug.
+// every later call on that session, which would turn per-request credential
+// scoping into a stale-credential bug.
 func newHandler(loopback http.Handler) (http.Handler, error) {
 	raw := gomcp.NewServer(
 		&gomcp.Implementation{Name: serverName, Version: serverVersion},

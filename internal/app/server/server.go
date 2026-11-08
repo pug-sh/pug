@@ -90,7 +90,7 @@ func start(ctx context.Context, d *deps) error {
 	if err != nil {
 		return err
 	}
-	mcpGrants, err := newMCPGrants(ctx, d.pgW)
+	mcpOAuth, err := newMCPOAuth(ctx, d.pgW)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func start(ctx context.Context, d *deps) error {
 
 	dashboardMW := authn.NewMiddleware(pogrpc.WithJWTAuth(d.jwtKey, queriesRo))
 	sdkMW := authn.NewMiddleware(pogrpc.WithSDKAuth(projectsRepo))
-	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
+	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo, mcpOAuth.Grants))
 
 	// Public
 	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled, sso.cipher, sso.client, turnstileVerifier)
@@ -136,7 +136,7 @@ func start(ctx context.Context, d *deps) error {
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
 		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
 	mcpGrantsPath, mcpGrantsHandler := mcpgrantsv1connect.NewMCPGrantsServiceHandler(
-		mcpgrantsrpc.NewServer(mcpGrants), handlerOpts)
+		mcpgrantsrpc.NewServer(mcpOAuth.Grants), handlerOpts)
 
 	// No ClickHouse: the server only reads what `pug cron usage` stored, and
 	// MeterWindow is the one method that needs it.
@@ -243,12 +243,10 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
-	// mcp.Mount owns the whole endpoint, including its own private-key-only auth
-	// boundary built from projectsRepo, and replays each tool call through this same
-	// mux so validation, auth and authz run as they would for an external request.
-	// Mounted directly like reflection: not a Connect service, so the authz-registry
-	// contract does not apply.
-	if err := mcp.Mount(mux, mux, projectsRepo); err != nil {
+	// mcp.Mount owns /mcp: its auth boundary, the OAuth routes when on, and the
+	// loopback that replays tool calls through this mux. Mounted directly like
+	// reflection: not a Connect service, so the authz-registry contract does not apply.
+	if err := mcp.Mount(mux, mux, projectsRepo, mcpOAuth); err != nil {
 		return fmt.Errorf("mount mcp: %w", err)
 	}
 

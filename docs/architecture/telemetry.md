@@ -40,11 +40,11 @@ The mode is resolved once per process on the first `SetupSDK` call, so set the e
 
 | Set by | Tenant | Requests |
 | ------ | ------ | -------- |
-| `PrincipalInterceptor` | The authenticated project and its org | Project-scoped RPCs (`authzspec.Spec.IsProjectScoped`): API keys, and a JWT with `x-project-id` |
+| `PrincipalInterceptor` | The authenticated project and its org | Project-scoped RPCs (`authzspec.Spec.IsProjectScoped`): API keys, MCP access tokens, and a JWT with `x-project-id` |
 | `AuthzInterceptor` | The message's `org_id`, once authorized | Role-gated org RPCs |
 | The `OrgsService.Leave` handler | The org, once left | Leaving an org |
 | `GetSharedDashboard` | The share's project, without its org, once the share resolves | The public shared dashboard |
-| `loopbackClient.Do` | The API key's project and its org | The `/mcp` loopback's own logs |
+| `loopbackClient.Do` | The project of the API key or connection, and its org | The `/mcp` loopback's own logs |
 
 The tenant is a pointer in context, so a value set deep in a request still reaches the access log. `rpc.HandlerOptions` is the one chain every handler uses. Its `PrincipalInterceptor` runs inside otel and before `validate`, so a project-scoped request that fails validation still names its project on the span and the access log; `TestHandlerOptions_rejectedRequestLogsTenant` pins that. Org RPCs, `Leave` and the share set the tenant only once authorized, so a request refused or rejected before then names none. An `x-project-id` sent to an RPC that is not project-scoped is not its tenant. A log call that passes `org_id` or `project_id` itself keeps its own value. One bound with `Logger.With` is not checked, but no code binds one. Sign-in RPCs name no tenant, even when they join an org or return the demo project: they act for a customer. The throttled cookieless degrade logs name none either, since each line stands for every tenant. Workers and cron jobs still add these attributes by hand.
 

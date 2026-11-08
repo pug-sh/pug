@@ -19,7 +19,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 // serve answers each URL from respond, which returns a status, headers and a body.
 func serve(respond func(url string) (int, http.Header, string)) *Client {
-	return newClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	return NewClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		status, header, body := respond(r.URL.String())
 		return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})})
@@ -78,7 +78,7 @@ func TestFetch(t *testing.T) {
 }
 
 func TestClientIDRules(t *testing.T) {
-	c := newClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	c := NewClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		t.Errorf("fetched %s, which the client_id rules should refuse first", r.URL)
 		return nil, errors.New("unreachable")
 	})})

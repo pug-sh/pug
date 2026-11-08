@@ -50,9 +50,11 @@ func (e *Error) Code() string  { return e.code }
 
 var (
 	ErrAccessDenied            = &Error{"access_denied"}
+	ErrInvalidClient           = &Error{"invalid_client"}
 	ErrInvalidRequest          = &Error{"invalid_request"}
 	ErrInvalidGrant            = &Error{"invalid_grant"}
 	ErrInvalidTarget           = &Error{"invalid_target"}
+	ErrUnsupportedGrantType    = &Error{"unsupported_grant_type"}
 	ErrUnsupportedResponseType = &Error{"unsupported_response_type"}
 )
 
@@ -72,6 +74,8 @@ type DocumentFetcher interface {
 func NewService(pgW *pgxpool.Pool, documents DocumentFetcher, issuer string) *Service {
 	return &Service{pgW: pgW, documents: documents, issuer: issuer}
 }
+
+func (s *Service) Issuer() string { return s.issuer }
 
 // allowsResource reports whether r is absent or names this /mcp, as typed with or
 // without the slash.

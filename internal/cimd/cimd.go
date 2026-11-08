@@ -40,11 +40,12 @@ type Client struct {
 // New fetches over httpx.NewGuardedClient, which refuses private, loopback and
 // metadata addresses and ignores proxies.
 func New() *Client {
-	return newClient(httpx.NewGuardedClient(fetchTimeout, false))
+	return NewClient(httpx.NewGuardedClient(fetchTimeout, false))
 }
 
-// newClient never follows a redirect: the 3xx comes back and fails as a non-200.
-func newClient(c *http.Client) *Client {
+// NewClient fetches over c, such as a test server's client, where New would refuse
+// the address. It never follows a redirect: the 3xx comes back and fails as a non-200.
+func NewClient(c *http.Client) *Client {
 	out := *c
 	out.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{http: &out}

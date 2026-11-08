@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
+	coremcpgrants "github.com/pug-sh/pug/internal/core/mcpgrants"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -537,11 +538,46 @@ func TestWithJWTAuth(t *testing.T) {
 	})
 }
 
+const goodMCPToken = "mcp_at_good"
+
+// stubTokens resolves exactly goodMCPToken, and counts its lookups.
+type stubTokens struct {
+	err   error // if set, every lookup returns it
+	calls int
+}
+
+func (s *stubTokens) ResolveAccessToken(_ context.Context, token string) (coremcpgrants.Access, error) {
+	s.calls++
+	switch {
+	case s.err != nil:
+		return coremcpgrants.Access{}, s.err
+	case token != goodMCPToken:
+		return coremcpgrants.Access{}, coremcpgrants.ErrInvalidToken
+	}
+	return coremcpgrants.Access{
+		GrantID:  "grant-1",
+		Customer: dbread.Customer{ID: "cust-1"},
+		Project:  dbread.Project{ID: "proj-3", OrgID: "org-3"},
+	}, nil
+}
+
+// wantMCPPrincipal checks a token acted as the person who approved it, on its project.
+func wantMCPPrincipal(t *testing.T, result any, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p := result.(*Principal)
+	if p.AuthType != AuthTypeMCPToken || p.Customer.ID != "cust-1" || p.Project.ID != "proj-3" ||
+		p.GrantID != "grant-1" || p.MaskedAPIKey != "" {
+		t.Errorf("principal = %+v, want cust-1 on proj-3 through grant-1", p)
+	}
+}
+
 func TestWithDualAuth(t *testing.T) {
 	stub := newStubLookup()
-	// WithDualAuth requires a jwtAuth fallback; use a dummy key and nil queries
-	// since we only test the API key path here.
-	authFunc := WithDualAuth([]byte("test-jwt-key"), nil, stub)
+	// nil queries are safe: no subtest gets as far as the JWT path's database lookup.
+	authFunc := WithDualAuth([]byte("test-jwt-key"), nil, stub, &stubTokens{})
 	ctx := context.Background()
 
 	t.Run("private key via header succeeds", func(t *testing.T) {
@@ -606,18 +642,37 @@ func TestWithDualAuth(t *testing.T) {
 			privateProjects: map[string]dbread.Project{},
 			forceErr:        errors.New("connection refused"),
 		}
-		errAuthFunc := WithDualAuth([]byte("test-jwt-key"), nil, errStub)
+		errAuthFunc := WithDualAuth([]byte("test-jwt-key"), nil, errStub, &stubTokens{})
 
 		_, err := errAuthFunc(ctx, newRequest("prv_valid456", ""))
 		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
 			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
 		}
 	})
+
+	// A token is issued for /mcp, so the Connect API refuses it from the network,
+	// before it is even looked up.
+	t.Run("MCP token from the network is refused", func(t *testing.T) {
+		tokens := &stubTokens{}
+		_, err := WithDualAuth([]byte("test-jwt-key"), nil, stub, tokens)(ctx, newJWTRequest(goodMCPToken, ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnauthenticated)
+		}
+		if tokens.calls != 0 {
+			t.Errorf("the token was looked up %d times, want none", tokens.calls)
+		}
+	})
+
+	t.Run("MCP token on a /mcp tool call resolves", func(t *testing.T) {
+		result, err := authFunc(WithLoopback(ctx), newJWTRequest(goodMCPToken, ""))
+		wantMCPPrincipal(t, result, err)
+	})
 }
 
-func TestWithPrivateKeyAuth(t *testing.T) {
+func TestWithMCPAuth(t *testing.T) {
 	stub := newStubLookup()
-	authFunc := WithPrivateKeyAuth(stub)
+	tokens := &stubTokens{}
+	authFunc := WithMCPAuth(stub, tokens)
 	ctx := context.Background()
 
 	t.Run("private key via header succeeds", func(t *testing.T) {
@@ -642,7 +697,7 @@ func TestWithPrivateKeyAuth(t *testing.T) {
 
 	t.Run("public key via header rejected", func(t *testing.T) {
 		if _, err := authFunc(ctx, newRequest("pub_valid123", "")); err == nil {
-			t.Fatal("expected error for public key on private key auth")
+			t.Fatal("expected error for public key on /mcp auth")
 		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
 		}
@@ -652,17 +707,17 @@ func TestWithPrivateKeyAuth(t *testing.T) {
 		// A query-param credential is never read: the header is empty, so this
 		// fails as a missing key regardless of the ?api_key value.
 		if _, err := authFunc(ctx, newRequest("", "prv_valid456")); err == nil {
-			t.Fatal("expected error for query-param key on private key auth")
-		} else if got := err.Error(); !strings.Contains(got, "x-api-key header not present") {
-			t.Errorf("error = %q, want to contain %q", got, "x-api-key header not present")
+			t.Fatal("expected error for query-param key on /mcp auth")
+		} else if got := err.Error(); !strings.Contains(got, "API key or access token not present") {
+			t.Errorf("error = %q, want to contain %q", got, "API key or access token not present")
 		}
 	})
 
-	t.Run("missing key returns error", func(t *testing.T) {
+	t.Run("missing credential returns error", func(t *testing.T) {
 		if _, err := authFunc(ctx, newRequest("", "")); err == nil {
-			t.Fatal("expected error for missing key")
-		} else if got := err.Error(); !strings.Contains(got, "x-api-key header not present") {
-			t.Errorf("error = %q, want to contain %q", got, "x-api-key header not present")
+			t.Fatal("expected error for missing credential")
+		} else if got := err.Error(); !strings.Contains(got, "API key or access token not present") {
+			t.Errorf("error = %q, want to contain %q", got, "API key or access token not present")
 		}
 	})
 
@@ -690,11 +745,57 @@ func TestWithPrivateKeyAuth(t *testing.T) {
 			privateProjects: map[string]dbread.Project{},
 			forceErr:        errors.New("connection refused"),
 		}
-		errAuthFunc := WithPrivateKeyAuth(errStub)
+		errAuthFunc := WithMCPAuth(errStub, tokens)
 
 		_, err := errAuthFunc(ctx, newRequest("prv_valid456", ""))
 		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
 			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
+		}
+	})
+
+	t.Run("MCP token acts as the person who approved it", func(t *testing.T) {
+		result, err := authFunc(ctx, newJWTRequest(goodMCPToken, ""))
+		wantMCPPrincipal(t, result, err)
+	})
+
+	t.Run("unknown MCP token returns error", func(t *testing.T) {
+		_, err := authFunc(ctx, newJWTRequest("mcp_at_unknown", ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnauthenticated)
+		}
+	})
+
+	t.Run("MCP token lookup failure returns unavailable", func(t *testing.T) {
+		_, err := WithMCPAuth(stub, &stubTokens{err: errors.New("connection refused")})(ctx, newJWTRequest(goodMCPToken, ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
+		}
+	})
+
+	// The loopback presents the credential the passthrough stashed, which picks the
+	// key too, so the two must agree.
+	t.Run("x-api-key wins over an MCP token", func(t *testing.T) {
+		counted := &stubTokens{}
+		req := newRequest("prv_valid456", "")
+		req.Header.Set("Authorization", "Bearer "+goodMCPToken)
+		result, err := WithMCPAuth(stub, counted)(ctx, req)
+		if err != nil || result.(*Principal).AuthType != AuthTypePrivateKey || counted.calls != 0 {
+			t.Errorf("principal = %+v, %v after %d token lookups; want the key's", result, err, counted.calls)
+		}
+	})
+
+	t.Run("dashboard JWT refused", func(t *testing.T) {
+		jwtToken := signTestJWT(t, []byte("test-jwt-key"), jwt.MapClaims{"sub": "cust-1"})
+		_, err := authFunc(ctx, newJWTRequest(jwtToken, ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnauthenticated)
+		}
+	})
+
+	t.Run("OAuth off takes no token", func(t *testing.T) {
+		_, err := WithMCPAuth(stub, (*coremcpgrants.Service)(nil))(ctx, newJWTRequest(goodMCPToken, ""))
+		if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnauthenticated)
 		}
 	})
 }
@@ -702,8 +803,8 @@ func TestWithPrivateKeyAuth(t *testing.T) {
 // TestNormalizeBearerAPIKey pins the credential normalisation /mcp relies on. It
 // lives here, at the owner, rather than only being covered transitively from the
 // mcp package: the value this returns is stashed in the request context and later
-// re-injected as the credential on every in-process tool call, so "what counts as
-// the effective key" is a security-relevant contract.
+// re-injected as the credential on every key-authenticated tool call, so "what
+// counts as the effective key" is a security-relevant contract.
 func TestNormalizeBearerAPIKey(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -714,8 +815,8 @@ func TestNormalizeBearerAPIKey(t *testing.T) {
 		// separately from want because the two legitimately disagree: a public key is
 		// never an effective credential (want "") yet stays on the request untouched for
 		// the auth boundary to reject. It is the header, not the return value, that the
-		// outer WithPrivateKeyAuth reads, so dropping the Set in NormalizeBearerAPIKey
-		// would break Bearer auth for every MCP client while every want below still held.
+		// outer WithMCPAuth reads, so dropping the Set in NormalizeBearerAPIKey would
+		// break every client sending its key as a Bearer while every want below held.
 		wantHeader string
 	}{
 		{"private x-api-key passes through", "prv_a", "", "prv_a", "prv_a"},

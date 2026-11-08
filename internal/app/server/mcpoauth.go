@@ -8,36 +8,43 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/app/server/mcp"
 	"github.com/pug-sh/pug/internal/cimd"
 	"github.com/pug-sh/pug/internal/core/mcpgrants"
 	"github.com/sethvargo/go-envconfig"
 )
 
 type mcpOAuthConfig struct {
-	APIBaseURL string `env:"PUG_API_BASE_URL"`
-	// The consent page is the dashboard's /oauth/authorize.
+	APIBaseURL       string `env:"PUG_API_BASE_URL"`
 	DashboardBaseURL string `env:"PUG_DASHBOARD_BASE_URL"`
 }
 
-// newMCPGrants turns OAuth for /mcp on when PUG_API_BASE_URL is set, and returns nil
-// when it is off.
-func newMCPGrants(ctx context.Context, pgW *pgxpool.Pool) (*mcpgrants.Service, error) {
+// consentPath is the dashboard page that serves the authorization endpoint.
+const consentPath = "/oauth/authorize"
+
+// newMCPOAuth turns OAuth for /mcp on when PUG_API_BASE_URL is set, and returns
+// the zero mcp.OAuth when it is off.
+func newMCPOAuth(ctx context.Context, pgW *pgxpool.Pool) (mcp.OAuth, error) {
 	var cfg mcpOAuthConfig
 	if err := envconfig.Process(ctx, &cfg); err != nil {
-		return nil, err
+		return mcp.OAuth{}, err
 	}
 	issuer, err := mcpIssuer(cfg.APIBaseURL)
 	if err != nil {
-		return nil, err
+		return mcp.OAuth{}, err
 	}
 	slog.InfoContext(ctx, "mcp oauth", slog.Bool("enabled", issuer != ""), slog.String("issuer", issuer))
 	if issuer == "" {
-		return nil, nil
+		return mcp.OAuth{}, nil
 	}
-	if u, err := url.Parse(cfg.DashboardBaseURL); err != nil || !u.IsAbs() || u.Host == "" {
-		return nil, fmt.Errorf("PUG_API_BASE_URL is set, so PUG_DASHBOARD_BASE_URL must be an absolute URL (got %q)", cfg.DashboardBaseURL)
+	dashboard := strings.TrimSuffix(cfg.DashboardBaseURL, "/")
+	if u, err := url.Parse(dashboard); err != nil || u.Host == "" || !secureOrLocal(u) {
+		return mcp.OAuth{}, fmt.Errorf("PUG_API_BASE_URL is set, so PUG_DASHBOARD_BASE_URL must be an https URL, or http on localhost or 127.0.0.1 for development (got %q)", cfg.DashboardBaseURL)
 	}
-	return mcpgrants.NewService(pgW, cimd.New(), issuer), nil
+	return mcp.OAuth{
+		Grants:                mcpgrants.NewService(pgW, cimd.New(), issuer),
+		AuthorizationEndpoint: dashboard + consentPath,
+	}, nil
 }
 
 // mcpIssuer returns the origin PUG_API_BASE_URL names, or "" when it is unset. The
@@ -52,8 +59,14 @@ func mcpIssuer(raw string) (string, error) {
 	if err != nil || u.Host == "" || origin != strings.ToLower(u.Scheme+"://"+u.Host) {
 		return "", fmt.Errorf("PUG_API_BASE_URL must be an origin such as https://api.example.com, with no path (got %q)", raw)
 	}
-	if u.Scheme == "https" || (u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1")) {
+	if secureOrLocal(u) {
 		return origin, nil
 	}
 	return "", fmt.Errorf("PUG_API_BASE_URL must be https, or http on localhost or 127.0.0.1 for development (got %q)", raw)
+}
+
+// secureOrLocal is how OAuth clients want every endpoint served, the consent page
+// included: https, or http on localhost or 127.0.0.1 for development.
+func secureOrLocal(u *url.URL) bool {
+	return u.Scheme == "https" || (u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"))
 }

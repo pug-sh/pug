@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
+	coremcpgrants "github.com/pug-sh/pug/internal/core/mcpgrants"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -36,10 +37,12 @@ const (
 	AuthTypeJWT        AuthType = "jwt"
 	AuthTypePublicKey  AuthType = "pub_key"
 	AuthTypePrivateKey AuthType = "priv_key"
+	AuthTypeMCPToken   AuthType = "mcp_token"
 )
 
 // Principal represents the authenticated entity.
 // Customer is set for JWT auth. Project is set for API key auth and JWT auth with x-project-id header.
+// An MCP access token sets both: the person who approved the connection, and its project.
 type Principal struct {
 	AuthType     AuthType
 	Customer     *dbread.Customer
@@ -47,6 +50,7 @@ type Principal struct {
 	JWTID        string // JWT ID (jti claim), set for JWT auth
 	SessionID    string // Refresh family id (sid claim), set for JWT auth; absent from older JWTs
 	MaskedAPIKey string // Masked API key suffix (e.g. "...d456"), set for API key auth
+	GrantID      string // MCP grant id, set for MCP token auth
 }
 
 // maskKey returns "...XXXX" showing only the last 4 characters of an API key,
@@ -66,7 +70,7 @@ func maskKey(key string) string {
 // owned solely by package rpc.
 //
 // It MUTATES req.Header in place when it promotes a Bearer token: that side effect
-// is the whole mechanism by which the downstream WithPrivateKeyAuth sees the key.
+// is the whole mechanism by which the downstream WithMCPAuth sees the key.
 //
 // x-api-key, if present, always wins: a Bearer must never be able to override an
 // explicit x-api-key, or anything that can inject an Authorization header (a proxy,
@@ -97,12 +101,55 @@ func NormalizeBearerAPIKey(req *http.Request) string {
 	return token
 }
 
+// MCPAccessToken returns an MCP access token sent as a bearer.
+func MCPAccessToken(req *http.Request) (string, bool) {
+	token, ok := authn.BearerToken(req)
+	return token, ok && strings.HasPrefix(token, coremcpgrants.AccessTokenPrefix)
+}
+
+type loopbackKey struct{}
+
+// WithLoopback marks a /mcp tool call re-entering the mux in-process: the only
+// request WithDualAuth takes an MCP access token on. A network request can't set it.
+func WithLoopback(ctx context.Context) context.Context {
+	return context.WithValue(ctx, loopbackKey{}, true)
+}
+
+func fromLoopback(ctx context.Context) bool {
+	marked, _ := ctx.Value(loopbackKey{}).(bool)
+	return marked
+}
+
+// mcpTokenLookup resolves an MCP access token, as *mcpgrants.Service does. A dead
+// token is ErrInvalidToken, and the lookup logs and records any other failure.
+type mcpTokenLookup interface {
+	ResolveAccessToken(ctx context.Context, token string) (coremcpgrants.Access, error)
+}
+
+// resolveMCPTokenPrincipal acts as the person who approved the connection, on its
+// project, so the role gate runs as it does for their dashboard.
+func resolveMCPTokenPrincipal(ctx context.Context, tokens mcpTokenLookup, token string) (*Principal, error) {
+	access, err := tokens.ResolveAccessToken(ctx, token)
+	switch {
+	case errors.Is(err, coremcpgrants.ErrInvalidToken):
+		return nil, unauthenticated(ctx, "invalid access token")
+	case err != nil:
+		return nil, unavailable(ctx, "failed to validate access token")
+	}
+	return &Principal{
+		AuthType: AuthTypeMCPToken,
+		Customer: &access.Customer,
+		Project:  &access.Project,
+		GrantID:  access.GrantID,
+	}, nil
+}
+
 // resolvePrivateKeyPrincipal resolves an already-prefix-validated private
 // ("prv_") API key to its project and builds the matching Principal (AuthType
 // private, Project set, Customer nil). pgx.ErrNoRows becomes an "invalid API
 // key" rejection; any other DB failure becomes Unavailable (the repo
 // logs/records those at source). Shared by the private-key paths of
-// WithDualAuth and WithPrivateKeyAuth.
+// WithDualAuth and WithMCPAuth.
 func resolvePrivateKeyPrincipal(ctx context.Context, repo projectKeyLookup, apiKey string) (*Principal, error) {
 	project, err := repo.GetProjectByPrivateApiKey(ctx, apiKey)
 	if err != nil {
@@ -319,7 +366,8 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 
 // WithDualAuth authenticates via private API key if x-api-key header is present; otherwise falls back to JWT.
 // Unlike WithSDKAuth, this only accepts private keys (not public) and falls back to JWT, populating Customer.
-func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup) authn.AuthFunc {
+// An MCP access token is taken only on a /mcp tool call (WithLoopback), so it works at /mcp alone.
+func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup, tokens mcpTokenLookup) authn.AuthFunc {
 	jwtAuth := WithJWTAuth(jwtKey, queries)
 
 	return func(ctx context.Context, req *http.Request) (any, error) {
@@ -329,37 +377,31 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup)
 			}
 			return resolvePrivateKeyPrincipal(ctx, repo, apiKey)
 		}
+		if token, ok := MCPAccessToken(req); ok {
+			if !fromLoopback(ctx) {
+				return nil, unauthenticated(ctx, "an MCP access token works only at /mcp")
+			}
+			return resolveMCPTokenPrincipal(ctx, tokens, token)
+		}
 		return jwtAuth(ctx, req)
 	}
 }
 
-// WithPrivateKeyAuth authenticates via a private ("secret") API key in the
-// x-api-key header only. It is the auth boundary for the /mcp endpoint: MCP
-// clients configure a static credential, so an expiring access JWT is useless
-// there and public keys (extractable from client apps) are refused.
-//
-// Unlike WithSDKAuth there is no public-key branch and no api_key query-param
-// fallback; unlike WithDualAuth there is no JWT fallback. The resulting
-// Principal has Project set and Customer nil, so the authz interceptor keeps the
-// same coarse project-scoping as the rest of the private-key API.
-func WithPrivateKeyAuth(repo projectKeyLookup) authn.AuthFunc {
+// WithMCPAuth is the auth boundary for /mcp: a private key in x-api-key, or an MCP
+// access token (tokens is a nil *mcpgrants.Service, taking none, while OAuth is off).
+// Never a dashboard JWT (it reaches all its customer sees) or a public key (extractable).
+func WithMCPAuth(repo projectKeyLookup, tokens mcpTokenLookup) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
-		apiKey := req.Header.Get(HeaderAPIKey)
-		if apiKey == "" {
-			return nil, unauthenticated(ctx, "x-api-key header not present")
+		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
+			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
+				return nil, unauthenticated(ctx, "invalid API key")
+			}
+			return resolvePrivateKeyPrincipal(ctx, repo, apiKey)
 		}
-		if !strings.HasPrefix(apiKey, privateKeyPrefix) {
-			return nil, unauthenticated(ctx, "invalid API key")
+		if token, ok := MCPAccessToken(req); ok {
+			return resolveMCPTokenPrincipal(ctx, tokens, token)
 		}
-
-		principal, err := resolvePrivateKeyPrincipal(ctx, repo, apiKey)
-		if err != nil {
-			return nil, err
-		}
-
-		slog.DebugContext(ctx, "private key auth succeeded", slog.String("project_id", principal.Project.ID))
-
-		return principal, nil
+		return nil, unauthenticated(ctx, "API key or access token not present")
 	}
 }
 
