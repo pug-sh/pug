@@ -101,6 +101,7 @@ func TestClientIDRules(t *testing.T) {
 		"https://example.com/clienté.json",
 		"https://example.com/client .json",
 		"https://:443/client.json",
+		"https://%D0%B0%D1%80%D1%80%D3%8F%D0%B5.com/client.json",
 	} {
 		if _, err := c.Fetch(t.Context(), id); !errors.Is(err, ErrClientID) {
 			t.Errorf("client_id %q: err = %v, want ErrClientID", id, err)

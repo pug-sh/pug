@@ -210,7 +210,6 @@ func TestRefreshSession(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateProject: %v", err)
 		}
-		// Nothing writes MCP rows yet, so they go in by hand.
 		const refreshToken = "mcp_rt_test"
 		if _, err := db.PgW.Exec(ctx, `insert into mcp_grants
 			(client_id, client_name, code_challenge, code_expires_at, code_hash, code_used_at, customer_id, id, project_id, redirect_uri)

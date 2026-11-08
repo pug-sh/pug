@@ -17,6 +17,7 @@ import (
 	billingrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/billing"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/customers"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
+	mcpgrantsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/mcpgrants"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
@@ -43,6 +44,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1/billingv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/mcpgrants/v1/mcpgrantsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
@@ -88,6 +90,10 @@ func start(ctx context.Context, d *deps) error {
 	if err != nil {
 		return err
 	}
+	mcpGrants, err := newMCPGrants(ctx, d.pgW)
+	if err != nil {
+		return err
+	}
 	warnStalledDeletions(ctx, queriesRo.HasStalledProjectDeletions)
 	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap()).WithSSOConnections(sso.cipher, sso.checkIssuer)
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
@@ -129,6 +135,8 @@ func start(ctx context.Context, d *deps) error {
 
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
 		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
+	mcpGrantsPath, mcpGrantsHandler := mcpgrantsv1connect.NewMCPGrantsServiceHandler(
+		mcpgrantsrpc.NewServer(mcpGrants), handlerOpts)
 
 	// No ClickHouse: the server only reads what `pug cron usage` stored, and
 	// MeterWindow is the one method that needs it.
@@ -206,6 +214,7 @@ func start(ctx context.Context, d *deps) error {
 	handle(dashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
 	handle(orgEmailProvidersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 	handle(customersPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(customersHandler)))
+	handle(mcpGrantsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(mcpGrantsHandler)))
 	handle(usagePath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(usageHandler)))
 	handle(billingPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(billingHandler)))
 

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pug-sh/pug/internal/httpx"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -97,9 +98,11 @@ func parseClientID(clientID string) (*url.URL, bool) {
 
 // parseExact refuses a spelling that Go writes back differently, such as an upper-case
 // scheme, a bare '#', a space or raw non-ASCII, so the string checked is the URL used.
+// It also refuses a percent-encoded non-ASCII host, which would show as a lookalike.
 func parseExact(s string) (*url.URL, bool) {
 	u, err := url.Parse(s)
-	return u, err == nil && u.String() == s
+	return u, err == nil && u.String() == s &&
+		!strings.ContainsFunc(u.Host, func(r rune) bool { return r > unicode.MaxASCII })
 }
 
 func hasDotSegment(path string) bool {

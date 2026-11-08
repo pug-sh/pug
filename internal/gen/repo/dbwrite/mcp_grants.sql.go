@@ -108,6 +108,28 @@ func (q *Queries) MarkMCPGrantUsed(ctx context.Context, id string) error {
 	return err
 }
 
+const revokeCustomerMCPGrant = `-- name: RevokeCustomerMCPGrant :execrows
+update mcp_grants
+set revoke_time = now()
+where id = $1
+  and customer_id = $2
+  and revoke_time is null
+`
+
+type RevokeCustomerMCPGrantParams struct {
+	ID         string
+	CustomerID string
+}
+
+// Scoped by customer_id, so a grant id never revokes another person's grant.
+func (q *Queries) RevokeCustomerMCPGrant(ctx context.Context, arg RevokeCustomerMCPGrantParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeCustomerMCPGrant, arg.ID, arg.CustomerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeMCPGrant = `-- name: RevokeMCPGrant :exec
 update mcp_grants
 set revoke_time = now()

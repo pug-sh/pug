@@ -1,5 +1,5 @@
 -- +goose Up
--- MCP OAuth, phase 2 (docs/architecture/mcp-oauth.md).
+-- OAuth for /mcp: grants, and their token pairs in refresh_tokens.
 
 -- One approval: one person, one project, one client.
 create table mcp_grants (

@@ -16,6 +16,7 @@ import (
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/rs/xid"
 )
 
@@ -49,8 +50,63 @@ type Approval struct {
 	SessionID string
 }
 
+// Consent is what the consent page shows for a request that checks out.
+type Consent struct {
+	// ClientHost is the client_id URL's host, which names the app.
+	ClientHost string
+	// ClientName is the app's name for itself, which anyone can write.
+	ClientName   string
+	RedirectHost string
+	Loopback     bool
+	Projects     []Project
+	// CancelURL sends the browser back with access_denied.
+	CancelURL string
+}
+
+// Project is a project with its org's name.
+type Project struct {
+	ID             string
+	DisplayName    string
+	OrgID          string
+	OrgDisplayName string
+}
+
 // An S256 code_challenge is always 43 base64url characters.
 var challengeShape = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+
+// Describe checks the request for the consent page, which offers every live project
+// in every org the person belongs to.
+func (s *Service) Describe(ctx context.Context, customerID string, req AuthorizationRequest) (Consent, error) {
+	clientName, err := s.checkRequest(ctx, req)
+	if err != nil {
+		return Consent{}, err
+	}
+	rows, err := dbread.New(s.pgW).GetProjectsWithOrgByCustomerID(ctx, customerID)
+	if err != nil {
+		return Consent{}, recordServiceError(ctx, "failed to list the projects to connect", err, slog.String("customer_id", customerID))
+	}
+	projects := make([]Project, len(rows))
+	for i, r := range rows {
+		projects[i] = Project{ID: r.ID, DisplayName: r.DisplayName, OrgID: r.OrgID, OrgDisplayName: r.OrgDisplayName}
+	}
+	return Consent{
+		ClientHost:   host(req.ClientID),
+		ClientName:   clientName,
+		RedirectHost: host(req.RedirectURI),
+		Loopback:     cimd.IsLoopback(req.RedirectURI),
+		Projects:     projects,
+		CancelURL:    s.redirect(req, url.Values{"error": {ErrAccessDenied.Code()}}),
+	}, nil
+}
+
+// host is the host of a URL that checkRequest accepted, so it parses.
+func host(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
 
 // Approve creates a grant and its code, and returns the URL to send the browser to.
 func (s *Service) Approve(ctx context.Context, a Approval) (string, error) {
@@ -75,15 +131,20 @@ func (s *Service) checkRequest(ctx context.Context, req AuthorizationRequest) (s
 	case err != nil:
 		return "", fmt.Errorf("%w: %w", ErrClientInvalid, err)
 	case !doc.Lists(req.RedirectURI):
-		return "", ErrRedirectNotListed
+		err = ErrRedirectNotListed
 	case req.ResponseType != "code":
-		return "", s.redirectError(req, ErrUnsupportedResponseType)
+		err = s.redirectError(req, ErrUnsupportedResponseType)
 	case req.CodeChallengeMethod != "S256", !challengeShape.MatchString(req.CodeChallenge):
-		return "", s.redirectError(req, ErrInvalidRequest)
+		err = s.redirectError(req, ErrInvalidRequest)
 	case !s.allowsResource(req.Resource):
-		return "", s.redirectError(req, ErrInvalidTarget)
+		err = s.redirectError(req, ErrInvalidTarget)
+	default:
+		return doc.ClientName, nil
 	}
-	return doc.ClientName, nil
+	slog.WarnContext(ctx, "authorization request refused", slogx.Error(err), slog.String("client_id", req.ClientID),
+		slog.String("redirect_uri", req.RedirectURI), slog.String("response_type", req.ResponseType),
+		slog.String("code_challenge_method", req.CodeChallengeMethod), slog.String("resource", req.Resource))
+	return "", err
 }
 
 func (s *Service) redirectError(req AuthorizationRequest, oauthErr *Error) error {

@@ -47,3 +47,11 @@ update mcp_grants
 set revoke_time = now()
 where id = @id
   and revoke_time is null;
+
+-- name: RevokeCustomerMCPGrant :execrows
+-- Scoped by customer_id, so a grant id never revokes another person's grant.
+update mcp_grants
+set revoke_time = now()
+where id = @id
+  and customer_id = @customer_id
+  and revoke_time is null;

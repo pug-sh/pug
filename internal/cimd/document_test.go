@@ -167,3 +167,20 @@ func TestLoopbackRedirectMatchesAnyPort(t *testing.T) {
 		}
 	}
 }
+
+func TestIsLoopback(t *testing.T) {
+	for redirect, want := range map[string]bool{
+		"http://localhost:53682/callback": true,
+		"http://127.0.0.1/callback":       true,
+		"http://[::1]:53682/callback":     true,
+		"https://claude.ai/callback":      false,
+		"http://localhost.example/cb":     false,
+		"http://127.0.0.2/callback":       false,
+		"http://user@localhost/callback":  false,
+		"not a url":                       false,
+	} {
+		if got := IsLoopback(redirect); got != want {
+			t.Errorf("IsLoopback(%q) = %v, want %v", redirect, got, want)
+		}
+	}
+}

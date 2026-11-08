@@ -1,6 +1,6 @@
-// Package mcpgrants makes pug an OAuth authorization server for its own /mcp
-// (docs/architecture/mcp-oauth.md). A grant is one person letting one client read
-// one project; its token pairs are rows in refresh_tokens.
+// Package mcpgrants makes pug an OAuth authorization server for its own /mcp. A
+// grant is one person letting one client read one project; its token pairs are
+// rows in refresh_tokens.
 package mcpgrants
 
 import (
@@ -39,6 +39,7 @@ var (
 	ErrSessionEnded      = errors.New("the approving session has ended")
 	ErrProjectNotFound   = errors.New("project not found")
 	ErrInvalidToken      = errors.New("invalid or expired access token")
+	ErrGrantNotFound     = errors.New("grant not found")
 )
 
 // An Error is an OAuth error the client sees (RFC 6749 section 5.2).
@@ -48,6 +49,7 @@ func (e *Error) Error() string { return e.code }
 func (e *Error) Code() string  { return e.code }
 
 var (
+	ErrAccessDenied            = &Error{"access_denied"}
 	ErrInvalidRequest          = &Error{"invalid_request"}
 	ErrInvalidGrant            = &Error{"invalid_grant"}
 	ErrInvalidTarget           = &Error{"invalid_target"}

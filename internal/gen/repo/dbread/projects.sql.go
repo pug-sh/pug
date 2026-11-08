@@ -146,6 +146,53 @@ func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Proje
 	return items, nil
 }
 
+const getProjectsWithOrgByCustomerID = `-- name: GetProjectsWithOrgByCustomerID :many
+select
+  o.display_name as org_display_name,
+  p.display_name,
+  p.id,
+  p.org_id
+from projects p
+join orgs o on o.id = p.org_id
+join org_members om on om.org_id = p.org_id
+where om.customer_id = $1
+  and p.deletion_time is null
+order by o.create_time asc, o.id asc, p.create_time asc, p.id asc
+`
+
+type GetProjectsWithOrgByCustomerIDRow struct {
+	OrgDisplayName string
+	DisplayName    string
+	ID             string
+	OrgID          string
+}
+
+// Every live project in every org the customer belongs to, with any role.
+func (q *Queries) GetProjectsWithOrgByCustomerID(ctx context.Context, customerID string) ([]GetProjectsWithOrgByCustomerIDRow, error) {
+	rows, err := q.db.Query(ctx, getProjectsWithOrgByCustomerID, customerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProjectsWithOrgByCustomerIDRow
+	for rows.Next() {
+		var i GetProjectsWithOrgByCustomerIDRow
+		if err := rows.Scan(
+			&i.OrgDisplayName,
+			&i.DisplayName,
+			&i.ID,
+			&i.OrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveProjects = `-- name: ListLiveProjects :many
 select id, org_id from projects where deletion_time is null order by id
 `

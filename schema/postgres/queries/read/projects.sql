@@ -30,3 +30,17 @@ where k.token = @token and k.kind = 'public' and p.deletion_time is null;
 -- name: ListLiveProjects :many
 -- Every project retention cuts, with the org whose length it follows.
 select id, org_id from projects where deletion_time is null order by id;
+
+-- name: GetProjectsWithOrgByCustomerID :many
+-- Every live project in every org the customer belongs to, with any role.
+select
+  o.display_name as org_display_name,
+  p.display_name,
+  p.id,
+  p.org_id
+from projects p
+join orgs o on o.id = p.org_id
+join org_members om on om.org_id = p.org_id
+where om.customer_id = @customer_id
+  and p.deletion_time is null
+order by o.create_time asc, o.id asc, p.create_time asc, p.id asc;

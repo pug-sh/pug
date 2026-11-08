@@ -106,6 +106,13 @@ func parseRedirect(redirect string) (*url.URL, bool) {
 	return u, ok && u.User == nil && u.Fragment == ""
 }
 
+// IsLoopback reports whether redirect is on a loopback host, so the client runs on
+// the person's computer, where any program can claim the port.
+func IsLoopback(redirect string) bool {
+	u, ok := parseRedirect(redirect)
+	return ok && isLoopback(u)
+}
+
 func isLoopback(u *url.URL) bool {
 	switch u.Hostname() {
 	case "127.0.0.1", "::1", "localhost":
