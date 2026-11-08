@@ -275,6 +275,34 @@ func TestE2E_ToolsListPinsCuratedNames(t *testing.T) {
 	}
 }
 
+// Claude's connector directory requires a title and readOnlyHint on every tool.
+func TestE2E_ToolsAreTitledAndReadOnly(t *testing.T) {
+	deps := newTestServer(t)
+	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
+
+	res, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	byTitle := make(map[string]string)
+	for _, tl := range res.Tools {
+		if tl.Title == "" {
+			t.Errorf("tool %q has no title", tl.Name)
+		}
+		if prev, dup := byTitle[tl.Title]; dup {
+			t.Errorf("tools %q and %q share the title %q", prev, tl.Name, tl.Title)
+		}
+		byTitle[tl.Title] = tl.Name
+
+		if tl.Annotations == nil || !tl.Annotations.ReadOnlyHint {
+			t.Errorf("tool %q is not marked read-only", tl.Name)
+		} else if tl.Annotations.Title != tl.Title {
+			t.Errorf("tool %q: annotations.title = %q, want %q", tl.Name, tl.Annotations.Title, tl.Title)
+		}
+	}
+}
+
 func TestE2E_GetProfileHappyPath(t *testing.T) {
 	deps := newTestServer(t)
 	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
@@ -604,7 +632,7 @@ func TestE2E_TrailingSlashServed(t *testing.T) {
 
 type recordingServer struct{ names []string }
 
-func (r *recordingServer) AddTool(tool mcpruntime.Tool, _ mcpruntime.ToolHandler) {
+func (r *recordingServer) AddTool(tool *gomcp.Tool, _ gomcp.ToolHandler) {
 	r.names = append(r.names, tool.Name)
 }
 

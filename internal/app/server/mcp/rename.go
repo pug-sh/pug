@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 
+	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	activityv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1mcp"
 	insightsv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1mcp"
 	profilesv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1mcp"
@@ -12,17 +15,20 @@ import (
 )
 
 // toolDisposition is what happens to one generated tool: it is either exposed
-// under a curated MCP name, or hidden with a recorded reason. The fields are
-// unexported and the only constructors are expose and hide, so the invariants
+// under a curated MCP name and title, or hidden with a recorded reason. The fields
+// are unexported and the only constructors are expose and hide, so the invariants
 // "exposed XOR hidden" and "exposed implies a non-empty curated name" hold BY
 // CONSTRUCTION rather than by test — the same idiom as authzspec.Spec.
 type toolDisposition struct {
 	curated string // non-empty iff exposed
+	title   string // what clients show people in place of the curated name
 	reason  string // non-empty iff hidden
 }
 
-func expose(curated string) toolDisposition { return toolDisposition{curated: curated} }
-func hide(reason string) toolDisposition    { return toolDisposition{reason: reason} }
+func expose(curated, title string) toolDisposition {
+	return toolDisposition{curated: curated, title: title}
+}
+func hide(reason string) toolDisposition { return toolDisposition{reason: reason} }
 
 func (d toolDisposition) exposed() bool { return d.curated != "" }
 
@@ -40,27 +46,30 @@ func (d toolDisposition) exposed() bool { return d.curated != "" }
 // Hidden tools are filtered out before registration (see keepTool) AND rejected by
 // the renamer if a filter regression ever let one through — so the GDPR erasure
 // RPCs cannot reach an LLM agent even if the filter breaks.
+//
+// Every exposed tool is marked read-only, so Claude runs it without asking: never
+// expose a tool that writes.
 var toolPolicy = map[string]toolDisposition{
 	// insights
-	insightsv1mcp.InsightsService_QueryTool.Name:             expose("query_insights"),
-	insightsv1mcp.InsightsService_GetFilterSchemaTool.Name:   expose("get_insights_filter_schema"),
-	insightsv1mcp.InsightsService_GetPropertyValuesTool.Name: expose("get_insights_property_values"),
+	insightsv1mcp.InsightsService_QueryTool.Name:             expose("query_insights", "Query insights"),
+	insightsv1mcp.InsightsService_GetFilterSchemaTool.Name:   expose("get_insights_filter_schema", "Get insights filter schema"),
+	insightsv1mcp.InsightsService_GetPropertyValuesTool.Name: expose("get_insights_property_values", "Get insights property values"),
 	insightsv1mcp.InsightsService_SegmentUsersTool.Name: hide(
 		"the segmentation drill-down insight is still WIP; served as a Connect RPC but kept off the tool surface until it is live"),
 
 	// activity
-	activityv1mcp.ActivityService_GetActivityFeedTool.Name:    expose("get_activity_feed"),
-	activityv1mcp.ActivityService_GetEventExplorerTool.Name:   expose("explore_events"),
-	activityv1mcp.ActivityService_GetFilterSchemaTool.Name:    expose("get_activity_filter_schema"),
-	activityv1mcp.ActivityService_GetPropertyValuesTool.Name:  expose("get_activity_property_values"),
-	activityv1mcp.ActivityService_GetActivityHeatmapTool.Name: expose("get_activity_heatmap"),
-	activityv1mcp.ActivityService_GetProfileStatsTool.Name:    expose("get_profile_stats"),
-	activityv1mcp.ActivityService_GetProfileSessionsTool.Name: expose("get_profile_sessions"),
+	activityv1mcp.ActivityService_GetActivityFeedTool.Name:    expose("get_activity_feed", "Get activity feed"),
+	activityv1mcp.ActivityService_GetEventExplorerTool.Name:   expose("explore_events", "Explore events"),
+	activityv1mcp.ActivityService_GetFilterSchemaTool.Name:    expose("get_activity_filter_schema", "Get activity filter schema"),
+	activityv1mcp.ActivityService_GetPropertyValuesTool.Name:  expose("get_activity_property_values", "Get activity property values"),
+	activityv1mcp.ActivityService_GetActivityHeatmapTool.Name: expose("get_activity_heatmap", "Get activity heatmap"),
+	activityv1mcp.ActivityService_GetProfileStatsTool.Name:    expose("get_profile_stats", "Get profile stats"),
+	activityv1mcp.ActivityService_GetProfileSessionsTool.Name: expose("get_profile_sessions", "Get profile sessions"),
 
 	// profiles
-	profilesv1mcp.ProfilesService_GetTool.Name:                expose("get_profile"),
-	profilesv1mcp.ProfilesService_GetByExternalIdTool.Name:    expose("get_profile_by_external_id"),
-	profilesv1mcp.ProfilesService_GetDeletionRequestTool.Name: expose("get_deletion_request"),
+	profilesv1mcp.ProfilesService_GetTool.Name:                expose("get_profile", "Get profile"),
+	profilesv1mcp.ProfilesService_GetByExternalIdTool.Name:    expose("get_profile_by_external_id", "Get profile by external ID"),
+	profilesv1mcp.ProfilesService_GetDeletionRequestTool.Name: expose("get_deletion_request", "Get deletion request"),
 	profilesv1mcp.ProfilesService_DeleteTool.Name: hide(
 		"GDPR/DPDP erasure is irreversible and must never be an LLM-callable tool"),
 	profilesv1mcp.ProfilesService_DeleteDataSubjectTool.Name: hide(
@@ -78,15 +87,19 @@ func keepTool(generatedName string) bool {
 	return !ok || d.exposed()
 }
 
-// renamer wraps a mcpruntime.MCPServer and rewrites each generated tool name to
-// its curated name at registration time, rejecting anything the policy does not
+type toolServer interface {
+	AddTool(*gomcp.Tool, gomcp.ToolHandler)
+}
+
+// renamer registers each generated tool on the go-sdk server under its curated
+// name and title, marked read-only, rejecting anything the policy does not
 // sanction. It implements mcpruntime.MCPServer so the generated ForwardToConnect*
 // functions register through it transparently.
 //
 // It is not safe for concurrent use and is not meant to outlive one registration
 // pass; registerRenamed owns its whole lifetime, so neither is reachable.
 type renamer struct {
-	inner   mcpruntime.MCPServer
+	inner   toolServer
 	seen    map[string]bool   // generated name -> registered
 	claimed map[string]string // curated name -> the generated name that claimed it
 	errs    []error
@@ -97,7 +110,7 @@ type renamer struct {
 // caller CANNOT register tools and then forget the completeness check — which
 // would silently drop every tool the policy does not name (AddTool returns without
 // registering) and boot a green server with a hole in its tool surface.
-func registerRenamed(inner mcpruntime.MCPServer, register func(mcpruntime.MCPServer)) error {
+func registerRenamed(inner toolServer, register func(mcpruntime.MCPServer)) error {
 	r := &renamer{
 		inner:   inner,
 		seen:    make(map[string]bool),
@@ -131,8 +144,49 @@ func (r *renamer) AddTool(tool mcpruntime.Tool, handler mcpruntime.ToolHandler) 
 
 	r.claimed[d.curated] = tool.Name
 	r.seen[tool.Name] = true
-	tool.Name = d.curated
-	r.inner.AddTool(tool, handler)
+	r.inner.AddTool(sdkTool(d, tool), sdkHandler(handler))
+}
+
+// sdkTool and sdkHandler stand in for gosdk.Wrap, which can't set a title or annotations.
+func sdkTool(d toolDisposition, tool mcpruntime.Tool) *gomcp.Tool {
+	t := &gomcp.Tool{
+		Name:        d.curated,
+		Title:       d.title,
+		Description: tool.Description,
+		InputSchema: tool.RawInputSchema,
+		// Clients on MCP specs before 2025-06-18 read the title only from the annotations.
+		Annotations: &gomcp.ToolAnnotations{Title: d.title, ReadOnlyHint: true},
+	}
+	if len(tool.RawOutputSchema) > 0 {
+		t.OutputSchema = tool.RawOutputSchema
+	}
+
+	return t
+}
+
+func sdkHandler(handler mcpruntime.ToolHandler) gomcp.ToolHandler {
+	return func(ctx context.Context, req *gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		var args map[string]any
+		if len(req.Params.Arguments) > 0 {
+			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+				return nil, err
+			}
+		}
+		if args == nil {
+			args = map[string]any{}
+		}
+
+		res, err := handler(ctx, &mcpruntime.CallToolRequest{Arguments: args})
+		if err != nil || res == nil {
+			return nil, err
+		}
+
+		return &gomcp.CallToolResult{
+			Content:           []gomcp.Content{&gomcp.TextContent{Text: res.Text}},
+			StructuredContent: res.StructuredContent,
+			IsError:           res.IsError,
+		}, nil
+	}
 }
 
 // checkComplete reports any exposed policy entry that no generated tool matched (a

@@ -7,8 +7,8 @@
 //
 // Tools are generated from the shared protos by protoc-gen-go-mcp (the *v1mcp
 // packages); this package selects the read-only subset, gives each a curated
-// name, and serves them over the official modelcontextprotocol/go-sdk streamable
-// HTTP transport in stateless mode.
+// name and title, and serves them over the official modelcontextprotocol/go-sdk
+// streamable HTTP transport in stateless mode.
 package mcp
 
 import (
@@ -22,7 +22,6 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	profilesv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1mcp"
 	mcpruntime "github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime"
-	"github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime/gosdk"
 )
 
 const (
@@ -84,7 +83,7 @@ func newHandler(loopback http.Handler) (http.Handler, error) {
 		&gomcp.Implementation{Name: serverName, Version: serverVersion},
 		&gomcp.ServerOptions{Instructions: instructions},
 	)
-	if err := registerRenamed(gosdk.Wrap(raw), func(srv mcpruntime.MCPServer) {
+	if err := registerRenamed(raw, func(srv mcpruntime.MCPServer) {
 		registerTools(srv, loopback)
 	}); err != nil {
 		return nil, err
