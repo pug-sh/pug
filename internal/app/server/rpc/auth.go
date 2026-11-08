@@ -45,6 +45,7 @@ type Principal struct {
 	Customer     *dbread.Customer
 	Project      *dbread.Project
 	JWTID        string // JWT ID (jti claim), set for JWT auth
+	SessionID    string // Refresh family id (sid claim), set for JWT auth; absent from older JWTs
 	MaskedAPIKey string // Masked API key suffix (e.g. "...d456"), set for API key auth
 }
 
@@ -264,15 +265,18 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			return nil, unauthenticated(ctx, "invalid token claims")
 		}
 
-		var jwtID string
+		var jwtID, sessionID string
 		if claims, ok := parsedJWT.Claims.(jwt.MapClaims); !ok {
 			slog.WarnContext(ctx, "JWT claims are not MapClaims, cannot extract jti", slog.String("claims_type", fmt.Sprintf("%T", parsedJWT.Claims)))
-		} else if raw, exists := claims["jti"]; exists {
-			if s, ok := raw.(string); ok {
-				jwtID = s
-			} else {
-				slog.WarnContext(ctx, "jti claim is not a string", slog.String("jti_type", fmt.Sprintf("%T", raw)))
+		} else {
+			if raw, exists := claims["jti"]; exists {
+				if s, ok := raw.(string); ok {
+					jwtID = s
+				} else {
+					slog.WarnContext(ctx, "jti claim is not a string", slog.String("jti_type", fmt.Sprintf("%T", raw)))
+				}
 			}
+			sessionID, _ = claims["sid"].(string)
 		}
 
 		customer, err := queries.GetCustomerByID(ctx, customerID)
@@ -286,9 +290,10 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 		}
 
 		principal := &Principal{
-			AuthType: AuthTypeJWT,
-			Customer: &customer,
-			JWTID:    jwtID,
+			AuthType:  AuthTypeJWT,
+			Customer:  &customer,
+			JWTID:     jwtID,
+			SessionID: sessionID,
 		}
 
 		// Optionally populate Project if x-project-id header is provided

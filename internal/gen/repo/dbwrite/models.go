@@ -211,6 +211,23 @@ type EmailActionToken struct {
 	CreateTime      pgtype.Timestamptz
 }
 
+type McpGrant struct {
+	ClientID      string
+	ClientName    string
+	CodeChallenge string
+	CodeExpiresAt pgtype.Timestamptz
+	CodeHash      string
+	CodeUsedAt    pgtype.Timestamptz
+	CreateTime    pgtype.Timestamptz
+	CustomerID    string
+	ID            string
+	LastUsedTime  pgtype.Timestamptz
+	ProjectID     string
+	ProvenDomain  pgtype.Text
+	RedirectUri   string
+	RevokeTime    pgtype.Timestamptz
+}
+
 type Org struct {
 	CreateTime           pgtype.Timestamptz
 	DisplayName          string
@@ -324,15 +341,18 @@ type ProjectDeletion struct {
 }
 
 type RefreshToken struct {
-	ID           string
-	CustomerID   string
-	FamilyID     string
-	TokenHash    string
-	ExpiresAt    pgtype.Timestamptz
-	ConsumedAt   pgtype.Timestamptz
-	RevokedAt    pgtype.Timestamptz
-	CreateTime   pgtype.Timestamptz
-	ProvenDomain pgtype.Text
+	ID              string
+	CustomerID      string
+	FamilyID        string
+	TokenHash       string
+	ExpiresAt       pgtype.Timestamptz
+	ConsumedAt      pgtype.Timestamptz
+	RevokedAt       pgtype.Timestamptz
+	CreateTime      pgtype.Timestamptz
+	ProvenDomain    pgtype.Text
+	AccessExpiresAt pgtype.Timestamptz
+	AccessTokenHash pgtype.Text
+	McpGrantID      pgtype.Text
 }
 
 type RetentionState struct {

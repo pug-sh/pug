@@ -358,6 +358,30 @@ func TestWithJWTAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("valid JWT with sid populates SessionID", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1", "sid": "family-123"})
+		result, err := authFunc(ctx, newJWTRequest(token, ""))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		p := result.(*Principal)
+		if p.SessionID != "family-123" {
+			t.Errorf("SessionID = %q, want %q", p.SessionID, "family-123")
+		}
+	})
+
+	t.Run("valid JWT without sid still authenticates", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1"})
+		result, err := authFunc(ctx, newJWTRequest(token, ""))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		p := result.(*Principal)
+		if p.SessionID != "" {
+			t.Errorf("SessionID = %q, want empty", p.SessionID)
+		}
+	})
+
 	t.Run("valid JWT with x-project-id populates Project", func(t *testing.T) {
 		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1"})
 		result, err := authFunc(ctx, newJWTRequest(token, "proj-1"))
