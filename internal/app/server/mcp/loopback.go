@@ -28,6 +28,9 @@ import (
 // abandoned work drains.
 const toolCallTimeout = 2 * time.Minute
 
+// projectIDKey is where a tool call's project_id argument rides the context.
+type projectIDKey struct{}
+
 // loopbackClient replays each tool call through the server's own mux; its
 // rpc.WithLoopback mark is what admits an MCP access token. The credential rides the
 // request context, since a field on this shared client would leak across tenants.
@@ -87,6 +90,9 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 		return nil, err
 	}
 	req.Header.Set(cred.header, cred.value)
+	if id, ok := ctx.Value(projectIDKey{}).(string); ok && id != "" {
+		req.Header.Set(rpc.HeaderProjectID, id)
+	}
 
 	ctx, cancel := context.WithTimeout(rpc.WithLoopback(ctx), toolCallTimeout)
 	defer cancel()

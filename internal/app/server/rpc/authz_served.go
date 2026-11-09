@@ -20,6 +20,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1connect"
 )
 
 // servedServices lists every RPC service mounted by the server (see start() in
@@ -43,6 +44,7 @@ var servedServices = []struct {
 	{mcpgrantsv1connect.MCPGrantsServiceName, reflect.TypeFor[mcpgrantsv1connect.MCPGrantsServiceHandler]()},
 	{usagev1connect.UsageServiceName, reflect.TypeFor[usagev1connect.UsageServiceHandler]()},
 	{billingv1connect.BillingServiceName, reflect.TypeFor[billingv1connect.BillingServiceHandler]()},
+	{sharedprojectsv1connect.ProjectsServiceName, reflect.TypeFor[sharedprojectsv1connect.ProjectsServiceHandler]()},
 	{insightsv1connect.InsightsServiceName, reflect.TypeFor[insightsv1connect.InsightsServiceHandler]()},
 	{activityv1connect.ActivityServiceName, reflect.TypeFor[activityv1connect.ActivityServiceHandler]()},
 	{profilesv1connect.ProfilesServiceName, reflect.TypeFor[profilesv1connect.ProfilesServiceHandler]()},

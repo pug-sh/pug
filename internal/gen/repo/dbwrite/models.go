@@ -222,7 +222,7 @@ type McpGrant struct {
 	CustomerID    string
 	ID            string
 	LastUsedTime  pgtype.Timestamptz
-	ProjectID     string
+	ProjectID     pgtype.Text
 	ProvenDomain  pgtype.Text
 	RedirectUri   string
 	RevokeTime    pgtype.Timestamptz

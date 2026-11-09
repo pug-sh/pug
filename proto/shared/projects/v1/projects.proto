@@ -1,0 +1,31 @@
+edition = "2023";
+
+package shared.projects.v1;
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1;sharedprojectsv1";
+
+// ProjectsService lists the projects a credential can read.
+service ProjectsService {
+  // List returns the projects you can read, each with the org it belongs to.
+  // Every other tool reads one project and takes its id as project_id, so call
+  // this first. When a question doesn't say which project and more than one
+  // could fit, ask. A connection made by signing in reads the projects of the
+  // orgs its person belonged to when they connected; an API key reads its own
+  // project only.
+  rpc List(ListRequest) returns (ListResponse);
+}
+
+message ListRequest {}
+
+message ListResponse {
+  // Oldest org first, and oldest project first within each org.
+  repeated Project projects = 1;
+}
+
+// Project is a project with its org's name.
+message Project {
+  string id = 1;
+  string display_name = 2;
+  string org_id = 3;
+  string org_display_name = 4;
+}

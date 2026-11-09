@@ -20,7 +20,6 @@ insert into mcp_grants (
   code_hash,
   customer_id,
   id,
-  project_id,
   proven_domain,
   redirect_uri
 )
@@ -33,8 +32,7 @@ values (
   $6,
   $7,
   $8,
-  $9,
-  $10
+  $9
 )
 `
 
@@ -46,7 +44,6 @@ type CreateMCPGrantParams struct {
 	CodeHash      string
 	CustomerID    string
 	ID            string
-	ProjectID     string
 	ProvenDomain  pgtype.Text
 	RedirectUri   string
 }
@@ -60,7 +57,6 @@ func (q *Queries) CreateMCPGrant(ctx context.Context, arg CreateMCPGrantParams) 
 		arg.CodeHash,
 		arg.CustomerID,
 		arg.ID,
-		arg.ProjectID,
 		arg.ProvenDomain,
 		arg.RedirectUri,
 	)
@@ -68,29 +64,34 @@ func (q *Queries) CreateMCPGrant(ctx context.Context, arg CreateMCPGrantParams) 
 }
 
 const getMCPGrantByCodeHashForUpdate = `-- name: GetMCPGrantByCodeHashForUpdate :one
-select client_id, client_name, code_challenge, code_expires_at, code_hash, code_used_at, create_time, customer_id, id, last_used_time, project_id, proven_domain, redirect_uri, revoke_time
+select client_id, code_challenge, code_expires_at, code_used_at, customer_id, id, redirect_uri, revoke_time
 from mcp_grants
 where code_hash = $1
 for update
 `
 
+type GetMCPGrantByCodeHashForUpdateRow struct {
+	ClientID      string
+	CodeChallenge string
+	CodeExpiresAt pgtype.Timestamptz
+	CodeUsedAt    pgtype.Timestamptz
+	CustomerID    string
+	ID            string
+	RedirectUri   string
+	RevokeTime    pgtype.Timestamptz
+}
+
 // Unfiltered, so a used code is found and its replay revokes the grant.
-func (q *Queries) GetMCPGrantByCodeHashForUpdate(ctx context.Context, codeHash string) (McpGrant, error) {
+func (q *Queries) GetMCPGrantByCodeHashForUpdate(ctx context.Context, codeHash string) (GetMCPGrantByCodeHashForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getMCPGrantByCodeHashForUpdate, codeHash)
-	var i McpGrant
+	var i GetMCPGrantByCodeHashForUpdateRow
 	err := row.Scan(
 		&i.ClientID,
-		&i.ClientName,
 		&i.CodeChallenge,
 		&i.CodeExpiresAt,
-		&i.CodeHash,
 		&i.CodeUsedAt,
-		&i.CreateTime,
 		&i.CustomerID,
 		&i.ID,
-		&i.LastUsedTime,
-		&i.ProjectID,
-		&i.ProvenDomain,
 		&i.RedirectUri,
 		&i.RevokeTime,
 	)

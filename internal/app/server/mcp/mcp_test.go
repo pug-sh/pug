@@ -32,6 +32,8 @@ import (
 	profilesv1 "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	profilesv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1mcp"
+	sharedprojectsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	mcpruntime "github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime"
 	"google.golang.org/protobuf/proto"
@@ -83,6 +85,7 @@ var curatedToolNames = []string{
 	"get_profile_by_external_id",
 	"get_profile_sessions",
 	"get_profile_stats",
+	"list_projects",
 	"query_insights",
 }
 
@@ -107,18 +110,21 @@ func (s *stubKeyLookup) GetProjectByPrivateApiKey(_ context.Context, key string)
 
 func (s *stubKeyLookup) InvalidateProjectKeys(context.Context, string, ...string) {}
 
-// stubTokens resolves testAccessToken to a person on proj-mcp.
+// stubTokens resolves testAccessToken to a person whose grant reads proj-mcp.
 type stubTokens struct{}
 
 func (stubTokens) ResolveAccessToken(_ context.Context, token string) (mcpgrants.Access, error) {
 	if token != testAccessToken {
 		return mcpgrants.Access{}, mcpgrants.ErrInvalidToken
 	}
-	return mcpgrants.Access{
-		GrantID:  "grant-mcp",
-		Customer: dbread.Customer{ID: "cust-mcp"},
-		Project:  dbread.Project{ID: "proj-mcp", OrgID: "org-mcp"},
-	}, nil
+	return mcpgrants.Access{GrantID: "grant-mcp", Customer: dbread.Customer{ID: "cust-mcp"}}, nil
+}
+
+func (stubTokens) ResolveProject(_ context.Context, grantID, projectID string) (dbread.Project, error) {
+	if grantID != "grant-mcp" || projectID != "proj-mcp" {
+		return dbread.Project{}, mcpgrants.ErrProjectNotFound
+	}
+	return dbread.Project{ID: "proj-mcp", OrgID: "org-mcp"}, nil
 }
 
 // stubRoleLookup satisfies the authz interceptor's memberRoleLookup. On the
@@ -142,6 +148,19 @@ func (s *stubInsights) Query(context.Context, *connect.Request[insightsv1.QueryR
 
 type stubActivity struct {
 	activityv1connect.UnimplementedActivityServiceHandler
+}
+
+// stubProjects lists the key's own project, as the real handler does for a key.
+type stubProjects struct {
+	sharedprojectsv1connect.UnimplementedProjectsServiceHandler
+}
+
+func (stubProjects) List(ctx context.Context, _ *connect.Request[sharedprojectsv1.ListRequest]) (*connect.Response[sharedprojectsv1.ListResponse], error) {
+	p, err := pogrpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&sharedprojectsv1.ListResponse{Projects: []*sharedprojectsv1.Project{{Id: proto.String(p.Project.ID)}}}), nil
 }
 
 type stubProfiles struct {
@@ -223,6 +242,8 @@ func newTestServerWith(t *testing.T, oauth OAuth) testDeps {
 	// test has teeth: a JWT these handlers accept must still be refused at /mcp.
 	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, nil, repo, oauth.Grants))
 
+	sp, sh := sharedprojectsv1connect.NewProjectsServiceHandler(stubProjects{}, handlerOpts)
+	mux.Handle(sp, sharedMW.Wrap(sh))
 	ip, ih := insightsv1connect.NewInsightsServiceHandler(insights, handlerOpts)
 	mux.Handle(ip, sharedMW.Wrap(ih))
 	ap, ah := activityv1connect.NewActivityServiceHandler(&stubActivity{}, handlerOpts)
@@ -352,6 +373,65 @@ func TestE2E_GetProfileHappyPath(t *testing.T) {
 	}
 	if !deps.profiles.sawProject {
 		t.Error("handler did not see an authenticated Principal with a Project")
+	}
+}
+
+// Every tool reads one project, so each takes project_id, except list_projects,
+// which names them. Optional, because a key already names its project.
+func TestE2E_ProjectScopedToolsTakeProjectID(t *testing.T) {
+	deps := newTestServer(t)
+	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
+
+	res, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tl := range res.Tools {
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+			Required   []string                   `json:"required"`
+		}
+		raw, err := json.Marshal(tl.InputSchema)
+		if err != nil || json.Unmarshal(raw, &schema) != nil {
+			t.Fatalf("tool %q: unreadable input schema %s (%v)", tl.Name, raw, err)
+		}
+		_, takes := schema.Properties["project_id"]
+		if takes != (tl.Name != "list_projects") {
+			t.Errorf("tool %q takes project_id = %v, want %v", tl.Name, takes, !takes)
+		}
+		for _, name := range schema.Required {
+			if name == "project_id" {
+				t.Errorf("tool %q requires project_id, which a key may leave out", tl.Name)
+			}
+		}
+	}
+}
+
+// A key reads its own project whether or not the call names it, and refuses any other.
+func TestE2E_KeyReadsOnlyItsOwnProject(t *testing.T) {
+	deps := newTestServer(t)
+	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
+	call := func(args map[string]any) *gomcp.CallToolResult {
+		t.Helper()
+		res, err := session.CallTool(ctx, &gomcp.CallToolParams{Name: "get_profile", Arguments: args})
+		if err != nil {
+			t.Fatalf("CallTool: %v", err)
+		}
+		return res
+	}
+
+	if res := call(map[string]any{"id": "user-1", "project_id": "proj-mcp"}); res.IsError || deps.profiles.principal.Project.ID != "proj-mcp" {
+		t.Errorf("naming its own project = %s on %+v, want proj-mcp read", toolText(res), deps.profiles.principal)
+	}
+	deps.profiles.gotID = ""
+	res := call(map[string]any{"id": "user-2", "project_id": "proj-other"})
+	if !res.IsError || !strings.Contains(toolText(res), "project not found or access denied") || deps.profiles.gotID != "" {
+		t.Errorf("naming another project = %q (handler saw %q), want a refusal before the handler", toolText(res), deps.profiles.gotID)
+	}
+
+	listed, err := session.CallTool(ctx, &gomcp.CallToolParams{Name: "list_projects"})
+	if err != nil || listed.IsError || !strings.Contains(toolText(listed), "proj-mcp") {
+		t.Errorf("list_projects = %v, %v; want the key's project", listed, err)
 	}
 }
 
@@ -1044,7 +1124,8 @@ func TestLoopbackPresentsCredential(t *testing.T) {
 	}
 }
 
-// The inner auth takes an MCP token only on a request the loopback marked.
+// The inner auth takes an MCP token only on a request the loopback marked, and on
+// the project the call named.
 func TestLoopbackMarksItsRequests(t *testing.T) {
 	var principal *pogrpc.Principal
 	inner := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, nil, &stubKeyLookup{}, stubTokens{})).Wrap(
@@ -1052,8 +1133,8 @@ func TestLoopbackMarksItsRequests(t *testing.T) {
 			principal, _ = pogrpc.MustGetPrincipalWithProject(r.Context())
 			w.WriteHeader(http.StatusNoContent)
 		}))
-	req, err := http.NewRequestWithContext(withCredential(context.Background(), tokenCredential),
-		http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
+	ctx := context.WithValue(withCredential(context.Background(), tokenCredential), projectIDKey{}, "proj-mcp")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -1063,7 +1144,8 @@ func TestLoopbackMarksItsRequests(t *testing.T) {
 		t.Fatalf("Do: %v", err)
 	}
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent || principal == nil || principal.AuthType != pogrpc.AuthTypeMCPToken {
-		t.Errorf("status = %d, principal = %+v; want the token taken", resp.StatusCode, principal)
+	if resp.StatusCode != http.StatusNoContent || principal == nil || principal.AuthType != pogrpc.AuthTypeMCPToken ||
+		principal.Project.ID != "proj-mcp" {
+		t.Errorf("status = %d, principal = %+v; want the token taken on proj-mcp", resp.StatusCode, principal)
 	}
 }

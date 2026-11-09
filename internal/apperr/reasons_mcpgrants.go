@@ -8,4 +8,5 @@ var (
 	ReasonMCPRedirectNotListed    = codes.add("MCP_REDIRECT_NOT_LISTED")
 	ReasonMCPAuthorizationInvalid = codes.add("MCP_AUTHORIZATION_INVALID")
 	ReasonMCPGrantNotFound        = codes.add("MCP_GRANT_NOT_FOUND")
+	ReasonMCPNoOrg                = codes.add("MCP_NO_ORG")
 )

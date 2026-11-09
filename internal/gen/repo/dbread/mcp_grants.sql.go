@@ -12,30 +12,29 @@ import (
 )
 
 const getMCPAccessByTokenHash = `-- name: GetMCPAccessByTokenHash :one
-select g.customer_id, g.id as grant_id, g.project_id
+select g.customer_id, g.id as grant_id
 from refresh_tokens rt
 join mcp_grants g on g.id = rt.mcp_grant_id
-join projects p on p.id = g.project_id
-join org_members om on om.org_id = p.org_id and om.customer_id = g.customer_id
 where rt.access_token_hash = $1
   and rt.access_expires_at > now()
   and g.revoke_time is null
-  and p.deletion_time is null
-  and om.create_time <= g.create_time
+  and exists (
+    select 1 from org_members om
+    where om.customer_id = g.customer_id and om.create_time <= g.create_time
+  )
 `
 
 type GetMCPAccessByTokenHashRow struct {
 	CustomerID string
 	GrantID    string
-	ProjectID  string
 }
 
-// The token is unexpired, its grant unrevoked, its project live, and its person in
-// the project's org since before the grant, so being added back doesn't revive it.
+// The token is unexpired, its grant unrevoked, and its person still in an org they
+// joined before the grant, so being added back doesn't revive it.
 func (q *Queries) GetMCPAccessByTokenHash(ctx context.Context, accessTokenHash pgtype.Text) (GetMCPAccessByTokenHashRow, error) {
 	row := q.db.QueryRow(ctx, getMCPAccessByTokenHash, accessTokenHash)
 	var i GetMCPAccessByTokenHashRow
-	err := row.Scan(&i.CustomerID, &i.GrantID, &i.ProjectID)
+	err := row.Scan(&i.CustomerID, &i.GrantID)
 	return i, err
 }
 
@@ -43,20 +42,53 @@ const getMCPGrantMemberEmail = `-- name: GetMCPGrantMemberEmail :one
 select c.email
 from mcp_grants g
 join customers c on c.id = g.customer_id
-join projects p on p.id = g.project_id
-join org_members om on om.org_id = p.org_id and om.customer_id = g.customer_id
 where g.id = $1
-  and p.deletion_time is null
-  and om.create_time <= g.create_time
+  and exists (
+    select 1 from org_members om
+    where om.customer_id = g.customer_id and om.create_time <= g.create_time
+  )
 `
 
-// No row once the person has left the project's org, even if added back since, or
-// the project is deleted.
+// No row once the person has left every org they joined before the grant, even if
+// added back since.
 func (q *Queries) GetMCPGrantMemberEmail(ctx context.Context, id string) (string, error) {
 	row := q.db.QueryRow(ctx, getMCPGrantMemberEmail, id)
 	var email string
 	err := row.Scan(&email)
 	return email, err
+}
+
+const getMCPGrantProject = `-- name: GetMCPGrantProject :one
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time, p.deletion_time, p.default_theme
+from mcp_grants g
+join org_members om on om.customer_id = g.customer_id and om.create_time <= g.create_time
+join projects p on p.org_id = om.org_id
+where g.id = $1
+  and p.id = $2
+  and p.deletion_time is null
+`
+
+type GetMCPGrantProjectParams struct {
+	GrantID   string
+	ProjectID string
+}
+
+// A live project in an org the grant's person joined before the grant.
+func (q *Queries) GetMCPGrantProject(ctx context.Context, arg GetMCPGrantProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, getMCPGrantProject, arg.GrantID, arg.ProjectID)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
+		&i.ReportingTimezone,
+		&i.UpdateTime,
+		&i.DeletionTime,
+		&i.DefaultTheme,
+	)
+	return i, err
 }
 
 const listLiveMCPGrantsByCustomerID = `-- name: ListLiveMCPGrantsByCustomerID :many
@@ -67,39 +99,31 @@ select
   g.id,
   g.last_used_time,
   o.display_name as org_display_name,
-  p.display_name as project_display_name,
-  p.id as project_id,
-  p.org_id
+  o.id as org_id
 from mcp_grants g
-join projects p on p.id = g.project_id
-join orgs o on o.id = p.org_id
-join org_members om on om.org_id = p.org_id and om.customer_id = g.customer_id
+join org_members om on om.customer_id = g.customer_id and om.create_time <= g.create_time
+join orgs o on o.id = om.org_id
 where g.customer_id = $1
   and g.revoke_time is null
-  and p.deletion_time is null
-  and om.create_time <= g.create_time
   and exists (
     select 1 from refresh_tokens rt
     where rt.mcp_grant_id = g.id and rt.expires_at > now()
   )
-order by g.create_time desc, g.id desc
+order by g.create_time desc, g.id desc, o.create_time asc, o.id asc
 `
 
 type ListLiveMCPGrantsByCustomerIDRow struct {
-	ClientID           string
-	ClientName         string
-	CreateTime         pgtype.Timestamptz
-	ID                 string
-	LastUsedTime       pgtype.Timestamptz
-	OrgDisplayName     string
-	ProjectDisplayName string
-	ProjectID          string
-	OrgID              string
+	ClientID       string
+	ClientName     string
+	CreateTime     pgtype.Timestamptz
+	ID             string
+	LastUsedTime   pgtype.Timestamptz
+	OrgDisplayName string
+	OrgID          string
 }
 
-// The grants that can still reach their project: unrevoked, with an unexpired
-// refresh token, which only an exchanged code mints, on a live project whose org
-// the person joined first.
+// One row per grant and org it reads: unrevoked, with an unexpired refresh token,
+// which only an exchanged code mints, and an org the person joined before the grant.
 func (q *Queries) ListLiveMCPGrantsByCustomerID(ctx context.Context, customerID string) ([]ListLiveMCPGrantsByCustomerIDRow, error) {
 	rows, err := q.db.Query(ctx, listLiveMCPGrantsByCustomerID, customerID)
 	if err != nil {
@@ -116,8 +140,54 @@ func (q *Queries) ListLiveMCPGrantsByCustomerID(ctx context.Context, customerID 
 			&i.ID,
 			&i.LastUsedTime,
 			&i.OrgDisplayName,
-			&i.ProjectDisplayName,
-			&i.ProjectID,
+			&i.OrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMCPGrantProjects = `-- name: ListMCPGrantProjects :many
+select
+  o.display_name as org_display_name,
+  p.display_name,
+  p.id,
+  p.org_id
+from mcp_grants g
+join org_members om on om.customer_id = g.customer_id and om.create_time <= g.create_time
+join orgs o on o.id = om.org_id
+join projects p on p.org_id = o.id
+where g.id = $1
+  and p.deletion_time is null
+order by o.create_time asc, o.id asc, p.create_time asc, p.id asc
+`
+
+type ListMCPGrantProjectsRow struct {
+	OrgDisplayName string
+	DisplayName    string
+	ID             string
+	OrgID          string
+}
+
+// Every live project in the orgs the grant's person joined before the grant.
+func (q *Queries) ListMCPGrantProjects(ctx context.Context, grantID string) ([]ListMCPGrantProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listMCPGrantProjects, grantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMCPGrantProjectsRow
+	for rows.Next() {
+		var i ListMCPGrantProjectsRow
+		if err := rows.Scan(
+			&i.OrgDisplayName,
+			&i.DisplayName,
+			&i.ID,
 			&i.OrgID,
 		); err != nil {
 			return nil, err

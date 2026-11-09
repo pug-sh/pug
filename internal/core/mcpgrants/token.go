@@ -40,11 +40,11 @@ type Tokens struct {
 	RefreshToken string
 }
 
-// Access is what a live access token reaches.
+// Access is who a live access token acts as. Each call names its project, which
+// ResolveProject checks.
 type Access struct {
 	GrantID  string
 	Customer dbread.Customer
-	Project  dbread.Project
 }
 
 // RFC 7636's code_verifier: 43 to 128 unreserved characters.
@@ -131,7 +131,7 @@ func (s *Service) Refresh(ctx context.Context, r TokenRefresh) (Tokens, error) {
 }
 
 // ResolveAccessToken returns ErrInvalidToken unless the token is live and its
-// grant still reaches its project. A nil Service is OAuth off, so no token is live.
+// grant still reaches an org. A nil Service is OAuth off, so no token is live.
 func (s *Service) ResolveAccessToken(ctx context.Context, token string) (Access, error) {
 	if s == nil {
 		return Access{}, ErrInvalidToken
@@ -145,15 +145,25 @@ func (s *Service) ResolveAccessToken(ctx context.Context, token string) (Access,
 	if err != nil {
 		return Access{}, resolveError(ctx, err)
 	}
-	project, err := r.GetProjectByID(ctx, ids.ProjectID)
-	if err != nil {
-		return Access{}, resolveError(ctx, err)
-	}
-	return Access{GrantID: ids.GrantID, Customer: customer, Project: project}, nil
+	return Access{GrantID: ids.GrantID, Customer: customer}, nil
 }
 
-// resolveError reads a missing row as a dead token, though the customer or project
-// may have gone only after the token check.
+// ResolveProject returns ErrProjectNotFound unless the grant reads the project: a
+// live one in an org its person joined before the grant.
+func (s *Service) ResolveProject(ctx context.Context, grantID, projectID string) (dbread.Project, error) {
+	project, err := dbread.New(s.pgW).GetMCPGrantProject(ctx, dbread.GetMCPGrantProjectParams{GrantID: grantID, ProjectID: projectID})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return dbread.Project{}, ErrProjectNotFound
+	case err != nil:
+		return dbread.Project{}, recordServiceError(ctx, "failed to resolve mcp grant project", err,
+			slog.String("grant_id", grantID), slog.String("project_id", projectID))
+	}
+	return project, nil
+}
+
+// resolveError reads a missing row as a dead token, though the customer may have
+// gone only after the token check.
 func resolveError(ctx context.Context, err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrInvalidToken
@@ -161,14 +171,14 @@ func resolveError(ctx context.Context, err error) error {
 	return recordServiceError(ctx, "failed to resolve mcp access token", err)
 }
 
-// checkAccess revokes a grant whose person lost access: they left the project's org,
-// the project was deleted, or their domain requires an SSO the approval lacked.
+// checkAccess revokes a grant whose person lost access: they left every org they
+// joined before it, or their domain requires an SSO the approval lacked.
 func checkAccess(ctx context.Context, tx pgx.Tx, grantID, provenDomain string) error {
 	r := dbread.New(tx)
 	email, err := r.GetMCPGrantMemberEmail(ctx, grantID)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return commitRevoke(ctx, tx, grantID, errors.New("access to the project ended"))
+		return commitRevoke(ctx, tx, grantID, errors.New("the person left every org the grant reads"))
 	case err != nil:
 		return recordServiceError(ctx, "failed to check mcp grant membership", err, slog.String("grant_id", grantID))
 	}

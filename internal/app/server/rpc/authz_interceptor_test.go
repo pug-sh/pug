@@ -237,6 +237,14 @@ func TestResolveOrgID(t *testing.T) {
 			t.Fatalf("code = %v, want Unauthenticated", apperrCode(err))
 		}
 	})
+	// A model reads the message, so it names the argument and the tool that fill it.
+	t.Run("orgFromProject without a project tells an MCP token why", func(t *testing.T) {
+		token := &Principal{AuthType: AuthTypeMCPToken, Customer: &dbread.Customer{ID: "cust-1"}, GrantID: "grant-1"}
+		_, err := resolveOrgID(emptyReq(), token, authzspec.OrgFromProject)
+		if apperrCode(err) != connect.CodeUnauthenticated || !strings.Contains(err.Error(), "project_id is required") {
+			t.Fatalf("err = %v, want Unauthenticated asking for project_id", err)
+		}
+	})
 	t.Run("orgFromMessage reads org_id off the message", func(t *testing.T) {
 		got, err := resolveOrgID(msgReq("org-9"), noProject, authzspec.OrgFromMessage)
 		if err != nil || got != "org-9" {
@@ -589,6 +597,7 @@ func TestSelfWriteRPCs(t *testing.T) {
 		"/dashboard.mcpgrants.v1.MCPGrantsService/ApproveAuthorization":  true,
 		"/dashboard.mcpgrants.v1.MCPGrantsService/ListGrants":            false,
 		"/dashboard.mcpgrants.v1.MCPGrantsService/RevokeGrant":           true,
+		"/shared.projects.v1.ProjectsService/List":                       false,
 		"/sdk.profiles.v1.ProfilesSDKService/Identify":                   false,
 		"/sdk.profiles.v1.ProfilesSDKService/BatchIdentify":              false,
 		"/sdk.events.v1.EventsService/BatchCreate":                       false,

@@ -58,7 +58,8 @@ type MCPGrantsServiceClient interface {
 	// Checks the request again and creates the grant and its code. Unauthenticated
 	// when the session has ended or its token has no sid, and with SSO_REQUIRED when
 	// the person's domain requires an SSO sign-in this session lacks: refreshing the
-	// session then shows the SSO prompt.
+	// session then shows the SSO prompt. FailedPrecondition with MCP_NO_ORG when the
+	// person is in no org, since a grant reads only the orgs they are in.
 	ApproveAuthorization(context.Context, *connect.Request[v1.ApproveAuthorizationRequest]) (*connect.Response[v1.ApproveAuthorizationResponse], error)
 	// Whether OAuth is on, and the person's own live grants.
 	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)
@@ -144,7 +145,8 @@ type MCPGrantsServiceHandler interface {
 	// Checks the request again and creates the grant and its code. Unauthenticated
 	// when the session has ended or its token has no sid, and with SSO_REQUIRED when
 	// the person's domain requires an SSO sign-in this session lacks: refreshing the
-	// session then shows the SSO prompt.
+	// session then shows the SSO prompt. FailedPrecondition with MCP_NO_ORG when the
+	// person is in no org, since a grant reads only the orgs they are in.
 	ApproveAuthorization(context.Context, *connect.Request[v1.ApproveAuthorizationRequest]) (*connect.Response[v1.ApproveAuthorizationResponse], error)
 	// Whether OAuth is on, and the person's own live grants.
 	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)

@@ -42,7 +42,8 @@ const (
 
 // Principal represents the authenticated entity.
 // Customer is set for JWT auth. Project is set for API key auth and JWT auth with x-project-id header.
-// An MCP access token sets both: the person who approved the connection, and its project.
+// An MCP access token sets the person who approved the connection, and on a /mcp tool
+// call the x-project-id project, once the grant is found to read it.
 type Principal struct {
 	AuthType     AuthType
 	Customer     *dbread.Customer
@@ -121,13 +122,15 @@ func fromLoopback(ctx context.Context) bool {
 }
 
 // mcpTokenLookup resolves an MCP access token, as *mcpgrants.Service does. A dead
-// token is ErrInvalidToken, and the lookup logs and records any other failure.
+// token is ErrInvalidToken, a project the grant doesn't read ErrProjectNotFound, and
+// the lookup logs and records any other failure.
 type mcpTokenLookup interface {
 	ResolveAccessToken(ctx context.Context, token string) (coremcpgrants.Access, error)
+	ResolveProject(ctx context.Context, grantID, projectID string) (dbread.Project, error)
 }
 
-// resolveMCPTokenPrincipal acts as the person who approved the connection, on its
-// project, so the role gate runs as it does for their dashboard.
+// resolveMCPTokenPrincipal acts as the person who approved the connection, so the
+// role gate runs as it does for their dashboard.
 func resolveMCPTokenPrincipal(ctx context.Context, tokens mcpTokenLookup, token string) (*Principal, error) {
 	access, err := tokens.ResolveAccessToken(ctx, token)
 	switch {
@@ -139,9 +142,28 @@ func resolveMCPTokenPrincipal(ctx context.Context, tokens mcpTokenLookup, token 
 	return &Principal{
 		AuthType: AuthTypeMCPToken,
 		Customer: &access.Customer,
-		Project:  &access.Project,
 		GrantID:  access.GrantID,
 	}, nil
+}
+
+// withMCPProject sets the project a /mcp tool call names, if the grant reads it.
+func withMCPProject(ctx context.Context, tokens mcpTokenLookup, principal *Principal, projectID string) (*Principal, error) {
+	if projectID == "" {
+		return principal, nil
+	}
+	// As in WithSDKAuth: Postgres errors on invalid UTF-8 or a NUL rather than finding no rows.
+	if !utf8.ValidString(projectID) || strings.ContainsRune(projectID, 0) {
+		return nil, unauthenticated(ctx, "project not found or access denied")
+	}
+	project, err := tokens.ResolveProject(ctx, principal.GrantID, projectID)
+	switch {
+	case errors.Is(err, coremcpgrants.ErrProjectNotFound):
+		return nil, unauthenticated(ctx, "project not found or access denied")
+	case err != nil:
+		return nil, unavailable(ctx, "failed to verify project access")
+	}
+	principal.Project = &project
+	return principal, nil
 }
 
 // resolvePrivateKeyPrincipal resolves an already-prefix-validated private
@@ -367,6 +389,8 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 // WithDualAuth authenticates via private API key if x-api-key header is present; otherwise falls back to JWT.
 // Unlike WithSDKAuth, this only accepts private keys (not public) and falls back to JWT, populating Customer.
 // An MCP access token is taken only on a /mcp tool call (WithLoopback), so it works at /mcp alone.
+// Such a call names its project in x-project-id: a token reads it if its grant does,
+// and a key only if it is the key's own.
 func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup, tokens mcpTokenLookup) authn.AuthFunc {
 	jwtAuth := WithJWTAuth(jwtKey, queries)
 
@@ -375,13 +399,25 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup,
 			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
 				return nil, unauthenticated(ctx, "invalid API key")
 			}
-			return resolvePrivateKeyPrincipal(ctx, repo, apiKey)
+			principal, err := resolvePrivateKeyPrincipal(ctx, repo, apiKey)
+			if err != nil {
+				return nil, err
+			}
+			// Loopback only: the API has always ignored x-project-id beside a key.
+			if id := req.Header.Get(HeaderProjectID); fromLoopback(ctx) && id != "" && id != principal.Project.ID {
+				return nil, unauthenticated(ctx, "project not found or access denied")
+			}
+			return principal, nil
 		}
 		if token, ok := MCPAccessToken(req); ok {
 			if !fromLoopback(ctx) {
 				return nil, unauthenticated(ctx, "an MCP access token works only at /mcp")
 			}
-			return resolveMCPTokenPrincipal(ctx, tokens, token)
+			principal, err := resolveMCPTokenPrincipal(ctx, tokens, token)
+			if err != nil {
+				return nil, err
+			}
+			return withMCPProject(ctx, tokens, principal, req.Header.Get(HeaderProjectID))
 		}
 		return jwtAuth(ctx, req)
 	}
@@ -389,7 +425,7 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup,
 
 // WithMCPAuth is the auth boundary for /mcp: a private key in x-api-key, or an MCP
 // access token (tokens is a nil *mcpgrants.Service, taking none, while OAuth is off).
-// Never a dashboard JWT (it reaches all its customer sees) or a public key (extractable).
+// Never a dashboard JWT (a full session, writes included) or a public key (extractable).
 func WithMCPAuth(repo projectKeyLookup, tokens mcpTokenLookup) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {

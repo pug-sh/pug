@@ -11,6 +11,7 @@ import (
 	activityv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1mcp"
 	insightsv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1mcp"
 	profilesv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1mcp"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1mcp"
 	mcpruntime "github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime"
 )
 
@@ -50,6 +51,9 @@ func (d toolDisposition) exposed() bool { return d.curated != "" }
 // Every exposed tool is marked read-only, so Claude runs it without asking: never
 // expose a tool that writes.
 var toolPolicy = map[string]toolDisposition{
+	// projects
+	sharedprojectsv1mcp.ProjectsService_ListTool.Name: expose("list_projects", "List projects"),
+
 	// insights
 	insightsv1mcp.InsightsService_QueryTool.Name:             expose("query_insights", "Query insights"),
 	insightsv1mcp.InsightsService_GetFilterSchemaTool.Name:   expose("get_insights_filter_schema", "Get insights filter schema"),

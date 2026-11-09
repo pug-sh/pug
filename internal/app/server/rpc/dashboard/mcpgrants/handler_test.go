@@ -97,12 +97,12 @@ func TestApprovalErrors(t *testing.T) {
 		{coremcpgrants.ErrRedirectNotListed, connect.CodeInvalidArgument, apperr.ReasonMCPRedirectNotListed},
 		{&coremcpgrants.RedirectError{Err: coremcpgrants.ErrInvalidRequest}, connect.CodeInvalidArgument, apperr.ReasonMCPAuthorizationInvalid},
 		{coremcpgrants.ErrSessionEnded, connect.CodeUnauthenticated, apperr.ReasonUnauthenticated},
+		{coremcpgrants.ErrNoOrg, connect.CodeFailedPrecondition, apperr.ReasonMCPNoOrg},
 		{&coreorgs.SSORequiredError{Domain: "acme.com"}, connect.CodeUnauthenticated, apperr.ReasonSSORequired},
-		{coremcpgrants.ErrProjectNotFound, connect.CodeNotFound, apperr.ReasonProjectNotFound},
 	} {
-		wantAppErr(t, approvalError(tc.err, "p"), tc.code, tc.reason)
+		wantAppErr(t, approvalError(tc.err), tc.code, tc.reason)
 	}
-	if err := approvalError(errors.New("boom"), "p"); connect.CodeOf(err) != connect.CodeInternal {
+	if err := approvalError(errors.New("boom")); connect.CodeOf(err) != connect.CodeInternal {
 		t.Errorf("an unexpected error = %v, want Internal", err)
 	}
 }
@@ -111,6 +111,7 @@ type backend struct {
 	srv      *Server
 	svc      *coremcpgrants.Service
 	customer dbread.Customer
+	org      string
 	project  string
 	session  string
 }
@@ -146,7 +147,7 @@ func newBackend(t *testing.T) backend {
 		t.Fatal(err)
 	}
 	svc := coremcpgrants.NewService(db.PgW, claude, issuer)
-	return backend{srv: NewServer(svc), svc: svc, customer: customer, project: projects[0].ID, session: session}
+	return backend{srv: NewServer(svc), svc: svc, customer: customer, org: org.ID, project: projects[0].ID, session: session}
 }
 
 func (b backend) describe(req *mcpgrantsv1.AuthorizationRequest) (*mcpgrantsv1.DescribeAuthorizationResponse, error) {
@@ -160,7 +161,7 @@ func (b backend) describe(req *mcpgrantsv1.AuthorizationRequest) (*mcpgrantsv1.D
 
 func (b backend) approve(req *mcpgrantsv1.AuthorizationRequest) (*mcpgrantsv1.ApproveAuthorizationResponse, error) {
 	resp, err := b.srv.ApproveAuthorization(signedIn(b.customer, b.session),
-		connect.NewRequest(&mcpgrantsv1.ApproveAuthorizationRequest{Request: req, ProjectId: proto.String(b.project)}))
+		connect.NewRequest(&mcpgrantsv1.ApproveAuthorizationRequest{Request: req}))
 	if err != nil {
 		return nil, err
 	}
@@ -255,10 +256,10 @@ func TestListAndRevokeGrants(t *testing.T) {
 		t.Fatalf("ListGrants = %v, want OAuth on and one grant", listed)
 	}
 	g := listed.GetGrants()[0]
-	if g.GetClientHost() != "claude.ai" || g.GetClientName() != "Claude" || g.GetProject().GetId() != b.project ||
-		g.GetProject().GetOrgDisplayName() != "Acme" || g.GetCreateTime() == nil ||
+	if g.GetClientHost() != "claude.ai" || g.GetClientName() != "Claude" || len(g.GetOrgs()) != 1 ||
+		g.GetOrgs()[0].GetId() != b.org || g.GetOrgs()[0].GetDisplayName() != "Acme" || g.GetCreateTime() == nil ||
 		!g.GetLastUsedTime().AsTime().After(g.GetCreateTime().AsTime()) {
-		t.Fatalf("grant = %v, want claude.ai on bob's project, used after it was created", g)
+		t.Fatalf("grant = %v, want claude.ai on bob's org, used after it was created", g)
 	}
 
 	revoke := func() error {

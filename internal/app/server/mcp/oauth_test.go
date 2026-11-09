@@ -28,6 +28,7 @@ import (
 
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	mcpgrantsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/mcpgrants"
+	sharedprojectsrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/projects"
 	"github.com/pug-sh/pug/internal/cimd"
 	"github.com/pug-sh/pug/internal/core/authz"
 	"github.com/pug-sh/pug/internal/core/mcpgrants"
@@ -36,6 +37,7 @@ import (
 	mcpgrantsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/mcpgrants/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/mcpgrants/v1/mcpgrantsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -378,8 +380,11 @@ func newOAuthBackend(t *testing.T) *oauthBackend {
 	opts := pogrpc.HandlerOptions(otelInterceptor, authorizer, orgs)
 	queries := dbread.New(db.PgW)
 	repo := &stubKeyLookup{}
+	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, queries, repo, grants))
 	pp, ph := profilesv1connect.NewProfilesServiceHandler(b.profiles, opts)
-	mux.Handle(pp, authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, queries, repo, grants)).Wrap(ph))
+	mux.Handle(pp, sharedMW.Wrap(ph))
+	sp, sh := sharedprojectsv1connect.NewProjectsServiceHandler(sharedprojectsrpc.NewServer(queries, grants), opts)
+	mux.Handle(sp, sharedMW.Wrap(sh))
 	cp, ch := mcpgrantsv1connect.NewMCPGrantsServiceHandler(mcpgrantsrpc.NewServer(grants), opts)
 	mux.Handle(cp, authn.NewMiddleware(pogrpc.WithJWTAuth(testJWTKey, queries)).Wrap(ch))
 	if err := Mount(mux, mux, repo, OAuth{Grants: grants, AuthorizationEndpoint: testConsentPage}); err != nil {
@@ -409,7 +414,6 @@ func (b *oauthBackend) approve(ctx context.Context, args *auth.AuthorizationArgs
 			ResponseType:        proto.String(q.Get("response_type")),
 			State:               proto.String(q.Get("state")),
 		},
-		ProjectId: proto.String(b.project),
 	})
 	req.Header().Set("Authorization", "Bearer "+b.jwt)
 	resp, err := mcpgrantsv1connect.NewMCPGrantsServiceClient(http.DefaultClient, b.url).ApproveAuthorization(ctx, req)
@@ -485,7 +489,9 @@ func TestE2E_OAuthSignIn(t *testing.T) {
 		t.Fatalf("token = %+v, want an MCP access token and a refresh token", tok)
 	}
 
-	res, err := session.CallTool(t.Context(), &gomcp.CallToolParams{Name: "get_profile", Arguments: map[string]any{"id": "user-1"}})
+	res, err := session.CallTool(t.Context(), &gomcp.CallToolParams{
+		Name: "get_profile", Arguments: map[string]any{"id": "user-1", "project_id": b.project},
+	})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
 	}
@@ -534,8 +540,7 @@ func TestE2E_OAuthSignIn(t *testing.T) {
 // follows is invalid_grant, which sends the client back to sign in.
 func TestE2E_OAuthAccessEnds(t *testing.T) {
 	for name, end := range map[string]func(*oauthBackend){
-		"member removed":  func(b *oauthBackend) { b.exec("delete from org_members where customer_id = $1", b.customer) },
-		"project deleted": func(b *oauthBackend) { b.exec("update projects set deletion_time = now() where id = $1", b.project) },
+		"member removed": func(b *oauthBackend) { b.exec("delete from org_members where customer_id = $1", b.customer) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			b := newOAuthBackend(t)
@@ -564,6 +569,75 @@ func TestE2E_OAuthAccessEnds(t *testing.T) {
 				t.Errorf("after: refresh = %d %v (%v), want 400 invalid_grant", resp.StatusCode, body, err)
 			}
 		})
+	}
+}
+
+// joinOrg adds the person, as a viewer, to a new org someone else made, and
+// returns that org's default project.
+func (b *oauthBackend) joinOrg(name string) string {
+	b.t.Helper()
+	ctx := b.t.Context()
+	w := dbwrite.New(b.db.PgW)
+	owner := xid.New().String()
+	if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: owner, Email: owner + "@example.com"}); err != nil {
+		b.t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := coreorgs.NewService(b.db.PgRO, b.db.PgW, nil).CreateOrgWithDefaults(ctx, owner, name)
+	if err != nil {
+		b.t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+	projects, err := dbread.New(b.db.PgW).GetProjectsByOrgID(ctx, org.ID)
+	if err != nil || len(projects) != 1 {
+		b.t.Fatalf("projects = %v, %v; want the default one", projects, err)
+	}
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{CustomerID: b.customer, OrgID: org.ID, Role: "ORG_ROLE_VIEWER"}); err != nil {
+		b.t.Fatalf("CreateOrgMember: %v", err)
+	}
+	return projects[0].ID
+}
+
+// A connection reads every project in the orgs the person was in when they
+// approved, one per call, and none in an org they joined later.
+func TestE2E_OAuthReadsEveryOrg(t *testing.T) {
+	b := newOAuthBackend(t)
+	before := b.joinOrg("Globex")
+	session, _, _ := b.connect()
+	after := b.joinOrg("Initech")
+	call := func(name string, args map[string]any) *gomcp.CallToolResult {
+		t.Helper()
+		res, err := session.CallTool(t.Context(), &gomcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatalf("CallTool %s: %v", name, err)
+		}
+		return res
+	}
+	read := func(project string) *gomcp.CallToolResult {
+		t.Helper()
+		return call("get_profile", map[string]any{"id": "user-1", "project_id": project})
+	}
+
+	listed := toolText(call("list_projects", nil))
+	if !strings.Contains(listed, b.project) || !strings.Contains(listed, before) || strings.Contains(listed, after) {
+		t.Errorf("list_projects = %s, want the person's org and Globex, not Initech", listed)
+	}
+	for project, want := range map[string]bool{b.project: true, before: true, after: false} {
+		if res := read(project); res.IsError == want {
+			t.Errorf("get_profile on %s: error = %v (%s), want read = %v", project, res.IsError, toolText(res), want)
+		} else if want && b.profiles.principal.Project.ID != project {
+			t.Errorf("get_profile on %s ran on %s", project, b.profiles.principal.Project.ID)
+		}
+	}
+	if res := call("get_profile", map[string]any{"id": "user-1"}); !res.IsError || !strings.Contains(toolText(res), "project_id is required") {
+		t.Errorf("get_profile without project_id = %s, want a refusal that asks for it", toolText(res))
+	}
+
+	// A deleted project ends its own reads, not the connection.
+	b.exec("update projects set deletion_time = now() where id = $1", before)
+	if res := read(before); !res.IsError {
+		t.Errorf("get_profile on a deleted project succeeded")
+	}
+	if res := read(b.project); res.IsError {
+		t.Errorf("get_profile on a live project after another's deletion: %s", toolText(res))
 	}
 }
 
