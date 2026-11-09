@@ -9,6 +9,7 @@ import (
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	activityv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1mcp"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/dashboards/v1/shareddashboardsv1mcp"
 	insightsv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1mcp"
 	profilesv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1mcp"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1mcp"
@@ -17,17 +18,25 @@ import (
 
 // toolDisposition is what happens to one generated tool: it is either exposed
 // under a curated MCP name and title, or hidden with a recorded reason. The fields
-// are unexported and the only constructors are expose and hide, so the invariants
-// "exposed XOR hidden" and "exposed implies a non-empty curated name" hold BY
-// CONSTRUCTION rather than by test — the same idiom as authzspec.Spec.
+// are unexported and the only constructors are expose, exposeWrite and hide, so
+// the invariants "exposed XOR hidden" and "exposed implies a non-empty curated
+// name" hold BY CONSTRUCTION rather than by test, the same idiom as
+// authzspec.Spec.
 type toolDisposition struct {
 	curated string // non-empty iff exposed
 	title   string // what clients show people in place of the curated name
+	writes  bool   // the tool changes data
 	reason  string // non-empty iff hidden
 }
 
 func expose(curated, title string) toolDisposition {
 	return toolDisposition{curated: curated, title: title}
+}
+
+// exposeWrite exposes a tool that changes data. It is marked destructive, not
+// read-only, so Claude asks the person before each call.
+func exposeWrite(curated, title string) toolDisposition {
+	return toolDisposition{curated: curated, title: title, writes: true}
 }
 func hide(reason string) toolDisposition { return toolDisposition{reason: reason} }
 
@@ -48,11 +57,16 @@ func (d toolDisposition) exposed() bool { return d.curated != "" }
 // the renamer if a filter regression ever let one through — so the GDPR erasure
 // RPCs cannot reach an LLM agent even if the filter breaks.
 //
-// Every exposed tool is marked read-only, so Claude runs it without asking: never
-// expose a tool that writes.
+// expose marks a tool read-only, so Claude runs it without asking: a tool that
+// writes uses exposeWrite.
 var toolPolicy = map[string]toolDisposition{
 	// projects
 	sharedprojectsv1mcp.ProjectsService_ListTool.Name: expose("list_projects", "List projects"),
+
+	// dashboards
+	shareddashboardsv1mcp.DashboardsService_ListTool.Name:   expose("list_dashboards", "List dashboards"),
+	shareddashboardsv1mcp.DashboardsService_GetTool.Name:    expose("get_dashboard", "Get dashboard"),
+	shareddashboardsv1mcp.DashboardsService_UpsertTool.Name: exposeWrite("upsert_dashboard", "Create or update dashboard"),
 
 	// insights
 	insightsv1mcp.InsightsService_QueryTool.Name:             expose("query_insights", "Query insights"),
@@ -96,8 +110,8 @@ type toolServer interface {
 }
 
 // renamer registers each generated tool on the go-sdk server under its curated
-// name and title, marked read-only, rejecting anything the policy does not
-// sanction. It implements mcpruntime.MCPServer so the generated ForwardToConnect*
+// name, title and annotations, rejecting anything the policy does not sanction.
+// It implements mcpruntime.MCPServer so the generated ForwardToConnect*
 // functions register through it transparently.
 //
 // It is not safe for concurrent use and is not meant to outlive one registration
@@ -159,7 +173,10 @@ func sdkTool(d toolDisposition, tool mcpruntime.Tool) *gomcp.Tool {
 		Description: tool.Description,
 		InputSchema: tool.RawInputSchema,
 		// Clients on MCP specs before 2025-06-18 read the title only from the annotations.
-		Annotations: &gomcp.ToolAnnotations{Title: d.title, ReadOnlyHint: true},
+		Annotations: &gomcp.ToolAnnotations{Title: d.title, ReadOnlyHint: !d.writes},
+	}
+	if d.writes {
+		t.Annotations.DestructiveHint = new(true)
 	}
 	if len(tool.RawOutputSchema) > 0 {
 		t.OutputSchema = tool.RawOutputSchema

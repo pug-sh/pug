@@ -28,14 +28,17 @@ import (
 
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	mcpgrantsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/mcpgrants"
+	shareddashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/dashboards"
 	sharedprojectsrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/projects"
 	"github.com/pug-sh/pug/internal/cimd"
 	"github.com/pug-sh/pug/internal/core/authz"
+	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	"github.com/pug-sh/pug/internal/core/mcpgrants"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	mcpgrantsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/mcpgrants/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/mcpgrants/v1/mcpgrantsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/dashboards/v1/shareddashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -44,9 +47,10 @@ import (
 )
 
 const (
-	testIssuer      = "https://api.pugs.dev"
-	testConsentPage = "https://app.pug.sh/oauth/authorize"
-	initializeBody  = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`
+	testIssuer           = "https://api.pugs.dev"
+	testConsentPage      = "https://app.pug.sh/oauth/authorize"
+	testDashboardBaseURL = "https://app.pug.sh"
+	initializeBody       = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`
 )
 
 // newOAuthTestServer has OAuth on over no database, which serves everything short
@@ -385,6 +389,9 @@ func newOAuthBackend(t *testing.T) *oauthBackend {
 	mux.Handle(pp, sharedMW.Wrap(ph))
 	sp, sh := sharedprojectsv1connect.NewProjectsServiceHandler(sharedprojectsrpc.NewServer(queries, grants), opts)
 	mux.Handle(sp, sharedMW.Wrap(sh))
+	dp, dh := shareddashboardsv1connect.NewDashboardsServiceHandler(
+		shareddashboardsrpc.NewServer(coredashboards.NewService(db.PgRO, db.PgW), testDashboardBaseURL), opts)
+	mux.Handle(dp, sharedMW.Wrap(dh))
 	cp, ch := mcpgrantsv1connect.NewMCPGrantsServiceHandler(mcpgrantsrpc.NewServer(grants), opts)
 	mux.Handle(cp, authn.NewMiddleware(pogrpc.WithJWTAuth(testJWTKey, queries)).Wrap(ch))
 	if err := Mount(mux, mux, repo, OAuth{Grants: grants, AuthorizationEndpoint: testConsentPage}); err != nil {
@@ -645,5 +652,86 @@ func (b *oauthBackend) exec(sql string, args ...any) {
 	b.t.Helper()
 	if _, err := b.db.PgW.Exec(b.t.Context(), sql, args...); err != nil {
 		b.t.Fatalf("%s: %v", sql, err)
+	}
+}
+
+// upserted is upsert_dashboard's result as the model reads it.
+type upserted struct {
+	ID         string   `json:"id"`
+	UpdateTime string   `json:"update_time"`
+	URL        string   `json:"url"`
+	TileIDs    []string `json:"tile_ids"`
+}
+
+// A connection edits dashboards with its person's role: a member creates one and
+// edits it with the update_time it was given, and a viewer only reads.
+func TestE2E_OAuthDashboards(t *testing.T) {
+	b := newOAuthBackend(t)
+	viewed := b.joinOrg("Globex")
+	b.exec(`update org_members set role = 'ORG_ROLE_MEMBER'
+		where customer_id = $1 and org_id = (select org_id from projects where id = $2)`, b.customer, b.project)
+	session, _, _ := b.connect()
+	call := func(name string, args map[string]any) *gomcp.CallToolResult {
+		t.Helper()
+		res, err := session.CallTool(t.Context(), &gomcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatalf("CallTool %s: %v", name, err)
+		}
+		return res
+	}
+	upsert := func(args map[string]any) upserted {
+		t.Helper()
+		args["project_id"] = b.project
+		res := call("upsert_dashboard", args)
+		var out upserted
+		if res.IsError || json.Unmarshal([]byte(toolText(res)), &out) != nil {
+			t.Fatalf("upsert_dashboard = %s", toolText(res))
+		}
+		return out
+	}
+
+	created := upsert(map[string]any{
+		"display_name": "Growth",
+		"tiles": []any{
+			map[string]any{
+				"display_name": "Signups",
+				"spec":         map[string]any{"insight_type": "INSIGHT_TYPE_TRENDS", "events": []any{map[string]any{"event": map[string]any{"kind": "signup"}}}},
+				"chart":        "CHART_BAR",
+			},
+			map[string]any{"markdown": "Weekly numbers"},
+		},
+	})
+	if want := testDashboardBaseURL + "/dashboards/" + created.ID + "?project=" + b.project; created.URL != want || len(created.TileIDs) != 2 {
+		t.Fatalf("created = %+v, want two tiles linked at %s", created, want)
+	}
+	edit := map[string]any{
+		"id":          created.ID,
+		"update_time": created.UpdateTime,
+		"tiles":       []any{map[string]any{"id": created.TileIDs[1], "markdown": "Daily numbers"}},
+	}
+	edited := upsert(edit)
+	if edited.UpdateTime == created.UpdateTime || !slices.Equal(edited.TileIDs, created.TileIDs[1:]) {
+		t.Errorf("edited = %+v, want a new update_time and the changed tile", edited)
+	}
+	if res := call("upsert_dashboard", edit); !res.IsError || !strings.Contains(toolText(res), "DASHBOARD_CHANGED") {
+		t.Errorf("an edit with a stale update_time = %s, want DASHBOARD_CHANGED", toolText(res))
+	}
+
+	got := toolText(call("get_dashboard", map[string]any{"project_id": b.project, "id": created.ID}))
+	for _, want := range []string{"Signups", "CHART_BAR", "Daily numbers", edited.UpdateTime} {
+		if !strings.Contains(got, want) {
+			t.Errorf("get_dashboard = %s, want it to carry %q", got, want)
+		}
+	}
+	if got := toolText(call("list_dashboards", map[string]any{"project_id": b.project})); !strings.Contains(got, created.ID) {
+		t.Errorf("list_dashboards = %s, want %s", got, created.ID)
+	}
+
+	if res := call("list_dashboards", map[string]any{"project_id": viewed}); res.IsError {
+		t.Errorf("a viewer's list_dashboards = %s", toolText(res))
+	}
+	res := call("upsert_dashboard", map[string]any{"project_id": viewed, "display_name": "Viewer's"})
+	if !res.IsError || !strings.Contains(toolText(res), "ORG_ROLE_FORBIDDEN") {
+		t.Errorf("a viewer's upsert_dashboard = %s, want ORG_ROLE_FORBIDDEN", toolText(res))
 	}
 }
