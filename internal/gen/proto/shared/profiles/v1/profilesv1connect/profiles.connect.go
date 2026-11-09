@@ -69,10 +69,12 @@ type ProfilesServiceClient interface {
 	// always listed, with bot-tagged events left out of its activity summary.
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.ServerStreamForClient[v1.ListResponse], error)
 	// Delete erases a data subject identified by profile id. Like
-	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
-	// events table and every derived rollup; the profile is soft-deleted
-	// synchronously in PostgreSQL and physically removed from every store by the
-	// compliance worker.
+	// DeleteDataSubject, it enqueues asynchronous hard erasure of the subject's
+	// events, activity rollup, aliases, devices and profile; the profile is
+	// soft-deleted synchronously in PostgreSQL and physically removed from every
+	// store by the compliance worker. The daily dashboard rollup is kept: it has no
+	// per-person key, though its unique-user counts still hold a hashed token per
+	// person.
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	// DeleteDataSubject erases a data subject identified by external_id (the
 	// controller-facing handle). Proceeds even when no profile row exists, since
@@ -192,10 +194,12 @@ type ProfilesServiceHandler interface {
 	// always listed, with bot-tagged events left out of its activity summary.
 	List(context.Context, *connect.Request[v1.ListRequest], *connect.ServerStream[v1.ListResponse]) error
 	// Delete erases a data subject identified by profile id. Like
-	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
-	// events table and every derived rollup; the profile is soft-deleted
-	// synchronously in PostgreSQL and physically removed from every store by the
-	// compliance worker.
+	// DeleteDataSubject, it enqueues asynchronous hard erasure of the subject's
+	// events, activity rollup, aliases, devices and profile; the profile is
+	// soft-deleted synchronously in PostgreSQL and physically removed from every
+	// store by the compliance worker. The daily dashboard rollup is kept: it has no
+	// per-person key, though its unique-user counts still hold a hashed token per
+	// person.
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	// DeleteDataSubject erases a data subject identified by external_id (the
 	// controller-facing handle). Proceeds even when no profile row exists, since

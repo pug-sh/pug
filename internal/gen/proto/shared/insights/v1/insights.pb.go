@@ -492,10 +492,11 @@ type InsightQuerySpec struct {
 	IncludeCookieless *bool `protobuf:"varint,12,opt,name=include_cookieless,json=includeCookieless" json:"include_cookieless,omitempty"`
 	// Country-choropleth query. Only valid when insight_type == MAP.
 	Map *MapQuery `protobuf:"bytes,13,opt,name=map" json:"map,omitempty"`
-	// Traffic tagged as automated at ingest ($bot: crawler user agents and
-	// datacenter networks) is EXCLUDED by default from every insight and every
-	// metric. Session metrics and user flow judge a session whole: one tagged
-	// event excludes the session. Set true to include bots.
+	// Traffic tagged as automated at ingest ($bot, set only on web events from a
+	// public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default from every insight and every metric.
+	// Session metrics and user flow judge a session whole: one tagged event
+	// excludes the session. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,14,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2890,10 +2891,11 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x06points\x18\x03 \x03(\v2\x1d.shared.insights.v1.DataPointR\x06points\"Q\n" +
 	"\tDataPoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\xc9\x03\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\xcb\x03\n" +
 	"\x18GetPropertyValuesRequest\x12S\n" +
-	"\fproperty_key\x18\x01 \x01(\tB0\xbaH-\xc8\x01\x01r(2&^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$R\vpropertyKey\x12>\n" +
-	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x127\n" +
+	"\fproperty_key\x18\x01 \x01(\tB0\xbaH-\xc8\x01\x01r(2&^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$R\vpropertyKey\x12@\n" +
+	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\r\xbaH\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x06source\x127\n" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind:\xde\x01\xbaH\xda\x01\x1a\xd7\x01\n" +
 	"2get_property_values_request.auto_key_dollar_prefix\x12?auto property keys must start with '$' (for example '$browser')\x1a`this.source != common.v1.PropertySource.PROPERTY_SOURCE_AUTO|| this.property_key.startsWith('$')\"3\n" +

@@ -54,3 +54,16 @@ func TestGetPropertyValuesRequest_AutoKeyRequiresDollarPrefix(t *testing.T) {
 		})
 	}
 }
+
+// required only checks presence under editions, so an explicit UNSPECIFIED needs
+// not_in: without it the request reached the service's default case as internal.
+func TestGetPropertyValuesRequest_RejectsUnspecifiedSource(t *testing.T) {
+	err := protovalidate.Validate(&insightsv1.GetPropertyValuesRequest{
+		PropertyKey: proto.String("plan"),
+		Source:      commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED.Enum(),
+	})
+	ve, ok := errors.AsType[*protovalidate.ValidationError](err)
+	if !ok || len(ve.Violations) != 1 || ve.Violations[0].Proto.GetRuleId() != "enum.not_in" {
+		t.Fatalf("got %v, want only an enum.not_in violation", err)
+	}
+}

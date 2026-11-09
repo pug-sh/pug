@@ -15,18 +15,19 @@ service ProfilesSDKService {
   // worker. Items for one external_id that only set traits may merge in order,
   // later values winning. It is not atomic: an error can follow a partial publish,
   // and a retry repeats what was already published. The worker applies separate
-  // messages in no guaranteed order.
+  // messages in no guaranteed order. An item that breaks a validation rule is
+  // skipped and listed in invalid_identifies; the rest are still queued.
   rpc BatchIdentify(BatchIdentifyRequest) returns (BatchIdentifyResponse);
 }
 
 message IdentifyRequest {
-  // Stable user identifier (e.g. email, database ID).
+  // Stable, unique user identifier: your database user ID, not an email, which
+  // can change.
   // The 'cookieless-' prefix is server-owned: ingest mints those ids and the
-  // reserved-prefix rule on BatchCreateRequest.distinct_id already refuses them
+  // reserved-prefix rule on an incoming event's distinct_id already refuses them
   // from clients. external_id needs the same guard because post-identify events
   // are keyed by external_id, so an id accepted here comes back as a distinct_id
-  // that the batch rule then rejects, and because that rule is `all()`, one such
-  // user fails the WHOLE batch, taking unrelated users' events with it.
+  // and BatchCreate drops every event of that user.
   string external_id = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.min_len = 1,
@@ -34,42 +35,76 @@ message IdentifyRequest {
       id: "external_id.reserved_prefix",
       message: "external_id must not start with the reserved 'cookieless-' prefix",
       expression: "!this.startsWith('cookieless-')"
+    },
+    (buf.validate.field).cel = {
+      id: "external_id.no_nul",
+      message: "external_id must not contain a NUL character",
+      expression: "!this.contains('\\u0000')"
     }
   ];
   // Profile properties, shallow-merged into existing properties. On key conflict,
-  // these values take precedence over previously stored values.
+  // these values take precedence over previously stored values. A trait whose key,
+  // or any string in it, holds a NUL can't be stored and is dropped.
   google.protobuf.Struct traits = 2;
   // The SDK-generated anonymous ID. The SDK should send this on first identify
   // to trigger merge-and-soft-delete of the anonymous profile. Must start with "anon-".
-  string anonymous_id = 3 [(buf.validate.field).string = {
-    max_len: 255,
-    pattern: "^$|^anon-"
-  }];
+  string anonymous_id = 3 [
+    (buf.validate.field).string = {
+      max_len: 255,
+      pattern: "^$|^anon-"
+    },
+    (buf.validate.field).cel = {
+      id: "anonymous_id.no_nul",
+      message: "anonymous_id must not contain a NUL character",
+      expression: "!this.contains('\\u0000')"
+    }
+  ];
   // The device to assign to this profile. The SDK should send this on first
   // identify and on account switch (external_id changed), not on every call,
   // to avoid unnecessary DB writes. Omit for web SDKs without push support.
-  string device_id = 4 [(buf.validate.field).string = {max_len: 36}];
+  string device_id = 4 [
+    (buf.validate.field).string = {max_len: 36},
+    (buf.validate.field).cel = {
+      id: "device_id.no_nul",
+      message: "device_id must not contain a NUL character",
+      expression: "!this.contains('\\u0000')"
+    }
+  ];
 }
 
 message IdentifyResponse {}
 
 message BatchIdentifyRequest {
-  // Each item is validated with IdentifyRequest's rules; one invalid item
-  // fails the whole request.
-  repeated IdentifyRequest identifies = 1 [(buf.validate.field).repeated.max_items = 1000];
+  // BatchIdentify validates each item on its own with IdentifyRequest's rules,
+  // so an invalid item is skipped and the rest are queued.
+  repeated IdentifyRequest identifies = 1 [(buf.validate.field).repeated = {
+    max_items: 1000
+    items: {ignore: IGNORE_ALWAYS}
+  }];
 }
 
 message BatchIdentifyResponse {
   // Identifies queued for the worker, not yet applied.
   uint32 accepted = 1;
+  // The items skipped for breaking a validation rule, in request order.
+  repeated InvalidIdentify invalid_identifies = 2;
+}
+
+message InvalidIdentify {
+  // Position in BatchIdentifyRequest.identifies, counting from 0.
+  uint32 index = 1;
+  // The rules it broke, e.g. "external_id: external_id must not start with the
+  // reserved 'cookieless-' prefix". At most 10, then one more entry that counts
+  // the rest, e.g. "and 3 more".
+  repeated string violations = 2;
 }
 
 // ProfileIdentifyMessage is the internal NATS envelope for the identify worker.
 // project_id is injected server-side from the authenticated principal.
 message ProfileIdentifyMessage {
   // Mirrors IdentifyRequest.external_id: the worker re-validates this envelope,
-  // so the reserved prefix is enforced at both stages rather than trusting that
-  // the value only ever arrives from an already-validated request.
+  // so its rules hold at both stages rather than trusting that the value only
+  // ever arrives from an already-validated request.
   string external_id = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.min_len = 1,
@@ -77,6 +112,11 @@ message ProfileIdentifyMessage {
       id: "external_id.reserved_prefix",
       message: "external_id must not start with the reserved 'cookieless-' prefix",
       expression: "!this.startsWith('cookieless-')"
+    },
+    (buf.validate.field).cel = {
+      id: "external_id.no_nul",
+      message: "external_id must not contain a NUL character",
+      expression: "!this.contains('\\u0000')"
     }
   ];
   google.protobuf.Struct traits = 2;

@@ -1,6 +1,7 @@
 package profiles
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -41,17 +42,15 @@ func TestIdentify_RejectsCookielessAnonymousID(t *testing.T) {
 
 // TestIdentify_RejectsCookielessExternalID closes the third id field.
 //
-// anonymous_id (^$|^anon-) and BatchCreateRequest.distinct_id
-// (batch.distinct_id_reserved_prefix) were both guarded; external_id carried only
+// anonymous_id (^$|^anon-) and an incoming event's distinct_id
+// (incoming_event.distinct_id_reserved_prefix) were both guarded; external_id carried only
 // `required`, while ingestion.md claims the prefix is reserved against client-sent
 // ids outright. Two of three is not a reserved namespace.
 //
 // The concrete failure it allows: a tenant whose external_id is user-supplied (a
 // username, not an email) lets someone register as "cookieless-x". Identify
-// succeeds, and post-identify events are keyed by external_id, so every later
-// BatchCreate carrying that user trips the reserved-prefix rule. Because that CEL
-// is `this.events.all(...)`, the WHOLE batch is rejected, taking unrelated users'
-// events down with it on a server-side SDK.
+// succeeds, and post-identify events are keyed by external_id, so BatchCreate
+// drops every later event of that user on the reserved-prefix rule.
 func TestIdentify_RejectsCookielessExternalID(t *testing.T) {
 	req := &sdkprofilesv1.IdentifyRequest{
 		ExternalId: proto.String(cookieless.IDPrefix + "3q28pTkXhWZbA4NUJ9wA"),
@@ -87,8 +86,31 @@ func TestIdentify_RejectsEmptyExternalID(t *testing.T) {
 	}
 }
 
-// BatchIdentify items carry every Identify rule: protovalidate validates each
-// element of a repeated message field, so one bad item fails the whole batch.
+// Postgres text can't hold a NUL, so an id carrying one would be accepted and then
+// dead-letter in the worker. The envelope mirrors external_id's rule.
+func TestIdentify_RejectsNULInIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		field string
+		msg   proto.Message
+	}{
+		{"request external_id", "external_id", &sdkprofilesv1.IdentifyRequest{ExternalId: proto.String("user\x001")}},
+		{"request anonymous_id", "anonymous_id", &sdkprofilesv1.IdentifyRequest{ExternalId: proto.String("user-1"), AnonymousId: proto.String("anon-\x001")}},
+		{"request device_id", "device_id", &sdkprofilesv1.IdentifyRequest{ExternalId: proto.String("user-1"), DeviceId: proto.String("dev\x001")}},
+		{"envelope external_id", "external_id", &sdkprofilesv1.ProfileIdentifyMessage{ExternalId: proto.String("user\x001"), ProjectId: proto.String("p1")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := protovalidate.Validate(tc.msg)
+			ve, ok := errors.AsType[*protovalidate.ValidationError](err)
+			if !ok || len(ve.Violations) != 1 || ve.Violations[0].Proto.GetRuleId() != tc.field+".no_nul" {
+				t.Errorf("got %v, want only a %s.no_nul violation", err, tc.field)
+			}
+		})
+	}
+}
+
+// The request holds only max_items: BatchIdentify validates each item itself, so an
+// item breaking an Identify rule leaves the request valid and is skipped alone.
 func TestBatchIdentifyRequest_Validation(t *testing.T) {
 	item := func(externalID, anonymousID string) *sdkprofilesv1.IdentifyRequest {
 		return &sdkprofilesv1.IdentifyRequest{ExternalId: proto.String(externalID), AnonymousId: proto.String(anonymousID)}
@@ -105,9 +127,9 @@ func TestBatchIdentifyRequest_Validation(t *testing.T) {
 		{"empty", nil, ""},
 		{"1000 items", full, ""},
 		{"1001 items", append(slices.Clone(full), item("user-x", "")), "identifies"},
-		{"cookieless external id", []*sdkprofilesv1.IdentifyRequest{item("user-1", ""), item(cookieless.IDPrefix+"abc", "")}, "external_id"},
-		{"empty external id", []*sdkprofilesv1.IdentifyRequest{item("user-1", ""), item("", "")}, "external_id"},
-		{"bad anonymous id", []*sdkprofilesv1.IdentifyRequest{item("user-1", "nope")}, "anonymous_id"},
+		{"cookieless external id", []*sdkprofilesv1.IdentifyRequest{item("user-1", ""), item(cookieless.IDPrefix+"abc", "")}, ""},
+		{"empty external id", []*sdkprofilesv1.IdentifyRequest{item("user-1", ""), item("", "")}, ""},
+		{"bad anonymous id", []*sdkprofilesv1.IdentifyRequest{item("user-1", "nope")}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := protovalidate.Validate(&sdkprofilesv1.BatchIdentifyRequest{Identifies: tc.items})

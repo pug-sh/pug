@@ -501,8 +501,9 @@ func (x *GetDeletionRequestResponse) GetError() string {
 type GetByExternalIdRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	ExternalId *string                `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,2,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -599,8 +600,9 @@ func (x *GetByExternalIdResponse) GetProfile() *Profile {
 type GetRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,2,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -755,8 +757,9 @@ type ListRequest struct {
 	PageToken            *string             `protobuf:"bytes,1,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	FilterGroups         []*FilterGroup      `protobuf:"bytes,2,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
 	FilterGroupsOperator *v1.LogicalOperator `protobuf:"varint,3,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	// The sort key (first or last seen, or a derived anonymous person's
 	// create_time, which is its first event) is computed after this filter, so
 	// changing it mid-pagination skips rows. Keep it constant for a page_token run

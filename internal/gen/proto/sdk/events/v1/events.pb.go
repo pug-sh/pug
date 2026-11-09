@@ -25,8 +25,11 @@ const (
 )
 
 type BatchCreateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Events        []*Event               `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// BatchCreate validates each event on its own, as an IncomingEvent, so an
+	// event that breaks a rule, or repeats an earlier kept event's event_id, is
+	// dropped as invalid_event and the rest are kept.
+	Events        []*Event `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -80,10 +83,14 @@ type BatchCreateResponse struct {
 	// Per-reason breakdown of `dropped`, keyed by a stable reason token. This is
 	// what makes a drop actionable rather than merely visible: `salt_unavailable`
 	// is a server-side fault and the same payload may be retried, whereas
-	// `day_out_of_range` is client clock skew that will drop again on every retry.
+	// `day_out_of_range` is client clock skew and `invalid_event` an event that
+	// broke a validation rule or repeated an earlier kept event's event_id, and
+	// both drop again on every retry.
 	DroppedByReason map[string]uint32 `protobuf:"bytes,3,rep,name=dropped_by_reason,json=droppedByReason" json:"dropped_by_reason,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The events dropped as `invalid_event`, in request order.
+	InvalidEvents []*InvalidEvent `protobuf:"bytes,4,rep,name=invalid_events,json=invalidEvents" json:"invalid_events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BatchCreateResponse) Reset() {
@@ -137,6 +144,116 @@ func (x *BatchCreateResponse) GetDroppedByReason() map[string]uint32 {
 	return nil
 }
 
+func (x *BatchCreateResponse) GetInvalidEvents() []*InvalidEvent {
+	if x != nil {
+		return x.InvalidEvents
+	}
+	return nil
+}
+
+type InvalidEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Position in BatchCreateRequest.events, counting from 0.
+	Index *uint32 `protobuf:"varint,1,opt,name=index" json:"index,omitempty"`
+	// The rules it broke, e.g. "event.kind: does not match regex pattern `^[a-zA-Z0-9_.-]+$`".
+	// At most 10, then one more entry that counts the rest, e.g. "and 3 more".
+	Violations    []string `protobuf:"bytes,2,rep,name=violations" json:"violations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvalidEvent) Reset() {
+	*x = InvalidEvent{}
+	mi := &file_sdk_events_v1_events_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvalidEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvalidEvent) ProtoMessage() {}
+
+func (x *InvalidEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_sdk_events_v1_events_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvalidEvent.ProtoReflect.Descriptor instead.
+func (*InvalidEvent) Descriptor() ([]byte, []int) {
+	return file_sdk_events_v1_events_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *InvalidEvent) GetIndex() uint32 {
+	if x != nil && x.Index != nil {
+		return *x.Index
+	}
+	return 0
+}
+
+func (x *InvalidEvent) GetViolations() []string {
+	if x != nil {
+		return x.Violations
+	}
+	return nil
+}
+
+// Never sent. BatchCreate validates each event as one: Event's rules plus two
+// that hold only at the SDK boundary, since the server fills a cookieless
+// event's identity with 'cookieless-' ids before the EventBatch envelope
+// re-validates it.
+type IncomingEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Event         *Event                 `protobuf:"bytes,1,opt,name=event" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IncomingEvent) Reset() {
+	*x = IncomingEvent{}
+	mi := &file_sdk_events_v1_events_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IncomingEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IncomingEvent) ProtoMessage() {}
+
+func (x *IncomingEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_sdk_events_v1_events_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IncomingEvent.ProtoReflect.Descriptor instead.
+func (*IncomingEvent) Descriptor() ([]byte, []int) {
+	return file_sdk_events_v1_events_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *IncomingEvent) GetEvent() *Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
 type Event struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	EventId          *string                      `protobuf:"bytes,1,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
@@ -144,13 +261,13 @@ type Event struct {
 	CustomProperties map[string]*v1.PropertyValue `protobuf:"bytes,3,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Empty only when cookieless (event.identity_required_unless_cookieless);
 	// never client-settable to a 'cookieless-'-prefixed value
-	// (batch.distinct_id_reserved_prefix).
+	// (incoming_event.distinct_id_reserved_prefix).
 	DistinctId *string `protobuf:"bytes,4,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	// Same character set as common.v1.EventFilter.kind (filters.proto); + requires non-empty at ingest.
 	Kind      *string                `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
 	OccurTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
-	// A UUID whenever set; omit entirely in cookieless mode (an explicit "" is
-	// also rejected — set fields must satisfy the uuid rule).
+	// A UUID whenever set; omit entirely in cookieless mode (an explicit "" also
+	// drops the event as invalid_event, since a set field must be a UUID).
 	SessionId *string `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	// Cookieless (no-consent) mode: the client stores nothing on the device and
 	// sends no identity; the ingest server derives an ephemeral daily-rotating
@@ -162,7 +279,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_sdk_events_v1_events_proto_msgTypes[2]
+	mi := &file_sdk_events_v1_events_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -174,7 +291,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_events_v1_events_proto_msgTypes[2]
+	mi := &file_sdk_events_v1_events_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -187,7 +304,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_sdk_events_v1_events_proto_rawDescGZIP(), []int{2}
+	return file_sdk_events_v1_events_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Event) GetEventId() string {
@@ -256,7 +373,7 @@ type EventBatch struct {
 
 func (x *EventBatch) Reset() {
 	*x = EventBatch{}
-	mi := &file_sdk_events_v1_events_proto_msgTypes[3]
+	mi := &file_sdk_events_v1_events_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -268,7 +385,7 @@ func (x *EventBatch) String() string {
 func (*EventBatch) ProtoMessage() {}
 
 func (x *EventBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_events_v1_events_proto_msgTypes[3]
+	mi := &file_sdk_events_v1_events_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -281,7 +398,7 @@ func (x *EventBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventBatch.ProtoReflect.Descriptor instead.
 func (*EventBatch) Descriptor() ([]byte, []int) {
-	return file_sdk_events_v1_events_proto_rawDescGZIP(), []int{3}
+	return file_sdk_events_v1_events_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EventBatch) GetEvents() []*Event {
@@ -302,18 +419,26 @@ var File_sdk_events_v1_events_proto protoreflect.FileDescriptor
 
 const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\n" +
-	"\x1asdk/events/v1/events.proto\x12\rsdk.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1ecommon/v1/property_value.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb3\x03\n" +
-	"\x12BatchCreateRequest\x127\n" +
-	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events:\xe3\x02\xbaH\xdf\x02\x1a\xb5\x01\n" +
-	"&batch.cookieless_identity_server_owned\x129cookieless events must not send distinct_id or session_id\x1aPthis.events.all(e, !e.cookieless || (e.distinct_id == '' && e.session_id == ''))\x1a\xa4\x01\n" +
-	"!batch.distinct_id_reserved_prefix\x12Adistinct_id must not start with the reserved 'cookieless-' prefix\x1a<this.events.all(e, !e.distinct_id.startsWith('cookieless-'))\"\xf4\x01\n" +
+	"\x1asdk/events/v1/events.proto\x12\rsdk.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1ecommon/v1/property_value.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"R\n" +
+	"\x12BatchCreateRequest\x12<\n" +
+	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventB\x0e\xbaH\v\x92\x01\b\x10\xe8\a\"\x03\xd8\x01\x03R\x06events\"\xb8\x02\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\rR\baccepted\x12\x18\n" +
 	"\adropped\x18\x02 \x01(\rR\adropped\x12c\n" +
-	"\x11dropped_by_reason\x18\x03 \x03(\v27.sdk.events.v1.BatchCreateResponse.DroppedByReasonEntryR\x0fdroppedByReason\x1aB\n" +
+	"\x11dropped_by_reason\x18\x03 \x03(\v27.sdk.events.v1.BatchCreateResponse.DroppedByReasonEntryR\x0fdroppedByReason\x12B\n" +
+	"\x0einvalid_events\x18\x04 \x03(\v2\x1b.sdk.events.v1.InvalidEventR\rinvalidEvents\x1aB\n" +
 	"\x14DroppedByReasonEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\rR\x05value:\x028\x01\"\xec\b\n" +
+	"\x05value\x18\x02 \x01(\rR\x05value:\x028\x01\"D\n" +
+	"\fInvalidEvent\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\rR\x05index\x12\x1e\n" +
+	"\n" +
+	"violations\x18\x02 \x03(\tR\n" +
+	"violations\"\x9d\x03\n" +
+	"\rIncomingEvent\x12\x8b\x03\n" +
+	"\x05event\x18\x01 \x01(\v2\x14.sdk.events.v1.EventB\xde\x02\xbaH\xda\x02\xba\x01\xb3\x01\n" +
+	"/incoming_event.cookieless_identity_server_owned\x129cookieless events must not send distinct_id or session_id\x1aE!this.cookieless || (this.distinct_id == '' && this.session_id == '')\xba\x01\x9c\x01\n" +
+	"*incoming_event.distinct_id_reserved_prefix\x12Adistinct_id must not start with the reserved 'cookieless-' prefix\x1a+!this.distinct_id.startsWith('cookieless-')\xc8\x01\x01R\x05event\"\xec\b\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12Q\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2(.sdk.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12W\n" +
@@ -358,34 +483,38 @@ func file_sdk_events_v1_events_proto_rawDescGZIP() []byte {
 	return file_sdk_events_v1_events_proto_rawDescData
 }
 
-var file_sdk_events_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_sdk_events_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_sdk_events_v1_events_proto_goTypes = []any{
 	(*BatchCreateRequest)(nil),    // 0: sdk.events.v1.BatchCreateRequest
 	(*BatchCreateResponse)(nil),   // 1: sdk.events.v1.BatchCreateResponse
-	(*Event)(nil),                 // 2: sdk.events.v1.Event
-	(*EventBatch)(nil),            // 3: sdk.events.v1.EventBatch
-	nil,                           // 4: sdk.events.v1.BatchCreateResponse.DroppedByReasonEntry
-	nil,                           // 5: sdk.events.v1.Event.AutoPropertiesEntry
-	nil,                           // 6: sdk.events.v1.Event.CustomPropertiesEntry
-	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
-	(*v1.PropertyValue)(nil),      // 8: common.v1.PropertyValue
+	(*InvalidEvent)(nil),          // 2: sdk.events.v1.InvalidEvent
+	(*IncomingEvent)(nil),         // 3: sdk.events.v1.IncomingEvent
+	(*Event)(nil),                 // 4: sdk.events.v1.Event
+	(*EventBatch)(nil),            // 5: sdk.events.v1.EventBatch
+	nil,                           // 6: sdk.events.v1.BatchCreateResponse.DroppedByReasonEntry
+	nil,                           // 7: sdk.events.v1.Event.AutoPropertiesEntry
+	nil,                           // 8: sdk.events.v1.Event.CustomPropertiesEntry
+	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
+	(*v1.PropertyValue)(nil),      // 10: common.v1.PropertyValue
 }
 var file_sdk_events_v1_events_proto_depIdxs = []int32{
-	2, // 0: sdk.events.v1.BatchCreateRequest.events:type_name -> sdk.events.v1.Event
-	4, // 1: sdk.events.v1.BatchCreateResponse.dropped_by_reason:type_name -> sdk.events.v1.BatchCreateResponse.DroppedByReasonEntry
-	5, // 2: sdk.events.v1.Event.auto_properties:type_name -> sdk.events.v1.Event.AutoPropertiesEntry
-	6, // 3: sdk.events.v1.Event.custom_properties:type_name -> sdk.events.v1.Event.CustomPropertiesEntry
-	7, // 4: sdk.events.v1.Event.occur_time:type_name -> google.protobuf.Timestamp
-	2, // 5: sdk.events.v1.EventBatch.events:type_name -> sdk.events.v1.Event
-	8, // 6: sdk.events.v1.Event.AutoPropertiesEntry.value:type_name -> common.v1.PropertyValue
-	8, // 7: sdk.events.v1.Event.CustomPropertiesEntry.value:type_name -> common.v1.PropertyValue
-	0, // 8: sdk.events.v1.EventsService.BatchCreate:input_type -> sdk.events.v1.BatchCreateRequest
-	1, // 9: sdk.events.v1.EventsService.BatchCreate:output_type -> sdk.events.v1.BatchCreateResponse
-	9, // [9:10] is the sub-list for method output_type
-	8, // [8:9] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	4,  // 0: sdk.events.v1.BatchCreateRequest.events:type_name -> sdk.events.v1.Event
+	6,  // 1: sdk.events.v1.BatchCreateResponse.dropped_by_reason:type_name -> sdk.events.v1.BatchCreateResponse.DroppedByReasonEntry
+	2,  // 2: sdk.events.v1.BatchCreateResponse.invalid_events:type_name -> sdk.events.v1.InvalidEvent
+	4,  // 3: sdk.events.v1.IncomingEvent.event:type_name -> sdk.events.v1.Event
+	7,  // 4: sdk.events.v1.Event.auto_properties:type_name -> sdk.events.v1.Event.AutoPropertiesEntry
+	8,  // 5: sdk.events.v1.Event.custom_properties:type_name -> sdk.events.v1.Event.CustomPropertiesEntry
+	9,  // 6: sdk.events.v1.Event.occur_time:type_name -> google.protobuf.Timestamp
+	4,  // 7: sdk.events.v1.EventBatch.events:type_name -> sdk.events.v1.Event
+	10, // 8: sdk.events.v1.Event.AutoPropertiesEntry.value:type_name -> common.v1.PropertyValue
+	10, // 9: sdk.events.v1.Event.CustomPropertiesEntry.value:type_name -> common.v1.PropertyValue
+	0,  // 10: sdk.events.v1.EventsService.BatchCreate:input_type -> sdk.events.v1.BatchCreateRequest
+	1,  // 11: sdk.events.v1.EventsService.BatchCreate:output_type -> sdk.events.v1.BatchCreateResponse
+	11, // [11:12] is the sub-list for method output_type
+	10, // [10:11] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_sdk_events_v1_events_proto_init() }
@@ -399,7 +528,7 @@ func file_sdk_events_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sdk_events_v1_events_proto_rawDesc), len(file_sdk_events_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

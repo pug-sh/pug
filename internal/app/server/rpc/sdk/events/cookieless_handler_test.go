@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -83,7 +84,7 @@ func testCookielessEvent() *eventsv1.Event {
 }
 
 // testConsentedEvent is an ordinary identified event. Batches legitimately mix
-// the two (`cookieless` is per-event and both batch CEL rules are per-element),
+// the two (`cookieless` is per-event and every event is validated on its own),
 // which is precisely why a cookieless fault must not fail the whole request.
 func testConsentedEvent(distinctID string) *eventsv1.Event {
 	return &eventsv1.Event{
@@ -242,6 +243,45 @@ func TestResolveCookieless_AllDropped_ReportsReasonNotBareZero(t *testing.T) {
 	}
 	if got := resp.Msg.GetDroppedByReason()[dropReasonSaltUnavailable]; got != 1 {
 		t.Errorf("dropped_by_reason[%s] = %d, want 1", dropReasonSaltUnavailable, got)
+	}
+}
+
+// A client may retry salt_unavailable but not invalid_event, so a batch hitting
+// both must report each, whether or not anything is left to publish.
+func TestBatchCreate_InvalidAndCookielessDropsShareTheTally(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		withConsented bool
+		wantAccepted  uint32
+	}{
+		{"publish path", true, 1},
+		{"all refused", false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			js := &stubJetStream{}
+			res := &stubResolver{dayOK: true, didErr: errors.New("redis down")}
+			s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}, cookieless: res}
+			bad := testConsentedEvent("anon-u1")
+			bad.Kind = proto.String("Order Completed")
+			events := []*eventsv1.Event{bad, testCookielessEvent()}
+			if tc.withConsented {
+				events = append(events, testConsentedEvent("anon-u2"))
+			}
+
+			resp, err := s.BatchCreate(ctxWithProject(context.Background()), cookielessReq(events...))
+			if err != nil {
+				t.Fatalf("BatchCreate: %v", err)
+			}
+			got := resp.Msg
+			want := map[string]uint32{dropReasonInvalidEvent: 1, dropReasonSaltUnavailable: 1}
+			if got.GetAccepted() != tc.wantAccepted || got.GetDropped() != 2 || !maps.Equal(got.GetDroppedByReason(), want) {
+				t.Errorf("accepted=%d dropped=%d by_reason=%v, want %d, 2, %v",
+					got.GetAccepted(), got.GetDropped(), got.GetDroppedByReason(), tc.wantAccepted, want)
+			}
+			if inv := got.GetInvalidEvents(); len(inv) != 1 || inv[0].GetIndex() != 0 {
+				t.Errorf("invalid_events = %v, want only index 0", inv)
+			}
+		})
 	}
 }
 

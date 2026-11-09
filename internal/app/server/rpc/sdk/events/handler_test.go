@@ -3,7 +3,6 @@ package events
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -21,7 +20,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
-	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/attribution"
 	"github.com/pug-sh/pug/internal/autoprop"
 	"github.com/pug-sh/pug/internal/cookieless"
@@ -274,13 +272,14 @@ func TestBatchCreateWiresAuthTypedEnrichers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		authType    rpc.AuthType
-		want        string
-		wantBrowser string
+		authType     rpc.AuthType
+		want         string
+		wantBrowser  string
+		wantBotScore string
 	}{
-		{rpc.AuthTypePublicKey, "US", "Google Chrome"},
-		{rpc.AuthTypePrivateKey, "DE", ""},
-		{rpc.AuthTypeJWT, "US", ""},
+		{rpc.AuthTypePublicKey, "US", "Google Chrome", "5"},
+		{rpc.AuthTypePrivateKey, "DE", "", ""},
+		{rpc.AuthTypeJWT, "US", "", ""},
 	} {
 		t.Run(string(tt.authType), func(t *testing.T) {
 			js := &stubJetStream{}
@@ -300,6 +299,8 @@ func TestBatchCreateWiresAuthTypedEnrichers(t *testing.T) {
 				}},
 			})
 			req.Header().Set("User-Agent", chromeWindowsUA)
+			req.Header().Set(cfHeaderBotScore, "5")
+			req.Header().Set(cfHeaderVerifiedBot, "false")
 			ctx := authn.SetInfo(context.Background(), &rpc.Principal{
 				AuthType: tt.authType,
 				Project:  &dbread.Project{ID: "test-project"},
@@ -319,6 +320,12 @@ func TestBatchCreateWiresAuthTypedEnrichers(t *testing.T) {
 			}
 			if got := propString(published[useragent.PropBrowser]); got != tt.wantBrowser {
 				t.Errorf("published $browser = %q, want %q; is principal.AuthType still passed to enrichUserAgent?", got, tt.wantBrowser)
+			}
+			if got := propString(published[autoprop.PropBotScore]); got != tt.wantBotScore {
+				t.Errorf("published $bot_score = %q, want %q; is principal.AuthType still passed to enrichBotScore?", got, tt.wantBotScore)
+			}
+			if _, set := published[autoprop.PropVerifiedBot]; set != (tt.wantBotScore != "") {
+				t.Errorf("published $verified_bot set = %v, want %v; is principal.AuthType still passed to enrichVerifiedBot?", set, tt.wantBotScore != "")
 			}
 		})
 	}
@@ -406,6 +413,25 @@ func TestEnrichUserAgent(t *testing.T) {
 				useragent.PropMobile:         "false",
 			},
 		},
+		{
+			// CupertinoClient's User-Agent: parsed, it names the app's bundle as $browser.
+			name:     "native app event skipped",
+			uaHeader: "Runner/1 CFNetwork/1568.100.1 Darwin/24.0.0",
+			events:   []*eventsv1.Event{{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: "ios"})}},
+			want:     map[string]string{autoprop.PropPlatform: "ios"},
+		},
+		{
+			name:     "web event enriched",
+			uaHeader: chromeWindowsUA,
+			events:   []*eventsv1.Event{{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: autoprop.PlatformWeb})}},
+			want: map[string]string{
+				autoprop.PropPlatform:        autoprop.PlatformWeb,
+				useragent.PropBrowser:        "Google Chrome",
+				useragent.PropBrowserVersion: "118",
+				useragent.PropOS:             "Windows",
+				useragent.PropMobile:         "false",
+			},
+		},
 	}
 
 	uaParser, err := useragent.NewParser()
@@ -437,6 +463,16 @@ func TestEnrichUserAgent(t *testing.T) {
 			s.enrichUserAgent(context.Background(), "test-project", rpc.AuthTypePrivateKey, h, events)
 			assertProps(t, events[0], nil)
 		}
+	})
+
+	t.Run("native event skipped, rest of batch enriched", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("User-Agent", chromeWindowsUA)
+		native := &eventsv1.Event{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: "android"})}
+		plain := &eventsv1.Event{}
+		s.enrichUserAgent(context.Background(), "test-project", rpc.AuthTypePublicKey, h, []*eventsv1.Event{native, plain})
+		assertProps(t, native, map[string]string{autoprop.PropPlatform: "android"})
+		assertProps(t, plain, chromeProps)
 	})
 }
 
@@ -529,7 +565,7 @@ func TestEnrichBotScore(t *testing.T) {
 			if tt.header != "" {
 				h.Set(cfHeaderBotScore, tt.header)
 			}
-			s.enrichBotScore(context.Background(), "test-project", h, tt.events)
+			s.enrichBotScore(context.Background(), "test-project", rpc.AuthTypePublicKey, h, tt.events)
 			for _, event := range tt.events {
 				got, exists := event.AutoProperties["$bot_score"]
 				if tt.wantScore == "" {
@@ -544,6 +580,14 @@ func TestEnrichBotScore(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("private key: header ignored, client value still stripped", func(t *testing.T) {
+		h := http.Header{}
+		h.Set(cfHeaderBotScore, "5")
+		events := []*eventsv1.Event{{AutoProperties: propMap(map[string]string{"$bot_score": "99"})}}
+		s.enrichBotScore(context.Background(), "test-project", rpc.AuthTypePrivateKey, h, events)
+		assertProps(t, events[0], nil)
+	})
 }
 
 func TestEnrichVerifiedBot(t *testing.T) {
@@ -611,7 +655,7 @@ func TestEnrichVerifiedBot(t *testing.T) {
 			if tt.header != "" {
 				h.Set(cfHeaderVerifiedBot, tt.header)
 			}
-			s.enrichVerifiedBot(context.Background(), "test-project", h, tt.events)
+			s.enrichVerifiedBot(context.Background(), "test-project", rpc.AuthTypePublicKey, h, tt.events)
 			for _, event := range tt.events {
 				got, exists := event.AutoProperties["$verified_bot"]
 				if tt.want == "" {
@@ -626,6 +670,14 @@ func TestEnrichVerifiedBot(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("private key: header ignored, client value still stripped", func(t *testing.T) {
+		h := http.Header{}
+		h.Set(cfHeaderVerifiedBot, "true")
+		events := []*eventsv1.Event{{AutoProperties: propMap(map[string]string{"$verified_bot": "true"})}}
+		s.enrichVerifiedBot(context.Background(), "test-project", rpc.AuthTypePrivateKey, h, events)
+		assertProps(t, events[0], nil)
+	})
 }
 
 func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
@@ -649,8 +701,8 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	// Same order as BatchCreate: geo, UA, bot score, verified bot.
 	s.enrichGeo(context.Background(), "test-project", rpc.AuthTypePublicKey, h, events)
 	s.enrichUserAgent(context.Background(), "test-project", rpc.AuthTypePublicKey, h, events)
-	s.enrichBotScore(context.Background(), "test-project", h, events)
-	s.enrichVerifiedBot(context.Background(), "test-project", h, events)
+	s.enrichBotScore(context.Background(), "test-project", rpc.AuthTypePublicKey, h, events)
+	s.enrichVerifiedBot(context.Background(), "test-project", rpc.AuthTypePublicKey, h, events)
 
 	want := map[string]string{
 		// Geo props (public key → always overwrite).
@@ -676,34 +728,118 @@ func ctxWithProject(ctx context.Context) context.Context {
 	})
 }
 
-// TestBatchCreate_DuplicateEventID verifies that a batch with duplicate event IDs
-// is rejected with CodeInvalidArgument and ReasonInvalidEventBatch.
-func TestBatchCreate_DuplicateEventID(t *testing.T) {
-	s := &Server{
-		publisher:   nil, // not reached: validation fails first
-		geoProvider: stubProvider{},
-		uaParser:    nil,
+// A repeated event_id costs only the repeat: the first event with it is kept.
+func TestBatchCreate_DuplicateEventIDDropsTheRepeat(t *testing.T) {
+	js := &stubJetStream{}
+	s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}}
+	first, other, repeat := testConsentedEvent("u1"), testConsentedEvent("u2"), testConsentedEvent("u3")
+	repeat.EventId = proto.String(first.GetEventId())
+
+	resp, err := s.BatchCreate(ctxWithProject(context.Background()),
+		connect.NewRequest(&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{first, other, repeat}}))
+	if err != nil {
+		t.Fatalf("BatchCreate: %v", err)
 	}
-	req := connect.NewRequest(&eventsv1.BatchCreateRequest{
-		Events: []*eventsv1.Event{
-			{EventId: proto.String("dup-id")},
-			{EventId: proto.String("dup-id")},
-		},
-	})
-	ctx := ctxWithProject(context.Background())
-	_, err := s.BatchCreate(ctx, req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	invalid := resp.Msg.GetInvalidEvents()
+	if resp.Msg.GetAccepted() != 2 || len(invalid) != 1 || invalid[0].GetIndex() != 2 ||
+		strings.Join(invalid[0].GetViolations(), "\n") != "event.event_id: repeats the event at index 0" {
+		t.Errorf("accepted=%d invalid_events=%v, want 2 accepted and index 2 repeating index 0", resp.Msg.GetAccepted(), invalid)
 	}
-	var ae *apperr.Error
-	if !errors.As(err, &ae) {
-		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
+
+	var batch eventsv1.EventBatch
+	if err := proto.Unmarshal(js.data, &batch); err != nil {
+		t.Fatal(err)
 	}
-	if ae.Code() != connect.CodeInvalidArgument {
-		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
+	if got := batch.GetEvents(); len(got) != 2 || got[0].GetDistinctId() != "u1" || got[1].GetDistinctId() != "u2" {
+		t.Errorf("published %v, want the events of u1 and u2", got)
 	}
-	if ae.Reason() != apperr.ReasonInvalidEventBatch {
-		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidEventBatch, ae.Reason())
+}
+
+func TestBatchCreate_DropsInvalidEventsAlone(t *testing.T) {
+	bad := func(edit func(*eventsv1.Event)) *eventsv1.Event {
+		e := testConsentedEvent("u2")
+		edit(e)
+		return e
+	}
+	cases := []struct {
+		name string
+		bad  []*eventsv1.Event
+		want string
+	}{
+		{"kind_with_space", []*eventsv1.Event{bad(func(e *eventsv1.Event) {
+			e.Kind = proto.String("Order Completed")
+		})}, "event.kind: "},
+		{"dollar_custom_key", []*eventsv1.Event{bad(func(e *eventsv1.Event) {
+			e.CustomProperties = propMap(map[string]string{"$plan": "pro"})
+		})}, "custom_properties keys must not start with '$'"},
+		{"reserved_distinct_id", []*eventsv1.Event{bad(func(e *eventsv1.Event) {
+			e.DistinctId = proto.String(cookieless.IDPrefix + "x")
+		})}, "reserved 'cookieless-' prefix"},
+		{"cookieless_with_session_id", []*eventsv1.Event{bad(func(e *eventsv1.Event) {
+			e.Cookieless = proto.Bool(true)
+			e.DistinctId = nil
+		})}, "cookieless events must not send distinct_id or session_id"},
+		// Both lack an event_id, so the duplicate check must not see them.
+		{"two_missing_event_ids", []*eventsv1.Event{
+			bad(func(e *eventsv1.Event) { e.EventId = nil }),
+			bad(func(e *eventsv1.Event) { e.EventId = nil }),
+		}, "event.event_id: "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			js := &stubJetStream{}
+			s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}}
+			good := testConsentedEvent("u1")
+			req := connect.NewRequest(&eventsv1.BatchCreateRequest{Events: append([]*eventsv1.Event{good}, tc.bad...)})
+
+			resp, err := s.BatchCreate(ctxWithProject(context.Background()), req)
+			if err != nil {
+				t.Fatalf("BatchCreate: %v", err)
+			}
+			n := uint32(len(tc.bad))
+			if got := resp.Msg; got.GetAccepted() != 1 || got.GetDropped() != n || got.GetDroppedByReason()[dropReasonInvalidEvent] != n {
+				t.Errorf("accepted=%d dropped=%d by_reason=%v, want 1, %d, {%s:%d}",
+					got.GetAccepted(), got.GetDropped(), got.GetDroppedByReason(), n, dropReasonInvalidEvent, n)
+			}
+			invalid := resp.Msg.GetInvalidEvents()
+			if len(invalid) != len(tc.bad) {
+				t.Fatalf("invalid_events = %v, want %d entries", invalid, len(tc.bad))
+			}
+			for i, inv := range invalid {
+				if inv.GetIndex() != uint32(i+1) {
+					t.Errorf("invalid_events[%d].index = %d, want %d", i, inv.GetIndex(), i+1)
+				}
+				if v := strings.Join(inv.GetViolations(), "\n"); !strings.Contains(v, tc.want) {
+					t.Errorf("invalid_events[%d].violations = %q, want one containing %q", i, v, tc.want)
+				}
+			}
+
+			var batch eventsv1.EventBatch
+			if err := proto.Unmarshal(js.data, &batch); err != nil {
+				t.Fatal(err)
+			}
+			if got := batch.GetEvents(); len(got) != 1 || got[0].GetEventId() != good.GetEventId() {
+				t.Errorf("published %v, want only the valid event", got)
+			}
+		})
+	}
+}
+
+func TestBatchCreate_AllInvalidPublishesNothing(t *testing.T) {
+	js := &stubJetStream{}
+	s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}}
+	e := testConsentedEvent("u1")
+	e.Kind = proto.String("signup:started")
+
+	resp, err := s.BatchCreate(ctxWithProject(context.Background()), connect.NewRequest(&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{e}}))
+	if err != nil {
+		t.Fatalf("BatchCreate: %v", err)
+	}
+	if got := resp.Msg; got.GetAccepted() != 0 || got.GetDropped() != 1 || len(got.GetInvalidEvents()) != 1 {
+		t.Errorf("accepted=%d dropped=%d invalid_events=%v, want 0, 1 and one entry", got.GetAccepted(), got.GetDropped(), got.GetInvalidEvents())
+	}
+	if js.data != nil {
+		t.Error("published a batch with no valid event")
 	}
 }
 
@@ -719,7 +855,7 @@ func TestEnrichBotAndVerified_TypedSlots(t *testing.T) {
 		events := []*eventsv1.Event{{}}
 		h := http.Header{}
 		h.Set(cfHeaderBotScore, "42")
-		s.enrichBotScore(context.Background(), "test-project", h, events)
+		s.enrichBotScore(context.Background(), "test-project", rpc.AuthTypePublicKey, h, events)
 
 		got := events[0].AutoProperties["$bot_score"]
 		iv, ok := got.GetValue().(*commonv1.PropertyValue_IntValue)
@@ -735,7 +871,7 @@ func TestEnrichBotAndVerified_TypedSlots(t *testing.T) {
 		events := []*eventsv1.Event{{}}
 		h := http.Header{}
 		h.Set(cfHeaderVerifiedBot, "true")
-		s.enrichVerifiedBot(context.Background(), "test-project", h, events)
+		s.enrichVerifiedBot(context.Background(), "test-project", rpc.AuthTypePublicKey, h, events)
 
 		got := events[0].AutoProperties["$verified_bot"]
 		bv, ok := got.GetValue().(*commonv1.PropertyValue_BoolValue)

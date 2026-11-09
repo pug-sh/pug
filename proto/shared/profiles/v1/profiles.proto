@@ -26,10 +26,12 @@ service ProfilesService {
   // always listed, with bot-tagged events left out of its activity summary.
   rpc List(ListRequest) returns (stream ListResponse) {}
   // Delete erases a data subject identified by profile id. Like
-  // DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
-  // events table and every derived rollup; the profile is soft-deleted
-  // synchronously in PostgreSQL and physically removed from every store by the
-  // compliance worker.
+  // DeleteDataSubject, it enqueues asynchronous hard erasure of the subject's
+  // events, activity rollup, aliases, devices and profile; the profile is
+  // soft-deleted synchronously in PostgreSQL and physically removed from every
+  // store by the compliance worker. The daily dashboard rollup is kept: it has no
+  // per-person key, though its unique-user counts still hold a hashed token per
+  // person.
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   // DeleteDataSubject erases a data subject identified by external_id (the
   // controller-facing handle). Proceeds even when no profile row exists, since
@@ -96,8 +98,9 @@ message GetDeletionRequestResponse {
 
 message GetByExternalIdRequest {
   string external_id = 1 [(buf.validate.field).required = true];
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   bool include_bots = 2;
 }
 
@@ -107,8 +110,9 @@ message GetByExternalIdResponse {
 
 message GetRequest {
   string id = 1 [(buf.validate.field).required = true];
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   bool include_bots = 2;
 }
 
@@ -153,8 +157,9 @@ message ListRequest {
   string page_token = 1;
   repeated FilterGroup filter_groups = 2;
   common.v1.LogicalOperator filter_groups_operator = 3;
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   // The sort key (first or last seen, or a derived anonymous person's
   // create_time, which is its first event) is computed after this filter, so
   // changing it mid-pagination skips rows. Keep it constant for a page_token run

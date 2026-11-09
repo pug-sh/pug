@@ -406,9 +406,74 @@ func TestBatchIdentify_MergesItemsThatOnlySetTraits(t *testing.T) {
 	}
 }
 
-// jsonb refuses a NUL, so the worker fails the whole message carrying one. Sent alone
-// it costs only itself; merged, it would take the other items down with it.
-func TestBatchIdentify_KeepsTraitsPostgresCannotStoreApart(t *testing.T) {
+// An item breaking an Identify rule costs only itself: it is listed, and the rest
+// still publish.
+func TestBatchIdentify_SkipsInvalidItems(t *testing.T) {
+	spy := &spyJetStream{}
+	res, err := NewServer(spy).BatchIdentify(sdkContext("proj-test"), batch(
+		identify(t, "user-1", "", "", map[string]any{"plan": "pro"}),
+		identify(t, "cookieless-x", "", "", nil),
+		identify(t, "user-2", "", "", nil),
+		identify(t, "user\x003", "", "", nil),
+	))
+	if err != nil {
+		t.Fatalf("BatchIdentify: %v", err)
+	}
+	invalid := res.Msg.GetInvalidIdentifies()
+	if res.Msg.GetAccepted() != 2 || len(invalid) != 2 || invalid[0].GetIndex() != 1 || invalid[1].GetIndex() != 3 {
+		t.Fatalf("accepted=%d invalid_identifies=%v, want 2 accepted and indexes 1 and 3", res.Msg.GetAccepted(), invalid)
+	}
+	for _, inv := range invalid {
+		if v := strings.Join(inv.GetViolations(), "\n"); !strings.HasPrefix(v, "external_id: ") {
+			t.Errorf("violations = %q, want one naming external_id", v)
+		}
+	}
+	msgs := publishedIdentifies(t, spy)
+	if len(msgs) != 2 || msgs[0].GetExternalId() != "user-1" || msgs[1].GetExternalId() != "user-2" {
+		t.Errorf("published %v, want user-1 and user-2", msgs)
+	}
+}
+
+// Items are checked before merging: {c} would otherwise merge into the bad item's
+// message and be skipped with it.
+func TestBatchIdentify_SkipsInvalidItemBeforeMerging(t *testing.T) {
+	spy := &spyJetStream{}
+	res, err := NewServer(spy).BatchIdentify(sdkContext("proj-test"), batch(
+		identify(t, "user-1", "", "", map[string]any{"a": "1"}),
+		identify(t, "user-1", "", "", map[string]any{"b": "2"}),
+		identify(t, "user-1", "nope", "", map[string]any{"x": "9"}),
+		identify(t, "user-1", "", "", map[string]any{"c": "3"}),
+	))
+	if err != nil {
+		t.Fatalf("BatchIdentify: %v", err)
+	}
+	invalid := res.Msg.GetInvalidIdentifies()
+	if res.Msg.GetAccepted() != 3 || len(invalid) != 1 || invalid[0].GetIndex() != 2 {
+		t.Fatalf("accepted=%d invalid_identifies=%v, want 3 accepted and index 2", res.Msg.GetAccepted(), invalid)
+	}
+	want := map[string]any{"a": "1", "b": "2", "c": "3"}
+	if msgs := publishedIdentifies(t, spy); len(msgs) != 1 || !reflect.DeepEqual(msgs[0].GetTraits().AsMap(), want) {
+		t.Errorf("published %v, want one message with traits %v", msgs, want)
+	}
+}
+
+func TestBatchIdentify_AllInvalidPublishesNothing(t *testing.T) {
+	spy := &spyJetStream{}
+	res, err := NewServer(spy).BatchIdentify(sdkContext("proj-test"), batch(identify(t, "", "", "", nil)))
+	if err != nil {
+		t.Fatalf("BatchIdentify: %v", err)
+	}
+	if res.Msg.GetAccepted() != 0 || len(res.Msg.GetInvalidIdentifies()) != 1 {
+		t.Errorf("accepted=%d invalid_identifies=%v, want 0 and one entry", res.Msg.GetAccepted(), res.Msg.GetInvalidIdentifies())
+	}
+	if msgs := publishedIdentifies(t, spy); len(msgs) != 0 {
+		t.Errorf("published %v, want nothing", msgs)
+	}
+}
+
+// jsonb refuses a NUL and the worker would fail the whole message carrying one, so the
+// trait holding it is dropped and the rest of its item merges as usual.
+func TestBatchIdentify_DropsTraitsPostgresCannotStore(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		traits map[string]any
@@ -420,22 +485,30 @@ func TestBatchIdentify_KeepsTraitsPostgresCannotStoreApart(t *testing.T) {
 		{"in an object in a list", map[string]any{"tags": []any{map[string]any{"note": "a\x00b"}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			traits := maps.Clone(tc.traits)
+			traits["seen"] = "yes"
 			msgs := publishedIdentifies(t, acceptBatch(t,
 				identify(t, "user-1", "anon-1", "device-1", map[string]any{"plan": "free"}),
-				identify(t, "user-1", "", "", tc.traits),
+				identify(t, "user-1", "", "", traits),
 				identify(t, "user-1", "", "", map[string]any{"plan": "pro"}),
 			))
-			if len(msgs) != 2 {
-				t.Fatalf("published %d messages, want 2: %v", len(msgs), msgs)
-			}
-			// The clean items merge past it, so its failure can't reach them.
-			if got := msgs[0].GetTraits().AsMap(); !reflect.DeepEqual(got, map[string]any{"plan": "pro"}) {
-				t.Errorf("first message traits = %v, want plan=pro only", got)
-			}
-			if got := msgs[1].GetTraits().AsMap(); !reflect.DeepEqual(got, tc.traits) {
-				t.Errorf("second message traits = %v, want %v", got, tc.traits)
+			want := map[string]any{"plan": "pro", "seen": "yes"}
+			if len(msgs) != 1 || !reflect.DeepEqual(msgs[0].GetTraits().AsMap(), want) {
+				t.Errorf("published %v, want one message with traits %v", msgs, want)
 			}
 		})
+	}
+}
+
+// Dropped per item before merging, so a later item's NUL can't erase an earlier value.
+func TestBatchIdentify_DroppedTraitKeepsEarlierValue(t *testing.T) {
+	msgs := publishedIdentifies(t, acceptBatch(t,
+		identify(t, "user-1", "", "", map[string]any{"name": "Ada"}),
+		identify(t, "user-1", "", "", map[string]any{"name": "A\x00da"}),
+	))
+	want := map[string]any{"name": "Ada"}
+	if len(msgs) != 1 || !reflect.DeepEqual(msgs[0].GetTraits().AsMap(), want) {
+		t.Errorf("published %v, want one message with traits %v", msgs, want)
 	}
 }
 

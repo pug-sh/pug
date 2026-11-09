@@ -3,7 +3,9 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 
 	validatepb "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
@@ -65,8 +67,12 @@ func sanitizeError(ctx context.Context, procedure string, err error) error {
 
 	// Already a connect error: attach a generic reason mapped from the code.
 	if connectErr, ok := errors.AsType[*connect.Error](err); ok {
+		vErr, invalid := errors.AsType[*protovalidate.ValidationError](connectErr)
+		if invalid {
+			connectErr = capViolations(connectErr, vErr)
+		}
 		attachDetails(ctx, connectErr, apperr.ReasonForCode(connectErr.Code()))
-		if vErr, ok := errors.AsType[*protovalidate.ValidationError](connectErr); ok {
+		if invalid {
 			addDetail(ctx, connectErr, badRequestFromViolations(vErr))
 		}
 		return connectErr
@@ -122,13 +128,30 @@ func addDetail(ctx context.Context, cerr *connect.Error, msg proto.Message) {
 	cerr.AddDetail(detail)
 }
 
-// badRequestFromViolations maps protovalidate violations to a google.rpc.BadRequest.
+// capViolations caps the message the validate interceptor renders from every
+// violation; the capped ValidationError stays reachable through errors.As.
+func capViolations(cerr *connect.Error, vErr *protovalidate.ValidationError) *connect.Error {
+	rest := len(vErr.Violations) - maxViolationLines
+	if rest <= 0 {
+		return cerr
+	}
+	shown := &protovalidate.ValidationError{Violations: vErr.Violations[:maxViolationLines]}
+	capped := connect.NewError(cerr.Code(), fmt.Errorf("%w\n - and %d more", shown, rest))
+	maps.Copy(capped.Meta(), cerr.Meta())
+	for _, d := range cerr.Details() {
+		capped.AddDetail(d)
+	}
+	return capped
+}
+
+// badRequestFromViolations maps protovalidate violations to a google.rpc.BadRequest,
+// at most maxViolationLines of them; the error's message counts the rest.
 func badRequestFromViolations(vErr *protovalidate.ValidationError) *errdetails.BadRequest {
 	br := &errdetails.BadRequest{}
-	for _, v := range vErr.ToProto().GetViolations() {
+	for _, v := range vErr.Violations[:min(len(vErr.Violations), maxViolationLines)] {
 		br.FieldViolations = append(br.FieldViolations, &errdetails.BadRequest_FieldViolation{
-			Field:       fieldPathString(v.GetField()),
-			Description: v.GetMessage(),
+			Field:       fieldPathString(v.Proto.GetField()),
+			Description: v.Proto.GetMessage(),
 		})
 	}
 	return br
@@ -143,4 +166,29 @@ func fieldPathString(fp *validatepb.FieldPath) string {
 		parts = append(parts, el.GetFieldName())
 	}
 	return strings.Join(parts, ".")
+}
+
+// maxViolationLines caps what one validation error adds to a response: the caller
+// is untrusted, and one event of empty property values breaks a rule per entry.
+const maxViolationLines = 10
+
+// Violations renders a validation error one line per violation, up to
+// maxViolationLines and then a count of the rest, plus the first rule broken, for
+// a batch that skips an invalid item instead of failing whole.
+func Violations(err error) (firstRule string, lines []string) {
+	if err == nil {
+		return "", nil
+	}
+	vErr, ok := errors.AsType[*protovalidate.ValidationError](err)
+	if !ok || len(vErr.Violations) == 0 {
+		return "", []string{err.Error()}
+	}
+	shown := vErr.Violations[:min(len(vErr.Violations), maxViolationLines)]
+	for _, v := range shown {
+		lines = append(lines, v.String())
+	}
+	if rest := len(vErr.Violations) - len(shown); rest > 0 {
+		lines = append(lines, fmt.Sprintf("and %d more", rest))
+	}
+	return vErr.Violations[0].Proto.GetRuleId(), lines
 }

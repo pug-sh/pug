@@ -25,16 +25,17 @@ const (
 
 type IdentifyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Stable user identifier (e.g. email, database ID).
+	// Stable, unique user identifier: your database user ID, not an email, which
+	// can change.
 	// The 'cookieless-' prefix is server-owned: ingest mints those ids and the
-	// reserved-prefix rule on BatchCreateRequest.distinct_id already refuses them
+	// reserved-prefix rule on an incoming event's distinct_id already refuses them
 	// from clients. external_id needs the same guard because post-identify events
 	// are keyed by external_id, so an id accepted here comes back as a distinct_id
-	// that the batch rule then rejects, and because that rule is `all()`, one such
-	// user fails the WHOLE batch, taking unrelated users' events with it.
+	// and BatchCreate drops every event of that user.
 	ExternalId *string `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	// Profile properties, shallow-merged into existing properties. On key conflict,
-	// these values take precedence over previously stored values.
+	// these values take precedence over previously stored values. A trait whose key,
+	// or any string in it, holds a NUL can't be stored and is dropped.
 	Traits *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
 	// The SDK-generated anonymous ID. The SDK should send this on first identify
 	// to trigger merge-and-soft-delete of the anonymous profile. Must start with "anon-".
@@ -143,8 +144,8 @@ func (*IdentifyResponse) Descriptor() ([]byte, []int) {
 
 type BatchIdentifyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Each item is validated with IdentifyRequest's rules; one invalid item
-	// fails the whole request.
+	// BatchIdentify validates each item on its own with IdentifyRequest's rules,
+	// so an invalid item is skipped and the rest are queued.
 	Identifies    []*IdentifyRequest `protobuf:"bytes,1,rep,name=identifies" json:"identifies,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -190,9 +191,11 @@ func (x *BatchIdentifyRequest) GetIdentifies() []*IdentifyRequest {
 type BatchIdentifyResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Identifies queued for the worker, not yet applied.
-	Accepted      *uint32 `protobuf:"varint,1,opt,name=accepted" json:"accepted,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Accepted *uint32 `protobuf:"varint,1,opt,name=accepted" json:"accepted,omitempty"`
+	// The items skipped for breaking a validation rule, in request order.
+	InvalidIdentifies []*InvalidIdentify `protobuf:"bytes,2,rep,name=invalid_identifies,json=invalidIdentifies" json:"invalid_identifies,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *BatchIdentifyResponse) Reset() {
@@ -232,13 +235,76 @@ func (x *BatchIdentifyResponse) GetAccepted() uint32 {
 	return 0
 }
 
+func (x *BatchIdentifyResponse) GetInvalidIdentifies() []*InvalidIdentify {
+	if x != nil {
+		return x.InvalidIdentifies
+	}
+	return nil
+}
+
+type InvalidIdentify struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Position in BatchIdentifyRequest.identifies, counting from 0.
+	Index *uint32 `protobuf:"varint,1,opt,name=index" json:"index,omitempty"`
+	// The rules it broke, e.g. "external_id: external_id must not start with the
+	// reserved 'cookieless-' prefix". At most 10, then one more entry that counts
+	// the rest, e.g. "and 3 more".
+	Violations    []string `protobuf:"bytes,2,rep,name=violations" json:"violations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvalidIdentify) Reset() {
+	*x = InvalidIdentify{}
+	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvalidIdentify) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvalidIdentify) ProtoMessage() {}
+
+func (x *InvalidIdentify) ProtoReflect() protoreflect.Message {
+	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvalidIdentify.ProtoReflect.Descriptor instead.
+func (*InvalidIdentify) Descriptor() ([]byte, []int) {
+	return file_sdk_profiles_v1_profiles_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *InvalidIdentify) GetIndex() uint32 {
+	if x != nil && x.Index != nil {
+		return *x.Index
+	}
+	return 0
+}
+
+func (x *InvalidIdentify) GetViolations() []string {
+	if x != nil {
+		return x.Violations
+	}
+	return nil
+}
+
 // ProfileIdentifyMessage is the internal NATS envelope for the identify worker.
 // project_id is injected server-side from the authenticated principal.
 type ProfileIdentifyMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Mirrors IdentifyRequest.external_id: the worker re-validates this envelope,
-	// so the reserved prefix is enforced at both stages rather than trusting that
-	// the value only ever arrives from an already-validated request.
+	// so its rules hold at both stages rather than trusting that the value only
+	// ever arrives from an already-validated request.
 	ExternalId    *string          `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	Traits        *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
 	ProjectId     *string          `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
@@ -250,7 +316,7 @@ type ProfileIdentifyMessage struct {
 
 func (x *ProfileIdentifyMessage) Reset() {
 	*x = ProfileIdentifyMessage{}
-	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[4]
+	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -262,7 +328,7 @@ func (x *ProfileIdentifyMessage) String() string {
 func (*ProfileIdentifyMessage) ProtoMessage() {}
 
 func (x *ProfileIdentifyMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[4]
+	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -275,7 +341,7 @@ func (x *ProfileIdentifyMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileIdentifyMessage.ProtoReflect.Descriptor instead.
 func (*ProfileIdentifyMessage) Descriptor() ([]byte, []int) {
-	return file_sdk_profiles_v1_profiles_proto_rawDescGZIP(), []int{4}
+	return file_sdk_profiles_v1_profiles_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ProfileIdentifyMessage) GetExternalId() string {
@@ -317,24 +383,34 @@ var File_sdk_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xd5\x02\n" +
-	"\x0fIdentifyRequest\x12\xb2\x01\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\x90\x01\xbaH\x8c\x01\xba\x01\x81\x01\n" +
-	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xc8\x01\x01r\x02\x10\x01R\n" +
+	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xf1\x04\n" +
+	"\x0fIdentifyRequest\x12\x91\x02\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\xef\x01\xbaH\xeb\x01\xba\x01\x81\x01\n" +
+	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xba\x01\\\n" +
+	"\x12external_id.no_nul\x12,external_id must not contain a NUL character\x1a\x18!this.contains('\\u0000')\xc8\x01\x01r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
-	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x126\n" +
-	"\fanonymous_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\x12$\n" +
-	"\tdevice_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18$R\bdeviceId\"\x12\n" +
-	"\x10IdentifyResponse\"c\n" +
-	"\x14BatchIdentifyRequest\x12K\n" +
+	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12\x97\x01\n" +
+	"\fanonymous_id\x18\x03 \x01(\tBt\xbaHq\xba\x01^\n" +
+	"\x13anonymous_id.no_nul\x12-anonymous_id must not contain a NUL character\x1a\x18!this.contains('\\u0000')r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\x12\x7f\n" +
+	"\tdevice_id\x18\x04 \x01(\tBb\xbaH_\xba\x01X\n" +
+	"\x10device_id.no_nul\x12*device_id must not contain a NUL character\x1a\x18!this.contains('\\u0000')r\x02\x18$R\bdeviceId\"\x12\n" +
+	"\x10IdentifyResponse\"h\n" +
+	"\x14BatchIdentifyRequest\x12P\n" +
 	"\n" +
-	"identifies\x18\x01 \x03(\v2 .sdk.profiles.v1.IdentifyRequestB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\n" +
-	"identifies\"3\n" +
+	"identifies\x18\x01 \x03(\v2 .sdk.profiles.v1.IdentifyRequestB\x0e\xbaH\v\x92\x01\b\x10\xe8\a\"\x03\xd8\x01\x03R\n" +
+	"identifies\"\x84\x01\n" +
 	"\x15BatchIdentifyResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xe9\x02\n" +
-	"\x16ProfileIdentifyMessage\x12\xb2\x01\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\x90\x01\xbaH\x8c\x01\xba\x01\x81\x01\n" +
-	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xc8\x01\x01r\x02\x10\x01R\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\x12O\n" +
+	"\x12invalid_identifies\x18\x02 \x03(\v2 .sdk.profiles.v1.InvalidIdentifyR\x11invalidIdentifies\"G\n" +
+	"\x0fInvalidIdentify\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\rR\x05index\x12\x1e\n" +
+	"\n" +
+	"violations\x18\x02 \x03(\tR\n" +
+	"violations\"\xc8\x03\n" +
+	"\x16ProfileIdentifyMessage\x12\x91\x02\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\xef\x01\xbaH\xeb\x01\xba\x01\x81\x01\n" +
+	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xba\x01\\\n" +
+	"\x12external_id.no_nul\x12,external_id must not contain a NUL character\x1a\x18!this.contains('\\u0000')\xc8\x01\x01r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12)\n" +
 	"\n" +
@@ -358,28 +434,30 @@ func file_sdk_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 	return file_sdk_profiles_v1_profiles_proto_rawDescData
 }
 
-var file_sdk_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_sdk_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_sdk_profiles_v1_profiles_proto_goTypes = []any{
 	(*IdentifyRequest)(nil),        // 0: sdk.profiles.v1.IdentifyRequest
 	(*IdentifyResponse)(nil),       // 1: sdk.profiles.v1.IdentifyResponse
 	(*BatchIdentifyRequest)(nil),   // 2: sdk.profiles.v1.BatchIdentifyRequest
 	(*BatchIdentifyResponse)(nil),  // 3: sdk.profiles.v1.BatchIdentifyResponse
-	(*ProfileIdentifyMessage)(nil), // 4: sdk.profiles.v1.ProfileIdentifyMessage
-	(*structpb.Struct)(nil),        // 5: google.protobuf.Struct
+	(*InvalidIdentify)(nil),        // 4: sdk.profiles.v1.InvalidIdentify
+	(*ProfileIdentifyMessage)(nil), // 5: sdk.profiles.v1.ProfileIdentifyMessage
+	(*structpb.Struct)(nil),        // 6: google.protobuf.Struct
 }
 var file_sdk_profiles_v1_profiles_proto_depIdxs = []int32{
-	5, // 0: sdk.profiles.v1.IdentifyRequest.traits:type_name -> google.protobuf.Struct
+	6, // 0: sdk.profiles.v1.IdentifyRequest.traits:type_name -> google.protobuf.Struct
 	0, // 1: sdk.profiles.v1.BatchIdentifyRequest.identifies:type_name -> sdk.profiles.v1.IdentifyRequest
-	5, // 2: sdk.profiles.v1.ProfileIdentifyMessage.traits:type_name -> google.protobuf.Struct
-	0, // 3: sdk.profiles.v1.ProfilesSDKService.Identify:input_type -> sdk.profiles.v1.IdentifyRequest
-	2, // 4: sdk.profiles.v1.ProfilesSDKService.BatchIdentify:input_type -> sdk.profiles.v1.BatchIdentifyRequest
-	1, // 5: sdk.profiles.v1.ProfilesSDKService.Identify:output_type -> sdk.profiles.v1.IdentifyResponse
-	3, // 6: sdk.profiles.v1.ProfilesSDKService.BatchIdentify:output_type -> sdk.profiles.v1.BatchIdentifyResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 2: sdk.profiles.v1.BatchIdentifyResponse.invalid_identifies:type_name -> sdk.profiles.v1.InvalidIdentify
+	6, // 3: sdk.profiles.v1.ProfileIdentifyMessage.traits:type_name -> google.protobuf.Struct
+	0, // 4: sdk.profiles.v1.ProfilesSDKService.Identify:input_type -> sdk.profiles.v1.IdentifyRequest
+	2, // 5: sdk.profiles.v1.ProfilesSDKService.BatchIdentify:input_type -> sdk.profiles.v1.BatchIdentifyRequest
+	1, // 6: sdk.profiles.v1.ProfilesSDKService.Identify:output_type -> sdk.profiles.v1.IdentifyResponse
+	3, // 7: sdk.profiles.v1.ProfilesSDKService.BatchIdentify:output_type -> sdk.profiles.v1.BatchIdentifyResponse
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_sdk_profiles_v1_profiles_proto_init() }
@@ -393,7 +471,7 @@ func file_sdk_profiles_v1_profiles_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sdk_profiles_v1_profiles_proto_rawDesc), len(file_sdk_profiles_v1_profiles_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -3,12 +3,14 @@ package events
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
+	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -48,6 +50,7 @@ var (
 	cookielessIdentitySourceCounter  metric.Int64Counter
 	botTaggedCounter                 metric.Int64Counter
 	acceptedCounter                  metric.Int64Counter
+	invalidDroppedCounter            metric.Int64Counter
 )
 
 func init() {
@@ -82,14 +85,18 @@ func init() {
 	)
 	acceptedCounter, _ = meter.Int64Counter(
 		"events.accepted_total",
-		metric.WithDescription("Events published to NATS by BatchCreate, after cookieless drops. auth=pub_key is browser/app SDK traffic, auth=priv_key is server-side."),
+		metric.WithDescription("Events published to NATS by BatchCreate, after invalid and cookieless drops. auth=pub_key is browser/app SDK traffic, auth=priv_key is server-side."),
+	)
+	invalidDroppedCounter, _ = meter.Int64Counter(
+		"events.invalid_dropped_total",
+		metric.WithDescription("Events dropped as invalid_event in dropped_by_reason, keeping the rest of their batch. rule is the first validation rule the event broke, e.g. string.pattern for a kind outside [a-zA-Z0-9_.-], or event_id.unique when it repeats an earlier kept event's event_id. It drops again on every retry, so a sustained count means a tenant is losing events."),
 	)
 }
 
-// Drop reasons, reported BOTH as the `reason` attribute on
-// events.cookieless_dropped_total and as keys of
-// BatchCreateResponse.dropped_by_reason. One constant per reason so the metric
-// label an operator alerts on and the token a client branches on cannot drift
+// Drop reasons, reported BOTH as keys of BatchCreateResponse.dropped_by_reason
+// and on a metric: the `reason` attribute of events.cookieless_dropped_total, or
+// events.invalid_dropped_total for invalid_event. One constant per reason so the
+// metric an operator alerts on and the token a client branches on cannot drift
 // apart.
 const (
 	// dropReasonDayOutOfRange: occur_time fell outside the today/yesterday UTC
@@ -112,9 +119,13 @@ const (
 	// than tallying per event, so it appears on the metric but never in
 	// dropped_by_reason; the client learns it from the error instead.
 	dropReasonIdentityHeadersMissing = "identity_headers_missing"
+	// dropReasonInvalidEvent: the event broke a validation rule or repeated an
+	// earlier kept event's event_id, and is listed in invalid_events. Client-side:
+	// retrying the same payload drops it again.
+	dropReasonInvalidEvent = "invalid_event"
 )
 
-// allDropReasons is the registry of every reason ingest resolution can emit. It
+// allDropReasons is the registry of every reason BatchCreate can emit. It
 // exists so the vocabulary can be checked against the source rather than against
 // a hand-maintained copy of it: TestDropReasons_RegistryMatchesDeclaredConstants
 // reads the dropReason* constants out of this file with go/ast and fails if one
@@ -122,17 +133,18 @@ const (
 // literal, which could only ever agree with itself: adding and emitting a fifth
 // reason left it green.
 //
-// Adding a reason means appending it here AND extending the
-// events.cookieless_dropped_total metric description; the reason is both a metric
-// label and a client-facing wire key, so the two must not drift.
+// Adding a reason means appending it here AND documenting it on the metric that
+// counts it; the reason is both a metric and a client-facing wire key, so the
+// two must not drift.
 var allDropReasons = []string{
 	dropReasonDayOutOfRange,
 	dropReasonSaltUnavailable,
 	dropReasonSaltCorrupt,
 	dropReasonIdentityHeadersMissing,
+	dropReasonInvalidEvent,
 }
 
-// dropTally counts events refused during ingest resolution, keyed by reason.
+// dropTally counts events BatchCreate refused, keyed by reason.
 // A nil tally reads fine (total and len are nil-safe) and BatchCreate relies on
 // that for its empty-batch path; only add requires a constructed map.
 type dropTally map[string]uint32
@@ -151,10 +163,14 @@ func (d dropTally) total() uint32 {
 // and how many the server refused, by reason. Every return path builds its
 // response here so a partial or total drop can never surface as a bare
 // accepted=0 that the caller has to infer a fault from.
-func batchResponse(accepted int, drops dropTally) *connect.Response[eventsv1.BatchCreateResponse] {
+func batchResponse(accepted int, drops dropTally, invalid []*eventsv1.InvalidEvent) *connect.Response[eventsv1.BatchCreateResponse] {
+	for range invalid {
+		drops.add(dropReasonInvalidEvent)
+	}
 	msg := &eventsv1.BatchCreateResponse{
-		Accepted: proto.Uint32(uint32(accepted)),
-		Dropped:  proto.Uint32(drops.total()),
+		Accepted:      proto.Uint32(uint32(accepted)),
+		Dropped:       proto.Uint32(drops.total()),
+		InvalidEvents: invalid,
 	}
 	if len(drops) > 0 {
 		msg.DroppedByReason = drops
@@ -212,17 +228,15 @@ func (s *Server) BatchCreate(
 	if len(events) == 0 {
 		slog.DebugContext(ctx, "received empty event batch",
 			slog.String("project_id", principal.Project.ID))
-		return batchResponse(0, nil), nil
+		return batchResponse(0, nil, nil), nil
 	}
 
-	if err := coreevents.ValidateExternalEvents(events); err != nil {
-		return nil, apperr.Invalid(apperr.ReasonInvalidEventBatch, err.Error())
-	}
+	projectID := principal.Project.ID
+	events, invalid := dropInvalid(ctx, projectID, events)
 
 	// A page unload aborts the request and its cookieless events have no other
 	// copy, so finish the batch. JetStream times out the publish itself.
 	ctx = context.WithoutCancel(ctx)
-	projectID := principal.Project.ID
 	resolveCtx, cancel := context.WithTimeout(ctx, cookielessResolveTimeout)
 	events, drops, err := s.resolveCookieless(resolveCtx, projectID, req.Header(), req.Peer().Addr, events)
 	cancel()
@@ -233,13 +247,13 @@ func (s *Server) BatchCreate(
 		// Every event was refused. Still OK, not an error, but the response now
 		// carries why, so a caller can tell a retryable salt outage apart from
 		// permanently unusable timestamps instead of seeing a bare accepted=0.
-		return batchResponse(0, drops), nil
+		return batchResponse(0, drops, invalid), nil
 	}
 	s.enrichGeo(ctx, projectID, principal.AuthType, req.Header(), events)
 	s.enrichUserAgent(ctx, projectID, principal.AuthType, req.Header(), events)
 	s.enrichBot(ctx, projectID, principal.AuthType, req.Header(), events)
-	s.enrichBotScore(ctx, projectID, req.Header(), events)
-	s.enrichVerifiedBot(ctx, projectID, req.Header(), events)
+	s.enrichBotScore(ctx, projectID, principal.AuthType, req.Header(), events)
+	s.enrichVerifiedBot(ctx, projectID, principal.AuthType, req.Header(), events)
 	s.enrichAttribution(ctx, projectID, events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
@@ -250,12 +264,44 @@ func (s *Server) BatchCreate(
 	}
 	acceptedCounter.Add(ctx, int64(len(events)), metric.WithAttributes(attribute.String("auth", string(principal.AuthType))))
 
-	return batchResponse(len(events), drops), nil
+	return batchResponse(len(events), drops, invalid), nil
+}
+
+// dropInvalid validates each event on its own, so one that breaks a rule is
+// dropped and reported instead of failing the whole batch. So is one repeating an
+// earlier kept event's event_id; the first is kept.
+func dropInvalid(ctx context.Context, projectID string, events []*eventsv1.Event) ([]*eventsv1.Event, []*eventsv1.InvalidEvent) {
+	kept := make([]*eventsv1.Event, 0, len(events))
+	var invalid []*eventsv1.InvalidEvent
+	firstIndex := make(map[string]int, len(events))
+	for i, e := range events {
+		rule, violations := rpc.Violations(protovalidate.Validate(&eventsv1.IncomingEvent{Event: e}))
+		if first, dup := firstIndex[e.GetEventId()]; violations == nil && dup {
+			rule, violations = "event_id.unique", []string{fmt.Sprintf("event.event_id: repeats the event at index %d", first)}
+		}
+		if violations == nil {
+			firstIndex[e.GetEventId()] = i
+			kept = append(kept, e)
+			continue
+		}
+		invalid = append(invalid, &eventsv1.InvalidEvent{
+			Index:      proto.Uint32(uint32(i)),
+			Violations: violations,
+		})
+		invalidDroppedCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("project_id", projectID),
+			attribute.String("rule", rule),
+		))
+	}
+	return kept, invalid
 }
 
 // Scoped to public-key requests: on a private-key request the User-Agent is the
 // customer's HTTP client, so parsing it writes "curl" as the visitor's browser.
 // A relay sets $browser/$os/$device/$mobile per event instead; those already win.
+// A native app's events ($platform set, but not web) are skipped too, since its
+// HTTP client parses as a browser. An event with no $platform, as a raw HTTP API
+// caller may send, is still parsed.
 func (s *Server) enrichUserAgent(ctx context.Context, projectID string, authType rpc.AuthType, h http.Header, events []*eventsv1.Event) {
 	if authType != rpc.AuthTypePublicKey {
 		return
@@ -272,6 +318,9 @@ func (s *Server) enrichUserAgent(ctx context.Context, projectID string, authType
 		return
 	}
 	for _, event := range events {
+		if p := autoPropString(event.AutoProperties, autoprop.PropPlatform); p != "" && p != autoprop.PlatformWeb {
+			continue
+		}
 		if event.AutoProperties == nil {
 			event.AutoProperties = make(map[string]*commonv1.PropertyValue, len(props))
 		}
@@ -326,10 +375,15 @@ func (s *Server) enrichGeo(ctx context.Context, projectID string, authType rpc.A
 	}
 }
 
-func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
+// On a private-key request the CDN scored the customer's backend, not a visitor,
+// so only the strip runs there.
+func (s *Server) enrichBotScore(ctx context.Context, projectID string, authType rpc.AuthType, h http.Header, events []*eventsv1.Event) {
 	// Always strip client-supplied bot score (server-only property).
 	for _, event := range events {
 		delete(event.AutoProperties, autoprop.PropBotScore)
+	}
+	if authType != rpc.AuthTypePublicKey {
+		return
 	}
 
 	botScoreStr := h.Get(cfHeaderBotScore)
@@ -654,10 +708,14 @@ func peerIP(addr string) string {
 	return ip
 }
 
-func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
+// Scoped like enrichBotScore: a private-key request's header describes the backend.
+func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, authType rpc.AuthType, h http.Header, events []*eventsv1.Event) {
 	// Always strip client-supplied verified-bot flag (server-only property).
 	for _, event := range events {
 		delete(event.AutoProperties, autoprop.PropVerifiedBot)
+	}
+	if authType != rpc.AuthTypePublicKey {
+		return
 	}
 
 	raw := h.Get(cfHeaderVerifiedBot)
