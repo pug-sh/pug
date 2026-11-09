@@ -45,7 +45,6 @@ func (e *RedirectError) Unwrap() error { return e.Err }
 type Approval struct {
 	Request    AuthorizationRequest
 	CustomerID string
-	ProjectID  string
 	// SessionID is the approving access token's sid, its refresh family.
 	SessionID string
 }
@@ -58,7 +57,8 @@ type Consent struct {
 	ClientName   string
 	RedirectHost string
 	Loopback     bool
-	Projects     []Project
+	// Projects are what the grant reads, with any added to their orgs later.
+	Projects []Project
 	// CancelURL sends the browser back with access_denied.
 	CancelURL string
 }
@@ -74,7 +74,7 @@ type Project struct {
 // An S256 code_challenge is always 43 base64url characters.
 var challengeShape = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 
-// Describe checks the request for the consent page, which offers every live project
+// Describe checks the request for the consent page, which lists every live project
 // in every org the person belongs to.
 func (s *Service) Describe(ctx context.Context, customerID string, req AuthorizationRequest) (Consent, error) {
 	clientName, err := s.checkRequest(ctx, req)
@@ -178,19 +178,20 @@ func (s *Service) createGrant(ctx context.Context, a Approval, clientName string
 	case err != nil:
 		return "", recordServiceError(ctx, "failed to read the approving session", err, slog.String("customer_id", a.CustomerID))
 	}
-	_, err = r.GetProjectByIDAndOrgMember(ctx, dbread.GetProjectByIDAndOrgMemberParams{ID: a.ProjectID, CustomerID: a.CustomerID})
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return "", ErrProjectNotFound
-	case err != nil:
-		return "", recordServiceError(ctx, "failed to read the approved project", err, slog.String("project_id", a.ProjectID))
-	}
 	email, err := r.GetCustomerEmailByID(ctx, a.CustomerID)
 	if err != nil {
 		return "", recordServiceError(ctx, "failed to read the approving customer", err, slog.String("customer_id", a.CustomerID))
 	}
 	if err := coreorgs.CheckSignInInTx(ctx, r, email, provenDomain.String); err != nil {
 		return "", err
+	}
+	// With no org the grant reads nothing, and its client would loop on reconnecting.
+	orgs, err := r.GetOrgsByCustomerID(ctx, a.CustomerID)
+	switch {
+	case err != nil:
+		return "", recordServiceError(ctx, "failed to read the approving customer's orgs", err, slog.String("customer_id", a.CustomerID))
+	case len(orgs) == 0:
+		return "", ErrNoOrg
 	}
 
 	code := newToken("")
@@ -202,7 +203,6 @@ func (s *Service) createGrant(ctx context.Context, a Approval, clientName string
 		CodeHash:      hashToken(code),
 		CustomerID:    a.CustomerID,
 		ID:            xid.New().String(),
-		ProjectID:     a.ProjectID,
 		ProvenDomain:  provenDomain,
 		RedirectUri:   a.Request.RedirectURI,
 	}); err != nil {

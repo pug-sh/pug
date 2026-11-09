@@ -7,7 +7,6 @@ insert into mcp_grants (
   code_hash,
   customer_id,
   id,
-  project_id,
   proven_domain,
   redirect_uri
 )
@@ -19,14 +18,13 @@ values (
   @code_hash,
   @customer_id,
   @id,
-  @project_id,
   @proven_domain,
   @redirect_uri
 );
 
 -- name: GetMCPGrantByCodeHashForUpdate :one
 -- Unfiltered, so a used code is found and its replay revokes the grant.
-select *
+select client_id, code_challenge, code_expires_at, code_used_at, customer_id, id, redirect_uri, revoke_time
 from mcp_grants
 where code_hash = @code_hash
 for update;

@@ -29,6 +29,7 @@ import (
 	activityrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/activity"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
+	sharedprojectsrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/projects"
 	"github.com/pug-sh/pug/internal/app/server/webhook"
 	"github.com/pug-sh/pug/internal/cookieless"
 	"github.com/pug-sh/pug/internal/core/billing/entitlement"
@@ -56,6 +57,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/geo"
@@ -167,6 +169,8 @@ func start(ctx context.Context, d *deps) error {
 		billingrpc.NewServer(subscriptionSvc, meter.NewReader(dbread.New(d.pgW))), handlerOpts)
 
 	// Shared
+	sharedProjectsPath, sharedProjectsHandler := sharedprojectsv1connect.NewProjectsServiceHandler(
+		sharedprojectsrpc.NewServer(queriesRo, mcpOAuth.Grants), handlerOpts)
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
 	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
@@ -219,6 +223,7 @@ func start(ctx context.Context, d *deps) error {
 	handle(billingPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(billingHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
+	handle(sharedProjectsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(sharedProjectsHandler)))
 	handle(insightsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(insightsHandler)))
 	handle(activityPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(activityHandler)))
 	handle(sharedProfilesPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))

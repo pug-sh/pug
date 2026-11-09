@@ -83,7 +83,7 @@ func (f *fixture) signIn(customerID, provenDomain string) string {
 func (f *fixture) approval(session, verifier string) Approval {
 	req := request(claudeID, claudeRedirect)
 	req.CodeChallenge = oauth2.S256ChallengeFromVerifier(verifier)
-	return Approval{Request: req, CustomerID: f.customer, ProjectID: f.project, SessionID: session}
+	return Approval{Request: req, CustomerID: f.customer, SessionID: session}
 }
 
 // approve allows claude.ai and returns the redirect it gets, with the PKCE verifier.
@@ -190,8 +190,11 @@ func TestConnectAndRefresh(t *testing.T) {
 	}
 
 	access, err := f.svc.ResolveAccessToken(ctx, tokens.AccessToken)
-	if err != nil || access.Customer.ID != f.customer || access.Project.ID != f.project {
-		t.Fatalf("ResolveAccessToken = %+v, %v; want the person and the approved project", access, err)
+	if err != nil || access.Customer.ID != f.customer || access.GrantID == "" {
+		t.Fatalf("ResolveAccessToken = %+v, %v; want the person who approved", access, err)
+	}
+	if project, err := f.svc.ResolveProject(ctx, access.GrantID, f.project); err != nil || project.ID != f.project {
+		t.Fatalf("ResolveProject = %+v, %v; want the person's project", project, err)
 	}
 	if _, err := f.svc.ResolveAccessToken(ctx, tokens.RefreshToken); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("a refresh token resolved as an access token: %v", err)
@@ -401,7 +404,6 @@ func TestLostAccessRevokesAtRefresh(t *testing.T) {
 				f.t.Fatal(err)
 			}
 		},
-		"project deleted": func(f *fixture) { f.exec("update projects set deletion_time = now() where id = $1", f.project) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t, "bob@acme.com")
@@ -414,7 +416,7 @@ func TestLostAccessRevokesAtRefresh(t *testing.T) {
 
 func TestApproveRefusals(t *testing.T) {
 	f := newFixture(t, "bob@acme.com")
-	otherCustomer, _, otherProject := f.signUp("carol@globex.com")
+	otherCustomer, _, _ := f.signUp("carol@globex.com")
 	signedOut := f.signIn(f.customer, "")
 	f.exec("update refresh_tokens set revoked_at = now() where family_id = $1", signedOut)
 	expired := f.signIn(f.customer, "")
@@ -426,21 +428,25 @@ func TestApproveRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		session string
-		project string
 		want    error
 	}{
-		{"a JWT minted without a sid", "", f.project, ErrSessionEnded},
-		{"a signed-out session", signedOut, f.project, ErrSessionEnded},
-		{"an expired session", expired, f.project, ErrSessionEnded},
-		{"another person's session", f.signIn(otherCustomer, ""), f.project, ErrSessionEnded},
-		{"a connection's token family", connection.GrantID, f.project, ErrSessionEnded},
-		{"a project in another org", f.signIn(f.customer, ""), otherProject, ErrProjectNotFound},
+		{"a JWT minted without a sid", "", ErrSessionEnded},
+		{"a signed-out session", signedOut, ErrSessionEnded},
+		{"an expired session", expired, ErrSessionEnded},
+		{"another person's session", f.signIn(otherCustomer, ""), ErrSessionEnded},
+		{"a connection's token family", connection.GrantID, ErrSessionEnded},
 	} {
 		a := f.approval(tc.session, oauth2.GenerateVerifier())
-		a.ProjectID = tc.project
 		if _, err := f.svc.Approve(t.Context(), a); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", tc.name, err, tc.want)
 		}
+	}
+	orgless, _, _ := f.signUp("dave@initech.com")
+	f.exec("delete from org_members where customer_id = $1", orgless)
+	a := f.approval(f.signIn(orgless, ""), oauth2.GenerateVerifier())
+	a.CustomerID = orgless
+	if _, err := f.svc.Approve(t.Context(), a); !errors.Is(err, ErrNoOrg) {
+		t.Errorf("a person in no org: err = %v, want %v", err, ErrNoOrg)
 	}
 	var grants int
 	if err := f.db.PgW.QueryRow(t.Context(), "select count(*) from mcp_grants").Scan(&grants); err != nil || grants != 1 {

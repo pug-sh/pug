@@ -8,9 +8,9 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/mcpgrants/v1;mcpgrantsv1";
 
 // MCPGrantsService backs the consent page at /oauth/authorize and Connected apps.
-// A grant lets one client, such as Claude, read one project as the person who
-// approved it. With OAuth off, every RPC but ListGrants answers FailedPrecondition
-// with MCP_OAUTH_DISABLED.
+// A grant lets one client, such as Claude, read every project in the orgs the
+// person belongs to when they approve, as them. With OAuth off, every RPC but
+// ListGrants answers FailedPrecondition with MCP_OAUTH_DISABLED.
 service MCPGrantsService {
   // Checks an authorization request for the consent page, fetching the client's
   // metadata document. MCP_CLIENT_INVALID, MCP_CLIENT_UNAVAILABLE and
@@ -22,7 +22,8 @@ service MCPGrantsService {
   // Checks the request again and creates the grant and its code. Unauthenticated
   // when the session has ended or its token has no sid, and with SSO_REQUIRED when
   // the person's domain requires an SSO sign-in this session lacks: refreshing the
-  // session then shows the SSO prompt.
+  // session then shows the SSO prompt. FailedPrecondition with MCP_NO_ORG when the
+  // person is in no org, since a grant reads only the orgs they are in.
   rpc ApproveAuthorization(ApproveAuthorizationRequest) returns (ApproveAuthorizationResponse) {}
 
   // Whether OAuth is on, and the person's own live grants.
@@ -54,7 +55,7 @@ message AuthorizationError {
   string redirect_uri = 2;
 }
 
-// Project is a project with its org's name, as the consent page's picker shows it.
+// Project is a project with its org's name.
 message Project {
   string id = 1;
   string display_name = 2;
@@ -78,7 +79,8 @@ message DescribeAuthorizationResponse {
   // The redirect is on a loopback host, so the app runs on the person's computer,
   // where any program can claim the port. Warn before Allow.
   bool loopback_redirect = 4;
-  // Every live project in every org the person belongs to, with any role.
+  // Every live project in every org the person belongs to, with any role. A grant
+  // reads them all, and projects added to those orgs later.
   repeated Project projects = 5;
   // Where Cancel sends the browser: the redirect with error=access_denied, the
   // state and iss. Follow it only if it is https, or http on a loopback host.
@@ -87,11 +89,8 @@ message DescribeAuthorizationResponse {
 
 message ApproveAuthorizationRequest {
   AuthorizationRequest request = 1;
-  // The project picked on the consent page.
-  string project_id = 2 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.len = 20
-  ];
+  reserved 2;
+  reserved project_id;
 }
 
 message ApproveAuthorizationResponse {
@@ -109,16 +108,25 @@ message ListGrantsResponse {
   repeated Grant grants = 2;
 }
 
-// Grant is one connection: one client reading one project as the person.
+// Grant is one connection: one client reading the person's projects as them.
 message Grant {
   string id = 1;
   string client_host = 2;
   // The app's name for itself at approval.
   string client_name = 3;
-  Project project = 4;
+  reserved 4;
+  reserved project;
   google.protobuf.Timestamp create_time = 5;
   // When the client last got a token.
   google.protobuf.Timestamp last_used_time = 6;
+  // The orgs it reads every project of: those the person joined before they
+  // approved and hasn't left since, oldest first.
+  repeated Org orgs = 7;
+}
+
+message Org {
+  string id = 1;
+  string display_name = 2;
 }
 
 message RevokeGrantRequest {

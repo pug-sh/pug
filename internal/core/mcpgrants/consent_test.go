@@ -128,9 +128,9 @@ func TestListGrants(t *testing.T) {
 		t.Fatalf("grants = %v, want %v: the two exchanged ones, newest first", ids, want)
 	}
 	g := grants[0]
-	if g.ClientHost != "claude.ai" || g.ClientName != "Claude" || g.Project.ID != f.project || g.Project.OrgID != f.orgID ||
-		g.Project.OrgDisplayName != "Org of bob@acme.com" || g.CreateTime.IsZero() || g.LastUsedTime.Sub(g.CreateTime) != time.Minute {
-		t.Errorf("grant = %+v, want claude.ai on bob's project, used a minute after it was created", g)
+	if g.ClientHost != "claude.ai" || g.ClientName != "Claude" || !slices.Equal(g.Orgs, []Org{{f.orgID, "Org of bob@acme.com"}}) ||
+		g.CreateTime.IsZero() || g.LastUsedTime.Sub(g.CreateTime) != time.Minute {
+		t.Errorf("grant = %+v, want claude.ai on bob's org, used a minute after it was created", g)
 	}
 
 	// A refreshed grant has two refresh rows, and an idle one no live access token.
@@ -147,9 +147,6 @@ func TestListGrantsHidesDeadGrants(t *testing.T) {
 	for name, kill := range map[string]func(*fixture, Tokens){
 		"revoked": func(f *fixture, tokens Tokens) {
 			f.exec("update mcp_grants set revoke_time = now() where id = $1", f.grantID(tokens))
-		},
-		"project deleted": func(f *fixture, _ Tokens) {
-			f.exec("update projects set deletion_time = now() where id = $1", f.project)
 		},
 		"left the org and was added back": func(f *fixture, _ Tokens) {
 			f.exec("delete from org_members where customer_id = $1", f.customer)
@@ -170,6 +167,26 @@ func TestListGrantsHidesDeadGrants(t *testing.T) {
 				t.Errorf("grants = %+v, want none", grants)
 			}
 		})
+	}
+}
+
+// A grant names the orgs it reads: those its person joined before approving and
+// hasn't left since.
+func TestListGrantsNamesItsOrgs(t *testing.T) {
+	f := newFixture(t, "bob@acme.com")
+	carol := f.another("carol@globex.com")
+	f.join(carol.orgID)
+	dave := f.another("dave@initech.com")
+	f.connect(f.signIn(f.customer, ""))
+	f.join(dave.orgID)
+
+	bobs := Org{f.orgID, "Org of bob@acme.com"}
+	if grants := f.grants(); len(grants) != 1 || !slices.Equal(grants[0].Orgs, []Org{bobs, {carol.orgID, "Org of carol@globex.com"}}) {
+		t.Fatalf("grants = %+v, want one reading bob's and carol's orgs, not the one joined since", grants)
+	}
+	f.exec("delete from org_members where customer_id = $1 and org_id = $2", f.customer, carol.orgID)
+	if grants := f.grants(); len(grants) != 1 || !slices.Equal(grants[0].Orgs, []Org{bobs}) {
+		t.Errorf("grants = %+v, want one reading bob's org alone", grants)
 	}
 }
 

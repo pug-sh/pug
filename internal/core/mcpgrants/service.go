@@ -1,6 +1,6 @@
 // Package mcpgrants makes pug an OAuth authorization server for its own /mcp. A
-// grant is one person letting one client read one project; its token pairs are
-// rows in refresh_tokens.
+// grant lets one client read every project in the orgs its person joined before
+// approving and hasn't left since; its token pairs are rows in refresh_tokens.
 package mcpgrants
 
 import (
@@ -37,6 +37,7 @@ var (
 	ErrClientUnavailable = errors.New("client metadata document could not be loaded")
 	ErrRedirectNotListed = errors.New("redirect_uri is not in the client's metadata document")
 	ErrSessionEnded      = errors.New("the approving session has ended")
+	ErrNoOrg             = errors.New("the approving person belongs to no org")
 	ErrProjectNotFound   = errors.New("project not found")
 	ErrInvalidToken      = errors.New("invalid or expired access token")
 	ErrGrantNotFound     = errors.New("grant not found")

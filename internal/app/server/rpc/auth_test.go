@@ -540,10 +540,12 @@ func TestWithJWTAuth(t *testing.T) {
 
 const goodMCPToken = "mcp_at_good"
 
-// stubTokens resolves exactly goodMCPToken, and counts its lookups.
+// stubTokens resolves exactly goodMCPToken, whose grant reads proj-3 alone, and
+// counts its token lookups.
 type stubTokens struct {
-	err   error // if set, every lookup returns it
-	calls int
+	err        error // if set, every token lookup returns it
+	projectErr error // if set, every project lookup returns it
+	calls      int
 }
 
 func (s *stubTokens) ResolveAccessToken(_ context.Context, token string) (coremcpgrants.Access, error) {
@@ -554,23 +556,34 @@ func (s *stubTokens) ResolveAccessToken(_ context.Context, token string) (coremc
 	case token != goodMCPToken:
 		return coremcpgrants.Access{}, coremcpgrants.ErrInvalidToken
 	}
-	return coremcpgrants.Access{
-		GrantID:  "grant-1",
-		Customer: dbread.Customer{ID: "cust-1"},
-		Project:  dbread.Project{ID: "proj-3", OrgID: "org-3"},
-	}, nil
+	return coremcpgrants.Access{GrantID: "grant-1", Customer: dbread.Customer{ID: "cust-1"}}, nil
 }
 
-// wantMCPPrincipal checks a token acted as the person who approved it, on its project.
-func wantMCPPrincipal(t *testing.T, result any, err error) {
+func (s *stubTokens) ResolveProject(_ context.Context, grantID, projectID string) (dbread.Project, error) {
+	switch {
+	case s.projectErr != nil:
+		return dbread.Project{}, s.projectErr
+	case grantID != "grant-1" || projectID != "proj-3":
+		return dbread.Project{}, coremcpgrants.ErrProjectNotFound
+	}
+	return dbread.Project{ID: "proj-3", OrgID: "org-3"}, nil
+}
+
+// wantMCPPrincipal checks a token acted as the person who approved it, on project,
+// or on none when project is empty.
+func wantMCPPrincipal(t *testing.T, result any, err error, project string) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	p := result.(*Principal)
-	if p.AuthType != AuthTypeMCPToken || p.Customer.ID != "cust-1" || p.Project.ID != "proj-3" ||
+	gotProject := ""
+	if p.Project != nil {
+		gotProject = p.Project.ID
+	}
+	if p.AuthType != AuthTypeMCPToken || p.Customer.ID != "cust-1" || gotProject != project ||
 		p.GrantID != "grant-1" || p.MaskedAPIKey != "" {
-		t.Errorf("principal = %+v, want cust-1 on proj-3 through grant-1", p)
+		t.Errorf("principal = %+v, want cust-1 on %q through grant-1", p, project)
 	}
 }
 
@@ -665,7 +678,52 @@ func TestWithDualAuth(t *testing.T) {
 
 	t.Run("MCP token on a /mcp tool call resolves", func(t *testing.T) {
 		result, err := authFunc(WithLoopback(ctx), newJWTRequest(goodMCPToken, ""))
-		wantMCPPrincipal(t, result, err)
+		wantMCPPrincipal(t, result, err, "")
+	})
+
+	t.Run("MCP token reads a project its grant does", func(t *testing.T) {
+		result, err := authFunc(WithLoopback(ctx), newJWTRequest(goodMCPToken, "proj-3"))
+		wantMCPPrincipal(t, result, err, "proj-3")
+	})
+
+	t.Run("MCP token refused a project its grant doesn't read", func(t *testing.T) {
+		_, err := authFunc(WithLoopback(ctx), newJWTRequest(goodMCPToken, "proj-9"))
+		if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnauthenticated)
+		}
+	})
+
+	t.Run("MCP project lookup failure returns unavailable", func(t *testing.T) {
+		failing := WithDualAuth([]byte("test-jwt-key"), nil, stub, &stubTokens{projectErr: errors.New("connection refused")})
+		_, err := failing(WithLoopback(ctx), newJWTRequest(goodMCPToken, "proj-3"))
+		if got := connect.CodeOf(err); got != connect.CodeUnavailable {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnavailable)
+		}
+	})
+
+	t.Run("MCP token naming a NUL project is refused before the lookup", func(t *testing.T) {
+		failing := WithDualAuth([]byte("test-jwt-key"), nil, stub, &stubTokens{projectErr: errors.New("invalid byte sequence")})
+		_, err := failing(WithLoopback(ctx), newJWTRequest(goodMCPToken, "proj-3\x00"))
+		if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
+			t.Errorf("code = %v (err %v), want %v", got, err, connect.CodeUnauthenticated)
+		}
+	})
+
+	t.Run("private key on a tool call reads only its own project", func(t *testing.T) {
+		own := newRequest("prv_valid456", "")
+		own.Header.Set(HeaderProjectID, "proj-2")
+		if result, err := authFunc(WithLoopback(ctx), own); err != nil || result.(*Principal).Project.ID != "proj-2" {
+			t.Errorf("own project: principal = %+v, %v; want proj-2", result, err)
+		}
+		other := newRequest("prv_valid456", "")
+		other.Header.Set(HeaderProjectID, "proj-9")
+		if _, err := authFunc(WithLoopback(ctx), other); connect.CodeOf(err) != connect.CodeUnauthenticated {
+			t.Errorf("another project: err = %v, want Unauthenticated", err)
+		}
+		// The API itself has always ignored x-project-id beside a key.
+		if result, err := authFunc(ctx, other); err != nil || result.(*Principal).Project.ID != "proj-2" {
+			t.Errorf("off the loopback: principal = %+v, %v; want proj-2", result, err)
+		}
 	})
 }
 
@@ -753,9 +811,10 @@ func TestWithMCPAuth(t *testing.T) {
 		}
 	})
 
+	// The edge knows no project yet: each tool call names its own.
 	t.Run("MCP token acts as the person who approved it", func(t *testing.T) {
-		result, err := authFunc(ctx, newJWTRequest(goodMCPToken, ""))
-		wantMCPPrincipal(t, result, err)
+		result, err := authFunc(ctx, newJWTRequest(goodMCPToken, "proj-3"))
+		wantMCPPrincipal(t, result, err, "")
 	})
 
 	t.Run("unknown MCP token returns error", func(t *testing.T) {

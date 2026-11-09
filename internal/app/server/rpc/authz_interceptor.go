@@ -127,6 +127,11 @@ func resolveOrgID(req connect.AnyRequest, principal *Principal, src authzspec.Or
 		// A customer principal without a project cannot be authorized for a
 		// project-scoped RPC; mirror MustGetPrincipalWithProject's Unauthenticated.
 		if principal.Project == nil {
+			// A model reads this, and a /mcp tool call names its project in project_id.
+			if principal.AuthType == AuthTypeMCPToken {
+				return "", apperr.Unauthenticated(apperr.ReasonUnauthenticated,
+					"project_id is required: list_projects names the projects you can read")
+			}
 			return "", apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 		}
 		return principal.Project.OrgID, nil

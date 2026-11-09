@@ -42,7 +42,7 @@ func (s *Server) DescribeAuthorization(
 	}
 	c, err := s.grants.Describe(ctx, principal.Customer.ID, authorizationRequest(req.Msg.GetRequest()))
 	if err != nil {
-		return nil, approvalError(err, "")
+		return nil, approvalError(err)
 	}
 	projects := make([]*mcpgrantsv1.Project, len(c.Projects))
 	for i, p := range c.Projects {
@@ -72,11 +72,10 @@ func (s *Server) ApproveAuthorization(
 	redirect, err := s.grants.Approve(ctx, coremcpgrants.Approval{
 		Request:    authorizationRequest(req.Msg.GetRequest()),
 		CustomerID: principal.Customer.ID,
-		ProjectID:  req.Msg.GetProjectId(),
 		SessionID:  principal.SessionID,
 	})
 	if err != nil {
-		return nil, approvalError(err, req.Msg.GetProjectId())
+		return nil, approvalError(err)
 	}
 	return connect.NewResponse(&mcpgrantsv1.ApproveAuthorizationResponse{RedirectUri: proto.String(redirect)}), nil
 }
@@ -125,7 +124,7 @@ func (s *Server) RevokeGrant(
 
 // approvalError translates what Describe and Approve return. The service logged
 // and recorded anything unexpected.
-func approvalError(err error, projectID string) error {
+func approvalError(err error) error {
 	if redirectErr, ok := errors.AsType[*coremcpgrants.RedirectError](err); ok {
 		return apperr.Invalid(apperr.ReasonMCPAuthorizationInvalid, "the app's authorization request is invalid",
 			apperr.Detail(&mcpgrantsv1.AuthorizationError{
@@ -148,8 +147,8 @@ func approvalError(err error, projectID string) error {
 	// The app refreshes the session and retries, and the new access token has a sid.
 	case errors.Is(err, coremcpgrants.ErrSessionEnded):
 		return apperr.Unauthenticated(apperr.ReasonUnauthenticated, "the session has ended")
-	case errors.Is(err, coremcpgrants.ErrProjectNotFound):
-		return apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", projectID))
+	case errors.Is(err, coremcpgrants.ErrNoOrg):
+		return apperr.FailedPrecondition(apperr.ReasonMCPNoOrg, "you aren't in any org, so there is nothing to connect")
 	}
 	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 }

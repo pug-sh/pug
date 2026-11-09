@@ -100,9 +100,12 @@ var permissionRegistry = map[string]authzspec.Spec{
 
 	// --- dashboard.mcpgrants.v1.MCPGrantsService ---
 	"/dashboard.mcpgrants.v1.MCPGrantsService/DescribeAuthorization": authzspec.SelfRead("lists only the caller's own projects"),
-	"/dashboard.mcpgrants.v1.MCPGrantsService/ApproveAuthorization":  authzspec.SelfWrite("the grant acts with the caller's own role; the service checks they can read the project"),
+	"/dashboard.mcpgrants.v1.MCPGrantsService/ApproveAuthorization":  authzspec.SelfWrite("the grant acts with the caller's own role, only in orgs they joined before approving"),
 	"/dashboard.mcpgrants.v1.MCPGrantsService/ListGrants":            authzspec.SelfRead("returns only the caller's grants"),
 	"/dashboard.mcpgrants.v1.MCPGrantsService/RevokeGrant":           authzspec.SelfWrite("revokes only the caller's own grant"),
+
+	// --- shared.projects.v1.ProjectsService ---
+	"/shared.projects.v1.ProjectsService/List": authzspec.SelfRead("lists only what the credential reads: a key its own project, a session its person's orgs, a grant the orgs it reads"),
 
 	// --- shared.insights.v1.InsightsService ---
 	"/shared.insights.v1.InsightsService/Query":             authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),

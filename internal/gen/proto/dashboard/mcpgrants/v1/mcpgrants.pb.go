@@ -174,7 +174,7 @@ func (x *AuthorizationError) GetRedirectUri() string {
 	return ""
 }
 
-// Project is a project with its org's name, as the consent page's picker shows it.
+// Project is a project with its org's name.
 type Project struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
@@ -300,7 +300,8 @@ type DescribeAuthorizationResponse struct {
 	// The redirect is on a loopback host, so the app runs on the person's computer,
 	// where any program can claim the port. Warn before Allow.
 	LoopbackRedirect *bool `protobuf:"varint,4,opt,name=loopback_redirect,json=loopbackRedirect" json:"loopback_redirect,omitempty"`
-	// Every live project in every org the person belongs to, with any role.
+	// Every live project in every org the person belongs to, with any role. A grant
+	// reads them all, and projects added to those orgs later.
 	Projects []*Project `protobuf:"bytes,5,rep,name=projects" json:"projects,omitempty"`
 	// Where Cancel sends the browser: the redirect with error=access_denied, the
 	// state and iss. Follow it only if it is https, or http on a loopback host.
@@ -382,10 +383,8 @@ func (x *DescribeAuthorizationResponse) GetCancelUri() string {
 }
 
 type ApproveAuthorizationRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Request *AuthorizationRequest  `protobuf:"bytes,1,opt,name=request" json:"request,omitempty"`
-	// The project picked on the consent page.
-	ProjectId     *string `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Request       *AuthorizationRequest  `protobuf:"bytes,1,opt,name=request" json:"request,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -425,13 +424,6 @@ func (x *ApproveAuthorizationRequest) GetRequest() *AuthorizationRequest {
 		return x.Request
 	}
 	return nil
-}
-
-func (x *ApproveAuthorizationRequest) GetProjectId() string {
-	if x != nil && x.ProjectId != nil {
-		return *x.ProjectId
-	}
-	return ""
 }
 
 type ApproveAuthorizationResponse struct {
@@ -570,17 +562,19 @@ func (x *ListGrantsResponse) GetGrants() []*Grant {
 	return nil
 }
 
-// Grant is one connection: one client reading one project as the person.
+// Grant is one connection: one client reading the person's projects as them.
 type Grant struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Id         *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	ClientHost *string                `protobuf:"bytes,2,opt,name=client_host,json=clientHost" json:"client_host,omitempty"`
 	// The app's name for itself at approval.
 	ClientName *string                `protobuf:"bytes,3,opt,name=client_name,json=clientName" json:"client_name,omitempty"`
-	Project    *Project               `protobuf:"bytes,4,opt,name=project" json:"project,omitempty"`
 	CreateTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
 	// When the client last got a token.
-	LastUsedTime  *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_used_time,json=lastUsedTime" json:"last_used_time,omitempty"`
+	LastUsedTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_used_time,json=lastUsedTime" json:"last_used_time,omitempty"`
+	// The orgs it reads every project of: those the person joined before they
+	// approved and hasn't left since, oldest first.
+	Orgs          []*Org `protobuf:"bytes,7,rep,name=orgs" json:"orgs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -636,13 +630,6 @@ func (x *Grant) GetClientName() string {
 	return ""
 }
 
-func (x *Grant) GetProject() *Project {
-	if x != nil {
-		return x.Project
-	}
-	return nil
-}
-
 func (x *Grant) GetCreateTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreateTime
@@ -657,6 +644,65 @@ func (x *Grant) GetLastUsedTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Grant) GetOrgs() []*Org {
+	if x != nil {
+		return x.Orgs
+	}
+	return nil
+}
+
+type Org struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Org) Reset() {
+	*x = Org{}
+	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Org) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Org) ProtoMessage() {}
+
+func (x *Org) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Org.ProtoReflect.Descriptor instead.
+func (*Org) Descriptor() ([]byte, []int) {
+	return file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Org) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *Org) GetDisplayName() string {
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
+	}
+	return ""
+}
+
 type RevokeGrantRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GrantId       *string                `protobuf:"bytes,1,opt,name=grant_id,json=grantId" json:"grant_id,omitempty"`
@@ -666,7 +712,7 @@ type RevokeGrantRequest struct {
 
 func (x *RevokeGrantRequest) Reset() {
 	*x = RevokeGrantRequest{}
-	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[10]
+	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +724,7 @@ func (x *RevokeGrantRequest) String() string {
 func (*RevokeGrantRequest) ProtoMessage() {}
 
 func (x *RevokeGrantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[10]
+	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +737,7 @@ func (x *RevokeGrantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeGrantRequest.ProtoReflect.Descriptor instead.
 func (*RevokeGrantRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDescGZIP(), []int{10}
+	return file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RevokeGrantRequest) GetGrantId() string {
@@ -709,7 +755,7 @@ type RevokeGrantResponse struct {
 
 func (x *RevokeGrantResponse) Reset() {
 	*x = RevokeGrantResponse{}
-	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[11]
+	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -721,7 +767,7 @@ func (x *RevokeGrantResponse) String() string {
 func (*RevokeGrantResponse) ProtoMessage() {}
 
 func (x *RevokeGrantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[11]
+	mi := &file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -734,7 +780,7 @@ func (x *RevokeGrantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeGrantResponse.ProtoReflect.Descriptor instead.
 func (*RevokeGrantResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDescGZIP(), []int{11}
+	return file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDescGZIP(), []int{12}
 }
 
 var File_dashboard_mcpgrants_v1_mcpgrants_proto protoreflect.FileDescriptor
@@ -769,27 +815,29 @@ const file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDesc = "" +
 	"\x11loopback_redirect\x18\x04 \x01(\bR\x10loopbackRedirect\x12;\n" +
 	"\bprojects\x18\x05 \x03(\v2\x1f.dashboard.mcpgrants.v1.ProjectR\bprojects\x12\x1d\n" +
 	"\n" +
-	"cancel_uri\x18\x06 \x01(\tR\tcancelUri\"\x91\x01\n" +
+	"cancel_uri\x18\x06 \x01(\tR\tcancelUri\"w\n" +
 	"\x1bApproveAuthorizationRequest\x12F\n" +
-	"\arequest\x18\x01 \x01(\v2,.dashboard.mcpgrants.v1.AuthorizationRequestR\arequest\x12*\n" +
-	"\n" +
-	"project_id\x18\x02 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x98\x01\x14R\tprojectId\"A\n" +
+	"\arequest\x18\x01 \x01(\v2,.dashboard.mcpgrants.v1.AuthorizationRequestR\arequestJ\x04\b\x02\x10\x03R\n" +
+	"project_id\"A\n" +
 	"\x1cApproveAuthorizationResponse\x12!\n" +
 	"\fredirect_uri\x18\x01 \x01(\tR\vredirectUri\"\x13\n" +
 	"\x11ListGrantsRequest\"p\n" +
 	"\x12ListGrantsResponse\x12#\n" +
 	"\roauth_enabled\x18\x01 \x01(\bR\foauthEnabled\x125\n" +
-	"\x06grants\x18\x02 \x03(\v2\x1d.dashboard.mcpgrants.v1.GrantR\x06grants\"\x93\x02\n" +
+	"\x06grants\x18\x02 \x03(\v2\x1d.dashboard.mcpgrants.v1.GrantR\x06grants\"\x98\x02\n" +
 	"\x05Grant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vclient_host\x18\x02 \x01(\tR\n" +
 	"clientHost\x12\x1f\n" +
 	"\vclient_name\x18\x03 \x01(\tR\n" +
-	"clientName\x129\n" +
-	"\aproject\x18\x04 \x01(\v2\x1f.dashboard.mcpgrants.v1.ProjectR\aproject\x12;\n" +
+	"clientName\x12;\n" +
 	"\vcreate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12@\n" +
-	"\x0elast_used_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\flastUsedTime\"<\n" +
+	"\x0elast_used_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\flastUsedTime\x12/\n" +
+	"\x04orgs\x18\a \x03(\v2\x1b.dashboard.mcpgrants.v1.OrgR\x04orgsJ\x04\b\x04\x10\x05R\aproject\"8\n" +
+	"\x03Org\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\"<\n" +
 	"\x12RevokeGrantRequest\x12&\n" +
 	"\bgrant_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x98\x01\x14R\agrantId\"\x15\n" +
 	"\x13RevokeGrantResponse2\xf2\x03\n" +
@@ -812,7 +860,7 @@ func file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDescGZIP() []byte {
 	return file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDescData
 }
 
-var file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_dashboard_mcpgrants_v1_mcpgrants_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_dashboard_mcpgrants_v1_mcpgrants_proto_goTypes = []any{
 	(*AuthorizationRequest)(nil),          // 0: dashboard.mcpgrants.v1.AuthorizationRequest
 	(*AuthorizationError)(nil),            // 1: dashboard.mcpgrants.v1.AuthorizationError
@@ -824,26 +872,27 @@ var file_dashboard_mcpgrants_v1_mcpgrants_proto_goTypes = []any{
 	(*ListGrantsRequest)(nil),             // 7: dashboard.mcpgrants.v1.ListGrantsRequest
 	(*ListGrantsResponse)(nil),            // 8: dashboard.mcpgrants.v1.ListGrantsResponse
 	(*Grant)(nil),                         // 9: dashboard.mcpgrants.v1.Grant
-	(*RevokeGrantRequest)(nil),            // 10: dashboard.mcpgrants.v1.RevokeGrantRequest
-	(*RevokeGrantResponse)(nil),           // 11: dashboard.mcpgrants.v1.RevokeGrantResponse
-	(*timestamppb.Timestamp)(nil),         // 12: google.protobuf.Timestamp
+	(*Org)(nil),                           // 10: dashboard.mcpgrants.v1.Org
+	(*RevokeGrantRequest)(nil),            // 11: dashboard.mcpgrants.v1.RevokeGrantRequest
+	(*RevokeGrantResponse)(nil),           // 12: dashboard.mcpgrants.v1.RevokeGrantResponse
+	(*timestamppb.Timestamp)(nil),         // 13: google.protobuf.Timestamp
 }
 var file_dashboard_mcpgrants_v1_mcpgrants_proto_depIdxs = []int32{
 	0,  // 0: dashboard.mcpgrants.v1.DescribeAuthorizationRequest.request:type_name -> dashboard.mcpgrants.v1.AuthorizationRequest
 	2,  // 1: dashboard.mcpgrants.v1.DescribeAuthorizationResponse.projects:type_name -> dashboard.mcpgrants.v1.Project
 	0,  // 2: dashboard.mcpgrants.v1.ApproveAuthorizationRequest.request:type_name -> dashboard.mcpgrants.v1.AuthorizationRequest
 	9,  // 3: dashboard.mcpgrants.v1.ListGrantsResponse.grants:type_name -> dashboard.mcpgrants.v1.Grant
-	2,  // 4: dashboard.mcpgrants.v1.Grant.project:type_name -> dashboard.mcpgrants.v1.Project
-	12, // 5: dashboard.mcpgrants.v1.Grant.create_time:type_name -> google.protobuf.Timestamp
-	12, // 6: dashboard.mcpgrants.v1.Grant.last_used_time:type_name -> google.protobuf.Timestamp
+	13, // 4: dashboard.mcpgrants.v1.Grant.create_time:type_name -> google.protobuf.Timestamp
+	13, // 5: dashboard.mcpgrants.v1.Grant.last_used_time:type_name -> google.protobuf.Timestamp
+	10, // 6: dashboard.mcpgrants.v1.Grant.orgs:type_name -> dashboard.mcpgrants.v1.Org
 	3,  // 7: dashboard.mcpgrants.v1.MCPGrantsService.DescribeAuthorization:input_type -> dashboard.mcpgrants.v1.DescribeAuthorizationRequest
 	5,  // 8: dashboard.mcpgrants.v1.MCPGrantsService.ApproveAuthorization:input_type -> dashboard.mcpgrants.v1.ApproveAuthorizationRequest
 	7,  // 9: dashboard.mcpgrants.v1.MCPGrantsService.ListGrants:input_type -> dashboard.mcpgrants.v1.ListGrantsRequest
-	10, // 10: dashboard.mcpgrants.v1.MCPGrantsService.RevokeGrant:input_type -> dashboard.mcpgrants.v1.RevokeGrantRequest
+	11, // 10: dashboard.mcpgrants.v1.MCPGrantsService.RevokeGrant:input_type -> dashboard.mcpgrants.v1.RevokeGrantRequest
 	4,  // 11: dashboard.mcpgrants.v1.MCPGrantsService.DescribeAuthorization:output_type -> dashboard.mcpgrants.v1.DescribeAuthorizationResponse
 	6,  // 12: dashboard.mcpgrants.v1.MCPGrantsService.ApproveAuthorization:output_type -> dashboard.mcpgrants.v1.ApproveAuthorizationResponse
 	8,  // 13: dashboard.mcpgrants.v1.MCPGrantsService.ListGrants:output_type -> dashboard.mcpgrants.v1.ListGrantsResponse
-	11, // 14: dashboard.mcpgrants.v1.MCPGrantsService.RevokeGrant:output_type -> dashboard.mcpgrants.v1.RevokeGrantResponse
+	12, // 14: dashboard.mcpgrants.v1.MCPGrantsService.RevokeGrant:output_type -> dashboard.mcpgrants.v1.RevokeGrantResponse
 	11, // [11:15] is the sub-list for method output_type
 	7,  // [7:11] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
@@ -862,7 +911,7 @@ func file_dashboard_mcpgrants_v1_mcpgrants_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDesc), len(file_dashboard_mcpgrants_v1_mcpgrants_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

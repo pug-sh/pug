@@ -30,12 +30,16 @@ func projectToRPC(p coremcpgrants.Project) *mcpgrantsv1.Project {
 }
 
 func grantToRPC(g coremcpgrants.Grant) *mcpgrantsv1.Grant {
+	orgs := make([]*mcpgrantsv1.Org, len(g.Orgs))
+	for i, o := range g.Orgs {
+		orgs[i] = &mcpgrantsv1.Org{Id: proto.String(o.ID), DisplayName: proto.String(o.DisplayName)}
+	}
 	return &mcpgrantsv1.Grant{
 		Id:           proto.String(g.ID),
 		ClientHost:   proto.String(g.ClientHost),
 		ClientName:   proto.String(g.ClientName),
-		Project:      projectToRPC(g.Project),
 		CreateTime:   timestamppb.New(g.CreateTime),
 		LastUsedTime: timestamppb.New(g.LastUsedTime),
+		Orgs:         orgs,
 	}
 }
