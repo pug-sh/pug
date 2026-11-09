@@ -47,6 +47,7 @@ message InvalidEvent {
   // Position in BatchCreateRequest.events, counting from 0.
   uint32 index = 1;
   // The rules it broke, e.g. "event.kind: does not match regex pattern `^[a-zA-Z0-9_.-]+$`".
+  // At most 10, then one more entry that counts the rest, e.g. "and 3 more".
   repeated string violations = 2;
 }
 

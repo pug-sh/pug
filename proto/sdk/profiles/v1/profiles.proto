@@ -94,7 +94,8 @@ message InvalidIdentify {
   // Position in BatchIdentifyRequest.identifies, counting from 0.
   uint32 index = 1;
   // The rules it broke, e.g. "external_id: external_id must not start with the
-  // reserved 'cookieless-' prefix".
+  // reserved 'cookieless-' prefix". At most 10, then one more entry that counts
+  // the rest, e.g. "and 3 more".
   repeated string violations = 2;
 }
 

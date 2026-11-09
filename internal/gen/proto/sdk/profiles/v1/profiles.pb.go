@@ -247,7 +247,8 @@ type InvalidIdentify struct {
 	// Position in BatchIdentifyRequest.identifies, counting from 0.
 	Index *uint32 `protobuf:"varint,1,opt,name=index" json:"index,omitempty"`
 	// The rules it broke, e.g. "external_id: external_id must not start with the
-	// reserved 'cookieless-' prefix".
+	// reserved 'cookieless-' prefix". At most 10, then one more entry that counts
+	// the rest, e.g. "and 3 more".
 	Violations    []string `protobuf:"bytes,2,rep,name=violations" json:"violations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -3,8 +3,10 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +14,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/correlation"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -514,5 +518,81 @@ func TestErrorInterceptor_validationBecomesBadRequest(t *testing.T) {
 		if fv.GetDescription() == "" {
 			t.Error("field violation has empty Description")
 		}
+	}
+}
+
+// overCapViolations is one event of empty property values, which break the oneof
+// rule once per entry.
+func overCapViolations(t *testing.T) *protovalidate.ValidationError {
+	t.Helper()
+	props := make(map[string]*commonv1.PropertyValue, 30)
+	for i := range 30 {
+		props[fmt.Sprintf("k%d", i)] = &commonv1.PropertyValue{}
+	}
+	err := protovalidate.Validate(&eventsv1.IncomingEvent{Event: &eventsv1.Event{CustomProperties: props}})
+	vErr, ok := errors.AsType[*protovalidate.ValidationError](err)
+	if !ok || len(vErr.Violations) <= maxViolationLines {
+		t.Fatalf("want more than %d violations, got %v", maxViolationLines, err)
+	}
+	return vErr
+}
+
+func TestViolationsCapsLinesAndCountsTheRest(t *testing.T) {
+	vErr := overCapViolations(t)
+
+	rule, lines := Violations(vErr)
+
+	if len(lines) != maxViolationLines+1 {
+		t.Fatalf("got %d lines, want %d", len(lines), maxViolationLines+1)
+	}
+	if want := fmt.Sprintf("and %d more", len(vErr.Violations)-maxViolationLines); lines[maxViolationLines] != want {
+		t.Errorf("last line = %q, want %q", lines[maxViolationLines], want)
+	}
+	if want := vErr.Violations[0].Proto.GetRuleId(); rule != want {
+		t.Errorf("rule = %q, want the first violation's %q", rule, want)
+	}
+}
+
+func TestViolationsUnderTheCapListsEveryOne(t *testing.T) {
+	err := protovalidate.Validate(&eventsv1.IncomingEvent{Event: &eventsv1.Event{}})
+	vErr, ok := errors.AsType[*protovalidate.ValidationError](err)
+	if !ok || len(vErr.Violations) == 0 || len(vErr.Violations) > maxViolationLines {
+		t.Fatalf("want 1 to %d violations, got %v", maxViolationLines, err)
+	}
+
+	_, lines := Violations(err)
+
+	if len(lines) != len(vErr.Violations) {
+		t.Errorf("got %d lines, want one per violation (%d)", len(lines), len(vErr.Violations))
+	}
+}
+
+// The validate interceptor's message renders every violation; the response must not.
+func TestErrorInterceptor_capsAValidationErrorsMessageAndBadRequest(t *testing.T) {
+	vErr := overCapViolations(t)
+
+	got := testInterceptor(t, context.Background(), connect.NewError(connect.CodeInvalidArgument, vErr))
+
+	var connectErr *connect.Error
+	if !errors.As(got, &connectErr) {
+		t.Fatalf("want *connect.Error, got %T", got)
+	}
+	msg := connectErr.Message()
+	if n := strings.Count(msg, "\n - "); n != maxViolationLines+1 {
+		t.Errorf("message has %d lines, want %d:\n%s", n, maxViolationLines+1, msg)
+	}
+	if want := fmt.Sprintf("\n - and %d more", len(vErr.Violations)-maxViolationLines); !strings.HasSuffix(msg, want) {
+		t.Errorf("message does not end with %q:\n%s", want, msg)
+	}
+	var br *errdetails.BadRequest
+	for _, d := range connectErr.Details() {
+		if m, e := d.Value(); e == nil {
+			if b, ok := m.(*errdetails.BadRequest); ok {
+				br = b
+			}
+		}
+	}
+	if n := len(br.GetFieldViolations()); n != maxViolationLines {
+		t.Errorf("BadRequest has %d field violations, want %d", n, maxViolationLines)
 	}
 }

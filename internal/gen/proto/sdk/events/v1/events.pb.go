@@ -156,6 +156,7 @@ type InvalidEvent struct {
 	// Position in BatchCreateRequest.events, counting from 0.
 	Index *uint32 `protobuf:"varint,1,opt,name=index" json:"index,omitempty"`
 	// The rules it broke, e.g. "event.kind: does not match regex pattern `^[a-zA-Z0-9_.-]+$`".
+	// At most 10, then one more entry that counts the rest, e.g. "and 3 more".
 	Violations    []string `protobuf:"bytes,2,rep,name=violations" json:"violations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
