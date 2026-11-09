@@ -83,22 +83,25 @@ func TestBatchIdentify_Served(t *testing.T) {
 		items         []*sdkprofilesv1.IdentifyRequest
 		wantCode      connect.Code // 0 means success
 		wantPublished int
+		wantSkipped   int
 	}{
 		{name: "public key", key: servedPublicKey, items: []*sdkprofilesv1.IdentifyRequest{valid}, wantPublished: 1},
 		{name: "private key", key: servedPrivateKey, items: []*sdkprofilesv1.IdentifyRequest{valid}, wantPublished: 1},
 		{name: "no key", items: []*sdkprofilesv1.IdentifyRequest{valid}, wantCode: connect.CodeUnauthenticated},
 		{name: "unknown key", key: "pub_unknown", items: []*sdkprofilesv1.IdentifyRequest{valid}, wantCode: connect.CodeUnauthenticated},
 		{
-			name:     "one invalid item",
-			key:      servedPrivateKey,
-			items:    []*sdkprofilesv1.IdentifyRequest{valid, identify(t, "cookieless-x", "", "", nil)},
-			wantCode: connect.CodeInvalidArgument,
+			name:          "one invalid item",
+			key:           servedPrivateKey,
+			items:         []*sdkprofilesv1.IdentifyRequest{valid, identify(t, "cookieless-x", "", "", nil)},
+			wantPublished: 1,
+			wantSkipped:   1,
 		},
 		{
-			name:     "one empty external id",
-			key:      servedPrivateKey,
-			items:    []*sdkprofilesv1.IdentifyRequest{valid, identify(t, "", "", "", nil)},
-			wantCode: connect.CodeInvalidArgument,
+			name:          "one empty external id",
+			key:           servedPrivateKey,
+			items:         []*sdkprofilesv1.IdentifyRequest{valid, identify(t, "", "", "", nil)},
+			wantPublished: 1,
+			wantSkipped:   1,
 		},
 		{
 			name:     "1001 items",
@@ -125,8 +128,11 @@ func TestBatchIdentify_Served(t *testing.T) {
 			case err != nil:
 				t.Fatalf("unexpected error: %v", err)
 			default:
-				if got, want := res.Msg.GetAccepted(), uint32(len(tc.items)); got != want {
+				if got, want := res.Msg.GetAccepted(), uint32(len(tc.items)-tc.wantSkipped); got != want {
 					t.Errorf("accepted = %d, want %d", got, want)
+				}
+				if got := len(res.Msg.GetInvalidIdentifies()); got != tc.wantSkipped {
+					t.Errorf("invalid_identifies has %d entries, want %d", got, tc.wantSkipped)
 				}
 			}
 			if msgs := publishedIdentifies(t, spy); len(msgs) != tc.wantPublished {

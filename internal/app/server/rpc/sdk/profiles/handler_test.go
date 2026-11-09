@@ -163,6 +163,37 @@ func TestIdentify_StripsClientSuppliedIP(t *testing.T) {
 	}
 }
 
+// jsonb can't hold a NUL and the worker would fail the whole identify on one, so the
+// trait holding it is dropped and the rest, the merge and the device link still apply.
+func TestIdentify_DropsNULTraits(t *testing.T) {
+	spy := &spyJetStream{}
+	traits, _ := structpb.NewStruct(map[string]any{
+		"note":   "a\x00b",
+		"a\x00b": "key",
+		"plan":   "pro",
+	})
+	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
+		ExternalId:  proto.String("user-42"),
+		Traits:      traits,
+		AnonymousId: proto.String("anon-1"),
+		DeviceId:    proto.String("device-1"),
+	})
+	if _, err := NewServer(spy).Identify(sdkContext("proj-test"), req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs := publishedIdentifies(t, spy)
+	if len(msgs) != 1 {
+		t.Fatalf("published %d messages, want 1", len(msgs))
+	}
+	if got := msgs[0].GetTraits().GetFields(); len(got) != 1 || got["plan"].GetStringValue() != "pro" {
+		t.Errorf("traits = %v, want plan=pro only", got)
+	}
+	if msgs[0].GetAnonymousId() != "anon-1" || msgs[0].GetDeviceId() != "device-1" {
+		t.Errorf("message = %v, want anonymous_id and device_id kept", msgs[0])
+	}
+}
+
 func TestIdentify_NilTraitsIsSafe(t *testing.T) {
 	spy := &spyJetStream{}
 	srv := NewServer(spy)

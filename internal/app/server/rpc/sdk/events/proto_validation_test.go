@@ -1,6 +1,7 @@
 package events
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,10 @@ func resolvedCookielessEvent() *eventsv1.Event {
 	return e
 }
 
+func incoming(e *eventsv1.Event) *eventsv1.IncomingEvent {
+	return &eventsv1.IncomingEvent{Event: e}
+}
+
 func TestEventValidation_TwoStageContract(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -47,46 +52,46 @@ func TestEventValidation_TwoStageContract(t *testing.T) {
 		wantErr string // substring of the violation id/message; "" = must pass
 	}{
 		{"sdk_normal_event_ok",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{validEvent()}}, ""},
+			incoming(validEvent()), ""},
 		{"sdk_cookieless_empty_identity_ok",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{cookielessEvent()}}, ""},
+			incoming(cookielessEvent()), ""},
 		{"sdk_normal_missing_distinct_id_rejected",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{func() *eventsv1.Event {
+			incoming(func() *eventsv1.Event {
 				e := validEvent()
 				e.DistinctId = nil
 				return e
-			}()}}, "required unless cookieless"},
+			}()), "required unless cookieless"},
 		{"sdk_cookieless_with_distinct_id_rejected",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{func() *eventsv1.Event {
+			incoming(func() *eventsv1.Event {
 				e := cookielessEvent()
 				e.DistinctId = proto.String("anon-u1")
 				return e
-			}()}}, "must not send distinct_id"},
+			}()), "must not send distinct_id"},
 		{"sdk_cookieless_with_session_id_rejected",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{func() *eventsv1.Event {
+			incoming(func() *eventsv1.Event {
 				e := cookielessEvent()
 				e.SessionId = proto.String("f47ac10b-58cc-4372-a567-0e02b2c3d483")
 				return e
-			}()}}, "must not send distinct_id"},
+			}()), "must not send distinct_id"},
 		{"sdk_spoofed_prefix_rejected",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{func() *eventsv1.Event {
+			incoming(func() *eventsv1.Event {
 				e := validEvent()
 				e.DistinctId = proto.String("cookieless-fake")
 				return e
-			}()}}, "reserved 'cookieless-' prefix"},
+			}()), "reserved 'cookieless-' prefix"},
 		{"sdk_bad_session_uuid_rejected",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{func() *eventsv1.Event {
+			incoming(func() *eventsv1.Event {
 				e := validEvent()
 				e.SessionId = proto.String("not-a-uuid")
 				return e
-			}()}}, "session_id"},
+			}()), "session_id"},
 		// The two-stage pin: the post-resolution shape must pass the internal
 		// envelope but fail the SDK boundary — that asymmetry is the design.
 		{"envelope_resolved_cookieless_ok",
 			&eventsv1.EventBatch{ProjectId: proto.String("p1"),
 				Events: []*eventsv1.Event{resolvedCookielessEvent()}}, ""},
 		{"sdk_resolved_shape_rejected_at_boundary",
-			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{resolvedCookielessEvent()}},
+			incoming(resolvedCookielessEvent()),
 			"must not send distinct_id"},
 		{"envelope_normal_missing_identity_rejected",
 			&eventsv1.EventBatch{ProjectId: proto.String("p1"),
@@ -95,6 +100,28 @@ func TestEventValidation_TwoStageContract(t *testing.T) {
 					e.DistinctId = nil
 					return e
 				}()}}, "required unless cookieless"},
+		// A rule at the request level would fail the whole batch, so each of these
+		// must be left to the handler.
+		{"batch_leaves_event_rules_to_the_handler",
+			&eventsv1.BatchCreateRequest{Events: []*eventsv1.Event{
+				func() *eventsv1.Event {
+					e := validEvent()
+					e.Kind = proto.String("Order Completed")
+					return e
+				}(),
+				func() *eventsv1.Event {
+					e := validEvent()
+					e.DistinctId = proto.String("cookieless-fake")
+					return e
+				}(),
+				func() *eventsv1.Event {
+					e := cookielessEvent()
+					e.DistinctId = proto.String("anon-u1")
+					return e
+				}(),
+			}}, ""},
+		{"batch_over_max_items_rejected",
+			&eventsv1.BatchCreateRequest{Events: slices.Repeat([]*eventsv1.Event{validEvent()}, 1001)}, "1000"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

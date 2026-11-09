@@ -85,8 +85,9 @@ message GetActivityFeedRequest {
   string page_token = 6;
   // Optional. Filter by multiple event types with per-event property filters.
   repeated common.v1.EventFilter events = 7 [(buf.validate.field).repeated.max_items = 50];
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   bool include_bots = 8;
 }
 
@@ -135,8 +136,9 @@ message GetEventExplorerRequest {
   string page_token = 6;
   // Optional. Filter by multiple event types with per-event property filters.
   repeated common.v1.EventFilter events = 7 [(buf.validate.field).repeated.max_items = 50];
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   bool include_bots = 8;
 }
 
@@ -164,7 +166,7 @@ message GetPropertyValuesRequest {
   }];
   common.v1.PropertySource source = 2 [(buf.validate.field) = {
     required: true
-    enum: {defined_only: true}
+    enum: {defined_only: true, not_in: [0]}
   }];
   string event_kind = 3 [(buf.validate.field) = {
     string: {pattern: "^[a-zA-Z0-9_.-]*$"}
@@ -179,8 +181,9 @@ message GetActivityHeatmapRequest {
   string distinct_id = 1 [(buf.validate.field).required = true];
   // Optional. Defaults to the last 60 days when omitted.
   common.v1.TimeRange time_range = 2;
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   bool include_bots = 3;
 }
 
@@ -224,8 +227,9 @@ message GetProfileSessionsRequest {
   string page_token = 3;
   // Optional. Defaults to PROFILE_SESSION_SORT_STARTED_AT.
   ProfileSessionSort sort = 4 [(buf.validate.field).enum = {defined_only: true}];
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   bool include_bots = 5;
   // Optional. Restricts to sessions with an event in the window; omitted means the
   // profile's whole history. Every page aggregates the window, so narrowing it is
@@ -264,8 +268,9 @@ message GetProfileSessionsResponse {
 
 message GetProfileStatsRequest {
   string distinct_id = 1 [(buf.validate.field).required = true];
-  // Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-  // and datacenter networks) is EXCLUDED by default. Set true to include bots.
+  // Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+  // from a public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default. Set true to include bots.
   bool include_bots = 2;
 }
 

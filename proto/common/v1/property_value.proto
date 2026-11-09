@@ -23,8 +23,8 @@ message PropertyValue {
     // upstream rather than embedded as a property value. Note: max_len
     // counts codepoints, not bytes — multi-byte UTF-8 (emoji, CJK) can
     // exceed 1 KiB on the wire at this limit. Switch to max_bytes if a
-    // hard byte cap is required. Values exceeding the limit are rejected
-    // at the validate interceptor with CodeInvalidArgument (not truncated).
+    // hard byte cap is required. An event with a longer value is dropped
+    // as invalid_event, not truncated.
     //
     // Empty-string note: the filter expression cannot distinguish a
     // custom_properties value of "" from an absent key — both project to ''

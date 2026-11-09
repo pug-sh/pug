@@ -99,8 +99,9 @@ type GetActivityFeedRequest struct {
 	PageToken *string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
 	Events []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,8,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -356,8 +357,9 @@ type GetEventExplorerRequest struct {
 	PageToken *string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
 	Events []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,8,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -611,8 +613,9 @@ type GetActivityHeatmapRequest struct {
 	DistinctId *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	// Optional. Defaults to the last 60 days when omitted.
 	TimeRange *v1.TimeRange `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,3,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -781,8 +784,9 @@ type GetProfileSessionsRequest struct {
 	PageToken *string `protobuf:"bytes,3,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Defaults to PROFILE_SESSION_SORT_STARTED_AT.
 	Sort *ProfileSessionSort `protobuf:"varint,4,opt,name=sort,enum=shared.activity.v1.ProfileSessionSort" json:"sort,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	IncludeBots *bool `protobuf:"varint,5,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	// Optional. Restricts to sessions with an event in the window; omitted means the
 	// profile's whole history. Every page aggregates the window, so narrowing it is
@@ -1039,8 +1043,9 @@ func (x *GetProfileSessionsResponse) GetNextPageToken() string {
 type GetProfileStatsRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	DistinctId *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	// Optional. Traffic tagged as automated at ingest ($bot: crawler user agents
-	// and datacenter networks) is EXCLUDED by default. Set true to include bots.
+	// Optional. Traffic tagged as automated at ingest ($bot, set only on web events
+	// from a public key: a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen) is EXCLUDED by default. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,2,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1333,10 +1338,11 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"(event_explorer.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xc9\x03\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xcb\x03\n" +
 	"\x18GetPropertyValuesRequest\x12S\n" +
-	"\fproperty_key\x18\x01 \x01(\tB0\xbaH-\xc8\x01\x01r(2&^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$R\vpropertyKey\x12>\n" +
-	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x127\n" +
+	"\fproperty_key\x18\x01 \x01(\tB0\xbaH-\xc8\x01\x01r(2&^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$R\vpropertyKey\x12@\n" +
+	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\r\xbaH\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x06source\x127\n" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind:\xde\x01\xbaH\xda\x01\x1a\xd7\x01\n" +
 	"2get_property_values_request.auto_key_dollar_prefix\x12?auto property keys must start with '$' (for example '$browser')\x1a`this.source != common.v1.PropertySource.PROPERTY_SOURCE_AUTO|| this.property_key.startsWith('$')\"3\n" +

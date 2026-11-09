@@ -144,3 +144,19 @@ func fieldPathString(fp *validatepb.FieldPath) string {
 	}
 	return strings.Join(parts, ".")
 }
+
+// Violations renders a validation error one line per violation, plus the first
+// rule broken, for a batch that skips an invalid item instead of failing whole.
+func Violations(err error) (firstRule string, lines []string) {
+	if err == nil {
+		return "", nil
+	}
+	vErr, ok := errors.AsType[*protovalidate.ValidationError](err)
+	if !ok || len(vErr.Violations) == 0 {
+		return "", []string{err.Error()}
+	}
+	for _, v := range vErr.Violations {
+		lines = append(lines, v.String())
+	}
+	return vErr.Violations[0].Proto.GetRuleId(), lines
+}

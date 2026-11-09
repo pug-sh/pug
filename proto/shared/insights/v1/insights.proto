@@ -230,10 +230,11 @@ message InsightQuerySpec {
   // Country-choropleth query. Only valid when insight_type == MAP.
   MapQuery map = 13;
 
-  // Traffic tagged as automated at ingest ($bot: crawler user agents and
-  // datacenter networks) is EXCLUDED by default from every insight and every
-  // metric. Session metrics and user flow judge a session whole: one tagged
-  // event excludes the session. Set true to include bots.
+  // Traffic tagged as automated at ingest ($bot, set only on web events from a
+  // public key: a known crawler, a datacenter network or headless Chrome's
+  // 800x600 screen) is EXCLUDED by default from every insight and every metric.
+  // Session metrics and user flow judge a session whole: one tagged event
+  // excludes the session. Set true to include bots.
   bool include_bots = 14;
 
   option (buf.validate.message).cel = {
@@ -977,7 +978,7 @@ message GetPropertyValuesRequest {
   }];
   common.v1.PropertySource source = 2 [(buf.validate.field) = {
     required: true
-    enum: {defined_only: true}
+    enum: {defined_only: true, not_in: [0]}
   }];
   string event_kind = 3 [(buf.validate.field) = {
     string: {pattern: "^[a-zA-Z0-9_.-]*$"}

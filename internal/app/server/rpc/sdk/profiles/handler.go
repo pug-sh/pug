@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -20,6 +21,7 @@ import (
 	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -29,13 +31,25 @@ import (
 // max_payload, with room left for the envelope and trace headers.
 const maxCoalescedBytes = 900 << 10
 
-var ipStrippedCounter metric.Int64Counter
+var (
+	ipStrippedCounter      metric.Int64Counter
+	nulTraitDroppedCounter metric.Int64Counter
+	invalidSkippedCounter  metric.Int64Counter
+)
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/app/server/rpc/sdk/profiles")
 	ipStrippedCounter, _ = meter.Int64Counter(
 		"profiles.identify_ip_stripped_total",
 		metric.WithDescription("A $ip trait was stripped during Identify or BatchIdentify because the visitor IP must never be persisted. Our SDKs never add it, so a non-zero count means a caller supplied an IP in traits."),
+	)
+	nulTraitDroppedCounter, _ = meter.Int64Counter(
+		"profiles.identify_nul_trait_dropped_total",
+		metric.WithDescription("A trait was dropped during Identify or BatchIdentify because its key, or a string in it, held a NUL, which Postgres can't store. The rest of the identify still applies."),
+	)
+	invalidSkippedCounter, _ = meter.Int64Counter(
+		"profiles.batch_identify_invalid_skipped_total",
+		metric.WithDescription("A BatchIdentify item broke a validation rule and was skipped, keeping the rest of its batch (listed in invalid_identifies). rule is the first rule it broke. It is skipped again on every retry."),
 	)
 }
 
@@ -59,6 +73,7 @@ func (s *Server) Identify(
 		return nil, err
 	}
 
+	dropNULTraits(ctx, principal.Project.ID, req.Msg.GetTraits())
 	if err := s.publishIdentify(ctx, principal.Project.ID, req.Msg); err != nil {
 		return nil, err
 	}
@@ -66,9 +81,10 @@ func (s *Server) Identify(
 	return connect.NewResponse(&sdkprofilesv1.IdentifyResponse{}), nil
 }
 
-// BatchIdentify merges what it can with coalesce, then publishes each message as
-// Identify publishes one, stopping at the first failure. It isn't atomic: a client
-// retrying the batch repeats whatever was already published.
+// BatchIdentify skips invalid items, merges what it can with coalesce, then
+// publishes each message as Identify publishes one, stopping at the first failure.
+// It isn't atomic: a client retrying the batch repeats whatever was already
+// published.
 func (s *Server) BatchIdentify(
 	ctx context.Context,
 	req *connect.Request[sdkprofilesv1.BatchIdentifyRequest],
@@ -78,7 +94,12 @@ func (s *Server) BatchIdentify(
 		return nil, err
 	}
 
-	items := req.Msg.GetIdentifies()
+	items, invalid := skipInvalid(ctx, principal.Project.ID, req.Msg.GetIdentifies())
+	// Per item, before merging: a later item's dropped trait must not erase an
+	// earlier item's value for the same key.
+	for _, item := range items {
+		dropNULTraits(ctx, principal.Project.ID, item.GetTraits())
+	}
 	messages := coalesce(items)
 	for i, message := range messages {
 		if err := s.publishIdentify(ctx, principal.Project.ID, message); err != nil {
@@ -91,7 +112,8 @@ func (s *Server) BatchIdentify(
 
 	return connect.NewResponse(&sdkprofilesv1.BatchIdentifyResponse{
 		// Items, not messages: fewer than sent would read as refused.
-		Accepted: proto.Uint32(uint32(len(items))),
+		Accepted:          proto.Uint32(uint32(len(items))),
+		InvalidIdentifies: invalid,
 	}), nil
 }
 
@@ -99,11 +121,10 @@ func (s *Server) BatchIdentify(
 // The identify worker runs concurrently, so separate messages for one user can apply
 // in either order; one message gives the result of applying them in order.
 //
-// Three kinds of item stay out of a merge. One carrying anonymous_id or device_id stays
+// Two kinds of item stay out of a merge. One carrying anonymous_id or device_id stays
 // where it is, because those act across users and moving it could change the outcome.
 // One that would take a message past maxCoalescedBytes starts a new message, which later
-// items join. One holding a NUL stays alone: the worker can't store it and fails the
-// whole message, so it must cost only itself.
+// items join.
 func coalesce(items []*sdkprofilesv1.IdentifyRequest) []*sdkprofilesv1.IdentifyRequest {
 	type latest struct {
 		message *sdkprofilesv1.IdentifyRequest
@@ -112,10 +133,6 @@ func coalesce(items []*sdkprofilesv1.IdentifyRequest) []*sdkprofilesv1.IdentifyR
 	messages := make([]*sdkprofilesv1.IdentifyRequest, 0, len(items))
 	byUser := make(map[string]*latest, len(items))
 	for _, item := range items {
-		if traitsHaveNUL(item.GetTraits()) {
-			messages = append(messages, item)
-			continue
-		}
 		size := proto.Size(item)
 		onlySetsTraits := item.GetAnonymousId() == "" && item.GetDeviceId() == ""
 		last, seen := byUser[item.GetExternalId()]
@@ -138,6 +155,40 @@ func mergeTraits(into, from *sdkprofilesv1.IdentifyRequest) {
 		return
 	}
 	maps.Copy(into.Traits.Fields, from.GetTraits().GetFields())
+}
+
+// skipInvalid validates each item on its own, so one that breaks a rule is skipped
+// and reported instead of failing the whole batch.
+func skipInvalid(ctx context.Context, projectID string, items []*sdkprofilesv1.IdentifyRequest) ([]*sdkprofilesv1.IdentifyRequest, []*sdkprofilesv1.InvalidIdentify) {
+	kept := make([]*sdkprofilesv1.IdentifyRequest, 0, len(items))
+	var invalid []*sdkprofilesv1.InvalidIdentify
+	for i, item := range items {
+		rule, violations := rpc.Violations(protovalidate.Validate(item))
+		if violations == nil {
+			kept = append(kept, item)
+			continue
+		}
+		invalid = append(invalid, &sdkprofilesv1.InvalidIdentify{
+			Index:      proto.Uint32(uint32(i)),
+			Violations: violations,
+		})
+		invalidSkippedCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("project_id", projectID),
+			attribute.String("rule", rule),
+		))
+	}
+	return kept, invalid
+}
+
+// dropNULTraits drops each trait whose key, or any string in it, holds a NUL: jsonb
+// can't store one, and the worker would fail the whole identify on it.
+func dropNULTraits(ctx context.Context, projectID string, traits *structpb.Struct) {
+	for key, value := range traits.GetFields() {
+		if strings.ContainsRune(key, 0) || valueHasNUL(value) {
+			delete(traits.Fields, key)
+			nulTraitDroppedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("project_id", projectID)))
+		}
+	}
 }
 
 // traitsHaveNUL reports a NUL in any key or string, at any depth. It is Go rather than

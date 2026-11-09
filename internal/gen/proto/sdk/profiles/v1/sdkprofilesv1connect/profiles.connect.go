@@ -51,7 +51,8 @@ type ProfilesSDKServiceClient interface {
 	// worker. Items for one external_id that only set traits may merge in order,
 	// later values winning. It is not atomic: an error can follow a partial publish,
 	// and a retry repeats what was already published. The worker applies separate
-	// messages in no guaranteed order.
+	// messages in no guaranteed order. An item that breaks a validation rule is
+	// skipped and listed in invalid_identifies; the rest are still queued.
 	BatchIdentify(context.Context, *connect.Request[v1.BatchIdentifyRequest]) (*connect.Response[v1.BatchIdentifyResponse], error)
 }
 
@@ -107,7 +108,8 @@ type ProfilesSDKServiceHandler interface {
 	// worker. Items for one external_id that only set traits may merge in order,
 	// later values winning. It is not atomic: an error can follow a partial publish,
 	// and a retry repeats what was already published. The worker applies separate
-	// messages in no guaranteed order.
+	// messages in no guaranteed order. An item that breaks a validation rule is
+	// skipped and listed in invalid_identifies; the rest are still queued.
 	BatchIdentify(context.Context, *connect.Request[v1.BatchIdentifyRequest]) (*connect.Response[v1.BatchIdentifyResponse], error)
 }
 
