@@ -156,12 +156,7 @@ func renderInsightTile(
 		return nil, "invalid query parameters: " + err.Error(), nil
 	}
 
-	assembled := &insightsv1.QueryRequest{
-		Spec:        spec,
-		TimeRange:   timeRange,
-		Granularity: granularity.Enum(),
-		Timezone:    &timezone,
-	}
+	assembled := tileQuery(spec, timeRange, granularity, timezone)
 	if err := protovalidate.Validate(assembled); err != nil {
 		slog.WarnContext(ctx, "dashboard tile query invalid",
 			slog.String("tile_id", tile.ID), slog.String("reason", err.Error()))
@@ -186,4 +181,14 @@ func renderInsightTile(
 		return nil, "query failed", nil
 	}
 	return result, "", nil
+}
+
+// tileQuery is the request an insight tile runs as on its dashboard.
+func tileQuery(spec *insightsv1.InsightQuerySpec, timeRange *commonv1.TimeRange, granularity insightsv1.Granularity, timezone string) *insightsv1.QueryRequest {
+	return &insightsv1.QueryRequest{
+		Spec:        spec,
+		TimeRange:   timeRange,
+		Granularity: granularity.Enum(),
+		Timezone:    &timezone,
+	}
 }
