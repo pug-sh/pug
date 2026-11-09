@@ -11,4 +11,6 @@ type config struct {
 	// the server exposes the credential-less AuthService.DemoSignIn viewer login.
 	// Off everywhere else so the demo login can't be minted on a real deployment.
 	DemoEnabled bool `env:"PUG_DEMO_ENABLED,default=false"`
+	// Where shared.dashboards.v1 links a dashboard; empty leaves it without a link.
+	DashboardBaseURL string `env:"PUG_DASHBOARD_BASE_URL"`
 }

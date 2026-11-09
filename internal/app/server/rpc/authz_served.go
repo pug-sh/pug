@@ -18,6 +18,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/dashboards/v1/shareddashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1connect"
@@ -45,6 +46,7 @@ var servedServices = []struct {
 	{usagev1connect.UsageServiceName, reflect.TypeFor[usagev1connect.UsageServiceHandler]()},
 	{billingv1connect.BillingServiceName, reflect.TypeFor[billingv1connect.BillingServiceHandler]()},
 	{sharedprojectsv1connect.ProjectsServiceName, reflect.TypeFor[sharedprojectsv1connect.ProjectsServiceHandler]()},
+	{shareddashboardsv1connect.DashboardsServiceName, reflect.TypeFor[shareddashboardsv1connect.DashboardsServiceHandler]()},
 	{insightsv1connect.InsightsServiceName, reflect.TypeFor[insightsv1connect.InsightsServiceHandler]()},
 	{activityv1connect.ActivityServiceName, reflect.TypeFor[activityv1connect.ActivityServiceHandler]()},
 	{profilesv1connect.ProfilesServiceName, reflect.TypeFor[profilesv1connect.ProfilesServiceHandler]()},

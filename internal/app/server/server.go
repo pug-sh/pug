@@ -27,6 +27,7 @@ import (
 	eventsrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/events"
 	sdkprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/profiles"
 	activityrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/activity"
+	shareddashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/dashboards"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
 	sharedprojectsrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/projects"
@@ -55,6 +56,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/dashboards/v1/shareddashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/projects/v1/sharedprojectsv1connect"
@@ -124,7 +126,7 @@ func start(ctx context.Context, d *deps) error {
 		projects.NewServer(projectsSvc), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
 		dashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
-	sharedDashboardsPath, sharedDashboardsHandler := publicdashboardsv1connect.NewSharedDashboardsServiceHandler(
+	publicDashboardsPath, publicDashboardsHandler := publicdashboardsv1connect.NewSharedDashboardsServiceHandler(
 		publicdashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
 
 	email, err := newEmail(ctx, queriesRo, d.redis.Unwrap())
@@ -171,6 +173,8 @@ func start(ctx context.Context, d *deps) error {
 	// Shared
 	sharedProjectsPath, sharedProjectsHandler := sharedprojectsv1connect.NewProjectsServiceHandler(
 		sharedprojectsrpc.NewServer(queriesRo, mcpOAuth.Grants), handlerOpts)
+	sharedDashboardsPath, sharedDashboardsHandler := shareddashboardsv1connect.NewDashboardsServiceHandler(
+		shareddashboardsrpc.NewServer(dashboardsSvc, d.dashboardURL), handlerOpts)
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
 	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
@@ -210,7 +214,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Public (CORS, no auth)
 	handle(authPath, pogrpc.WithCORS(ctx, d.corsOrigins, authHandler))
-	handle(sharedDashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedDashboardsHandler))
+	handle(publicDashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, publicDashboardsHandler))
 
 	// Dashboard only (CORS + JWT auth)
 	handle(orgsPath, pogrpc.WithCORS(ctx, d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
@@ -224,6 +228,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	handle(sharedProjectsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(sharedProjectsHandler)))
+	handle(sharedDashboardsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(sharedDashboardsHandler)))
 	handle(insightsPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(insightsHandler)))
 	handle(activityPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(activityHandler)))
 	handle(sharedProfilesPath, pogrpc.WithCORS(ctx, d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))

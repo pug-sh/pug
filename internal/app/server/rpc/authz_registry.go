@@ -107,6 +107,11 @@ var permissionRegistry = map[string]authzspec.Spec{
 	// --- shared.projects.v1.ProjectsService ---
 	"/shared.projects.v1.ProjectsService/List": authzspec.SelfRead("lists only what the credential reads: a key its own project, a session its person's orgs, a grant the orgs it reads"),
 
+	// --- shared.dashboards.v1.DashboardsService ---
+	"/shared.dashboards.v1.DashboardsService/List":   authzspec.ProjGated(authz.ResourceDashboard, authz.ActionRead),
+	"/shared.dashboards.v1.DashboardsService/Get":    authzspec.ProjGated(authz.ResourceDashboard, authz.ActionRead),
+	"/shared.dashboards.v1.DashboardsService/Upsert": authzspec.ProjGated(authz.ResourceDashboard, authz.ActionUpdate, "creates or edits a dashboard; creating and updating need the same roles"),
+
 	// --- shared.insights.v1.InsightsService ---
 	"/shared.insights.v1.InsightsService/Query":             authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),
 	"/shared.insights.v1.InsightsService/SegmentUsers":      authzspec.ProjGated(authz.ResourceInsight, authz.ActionRead),

@@ -23,10 +23,10 @@ import (
 // MaxDashboardTiles is the most tiles a dashboard holds, as in the app's Upsert.
 const MaxDashboardTiles = 100
 
-// unitsPerColumn maps the app's 12 display columns onto the stored 72-unit grid.
-const unitsPerColumn = 6
+// UnitsPerColumn maps the app's 12 display columns onto the stored 72-unit grid.
+const UnitsPerColumn = 6
 
-const gridUnits = 12 * unitsPerColumn
+const gridUnits = 12 * UnitsPerColumn
 
 var (
 	ErrDashboardChanged   = errors.New("dashboard changed since it was read")
@@ -404,29 +404,29 @@ func (t *patchTile) setView(chart dashboardsv1.DashboardTileViewMode, retyped bo
 func defaultSize(p TilePayload) (w, h int32) {
 	insight, ok := p.Content.(InsightTile)
 	if !ok {
-		return 4 * unitsPerColumn, 16
+		return 4 * UnitsPerColumn, 16
 	}
 	switch insight.Spec.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		if len(insight.Spec.GetBreakdowns()) > 0 {
-			return 12 * unitsPerColumn, 51
+			return 12 * UnitsPerColumn, 51
 		}
-		return 12 * unitsPerColumn, 26
+		return 12 * UnitsPerColumn, 26
 	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
-		return 12 * unitsPerColumn, 40
+		return 12 * UnitsPerColumn, 40
 	case insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW:
-		return 12 * unitsPerColumn, 32
+		return 12 * UnitsPerColumn, 32
 	case insightsv1.InsightType_INSIGHT_TYPE_MAP:
-		return 6 * unitsPerColumn, 26
+		return 6 * UnitsPerColumn, 26
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 		insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 		insightsv1.InsightType_INSIGHT_TYPE_TOP_K:
 	}
 	switch p.ViewMode {
 	case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI:
-		return 3 * unitsPerColumn, 16
+		return 3 * UnitsPerColumn, 16
 	case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE:
-		return 6 * unitsPerColumn, 24
+		return 6 * UnitsPerColumn, 24
 	case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA,
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED,
@@ -435,7 +435,7 @@ func defaultSize(p TilePayload) (w, h int32) {
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY,
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_MAP:
 	}
-	return 6 * unitsPerColumn, 22
+	return 6 * UnitsPerColumn, 22
 }
 
 // minHeight is the app's floor for a tile's height.
@@ -453,7 +453,7 @@ type rect struct{ x, y, w, h int32 }
 func (t *patchTile) rect() rect {
 	pos := t.payload.Position
 	if pos == nil {
-		return rect{0, 0, 6 * unitsPerColumn, 18}
+		return rect{0, 0, 6 * UnitsPerColumn, 18}
 	}
 	return rect{pos.GetX(), pos.GetY(), pos.GetW(), max(pos.GetH(), minHeight(t.payload))}
 }
