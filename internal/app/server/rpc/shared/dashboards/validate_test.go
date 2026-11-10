@@ -108,6 +108,7 @@ func TestUpsertRequestRules(t *testing.T) {
 		{"w past the grid", with(create(), func(r *shareddashboardsv1.UpsertRequest) { r.Tiles[0].Position = pos(0, 0, 13, 22) })},
 		{"x + w past the grid", with(create(), func(r *shareddashboardsv1.UpsertRequest) { r.Tiles[0].Position = pos(8, 0, 6, 22) })},
 		{"negative y", with(create(), func(r *shareddashboardsv1.UpsertRequest) { r.Tiles[0].Position = pos(0, -1, 6, 22) })},
+		{"y past 100000", with(create(), func(r *shareddashboardsv1.UpsertRequest) { r.Tiles[0].Position = pos(0, 100001, 6, 22) })},
 		{"h of zero", with(create(), func(r *shareddashboardsv1.UpsertRequest) { r.Tiles[0].Position = pos(0, 0, 6, 0) })},
 		{"h past 800", with(create(), func(r *shareddashboardsv1.UpsertRequest) { r.Tiles[0].Position = pos(0, 0, 6, 801) })},
 		{"position without x", with(create(), func(r *shareddashboardsv1.UpsertRequest) { r.Tiles[0].Position.X = nil })},

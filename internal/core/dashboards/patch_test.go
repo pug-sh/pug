@@ -196,9 +196,11 @@ func TestPatchDashboard_EditKeepsWhatItDoesNotName(t *testing.T) {
 	seeded := seedBoard(t, svc, projectID,
 		UpsertTileInput{Payload: TilePayload{
 			DisplayName: "A",
+			Description: "About A",
 			Content:     InsightTile{Spec: trendsSpec("signup")},
 			ViewMode:    viewArea,
 			Compare:     dashboardsv1.ComparePeriod_COMPARE_PERIOD_PRIOR,
+			Header:      &dashboardsv1.TileHeader{Icon: proto.String("chart"), HideTitle: proto.Bool(true)},
 			Thresholds: []*dashboardsv1.ThresholdRule{{
 				Operator: dashboardsv1.ThresholdRule_OPERATOR_GTE.Enum(),
 				Value:    proto.Float64(5),
@@ -207,7 +209,13 @@ func TestPatchDashboard_EditKeepsWhatItDoesNotName(t *testing.T) {
 			Visualization: &dashboardsv1.VisualizationOptions{YAxisFormat: dashboardsv1.VisualizationOptions_Y_AXIS_FORMAT_COMPACT.Enum()},
 			Position:      gridPos(0, 0, 36, 22),
 		}},
-		UpsertTileInput{Payload: TilePayload{DisplayName: "B", Content: MarkdownTile{Body: "notes"}, Position: gridPos(36, 0, 36, 22)}},
+		UpsertTileInput{Payload: TilePayload{
+			DisplayName: "B",
+			Description: "About B",
+			Content:     MarkdownTile{Body: "notes"},
+			Header:      &dashboardsv1.TileHeader{Borderless: proto.Bool(true)},
+			Position:    gridPos(36, 0, 36, 22),
+		}},
 		UpsertTileInput{Payload: TilePayload{DisplayName: "C", Content: InsightTile{Spec: trendsSpec("purchase")}, Position: gridPos(0, 22, 72, 22)}},
 	)
 	a, b, c := seeded.Tiles[0], seeded.Tiles[1], seeded.Tiles[2]
@@ -252,6 +260,91 @@ func TestPatchDashboard_EditKeepsWhatItDoesNotName(t *testing.T) {
 	}
 	if !dash.UpdateTime.Time.Equal(res.UpdateTime) {
 		t.Errorf("result update_time = %v, stored %v", res.UpdateTime, dash.UpdateTime.Time)
+	}
+
+	again, err := svc.PatchDashboard(ctx, projectID, PatchDashboardInput{ID: seeded.Dashboard.ID, UpdateTime: res.UpdateTime})
+	if err != nil {
+		t.Fatalf("PatchDashboard changing nothing: %v", err)
+	}
+	if !again.UpdateTime.Equal(res.UpdateTime) {
+		t.Errorf("a call changing nothing moved update_time from %v to %v", res.UpdateTime, again.UpdateTime)
+	}
+}
+
+func TestPatchDashboard_ChangeSpec(t *testing.T) {
+	svc, projectID := newPatchTestService(t)
+	ctx := context.Background()
+	split := trendsSpec("signup")
+	split.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$platform")}}
+	seeded := seedBoard(t, svc, projectID,
+		UpsertTileInput{Payload: TilePayload{DisplayName: "Same type", Content: InsightTile{Spec: split}, ViewMode: viewArea, Position: gridPos(0, 0, 36, 22)}},
+		UpsertTileInput{Payload: TilePayload{DisplayName: "Retyped", Content: InsightTile{Spec: trendsSpec("signup")}, ViewMode: viewArea, Position: gridPos(36, 0, 36, 22)}},
+		UpsertTileInput{Payload: TilePayload{DisplayName: "Charted", Content: InsightTile{Spec: funnelSpec()}, ViewMode: viewBar, Position: gridPos(0, 22, 72, 26)}},
+	)
+	same, retyped, charted := seeded.Tiles[0], seeded.Tiles[1], seeded.Tiles[2]
+
+	res, err := svc.PatchDashboard(ctx, projectID, PatchDashboardInput{
+		ID:         seeded.Dashboard.ID,
+		UpdateTime: seeded.Dashboard.UpdateTime.Time,
+		Tiles: []PatchTileInput{
+			{ID: same.ID, Spec: trendsSpec("purchase")},
+			{ID: retyped.ID, Spec: funnelSpec()},
+			{ID: charted.ID, Spec: trendsSpec("signup"), ViewMode: viewKPI},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PatchDashboard: %v", err)
+	}
+
+	// A spec replaces the stored one whole, and a new insight type takes its own
+	// view unless the call picks a chart.
+	_, tiles := loadBoard(t, svc, projectID, seeded.Dashboard.ID)
+	for _, tc := range []struct {
+		name string
+		id   string
+		spec *insightsv1.InsightQuerySpec
+		view dashboardsv1.DashboardTileViewMode
+	}{
+		{"same type", same.ID, trendsSpec("purchase"), viewArea},
+		{"retyped", retyped.ID, funnelSpec(), viewBar},
+		{"retyped with a chart", charted.ID, trendsSpec("signup"), viewKPI},
+	} {
+		msg := tileMessage(t, tiles[tc.id])
+		if !proto.Equal(msg.GetInsight().GetSpec(), tc.spec) || msg.GetViewMode() != tc.view {
+			t.Errorf("%s: %v with %v, want %v with %v", tc.name, msg.GetViewMode(), msg.GetInsight().GetSpec(), tc.view, tc.spec)
+		}
+	}
+
+	_, err = svc.PatchDashboard(ctx, projectID, PatchDashboardInput{
+		ID:         seeded.Dashboard.ID,
+		UpdateTime: res.UpdateTime,
+		Tiles:      []PatchTileInput{{ID: same.ID, Spec: funnelSpec(), ViewMode: viewLine}},
+	})
+	if _, ok := errors.AsType[*InvalidTileError](err); !ok {
+		t.Errorf("a chart on a tile retyped to funnel: err = %v, want InvalidTileError", err)
+	}
+}
+
+// The overlap check sees each tile where Get reports it, so a tile placed in
+// space Get shows as free is accepted.
+func TestCheckPlacementSeesTilesAsGetShowsThem(t *testing.T) {
+	stored := patchTile{id: "between", label: "tile between", payload: TilePayload{
+		Content:  MarkdownTile{Body: "notes"},
+		Position: gridPos(40, 0, 20, 16),
+	}}
+	for _, tc := range []struct {
+		name string
+		at   *dashboardsv1.GridPosition
+		ok   bool
+	}{
+		{"beside a tile stored between columns", gridPos(24, 0, 18, 16), true},
+		{"over the column it rounds into", gridPos(30, 0, 18, 16), false},
+	} {
+		placed := patchTile{label: "tiles[0]", placed: true, payload: TilePayload{Content: MarkdownTile{Body: "new"}, Position: tc.at}}
+		err := checkPlacement([]patchTile{stored, placed})
+		if _, refused := errors.AsType[*TilePositionError](err); (tc.ok && err != nil) || (!tc.ok && !refused) {
+			t.Errorf("%s: err = %v", tc.name, err)
+		}
 	}
 }
 

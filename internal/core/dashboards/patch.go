@@ -26,7 +26,18 @@ const MaxDashboardTiles = 100
 // UnitsPerColumn maps the app's 12 display columns onto the stored 72-unit grid.
 const UnitsPerColumn = 6
 
-const gridUnits = 12 * UnitsPerColumn
+const (
+	displayColumns = 12
+	gridUnits      = displayColumns * UnitsPerColumn
+)
+
+// The shared Position's bounds, which every position Get reports keeps: the MCP
+// output schema carries them, and a client rejects a result that breaks them.
+const (
+	minTileWidth  = 2
+	maxTileY      = 100000
+	maxTileHeight = 800
+)
 
 var (
 	ErrDashboardChanged   = errors.New("dashboard changed since it was read")
@@ -40,10 +51,22 @@ type InvalidTileError struct{ Message string }
 
 func (e *InvalidTileError) Error() string { return e.Message }
 
-// TileOverlapError refuses a tile placed over another. Message names both.
-type TileOverlapError struct{ Message string }
+// TilePositionError refuses a position the call gave a tile: shorter than the
+// tile's floor, or over another tile. Message names the tiles.
+type TilePositionError struct{ Message string }
 
-func (e *TileOverlapError) Error() string { return e.Message }
+func (e *TilePositionError) Error() string { return e.Message }
+
+// TileQueryError refuses an insight tile whose query doesn't fit the dashboard's
+// window. Message names the tile.
+type TileQueryError struct{ Message string }
+
+func (e *TileQueryError) Error() string { return e.Message }
+
+// TileNotFoundError refuses a tile id that isn't on the dashboard.
+type TileNotFoundError struct{ ID string }
+
+func (e *TileNotFoundError) Error() string { return "tile " + e.ID + " isn't on the dashboard" }
 
 // PatchDashboardInput creates a dashboard (empty ID) or edits one. A nil field
 // keeps the stored value, or takes the default on create.
@@ -234,7 +257,7 @@ func mergeTiles(ctx context.Context, stored []dbread.DashboardTile, in PatchDash
 	removed := make(map[string]bool, len(in.Remove))
 	for _, id := range in.Remove {
 		if !onDashboard[id] {
-			return nil, nil, ErrDashboardTileNotFound
+			return nil, nil, &TileNotFoundError{ID: id}
 		}
 		removed[id] = true
 	}
@@ -244,7 +267,7 @@ func mergeTiles(ctx context.Context, stored []dbread.DashboardTile, in PatchDash
 			continue
 		}
 		if !onDashboard[c.ID] {
-			return nil, nil, ErrDashboardTileNotFound
+			return nil, nil, &TileNotFoundError{ID: c.ID}
 		}
 		if _, dup := changes[c.ID]; dup || removed[c.ID] {
 			return nil, nil, &InvalidTileError{Message: fmt.Sprintf("tile %s appears more than once", c.ID)}
@@ -327,7 +350,10 @@ func newPatchTile(c PatchTileInput, i int) (patchTile, error) {
 	default:
 		return patchTile{}, &InvalidTileError{Message: t.label + " needs exactly one of spec and markdown"}
 	}
-	return t, t.setView(c.ViewMode, true)
+	if err := t.setView(c.ViewMode, true); err != nil {
+		return patchTile{}, err
+	}
+	return t, nil
 }
 
 func (t *patchTile) change(c PatchTileInput) error {
@@ -448,14 +474,38 @@ func minHeight(p TilePayload) int32 {
 
 type rect struct{ x, y, w, h int32 }
 
-// rect is where the app draws the tile: a tile with no position sits at the
-// app's fallback, and a short one grows to its floor.
+// rect is where Get reports the tile, so the overlap check agrees with what the
+// caller read.
 func (t *patchTile) rect() rect {
-	pos := t.payload.Position
+	x, y, w, h := displayPosition(t.payload.Position, minHeight(t.payload))
+	return rect{x, y, w, h}
+}
+
+// DisplayPosition is where Get reports tile on the app's 12 columns. It rounds x
+// and the right edge as the app's storedPositionToDisplay does and grows a short
+// tile to its floor, as the app draws it, then keeps the result inside the shared
+// Position's bounds. A tile with no position sits at the app's fallback.
+func DisplayPosition(tile *dashboardsv1.DashboardTile) (x, y, w, h int32) {
+	p := payloadFromTile(tile)
+	return displayPosition(p.Position, minHeight(p))
+}
+
+func displayPosition(pos *dashboardsv1.GridPosition, floor int32) (x, y, w, h int32) {
 	if pos == nil {
-		return rect{0, 0, 6 * UnitsPerColumn, 18}
+		return 0, 0, 6, 18
 	}
-	return rect{pos.GetX(), pos.GetY(), pos.GetW(), max(pos.GetH(), minHeight(t.payload))}
+	// Clamped first so rounding a stored x near the int32 limit can't overflow.
+	px, pw := min(pos.GetX(), gridUnits), min(pos.GetW(), gridUnits)
+	x = min(max(columns(px), 0), displayColumns-minTileWidth)
+	right := min(displayColumns, max(x+minTileWidth, columns(max(px+1, px+pw))))
+	y = min(max(pos.GetY(), 0), maxTileY)
+	h = min(max(pos.GetH(), floor), maxTileHeight)
+	return x, y, right - x, h
+}
+
+// columns is Math.round(units / 6) for the non-negative units the app stores.
+func columns(units int32) int32 {
+	return (units + UnitsPerColumn/2) / UnitsPerColumn
 }
 
 func (a rect) overlaps(b rect) bool {
@@ -506,12 +556,12 @@ func checkPlacement(tiles []patchTile) error {
 			continue
 		}
 		if floor := minHeight(t.payload); t.payload.Position.GetH() < floor {
-			return &InvalidTileError{Message: fmt.Sprintf("%s: h must be at least %d", t.label, floor)}
+			return &TilePositionError{Message: fmt.Sprintf("%s: h must be at least %d", t.label, floor)}
 		}
 		placed := t.rect()
 		for j := range tiles {
 			if j != i && placed.overlaps(tiles[j].rect()) {
-				return &TileOverlapError{Message: t.label + " overlaps " + tiles[j].label}
+				return &TilePositionError{Message: t.label + " overlaps " + tiles[j].label}
 			}
 		}
 	}
@@ -527,7 +577,7 @@ func checkQueries(tiles []patchTile, timeRange *commonv1.TimeRange, granularity 
 			continue
 		}
 		if err := protovalidate.Validate(tileQuery(insight.Spec, timeRange, granularity, timezone)); err != nil {
-			return &InvalidTileError{Message: fmt.Sprintf("%s doesn't fit the dashboard's window: %v", t.label, err)}
+			return &TileQueryError{Message: fmt.Sprintf("%s doesn't fit the dashboard's window: %v", t.label, err)}
 		}
 	}
 	return nil

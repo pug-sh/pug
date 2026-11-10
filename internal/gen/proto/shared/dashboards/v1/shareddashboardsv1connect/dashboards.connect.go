@@ -53,21 +53,26 @@ type DashboardsServiceClient interface {
 	// chart and its position on the 12-column grid. Pass update_time to
 	// upsert_dashboard when you edit the dashboard.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	// Upsert creates a dashboard or edits one. It returns the dashboard's link,
-	// which you give to the person, and the ids of the tiles you sent, in order.
-	// To create, leave id empty and give a name and tiles. To edit, pass the
-	// dashboard's id and its update_time, from get_dashboard or your last
-	// upsert_dashboard. If someone changed the dashboard since, the call fails;
-	// read it again. A tile without an id is added and needs exactly one of spec
-	// and markdown. To change a tile, send its id and only the fields that change;
-	// spec and position are replaced whole. Tiles you leave out stay as they are.
-	// To remove a tile, list its id in remove, and only when the person asked for
-	// it. Work out each insight tile with query_insights first. chart applies to
-	// trends and top K only. Positions use a 12-column grid: x is 0 to 11 and w is
-	// 2 to 12. y and h count rows of about 18px; h is at least 15 for an insight
-	// tile and 9 for a KPI or markdown tile. Leave position out to put a new tile
-	// below the others. Markdown can't contain images. A dashboard with sharing on
-	// can't be edited.
+	// Upsert creates a dashboard or edits one. It returns the dashboard's link, if
+	// the server has one, which you give to the person, and the ids of the tiles
+	// you sent, in order. To create, leave id empty and give a name and tiles. To
+	// edit, pass the dashboard's id and its update_time, from get_dashboard or
+	// your last upsert_dashboard. If someone changed the dashboard since, the call
+	// fails; read it again. A tile without an id is added and needs exactly one of
+	// spec and markdown. Tile names must differ on a dashboard, ignoring case. To
+	// change a tile, send its id and only the fields that change; spec and
+	// position are replaced whole. A tile stays insight or markdown; to switch,
+	// add a new tile and remove the old one. Tiles you leave out stay as they
+	// are. To remove a tile, list its id in remove, and only when the person asked
+	// for it. Every insight tile shows the dashboard's default_time_range and
+	// default_granularity (the last 30 days by day when unset), so work out each
+	// one with query_insights over that window first. Dashboards can't show
+	// segmentation insights or session metrics. chart applies to trends and top K
+	// only. Positions use a 12-column grid: x is 0 to 10, w is 2 to 12, and x + w
+	// is at most 12. y and h count rows of about 18px; h is at least 15 for an
+	// insight tile and 9 for a KPI or markdown tile. A tile you place can't
+	// overlap another; leave position out to put a new tile below the others.
+	// Markdown can't contain images. A dashboard with sharing on can't be edited.
 	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 }
 
@@ -137,21 +142,26 @@ type DashboardsServiceHandler interface {
 	// chart and its position on the 12-column grid. Pass update_time to
 	// upsert_dashboard when you edit the dashboard.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	// Upsert creates a dashboard or edits one. It returns the dashboard's link,
-	// which you give to the person, and the ids of the tiles you sent, in order.
-	// To create, leave id empty and give a name and tiles. To edit, pass the
-	// dashboard's id and its update_time, from get_dashboard or your last
-	// upsert_dashboard. If someone changed the dashboard since, the call fails;
-	// read it again. A tile without an id is added and needs exactly one of spec
-	// and markdown. To change a tile, send its id and only the fields that change;
-	// spec and position are replaced whole. Tiles you leave out stay as they are.
-	// To remove a tile, list its id in remove, and only when the person asked for
-	// it. Work out each insight tile with query_insights first. chart applies to
-	// trends and top K only. Positions use a 12-column grid: x is 0 to 11 and w is
-	// 2 to 12. y and h count rows of about 18px; h is at least 15 for an insight
-	// tile and 9 for a KPI or markdown tile. Leave position out to put a new tile
-	// below the others. Markdown can't contain images. A dashboard with sharing on
-	// can't be edited.
+	// Upsert creates a dashboard or edits one. It returns the dashboard's link, if
+	// the server has one, which you give to the person, and the ids of the tiles
+	// you sent, in order. To create, leave id empty and give a name and tiles. To
+	// edit, pass the dashboard's id and its update_time, from get_dashboard or
+	// your last upsert_dashboard. If someone changed the dashboard since, the call
+	// fails; read it again. A tile without an id is added and needs exactly one of
+	// spec and markdown. Tile names must differ on a dashboard, ignoring case. To
+	// change a tile, send its id and only the fields that change; spec and
+	// position are replaced whole. A tile stays insight or markdown; to switch,
+	// add a new tile and remove the old one. Tiles you leave out stay as they
+	// are. To remove a tile, list its id in remove, and only when the person asked
+	// for it. Every insight tile shows the dashboard's default_time_range and
+	// default_granularity (the last 30 days by day when unset), so work out each
+	// one with query_insights over that window first. Dashboards can't show
+	// segmentation insights or session metrics. chart applies to trends and top K
+	// only. Positions use a 12-column grid: x is 0 to 10, w is 2 to 12, and x + w
+	// is at most 12. y and h count rows of about 18px; h is at least 15 for an
+	// insight tile and 9 for a KPI or markdown tile. A tile you place can't
+	// overlap another; leave position out to put a new tile below the others.
+	// Markdown can't contain images. A dashboard with sharing on can't be edited.
 	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 }
 

@@ -9,14 +9,13 @@ import (
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
-const displayColumns = 12
-
 func tileToRPC(msg *dashboardsv1.DashboardTile) *shareddashboardsv1.Tile {
+	x, y, w, h := coredashboards.DisplayPosition(msg)
 	tile := &shareddashboardsv1.Tile{
 		Id:          proto.String(msg.GetId()),
 		DisplayName: proto.String(msg.GetDisplayName()),
 		Description: proto.String(msg.GetDescription()),
-		Position:    positionToRPC(msg.GetPosition()),
+		Position:    &shareddashboardsv1.Position{X: proto.Int32(x), Y: proto.Int32(y), W: proto.Int32(w), H: proto.Int32(h)},
 	}
 	switch content := msg.GetContent().(type) {
 	case *dashboardsv1.DashboardTile_Insight:
@@ -74,22 +73,6 @@ func viewModeFromChart(chart shareddashboardsv1.Chart) dashboardsv1.DashboardTil
 		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI
 	}
 	return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
-}
-
-// positionToRPC shows a stored position on the 12-column grid the way the app
-// does (storedPositionToDisplay), and a tile with none at the app's fallback.
-func positionToRPC(p *dashboardsv1.GridPosition) *shareddashboardsv1.Position {
-	if p == nil {
-		return &shareddashboardsv1.Position{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(18)}
-	}
-	x := min(max(columns(p.GetX()), 0), displayColumns-1)
-	right := max(x+1, min(displayColumns, columns(max(p.GetX()+1, p.GetX()+p.GetW()))))
-	return &shareddashboardsv1.Position{X: proto.Int32(x), Y: proto.Int32(p.GetY()), W: proto.Int32(right - x), H: proto.Int32(p.GetH())}
-}
-
-// columns is Math.round(units / 6) for the non-negative units the grid stores.
-func columns(units int32) int32 {
-	return (units + coredashboards.UnitsPerColumn/2) / coredashboards.UnitsPerColumn
 }
 
 func positionToStored(p *shareddashboardsv1.Position) *dashboardsv1.GridPosition {

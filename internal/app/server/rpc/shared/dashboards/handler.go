@@ -160,8 +160,7 @@ func upsertError(err error, dashboardID string) error {
 	case errors.Is(err, coredashboards.ErrDashboardNotFound):
 		return dashboardNotFound(dashboardID)
 	case errors.Is(err, coredashboards.ErrDashboardTileNotFound):
-		return apperr.NotFound(apperr.ReasonDashboardTileNotFound, "a tile id in tiles or remove isn't on the dashboard",
-			apperr.Resource("dashboard", dashboardID))
+		return apperr.NotFound(apperr.ReasonDashboardTileNotFound, "a tile id in tiles or remove isn't on the dashboard")
 	case errors.Is(err, coredashboards.ErrDashboardTileDisplayNameConflict):
 		return apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
 	case errors.Is(err, coredashboards.ErrDashboardChanged):
@@ -172,8 +171,14 @@ func upsertError(err error, dashboardID string) error {
 		return apperr.Invalid(apperr.ReasonDashboardTileLimit,
 			fmt.Sprintf("a dashboard holds at most %d tiles", coredashboards.MaxDashboardTiles))
 	}
-	if overlap, ok := errors.AsType[*coredashboards.TileOverlapError](err); ok {
-		return apperr.Invalid(apperr.ReasonDashboardTileOverlap, overlap.Message)
+	if missing, ok := errors.AsType[*coredashboards.TileNotFoundError](err); ok {
+		return apperr.NotFound(apperr.ReasonDashboardTileNotFound, missing.Error(), apperr.Resource("dashboard_tile", missing.ID))
+	}
+	if position, ok := errors.AsType[*coredashboards.TilePositionError](err); ok {
+		return apperr.Invalid(apperr.ReasonInvalidTilePosition, position.Message)
+	}
+	if query, ok := errors.AsType[*coredashboards.TileQueryError](err); ok {
+		return apperr.Invalid(apperr.ReasonInvalidInsightQuery, query.Message)
 	}
 	if invalid, ok := errors.AsType[*coredashboards.InvalidTileError](err); ok {
 		return apperr.Invalid(apperr.ReasonInvalidTileContent, invalid.Message)

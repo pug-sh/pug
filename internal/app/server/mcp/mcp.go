@@ -67,7 +67,7 @@ Individual users:
 
 Dashboards:
 - list_dashboards lists the project's dashboards. get_dashboard returns one with its tiles and its update_time.
-- upsert_dashboard creates a dashboard, or edits one given its id and the update_time from get_dashboard. Get each insight tile right with query_insights first. Tiles you leave out stay as they are. Remove a tile only when the person asks.
+- upsert_dashboard creates a dashboard, or edits one given its id and the update_time from get_dashboard or your last upsert_dashboard. Get each insight tile right with query_insights first. Tiles you leave out stay as they are. Remove a tile only when the person asks.
 
 Compliance:
 - get_deletion_request reports the status of a previously submitted data-erasure request.

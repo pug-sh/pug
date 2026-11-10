@@ -3,13 +3,16 @@ package dashboards
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"buf.build/go/protovalidate"
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"github.com/rs/xid"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -277,23 +280,29 @@ func TestUpsertRefusals(t *testing.T) {
 		{"chart on markdown", edit(tiles(&shareddashboardsv1.Tile{Id: proto.String(notes), Chart: bar})),
 			connect.CodeInvalidArgument, apperr.ReasonInvalidTileContent},
 		{"new tile over another", edit(tiles(&shareddashboardsv1.Tile{Markdown: proto.String("x"), Position: pos(2, 10, 4, 16)})),
-			connect.CodeInvalidArgument, apperr.ReasonDashboardTileOverlap},
+			connect.CodeInvalidArgument, apperr.ReasonInvalidTilePosition},
 		{"tile moved over another", edit(tiles(&shareddashboardsv1.Tile{Id: proto.String(notes), Position: pos(4, 20, 4, 16)})),
-			connect.CodeInvalidArgument, apperr.ReasonDashboardTileOverlap},
+			connect.CodeInvalidArgument, apperr.ReasonInvalidTilePosition},
 		{"insight tile under 15 rows", edit(tiles(&shareddashboardsv1.Tile{Id: proto.String(signups), Position: pos(0, 0, 6, 14)})),
-			connect.CodeInvalidArgument, apperr.ReasonInvalidTileContent},
+			connect.CodeInvalidArgument, apperr.ReasonInvalidTilePosition},
 		{"markdown tile under 9 rows", edit(tiles(&shareddashboardsv1.Tile{Id: proto.String(notes), Position: pos(0, 22, 4, 8)})),
-			connect.CodeInvalidArgument, apperr.ReasonInvalidTileContent},
+			connect.CodeInvalidArgument, apperr.ReasonInvalidTilePosition},
 		{"tile name taken, ignoring case", edit(tiles(&shareddashboardsv1.Tile{DisplayName: proto.String("signups"), Markdown: proto.String("x")})),
 			connect.CodeAlreadyExists, apperr.ReasonDashboardTileNameConflict},
 		{"window too wide for minute buckets", edit(func(r *shareddashboardsv1.UpsertRequest) {
 			r.DefaultGranularity = insightsv1.Granularity_GRANULARITY_MINUTE.Enum()
-		}), connect.CodeInvalidArgument, apperr.ReasonInvalidTileContent},
+		}), connect.CodeInvalidArgument, apperr.ReasonInvalidInsightQuery},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := f.srv.Upsert(ctx, connect.NewRequest(tc.req))
 			wantRefused(t, err, tc.code, tc.reason)
 		})
+	}
+
+	_, err := f.srv.Upsert(ctx, connect.NewRequest(edit(func(r *shareddashboardsv1.UpsertRequest) { r.Remove = []string{signups, "nope"} })))
+	named := &errdetails.ResourceInfo{ResourceType: "dashboard_tile", ResourceName: "nope"}
+	if ae, ok := errors.AsType[*apperr.Error](err); !ok || !slices.ContainsFunc(ae.Details(), func(d proto.Message) bool { return proto.Equal(d, named) }) {
+		t.Errorf("unknown tile = %v, want it named in a ResourceInfo", err)
 	}
 
 	if got := f.get(t, ctx, created.GetId()); !got.GetUpdateTime().AsTime().Equal(created.GetUpdateTime().AsTime()) || len(got.GetTiles()) != 3 {
@@ -428,7 +437,8 @@ func TestNoLinkWithoutBaseURL(t *testing.T) {
 	}
 }
 
-// Positions the app stored read back as the app draws them on 12 columns.
+// Positions the app stored read back as the app draws them on 12 columns, kept
+// inside Position's rules.
 func TestStoredPositionsReadAsTheAppShowsThem(t *testing.T) {
 	f := newFixture(t, "")
 	ctx, projectID := f.newProject(t)
@@ -441,13 +451,20 @@ func TestStoredPositionsReadAsTheAppShowsThem(t *testing.T) {
 		"half a column in": gridPos(3, 5, 9, 20),
 		"between columns":  gridPos(40, 0, 20, 16),
 		"past the edge":    gridPos(70, 0, 10, 16),
+		"under its floor":  gridPos(0, 40, 24, 5),
+		"far down":         gridPos(0, 250000, 24, 16),
+		"near the limit":   gridPos(2147483647, 0, 72, 16),
 		"none":             nil,
 	}
 	want := map[string]*shareddashboardsv1.Position{
-		"half a column in": pos(1, 5, 1, 20),
-		"between columns":  pos(7, 0, 3, 16),
-		"past the edge":    pos(11, 0, 1, 16),
-		"none":             pos(0, 0, 6, 18),
+		"half a column in":      pos(1, 5, 2, 20),
+		"between columns":       pos(7, 0, 3, 16),
+		"past the edge":         pos(10, 0, 2, 16),
+		"under its floor":       pos(0, 40, 4, 9),
+		"far down":              pos(0, 100000, 4, 16),
+		"near the limit":        pos(10, 0, 2, 16),
+		"none":                  pos(0, 0, 6, 18),
+		"chart under its floor": pos(4, 40, 6, 15),
 	}
 	var in coredashboards.UpsertDashboardInput
 	in.DisplayName = "Board"
@@ -456,6 +473,9 @@ func TestStoredPositionsReadAsTheAppShowsThem(t *testing.T) {
 			DisplayName: name, Content: coredashboards.MarkdownTile{Body: name}, Position: p,
 		}})
 	}
+	in.Tiles = append(in.Tiles, coredashboards.UpsertTileInput{Payload: coredashboards.TilePayload{
+		DisplayName: "chart under its floor", Content: coredashboards.InsightTile{Spec: trendsSpec("signup")}, Position: gridPos(24, 40, 36, 10),
+	}})
 	if _, err := f.svc.UpsertDashboard(context.Background(), projectID, board.ID, in); err != nil {
 		t.Fatalf("UpsertDashboard: %v", err)
 	}
@@ -463,6 +483,9 @@ func TestStoredPositionsReadAsTheAppShowsThem(t *testing.T) {
 	for _, tile := range f.get(t, ctx, board.ID).GetTiles() {
 		if w := want[tile.GetDisplayName()]; !proto.Equal(tile.GetPosition(), w) {
 			t.Errorf("%s: position %v, want %v", tile.GetDisplayName(), tile.GetPosition(), w)
+		}
+		if err := protovalidate.Validate(tile.GetPosition()); err != nil {
+			t.Errorf("%s: position %v can't be sent back: %v", tile.GetDisplayName(), tile.GetPosition(), err)
 		}
 	}
 }
