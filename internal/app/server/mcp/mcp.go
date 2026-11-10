@@ -1,5 +1,5 @@
-// Package mcp mounts pug's read-only shared analytics API as a Model Context
-// Protocol (MCP) endpoint at /mcp. It is a thin adapter: every MCP tool call is
+// Package mcp mounts pug's shared analytics API as a Model Context Protocol
+// (MCP) endpoint at /mcp. It is a thin adapter: every MCP tool call is
 // forwarded back through the server's own Connect stack in-process (see
 // loopbackClient), so validation, authentication and authorization run as for an
 // external API request, except that only the loopback admits an MCP access token.
@@ -7,7 +7,7 @@
 // serves the token endpoint and the metadata clients discover it from (oauth.go).
 //
 // Tools are generated from the shared protos by protoc-gen-go-mcp (the *v1mcp
-// packages); this package selects the read-only subset, gives each a curated
+// packages); this package selects the ones to expose, gives each a curated
 // name and title, and serves them over the official modelcontextprotocol/go-sdk
 // streamable HTTP transport in stateless mode.
 package mcp
@@ -18,6 +18,8 @@ import (
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
 	activityv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1mcp"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/dashboards/v1/shareddashboardsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/dashboards/v1/shareddashboardsv1mcp"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	insightsv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1mcp"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
@@ -46,9 +48,9 @@ const (
 // Every exposed tool must be named here and no hidden one may be:
 // TestInstructionsMatchToolPolicy pins this against toolPolicy, since prose has no
 // compile-time link to the tool table.
-const instructions = `pug is a product-analytics platform. These tools are read-only.
+const instructions = `pug is a product-analytics platform. Every tool reads, except upsert_dashboard, which creates and edits dashboards.
 
-Every tool but list_projects reads one project, named by its project_id argument:
+Every tool but list_projects works in one project, named by its project_id argument:
 - list_projects lists the projects you can read, each with its org. Call it first, and pass the id of the project the question is about as project_id to every other tool. When more than one project could fit and the question doesn't say which, ask.
 
 Start by discovering what data exists:
@@ -62,6 +64,10 @@ Project-wide questions ("how many", "what is trending", "where do users drop off
 Individual users:
 - get_profile (by pug profile id) and get_profile_by_external_id (by the id your application assigned) look up one user.
 - get_activity_feed, get_activity_heatmap, get_profile_sessions and get_profile_stats each describe a SINGLE user and require that user's distinct_id, which a profile lookup gives you. They cannot answer project-wide questions — use query_insights for those.
+
+Dashboards:
+- list_dashboards lists the project's dashboards. get_dashboard returns one with its tiles and its update_time.
+- upsert_dashboard creates a dashboard, or edits one given its id and the update_time from get_dashboard or your last upsert_dashboard. Get each insight tile right with query_insights first. Tiles you leave out stay as they are. Remove a tile only when the person asks.
 
 Compliance:
 - get_deletion_request reports the status of a previously submitted data-erasure request.
@@ -105,11 +111,11 @@ func newHandler(loopback http.Handler) (http.Handler, error) {
 // it on as x-project-id, where auth checks the credential reads that project.
 var projectArg = mcpruntime.ExtraProperty{
 	Name:        "project_id",
-	Description: "The id of the project to read, from list_projects.",
+	Description: "The id of the project, from list_projects.",
 	ContextKey:  projectIDKey{},
 }
 
-// registerTools forwards each read-only shared RPC to the MCP server through an
+// registerTools forwards each exposed shared RPC to the MCP server through an
 // in-process loopback Connect client. srv is the rename-wrapping MCPServer, and
 // the one keepTool filter withholds every tool the policy table hides (the GDPR
 // erasure RPCs and the WIP insights SegmentUsers). Shared by newHandler and the
@@ -121,6 +127,8 @@ func registerTools(srv mcpruntime.MCPServer, loopback http.Handler) {
 
 	sharedprojectsv1mcp.ForwardToConnectProjectsServiceClient(srv,
 		sharedprojectsv1connect.NewProjectsServiceClient(client, loopbackBaseURL), filter)
+	shareddashboardsv1mcp.ForwardToConnectDashboardsServiceClient(srv,
+		shareddashboardsv1connect.NewDashboardsServiceClient(client, loopbackBaseURL), filter, project)
 	insightsv1mcp.ForwardToConnectInsightsServiceClient(srv,
 		insightsv1connect.NewInsightsServiceClient(client, loopbackBaseURL), filter, project)
 	activityv1mcp.ForwardToConnectActivityServiceClient(srv,

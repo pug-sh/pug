@@ -84,7 +84,7 @@ type OAuth struct {
 	AuthorizationEndpoint string
 }
 
-// Mount installs the read-only /mcp endpoint on mux. It is the single entry point
+// Mount installs the /mcp endpoint on mux. It is the single entry point
 // for the whole subsystem — it builds the tool handler, constructs the auth
 // boundary, and assembles the middleware sandwich — and server.start and the test
 // harness both go through it, so the endpoint cannot be wired one way in

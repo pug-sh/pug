@@ -430,6 +430,9 @@ func TestRoleGatedRPCsAreGated(t *testing.T) {
 		"/dashboard.billing.v1.BillingService/CreateCheckoutSession":        true,
 		"/dashboard.billing.v1.BillingService/CreatePortalSession":          true,
 		"/dashboard.billing.v1.BillingService/ListPlans":                    true,
+		"/shared.dashboards.v1.DashboardsService/List":                      true,
+		"/shared.dashboards.v1.DashboardsService/Get":                       true,
+		"/shared.dashboards.v1.DashboardsService/Upsert":                    true,
 		"/shared.insights.v1.InsightsService/Query":                         true,
 		"/shared.insights.v1.InsightsService/SegmentUsers":                  true,
 		"/shared.insights.v1.InsightsService/GetFilterSchema":               true,
@@ -536,6 +539,31 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 	for proc := range adminOnly {
 		if spec, ok := permissionRegistry[proc]; !ok || !spec.IsRoleGated() {
 			t.Errorf("%s: listed in adminOnly but is not a role-gated registry entry", proc)
+		}
+	}
+}
+
+// A connection acts with its person's role: a viewer reads dashboards, and a
+// member also creates and edits them.
+func TestSharedDashboardsRoles(t *testing.T) {
+	authorizer := mustAuthorizer(t)
+	for _, tc := range []struct {
+		proc string
+		role coreorgs.Role
+		want bool
+	}{
+		{"/shared.dashboards.v1.DashboardsService/List", coreorgs.RoleViewer, true},
+		{"/shared.dashboards.v1.DashboardsService/Get", coreorgs.RoleViewer, true},
+		{"/shared.dashboards.v1.DashboardsService/Upsert", coreorgs.RoleViewer, false},
+		{"/shared.dashboards.v1.DashboardsService/Upsert", coreorgs.RoleMember, true},
+	} {
+		spec := permissionRegistry[tc.proc]
+		err := authorizeRoleGated(jwtProjectCtx(), authorizer, fakeRoleLookup{role: tc.role}, reqFor(spec), spec)
+		if tc.want && err != nil {
+			t.Errorf("%s as %s: denied (%v)", tc.proc, tc.role, err)
+		}
+		if ae, ok := errors.AsType[*apperr.Error](err); !tc.want && (!ok || ae.Reason() != apperr.ReasonOrgRoleForbidden) {
+			t.Errorf("%s as %s: got %v, want ORG_ROLE_FORBIDDEN", tc.proc, tc.role, err)
 		}
 	}
 }

@@ -35,22 +35,10 @@ type UpsertTileInput struct {
 	Payload TilePayload
 }
 
-// UpsertDashboard reconciles a dashboard's metadata and the full tile set in a
-// single transaction with a row lock on the dashboard (true last-write-wins
-// under concurrent edits). Reconciliation has four branches:
-//   - Empty id → insert (server assigns id).
-//   - Populated id matching an existing tile → update (UPDATEs short-circuit
-//     in SQL via payload_hash so byte-identical content doesn't bump
-//     update_time).
-//   - Existing tile id not in the request → delete.
-//   - Populated id NOT matching any existing tile → rejected with
-//     ErrDashboardTileNotFound (no insert-as-new fallback).
-//
-// Duplicate non-empty ids within one request are rejected with
-// ErrDuplicateUpsertTileID. DELETE runs before INSERT/UPDATE so a swap-replace
-// (drop tile A and insert a new tile reusing A's display_name) doesn't trip
-// the partial unique index. Dashboard metadata is conditionally rewritten: it
-// only bumps update_time when the metadata changed or any tile changed.
+// UpsertDashboard reconciles a dashboard's metadata and the full tile set
+// (reconcileTilesInTx) in a single transaction with a row lock on the
+// dashboard (true last-write-wins under concurrent edits). Duplicate non-empty
+// ids within one request are rejected with ErrDuplicateUpsertTileID.
 //
 // Returns the post-state dashboard with tiles in **request order** so the
 // client can map server-assigned ids back to its draft. The reload happens
@@ -145,138 +133,9 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
-	existingIDs, err := readTx.ListDashboardTileIDsByDashboardIDAndProjectID(ctx, dbread.ListDashboardTileIDsByDashboardIDAndProjectIDParams{
-		DashboardID: dashboardID,
-		ProjectID:   projectID,
-	})
+	finalIDs, err := reconcileTilesInTx(ctx, readTx, writeTx, projectID, dashboardID, in, encoded)
 	if err != nil {
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list existing tile ids for upsert", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
-	}
-	existingSet := make(map[string]struct{}, len(existingIDs))
-	for _, id := range existingIDs {
-		existingSet[id] = struct{}{}
-	}
-
-	// finalIDs[i] is the post-write id of the i-th request tile. Pre-assign new
-	// ids for empty-id tiles (inserts) and validate that populated ids exist
-	// before we touch any rows, so a swap-replace (drop tile A and insert a new
-	// tile reusing A's display_name) doesn't trip the partial unique index —
-	// DELETE runs before INSERT/UPDATE below.
-	finalIDs := make([]string, len(in.Tiles))
-	for i, tile := range in.Tiles {
-		if tile.ID == "" {
-			finalIDs[i] = xid.New().String()
-			continue
-		}
-		if _, ok := existingSet[tile.ID]; !ok {
-			slog.WarnContext(ctx, "upsert rejected: tile id not on dashboard",
-				slog.String("project_id", projectID),
-				slog.String("dashboard_id", dashboardID),
-				slog.String("tile_id", tile.ID),
-				slog.Int("tile_index", i),
-			)
-			return DashboardWithTiles{}, ErrDashboardTileNotFound
-		}
-		finalIDs[i] = tile.ID
-	}
-
-	// DELETE first so a new tile in this request can reuse a dropped tile's
-	// display_name within a single Upsert call.
-	deleted, err := writeTx.DeleteDashboardTilesNotIn(ctx, dbwrite.DeleteDashboardTilesNotInParams{
-		DashboardID: dashboardID,
-		ProjectID:   projectID,
-		KeepIds:     finalIDs,
-	})
-	if err != nil {
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to delete tiles during upsert", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
-	}
-	tilesChanged := deleted > 0
-
-	for i, tile := range in.Tiles {
-		enc := encoded[i]
-		switch tile.ID {
-		case "":
-			if _, err := writeTx.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
-				ID:            finalIDs[i],
-				DashboardID:   dashboardID,
-				ProjectID:     projectID,
-				Kind:          int16(enc.Kind),
-				ViewMode:      enc.ViewMode,
-				DisplayName:   tile.Payload.DisplayName,
-				Description:   tile.Payload.Description,
-				InsightQuery:  enc.InsightQuery,
-				MarkdownBody:  enc.MarkdownBody,
-				Position:      enc.Position,
-				Compare:       enc.Compare,
-				Thresholds:    enc.Thresholds,
-				Header:        enc.Header,
-				Visualization: enc.Visualization,
-				PayloadHash:   enc.PayloadHash,
-			}); err != nil {
-				// CreateDashboardTile is `INSERT ... SELECT ... FROM dashboards d
-				// WHERE d.id = $X AND d.project_id = $Y` — zero rows when the
-				// dashboard row was deleted concurrent with this tx. Surface as
-				// 404 rather than CodeInternal. The row lock acquired upfront
-				// makes this very unlikely but not impossible (lock acquired
-				// AFTER a sibling tx's DELETE commits).
-				if errors.Is(err, pgx.ErrNoRows) {
-					return DashboardWithTiles{}, ErrDashboardNotFound
-				}
-				if conflict := translateUniqueViolation(err); conflict != nil {
-					return DashboardWithTiles{}, conflict
-				}
-				return DashboardWithTiles{}, recordServiceError(ctx, "failed to insert tile during upsert", err,
-					slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.Int("tile_index", i))
-			}
-			tilesChanged = true
-
-		default:
-			rows, err := writeTx.UpsertDashboardTileUpdate(ctx, dbwrite.UpsertDashboardTileUpdateParams{
-				ID:            tile.ID,
-				DashboardID:   dashboardID,
-				ProjectID:     projectID,
-				Kind:          int16(enc.Kind),
-				ViewMode:      enc.ViewMode,
-				DisplayName:   tile.Payload.DisplayName,
-				Description:   tile.Payload.Description,
-				InsightQuery:  enc.InsightQuery,
-				MarkdownBody:  enc.MarkdownBody,
-				Position:      enc.Position,
-				Compare:       enc.Compare,
-				Thresholds:    enc.Thresholds,
-				Header:        enc.Header,
-				Visualization: enc.Visualization,
-				PayloadHash:   enc.PayloadHash,
-			})
-			if err != nil {
-				if conflict := translateUniqueViolation(err); conflict != nil {
-					return DashboardWithTiles{}, conflict
-				}
-				return DashboardWithTiles{}, recordServiceError(ctx, "failed to update tile during upsert", err,
-					slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tile.ID))
-			}
-			if rows > 0 {
-				tilesChanged = true
-			}
-		}
-	}
-
-	// Conditional dashboard-metadata write. The trigger only fires when this
-	// UPDATE matches a row; the SQL WHERE makes the UPDATE a no-op when neither
-	// metadata changed nor any tile changed.
-	if _, err := writeTx.UpsertDashboardMetadata(ctx, dbwrite.UpsertDashboardMetadataParams{
-		ID:                 dashboardID,
-		ProjectID:          projectID,
-		DisplayName:        in.DisplayName,
-		Description:        in.Description,
-		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(in.DefaultTimeRange),
-		DefaultGranularity: dashboardGranularityDBName(in.DefaultGranularity),
-		TilesChanged:       tilesChanged,
-	}); err != nil {
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to update dashboard metadata during upsert", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+		return DashboardWithTiles{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -317,4 +176,157 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 		Dashboard: fresh.Dashboard,
 		Tiles:     ordered,
 	}, nil
+}
+
+// reconcileTilesInTx saves in as the dashboard's metadata and full tile set,
+// inside a transaction that holds the dashboard's row lock. encoded[i] is
+// in.Tiles[i] encoded. Reconciliation has four branches:
+//   - Empty id → insert (server assigns id).
+//   - Populated id matching an existing tile → update (UPDATEs short-circuit
+//     in SQL via payload_hash so byte-identical content doesn't bump
+//     update_time).
+//   - Existing tile id not in the request → delete.
+//   - Populated id NOT matching any existing tile → rejected with
+//     ErrDashboardTileNotFound (no insert-as-new fallback).
+//
+// DELETE runs before INSERT/UPDATE so a swap-replace (drop tile A and insert a
+// new tile reusing A's display_name) doesn't trip the partial unique index.
+// Dashboard metadata is conditionally rewritten: it only bumps update_time
+// when the metadata changed or any tile changed. Returns each tile's id in
+// request order.
+func reconcileTilesInTx(ctx context.Context, r *dbread.Queries, w *dbwrite.Queries, projectID, dashboardID string, in UpsertDashboardInput, encoded []EncodedTilePayload) ([]string, error) {
+	existingIDs, err := r.ListDashboardTileIDsByDashboardIDAndProjectID(ctx, dbread.ListDashboardTileIDsByDashboardIDAndProjectIDParams{
+		DashboardID: dashboardID,
+		ProjectID:   projectID,
+	})
+	if err != nil {
+		return nil, recordServiceError(ctx, "failed to list existing tile ids for upsert", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+	}
+	existingSet := make(map[string]struct{}, len(existingIDs))
+	for _, id := range existingIDs {
+		existingSet[id] = struct{}{}
+	}
+
+	// finalIDs[i] is the post-write id of the i-th request tile. Pre-assign new
+	// ids for empty-id tiles (inserts) and validate that populated ids exist
+	// before we touch any rows, so a swap-replace (drop tile A and insert a new
+	// tile reusing A's display_name) doesn't trip the partial unique index:
+	// DELETE runs before INSERT/UPDATE below.
+	finalIDs := make([]string, len(in.Tiles))
+	for i, tile := range in.Tiles {
+		if tile.ID == "" {
+			finalIDs[i] = xid.New().String()
+			continue
+		}
+		if _, ok := existingSet[tile.ID]; !ok {
+			slog.WarnContext(ctx, "upsert rejected: tile id not on dashboard",
+				slog.String("project_id", projectID),
+				slog.String("dashboard_id", dashboardID),
+				slog.String("tile_id", tile.ID),
+				slog.Int("tile_index", i),
+			)
+			return nil, ErrDashboardTileNotFound
+		}
+		finalIDs[i] = tile.ID
+	}
+
+	// DELETE first so a new tile in this request can reuse a dropped tile's
+	// display_name within a single Upsert call.
+	deleted, err := w.DeleteDashboardTilesNotIn(ctx, dbwrite.DeleteDashboardTilesNotInParams{
+		DashboardID: dashboardID,
+		ProjectID:   projectID,
+		KeepIds:     finalIDs,
+	})
+	if err != nil {
+		return nil, recordServiceError(ctx, "failed to delete tiles during upsert", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+	}
+	tilesChanged := deleted > 0
+
+	for i, tile := range in.Tiles {
+		enc := encoded[i]
+		switch tile.ID {
+		case "":
+			if _, err := w.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
+				ID:            finalIDs[i],
+				DashboardID:   dashboardID,
+				ProjectID:     projectID,
+				Kind:          int16(enc.Kind),
+				ViewMode:      enc.ViewMode,
+				DisplayName:   tile.Payload.DisplayName,
+				Description:   tile.Payload.Description,
+				InsightQuery:  enc.InsightQuery,
+				MarkdownBody:  enc.MarkdownBody,
+				Position:      enc.Position,
+				Compare:       enc.Compare,
+				Thresholds:    enc.Thresholds,
+				Header:        enc.Header,
+				Visualization: enc.Visualization,
+				PayloadHash:   enc.PayloadHash,
+			}); err != nil {
+				// CreateDashboardTile is `INSERT ... SELECT ... FROM dashboards d
+				// WHERE d.id = $X AND d.project_id = $Y`: zero rows when the
+				// dashboard row was deleted concurrent with this tx. Surface as
+				// 404 rather than CodeInternal. The row lock acquired upfront
+				// makes this very unlikely but not impossible (lock acquired
+				// AFTER a sibling tx's DELETE commits).
+				if errors.Is(err, pgx.ErrNoRows) {
+					return nil, ErrDashboardNotFound
+				}
+				if conflict := translateUniqueViolation(err); conflict != nil {
+					return nil, conflict
+				}
+				return nil, recordServiceError(ctx, "failed to insert tile during upsert", err,
+					slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.Int("tile_index", i))
+			}
+			tilesChanged = true
+
+		default:
+			rows, err := w.UpsertDashboardTileUpdate(ctx, dbwrite.UpsertDashboardTileUpdateParams{
+				ID:            tile.ID,
+				DashboardID:   dashboardID,
+				ProjectID:     projectID,
+				Kind:          int16(enc.Kind),
+				ViewMode:      enc.ViewMode,
+				DisplayName:   tile.Payload.DisplayName,
+				Description:   tile.Payload.Description,
+				InsightQuery:  enc.InsightQuery,
+				MarkdownBody:  enc.MarkdownBody,
+				Position:      enc.Position,
+				Compare:       enc.Compare,
+				Thresholds:    enc.Thresholds,
+				Header:        enc.Header,
+				Visualization: enc.Visualization,
+				PayloadHash:   enc.PayloadHash,
+			})
+			if err != nil {
+				if conflict := translateUniqueViolation(err); conflict != nil {
+					return nil, conflict
+				}
+				return nil, recordServiceError(ctx, "failed to update tile during upsert", err,
+					slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tile.ID))
+			}
+			if rows > 0 {
+				tilesChanged = true
+			}
+		}
+	}
+
+	// Conditional dashboard-metadata write. The trigger only fires when this
+	// UPDATE matches a row; the SQL WHERE makes the UPDATE a no-op when neither
+	// metadata changed nor any tile changed.
+	if _, err := w.UpsertDashboardMetadata(ctx, dbwrite.UpsertDashboardMetadataParams{
+		ID:                 dashboardID,
+		ProjectID:          projectID,
+		DisplayName:        in.DisplayName,
+		Description:        in.Description,
+		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(in.DefaultTimeRange),
+		DefaultGranularity: dashboardGranularityDBName(in.DefaultGranularity),
+		TilesChanged:       tilesChanged,
+	}); err != nil {
+		return nil, recordServiceError(ctx, "failed to update dashboard metadata during upsert", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+	}
+	return finalIDs, nil
 }

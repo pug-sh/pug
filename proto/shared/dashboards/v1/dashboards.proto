@@ -1,0 +1,219 @@
+edition = "2023";
+
+package shared.dashboards.v1;
+
+import "buf/validate/validate.proto";
+import "common/v1/time.proto";
+import "google/protobuf/timestamp.proto";
+import "shared/insights/v1/insights.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/dashboards/v1;shareddashboardsv1";
+
+// DashboardsService lists, reads, creates and edits a project's dashboards. It
+// can't delete a dashboard or turn sharing on.
+service DashboardsService {
+  // List returns the project's dashboards: each one's name, description, tile
+  // count, whether sharing is on, and when it last changed. Call get_dashboard
+  // for one dashboard's tiles.
+  rpc List(ListRequest) returns (ListResponse);
+  // Get returns one dashboard: its time window, its tiles and its update_time.
+  // Each tile has its id, its name, its spec (insight tiles) or markdown, its
+  // chart and its position on the 12-column grid. Pass update_time to
+  // upsert_dashboard when you edit the dashboard.
+  rpc Get(GetRequest) returns (GetResponse);
+  // Upsert creates a dashboard or edits one. It returns the dashboard's link, if
+  // the server has one, which you give to the person, and the ids of the tiles
+  // you sent, in order. To create, leave id empty and give a name and tiles. To
+  // edit, pass the dashboard's id and its update_time, from get_dashboard or
+  // your last upsert_dashboard. If someone changed the dashboard since, the call
+  // fails; read it again. A tile without an id is added and needs exactly one of
+  // spec and markdown. Tile names must differ on a dashboard, ignoring case. To
+  // change a tile, send its id and only the fields that change; spec and
+  // position are replaced whole. A tile stays insight or markdown; to switch,
+  // add a new tile and remove the old one. Tiles you leave out stay as they
+  // are. To remove a tile, list its id in remove, and only when the person asked
+  // for it. Every insight tile shows the dashboard's default_time_range and
+  // default_granularity (the last 30 days by day when unset), so work out each
+  // one with query_insights over that window first. Dashboards can't show
+  // segmentation insights or session metrics. chart applies to trends and top K
+  // only. Positions use a 12-column grid: x is 0 to 10, w is 2 to 12, and x + w
+  // is at most 12. y and h count rows of about 18px; h is at least 15 for an
+  // insight tile and 9 for a KPI or markdown tile. A tile you place can't
+  // overlap another; leave position out to put a new tile below the others.
+  // Markdown can't contain images. A dashboard with sharing on can't be edited.
+  rpc Upsert(UpsertRequest) returns (UpsertResponse);
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated DashboardSummary dashboards = 1;
+}
+
+message DashboardSummary {
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  int32 tile_count = 4;
+  // Whether anyone with the share link can read the dashboard.
+  bool shared = 5;
+  google.protobuf.Timestamp update_time = 6;
+}
+
+message GetRequest {
+  string id = 1 [(buf.validate.field).required = true];
+}
+
+message GetResponse {
+  Dashboard dashboard = 1;
+}
+
+// Dashboard never carries the share token: whoever holds it can read the
+// dashboard.
+message Dashboard {
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  common.v1.TimeRangePreset default_time_range = 4;
+  shared.insights.v1.Granularity default_granularity = 5;
+  bool shared = 6;
+  google.protobuf.Timestamp update_time = 7;
+  // The dashboard in Pug. Absent when the server has no dashboard address.
+  string url = 8;
+  repeated Tile tiles = 9;
+}
+
+// Tile is an insight tile (spec) or a markdown tile (markdown). In an upsert, a
+// tile with an id changes only the fields that are set.
+message Tile {
+  string id = 1;
+  string display_name = 2 [(buf.validate.field).string.max_len = 150];
+  string description = 3 [(buf.validate.field).string.max_len = 2000];
+  // The dashboard page can't draw segmentation or session metrics yet.
+  shared.insights.v1.InsightQuerySpec spec = 4 [(buf.validate.field).cel = {
+    id: "tile.spec_drawable"
+    message: "dashboards can't show segmentation insights or session metrics"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION"
+      "&& !has(this.session)"
+  }];
+  // An image would load as the dashboard opens, so its URL could carry data out.
+  string markdown = 5 [
+    (buf.validate.field).string = {
+      min_len: 1
+      max_len: 100000
+    },
+    (buf.validate.field).cel = {
+      id: "tile.markdown_no_images"
+      message: "markdown can't contain images"
+      expression: "!this.contains('![')"
+    }
+  ];
+  Chart chart = 6 [(buf.validate.field).enum.defined_only = true];
+  Position position = 7;
+}
+
+// Chart is how a trends or top K tile is drawn. The other insight types each
+// have one view, which the server picks.
+enum Chart {
+  CHART_UNSPECIFIED = 0;
+  CHART_LINE = 1;
+  CHART_AREA = 2;
+  CHART_BAR = 3;
+  CHART_STACKED_BAR = 4;
+  CHART_PIE = 5;
+  CHART_TABLE = 6;
+  CHART_KPI = 7;
+}
+
+// Position places a tile on the app's 12-column grid. y and h count rows of
+// about 18px, and the app floats tiles up to close gaps.
+message Position {
+  option (buf.validate.message).cel = {
+    id: "position.complete"
+    message: "position needs x, y, w and h"
+    expression: "has(this.x) && has(this.y) && has(this.w) && has(this.h)"
+  };
+  option (buf.validate.message).cel = {
+    id: "position.fits"
+    message: "x + w must be at most 12"
+    expression: "this.x + this.w <= 12"
+  };
+  int32 x = 1 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10
+  }];
+  int32 y = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
+  int32 w = 3 [(buf.validate.field).int32 = {
+    gte: 2
+    lte: 12
+  }];
+  // The minimum depends on the tile's view, so the server checks it.
+  int32 h = 4 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 800
+  }];
+}
+
+message UpsertRequest {
+  option (buf.validate.message).cel = {
+    id: "upsert_request.create_needs_name"
+    message: "creating a dashboard needs display_name"
+    expression: "this.id != '' || has(this.display_name)"
+  };
+  option (buf.validate.message).cel = {
+    id: "upsert_request.create_is_new"
+    message: "creating a dashboard takes no update_time, remove or tile ids"
+    expression:
+      "this.id != ''"
+      "|| (!has(this.update_time) && this.remove.size() == 0 && this.tiles.all(t, t.id == ''))"
+  };
+  option (buf.validate.message).cel = {
+    id: "upsert_request.edit_needs_update_time"
+    message: "editing a dashboard needs the update_time you read"
+    expression: "this.id == '' || has(this.update_time)"
+  };
+  option (buf.validate.message).cel = {
+    id: "upsert_request.new_tile_content"
+    message: "a new tile needs exactly one of spec and markdown"
+    expression: "this.tiles.all(t, t.id != '' || has(t.spec) != has(t.markdown))"
+  };
+  option (buf.validate.message).cel = {
+    id: "upsert_request.tile_ids_unique"
+    message: "a tile id appears at most once across tiles and remove"
+    expression: "(this.tiles.filter(t, t.id != '').map(t, t.id) + this.remove).unique()"
+  };
+
+  // Empty to create.
+  string id = 1;
+  // The dashboard's update_time when you read it. Required to edit.
+  google.protobuf.Timestamp update_time = 2;
+  string display_name = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 150
+  }];
+  string description = 4 [(buf.validate.field).string.max_len = 2000];
+  common.v1.TimeRangePreset default_time_range = 5 [(buf.validate.field).enum.defined_only = true];
+  shared.insights.v1.Granularity default_granularity = 6 [(buf.validate.field).enum.defined_only = true];
+  // A tile without an id is added; a tile with one is changed.
+  repeated Tile tiles = 7 [(buf.validate.field).repeated.max_items = 100];
+  // Ids of tiles to remove.
+  repeated string remove = 8 [(buf.validate.field).repeated = {
+    max_items: 100
+    items: {
+      string: {min_len: 1}
+    }
+  }];
+}
+
+message UpsertResponse {
+  string id = 1;
+  google.protobuf.Timestamp update_time = 2;
+  // Absent when the server has no dashboard address.
+  string url = 3;
+  // The id of each tile the call sent, in the call's order.
+  repeated string tile_ids = 4;
+}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -78,6 +79,7 @@ var curatedToolNames = []string{
 	"get_activity_filter_schema",
 	"get_activity_heatmap",
 	"get_activity_property_values",
+	"get_dashboard",
 	"get_deletion_request",
 	"get_insights_filter_schema",
 	"get_insights_property_values",
@@ -85,9 +87,15 @@ var curatedToolNames = []string{
 	"get_profile_by_external_id",
 	"get_profile_sessions",
 	"get_profile_stats",
+	"list_dashboards",
 	"list_projects",
 	"query_insights",
+	"upsert_dashboard",
 }
+
+// writingTools are the tools that change data, pinned as a literal for the same
+// reason. Every other tool must be read-only.
+var writingTools = []string{"upsert_dashboard"}
 
 // ---------- stubs ----------
 
@@ -323,8 +331,9 @@ func TestE2E_ToolsListPinsCuratedNames(t *testing.T) {
 	}
 }
 
-// Claude's connector directory requires a title and readOnlyHint on every tool.
-func TestE2E_ToolsAreTitledAndReadOnly(t *testing.T) {
+// Claude's connector directory requires a title on every tool, and readOnlyHint on
+// one that reads or destructiveHint on one that writes.
+func TestE2E_ToolsAreTitledAndAnnotated(t *testing.T) {
 	deps := newTestServer(t)
 	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
 
@@ -346,10 +355,20 @@ func TestE2E_ToolsAreTitledAndReadOnly(t *testing.T) {
 		}
 		byTitle[tl.Title] = tl.Name
 
-		if tl.Annotations == nil || !tl.Annotations.ReadOnlyHint {
-			t.Errorf("tool %q is not marked read-only", tl.Name)
-		} else if tl.Annotations.Title != tl.Title {
-			t.Errorf("tool %q: annotations.title = %q, want %q", tl.Name, tl.Annotations.Title, tl.Title)
+		a := tl.Annotations
+		if a == nil {
+			t.Errorf("tool %q has no annotations", tl.Name)
+			continue
+		}
+		if a.Title != tl.Title {
+			t.Errorf("tool %q: annotations.title = %q, want %q", tl.Name, a.Title, tl.Title)
+		}
+		writes := slices.Contains(writingTools, tl.Name)
+		if a.ReadOnlyHint == writes {
+			t.Errorf("tool %q: readOnlyHint = %v, want %v", tl.Name, a.ReadOnlyHint, !writes)
+		}
+		if destructive := a.DestructiveHint != nil && *a.DestructiveHint; writes && !destructive {
+			t.Errorf("tool %q writes but isn't marked destructive", tl.Name)
 		}
 	}
 }
