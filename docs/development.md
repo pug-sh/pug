@@ -7,7 +7,7 @@ account you can sign in as.
 
 | Tool | Version | Used for |
 |------|---------|----------|
-| Go | 1.27.3 or newer | Building `pug` |
+| Go | 1.27.4 or newer | Building `pug` |
 | Docker with Compose | Any recent | Postgres, ClickHouse, NATS and Dragonfly |
 | Bun | Any recent | The dashboard (optional) |
 
