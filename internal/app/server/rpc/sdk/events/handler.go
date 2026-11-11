@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"buf.build/go/protovalidate"
@@ -300,8 +301,9 @@ func dropInvalid(ctx context.Context, projectID string, events []*eventsv1.Event
 // customer's HTTP client, so parsing it writes "curl" as the visitor's browser.
 // A relay sets $browser/$os/$device/$mobile per event instead; those already win.
 // A native app's events ($platform set, but not web) are skipped too, since its
-// HTTP client parses as a browser. An event with no $platform, as a raw HTTP API
-// caller may send, is still parsed.
+// HTTP client parses as a browser. A hybrid app's WebView is parsed when it names
+// the OS $platform does, which an iPad's doesn't: it sends a Mac's User-Agent.
+// An event with no $platform, as a raw HTTP API caller may send, is still parsed.
 func (s *Server) enrichUserAgent(ctx context.Context, projectID string, authType rpc.AuthType, h http.Header, events []*eventsv1.Event) {
 	if authType != rpc.AuthTypePublicKey {
 		return
@@ -317,8 +319,10 @@ func (s *Server) enrichUserAgent(ctx context.Context, projectID string, authType
 			slog.Bool("header_present", h.Get("User-Agent") != ""))
 		return
 	}
+	browserEngine := useragent.FromBrowserEngine(h)
 	for _, event := range events {
-		if p := autoPropString(event.AutoProperties, autoprop.PropPlatform); p != "" && p != autoprop.PlatformWeb {
+		p := autoPropString(event.AutoProperties, autoprop.PropPlatform)
+		if p != "" && p != autoprop.PlatformWeb && (!browserEngine || !strings.EqualFold(p, props[useragent.PropOS])) {
 			continue
 		}
 		if event.AutoProperties == nil {

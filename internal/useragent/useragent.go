@@ -63,3 +63,10 @@ func (p *Parser) Parse(h http.Header) Properties {
 	uaStr = strings.ToValidUTF8(uaStr, "")
 	return propertiesFromUAParser(p.parser.Parse(uaStr), uaStr)
 }
+
+// FromBrowserEngine reports whether a browser engine sent the request, a WebView
+// included: every engine's User-Agent opens with "Mozilla/", while an HTTP client
+// library's names the library (okhttp, CFNetwork, dart:io, curl).
+func FromBrowserEngine(h http.Header) bool {
+	return strings.HasPrefix(h.Get("User-Agent"), "Mozilla/")
+}

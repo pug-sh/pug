@@ -24,6 +24,8 @@ var osFamilyNames = map[string]string{
 var frozenOSVersions = map[string]map[string]bool{
 	// Firefox caps at 10.15, Safari and Chromium send 10_15_7, Big Sur's compat mode sent 10.16.
 	"Mac OS X": {"10.15": true, "10.15.7": true, "10.16": true},
+	// iOS 26's WebKit has sent 18_6, 18_6_2 and 18_7, a WKWebView's included.
+	"iOS": {"18.6": true, "18.6.2": true, "18.7": true},
 	// NT 10.0 is Windows 10 and 11 alike.
 	"Windows":   {"10": true},
 	"Chrome OS": {"14541.0.0": true},
@@ -91,6 +93,8 @@ func osVersion(os *uaparser.Os, ua string) string {
 			if major, _ := strconv.Atoi(m[2]); major >= 26 {
 				return m[1]
 			}
+			// Safari before 26 runs on iOS before 26, where 18.6 and 18.7 are real releases.
+			return joinVersion(os.Major, os.Minor, os.Patch)
 		}
 	case "Android":
 		if isReducedAndroid(ua) {
@@ -128,7 +132,8 @@ func propertiesFromUAParser(client *uaparser.Client, ua string) Properties {
 
 	if client.UserAgent.Family != "" && client.UserAgent.Family != "Other" {
 		props[PropBrowser] = normalizeBrowserFamily(client.UserAgent.Family)
-		if client.UserAgent.Major != "" {
+		// A WKWebView has no version of its own: uap-go reads one from any Version/ token, an app's AppVersion/ included.
+		if client.UserAgent.Major != "" && client.UserAgent.Family != "Mobile Safari UI/WKWebView" {
 			props[PropBrowserVersion] = client.UserAgent.Major
 		}
 	}

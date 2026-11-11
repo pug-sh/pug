@@ -701,7 +701,7 @@ func TestE2E_OAuthDashboards(t *testing.T) {
 			map[string]any{"markdown": "Weekly numbers"},
 		},
 	})
-	if want := testDashboardBaseURL + "/dashboards/" + created.ID + "?project=" + b.project; created.URL != want || len(created.TileIDs) != 2 {
+	if want := testDashboardBaseURL + "/p/" + b.project + "/dashboards/" + created.ID; created.URL != want || len(created.TileIDs) != 2 {
 		t.Fatalf("created = %+v, want two tiles linked at %s", created, want)
 	}
 	edit := map[string]any{

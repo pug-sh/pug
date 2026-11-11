@@ -421,6 +421,27 @@ func TestEnrichUserAgent(t *testing.T) {
 			want:     map[string]string{autoprop.PropPlatform: "ios"},
 		},
 		{
+			name:     "hybrid app event from its webview enriched",
+			uaHeader: "Mozilla/5.0 (Linux; Android 15; Pixel 8 Build/AP4A.250105.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.219 Mobile Safari/537.36",
+			events:   []*eventsv1.Event{{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: "android"})}},
+			want: map[string]string{
+				autoprop.PropPlatform:        "android",
+				useragent.PropBrowser:        "Chrome Mobile WebView",
+				useragent.PropBrowserVersion: "124",
+				useragent.PropOS:             "Android",
+				useragent.PropOSVersion:      "15",
+				useragent.PropDevice:         "Pixel 8",
+				useragent.PropMobile:         "true",
+			},
+		},
+		{
+			// An iPad's WebView sends a Mac's User-Agent by default.
+			name:     "hybrid app event from an ipad webview skipped",
+			uaHeader: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+			events:   []*eventsv1.Event{{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: "ios"})}},
+			want:     map[string]string{autoprop.PropPlatform: "ios"},
+		},
+		{
 			name:     "web event enriched",
 			uaHeader: chromeWindowsUA,
 			events:   []*eventsv1.Event{{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: autoprop.PlatformWeb})}},
@@ -467,12 +488,16 @@ func TestEnrichUserAgent(t *testing.T) {
 
 	t.Run("native event skipped, rest of batch enriched", func(t *testing.T) {
 		h := http.Header{}
-		h.Set("User-Agent", chromeWindowsUA)
+		h.Set("User-Agent", "okhttp/4.12.0")
 		native := &eventsv1.Event{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: "android"})}
 		plain := &eventsv1.Event{}
 		s.enrichUserAgent(context.Background(), "test-project", rpc.AuthTypePublicKey, h, []*eventsv1.Event{native, plain})
 		assertProps(t, native, map[string]string{autoprop.PropPlatform: "android"})
-		assertProps(t, plain, chromeProps)
+		assertProps(t, plain, map[string]string{
+			useragent.PropBrowser:        "okhttp",
+			useragent.PropBrowserVersion: "4",
+			useragent.PropMobile:         "false",
+		})
 	})
 }
 

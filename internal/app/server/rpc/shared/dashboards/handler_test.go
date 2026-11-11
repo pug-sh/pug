@@ -142,7 +142,7 @@ func TestCreateThenGet(t *testing.T) {
 		},
 	})
 	id, ids := created.GetId(), created.GetTileIds()
-	if want := "https://app.example/dashboards/" + id + "?project=" + projectID; created.GetUrl() != want {
+	if want := "https://app.example/p/" + projectID + "/dashboards/" + id; created.GetUrl() != want {
 		t.Errorf("url = %q, want %q", created.GetUrl(), want)
 	}
 	if len(ids) != 4 {
