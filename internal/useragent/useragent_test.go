@@ -329,3 +329,24 @@ func TestParseNilReceiver(t *testing.T) {
 		t.Errorf("nil parser should return nil, got %v", got)
 	}
 }
+
+func TestFromBrowserEngine(t *testing.T) {
+	tests := []struct {
+		ua   string
+		want bool
+	}{
+		{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36", true},
+		{"Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36", true},
+		{"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148", true},
+		{"okhttp/4.12.0", false},
+		{"Runner/1 CFNetwork/1568.100.1 Darwin/24.0.0", false},
+		{"Dart/3.5 (dart:io)", false},
+		{"pug-android/1.0.0", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := FromBrowserEngine(header(tt.ua)); got != tt.want {
+			t.Errorf("FromBrowserEngine(%q) = %v, want %v", tt.ua, got, tt.want)
+		}
+	}
+}
