@@ -152,7 +152,7 @@ func (s *Server) link(projectID, dashboardID string) *string {
 	if s.baseURL == "" {
 		return nil
 	}
-	return proto.String(s.baseURL + "/dashboards/" + url.PathEscape(dashboardID) + "?project=" + url.QueryEscape(projectID))
+	return proto.String(s.baseURL + "/p/" + url.PathEscape(projectID) + "/dashboards/" + url.PathEscape(dashboardID))
 }
 
 func upsertError(err error, dashboardID string) error {
