@@ -331,8 +331,8 @@ func TestE2E_ToolsListPinsCuratedNames(t *testing.T) {
 	}
 }
 
-// Claude's connector directory requires a title on every tool, and readOnlyHint on
-// one that reads or destructiveHint on one that writes.
+// Claude's connector directory requires a title on every tool, and ChatGPT's requires
+// readOnlyHint, destructiveHint and openWorldHint set explicitly on every tool.
 func TestE2E_ToolsAreTitledAndAnnotated(t *testing.T) {
 	deps := newTestServer(t)
 	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
@@ -367,8 +367,11 @@ func TestE2E_ToolsAreTitledAndAnnotated(t *testing.T) {
 		if a.ReadOnlyHint == writes {
 			t.Errorf("tool %q: readOnlyHint = %v, want %v", tl.Name, a.ReadOnlyHint, !writes)
 		}
-		if destructive := a.DestructiveHint != nil && *a.DestructiveHint; writes && !destructive {
-			t.Errorf("tool %q writes but isn't marked destructive", tl.Name)
+		if a.DestructiveHint == nil || *a.DestructiveHint != writes {
+			t.Errorf("tool %q: destructiveHint must be explicitly %v", tl.Name, writes)
+		}
+		if a.OpenWorldHint == nil || *a.OpenWorldHint {
+			t.Errorf("tool %q: openWorldHint must be explicitly false", tl.Name)
 		}
 	}
 }

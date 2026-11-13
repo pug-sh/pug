@@ -12,10 +12,12 @@ const (
 	claudeRedirect = "https://claude.ai/api/mcp/auth_callback"
 	claudeCodeID   = "https://claude.ai/oauth/claude-code-client-metadata"
 	chatGPTID      = "https://chatgpt.com/oauth/client.json"
+	grokID         = "https://grok.com/oauth/mcp-client.json"
 )
 
-// The three documents as served on 2026-11-08.
+// The documents as served on 2026-11-08, and Grok's on 2026-11-13.
 var realDocuments = map[string]string{
+	grokID:       `{"client_id":"https://grok.com/oauth/mcp-client.json","client_name":"Grok","client_uri":"https://grok.com","logo_uri":"https://grok.com/icon-512x512.png","redirect_uris":["https://grok.com/connectors-oauth-exchange-code/","https://console.x.ai/connectors-oauth-exchange-code/"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}`,
 	claudeID:     `{"client_id":"https://claude.ai/oauth/mcp-oauth-client-metadata","client_name":"Claude","client_uri":"https://claude.ai","redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"grant_types":["authorization_code","refresh_token","urn:ietf:params:oauth:grant-type:jwt-bearer"],"response_types":["code"],"token_endpoint_auth_method":"none"}`,
 	claudeCodeID: `{"client_id":"https://claude.ai/oauth/claude-code-client-metadata","client_name":"Claude Code","client_uri":"https://claude.ai","redirect_uris":["http://localhost/callback","http://127.0.0.1/callback"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}`,
 	chatGPTID:    `{"client_id":"https://chatgpt.com/oauth/client.json","client_uri":"https://chatgpt.com/","redirect_uris":["https://chatgpt.com/connector_platform_oauth_redirect"],"token_endpoint_auth_method":"private_key_jwt","token_endpoint_auth_methods_supported":["none","private_key_jwt"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"client_name":"ChatGPT","logo_uri":"https://persistent.oaistatic.com/sonic/misc/openai-logo.png","token_endpoint_auth_signing_alg":"RS256","jwks_uri":"https://chatgpt.com/oauth/jwks.json"}`,
@@ -42,6 +44,7 @@ func TestRealDocumentsPass(t *testing.T) {
 		{claudeCodeID, "http://localhost:53682/callback", "Claude Code"},
 		{claudeCodeID, "http://127.0.0.1:53682/callback", "Claude Code"},
 		{chatGPTID, "https://chatgpt.com/connector_platform_oauth_redirect", "ChatGPT"},
+		{grokID, "https://grok.com/connectors-oauth-exchange-code/", "Grok"},
 	} {
 		doc, err := c.Fetch(t.Context(), tc.clientID)
 		if err != nil || doc.ClientName != tc.name || !doc.Lists(tc.redirect) {
@@ -70,8 +73,8 @@ func TestDocumentRefusals(t *testing.T) {
 		want error
 	}{
 		{
-			name: "a redirect on another host",
-			doc:  exampleDocument(id, "https://example.com/callback", "https://evil.example/callback"),
+			name: "only a redirect on another host",
+			doc:  exampleDocument(id, "https://evil.example/callback"),
 			want: ErrDocument,
 		},
 		{
@@ -129,6 +132,18 @@ func TestDocumentRefusals(t *testing.T) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestRedirectOnAnotherHostIsDropped(t *testing.T) {
+	const id = "https://example.com/client.json"
+	c := documents(map[string]string{id: exampleDocument(id, "https://example.com/callback", "https://evil.example/callback")})
+	doc, err := c.Fetch(t.Context(), id)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if !doc.Lists("https://example.com/callback") || doc.Lists("https://evil.example/callback") {
+		t.Errorf("redirect_uris = %v, want only the one on example.com", doc.RedirectURIs)
 	}
 }
 

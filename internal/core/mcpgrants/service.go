@@ -35,7 +35,7 @@ const (
 var (
 	ErrClientInvalid     = errors.New("client_id or its metadata document is invalid")
 	ErrClientUnavailable = errors.New("client metadata document could not be loaded")
-	ErrRedirectNotListed = errors.New("redirect_uri is not in the client's metadata document")
+	ErrRedirectNotListed = errors.New("redirect_uri is not in the client's metadata document, or is neither https on the client's host nor on a loopback host")
 	ErrSessionEnded      = errors.New("the approving session has ended")
 	ErrNoOrg             = errors.New("the approving person belongs to no org")
 	ErrProjectNotFound   = errors.New("project not found")
