@@ -173,10 +173,13 @@ func sdkTool(d toolDisposition, tool mcpruntime.Tool) *gomcp.Tool {
 		Description: tool.Description,
 		InputSchema: tool.RawInputSchema,
 		// Clients on MCP specs before 2025-06-18 read the title only from the annotations.
-		Annotations: &gomcp.ToolAnnotations{Title: d.title, ReadOnlyHint: !d.writes},
-	}
-	if d.writes {
-		t.Annotations.DestructiveHint = new(true)
+		// ChatGPT's directory wants every hint explicit, and no tool reaches past pug's own data.
+		Annotations: &gomcp.ToolAnnotations{
+			Title:           d.title,
+			ReadOnlyHint:    !d.writes,
+			DestructiveHint: new(d.writes),
+			OpenWorldHint:   new(false),
+		},
 	}
 	if len(tool.RawOutputSchema) > 0 {
 		t.OutputSchema = tool.RawOutputSchema
