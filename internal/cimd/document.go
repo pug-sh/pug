@@ -3,7 +3,6 @@ package cimd
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
 	"slices"
 	"strings"
@@ -45,13 +44,16 @@ func parse(body []byte, clientID, host string) (Document, error) {
 	if err := json.Unmarshal(body, &d); err != nil {
 		return Document{}, err
 	}
-	if err := d.check(clientID, host); err != nil {
+	// Grok lists a console.x.ai redirect beside its grok.com one, so a redirect pug
+	// won't send codes to is dropped rather than refusing the client.
+	d.RedirectURIs = slices.DeleteFunc(d.RedirectURIs, func(r string) bool { return !redirectAllowed(r, host) })
+	if err := d.check(clientID); err != nil {
 		return Document{}, err
 	}
 	return d, nil
 }
 
-func (d Document) check(clientID, host string) error {
+func (d Document) check(clientID string) error {
 	switch {
 	case d.ClientID != clientID:
 		return errors.New("client_id differs from the document's URL")
@@ -60,18 +62,13 @@ func (d Document) check(clientID, host string) error {
 		strings.ContainsFunc(d.ClientName, unicode.IsControl):
 		return errors.New("client_name is missing, too long or has control characters")
 	case len(d.RedirectURIs) == 0:
-		return errors.New("no redirect_uris")
+		return errors.New("no redirect_uris that are https on the client's host or on a loopback host")
 	case !d.canUseNone():
 		return errors.New("the client can't authenticate with none")
 	case !absentOrHas(d.GrantTypes, "authorization_code"):
 		return errors.New("grant_types lacks authorization_code")
 	case !absentOrHas(d.ResponseTypes, "code"):
 		return errors.New("response_types lacks code")
-	}
-	for _, r := range d.RedirectURIs {
-		if !redirectAllowed(r, host) {
-			return fmt.Errorf("redirect %q is neither https on the client's host nor on a loopback host", r)
-		}
 	}
 	return nil
 }

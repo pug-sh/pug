@@ -143,7 +143,7 @@ func approvalError(err error) error {
 	case errors.Is(err, coremcpgrants.ErrClientInvalid):
 		return apperr.Invalid(apperr.ReasonMCPClientInvalid, "the app's client_id or its details are invalid")
 	case errors.Is(err, coremcpgrants.ErrRedirectNotListed):
-		return apperr.Invalid(apperr.ReasonMCPRedirectNotListed, "the app's details don't list its redirect_uri")
+		return apperr.Invalid(apperr.ReasonMCPRedirectNotListed, "the app's details don't list its redirect_uri on a host pug accepts")
 	// The app refreshes the session and retries, and the new access token has a sid.
 	case errors.Is(err, coremcpgrants.ErrSessionEnded):
 		return apperr.Unauthenticated(apperr.ReasonUnauthenticated, "the session has ended")
