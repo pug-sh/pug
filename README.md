@@ -25,6 +25,8 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
   comparison.
 - **Dashboards**: compose insight and markdown tiles on a grid with a
   board-level time window, accelerated by a pre-aggregated rollup fast path.
+- **MCP server**: Claude, ChatGPT, or any MCP client can query your insights,
+  events, and profiles, and build dashboards for you.
 - **Privacy & compliance**: GDPR/DPDP data-subject erasure of a person's
   events and profile.
 
@@ -91,6 +93,24 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
   </picture>
   <br /><sub><b>Profiles</b>: the person behind the events, with traits, sessions, and activity.</sub>
 </p>
+
+## MCP server
+
+Pug serves a [Model Context Protocol](https://modelcontextprotocol.io) server,
+so an AI assistant can query your analytics. Sixteen tools read projects,
+dashboards, insights, events, sessions, and profiles, and one creates and edits
+dashboards.
+
+| Environment | Endpoint |
+|---|---|
+| Pug Cloud | `https://api.pug.sh/mcp` |
+| Self-hosted | `/mcp` on your API host, e.g. `http://localhost:3000/mcp` |
+
+In Claude, add Pug from the [connectors directory](https://claude.ai/directory/pug).
+Other clients take the endpoint as a custom connector. Connect by signing in to
+Pug, or with a project's private (`prv_`) API key in the `x-api-key` header. A
+self-hosted server offers sign-in only once `PUG_API_BASE_URL` is set. Setup
+steps for each client are in the [MCP docs](https://docs.pug.sh/mcp/).
 
 ## Tech stack
 
