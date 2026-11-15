@@ -86,10 +86,14 @@ func (x *SharedDashboardsServiceQueryRequest) GetGranularity() v11.Granularity {
 }
 
 type SharedDashboardsServiceQueryResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Dashboard     *v12.RenderedDashboard `protobuf:"bytes,1,opt,name=dashboard" json:"dashboard,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Dashboard *v12.RenderedDashboard `protobuf:"bytes,1,opt,name=dashboard" json:"dashboard,omitempty"`
+	// The shared project's IANA reporting timezone, which the tiles were bucketed in and
+	// a public viewer has no project to read. Empty: an older project that names no
+	// zone, so buckets follow ClickHouse's own zone.
+	ReportingTimezone *string `protobuf:"bytes,2,opt,name=reporting_timezone,json=reportingTimezone" json:"reporting_timezone,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *SharedDashboardsServiceQueryResponse) Reset() {
@@ -129,6 +133,13 @@ func (x *SharedDashboardsServiceQueryResponse) GetDashboard() *v12.RenderedDashb
 	return nil
 }
 
+func (x *SharedDashboardsServiceQueryResponse) GetReportingTimezone() string {
+	if x != nil && x.ReportingTimezone != nil {
+		return *x.ReportingTimezone
+	}
+	return ""
+}
+
 var File_public_dashboards_v1_dashboards_proto protoreflect.FileDescriptor
 
 const file_public_dashboards_v1_dashboards_proto_rawDesc = "" +
@@ -139,9 +150,10 @@ const file_public_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\n" +
 	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12K\n" +
 	"\vgranularity\x18\x03 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\vgranularity:\xae\x01\xbaH\xaa\x01\x1a\xa7\x01\n" +
-	"8query_shared_dashboard_request.valid_time_range_override\x12'time_range override must have from < to\x1aB!has(this.time_range) || this.time_range.from < this.time_range.to\"p\n" +
+	"8query_shared_dashboard_request.valid_time_range_override\x12'time_range override must have from < to\x1aB!has(this.time_range) || this.time_range.from < this.time_range.to\"\x9f\x01\n" +
 	"$SharedDashboardsServiceQueryResponse\x12H\n" +
-	"\tdashboard\x18\x01 \x01(\v2*.dashboard.dashboards.v1.RenderedDashboardR\tdashboard2\x9c\x01\n" +
+	"\tdashboard\x18\x01 \x01(\v2*.dashboard.dashboards.v1.RenderedDashboardR\tdashboard\x12-\n" +
+	"\x12reporting_timezone\x18\x02 \x01(\tR\x11reportingTimezone2\x9c\x01\n" +
 	"\x17SharedDashboardsService\x12\x80\x01\n" +
 	"\x05Query\x129.public.dashboards.v1.SharedDashboardsServiceQueryRequest\x1a:.public.dashboards.v1.SharedDashboardsServiceQueryResponse\"\x00BRZPgithub.com/pug-sh/pug/internal/gen/proto/public/dashboards/v1;publicdashboardsv1b\beditionsp\xe8\a"
 

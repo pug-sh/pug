@@ -177,7 +177,7 @@ All cached insight builders emit `SETTINGS use_query_cache = 1, query_cache_ttl 
 - at most one breakdown and, if present, on a materialized dimension (`materializedDims`, twenty since migration 009: the original ten plus `$pathname`, `$hostname`, `$referrerDomain`, `$channel`, `$locale`, `$screenSize`, `$utmTerm`, `$utmContent`, `$browserVersion`, `$osVersion`);
 - no filter groups and no per-event filters;
 - non-empty event kind;
-- DAY/WEEK/MONTH granularity (and UTC bucketing: a non-UTC `timezone` falls back to raw, since the rollup is UTC-day-keyed).
+- DAY/WEEK/MONTH granularity, and a `timezone` that names no zone (`""` or `"UTC"`). Any named zone, `Etc/UTC` included, falls back to raw, because the rollup's `day` is a bare `toDate(occur_time)` cut in the ClickHouse server's zone. Writes store UTC as `Etc/UTC`, so only older projects still holding `""` reach this path.
 
 The dispatchers `trendsQueryForExecution` / `segmentationQueryForExecution` pick `buildTrendsFromRollup` / `buildSegmentationFromRollup` when eligible, else the raw `BuildTrendsQuery` / `BuildSegmentationQuery`. The public builders therefore stay pure raw-events builders, and any query the predicate rejects (filtered, multi-dimension, sub-day, numeric-aggregation, custom-property breakdown, funnel/retention) runs unchanged on raw events.
 

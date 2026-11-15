@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
@@ -57,8 +58,9 @@ func (s *Server) Query(
 	overrides := coredashboards.DashboardQueryOverrides{
 		TimeRange:   req.Msg.GetTimeRange(),
 		Granularity: req.Msg.GetGranularity(),
+		Timezone:    dashboard.ReportingTimezone,
 	}
-	rendered, err := coredashboards.RenderDashboard(ctx, s.executor, dashboard, overrides)
+	rendered, err := coredashboards.RenderDashboard(ctx, s.executor, dashboard.DashboardWithTiles, overrides)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, rpc.ConnectCtxErr(err)
@@ -67,6 +69,7 @@ func (s *Server) Query(
 	}
 
 	return connect.NewResponse(&publicdashboardsv1.SharedDashboardsServiceQueryResponse{
-		Dashboard: coredashboards.RenderedDashboardToRPC(ctx, rendered),
+		Dashboard:         coredashboards.RenderedDashboardToRPC(ctx, rendered),
+		ReportingTimezone: proto.String(dashboard.ReportingTimezone),
 	}), nil
 }

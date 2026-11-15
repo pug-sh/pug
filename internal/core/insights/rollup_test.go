@@ -17,6 +17,7 @@ import (
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 func rollupTrendsSpec(agg insightsv1.AggregationType, kind string, breakdown string) *insightsv1.InsightQuerySpec {
@@ -521,47 +522,50 @@ func TestTrendsExecution_FallsBackToRaw_NonAlignedWindow(t *testing.T) {
 	}
 }
 
-func TestTrendsExecution_FallsBackToRaw_NonUTCTimezone(t *testing.T) {
-	// Fully rollup-eligible (DAY, no filters, materialized breakdown, aligned window)
-	// EXCEPT the bucketing timezone is non-UTC. The daily rollup is UTC-keyed, so
-	// serving a local-calendar query from it would silently bucket on UTC boundaries
-	// (off-by-one days for the viewer). The utcBucketing gate must force the raw path.
-	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
-	req.Timezone = proto.String("Asia/Kolkata")
-	q, usedRollup, err := trendsQueryForExecution(req, "proj_123", time.Now())
-	if err != nil {
-		t.Fatalf("trendsQueryForExecution: %v", err)
-	}
-	if usedRollup {
-		t.Fatal("non-UTC timezone must not use the UTC-keyed rollup")
-	}
-	if strings.Contains(q.SQL(), rollupTable) {
-		t.Errorf("non-UTC timezone must hit raw events, got rollup\nSQL:\n%s", q.SQL())
-	}
-	if !strings.Contains(q.SQL(), "FROM events") {
-		t.Errorf("expected raw events query\nSQL:\n%s", q.SQL())
-	}
-	if !strings.Contains(q.SQL(), "toTimeZone(occur_time, 'Asia/Kolkata')") {
-		t.Errorf("raw fallback must bucket in the requested zone\nSQL:\n%s", q.SQL())
+func TestTrendsExecution_FallsBackToRaw_NamedTimezone(t *testing.T) {
+	// Fully rollup-eligible except the request names a zone. The rollup's day is a bare
+	// toDate(occur_time), cut in the ClickHouse server's zone, so any named zone,
+	// StoredUTC included, must take the raw path and bucket in that zone.
+	for _, tz := range []string{"Asia/Kolkata", tzx.StoredUTC} {
+		req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
+		req.Timezone = proto.String(tz)
+		q, usedRollup, err := trendsQueryForExecution(req, "proj_123", time.Now())
+		if err != nil {
+			t.Fatalf("%s: trendsQueryForExecution: %v", tz, err)
+		}
+		if usedRollup {
+			t.Fatalf("%s must not use the rollup", tz)
+		}
+		if strings.Contains(q.SQL(), rollupTable) {
+			t.Errorf("%s must hit raw events, got rollup\nSQL:\n%s", tz, q.SQL())
+		}
+		if !strings.Contains(q.SQL(), "FROM events") {
+			t.Errorf("%s: expected raw events query\nSQL:\n%s", tz, q.SQL())
+		}
+		if !strings.Contains(q.SQL(), "toTimeZone(occur_time, '"+tz+"')") {
+			t.Errorf("%s: raw fallback must bucket in the requested zone\nSQL:\n%s", tz, q.SQL())
+		}
 	}
 }
 
-func TestSegmentationExecution_FallsBackToRaw_NonUTCTimezone(t *testing.T) {
+func TestSegmentationExecution_FallsBackToRaw_NamedTimezone(t *testing.T) {
 	// Same gate on the segmentation dispatch path.
-	req := rollupDayReq(rollupSegSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view"))
-	req.Timezone = proto.String("Asia/Kolkata")
-	q, usedRollup, err := segmentationQueryForExecution(req, "proj_123", time.Now())
-	if err != nil {
-		t.Fatalf("segmentationQueryForExecution: %v", err)
-	}
-	if usedRollup {
-		t.Fatal("non-UTC timezone must not use the UTC-keyed rollup")
-	}
-	if strings.Contains(q.SQL(), rollupTable) {
-		t.Errorf("non-UTC timezone must hit raw events, got rollup\nSQL:\n%s", q.SQL())
-	}
-	if !strings.Contains(q.SQL(), "FROM events") {
-		t.Errorf("expected raw events query\nSQL:\n%s", q.SQL())
+	for _, tz := range []string{"Asia/Kolkata", tzx.StoredUTC} {
+		req := rollupDayReq(rollupSegSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view"))
+		req.Timezone = proto.String(tz)
+		q, usedRollup, err := segmentationQueryForExecution(req, "proj_123", time.Now())
+		if err != nil {
+			t.Fatalf("%s: segmentationQueryForExecution: %v", tz, err)
+		}
+		if usedRollup {
+			t.Fatalf("%s must not use the rollup", tz)
+		}
+		if strings.Contains(q.SQL(), rollupTable) {
+			t.Errorf("%s must hit raw events, got rollup\nSQL:\n%s", tz, q.SQL())
+		}
+		if !strings.Contains(q.SQL(), "FROM events") {
+			t.Errorf("%s: expected raw events query\nSQL:\n%s", tz, q.SQL())
+		}
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 
 // newShareToken returns a 32-byte cryptographically-random token, hex-encoded
 // (64 chars). It is the sole secret gating the unauthenticated
-// SharedDashboardsService.Query, so it must come from crypto/rand — not a
+// SharedDashboardsService.Query, so it must come from crypto/rand, not a
 // monotonic id generator like xid (mirrors auth.newActionToken).
 func newShareToken() (string, error) {
 	b := make([]byte, 32)
@@ -31,7 +31,7 @@ func newShareToken() (string, error) {
 // dbwriteShareToDbread bridges the independently-generated write/read structs
 // for dashboard_shares (the columns match 1:1 but the Go types are distinct, per
 // the sqlc read/write split). Keep the field list in sync when a column is
-// added — a forgotten field compiles cleanly but silently zeroes the column on
+// added: a forgotten field compiles cleanly but silently zeroes the column on
 // the write-return path. TestDbwriteShareToDbread_FieldParity pins the count.
 func dbwriteShareToDbread(share dbwrite.DashboardShare) dbread.DashboardShare {
 	return dbread.DashboardShare{
@@ -104,17 +104,25 @@ func setShare(ctx context.Context, w *dbwrite.Queries, projectID, dashboardID st
 	return enabledShare(dbwriteShareToDbread(share)), nil
 }
 
-// GetSharedDashboard loads a dashboard and its tiles via an enabled share token.
+// SharedDashboard is a dashboard resolved through its public share, plus its
+// project's reporting timezone.
+type SharedDashboard struct {
+	DashboardWithTiles
+	ReportingTimezone string
+}
+
+// GetSharedDashboard loads a dashboard, its tiles and its project's reporting
+// timezone via an enabled share token.
 // The token is the public capability secret, so it is never written to logs or
 // telemetry attributes; diagnostics key on the resolved dashboard_id instead.
-func (s *Service) GetSharedDashboard(ctx context.Context, shareToken string) (DashboardWithTiles, error) {
+func (s *Service) GetSharedDashboard(ctx context.Context, shareToken string) (SharedDashboard, error) {
 	share, err := s.read.GetEnabledDashboardShareByToken(ctx, shareToken)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.DebugContext(ctx, "get shared dashboard: share token not found or disabled")
-			return DashboardWithTiles{}, ErrDashboardNotFound
+			return SharedDashboard{}, ErrDashboardNotFound
 		}
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to get dashboard share by token", err)
+		return SharedDashboard{}, recordServiceError(ctx, "failed to get dashboard share by token", err)
 	}
 	telemetry.SetTenant(ctx, "", share.ProjectID)
 
@@ -131,22 +139,33 @@ func (s *Service) GetSharedDashboard(ctx context.Context, shareToken string) (Da
 				slog.String("dashboard_id", share.DashboardID),
 			)
 			telemetry.RecordError(ctx, fmt.Errorf("dashboard share references missing dashboard %s", share.DashboardID))
-			return DashboardWithTiles{}, ErrDashboardNotFound
+			return SharedDashboard{}, ErrDashboardNotFound
 		}
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to get shared dashboard", err,
+		return SharedDashboard{}, recordServiceError(ctx, "failed to get shared dashboard", err,
 			slog.String("dashboard_id", share.DashboardID))
 	}
 
 	tiles, err := s.read.ListDashboardTilesByDashboardID(ctx, share.DashboardID)
 	if err != nil {
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list shared dashboard tiles", err,
+		return SharedDashboard{}, recordServiceError(ctx, "failed to list shared dashboard tiles", err,
 			slog.String("dashboard_id", share.DashboardID))
 	}
 
-	readShare := share
-	return DashboardWithTiles{
-		Dashboard: dashboard,
-		Tiles:     tiles,
-		Share:     &readShare,
+	reportingTimezone, err := s.read.GetProjectReportingTimezoneByID(ctx, share.ProjectID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.DebugContext(ctx, "get shared dashboard: project deleted after its share resolved",
+				slog.String("dashboard_id", share.DashboardID))
+			return SharedDashboard{}, ErrDashboardNotFound
+		}
+		return SharedDashboard{}, recordServiceError(ctx, "failed to get shared dashboard reporting timezone", err,
+			slog.String("dashboard_id", share.DashboardID))
+	}
+
+	return SharedDashboard{
+		Dashboard:         dashboard,
+		Tiles:             tiles,
+		Share:             &share,
+		ReportingTimezone: reportingTimezone,
 	}, nil
 }

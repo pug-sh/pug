@@ -1,11 +1,11 @@
 // Package tzx centralizes IANA timezone validation, normalization, and location
 // loading shared across project creation (where a reporting zone is captured and
 // stored) and the insights/dashboards query paths (where it aligns time-bucket
-// boundaries and preset windows to a viewer's local calendar).
+// boundaries and preset windows to the project's calendar).
 //
-// The empty string and the literal "UTC" are treated identically as "UTC bucketing"
-// — the historical default — so callers can store/compare a single canonical zero
-// value ("") and keep byte-identical SQL and rollup eligibility for UTC.
+// "" and "UTC" select SQL that names no zone, the only form the trends/segmentation
+// rollup serves. It follows the ClickHouse server's zone, which need not be UTC, so
+// writes store UTC as StoredUTC; a project still holding "" keeps the server's zone.
 package tzx
 
 import (
@@ -27,7 +27,11 @@ var nameRe = regexp.MustCompile(`^[A-Za-z0-9_+/-]+$`)
 // and the projects.reporting_timezone column width.
 const maxNameLen = 64
 
-// IsUTC reports whether name means "UTC bucketing": empty or the literal "UTC".
+// StoredUTC is how a write stores UTC: a named zone, so reads bucket it in SQL that names it.
+const StoredUTC = "Etc/UTC"
+
+// IsUTC reports whether name selects SQL that names no zone: empty or the literal
+// "UTC", never StoredUTC.
 func IsUTC(name string) bool {
 	return name == "" || name == "UTC"
 }
@@ -38,11 +42,11 @@ func ValidChars(name string) bool {
 	return len(name) <= maxNameLen && nameRe.MatchString(name)
 }
 
-// Normalize collapses the two UTC spellings to "" and otherwise returns name
-// unchanged. It does not validate; pair with Validate when the input is untrusted.
+// Normalize maps "" and "UTC" to StoredUTC and otherwise returns name unchanged. It
+// does not validate; pair with Validate when the input is untrusted.
 func Normalize(name string) string {
 	if IsUTC(name) {
-		return ""
+		return StoredUTC
 	}
 	return name
 }
@@ -50,13 +54,13 @@ func Normalize(name string) string {
 // Validate accepts ""/"UTC" (UTC) and otherwise requires the injection-safe charset
 // and a loadable location. ClickHouse carries its own tz database, so a name accepted
 // here but unknown there would surface as a query error at execution rather than here.
-// It is Load with the resolved location discarded — the two share one validation ladder.
+// It is Load with the resolved location discarded: the two share one validation ladder.
 func Validate(name string) error {
 	_, err := Load(name)
 	return err
 }
 
-// Coerce returns the normalized name when it validates, otherwise "" (UTC). Use at
+// Coerce returns the normalized name when it validates, otherwise StoredUTC. Use at
 // lenient capture points (project creation, signup) where a malformed client value
 // must never fail the operation. The fallback to UTC must not be fully silent: a
 // rejected value is a real client bug (the proto already guards the charset, so what
@@ -66,7 +70,7 @@ func Coerce(ctx context.Context, name string) string {
 	if err := Validate(name); err != nil {
 		slog.WarnContext(ctx, "coercing invalid reporting timezone to UTC",
 			slog.String("reporting_timezone", name))
-		return ""
+		return StoredUTC
 	}
 	return Normalize(name)
 }

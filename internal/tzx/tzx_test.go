@@ -10,9 +10,12 @@ func TestIsUTCAndNormalize(t *testing.T) {
 		if !IsUTC(name) {
 			t.Errorf("IsUTC(%q) = false, want true", name)
 		}
-		if got := Normalize(name); got != "" {
-			t.Errorf("Normalize(%q) = %q, want \"\"", name, got)
+		if got := Normalize(name); got != StoredUTC {
+			t.Errorf("Normalize(%q) = %q, want %q", name, got, StoredUTC)
 		}
+	}
+	if IsUTC(StoredUTC) {
+		t.Errorf("IsUTC(%q) = true, want false: a stored UTC must name its zone in SQL", StoredUTC)
 	}
 	if IsUTC("Asia/Kolkata") {
 		t.Error("IsUTC(Asia/Kolkata) = true, want false")
@@ -31,8 +34,8 @@ func TestValidate(t *testing.T) {
 	}
 	invalid := []string{
 		"Not/A/Zone",                // well-formed charset but unknown to tzdata
-		"Asia/Kolkata'; drop table", // injection attempt — fails charset
-		"Asia/Kolkata\"",            // quote — fails charset
+		"Asia/Kolkata'; drop table", // injection attempt: fails charset
+		"Asia/Kolkata\"",            // quote: fails charset
 		"a much too long timezone name that exceeds the sixty four character cap zzz",
 	}
 	for _, name := range invalid {
@@ -47,13 +50,15 @@ func TestCoerce(t *testing.T) {
 	if got := Coerce(ctx, "Asia/Kolkata"); got != "Asia/Kolkata" {
 		t.Errorf("Coerce(valid) = %q, want Asia/Kolkata", got)
 	}
-	if got := Coerce(ctx, "UTC"); got != "" {
-		t.Errorf("Coerce(UTC) = %q, want \"\"", got)
+	for _, name := range []string{"", "UTC"} {
+		if got := Coerce(ctx, name); got != StoredUTC {
+			t.Errorf("Coerce(%q) = %q, want %q", name, got, StoredUTC)
+		}
 	}
-	// Malformed/unknown coerces to UTC ("") rather than failing.
+	// Malformed/unknown coerces to UTC rather than failing.
 	for _, name := range []string{"Not/A/Zone", "evil'); drop"} {
-		if got := Coerce(ctx, name); got != "" {
-			t.Errorf("Coerce(%q) = %q, want \"\" (UTC fallback)", name, got)
+		if got := Coerce(ctx, name); got != StoredUTC {
+			t.Errorf("Coerce(%q) = %q, want %q (UTC fallback)", name, got, StoredUTC)
 		}
 	}
 }
@@ -65,11 +70,18 @@ func TestLoad(t *testing.T) {
 			t.Errorf("Load(%q) = (%v, %v), want (UTC, nil)", name, loc, err)
 		}
 	}
+	stored, err := Load(StoredUTC)
+	if err != nil {
+		t.Fatalf("Load(%q) error: %v", StoredUTC, err)
+	}
+	if _, offset := time.Date(2026, 6, 10, 0, 0, 0, 0, stored).Zone(); offset != 0 {
+		t.Errorf("%s offset = %ds, want 0", StoredUTC, offset)
+	}
 	loc, err := Load("Asia/Kolkata")
 	if err != nil {
 		t.Fatalf("Load(Asia/Kolkata) error: %v", err)
 	}
-	// Asia/Kolkata is UTC+05:30 with no DST — a stable offset to assert on.
+	// Asia/Kolkata is UTC+05:30 with no DST, a stable offset to assert on.
 	_, offset := time.Date(2026, 6, 10, 0, 0, 0, 0, loc).Zone()
 	if offset != int((5*time.Hour+30*time.Minute)/time.Second) {
 		t.Errorf("Asia/Kolkata offset = %ds, want 19800s", offset)

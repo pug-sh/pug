@@ -28,11 +28,11 @@ type DashboardQueryOverrides struct {
 	TimeRange   *commonv1.TimeRange    // nil = no override
 	Granularity insightsv1.Granularity // GRANULARITY_UNSPECIFIED (zero) = no override
 	// Timezone is an IANA name aligning day/week/month bucket boundaries and the
-	// resolved default-preset window to the viewer's local calendar. Empty = UTC
-	// (the historical behavior). On the QueryDashboard path this is the project's
-	// stored reporting_timezone (server-injected, not a client request field), which
-	// was validated at write time (Coerce on create, Validate on UpdateMeta); the
-	// insights executor re-validates it per tile before use.
+	// resolved default-preset window to the project's calendar. Empty names no zone:
+	// the window aligns to UTC and buckets follow the ClickHouse server's zone. Every
+	// caller passes the project's stored reporting_timezone (server-injected, not a
+	// client request field), which was validated at write time (Coerce on create,
+	// Validate on UpdateMeta); the insights executor re-validates it per tile before use.
 	Timezone string
 }
 

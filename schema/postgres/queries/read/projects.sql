@@ -6,6 +6,9 @@ order by create_time asc, id asc;
 -- name: GetProjectByID :one
 select * from projects where id = @id and deletion_time is null;
 
+-- name: GetProjectReportingTimezoneByID :one
+select reporting_timezone from projects where id = @id and deletion_time is null;
+
 -- name: GetProjectByIDAndOrgMember :one
 select p.*
 from projects p

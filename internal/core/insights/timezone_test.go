@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 func TestBucketExpr_UTCIsUnwrapped(t *testing.T) {
@@ -63,7 +64,9 @@ func TestUTCBucketing(t *testing.T) {
 	if !utcBucketing("") || !utcBucketing("UTC") {
 		t.Error("utcBucketing should be true for \"\" and \"UTC\"")
 	}
-	if utcBucketing("Asia/Kolkata") {
-		t.Error("utcBucketing(Asia/Kolkata) = true, want false")
+	for _, tz := range []string{"Asia/Kolkata", tzx.StoredUTC} {
+		if utcBucketing(tz) {
+			t.Errorf("utcBucketing(%s) = true, want false", tz)
+		}
 	}
 }
