@@ -187,15 +187,11 @@ func CreateOrgWithDefaultsInTx(
 	return org, nil
 }
 
-// CreateOrgWithDefaults opens its own transaction around CreateOrgWithDefaultsInTx.
-// Use this from RPC handlers and other callers without an active tx. Its default
-// project gets UTC (tzx.StoredUTC); the browser timezone is captured on the
-// signup paths (auth.CompleteMagicLink and auth.CompleteOIDCSignIn), which thread it
-// into CreateOrgWithDefaultsInTx via FinishSignup. A future org-create UI that
-// captures a zone can thread it here.
+// CreateOrgWithDefaults checks OrgCreationAllowedInTx, then runs CreateOrgWithDefaultsInTx
+// in its own tx. An empty or invalid reportingTimezone stores tzx.StoredUTC.
 func (s *Service) CreateOrgWithDefaults(
 	ctx context.Context,
-	customerID, displayName string,
+	customerID, displayName, reportingTimezone string,
 ) (dbwrite.Org, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -227,7 +223,7 @@ func (s *Service) CreateOrgWithDefaults(
 		return dbwrite.Org{}, ErrOrgCreationRestricted
 	}
 
-	org, err := CreateOrgWithDefaultsInTx(ctx, w, customerID, displayName, "")
+	org, err := CreateOrgWithDefaultsInTx(ctx, w, customerID, displayName, reportingTimezone)
 	if err != nil {
 		return dbwrite.Org{}, err
 	}

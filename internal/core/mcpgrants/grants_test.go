@@ -51,7 +51,7 @@ func (f *fixture) signUp(email string) (customerID, orgID, projectID string) {
 	if _, err := dbwrite.New(f.db.PgW).CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: customerID, Email: email}); err != nil {
 		f.t.Fatalf("CreateCustomer: %v", err)
 	}
-	org, err := f.orgs.CreateOrgWithDefaults(ctx, customerID, "Org of "+email)
+	org, err := f.orgs.CreateOrgWithDefaults(ctx, customerID, "Org of "+email, "")
 	if err != nil {
 		f.t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}

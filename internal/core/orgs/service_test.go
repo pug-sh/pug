@@ -52,7 +52,7 @@ func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
 		t.Fatalf("seed customer: %v", err)
 	}
 
-	org, err := svc.CreateOrgWithDefaults(ctx, customerID, "acme")
+	org, err := svc.CreateOrgWithDefaults(ctx, customerID, "acme", "")
 	if err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestCreateOrgWithDefaultsRollsBackWhenMemberFKFails(t *testing.T) {
 	// and the whole tx (org + member + project) must roll back.
 	missingCustomerID := xid.New().String()
 
-	if _, err := svc.CreateOrgWithDefaults(ctx, missingCustomerID, "rollback-test"); err == nil {
+	if _, err := svc.CreateOrgWithDefaults(ctx, missingCustomerID, "rollback-test", ""); err == nil {
 		t.Fatal("want error from CreateOrgMember FK violation, got nil")
 	}
 
@@ -660,7 +660,7 @@ func TestInviteMemberRejectsAlreadyMember(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed existing member: %v", err)
 	}
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "already-member-test")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "already-member-test", "")
 	if err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}
@@ -686,7 +686,7 @@ func TestInviteMemberRejectsSecondPendingInvite(t *testing.T) {
 	ctx := context.Background()
 
 	admin := seedCustomer(t, ctx, write, "admin")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "second-invite-test")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "second-invite-test", "")
 	if err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}
@@ -715,7 +715,7 @@ func TestGetMemberRoleRejectsDriftedDBValue(t *testing.T) {
 	ctx := context.Background()
 
 	admin := seedCustomer(t, ctx, write, "admin")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "drift-test")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "drift-test", "")
 	if err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}
@@ -864,7 +864,7 @@ func TestLeaveHappyPath(t *testing.T) {
 	owner := seedCustomer(t, ctx, write, "owner")
 	mate := seedCustomer(t, ctx, write, "mate")
 	leaver := seedCustomer(t, ctx, write, "leaver")
-	org, err := svc.CreateOrgWithDefaults(ctx, owner, "leave-org")
+	org, err := svc.CreateOrgWithDefaults(ctx, owner, "leave-org", "")
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
@@ -894,7 +894,7 @@ func TestLeaveLastAdmin(t *testing.T) {
 
 	soleAdmin := seedCustomer(t, ctx, write, "soleadmin")
 	member := seedCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, soleAdmin, "last-admin")
+	org, err := svc.CreateOrgWithDefaults(ctx, soleAdmin, "last-admin", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -920,7 +920,7 @@ func TestLeaveSoloAdminReturnsLastAdmin(t *testing.T) {
 	ctx := context.Background()
 
 	solo := seedCustomer(t, ctx, write, "solo")
-	org, err := svc.CreateOrgWithDefaults(ctx, solo, "only-member")
+	org, err := svc.CreateOrgWithDefaults(ctx, solo, "only-member", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -941,7 +941,7 @@ func TestLeaveNotMember(t *testing.T) {
 
 	owner := seedCustomer(t, ctx, write, "owner")
 	stranger := seedCustomer(t, ctx, write, "stranger")
-	org, err := svc.CreateOrgWithDefaults(ctx, owner, "not-member")
+	org, err := svc.CreateOrgWithDefaults(ctx, owner, "not-member", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -962,7 +962,7 @@ func TestUpdateMemberRolePromote(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	member := seedCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "promote-test")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "promote-test", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -991,7 +991,7 @@ func TestUpdateMemberRoleDemoteCoAdmin(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	co := seedCustomer(t, ctx, write, "coadmin")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-coadmin")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-coadmin", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1019,7 +1019,7 @@ func TestUpdateMemberRoleDemoteMemberToViewer(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	member := seedCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-viewer")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-viewer", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1047,7 +1047,7 @@ func TestUpdateMemberRolePromoteViewer(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	viewer := seedCustomer(t, ctx, write, "viewer")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "promote-viewer")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "promote-viewer", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1076,7 +1076,7 @@ func TestUpdateMemberRoleRejectsLastAdminDemotion(t *testing.T) {
 
 	for _, target := range []orgs.Role{orgs.RoleMember, orgs.RoleViewer} {
 		admin := seedCustomer(t, ctx, write, "admin")
-		org, err := svc.CreateOrgWithDefaults(ctx, admin, "last-admin-"+target.String())
+		org, err := svc.CreateOrgWithDefaults(ctx, admin, "last-admin-"+target.String(), "")
 		if err != nil {
 			t.Fatalf("seed: %v", err)
 		}
@@ -1100,7 +1100,7 @@ func TestUpdateMemberRoleNoOpSucceeds(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	member := seedCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "noop")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "noop", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1125,7 +1125,7 @@ func TestUpdateMemberRoleNotFound(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	stranger := seedCustomer(t, ctx, write, "stranger")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "notfound-test")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "notfound-test", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1151,7 +1151,7 @@ func TestLeaveNonAdminSoleMember(t *testing.T) {
 	// then directly deleting the admin via the unchecked DeleteOrgMember query.
 	admin := seedCustomer(t, ctx, write, "admin")
 	loner := seedCustomer(t, ctx, write, "loner")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "non-admin-sole")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "non-admin-sole", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1202,7 +1202,7 @@ func TestInviteMemberCountsPublishFailure(t *testing.T) {
 	ctx := context.Background()
 
 	inviter := seedCustomer(t, ctx, write, "inviter")
-	org, err := svc.CreateOrgWithDefaults(ctx, inviter, "publish-failure")
+	org, err := svc.CreateOrgWithDefaults(ctx, inviter, "publish-failure", "")
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
@@ -1278,7 +1278,7 @@ func TestLeaveTwoAdminsRaceExactlyOneSucceeds(t *testing.T) {
 	for i := range iterations {
 		a := seedCustomer(t, ctx, write, "racer-a")
 		b := seedCustomer(t, ctx, write, "racer-b")
-		org, err := svc.CreateOrgWithDefaults(ctx, a, "race-org")
+		org, err := svc.CreateOrgWithDefaults(ctx, a, "race-org", "")
 		if err != nil {
 			t.Fatalf("seed: %v", err)
 		}

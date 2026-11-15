@@ -337,7 +337,7 @@ func newOAuthBackend(t *testing.T) *oauthBackend {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	org, err := orgs.CreateOrgWithDefaults(ctx, b.customer, "Example")
+	org, err := orgs.CreateOrgWithDefaults(ctx, b.customer, "Example", "")
 	if err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}
@@ -589,7 +589,7 @@ func (b *oauthBackend) joinOrg(name string) string {
 	if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: owner, Email: owner + "@example.com"}); err != nil {
 		b.t.Fatalf("CreateCustomer: %v", err)
 	}
-	org, err := coreorgs.NewService(b.db.PgRO, b.db.PgW, nil).CreateOrgWithDefaults(ctx, owner, name)
+	org, err := coreorgs.NewService(b.db.PgRO, b.db.PgW, nil).CreateOrgWithDefaults(ctx, owner, name, "")
 	if err != nil {
 		b.t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}

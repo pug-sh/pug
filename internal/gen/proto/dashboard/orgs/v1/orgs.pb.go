@@ -1278,10 +1278,13 @@ func (x *ListInvitationsResponse) GetInvitations() []*OrgInvitation {
 }
 
 type CreateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	DisplayName *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	// Optional IANA timezone captured from the creator's browser, stored on the org's default project.
+	// Empty means UTC, and a zone the server doesn't know is stored as UTC rather than rejected.
+	ReportingTimezone *string `protobuf:"bytes,2,opt,name=reporting_timezone,json=reportingTimezone" json:"reporting_timezone,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CreateRequest) Reset() {
@@ -1317,6 +1320,13 @@ func (*CreateRequest) Descriptor() ([]byte, []int) {
 func (x *CreateRequest) GetDisplayName() string {
 	if x != nil && x.DisplayName != nil {
 		return *x.DisplayName
+	}
+	return ""
+}
+
+func (x *CreateRequest) GetReportingTimezone() string {
+	if x != nil && x.ReportingTimezone != nil {
+		return *x.ReportingTimezone
 	}
 	return ""
 }
@@ -2860,10 +2870,11 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x16ListInvitationsRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"]\n" +
 	"\x17ListInvitationsResponse\x12B\n" +
-	"\vinvitations\x18\x01 \x03(\v2 .dashboard.orgs.v1.OrgInvitationR\vinvitations\"A\n" +
+	"\vinvitations\x18\x01 \x03(\v2 .dashboard.orgs.v1.OrgInvitationR\vinvitations\"\x8d\x01\n" +
 	"\rCreateRequest\x120\n" +
 	"\fdisplay_name\x18\x01 \x01(\tB\r\xbaH\n" +
-	"\xc8\x01\x01r\x05\x10\x01\x18\x96\x01R\vdisplayName\":\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\x96\x01R\vdisplayName\x12J\n" +
+	"\x12reporting_timezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\x11reportingTimezone\":\n" +
 	"\x0eCreateResponse\x12(\n" +
 	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"-\n" +
 	"\fLeaveRequest\x12\x1d\n" +

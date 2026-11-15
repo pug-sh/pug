@@ -1,6 +1,7 @@
 package orgs_test
 
 import (
+	"strings"
 	"testing"
 
 	"buf.build/go/protovalidate"
@@ -63,6 +64,36 @@ func TestCreateRequest_Valid(t *testing.T) {
 	req := &orgsv1.CreateRequest{DisplayName: proto.String("acme")}
 	if err := protovalidate.Validate(req); err != nil {
 		t.Errorf("expected valid, got error: %v", err)
+	}
+}
+
+// An explicit "" is validated, unlike an omitted field, and must pass because it means UTC.
+func TestCreateRequest_ReportingTimezone(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		zone  *string
+		valid bool
+	}{
+		{"omitted", nil, true},
+		{"empty", proto.String(""), true},
+		{"region", proto.String("Asia/Kolkata"), true},
+		{"plus and digits", proto.String("Etc/GMT+5"), true},
+		{"underscore", proto.String("America/Argentina/Buenos_Aires"), true},
+		{"hyphen", proto.String("America/Port-au-Prince"), true},
+		{"64 chars", proto.String(strings.Repeat("a", 64)), true},
+		{"65 chars", proto.String(strings.Repeat("a", 65)), false},
+		{"offset", proto.String("+00:00"), false},
+		{"space", proto.String("America/New York"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := protovalidate.Validate(&orgsv1.CreateRequest{
+				DisplayName:       proto.String("acme"),
+				ReportingTimezone: tc.zone,
+			})
+			if (err == nil) != tc.valid {
+				t.Errorf("valid = %v, want %v: %v", err == nil, tc.valid, err)
+			}
+		})
 	}
 }
 

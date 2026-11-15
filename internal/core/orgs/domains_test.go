@@ -101,7 +101,7 @@ func (f *domainFixture) customer(email string) string {
 func (f *domainFixture) org(adminEmail string) (orgID, adminID string) {
 	f.t.Helper()
 	adminID = f.customer(adminEmail)
-	org, err := f.svc.CreateOrgWithDefaults(f.ctx, adminID, adminEmail)
+	org, err := f.svc.CreateOrgWithDefaults(f.ctx, adminID, adminEmail, "")
 	if err != nil {
 		f.t.Fatalf("create org: %v", err)
 	}
@@ -525,7 +525,7 @@ func TestOrgCreationRestriction(t *testing.T) {
 
 	bob := f.customer("bob@acme.com")
 	mustAddMember(t, f.ctx, f.w, openOrg, bob, orgs.RoleMember.String())
-	bobsOrg, err := f.svc.CreateOrgWithDefaults(f.ctx, bob, "bob's")
+	bobsOrg, err := f.svc.CreateOrgWithDefaults(f.ctx, bob, "bob's", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +546,7 @@ func TestOrgCreationRestriction(t *testing.T) {
 	if allowed(bob, "bob@acme.com") {
 		t.Fatal("one org turning creation off must restrict the domain (strictest wins), even for an admin of an org whose claim is pending")
 	}
-	if _, err := f.svc.CreateOrgWithDefaults(f.ctx, bob, "bob's org"); !errors.Is(err, orgs.ErrOrgCreationRestricted) {
+	if _, err := f.svc.CreateOrgWithDefaults(f.ctx, bob, "bob's org", ""); !errors.Is(err, orgs.ErrOrgCreationRestricted) {
 		t.Fatalf("Create err = %v, want ErrOrgCreationRestricted", err)
 	}
 	for name, c := range map[string][2]string{
@@ -558,7 +558,7 @@ func TestOrgCreationRestriction(t *testing.T) {
 			t.Fatalf("%s must still be allowed", name)
 		}
 	}
-	if _, err := f.svc.CreateOrgWithDefaults(f.ctx, jane, "jane's org"); err != nil {
+	if _, err := f.svc.CreateOrgWithDefaults(f.ctx, jane, "jane's org", ""); err != nil {
 		t.Fatalf("Create for a gmail member: %v", err)
 	}
 

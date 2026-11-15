@@ -67,7 +67,7 @@ func TestSetPasswordHandlerSSORequired(t *testing.T) {
 			t.Fatalf("CreateCustomer: %v", err)
 		}
 	}
-	org, err := orgs.CreateOrgWithDefaults(ctx, "cust-h-admin", "acme")
+	org, err := orgs.CreateOrgWithDefaults(ctx, "cust-h-admin", "acme", "")
 	if err != nil {
 		t.Fatal(err)
 	}
