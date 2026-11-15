@@ -25,6 +25,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 // ctxWithCustomer returns a context with a JWT principal carrying the given customer.
@@ -240,10 +241,11 @@ func TestHandler_UpdateMeta_InvalidTimezone(t *testing.T) {
 	assertReason(t, err, apperr.ReasonInvalidTimezone)
 }
 
-// ----- UpdateMeta: "UTC" full-replaces (clears) the stored zone to "" ----
+// ----- UpdateMeta: "UTC" full-replaces (clears) the stored zone to tzx.StoredUTC ----
 //
 // UpdateMeta normalizes via tzx.Normalize (not a coalesce-preserve), so sending
-// "UTC" must overwrite a previously-set zone with "" rather than preserving it.
+// "UTC" must overwrite a previously-set zone with tzx.StoredUTC rather than
+// preserving it.
 
 func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
 	if testing.Short() {
@@ -310,24 +312,24 @@ func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
 		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: projectID, OrgID: orgID}),
 		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			DisplayName:       proto.String("tz project"),
-			ReportingTimezone: proto.String("UTC"), // must clear to "", not preserve Asia/Kolkata
+			ReportingTimezone: proto.String("UTC"), // must clear to UTC, not preserve Asia/Kolkata
 		}),
 	)
 	if err != nil {
 		t.Fatalf("UpdateMeta: %v", err)
 	}
 
-	// UpdateMeta response must echo the cleared zone as "" (not "UTC").
-	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "" {
-		t.Errorf("UpdateMeta response ReportingTimezone = %q, want \"\" (UTC)", got)
+	// UpdateMeta response must echo the cleared zone as the stored UTC spelling.
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != tzx.StoredUTC {
+		t.Errorf("UpdateMeta response ReportingTimezone = %q, want %q", got, tzx.StoredUTC)
 	}
 
 	stored, err := projectsSvc.GetProjectByID(ctx, projectID)
 	if err != nil {
 		t.Fatalf("GetProjectByID after update: %v", err)
 	}
-	if stored.ReportingTimezone != "" {
-		t.Errorf("after clearing, ReportingTimezone = %q, want \"\" (UTC)", stored.ReportingTimezone)
+	if stored.ReportingTimezone != tzx.StoredUTC {
+		t.Errorf("after clearing, ReportingTimezone = %q, want %q", stored.ReportingTimezone, tzx.StoredUTC)
 	}
 }
 
@@ -502,10 +504,13 @@ func TestHandler_UpdateMeta_TimezoneOnlyPreservesName(t *testing.T) {
 
 	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
 		OrgId:       proto.String(orgID),
-		DisplayName: proto.String("keep me"), // timezone omitted → "" (UTC)
+		DisplayName: proto.String("keep me"), // timezone omitted → tzx.StoredUTC
 	}))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	if got := created.Msg.GetProject().GetReportingTimezone(); got != tzx.StoredUTC {
+		t.Errorf("Create without a zone stored %q, want %q", got, tzx.StoredUTC)
 	}
 	projectID := created.Msg.GetProject().GetId()
 
@@ -530,7 +535,7 @@ func TestHandler_UpdateMeta_TimezoneOnlyPreservesName(t *testing.T) {
 //
 // Distinct code path from the "UTC" string (TestHandler_UpdateMeta_ClearsTimezoneToUTC):
 // a present "" is a non-nil pointer to empty, so it must enter the presence branch
-// (req.Msg.ReportingTimezone != nil), pass tzx.Validate(""), and be WRITTEN as "",
+// (req.Msg.ReportingTimezone != nil), pass tzx.Validate(""), and be WRITTEN as tzx.StoredUTC,
 // not treated as omitted (which would preserve the old zone). Re-reads via
 // GetProjectByID to assert persistence, not just the echoed RETURNING row.
 func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
@@ -582,8 +587,8 @@ func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateMeta: %v", err)
 	}
-	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "" {
-		t.Errorf("UpdateMeta response ReportingTimezone = %q, want \"\" (UTC)", got)
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != tzx.StoredUTC {
+		t.Errorf("UpdateMeta response ReportingTimezone = %q, want %q", got, tzx.StoredUTC)
 	}
 	// display_name was omitted → must be preserved.
 	if got := updated.Msg.GetProject().GetDisplayName(); got != "tz empty project" {
@@ -594,8 +599,8 @@ func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectByID after update: %v", err)
 	}
-	if stored.ReportingTimezone != "" {
-		t.Errorf("after empty-string reset, stored ReportingTimezone = %q, want \"\" (UTC)", stored.ReportingTimezone)
+	if stored.ReportingTimezone != tzx.StoredUTC {
+		t.Errorf("after empty-string reset, stored ReportingTimezone = %q, want %q", stored.ReportingTimezone, tzx.StoredUTC)
 	}
 }
 

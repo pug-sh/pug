@@ -23,9 +23,11 @@ back to the raw path, which promoted columns keep fast. Sub-day granularity (an 
 view) and realtime are raw-path by design (the rollup is day-keyed).
 
 Two serving-model caveats, stated once here: **(a) every rollup fast path requires a
-UTC-midnight-aligned window, and the *bucketed* ones additionally require UTC bucketing**: a
-non-UTC `timezone` sends trends/segmentation to the raw path, which the promoted columns keep
-fast. Top K (the Pages/Countries/…/UTM row and Events list below) does not
+UTC-midnight-aligned window, and the *bucketed* ones additionally require a `timezone` that
+names no zone**: any named zone, `Etc/UTC` included, sends trends/segmentation to the raw path,
+which the promoted columns keep fast. Writes store UTC as `Etc/UTC`, so only older projects
+still holding `""` reach the bucketed rollups. Top K (the Pages/Countries/…/UTM row and Events
+list below) does not
 bucket by time, so `topKQueryForExecution` deliberately does not consult `timezone`; the
 day-alignment guard is the whole gate there. **(b) the session-grain panels (the stat
 row's Sessions/Bounce/Duration/Pages-per-session and Entry/Exit/Referrers/Channels) should scope

@@ -189,7 +189,7 @@ func CreateOrgWithDefaultsInTx(
 
 // CreateOrgWithDefaults opens its own transaction around CreateOrgWithDefaultsInTx.
 // Use this from RPC handlers and other callers without an active tx. Its default
-// project gets the UTC reporting zone (""); the browser timezone is captured on the
+// project gets UTC (tzx.StoredUTC); the browser timezone is captured on the
 // signup paths (auth.CompleteMagicLink and auth.CompleteOIDCSignIn), which thread it
 // into CreateOrgWithDefaultsInTx via FinishSignup. A future org-create UI that
 // captures a zone can thread it here.

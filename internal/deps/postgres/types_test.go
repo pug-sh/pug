@@ -30,7 +30,7 @@ func TestNewNullableText(t *testing.T) {
 
 	empty := ""
 	if got := NewNullableText(&empty); !got.Valid || got.String != "" {
-		t.Errorf("&\"\" → %+v, want {String:\"\", Valid:true} (write empty, e.g. UTC reset)", got)
+		t.Errorf("&\"\" → %+v, want {String:\"\", Valid:true} (write empty, e.g. clearing default_theme)", got)
 	}
 
 	val := "Asia/Kolkata"

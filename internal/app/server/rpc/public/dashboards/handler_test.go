@@ -5,8 +5,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 
@@ -72,7 +74,7 @@ func TestQuery_UnknownShareToken_NotFound(t *testing.T) {
 }
 
 // TestQuery_DisabledShareToken_NotFound: a token whose share was disabled must
-// 404 — the enabled=true predicate is the access-control gate.
+// 404: the enabled=true predicate is the access-control gate.
 func TestQuery_DisabledShareToken_NotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -97,15 +99,90 @@ func TestQuery_DisabledShareToken_NotFound(t *testing.T) {
 	assertCode(t, err, connect.CodeNotFound)
 }
 
+// TestQuery_BucketsInTheProjectsReportingTimezone: a public viewer has no project
+// to take a zone from, so the tiles bucket in the shared project's zone and the
+// response names it for the page to step and label the same days.
+func TestQuery_BucketsInTheProjectsReportingTimezone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	const zone = "America/New_York"
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		t.Fatalf("load %s: %v", zone, err)
+	}
+	srv, svc, projectID, ch := newPublicIntegrationServerInZone(t, zone)
+	ctx := context.Background()
+
+	today := time.Now().In(loc)
+	dayAt := func(daysAgo, hour int) time.Time {
+		return time.Date(today.Year(), today.Month(), today.Day()-daysAgo, hour, 0, 0, 0, loc)
+	}
+	wantDays := []time.Time{dayAt(2, 0), dayAt(1, 0)}
+	wantCounts := []float64{2, 1}
+	var events []testutil.Event
+	for _, at := range []time.Time{dayAt(2, 12), dayAt(2, 23), dayAt(1, 12)} {
+		events = append(events, testutil.Event{
+			EventID: uuid.NewString(), ProjectID: projectID, DistinctID: "visitor", Kind: "page_view",
+			SessionID: uuid.NewString(), OccurTime: at,
+		})
+	}
+	testutil.InsertEvents(ctx, t, ch.Conn, events...)
+
+	_, token := seedSharedDashboard(t, ctx, svc, projectID, coredashboards.InsightTile{Spec: &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+		},
+	}})
+
+	resp, err := srv.Query(ctx, connect.NewRequest(&publicdashboardsv1.SharedDashboardsServiceQueryRequest{
+		ShareId: proto.String(token),
+	}))
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if got := resp.Msg.GetReportingTimezone(); got != zone {
+		t.Errorf("reporting_timezone = %q, want %q", got, zone)
+	}
+	tiles := resp.Msg.GetDashboard().GetTiles()
+	if len(tiles) != 1 {
+		t.Fatalf("rendered tiles = %d, want 1", len(tiles))
+	}
+	if msg := tiles[0].GetErrorMessage(); msg != "" {
+		t.Fatalf("tile error: %s", msg)
+	}
+	series := tiles[0].GetResult().GetTrends().GetSeries()
+	if len(series) != 1 {
+		t.Fatalf("series = %d, want 1", len(series))
+	}
+	points := series[0].GetPoints()
+	if len(points) != len(wantDays) {
+		t.Fatalf("points = %d, want %d", len(points), len(wantDays))
+	}
+	for i, p := range points {
+		if got := p.GetTime().AsTime(); !got.Equal(wantDays[i]) {
+			t.Errorf("bucket %d = %s, want %s's midnight %s", i, got.UTC(), zone, wantDays[i].UTC())
+		}
+		if got := p.GetValue(); got != wantCounts[i] {
+			t.Errorf("bucket %d count = %v, want %v", i, got, wantCounts[i])
+		}
+	}
+}
+
 // ----- Helpers -----------------------------------------------------------
 
 func newPublicIntegrationServer(t *testing.T) (*Server, *coredashboards.Service, string) {
 	t.Helper()
+	srv, svc, projectID, _ := newPublicIntegrationServerInZone(t, "")
+	return srv, svc, projectID
+}
+
+func newPublicIntegrationServerInZone(t *testing.T, reportingTimezone string) (*Server, *coredashboards.Service, string, *testutil.TestClickHouse) {
+	t.Helper()
 	db := testutil.SetupPostgres(t)
 	ch := testutil.SetupClickHouse(t)
 	svc := coredashboards.NewService(db.PgRO, db.PgW)
-	// NewExecutor requires a non-nil conn even though the markdown-only dashboards
-	// these tests use never invoke it.
 	srv := NewServer(svc, coreinsights.NewExecutor(ch.Conn))
 
 	ctx := context.Background()
@@ -116,16 +193,21 @@ func newPublicIntegrationServer(t *testing.T) (*Server, *coredashboards.Service,
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
-		projectID, orgID, "test-project"); err != nil {
+		`INSERT INTO projects (id, org_id, display_name, reporting_timezone) VALUES ($1, $2, $3, $4)`,
+		projectID, orgID, "test-project", reportingTimezone); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
-	return srv, svc, projectID
+	return srv, svc, projectID, ch
 }
 
 // seedSharedMarkdownDashboard creates a dashboard with one markdown tile, enables
 // public sharing, and returns (dashboardID, shareToken).
 func seedSharedMarkdownDashboard(t *testing.T, ctx context.Context, svc *coredashboards.Service, projectID string) (string, string) {
+	t.Helper()
+	return seedSharedDashboard(t, ctx, svc, projectID, coredashboards.MarkdownTile{Body: "# Hello"})
+}
+
+func seedSharedDashboard(t *testing.T, ctx context.Context, svc *coredashboards.Service, projectID string, content coredashboards.TileContent) (string, string) {
 	t.Helper()
 	dash, err := svc.CreateDashboard(ctx, projectID, "Shared", "",
 		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
@@ -139,7 +221,7 @@ func seedSharedMarkdownDashboard(t *testing.T, ctx context.Context, svc *coredas
 		Tiles: []coredashboards.UpsertTileInput{
 			{Payload: coredashboards.TilePayload{
 				DisplayName: "Notes",
-				Content:     coredashboards.MarkdownTile{Body: "# Hello"},
+				Content:     content,
 			}},
 		},
 	}); err != nil {

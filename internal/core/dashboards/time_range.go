@@ -10,12 +10,12 @@ import (
 )
 
 // startOfDayIn truncates t to midnight in loc. With loc == time.UTC this is the
-// historical UTC-aligned boundary, deliberate because the day-keyed ClickHouse
-// rollup is UTC-aligned and insights.rollupWindowAligned only treats a window as
-// rollup-eligible when `from` is exactly midnight UTC. A non-UTC loc trades that
-// eligibility for a window whose first bucket is a full *local* day: the insights
-// raw builders bucket in the same zone (QueryRequest.timezone), so the window edge
-// and the bucket edges line up and the leading day is no longer a partial slice.
+// historical UTC-aligned boundary, deliberate because insights.rollupWindowAligned
+// only treats a window as rollup-eligible when `from` is exactly midnight UTC. A
+// non-UTC loc trades that eligibility for a window whose first bucket is a full
+// *local* day: the insights raw builders bucket in the same zone
+// (QueryRequest.timezone), so the window edge and the bucket edges line up and the
+// leading day is no longer a partial slice.
 func startOfDayIn(t time.Time, loc *time.Location) time.Time {
 	t = t.In(loc)
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)

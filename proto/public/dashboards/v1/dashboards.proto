@@ -26,4 +26,8 @@ message SharedDashboardsServiceQueryRequest {
 
 message SharedDashboardsServiceQueryResponse {
   dashboard.dashboards.v1.RenderedDashboard dashboard = 1;
+  // The shared project's IANA reporting timezone, which the tiles were bucketed in and
+  // a public viewer has no project to read. Empty: an older project that names no
+  // zone, so buckets follow ClickHouse's own zone.
+  string reporting_timezone = 2;
 }

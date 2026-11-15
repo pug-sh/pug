@@ -110,6 +110,17 @@ func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, token string) (P
 	return i, err
 }
 
+const getProjectReportingTimezoneByID = `-- name: GetProjectReportingTimezoneByID :one
+select reporting_timezone from projects where id = $1 and deletion_time is null
+`
+
+func (q *Queries) GetProjectReportingTimezoneByID(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getProjectReportingTimezoneByID, id)
+	var reporting_timezone string
+	err := row.Scan(&reporting_timezone)
+	return reporting_timezone, err
+}
+
 const getProjectsByOrgID = `-- name: GetProjectsByOrgID :many
 select create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time, deletion_time, default_theme from projects
 where org_id = $1 and deletion_time is null

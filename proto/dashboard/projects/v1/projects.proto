@@ -81,7 +81,9 @@ message Project {
   reserved 5, 6;
   reserved private_api_key, public_api_key;
   // IANA reporting timezone (e.g. "Asia/Kolkata") used to bucket day/week/month
-  // boundaries for this project's insights and dashboards. Empty string = UTC.
+  // boundaries for this project's insights and dashboards. UTC reads back as
+  // "Etc/UTC"; an older project may hold "", which names no zone, so its buckets
+  // follow ClickHouse's own zone.
   string reporting_timezone = 7;
   // The project's default theme, as a theme reference: a built-in id
   // ("pug-colourblind") or an https URL of a theme file, either optionally ending

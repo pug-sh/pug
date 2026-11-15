@@ -207,7 +207,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 	// Bucket the Date column through the SAME granularity function the raw path
 	// uses (over toDateTime(day)) so week/month boundaries are byte-identical.
 	// (Named bucketSQL, not bucketExpr, to avoid shadowing the package-level
-	// bucketExpr helper; this UTC-only rollup path deliberately does not call it.)
+	// bucketExpr helper; this zone-less rollup path deliberately does not call it.)
 	bucketSQL := fmt.Sprintf("%s(toDateTime(day))", granFn)
 
 	spec := req.GetSpec()

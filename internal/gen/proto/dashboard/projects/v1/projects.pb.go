@@ -429,7 +429,9 @@ type Project struct {
 	Id          *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
 	OrgId       *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	// IANA reporting timezone (e.g. "Asia/Kolkata") used to bucket day/week/month
-	// boundaries for this project's insights and dashboards. Empty string = UTC.
+	// boundaries for this project's insights and dashboards. UTC reads back as
+	// "Etc/UTC"; an older project may hold "", which names no zone, so its buckets
+	// follow ClickHouse's own zone.
 	ReportingTimezone *string `protobuf:"bytes,7,opt,name=reporting_timezone,json=reportingTimezone" json:"reporting_timezone,omitempty"`
 	// The project's default theme, as a theme reference: a built-in id
 	// ("pug-colourblind") or an https URL of a theme file, either optionally ending
