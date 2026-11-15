@@ -53,7 +53,7 @@ func (f *ssoFixture) org(domain string, settings coreorgs.DomainSettings) string
 	}); err != nil {
 		f.t.Fatalf("create admin: %v", err)
 	}
-	org, err := f.orgs.CreateOrgWithDefaults(f.ctx, adminID, "org for "+domain)
+	org, err := f.orgs.CreateOrgWithDefaults(f.ctx, adminID, "org for "+domain, "")
 	if err != nil {
 		f.t.Fatalf("create org: %v", err)
 	}

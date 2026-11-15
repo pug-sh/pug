@@ -46,7 +46,7 @@ func TestGetMemberRoleCaching(t *testing.T) {
 	freshOrg := func(t *testing.T) (orgID, adminID string) {
 		t.Helper()
 		adminID = seedCacheCustomer(t, w)
-		org, err := svc.CreateOrgWithDefaults(ctx, adminID, "acme-"+adminID)
+		org, err := svc.CreateOrgWithDefaults(ctx, adminID, "acme-"+adminID, "")
 		if err != nil {
 			t.Fatalf("CreateOrgWithDefaults: %v", err)
 		}
@@ -209,7 +209,7 @@ func TestMemberRoleCachePopulateRaceGuard(t *testing.T) {
 	svc := NewServiceWithRoleCache(db.PgRO, db.PgW, nil, rd.Client)
 
 	adminID := seedCacheCustomer(t, w)
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "race-"+adminID)
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "race-"+adminID, "")
 	if err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestGetMemberRoleCorruptCacheSelfHeals(t *testing.T) {
 	svc := NewServiceWithRoleCache(db.PgRO, db.PgW, nil, rd.Client)
 
 	adminID := seedCacheCustomer(t, w)
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "corrupt-cache-"+adminID)
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "corrupt-cache-"+adminID, "")
 	if err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 func ctxWithCustomer(ctx context.Context, c dbread.Customer) context.Context {
@@ -88,6 +89,46 @@ func TestCreateOrgHandlerHappyPath(t *testing.T) {
 	}
 }
 
+func TestCreateOrgHandlerStoresReportingTimezone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	srv := orgshandler.NewServer(h.svc)
+	customer, err := h.read.GetCustomerByID(h.ctx, seedRawCustomer(t, h.ctx, h.write, "tz"))
+	if err != nil {
+		t.Fatalf("read customer: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		zone *string
+		want string
+	}{
+		{"browser zone", proto.String("Asia/Kolkata"), "Asia/Kolkata"},
+		{"omitted", nil, tzx.StoredUTC},
+		{"empty", proto.String(""), tzx.StoredUTC},
+		{"unknown zone", proto.String("Not/A/Zone"), tzx.StoredUTC},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := srv.Create(ctxWithCustomer(h.ctx, customer), connect.NewRequest(&orgsv1.CreateRequest{
+				DisplayName:       proto.String(tc.name),
+				ReportingTimezone: tc.zone,
+			}))
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			projects, err := h.read.GetProjectsByOrgID(h.ctx, resp.Msg.GetOrg().GetId())
+			if err != nil || len(projects) != 1 {
+				t.Fatalf("want 1 default project, got %d (err=%v)", len(projects), err)
+			}
+			if got := projects[0].ReportingTimezone; got != tc.want {
+				t.Errorf("reporting_timezone = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestLeaveHandlerHappyPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -98,7 +139,7 @@ func TestLeaveHandlerHappyPath(t *testing.T) {
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	memberID := seedRawCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "leave-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "leave-handler", "")
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
@@ -135,7 +176,7 @@ func TestLeaveHandlerLastAdminReturnsFailedPrecondition(t *testing.T) {
 
 	adminID := seedRawCustomer(t, ctx, write, "sole-admin")
 	memberID := seedRawCustomer(t, ctx, write, "tag-along")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-admin-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-admin-handler", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -201,7 +242,7 @@ func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed member: %v", err)
 	}
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "promote-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "promote-handler", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -259,7 +300,7 @@ func TestUpdateMemberRoleHandlerLastAdminDemoteRejected(t *testing.T) {
 	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-admin-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-admin-handler", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -297,7 +338,7 @@ func TestUpdateMemberRoleHandlerDemoteCoAdmin(t *testing.T) {
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	coadminID := seedRawCustomer(t, ctx, write, "coadmin")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "demote-coadmin-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "demote-coadmin-handler", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -337,7 +378,7 @@ func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
-	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "leave-not-member")
+	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "leave-not-member", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -368,7 +409,7 @@ func TestInviteMemberHandlerAcceptsRole(t *testing.T) {
 	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "role-inviter")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "role-invite-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "role-invite-handler", "")
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
@@ -406,7 +447,7 @@ func TestInviteMemberHandlerAcceptsViewerRole(t *testing.T) {
 	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "viewer-inviter")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "viewer-invite-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "viewer-invite-handler", "")
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
@@ -443,7 +484,7 @@ func TestInviteMemberHandlerDefaultsOmittedRoleToMember(t *testing.T) {
 	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "norole-inviter")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "norole-invite-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "norole-invite-handler", "")
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
@@ -488,7 +529,7 @@ func TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound(t *testing.T) {
 
 	memberID := seedRawCustomer(t, ctx, write, "member")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
-	org, err := svc.CreateOrgWithDefaults(ctx, memberID, "get-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, memberID, "get-handler", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -540,7 +581,7 @@ func TestGetHandlerReturnsMemberRoleForActualMember(t *testing.T) {
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	memberID := seedRawCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "two-role")
+	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "two-role", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -579,7 +620,7 @@ func TestUpdateDisplayNameHandlerReturnsAdminRole(t *testing.T) {
 	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "old-name")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "old-name", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -622,7 +663,7 @@ func TestLeaveHandlerLastMemberReturnsFailedPrecondition(t *testing.T) {
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	lonerID := seedRawCustomer(t, ctx, write, "loner")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-member")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-member", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -667,11 +708,11 @@ func TestListHandlerRoleFieldPerOrg(t *testing.T) {
 	callerID := seedRawCustomer(t, ctx, write, "caller")
 	otherID := seedRawCustomer(t, ctx, write, "other")
 
-	orgA, err := svc.CreateOrgWithDefaults(ctx, callerID, "alpha")
+	orgA, err := svc.CreateOrgWithDefaults(ctx, callerID, "alpha", "")
 	if err != nil {
 		t.Fatalf("seed orgA: %v", err)
 	}
-	orgB, err := svc.CreateOrgWithDefaults(ctx, otherID, "beta")
+	orgB, err := svc.CreateOrgWithDefaults(ctx, otherID, "beta", "")
 	if err != nil {
 		t.Fatalf("seed orgB: %v", err)
 	}
@@ -721,7 +762,7 @@ func TestLeaveHandlerSoloAdminReturnsFailedPrecondition(t *testing.T) {
 	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "solo-admin")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "solo-admin-leave")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "solo-admin-leave", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -764,7 +805,7 @@ func TestUpdateMemberRoleHandlerRejectsUnspecifiedRole(t *testing.T) {
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	memberID := seedRawCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "unspec-role")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "unspec-role", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -853,7 +894,7 @@ func TestRemoveMemberHandlerHappyPath(t *testing.T) {
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	memberID := seedRawCustomer(t, ctx, write, "to-remove")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-happy")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-happy", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -890,7 +931,7 @@ func TestRemoveMemberHandlerSelfRemovalRejected(t *testing.T) {
 	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-self")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-self", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -935,7 +976,7 @@ func TestRemoveMemberHandlerNotFound(t *testing.T) {
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-notfound")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-notfound", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}

@@ -183,6 +183,12 @@ message CreateRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 150
   ];
+  // Optional IANA timezone captured from the creator's browser, stored on the org's default project.
+  // Empty means UTC, and a zone the server doesn't know is stored as UTC rather than rejected.
+  string reporting_timezone = 2 [(buf.validate.field).string = {
+    max_len: 64
+    pattern: "^[A-Za-z0-9_+/-]*$"
+  }];
 }
 
 message CreateResponse {

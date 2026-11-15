@@ -43,7 +43,7 @@ func TestList(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		org, err := orgs.CreateOrgWithDefaults(ctx, id, "Org of "+email)
+		org, err := orgs.CreateOrgWithDefaults(ctx, id, "Org of "+email, "")
 		if err != nil {
 			t.Fatal(err)
 		}

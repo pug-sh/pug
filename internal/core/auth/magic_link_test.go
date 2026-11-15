@@ -461,7 +461,7 @@ func TestCompleteMagicLink_ExistingAccountPlainLinkCreatesNoSecondOrg(t *testing
 		t.Fatalf("CreateCustomer: %v", err)
 	}
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
-	if _, err := orgsSvc.CreateOrgWithDefaults(ctx, "cust-existplain", "existing-org"); err != nil {
+	if _, err := orgsSvc.CreateOrgWithDefaults(ctx, "cust-existplain", "existing-org", ""); err != nil {
 		t.Fatalf("CreateOrgWithDefaults: %v", err)
 	}
 

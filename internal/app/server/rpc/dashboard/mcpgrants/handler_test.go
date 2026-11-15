@@ -131,7 +131,7 @@ func newBackend(t *testing.T) backend {
 	if err != nil {
 		t.Fatal(err)
 	}
-	org, err := coreorgs.NewService(db.PgRO, db.PgW, nil).CreateOrgWithDefaults(ctx, id, "Acme")
+	org, err := coreorgs.NewService(db.PgRO, db.PgW, nil).CreateOrgWithDefaults(ctx, id, "Acme", "")
 	if err != nil {
 		t.Fatal(err)
 	}

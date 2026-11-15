@@ -94,7 +94,7 @@ func TestSetPasswordRefusedWhereSSOIsRequired(t *testing.T) {
 			t.Fatalf("CreateCustomer: %v", err)
 		}
 	}
-	org, err := orgs.CreateOrgWithDefaults(ctx, "cust-admin", "acme")
+	org, err := orgs.CreateOrgWithDefaults(ctx, "cust-admin", "acme", "")
 	if err != nil {
 		t.Fatal(err)
 	}

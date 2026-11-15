@@ -289,7 +289,7 @@ func (s *server) Create(
 
 	// display_name validation (required, min_len=1, max_len=150) is enforced
 	// by the protovalidate interceptor on CreateRequest before this handler runs.
-	org, err := s.service.CreateOrgWithDefaults(ctx, principal.Customer.ID, req.Msg.GetDisplayName())
+	org, err := s.service.CreateOrgWithDefaults(ctx, principal.Customer.ID, req.Msg.GetDisplayName(), req.Msg.GetReportingTimezone())
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrOrgCreationRestricted) {
 			return nil, apperr.PermissionDenied(apperr.ReasonOrgCreationRestricted, "your company doesn't allow creating new orgs")

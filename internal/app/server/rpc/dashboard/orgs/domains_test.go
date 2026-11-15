@@ -69,7 +69,7 @@ func TestDomainHandlers(t *testing.T) {
 	dns := txtRecords{}
 	srv := orgshandler.NewServer(h.svc.WithTXTResolver(dns))
 	admin := seedCustomerWithEmail(t, h, "admin@acme.com")
-	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme")
+	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestOrgCreationRestrictionHandlers(t *testing.T) {
 	h := setupOrgsBackend(t, nil)
 	srv := orgshandler.NewServer(h.svc)
 	admin := seedCustomerWithEmail(t, h, "admin@acme.com")
-	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme")
+	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestRequireSSOHandlers(t *testing.T) {
 	h := setupOrgsBackend(t, nil)
 	srv := orgshandler.NewServer(h.svc)
 	admin := seedCustomerWithEmail(t, h, "admin@acme.com")
-	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme")
+	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestSSOConnectionHandlers(t *testing.T) {
 	}
 	srv := orgshandler.NewServer(h.svc.WithSSOConnections(cipher, func(context.Context, string) error { return nil }))
 	admin := seedCustomerWithEmail(t, h, "admin@acme.com")
-	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme")
+	org, err := h.svc.CreateOrgWithDefaults(h.ctx, admin.ID, "acme", "")
 	if err != nil {
 		t.Fatal(err)
 	}
