@@ -60,7 +60,12 @@ type InsightsServiceClient interface {
 	// The request also carries the time range and granularity, and it is the
 	// right tool for any project-wide or over-time question; per-granularity range
 	// caps apply. Traffic tagged as a bot at ingest is excluded unless
-	// spec.include_bots is true.
+	// spec.include_bots is true, and that includes crawler_request events, one per
+	// crawler request a site reported. On those, $bot_reason names the crawler,
+	// $crawler_category is answers, search, training, seo or other,
+	// $crawler_company is absent for most search engines and SEO tools, and
+	// $crawler_verified is verified, failed (an IP outside the operator's published
+	// ranges) or unchecked (no ranges or no usable IP to check).
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	// SegmentUsers returns a paginated page of the distinct ids of the users who
@@ -164,7 +169,12 @@ type InsightsServiceHandler interface {
 	// The request also carries the time range and granularity, and it is the
 	// right tool for any project-wide or over-time question; per-granularity range
 	// caps apply. Traffic tagged as a bot at ingest is excluded unless
-	// spec.include_bots is true.
+	// spec.include_bots is true, and that includes crawler_request events, one per
+	// crawler request a site reported. On those, $bot_reason names the crawler,
+	// $crawler_category is answers, search, training, seo or other,
+	// $crawler_company is absent for most search engines and SEO tools, and
+	// $crawler_verified is verified, failed (an IP outside the operator's published
+	// ranges) or unchecked (no ranges or no usable IP to check).
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	// SegmentUsers returns a paginated page of the distinct ids of the users who

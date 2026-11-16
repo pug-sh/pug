@@ -13,4 +13,7 @@ type config struct {
 	DemoEnabled bool `env:"PUG_DEMO_ENABLED,default=false"`
 	// Where shared.dashboards.v1 links a dashboard; empty leaves it without a link.
 	DashboardBaseURL string `env:"PUG_DASHBOARD_BASE_URL"`
+	// Off for a server with no internet access: crawler requests then read
+	// unchecked instead of being checked against their operators' IP ranges.
+	CrawlerRangesEnabled bool `env:"PUG_CRAWLER_RANGES_ENABLED,default=true"`
 }

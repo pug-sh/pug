@@ -19,7 +19,8 @@ traffic with one-page sessions.
 
 Classic crawlers (Googlebot, GPTBot) are *not* this problem for the browser SDK:
 they mostly don't run JavaScript, so they rarely reach it (Googlebot's rendering
-pass is on the list anyway). They only matter for a server-side ingest path.
+pass is on the list anyway). They only matter for a server-side ingest path,
+which `crawler_request` events on `sdk.events` add.
 
 ## Today
 

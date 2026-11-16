@@ -40,6 +40,14 @@ const (
 	// Server-only: enrichBot strips client-sent values before tagging.
 	PropBot       = "$bot"
 	PropBotReason = "$bot_reason"
+	// Server-only too: set on crawler_request events, and by enrichBot on a known
+	// crawler's web events. enrichBot strips every client key with the prefix.
+	PropCrawlerPrefix   = "$crawler_"
+	PropCrawlerCompany  = PropCrawlerPrefix + "company"
+	PropCrawlerCategory = PropCrawlerPrefix + "category"
+	PropCrawlerVerified = PropCrawlerPrefix + "verified"
+	// The status code the site answered a crawler request with.
+	PropStatusCode = "$status_code"
 )
 
 // PlatformWeb is the $platform every browser SDK sends; native and server SDKs

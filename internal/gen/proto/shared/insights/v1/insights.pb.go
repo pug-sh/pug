@@ -492,9 +492,10 @@ type InsightQuerySpec struct {
 	IncludeCookieless *bool `protobuf:"varint,12,opt,name=include_cookieless,json=includeCookieless" json:"include_cookieless,omitempty"`
 	// Country-choropleth query. Only valid when insight_type == MAP.
 	Map *MapQuery `protobuf:"bytes,13,opt,name=map" json:"map,omitempty"`
-	// Traffic tagged as automated at ingest ($bot, set only on web events from a
-	// public key: a known crawler, a datacenter network or headless Chrome's
-	// 800x600 screen) is EXCLUDED by default from every insight and every metric.
+	// Traffic tagged as automated at ingest ($bot, set on web events from a public
+	// key that come from a known crawler, a datacenter network or headless Chrome's
+	// 800x600 screen, and on every crawler_request event) is EXCLUDED by default
+	// from every insight and every metric.
 	// Session metrics and user flow judge a session whole: one tagged event
 	// excludes the session. Set true to include bots.
 	IncludeBots   *bool `protobuf:"varint,14,opt,name=include_bots,json=includeBots" json:"include_bots,omitempty"`

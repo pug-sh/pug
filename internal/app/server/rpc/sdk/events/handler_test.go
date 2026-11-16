@@ -1295,6 +1295,62 @@ func TestEnrichBot(t *testing.T) {
 	}
 }
 
+func TestEnrichBotNamesKnownCrawlers(t *testing.T) {
+	const (
+		googlebotRendererUA = "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/141.0.7390.122 Safari/537.36"
+		googleOtherUA       = "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.122 Mobile Safari/537.36 (compatible; GoogleOther)"
+		ahrefsUA            = "Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)"
+	)
+	spoofed := map[string]string{
+		"$crawler_category": "answers",
+		"$crawler_company":  "Spoofed",
+		"$crawler_verified": "verified",
+		"$crawler_future":   "x",
+	}
+	tests := []struct {
+		name     string
+		ua       string
+		authType rpc.AuthType
+		event    *eventsv1.Event
+		want     map[string]string // every $crawler_ key the event should end with
+	}{
+		{"a table row", googlebotRendererUA, rpc.AuthTypePublicKey, webEvent(nil),
+			map[string]string{"$crawler_category": "search", "$crawler_company": "Google"}},
+		{"another category", googleOtherUA, rpc.AuthTypePublicKey, webEvent(nil),
+			map[string]string{"$crawler_category": "other", "$crawler_company": "Google"}},
+		{"a list entry has no company", ahrefsUA, rpc.AuthTypePublicKey, webEvent(nil),
+			map[string]string{"$crawler_category": "seo"}},
+		{"a bot that is no crawler", headlessChromeUA, rpc.AuthTypePublicKey, webEvent(nil),
+			map[string]string{}},
+		{"a crawler's verdict is never set here", googlebotRendererUA, rpc.AuthTypePublicKey, webEvent(spoofed),
+			map[string]string{"$crawler_category": "search", "$crawler_company": "Google"}},
+		{"client values are stripped", chromeWindowsUA, rpc.AuthTypePublicKey, webEvent(spoofed),
+			map[string]string{}},
+		{"on a private key too", googlebotRendererUA, rpc.AuthTypePrivateKey, webEvent(spoofed),
+			map[string]string{}},
+		{"a non-web event is not tagged", googlebotRendererUA, rpc.AuthTypePublicKey,
+			&eventsv1.Event{AutoProperties: propMap(map[string]string{autoprop.PropPlatform: "android"})},
+			map[string]string{}},
+	}
+	s := &Server{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			h.Set("User-Agent", tt.ua)
+			s.enrichBot(context.Background(), "test-project", tt.authType, h, []*eventsv1.Event{tt.event})
+			got := map[string]string{}
+			for k, v := range tt.event.AutoProperties {
+				if strings.HasPrefix(k, autoprop.PropCrawlerPrefix) {
+					got[k] = propString(v)
+				}
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("$crawler_ keys = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBatchCreateWiresBotEnricher(t *testing.T) {
 	for _, tt := range []struct {
 		authType rpc.AuthType

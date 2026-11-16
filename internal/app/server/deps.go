@@ -38,6 +38,7 @@ type deps struct {
 	demoEnabled     bool
 	billing         corebilling.Config
 	dashboardURL    string
+	crawlerRanges   bool
 }
 
 // close shuts down all deps. OTel must shut down last: it owns the slog backend,
@@ -198,5 +199,6 @@ func newDeps(ctx context.Context) (*deps, error) {
 		demoEnabled:     serverCfg.DemoEnabled,
 		billing:         billingCfg,
 		dashboardURL:    serverCfg.DashboardBaseURL,
+		crawlerRanges:   serverCfg.CrawlerRangesEnabled,
 	}, nil
 }

@@ -23,11 +23,11 @@ service ProfilesSDKService {
 message IdentifyRequest {
   // Stable, unique user identifier: your database user ID, not an email, which
   // can change.
-  // The 'cookieless-' prefix is server-owned: ingest mints those ids and the
-  // reserved-prefix rule on an incoming event's distinct_id already refuses them
-  // from clients. external_id needs the same guard because post-identify events
-  // are keyed by external_id, so an id accepted here comes back as a distinct_id
-  // and BatchCreate drops every event of that user.
+  // The 'cookieless-' and 'crawler-' prefixes are server-owned: ingest mints
+  // those ids and the reserved-prefix rules on an incoming event's distinct_id
+  // already refuse them from clients. external_id needs the same guard because
+  // post-identify events are keyed by external_id, so an id accepted here comes
+  // back as a distinct_id and BatchCreate drops every event of that user.
   string external_id = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.min_len = 1,
@@ -35,6 +35,11 @@ message IdentifyRequest {
       id: "external_id.reserved_prefix",
       message: "external_id must not start with the reserved 'cookieless-' prefix",
       expression: "!this.startsWith('cookieless-')"
+    },
+    (buf.validate.field).cel = {
+      id: "external_id.reserved_crawler_prefix",
+      message: "external_id must not start with the reserved 'crawler-' prefix",
+      expression: "!this.startsWith('crawler-')"
     },
     (buf.validate.field).cel = {
       id: "external_id.no_nul",
@@ -112,6 +117,11 @@ message ProfileIdentifyMessage {
       id: "external_id.reserved_prefix",
       message: "external_id must not start with the reserved 'cookieless-' prefix",
       expression: "!this.startsWith('cookieless-')"
+    },
+    (buf.validate.field).cel = {
+      id: "external_id.reserved_crawler_prefix",
+      message: "external_id must not start with the reserved 'crawler-' prefix",
+      expression: "!this.startsWith('crawler-')"
     },
     (buf.validate.field).cel = {
       id: "external_id.no_nul",

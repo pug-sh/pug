@@ -26,6 +26,7 @@ import (
 	"github.com/pug-sh/pug/internal/botdetect"
 	"github.com/pug-sh/pug/internal/cookieless"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
+	"github.com/pug-sh/pug/internal/crawler"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
@@ -124,6 +125,9 @@ const (
 	// earlier kept event's event_id, and is listed in invalid_events. Client-side:
 	// retrying the same payload drops it again.
 	dropReasonInvalidEvent = "invalid_event"
+	// dropReasonUnknownAgent: a crawler_request whose client.user_agent names no
+	// known crawler, counted on crawlers.dropped_total. Retrying drops it again.
+	dropReasonUnknownAgent = "unknown_agent"
 )
 
 // allDropReasons is the registry of every reason BatchCreate can emit. It
@@ -143,6 +147,7 @@ var allDropReasons = []string{
 	dropReasonSaltCorrupt,
 	dropReasonIdentityHeadersMissing,
 	dropReasonInvalidEvent,
+	dropReasonUnknownAgent,
 }
 
 // dropTally counts events BatchCreate refused, keyed by reason.
@@ -193,18 +198,20 @@ type Server struct {
 	geoProvider geo.Provider
 	uaParser    *useragent.Parser
 	cookieless  identityResolver
+	ranges      rangeChecker
 }
 
 // NewServer takes identityResolver rather than *cookieless.Resolver so the nil
 // guard in resolveCookieless can fire: assigning a nil *Resolver to an interface
 // field yields a NON-nil interface, which skips the guard and nil-derefs on the
 // first cookieless event instead of returning the intended error.
-func NewServer(producer jetstream.JetStream, geoProvider geo.Provider, uaParser *useragent.Parser, resolver identityResolver) *Server {
+func NewServer(producer jetstream.JetStream, geoProvider geo.Provider, uaParser *useragent.Parser, resolver identityResolver, ranges rangeChecker) *Server {
 	return &Server{
 		publisher:   coreevents.NewPublisher(producer),
 		geoProvider: geoProvider,
 		uaParser:    uaParser,
 		cookieless:  resolver,
+		ranges:      ranges,
 	}
 }
 
@@ -233,7 +240,8 @@ func (s *Server) BatchCreate(
 	}
 
 	projectID := principal.Project.ID
-	events, invalid := dropInvalid(ctx, projectID, events)
+	events, invalid := dropInvalid(ctx, projectID, principal.AuthType, events)
+	events, crawlerRequests := splitCrawlerRequests(events)
 
 	// A page unload aborts the request and its cookieless events have no other
 	// copy, so finish the batch. JetStream times out the publish itself.
@@ -244,7 +252,8 @@ func (s *Server) BatchCreate(
 	if err != nil {
 		return nil, err
 	}
-	if len(events) == 0 {
+	crawlerEvents := s.buildCrawlerEvents(ctx, projectID, crawlerRequests, drops)
+	if len(events) == 0 && len(crawlerEvents) == 0 {
 		// Every event was refused. Still OK, not an error, but the response now
 		// carries why, so a caller can tell a retryable salt outage apart from
 		// permanently unusable timestamps instead of seeing a bare accepted=0.
@@ -256,6 +265,7 @@ func (s *Server) BatchCreate(
 	s.enrichBotScore(ctx, projectID, principal.AuthType, req.Header(), events)
 	s.enrichVerifiedBot(ctx, projectID, principal.AuthType, req.Header(), events)
 	s.enrichAttribution(ctx, projectID, events)
+	events = append(events, crawlerEvents...)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		if errors.Is(err, coreevents.ErrBatchInProcess) {
@@ -264,6 +274,7 @@ func (s *Server) BatchCreate(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to accept events"))
 	}
 	acceptedCounter.Add(ctx, int64(len(events)), metric.WithAttributes(attribute.String("auth", string(principal.AuthType))))
+	countCrawlerEvents(ctx, crawlerEvents)
 
 	return batchResponse(len(events), drops, invalid), nil
 }
@@ -271,12 +282,16 @@ func (s *Server) BatchCreate(
 // dropInvalid validates each event on its own, so one that breaks a rule is
 // dropped and reported instead of failing the whole batch. So is one repeating an
 // earlier kept event's event_id; the first is kept.
-func dropInvalid(ctx context.Context, projectID string, events []*eventsv1.Event) ([]*eventsv1.Event, []*eventsv1.InvalidEvent) {
+func dropInvalid(ctx context.Context, projectID string, authType rpc.AuthType, events []*eventsv1.Event) ([]*eventsv1.Event, []*eventsv1.InvalidEvent) {
 	kept := make([]*eventsv1.Event, 0, len(events))
 	var invalid []*eventsv1.InvalidEvent
 	firstIndex := make(map[string]int, len(events))
 	for i, e := range events {
 		rule, violations := rpc.Violations(protovalidate.Validate(&eventsv1.IncomingEvent{Event: e}))
+		// A rule can't see the key, and only the customer's own server can vouch for a crawler's IP.
+		if violations == nil && e.GetKind() == crawler.EventKind && authType != rpc.AuthTypePrivateKey {
+			rule, violations = "crawler_request.private_key", []string{"event.kind: crawler_request needs a private API key"}
+		}
 		if first, dup := firstIndex[e.GetEventId()]; violations == nil && dup {
 			rule, violations = "event_id.unique", []string{fmt.Sprintf("event.event_id: repeats the event at index %d", first)}
 		}
@@ -752,17 +767,31 @@ func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, authTy
 // enrichBot tags web-SDK events sent by automation the server can recognise
 // (botdetect). Public-key requests only: a private key is the customer's own
 // server, and non-web SDKs send an HTTP-client User-Agent the crawler list names.
+//
+// A user-agent match also gets crawler.Match's $crawler_category and
+// $crawler_company, but no $crawler_verified: the IP here is header-reported.
 func (s *Server) enrichBot(ctx context.Context, projectID string, authType rpc.AuthType, h http.Header, events []*eventsv1.Event) {
 	for _, event := range events {
 		delete(event.AutoProperties, autoprop.PropBot)
 		delete(event.AutoProperties, autoprop.PropBotReason)
+		for key := range event.AutoProperties {
+			if strings.HasPrefix(key, autoprop.PropCrawlerPrefix) {
+				delete(event.AutoProperties, key)
+			}
+		}
 	}
 	if authType != rpc.AuthTypePublicKey {
 		return
 	}
 
 	signal := "user_agent"
-	reason, ok := botdetect.MatchUserAgent(h.Get("User-Agent"))
+	ua := h.Get("User-Agent")
+	reason, ok := botdetect.MatchUserAgent(ua)
+	var agent crawler.Agent
+	var known bool
+	if ok {
+		agent, known = crawler.Match(ua)
+	}
 	if !ok {
 		signal = "asn"
 		reason, ok = datacenterReason(ctx, projectID, h, len(events))
@@ -788,6 +817,16 @@ func (s *Server) enrichBot(ctx context.Context, projectID string, authType rpc.A
 		}
 		event.AutoProperties[autoprop.PropBotReason] = &commonv1.PropertyValue{
 			Value: &commonv1.PropertyValue_StringValue{StringValue: eventReason},
+		}
+		if known {
+			event.AutoProperties[autoprop.PropCrawlerCategory] = &commonv1.PropertyValue{
+				Value: &commonv1.PropertyValue_StringValue{StringValue: string(agent.Category)},
+			}
+			if agent.Company != "" {
+				event.AutoProperties[autoprop.PropCrawlerCompany] = &commonv1.PropertyValue{
+					Value: &commonv1.PropertyValue_StringValue{StringValue: agent.Company},
+				}
+			}
 		}
 		tagged++
 	}
