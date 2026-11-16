@@ -576,6 +576,9 @@ func profileActivitySummaryCTE(projectID string, includeBots bool) *chq.Query {
 		Where(
 			chq.Eq("identity.project_id", projectID),
 			chq.BotFilter(includeBots, "states"),
+			// A profile identified as a crawler- id before the prefix was
+			// reserved must not take the crawler's requests.
+			chq.RawCond("NOT startsWith(states.distinct_id, '"+crawlerIDPrefix+"')"),
 		).
 		GroupBy("identity.project_id", "identity.profile_id")
 }

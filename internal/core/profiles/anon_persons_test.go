@@ -1346,3 +1346,34 @@ func TestProfilesNeverListCrawlers(t *testing.T) {
 		}
 	}
 }
+
+// TestProfilesNeverTakeCrawlerActivity pins that a profile identified as a
+// crawler- id before the prefix was reserved never counts the crawler's requests.
+func TestProfilesNeverTakeCrawlerActivity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	projectID := "proj-crawler-claimed"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"u-1", projectID, crawler.DistinctIDPrefix+"gptbot", map[string]any{}, uint8(0), now.Add(-2*time.Hour), now.Add(-2*time.Hour),
+	); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, crawler.DistinctIDPrefix+"gptbot", crawler.EventKind, uuid.NewString(),
+		map[string]string{"$bot": "true", "$bot_reason": "GPTBot"}, map[string]string{}, now.Add(-time.Hour))
+
+	service := profiles.NewService(nil, ch.Conn, nil)
+	got, err := service.GetByID(ctx, projectID, "u-1", true)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Activity != nil {
+		t.Errorf("Activity = %+v with bots included, want none", *got.Activity)
+	}
+}

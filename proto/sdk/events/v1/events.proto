@@ -81,7 +81,7 @@ message IncomingEvent {
     (buf.validate.field).cel = {
       id: "incoming_event.crawler_request_shape"
       message: "a crawler_request event needs client and an http or https $url"
-      expression: "this.kind != 'crawler_request' || (has(this.client) && '$url' in this.auto_properties && this.auto_properties['$url'].string_value.matches('^https?://'))"
+      expression: "this.kind != 'crawler_request' || (has(this.client) && '$url' in this.auto_properties && this.auto_properties['$url'].string_value.matches('^https?://[^/?#]+'))"
     },
     (buf.validate.field).cel = {
       id: "incoming_event.crawler_request_identity_server_owned"

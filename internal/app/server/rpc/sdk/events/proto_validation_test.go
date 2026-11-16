@@ -117,6 +117,12 @@ func TestEventValidation_TwoStageContract(t *testing.T) {
 				e.AutoProperties = propMap(map[string]string{"$url": "/pricing"})
 				return e
 			}()), "needs client and an http or https $url"},
+		{"sdk_crawler_request_url_without_host_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.AutoProperties = propMap(map[string]string{"$url": "https://"})
+				return e
+			}()), "needs client and an http or https $url"},
 		{"sdk_crawler_request_identity_rejected",
 			incoming(func() *eventsv1.Event {
 				e := crawlerRequest()

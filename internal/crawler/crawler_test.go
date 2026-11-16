@@ -176,6 +176,8 @@ func TestMatch(t *testing.T) {
 		{"a monitor", "Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)", Agent{}, false},
 		{"a link preview", "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", Agent{}, false},
 		{"past the scan bound", strings.Repeat("x", maxUALen) + " GPTBot/1.2", Agent{}, false},
+		{"a token ending at the scan bound", strings.Repeat("x", maxUALen-7) + " GPTBot/1.2", agentOf(commoncrawlersv1.Crawler_CRAWLER_GPTBOT), true},
+		{"a longer word cut at the scan bound", strings.Repeat("x", maxUALen-7) + " GPTBotX/1.2", Agent{}, false},
 		{"empty", "", Agent{}, false},
 	}
 	for _, tt := range tests {

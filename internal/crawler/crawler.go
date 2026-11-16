@@ -76,7 +76,12 @@ const maxUALen = 512
 // first crawler-user-agents entry tagged search-engine or seo that matches.
 func Match(ua string) (Agent, bool) {
 	if len(ua) > maxUALen {
-		ua = ua[:maxUALen]
+		// Drop the word the bound cuts, or "GPTBotX" cut after its T reads as GPTBot.
+		cut := maxUALen
+		for cut > 0 && isWordByte(ua[cut]) {
+			cut--
+		}
+		ua = ua[:cut]
 	}
 	lower := strings.ToLower(ua)
 	best, bestLen := -1, 0

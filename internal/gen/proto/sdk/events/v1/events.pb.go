@@ -500,14 +500,14 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\x05index\x18\x01 \x01(\rR\x05index\x12\x1e\n" +
 	"\n" +
 	"violations\x18\x02 \x03(\tR\n" +
-	"violations\"\xd0\t\n" +
-	"\rIncomingEvent\x12\xbe\t\n" +
-	"\x05event\x18\x01 \x01(\v2\x14.sdk.events.v1.EventB\x91\t\xbaH\x8d\t\xba\x01\xb3\x01\n" +
+	"violations\"\xd7\t\n" +
+	"\rIncomingEvent\x12\xc5\t\n" +
+	"\x05event\x18\x01 \x01(\v2\x14.sdk.events.v1.EventB\x98\t\xbaH\x94\t\xba\x01\xb3\x01\n" +
 	"/incoming_event.cookieless_identity_server_owned\x129cookieless events must not send distinct_id or session_id\x1aE!this.cookieless || (this.distinct_id == '' && this.session_id == '')\xba\x01\x9c\x01\n" +
 	"*incoming_event.distinct_id_reserved_prefix\x12Adistinct_id must not start with the reserved 'cookieless-' prefix\x1a+!this.distinct_id.startsWith('cookieless-')\xba\x01\x9e\x01\n" +
 	"2incoming_event.distinct_id_reserved_crawler_prefix\x12>distinct_id must not start with the reserved 'crawler-' prefix\x1a(!this.distinct_id.startsWith('crawler-')\xba\x01\x98\x01\n" +
-	"-incoming_event.client_only_on_crawler_request\x122client is accepted only on a crawler_request event\x1a3!has(this.client) || this.kind == 'crawler_request'\xba\x01\x82\x02\n" +
-	"$incoming_event.crawler_request_shape\x12>a crawler_request event needs client and an http or https $url\x1a\x99\x01this.kind != 'crawler_request' || (has(this.client) && '$url' in this.auto_properties && this.auto_properties['$url'].string_value.matches('^https?://'))\xba\x01\xeb\x01\n" +
+	"-incoming_event.client_only_on_crawler_request\x122client is accepted only on a crawler_request event\x1a3!has(this.client) || this.kind == 'crawler_request'\xba\x01\x89\x02\n" +
+	"$incoming_event.crawler_request_shape\x12>a crawler_request event needs client and an http or https $url\x1a\xa0\x01this.kind != 'crawler_request' || (has(this.client) && '$url' in this.auto_properties && this.auto_properties['$url'].string_value.matches('^https?://[^/?#]+'))\xba\x01\xeb\x01\n" +
 	"4incoming_event.crawler_request_identity_server_owned\x12Jcrawler_request events must not send distinct_id, session_id or cookieless\x1agthis.kind != 'crawler_request' || (this.distinct_id == '' && this.session_id == '' && !this.cookieless)\xc8\x01\x01R\x05event\"\x8e\x01\n" +
 	"\x06Client\x12V\n" +
 	"\x02ip\x18\x01 \x01(\tBF\xbaHC\xba\x01@\n" +
