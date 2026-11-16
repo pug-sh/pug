@@ -202,7 +202,8 @@ func Derive(in Input) Output {
 		// The cost is that an encoded "%2F" stops being distinguishable from
 		// a real separator; encoded slashes in paths are rare and the
 		// symmetry is worth more.
-		out.Pathname = pageURL.Path
+		// Decoding can yield invalid UTF-8, which fails the whole batch's marshal.
+		out.Pathname = strings.ToValidUTF8(pageURL.Path, "\uFFFD")
 		if out.Pathname == "" {
 			out.Pathname = "/"
 		}
@@ -294,7 +295,8 @@ func parsePageURL(raw string) (*url.URL, string) {
 
 func completeUTM(dst *string, q url.Values, param string) {
 	if *dst == "" {
-		*dst = q.Get(param)
+		// Decoding can yield invalid UTF-8, which fails the whole batch's marshal.
+		*dst = strings.ToValidUTF8(q.Get(param), "\uFFFD")
 	}
 }
 
