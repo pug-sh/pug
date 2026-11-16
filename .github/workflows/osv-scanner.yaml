@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   scan:
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.0
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1
     with:
       # A fork's PR token is read-only, so only main's runs upload to code scanning.
       upload-sarif: ${{ github.event_name != 'pull_request' }}
