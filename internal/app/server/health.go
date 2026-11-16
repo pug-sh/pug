@@ -7,9 +7,12 @@ import (
 
 // health backs the Kubernetes probes. Readiness ignores Postgres, ClickHouse, Redis
 // and NATS: every replica shares them, so an outage would pull every pod at once.
+// For the same reason it waits for the first load of the crawler IP ranges to
+// finish, not to succeed, so a new pod doesn't store crawler requests unchecked.
 type health struct {
-	natsClosed func() bool
-	draining   atomic.Bool
+	natsClosed   func() bool
+	rangesLoaded func() bool
+	draining     atomic.Bool
 }
 
 // live fails once this pod's NATS connection has closed for good, which nats.go
@@ -25,6 +28,10 @@ func (h *health) live(w http.ResponseWriter, _ *http.Request) {
 func (h *health) ready(w http.ResponseWriter, _ *http.Request) {
 	if h.draining.Load() {
 		http.Error(w, "draining", http.StatusServiceUnavailable)
+		return
+	}
+	if !h.rangesLoaded() {
+		http.Error(w, "loading crawler IP ranges", http.StatusServiceUnavailable)
 		return
 	}
 	_, _ = w.Write([]byte("ok"))

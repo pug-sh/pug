@@ -124,6 +124,12 @@ func TestDeriveURLDecomposition(t *testing.T) {
 			host:     "example.com",
 		},
 		{
+			name:     "escape that decodes to invalid UTF-8",
+			in:       Input{URL: "https://example.com/caf%E9"},
+			pathname: "/caf\uFFFD",
+			host:     "example.com",
+		},
+		{
 			name:     "literal space path matches its escaped spelling",
 			in:       Input{URL: "https://example.com/a b/c"},
 			pathname: "/a b/c",
@@ -177,6 +183,13 @@ func TestDeriveURLDecomposition(t *testing.T) {
 			utmSource: "google",
 			utmTerm:   "dog food",
 			utmCont:   "ad-1",
+		},
+		{
+			name:      "utm escape that decodes to invalid UTF-8",
+			in:        Input{URL: "https://example.com/?utm_source=caf%E9"},
+			pathname:  "/",
+			host:      "example.com",
+			utmSource: "caf\uFFFD",
 		},
 		{
 			name:      "client utm wins over url query",

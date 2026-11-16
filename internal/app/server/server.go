@@ -43,6 +43,8 @@ import (
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	coreusage "github.com/pug-sh/pug/internal/core/usage"
+	"github.com/pug-sh/pug/internal/crawler"
+	"github.com/pug-sh/pug/internal/crawlerips"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/billing/v1/billingv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
@@ -191,15 +193,16 @@ func start(ctx context.Context, d *deps) error {
 	if err != nil {
 		return err
 	}
+	crawlerIPs := crawlerips.New(ctx, d.crawlerRanges, crawler.RangeURLs())
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
 		eventsrpc.NewServer(d.nats.GetJetStream(), geoProvider, uaParser,
-			cookieless.New(d.redis.Unwrap())), handlerOpts)
+			cookieless.New(d.redis.Unwrap()), crawlerIPs), handlerOpts)
 
 	mux := http.NewServeMux()
 
 	// No auth, no CORS. Plain paths cannot collide with the RPC routes, which are
 	// all /<package>.<Service>/...
-	probes := &health{natsClosed: d.nats.IsClosed}
+	probes := &health{natsClosed: d.nats.IsClosed, rangesLoaded: crawlerIPs.Loaded}
 	mux.HandleFunc("/healthz", probes.live)
 	mux.HandleFunc("/readyz", probes.ready)
 

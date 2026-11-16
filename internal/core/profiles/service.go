@@ -437,9 +437,15 @@ func anonPersonsCTE(projectID string, includeBots bool) *chq.Query {
 			chq.RawCond("states.distinct_id != ''"),
 			chq.RawCond("states.distinct_id NOT IN claimed_ids"),
 			chq.BotFilter(includeBots, "states"),
+			// A crawler is never a person, with include_bots on or off.
+			chq.RawCond("NOT startsWith(states.distinct_id, '"+crawlerIDPrefix+"')"),
 		).
 		GroupBy("states.project_id", "states.distinct_id")
 }
+
+// crawlerIDPrefix is crawler.DistinctIDPrefix, copied to keep the crawler list
+// out of the compliance worker; a test pins the two.
+const crawlerIDPrefix = "crawler-"
 
 // personsCTE unions identified profiles with derived anonymous persons into
 // the single relation the read queries page over. Column order mirrors
@@ -570,6 +576,9 @@ func profileActivitySummaryCTE(projectID string, includeBots bool) *chq.Query {
 		Where(
 			chq.Eq("identity.project_id", projectID),
 			chq.BotFilter(includeBots, "states"),
+			// A profile identified as a crawler- id before the prefix was
+			// reserved must not take the crawler's requests.
+			chq.RawCond("NOT startsWith(states.distinct_id, '"+crawlerIDPrefix+"')"),
 		).
 		GroupBy("identity.project_id", "identity.profile_id")
 }

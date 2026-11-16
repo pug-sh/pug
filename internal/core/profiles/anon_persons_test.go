@@ -13,6 +13,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/cookieless"
 	"github.com/pug-sh/pug/internal/core/profiles"
+	"github.com/pug-sh/pug/internal/crawler"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -1303,5 +1304,76 @@ func TestProfilesBotExclusion(t *testing.T) {
 	}
 	if _, err := service.GetByID(ctx, projectID, "anon-crawler", false); !errors.Is(err, profiles.ErrProfileNotFound) {
 		t.Errorf("GetByID of a bot-only id = %v, want ErrProfileNotFound", err)
+	}
+}
+
+// TestProfilesNeverListCrawlers pins that a crawler's requests never make a
+// person: include_bots alone would list each crawler- id as an anonymous one.
+func TestProfilesNeverListCrawlers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	projectID := "proj-crawler-persons"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	request := map[string]string{"$bot": "true", "$bot_reason": "GPTBot", "$crawler_category": "training"}
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, crawler.DistinctIDPrefix+"gptbot", crawler.EventKind, uuid.NewString(),
+		request, map[string]string{}, now.Add(-time.Hour))
+	// Untagged too, which no ingest path writes: the prefix alone keeps it out.
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, crawler.DistinctIDPrefix+"untagged", crawler.EventKind, uuid.NewString(),
+		map[string]string{}, map[string]string{}, now.Add(-time.Hour))
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "anon-human", "page_view", uuid.NewString(),
+		map[string]string{"$browser": "Chrome"}, map[string]string{}, now.Add(-time.Hour))
+
+	service := profiles.NewService(nil, ch.Conn, nil)
+	for _, includeBots := range []bool{false, true} {
+		got, err := service.List(ctx, profiles.ListParams{ProjectID: projectID, PageSize: 100, IncludeBots: includeBots})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(got) != 1 || got[0].ID != "anon-human" {
+			ids := make([]string, len(got))
+			for i, p := range got {
+				ids[i] = p.ID
+			}
+			t.Errorf("include_bots=%v: persons = %v, want exactly [anon-human]", includeBots, ids)
+		}
+		if _, err := service.GetByID(ctx, projectID, crawler.DistinctIDPrefix+"gptbot", includeBots); !errors.Is(err, profiles.ErrProfileNotFound) {
+			t.Errorf("include_bots=%v: GetByID(crawler id) err = %v, want ErrProfileNotFound", includeBots, err)
+		}
+	}
+}
+
+// TestProfilesNeverTakeCrawlerActivity pins that a profile identified as a
+// crawler- id before the prefix was reserved never counts the crawler's requests.
+func TestProfilesNeverTakeCrawlerActivity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	projectID := "proj-crawler-claimed"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"u-1", projectID, crawler.DistinctIDPrefix+"gptbot", map[string]any{}, uint8(0), now.Add(-2*time.Hour), now.Add(-2*time.Hour),
+	); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, crawler.DistinctIDPrefix+"gptbot", crawler.EventKind, uuid.NewString(),
+		map[string]string{"$bot": "true", "$bot_reason": "GPTBot"}, map[string]string{}, now.Add(-time.Hour))
+
+	service := profiles.NewService(nil, ch.Conn, nil)
+	got, err := service.GetByID(ctx, projectID, "u-1", true)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Activity != nil {
+		t.Errorf("Activity = %+v with bots included, want none", *got.Activity)
 	}
 }

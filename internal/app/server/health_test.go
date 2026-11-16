@@ -8,19 +8,24 @@ import (
 
 func TestHealth(t *testing.T) {
 	tests := map[string]struct {
-		natsClosed bool
-		draining   bool
-		wantLive   int
-		wantReady  int
+		natsClosed    bool
+		draining      bool
+		loadingRanges bool
+		wantLive      int
+		wantReady     int
 	}{
-		"healthy":     {wantLive: http.StatusOK, wantReady: http.StatusOK},
-		"nats closed": {natsClosed: true, wantLive: http.StatusServiceUnavailable, wantReady: http.StatusOK},
-		"draining":    {draining: true, wantLive: http.StatusOK, wantReady: http.StatusServiceUnavailable},
+		"healthy":        {wantLive: http.StatusOK, wantReady: http.StatusOK},
+		"nats closed":    {natsClosed: true, wantLive: http.StatusServiceUnavailable, wantReady: http.StatusOK},
+		"draining":       {draining: true, wantLive: http.StatusOK, wantReady: http.StatusServiceUnavailable},
+		"loading ranges": {loadingRanges: true, wantLive: http.StatusOK, wantReady: http.StatusServiceUnavailable},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			h := &health{natsClosed: func() bool { return tc.natsClosed }}
+			h := &health{
+				natsClosed:   func() bool { return tc.natsClosed },
+				rangesLoaded: func() bool { return !tc.loadingRanges },
+			}
 			h.draining.Store(tc.draining)
 
 			rec := httptest.NewRecorder()

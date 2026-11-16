@@ -1,0 +1,296 @@
+edition = "2023";
+package common.crawlers.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/crawlers/v1;commoncrawlersv1";
+
+// The crawler table, read by the server and @pug-sh/crawlers. Other search
+// engines and SEO tools come from the crawler-user-agents list. buf refuses
+// deleting a row, so retire one with deprecated = true.
+
+// Category is why a crawler fetches a page.
+enum Category {
+  CATEGORY_UNSPECIFIED = 0;
+  // Fetched live because a person asked an AI product or assistant.
+  CATEGORY_ANSWERS = 1;
+  // Builds a search index that search results and AI answers draw on.
+  CATEGORY_SEARCH = 2;
+  // Collects pages to train models.
+  CATEGORY_TRAINING = 3;
+  // Crawls for an SEO tool: backlink indexes, rank tracking, site audits.
+  CATEGORY_SEO = 4;
+  // AI-related, but none of the above.
+  CATEGORY_OTHER = 5;
+}
+
+extend google.protobuf.EnumValueOptions {
+  // The agent's tokens. A token matches a User-Agent case-insensitively, as a
+  // whole word. The first is the agent's name.
+  repeated string token = 50000;
+  string company = 50001;
+  Category category = 50002;
+  // Where the operator publishes the agent's IP ranges; none when it publishes none.
+  repeated string ip_ranges = 50003;
+  // The operator's page that describes the agent.
+  string operator_page = 50004;
+  // The open lists that name an agent whose operator publishes no page.
+  repeated string listed_by = 50005;
+}
+
+enum Crawler {
+  CRAWLER_UNSPECIFIED = 0;
+
+  CRAWLER_CHATGPT_USER = 1 [
+    (token) = "ChatGPT-User",
+    (company) = "OpenAI",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://openai.com/chatgpt-user.json",
+    (operator_page) = "https://developers.openai.com/api/docs/bots"
+  ];
+  CRAWLER_CLAUDE_USER = 2 [
+    (token) = "Claude-User",
+    (company) = "Anthropic",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://claude.com/crawling/bots.json",
+    (operator_page) = "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+  ];
+  CRAWLER_PERPLEXITY_USER = 3 [
+    (token) = "Perplexity-User",
+    (company) = "Perplexity",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://www.perplexity.ai/perplexity-user.json",
+    (operator_page) = "https://docs.perplexity.ai/docs/resources/perplexity-crawlers"
+  ];
+  CRAWLER_MISTRALAI_USER = 4 [
+    (token) = "MistralAI-User",
+    (company) = "Mistral",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://mistral.ai/mistralai-user-ips.json",
+    (operator_page) = "https://docs.mistral.ai/robots"
+  ];
+  CRAWLER_KIMI_USER = 5 [
+    (token) = "Kimi-User",
+    (company) = "Moonshot AI",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://www.kimi.ai/policies/kimi-user.json",
+    (operator_page) = "https://www.kimi.ai/policies/kimi-crawlers"
+  ];
+  CRAWLER_DUCKASSISTBOT = 6 [
+    (token) = "DuckAssistBot",
+    (company) = "DuckDuckGo",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://duckduckgo.com/duckassistbot.json",
+    (operator_page) = "https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot"
+  ];
+  CRAWLER_AMZN_USER = 7 [
+    (token) = "Amzn-User",
+    (company) = "Amazon",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://developer.amazon.com/amazonbot/live-ip-addresses/",
+    (operator_page) = "https://developer.amazon.com/amazonbot"
+  ];
+  CRAWLER_META_EXTERNALFETCHER = 8 [
+    (token) = "meta-externalfetcher",
+    (company) = "Meta",
+    (category) = CATEGORY_ANSWERS,
+    (operator_page) = "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/"
+  ];
+  CRAWLER_GOOGLE_AGENT = 9 [
+    (token) = "Google-Agent",
+    (company) = "Google",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/user-triggered-agents.json",
+    (operator_page) = "https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers"
+  ];
+  // Replaced Google-NotebookLM, which Google supported until August 2026.
+  CRAWLER_GOOGLE_GEMININOTEBOOK = 10 [
+    (token) = "Google-GeminiNotebook",
+    (token) = "Google-NotebookLM",
+    (company) = "Google",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/user-triggered-fetchers.json",
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/user-triggered-fetchers-google.json",
+    (operator_page) = "https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers"
+  ];
+  CRAWLER_GOOGLE_READ_ALOUD = 11 [
+    (token) = "Google-Read-Aloud",
+    (company) = "Google",
+    (category) = CATEGORY_ANSWERS,
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/user-triggered-fetchers.json",
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/user-triggered-fetchers-google.json",
+    (operator_page) = "https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers"
+  ];
+
+  CRAWLER_OAI_SEARCHBOT = 12 [
+    (token) = "OAI-SearchBot",
+    (company) = "OpenAI",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://openai.com/searchbot.json",
+    (operator_page) = "https://developers.openai.com/api/docs/bots"
+  ];
+  CRAWLER_CLAUDE_SEARCHBOT = 13 [
+    (token) = "Claude-SearchBot",
+    (company) = "Anthropic",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://claude.com/crawling/bots.json",
+    (operator_page) = "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+  ];
+  CRAWLER_PERPLEXITYBOT = 14 [
+    (token) = "PerplexityBot",
+    (company) = "Perplexity",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://www.perplexity.ai/perplexitybot.json",
+    (operator_page) = "https://docs.perplexity.ai/docs/resources/perplexity-crawlers"
+  ];
+  CRAWLER_MISTRALAI_INDEX = 15 [
+    (token) = "MistralAI-Index",
+    (company) = "Mistral",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://mistral.ai/mistralai-index-ips.json",
+    (operator_page) = "https://docs.mistral.ai/robots"
+  ];
+  CRAWLER_KIMI_SEARCHBOT = 16 [
+    (token) = "Kimi-SearchBot",
+    (company) = "Moonshot AI",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://www.kimi.ai/policies/kimi-searchbot.json",
+    (operator_page) = "https://www.kimi.ai/policies/kimi-crawlers"
+  ];
+  CRAWLER_AMZN_SEARCHBOT = 17 [
+    (token) = "Amzn-SearchBot",
+    (company) = "Amazon",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://developer.amazon.com/amazonbot/searchbot-ip-addresses/",
+    (operator_page) = "https://developer.amazon.com/amazonbot"
+  ];
+  CRAWLER_META_WEBINDEXER = 18 [
+    (token) = "meta-webindexer",
+    (company) = "Meta",
+    (category) = CATEGORY_SEARCH,
+    (operator_page) = "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/"
+  ];
+  CRAWLER_GOOGLEBOT = 19 [
+    (token) = "Googlebot",
+    (company) = "Google",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/common-crawlers.json",
+    (operator_page) = "https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers"
+  ];
+  CRAWLER_BINGBOT = 20 [
+    (token) = "bingbot",
+    (token) = "msnbot",
+    (company) = "Microsoft",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://www.bing.com/toolbox/bingbot.json",
+    (operator_page) = "https://www.bing.com/webmasters/help/how-to-verify-bingbot-3905dc26"
+  ];
+  // Its data "may also be used to help train" Apple's models; opting out of that
+  // is the Applebot-Extended robots.txt token, which no request carries.
+  CRAWLER_APPLEBOT = 21 [
+    (token) = "Applebot",
+    (company) = "Apple",
+    (category) = CATEGORY_SEARCH,
+    (ip_ranges) = "https://search.developer.apple.com/applebot.json",
+    (operator_page) = "https://support.apple.com/en-us/119829"
+  ];
+  CRAWLER_BAIDUSPIDER = 22 [
+    (token) = "Baiduspider",
+    (company) = "Baidu",
+    (category) = CATEGORY_SEARCH,
+    (operator_page) = "https://www.baidu.com/search/robots_english.html"
+  ];
+  CRAWLER_YOUBOT = 23 [
+    (token) = "YouBot",
+    (company) = "You.com",
+    (category) = CATEGORY_SEARCH,
+    (listed_by) = "ai.robots.txt",
+    (listed_by) = "crawler-user-agents"
+  ];
+
+  CRAWLER_GPTBOT = 24 [
+    (token) = "GPTBot",
+    (company) = "OpenAI",
+    (category) = CATEGORY_TRAINING,
+    (ip_ranges) = "https://openai.com/gptbot.json",
+    (operator_page) = "https://developers.openai.com/api/docs/bots"
+  ];
+  CRAWLER_CLAUDEBOT = 25 [
+    (token) = "ClaudeBot",
+    (company) = "Anthropic",
+    (category) = CATEGORY_TRAINING,
+    (ip_ranges) = "https://claude.com/crawling/bots.json",
+    (operator_page) = "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+  ];
+  CRAWLER_META_EXTERNALAGENT = 26 [
+    (token) = "meta-externalagent",
+    (company) = "Meta",
+    (category) = CATEGORY_TRAINING,
+    (operator_page) = "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/"
+  ];
+  // "May be used to train Amazon AI models."
+  CRAWLER_AMAZONBOT = 27 [
+    (token) = "Amazonbot",
+    (company) = "Amazon",
+    (category) = CATEGORY_TRAINING,
+    (ip_ranges) = "https://developer.amazon.com/amazonbot/ip-addresses/",
+    (operator_page) = "https://developer.amazon.com/amazonbot"
+  ];
+  CRAWLER_KIMIBOT = 28 [
+    (token) = "KimiBot",
+    (company) = "Moonshot AI",
+    (category) = CATEGORY_TRAINING,
+    (ip_ranges) = "https://www.kimi.ai/policies/kimibot.json",
+    (operator_page) = "https://www.kimi.ai/policies/kimi-crawlers"
+  ];
+  CRAWLER_CCBOT = 29 [
+    (token) = "CCBot",
+    (company) = "Common Crawl",
+    (category) = CATEGORY_TRAINING,
+    (ip_ranges) = "https://index.commoncrawl.org/ccbot.json",
+    (operator_page) = "https://commoncrawl.org/ccbot"
+  ];
+  CRAWLER_BYTESPIDER = 30 [
+    (token) = "Bytespider",
+    (company) = "ByteDance",
+    (category) = CATEGORY_TRAINING,
+    (listed_by) = "ai.robots.txt",
+    (listed_by) = "crawler-user-agents"
+  ];
+  CRAWLER_AI2BOT = 31 [
+    (token) = "AI2Bot",
+    (company) = "Allen AI",
+    (category) = CATEGORY_TRAINING,
+    (operator_page) = "https://allenai.org/crawler"
+  ];
+
+  CRAWLER_OAI_ADSBOT = 32 [
+    (token) = "OAI-AdsBot",
+    (company) = "OpenAI",
+    (category) = CATEGORY_OTHER,
+    (ip_ranges) = "https://openai.com/adsbot.json",
+    (operator_page) = "https://developers.openai.com/api/docs/bots"
+  ];
+  CRAWLER_META_EXTERNALADS = 33 [
+    (token) = "meta-externalads",
+    (company) = "Meta",
+    (category) = CATEGORY_OTHER,
+    (operator_page) = "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/"
+  ];
+  // "One-off crawls for internal research and development."
+  CRAWLER_GOOGLEOTHER = 34 [
+    (token) = "GoogleOther",
+    (company) = "Google",
+    (category) = CATEGORY_OTHER,
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/common-crawlers.json",
+    (operator_page) = "https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers"
+  ];
+  // Crawls a site when its owner builds a Vertex AI agent.
+  CRAWLER_GOOGLE_CLOUDVERTEXBOT = 35 [
+    (token) = "Google-CloudVertexBot",
+    (company) = "Google",
+    (category) = CATEGORY_OTHER,
+    (ip_ranges) = "https://developers.google.com/static/crawling/ipranges/common-crawlers.json",
+    (operator_page) = "https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers"
+  ];
+}

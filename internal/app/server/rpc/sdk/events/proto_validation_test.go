@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/pug-sh/pug/internal/crawler"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 )
 
@@ -20,6 +21,17 @@ func validEvent() *eventsv1.Event {
 		Kind:       proto.String("page_view"),
 		OccurTime:  timestamppb.New(time.Unix(1700000000, 0)),
 		SessionId:  proto.String("f47ac10b-58cc-4372-a567-0e02b2c3d480"),
+	}
+}
+
+// crawlerRequest is a crawler request as @pug-sh/crawlers sends it.
+func crawlerRequest() *eventsv1.Event {
+	return &eventsv1.Event{
+		EventId:        proto.String("f47ac10b-58cc-4372-a567-0e02b2c3d484"),
+		Kind:           proto.String(crawler.EventKind),
+		OccurTime:      timestamppb.New(time.Unix(1700000000, 0)),
+		AutoProperties: propMap(map[string]string{"$url": "https://example.com/pricing"}),
+		Client:         &eventsv1.Client{UserAgent: proto.String("GPTBot/1.2"), Ip: proto.String("20.171.207.5")},
 	}
 }
 
@@ -79,6 +91,84 @@ func TestEventValidation_TwoStageContract(t *testing.T) {
 				e.DistinctId = proto.String("cookieless-fake")
 				return e
 			}()), "reserved 'cookieless-' prefix"},
+		{"sdk_crawler_prefix_rejected",
+			incoming(func() *eventsv1.Event {
+				e := validEvent()
+				e.DistinctId = proto.String(crawler.DistinctIDPrefix + "gptbot")
+				return e
+			}()), "reserved 'crawler-' prefix"},
+		{"sdk_crawler_request_ok",
+			incoming(crawlerRequest()), ""},
+		{"sdk_crawler_request_without_client_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.Client = nil
+				return e
+			}()), "needs client and an http or https $url"},
+		{"sdk_crawler_request_without_url_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.AutoProperties = nil
+				return e
+			}()), "needs client and an http or https $url"},
+		{"sdk_crawler_request_relative_url_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.AutoProperties = propMap(map[string]string{"$url": "/pricing"})
+				return e
+			}()), "needs client and an http or https $url"},
+		{"sdk_crawler_request_url_without_host_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.AutoProperties = propMap(map[string]string{"$url": "https://"})
+				return e
+			}()), "needs client and an http or https $url"},
+		{"sdk_crawler_request_identity_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.DistinctId = proto.String("anon-u1")
+				return e
+			}()), "must not send distinct_id, session_id or cookieless"},
+		{"sdk_cookieless_crawler_request_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.Cookieless = proto.Bool(true)
+				return e
+			}()), "must not send distinct_id, session_id or cookieless"},
+		{"sdk_client_on_another_kind_rejected",
+			incoming(func() *eventsv1.Event {
+				e := validEvent()
+				e.Client = crawlerRequest().GetClient()
+				return e
+			}()), "client is accepted only on a crawler_request event"},
+		{"sdk_client_bad_ip_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.Client.Ip = proto.String("crawler")
+				return e
+			}()), "ip must be an IP address"},
+		{"sdk_client_no_user_agent_rejected",
+			incoming(func() *eventsv1.Event {
+				e := crawlerRequest()
+				e.Client.UserAgent = proto.String("")
+				return e
+			}()), "user_agent"},
+		{"sdk_ordinary_ids_and_kinds_ok",
+			incoming(func() *eventsv1.Event {
+				e := validEvent()
+				e.DistinctId = proto.String("my-crawler-account")
+				e.Kind = proto.String("crawler_request_viewed")
+				return e
+			}()), ""},
+		// The server fills a crawler_request's identity before the envelope re-validates it.
+		{"envelope_crawler_request_ok",
+			&eventsv1.EventBatch{ProjectId: proto.String("p1"),
+				Events: []*eventsv1.Event{func() *eventsv1.Event {
+					e := validEvent()
+					e.DistinctId = proto.String(crawler.DistinctIDPrefix + "gptbot")
+					e.Kind = proto.String(crawler.EventKind)
+					return e
+				}()}}, ""},
 		{"sdk_bad_session_uuid_rejected",
 			incoming(func() *eventsv1.Event {
 				e := validEvent()

@@ -6,6 +6,7 @@
 package botdetect
 
 import (
+	"iter"
 	"regexp"
 	"strconv"
 	"strings"
@@ -71,6 +72,22 @@ func MatchUserAgent(ua string) (string, bool) {
 		return "", false
 	}
 	return names[hits[0]], true
+}
+
+// Listed yields the name and the list's tags of every crawler-user-agents
+// entry ua matches, first match first. The tags are the list's own slice.
+func Listed(ua string) iter.Seq2[string, []string] {
+	if len(ua) > maxUALen {
+		ua = ua[:maxUALen]
+	}
+	hits := agents.MatchingCrawlers(ua)
+	return func(yield func(string, []string) bool) {
+		for _, i := range hits {
+			if !yield(names[i], agents.Crawlers[i].Tags) {
+				return
+			}
+		}
+	}
 }
 
 func trimName(s string) string {

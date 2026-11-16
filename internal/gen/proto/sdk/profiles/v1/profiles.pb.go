@@ -27,11 +27,11 @@ type IdentifyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Stable, unique user identifier: your database user ID, not an email, which
 	// can change.
-	// The 'cookieless-' prefix is server-owned: ingest mints those ids and the
-	// reserved-prefix rule on an incoming event's distinct_id already refuses them
-	// from clients. external_id needs the same guard because post-identify events
-	// are keyed by external_id, so an id accepted here comes back as a distinct_id
-	// and BatchCreate drops every event of that user.
+	// The 'cookieless-' and 'crawler-' prefixes are server-owned: ingest mints
+	// those ids and the reserved-prefix rules on an incoming event's distinct_id
+	// already refuse them from clients. external_id needs the same guard because
+	// post-identify events are keyed by external_id, so an id accepted here comes
+	// back as a distinct_id and BatchCreate drops every event of that user.
 	ExternalId *string `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	// Profile properties, shallow-merged into existing properties. On key conflict,
 	// these values take precedence over previously stored values. A trait whose key,
@@ -383,10 +383,11 @@ var File_sdk_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xf1\x04\n" +
-	"\x0fIdentifyRequest\x12\x91\x02\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\xef\x01\xbaH\xeb\x01\xba\x01\x81\x01\n" +
-	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xba\x01\\\n" +
+	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xf8\x05\n" +
+	"\x0fIdentifyRequest\x12\x98\x03\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\xf6\x02\xbaH\xf2\x02\xba\x01\x81\x01\n" +
+	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xba\x01\x83\x01\n" +
+	"#external_id.reserved_crawler_prefix\x12>external_id must not start with the reserved 'crawler-' prefix\x1a\x1c!this.startsWith('crawler-')\xba\x01\\\n" +
 	"\x12external_id.no_nul\x12,external_id must not contain a NUL character\x1a\x18!this.contains('\\u0000')\xc8\x01\x01r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12\x97\x01\n" +
@@ -406,10 +407,11 @@ const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\x05index\x18\x01 \x01(\rR\x05index\x12\x1e\n" +
 	"\n" +
 	"violations\x18\x02 \x03(\tR\n" +
-	"violations\"\xc8\x03\n" +
-	"\x16ProfileIdentifyMessage\x12\x91\x02\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\xef\x01\xbaH\xeb\x01\xba\x01\x81\x01\n" +
-	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xba\x01\\\n" +
+	"violations\"\xcf\x04\n" +
+	"\x16ProfileIdentifyMessage\x12\x98\x03\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\xf6\x02\xbaH\xf2\x02\xba\x01\x81\x01\n" +
+	"\x1bexternal_id.reserved_prefix\x12Aexternal_id must not start with the reserved 'cookieless-' prefix\x1a\x1f!this.startsWith('cookieless-')\xba\x01\x83\x01\n" +
+	"#external_id.reserved_crawler_prefix\x12>external_id must not start with the reserved 'crawler-' prefix\x1a\x1c!this.startsWith('crawler-')\xba\x01\\\n" +
 	"\x12external_id.no_nul\x12,external_id must not contain a NUL character\x1a\x18!this.contains('\\u0000')\xc8\x01\x01r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12)\n" +

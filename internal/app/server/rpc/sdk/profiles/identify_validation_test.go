@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/cookieless"
+	"github.com/pug-sh/pug/internal/crawler"
 	sdkprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1"
 )
 
@@ -68,6 +69,24 @@ func TestIdentify_RejectsCookielessExternalID(t *testing.T) {
 	for _, id := range []string{"user@example.com", "my-cookieless-account", "anon-1234"} {
 		ok := &sdkprofilesv1.IdentifyRequest{ExternalId: proto.String(id)}
 		if err := protovalidate.Validate(ok); err != nil {
+			t.Errorf("external_id %q must remain valid: %v", id, err)
+		}
+	}
+}
+
+// An external id claims the distinct id it equals, so identifying as
+// crawler-gptbot would fold GPTBot's requests into that person.
+func TestIdentify_RejectsCrawlerExternalID(t *testing.T) {
+	for _, msg := range []proto.Message{
+		&sdkprofilesv1.IdentifyRequest{ExternalId: proto.String(crawler.DistinctIDPrefix + "gptbot")},
+		&sdkprofilesv1.ProfileIdentifyMessage{ExternalId: proto.String(crawler.DistinctIDPrefix + "gptbot"), ProjectId: proto.String("p1")},
+	} {
+		if err := protovalidate.Validate(msg); err == nil || !strings.Contains(err.Error(), "reserved 'crawler-' prefix") {
+			t.Errorf("%T with a crawler- external_id: err = %v, want the reserved-prefix violation", msg, err)
+		}
+	}
+	for _, id := range []string{"crawler", "my-crawler-account", "Crawler-gptbot"} {
+		if err := protovalidate.Validate(&sdkprofilesv1.IdentifyRequest{ExternalId: proto.String(id)}); err != nil {
 			t.Errorf("external_id %q must remain valid: %v", id, err)
 		}
 	}
