@@ -494,6 +494,9 @@ func TestOutside008SemanticsFires(t *testing.T) {
 		{"webmail", mutationCorpusRow{url: page, referrer: "https://mail.google.com/x"}, true},
 		{"auth intermediary", mutationCorpusRow{url: page, referrer: "https://accounts.google.com/x"}, true},
 		{"auth intermediary on a garbage url", mutationCorpusRow{url: "not a url", referrer: "https://accounts.google.com/x"}, true},
+		{"ai referrer", mutationCorpusRow{url: page, referrer: "https://chatgpt.com/"}, true},
+		{"ai source that was search", mutationCorpusRow{url: page, utmSource: "perplexity"}, true},
+		{"ai source that was unassigned", mutationCorpusRow{url: page, utmSource: "chatgpt.com"}, true},
 		{"google search", mutationCorpusRow{url: page, referrer: "https://www.google.com/"}, false},
 		{"self-referral", mutationCorpusRow{url: page, referrer: "https://www.pugandpals.example.com/y"}, false},
 		{"hostless referrer", mutationCorpusRow{url: page, referrer: "www.google.com/search"}, false},
@@ -525,6 +528,10 @@ func outside008Semantics(row mutationCorpusRow) string {
 	// An unparseable $url derives no channel in either implementation.
 	if out.Channel == "" {
 		return ""
+	}
+	if out.Channel == attribution.ChannelAIAssistants {
+		return fmt.Sprintf("referrer %q / source %q derives AI Assistants in Go, a channel frozen 008 has no rule for",
+			out.ReferrerDomain, out.UTMSource)
 	}
 	if googleFamily008.MatchString(out.ReferrerDomain) && out.Channel != attribution.ChannelOrganicSearch {
 		return fmt.Sprintf("referrer %q derives %q in Go but Organic Search in frozen 008", out.ReferrerDomain, out.Channel)

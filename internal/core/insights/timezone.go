@@ -19,9 +19,11 @@ func utcBucketing(tz string) bool {
 // in toTimeZone() so every toStartOf* function truncates in that zone: this aligns
 // day/week/month buckets (and hour buckets in fractional-offset zones) to the
 // project's local calendar uniformly, with no per-function or week-mode special
-// casing, and returns the bucket's start instant. tz must already be charset- and
+// casing. The result is cast back to a DateTime in that zone so it is the bucket's
+// start instant: toStartOfWeek and toStartOfMonth return a Date, which the driver reads
+// as midnight in the server's zone, not the project's. tz must already be charset- and
 // existence-validated by the caller (ExecuteQuery runs tzx.Validate up front), which
-// is what makes embedding it in the toTimeZone() literal injection-safe.
+// is what makes embedding it in the toTimeZone() and toDateTime() literals injection-safe.
 func bucketExpr(g insightsv1.Granularity, column, tz string) (string, error) {
 	fn, err := granularityFunc(g)
 	if err != nil {
@@ -30,5 +32,5 @@ func bucketExpr(g insightsv1.Granularity, column, tz string) (string, error) {
 	if utcBucketing(tz) {
 		return fmt.Sprintf("%s(%s)", fn, column), nil
 	}
-	return fmt.Sprintf("%s(toTimeZone(%s, '%s'))", fn, column, tz), nil
+	return fmt.Sprintf("toDateTime(%s(toTimeZone(%s, '%s')), '%s')", fn, column, tz, tz), nil
 }

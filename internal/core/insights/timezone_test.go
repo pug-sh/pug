@@ -28,15 +28,14 @@ func TestBucketExpr_NonUTCWrapsInToTimeZone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bucketExpr error: %v", err)
 	}
-	want := "toStartOfDay(toTimeZone(occur_time, 'Asia/Kolkata'))"
+	want := "toDateTime(toStartOfDay(toTimeZone(occur_time, 'Asia/Kolkata')), 'Asia/Kolkata')"
 	if got != want {
 		t.Errorf("bucketExpr = %q, want %q", got, want)
 	}
 }
 
-// Every granularity wraps the column in toTimeZone() the same way — the point of the
-// uniform template is that week/month/hour/minute all truncate in-zone with no
-// per-function special casing.
+// Every granularity takes one template, truncated in-zone then cast to a DateTime there,
+// since week and month truncate to a Date.
 func TestBucketExpr_NonUTCWrapsEveryGranularity(t *testing.T) {
 	cases := []struct {
 		gran insightsv1.Granularity
@@ -53,7 +52,7 @@ func TestBucketExpr_NonUTCWrapsEveryGranularity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("bucketExpr(%v) error: %v", c.gran, err)
 		}
-		want := c.fn + "(toTimeZone(occur_time, 'Asia/Kolkata'))"
+		want := "toDateTime(" + c.fn + "(toTimeZone(occur_time, 'Asia/Kolkata')), 'Asia/Kolkata')"
 		if got != want {
 			t.Errorf("bucketExpr(%v) = %q, want %q", c.gran, got, want)
 		}
