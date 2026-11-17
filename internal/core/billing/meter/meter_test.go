@@ -378,7 +378,7 @@ func TestCarriesTheShortfallAfterARoll(t *testing.T) {
 	if _, err := f.run(t, d(11, 10).Add(time.Hour)); err != nil {
 		t.Fatalf("November Run: %v", err)
 	}
-	shortfall := []int64{0, 500_000, 0, 0, 0, 0}
+	shortfall := []int64{0, 0, 500_000, 0, 0, 0}
 	if want := sumDiff(split(3_500_000), split(3_000_000)); !slices.Equal(shortfall, want) {
 		t.Fatalf("test arithmetic: shortfall %v, want %v", shortfall, want)
 	}
