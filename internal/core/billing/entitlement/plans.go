@@ -72,7 +72,7 @@ var catalog = []Plan{
 		Slug:          SlugUsage,
 		DisplayName:   "Pay as you go",
 		FreeEvents:    100_000,
-		TierUpTo:      []int64{2_000_000, 15_000_000, 50_000_000, 100_000_000, 250_000_000},
+		TierUpTo:      []int64{1_000_000, 3_000_000, 10_000_000, 30_000_000, 100_000_000},
 		RetentionDays: 5 * RetentionYearDays,
 	},
 }

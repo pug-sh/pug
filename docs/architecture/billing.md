@@ -99,7 +99,7 @@ for the layout a subscription on a catalog slug is split by. A deal's layout is
 
 | slug | name | free events / month | tier upper bounds | retention |
 |---|---|---|---|---|
-| `usage-2026-10` | Pay as you go | 100,000 | 2M · 15M · 50M · 100M · 250M · unbounded | 1,825 days |
+| `usage-2026-10` | Pay as you go | 100,000 | 1M · 3M · 10M · 30M · 100M · unbounded | 1,825 days |
 
 `TestCatalogIsPinned` pins these numbers. Once any org holds the plan they never
 change in place (§4.2).
