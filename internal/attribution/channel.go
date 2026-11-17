@@ -7,7 +7,7 @@ import (
 
 // This file is the single normative marketing-channel taxonomy
 // (docs/architecture/web-analytics.md). Every channel a pug event can carry is
-// classified here — profiles.md's "no ad hoc channel" rule points at this
+// classified here; profiles.md's "no ad hoc channel" rule points at this
 // derivation. Changing a rule, a set entry, or the rule ORDER changes what
 // lands in the permanent rollups; treat edits as taxonomy changes, not
 // refactors, and pin them in channel_test.go.
@@ -19,6 +19,7 @@ const (
 	ChannelPaidVideo     = "Paid Video"
 	ChannelDisplay       = "Display"
 	ChannelPaidOther     = "Paid Other"
+	ChannelAIAssistants  = "AI Assistants"
 	ChannelOrganicSearch = "Organic Search"
 	ChannelOrganicSocial = "Organic Social"
 	ChannelOrganicVideo  = "Organic Video"
@@ -40,11 +41,22 @@ var (
 	searchDomains = []string{
 		"bing.com", "duckduckgo.com", "yahoo.com", "yahoo.co.jp", "baidu.com",
 		"yandex.com", "yandex.ru", "ecosia.org", "search.brave.com",
-		"startpage.com", "perplexity.ai", "qwant.com", "kagi.com",
+		"startpage.com", "qwant.com", "kagi.com",
 	}
 	searchSources = []string{
 		"google", "bing", "duckduckgo", "ddg", "yahoo", "baidu", "yandex",
-		"ecosia", "brave", "startpage", "perplexity", "qwant", "kagi",
+		"ecosia", "brave", "startpage", "qwant", "kagi",
+	}
+
+	// ChatGPT tags its links utm_source=chatgpt.com, which matchesSource's domain arm takes.
+	aiDomains = []string{
+		"chatgpt.com", "chat.openai.com", "perplexity.ai", "claude.ai", "gemini.google.com",
+		"copilot.microsoft.com", "chat.mistral.ai", "meta.ai", "grok.com", "chat.deepseek.com",
+		"kimi.com", "you.com", "phind.com", "poe.com",
+	}
+	aiSources = []string{
+		"chatgpt", "openai", "perplexity", "claude", "gemini", "copilot", "mistral", "grok",
+		"deepseek", "kimi", "phind", "poe",
 	}
 
 	socialDomains = []string{
@@ -69,17 +81,17 @@ var (
 
 	// googleSearchSubdomains are the labels that may precede "google.<tld>" on a
 	// search surface; "" is the apex. An allow-list, so an unlisted subdomain
-	// (accounts, mail, search — and whatever google ships next) books a visible
-	// Referral instead of silently re-inflating Organic Search. gemini and lens
-	// are here because perplexity.ai is a searchDomain: same kind of surface.
+	// (accounts, mail, search, and whatever google ships next) books a visible
+	// Referral instead of silently re-inflating Organic Search. lens is here
+	// because it links out to what it matches; gemini is an AI assistant, in aiDomains.
 	googleSearchSubdomains = []string{
 		"", "www", "m", "images", "news", "maps", "scholar", "books", "video", "cse",
-		"gemini", "lens",
+		"lens",
 	}
 
 	// webmailDomains are webmail clients: a click there is a click inside an
 	// email, so it books Email. The mail.yahoo/mail.yandex hosts also suffix-match
-	// a search domain — one entry per such sibling, or the Organic Search defect
+	// a search domain: one entry per such sibling, or the Organic Search defect
 	// survives on the host left out.
 	webmailDomains = []string{
 		"mail.google.com", "mail.yahoo.com", "mail.yahoo.co.jp", "mail.yandex.ru",
@@ -92,15 +104,15 @@ var (
 // ref is referrerDomain's output (lowercased; self-referrals and
 // authIntermediaryHosts already blanked); src/med are the EFFECTIVE
 // utm_source/utm_medium (after URL completion) and are lowercased here;
-// anySignal reports that the event carried SOME attribution signal — any of
+// anySignal reports that the event carried SOME attribution signal: any of
 // the five effective UTM values, or a referrer that was sent but yielded no
 // host (referrerDomain's unresolved).
 //
-// Rule 12 is what keeps an unclassifiable signal OUT of Direct: an
+// Rule 13 is what keeps an unclassifiable signal OUT of Direct: an
 // unresolvable referrer books as Unassigned, which is visible on a dashboard,
 // rather than hiding inside the Direct bucket that is expected to be large.
 // A self-referral or an authIntermediaryHosts bounce is deliberately NOT a
-// signal: with no UTM left, both land on Direct via 13.
+// signal: with no UTM left, both land on Direct via 14.
 //
 //	 # | rule                                                  | channel
 //	 1 | paid medium AND search source/ref                     | Paid Search
@@ -109,29 +121,31 @@ var (
 //	 4 | medium ∈ {display, banner, expandable, interstitial,  | Display
 //	   |           cpm}                                        |
 //	 5 | paid medium, unmatched source                         | Paid Other
-//	 6 | search source/ref, or medium = organic                | Organic Search
-//	 7 | social source/ref, or medium ∈ {social,               | Organic Social
+//	 6 | AI source/ref                                         | AI Assistants
+//	 7 | search source/ref, or medium = organic                | Organic Search
+//	 8 | social source/ref, or medium ∈ {social,               | Organic Social
 //	   |   social-network, social-media, sm}                   |
-//	 8 | video source/ref, or medium = video                   | Organic Video
-//	 9 | source or medium ∈ {email, e-mail, e_mail, newsletter}| Email
+//	 9 | video source/ref, or medium = video                   | Organic Video
+//	10 | source or medium ∈ {email, e-mail, e_mail, newsletter}| Email
 //	   |   or a webmail referrer                               |
-//	10 | medium = affiliate                                    | Affiliate
-//	11 | ref != ""                                             | Referral
-//	12 | any UTM, or an unresolvable referrer, but             | Unassigned
+//	11 | medium = affiliate                                    | Affiliate
+//	12 | ref != ""                                             | Referral
+//	13 | any UTM, or an unresolvable referrer, but             | Unassigned
 //	   |   unclassifiable                                      |
-//	13 | otherwise                                             | Direct
+//	14 | otherwise                                             | Direct
 func classifyChannel(ref, src, med string, anySignal bool) string {
 	src = strings.ToLower(src)
 	med = strings.ToLower(med)
 
 	// A webmail ref is an email click, not the provider's search engine:
 	// mail.yahoo.com would otherwise suffix-match yahoo.com. Guards the ref arms
-	// only — a search utm_source still wins.
+	// only; a search utm_source still wins.
 	webmail := matchesHost(ref, webmailDomains)
 	search := matchesSource(src, searchSources, searchDomains) || isGoogleSearchHost(src) ||
 		(!webmail && (matchesHost(ref, searchDomains) || isGoogleSearchHost(ref)))
 	social := matchesSource(src, socialSources, socialDomains) || matchesHost(ref, socialDomains)
 	video := matchesSource(src, videoSources, videoDomains) || matchesHost(ref, videoDomains)
+	ai := matchesSource(src, aiSources, aiDomains) || matchesHost(ref, aiDomains)
 	paid := isPaidMedium(med)
 
 	switch {
@@ -145,6 +159,8 @@ func classifyChannel(ref, src, med string, anySignal bool) string {
 		return ChannelDisplay
 	case paid:
 		return ChannelPaidOther
+	case ai:
+		return ChannelAIAssistants
 	case search || med == "organic":
 		return ChannelOrganicSearch
 	case social || slices.Contains(socialMediums, med):
@@ -205,7 +221,7 @@ func matchesSource(src string, names, domains []string) bool {
 // isGoogleSearchHost matches google's SEARCH hosts without enumerating the
 // ccTLDs: a dot-boundary suffix of the host must be "google." followed by a
 // TLD-shaped tail (one or two labels of 2–3 alphabetic chars), AND the whole
-// prefix before it must be a googleSearchSubdomains entry —
+// prefix before it must be a googleSearchSubdomains entry:
 // google.com, google.co.uk and images.google.de match; accounts.google.com,
 // mail.google.com and search.google.com do not. The tail-shape check is what
 // keeps reverse-DNS app hosts out: android-app://com.google.android.gm
@@ -217,7 +233,7 @@ func isGoogleSearchHost(host string) bool {
 		return true
 	}
 	// Walk label boundaries to the first "google.<tld>": everything walked past
-	// is the subdomain — ALL of it, not the last label, or evil.www.google.com
+	// is the subdomain, ALL of it, not the last label, or evil.www.google.com
 	// would read as "www" and pass.
 	for i := 0; ; {
 		if tail, ok := strings.CutPrefix(host[i:], "google."); ok && tldShaped(tail) {
@@ -245,7 +261,7 @@ func tldShaped(tail string) bool {
 	if !more {
 		return true
 	}
-	// A second dot means a third label — too long to be a public-suffix tail.
+	// A second dot means a third label, too long to be a public-suffix tail.
 	return !strings.Contains(rest, ".") && tldLabel(rest)
 }
 

@@ -155,18 +155,20 @@ self-referral/auth-intermediary blanks, suffix-matched against the domain sets s
 | 3 | paid medium AND video source/ref | `Paid Video` |
 | 4 | `med ∈ {display, banner, expandable, interstitial, cpm}` | `Display` |
 | 5 | paid medium, unmatched source | `Paid Other` |
-| 6 | search source/ref, or `med = organic` | `Organic Search` |
-| 7 | social source/ref, or `med ∈ {social, social-network, social-media, sm}` | `Organic Social` |
-| 8 | video source/ref, or `med = video` | `Organic Video` |
-| 9 | `src or med ∈ {email, e-mail, e_mail, newsletter}`, or `ref` is a webmail host | `Email` |
-| 10 | `med = affiliate` | `Affiliate` |
-| 11 | `ref != ""` | `Referral` |
-| 12 | any UTM present, or a referrer sent but unresolvable, yet unclassifiable | `Unassigned` |
-| 13 | otherwise | `Direct` |
+| 6 | AI source/ref | `AI Assistants` |
+| 7 | search source/ref, or `med = organic` | `Organic Search` |
+| 8 | social source/ref, or `med ∈ {social, social-network, social-media, sm}` | `Organic Social` |
+| 9 | video source/ref, or `med = video` | `Organic Video` |
+| 10 | `src or med ∈ {email, e-mail, e_mail, newsletter}`, or `ref` is a webmail host | `Email` |
+| 11 | `med = affiliate` | `Affiliate` |
+| 12 | `ref != ""` | `Referral` |
+| 13 | any UTM present, or a referrer sent but unresolvable, yet unclassifiable | `Unassigned` |
+| 14 | otherwise | `Direct` |
 
 Domain sets live as Go consts in `internal/attribution/channel.go` (search: google's ccTLD family
 matched structurally by a TLD-shaped-tail check rather than enumeration, bing, duckduckgo, yahoo,
-baidu, yandex, ecosia, brave, startpage, perplexity…; social: facebook, instagram, x/twitter,
+baidu, yandex, ecosia, brave, startpage…; AI: chatgpt.com, perplexity.ai, claude.ai,
+gemini.google.com, copilot.microsoft.com…; social: facebook, instagram, x/twitter,
 t.co, linkedin, tiktok, pinterest, reddit, threads (threads.net and threads.com), bsky, news.ycombinator…; video: youtube,
 youtu.be, vimeo, twitch, dailymotion…). That file is the **single normative taxonomy**; this satisfies
 `profiles.md`'s "no ad hoc channel" rule by defining the stable derivation it demanded; the
@@ -178,20 +180,29 @@ gate on the subdomain or the whole google product estate books as Organic Search
 now blanked outright, see **Auth intermediaries** below), `mail.google.com`,
 `search.google.com` (Search Console). `googleSearchSubdomains` is the gate, and it is an
 **allow-list**: apex, `www`, `m`, `images`, `news`, `maps`, `scholar`, `books`, `video`, `cse`
-(GA4's own enumerated google hosts collapsed over the ccTLDs), plus `gemini` and `lens`, which cite
-and link out exactly like `perplexity.ai` already does from `searchDomains`. Failing closed is the point: an
+(GA4's own enumerated google hosts collapsed over the ccTLDs), plus `lens`, which links out to what it
+matches. `gemini` was here too until AI Assistants existed; it is in `aiDomains` now. Failing closed is the point: an
 unlisted subdomain books a visible Referral, where an exceptions set would silently re-inflate
 Organic Search every time google ships a product. Unchanged: `android-app://com.google.android.gm`
 (Gmail app) stays Referral: its `google.android.gm` tail is not TLD-shaped.
 
+**AI assistants are a channel.** `aiDomains` and `aiSources` route a visit an AI product sent
+(ChatGPT, Perplexity, Claude, Gemini, Copilot, …) to rule 6, ahead of Search, so `perplexity.ai`
+and `gemini.google.com`, which booked Organic Search before, and `chatgpt.com`, which booked
+Referral (or Unassigned, from its own `utm_source=chatgpt.com` with no referrer), all book
+`AI Assistants`. A paid medium still takes rules 1-5: there is no paid AI channel. The channel is
+stored at ingest, so rows from before it keep their old channel; the dashboard's "Visits from AI"
+also matches the same domains and sources exactly, the sources in their brands' casing too, which covers
+most of them. Matched that way, a paid visit from one counts too, where the channel books it Paid Other.
+
 **Webmail is Email, not Search.** `webmailDomains` (gmail, yahoo/aol/proton/zoho/yandex mail,
-outlook web) routes a referrer that is an email client to rule 9. `mail.yahoo.com`,
+outlook web) routes a referrer that is an email client to rule 10. `mail.yahoo.com`,
 `mail.yahoo.co.jp`, `mail.yandex.ru` and `mail.yandex.com` suffix-match a search domain, so for
 those four the set is what stops Organic Search (the same defect as the google one, in the
 yahoo/yandex portals); gmail is already out of Search via `googleSearchSubdomains` and is in the set
 to reach Email rather than a bare Referral. **Every `searchDomains` entry with a webmail sibling
 needs its own entry**, or the defect simply survives on the host that was left out. The webmail
-guard covers the referrer side only: a search `utm_source` still takes rule 6. The remaining
+guard covers the referrer side only: a search `utm_source` still takes rule 7. The remaining
 webmail hosts move Referral → Email so this reads as one rule rather than a google carve-out, and
 untagged newsletter clicks land in Email beside the UTM-tagged ones.
 
@@ -209,14 +220,14 @@ redirect back to the relying party originates from `accounts.google.com`, so the
 as referrers, and one that does arrive stays a visible Referral, which pins the subdomain gate. Before
 the list, `login.yahoo.com`, `accounts.youtube.com` and `oauth.telegram.org` suffix-matched the
 search/video/social sets and booked Organic Search/Video/Social. The paid rules still precede the
-blank's rule 13, so a paid medium with an auth referrer is Paid Other, and an unmatched
+blank's rule 14, so a paid medium with an auth referrer is Paid Other, and an unmatched
 `utm_source` with one is Unassigned.
 
 **Go and migration 008's SQL mirror deliberately disagree here.** Shipped migrations are frozen, so
 008's `multiIf` still books every `google.<tld>` host as Organic Search whatever the subdomain, has
-no webmail concept at all, and blanks no auth intermediary:
+no webmail concept at all, blanks no auth intermediary, and has no AI channel:
 
-| referrer | frozen 008 | Go |
+| referrer or `utm_source` | frozen 008 | Go |
 |---|---|---|
 | `search.google.com`, `docs.google.com`, … | Organic Search | Referral |
 | `mail.google.com`, `mail.yahoo.com`, `mail.yandex.*` | Organic Search | Email |
@@ -224,6 +235,10 @@ no webmail concept at all, and blanks no auth intermediary:
 | `accounts.google.com`, `login.yahoo.com` | Organic Search | Direct |
 | `accounts.youtube.com` / `oauth.telegram.org` | Organic Video / Organic Social | Direct |
 | `login.microsoftonline.com`, `appleid.apple.com`, … (rest of `authIntermediaryHosts`) | Referral | Direct |
+| `perplexity.ai`, `gemini.google.com` | Organic Search | AI Assistants |
+| `chatgpt.com`, `claude.ai`, `copilot.microsoft.com`, … (rest of `aiDomains`) | Referral | AI Assistants |
+| `utm_source=perplexity` | Organic Search | AI Assistants |
+| `utm_source=chatgpt.com`, `claude`, … (rest of `aiSources` and `aiDomains`) | Unassigned | AI Assistants |
 
 008's mutation is one-shot over pre-008 rows and **has already run in production**, so that
 rewrite is history rather than a choice: pre-008 rows carry the inflated Organic Search bucket, and

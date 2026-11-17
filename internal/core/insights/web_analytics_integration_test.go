@@ -494,6 +494,14 @@ func TestOutside008SemanticsFires(t *testing.T) {
 		{"webmail", mutationCorpusRow{url: page, referrer: "https://mail.google.com/x"}, true},
 		{"auth intermediary", mutationCorpusRow{url: page, referrer: "https://accounts.google.com/x"}, true},
 		{"auth intermediary on a garbage url", mutationCorpusRow{url: "not a url", referrer: "https://accounts.google.com/x"}, true},
+		{"ai referrer", mutationCorpusRow{url: page, referrer: "https://chatgpt.com/"}, true},
+		{"ai source that was search", mutationCorpusRow{url: page, utmSource: "perplexity"}, true},
+		{"ai source that was unassigned", mutationCorpusRow{url: page, utmSource: "chatgpt.com"}, true},
+		{"paid ai source that was search", mutationCorpusRow{url: page, utmSource: "perplexity", utmMedium: "cpc"}, true},
+		{"paid ai referrer that was search", mutationCorpusRow{url: page, referrer: "https://www.perplexity.ai/", utmMedium: "cpm"}, true},
+		{"paid ai source that was never search", mutationCorpusRow{url: page, utmSource: "chatgpt.com", utmMedium: "cpc"}, false},
+		{"unpaid display medium from an ai source", mutationCorpusRow{url: page, utmSource: "perplexity", utmMedium: "banner"}, false},
+		{"paid search source with an ai referrer", mutationCorpusRow{url: page, referrer: "https://www.perplexity.ai/", utmSource: "google", utmMedium: "cpc"}, false},
 		{"google search", mutationCorpusRow{url: page, referrer: "https://www.google.com/"}, false},
 		{"self-referral", mutationCorpusRow{url: page, referrer: "https://www.pugandpals.example.com/y"}, false},
 		{"hostless referrer", mutationCorpusRow{url: page, referrer: "www.google.com/search"}, false},
@@ -508,8 +516,23 @@ func TestOutside008SemanticsFires(t *testing.T) {
 // 008's own google rule, verbatim (008_add_web_analytics_columns.sql:225).
 var googleFamily008 = regexp.MustCompile(`(^|\.)google\.[a-z]{2,3}(\.[a-z]{2,3})?$`)
 
+// 008's own paid rule, verbatim (008_add_web_analytics_columns.sql:233).
+var paid008 = regexp.MustCompile(`^(.*cp.*|ppc|retargeting|paid.*)$`)
+
 // The mutation's only path to Email is a UTM token; a referrer cannot reach it.
 var emailTokens008 = []string{"email", "e-mail", "e_mail", "newsletter"}
+
+// 008's search match for perplexity, which Go has since moved to AI Assistants: the bare source, or the
+// domain as a source or referrer.
+func perplexity008(source, referrer string) bool {
+	source = strings.ToLower(source)
+	for _, host := range []string{source, referrer} {
+		if host == "perplexity.ai" || strings.HasSuffix(host, ".perplexity.ai") {
+			return true
+		}
+	}
+	return source == "perplexity"
+}
 
 // outside008Semantics reports why frozen 008 would derive a row differently
 // from Go, or "" when the two agree.
@@ -525,6 +548,15 @@ func outside008Semantics(row mutationCorpusRow) string {
 	// An unparseable $url derives no channel in either implementation.
 	if out.Channel == "" {
 		return ""
+	}
+	if out.Channel == attribution.ChannelAIAssistants {
+		return fmt.Sprintf("referrer %q / source %q derives AI Assistants in Go, a channel frozen 008 has no rule for",
+			out.ReferrerDomain, out.UTMSource)
+	}
+	// 008 still counts perplexity as search, so it books a paid row from there Paid Search.
+	if perplexity008(out.UTMSource, out.ReferrerDomain) && paid008.MatchString(strings.ToLower(out.UTMMedium)) &&
+		out.Channel != attribution.ChannelPaidSearch {
+		return fmt.Sprintf("paid perplexity row derives %q in Go but Paid Search in frozen 008", out.Channel)
 	}
 	if googleFamily008.MatchString(out.ReferrerDomain) && out.Channel != attribution.ChannelOrganicSearch {
 		return fmt.Sprintf("referrer %q derives %q in Go but Organic Search in frozen 008", out.ReferrerDomain, out.Channel)
