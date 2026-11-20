@@ -31,8 +31,8 @@ make clickstack
 # --no-reset to keep the schema and truncate the demo tables instead), then runs
 # the same event-gated flow as `pug worker demo`: ensure the demo account,
 # backfill events, seed Postgres profiles for ONLY the users that produced
-# events, then copy them to ClickHouse. A profile therefore never exists without
-# events. (Tunables: --count, --batch.)
+# events, copy them to ClickHouse, then backfill crawler requests. A profile
+# therefore never exists without events. (Tunables: --count, --batch.)
 ./bin/pug seed
 
 # Start development server + workers together
@@ -128,6 +128,11 @@ make clickstack
 # so it depends on no other worker (the rollup MV still fires on the direct
 # inserts). New signups keep appearing as the wall clock crosses each user's
 # join date and the worker creates their profile on first sight.
+# It also writes crawler_request events, which have no users or profiles: their
+# own backfill over the same window, after the human one and resuming before the
+# earliest stored, then a live loop. History seeded before AI-referred visits
+# gets them the same way, for users that already have a profile
+# (docs/architecture/demo.md, "Crawlers").
 # Self-bootstrapping so a single k8s
 # deployment seeds-then-streams with no manual seed step and no project id to
 # configure.

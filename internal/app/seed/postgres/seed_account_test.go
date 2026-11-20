@@ -43,6 +43,10 @@ func mustSeedAccount(t *testing.T, ctx context.Context, db *testutil.TestPostgre
 	if err != nil {
 		t.Fatalf("SeedAccount: %v", err)
 	}
+	// The demo backfills grow AI traffic up to the project's create time.
+	if !project.CreateTime.Valid {
+		t.Fatalf("SeedAccount returned project %s without its create time", project.ID)
+	}
 	return project
 }
 

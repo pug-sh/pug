@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/autoprop"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"github.com/pug-sh/pug/internal/crawler"
 	chdeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
@@ -79,7 +80,7 @@ func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[str
 // It returns the set of human user indices that actually produced at least one
 // inserted event, so the caller can seed profiles for exactly those users (no
 // profile is ever created for a user with no events).
-func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int64, batchSize int) (map[int]struct{}, error) {
+func (s *Seeder) backfillEvents(ctx context.Context, projectID string, growthUntil time.Time, count int64, batchSize int) (map[int]struct{}, error) {
 	// Guard the loop's batch step: a non-positive batchSize makes size==0 every
 	// iteration, so inserted never advances and the `for inserted < count` loop
 	// spins until ctx cancel. Both the CLI and the worker funnel through here.
@@ -92,12 +93,11 @@ func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int
 		slog.Int("batch_size", batchSize),
 	)
 
-	seedStart := time.Now()
-	// Six months covers the longest board window, 180 days.
-	start := seedStart.AddDate(0, -6, 0)
+	start := backfillFrom(time.Now())
 
 	slog.InfoContext(ctx, "building session factory")
 	factory := newSessionFactory()
+	factory.growthUntil = growthUntil
 	slog.InfoContext(ctx, "session factory ready", slog.Int("users", len(factory.users)))
 
 	active := make(map[int]struct{})
@@ -141,11 +141,18 @@ func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int
 	return active, nil
 }
 
-// EventCount returns how many events are stored for projectID. The demo worker
-// uses it to decide whether a one-time backfill is needed before live traffic.
+// backfillFrom is where the backfills start: six months covers the longest
+// board window, 180 days.
+func backfillFrom(now time.Time) time.Time {
+	return now.AddDate(0, -6, 0)
+}
+
+// EventCount returns how many events are stored for projectID, leaving out
+// crawler requests, which have a backfill of their own. The demo worker uses it
+// to decide whether a one-time backfill is needed before live traffic.
 func EventCount(ctx context.Context, ch driver.Conn, projectID string) (uint64, error) {
 	var n uint64
-	if err := ch.QueryRow(ctx, "SELECT count() FROM events WHERE project_id = ?", projectID).Scan(&n); err != nil {
+	if err := ch.QueryRow(ctx, "SELECT count() FROM events WHERE project_id = ? AND kind != ?", projectID, crawler.EventKind).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -166,10 +173,11 @@ func ProfileCount(ctx context.Context, ch driver.Conn, projectID string) (uint64
 // (without truncating) and returns the ascending list of human user indices
 // that produced at least one event. The demo worker pairs it with
 // SeedProfilesForUsers + CopyProfilesToClickHouse so a profile is created only
-// for a user who has events. It needs only a ClickHouse connection.
-func BackfillEvents(ctx context.Context, ch driver.Conn, projectID string, count int64, batchSize int) ([]int, error) {
+// for a user who has events. It needs only a ClickHouse connection. growthUntil
+// is the project's create time, until which AI visits grow.
+func BackfillEvents(ctx context.Context, ch driver.Conn, projectID string, growthUntil time.Time, count int64, batchSize int) ([]int, error) {
 	s := &Seeder{deps: &deps{ch: ch}}
-	active, err := s.backfillEvents(ctx, projectID, count, batchSize)
+	active, err := s.backfillEvents(ctx, projectID, growthUntil, count, batchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -282,19 +290,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 			if inserted >= size {
 				break
 			}
-			promoted, restAuto := chq.SplitPromotedAutoAnyProperties(e.autoProperties)
-			args := []any{
-				e.eventID,
-				projectID,
-				e.distinctID,
-				e.kind,
-				autoAnyMapToVariantMap(ctx, projectID, restAuto),
-				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
-			}
-			args = append(args, promoted.AppendArgs()...)
-			occurTime := clampOccurTime(e.occurTime, end)
-			args = append(args, occurTime, e.sessionID)
-			if err := batch.Append(args...); err != nil {
+			if err := batch.Append(eventArgs(ctx, projectID, e, clampOccurTime(e.occurTime, end))...); err != nil {
 				return 0, err
 			}
 			inserted++
@@ -309,6 +305,21 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 	}
 
 	return inserted, batch.Send()
+}
+
+// eventArgs is e as one EventsInsertStmt row, stored at occurTime.
+func eventArgs(ctx context.Context, projectID string, e event, occurTime time.Time) []any {
+	promoted, restAuto := chq.SplitPromotedAutoAnyProperties(e.autoProperties)
+	args := []any{
+		e.eventID,
+		projectID,
+		e.distinctID,
+		e.kind,
+		autoAnyMapToVariantMap(ctx, projectID, restAuto),
+		autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
+	}
+	args = append(args, promoted.AppendArgs()...)
+	return append(args, occurTime, e.sessionID)
 }
 
 // recordActiveUser marks the human user behind a session as having produced

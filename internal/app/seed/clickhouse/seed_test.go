@@ -263,7 +263,7 @@ func TestCrossSessionContinuity(t *testing.T) {
 	t0 := u.join.Add(30 * 24 * time.Hour)
 
 	// Purchase, then refund a week later: order ids and amounts must match.
-	purchase := buildSession(u, prof, journeyByName(webJourneys, "purchase"), t0, t0.Add(time.Hour), mem)
+	purchase := buildSession(u, prof, journeyByName(webJourneys, "purchase"), t0, t0.Add(time.Hour), mem, 0)
 	var orderID string
 	var amount float64
 	for _, e := range purchase {
@@ -275,7 +275,7 @@ func TestCrossSessionContinuity(t *testing.T) {
 	if orderID == "" {
 		t.Fatal("purchase journey produced no purchase event")
 	}
-	refund := buildSession(u, prof, journeyByName(webJourneys, "refund"), t0.Add(7*24*time.Hour), t0.Add(8*24*time.Hour), mem)
+	refund := buildSession(u, prof, journeyByName(webJourneys, "refund"), t0.Add(7*24*time.Hour), t0.Add(8*24*time.Hour), mem, 0)
 	for _, e := range refund {
 		if e.kind == "order_refunded" {
 			if got := e.customProperties["order_id"].(string); got != orderID {
@@ -288,7 +288,7 @@ func TestCrossSessionContinuity(t *testing.T) {
 	}
 
 	// Abandon a cart, then recover it via push: same cart total.
-	abandon := buildSession(u, prof, journeyByName(webJourneys, "abandoned-cart"), t0.Add(14*24*time.Hour), t0.Add(15*24*time.Hour), mem)
+	abandon := buildSession(u, prof, journeyByName(webJourneys, "abandoned-cart"), t0.Add(14*24*time.Hour), t0.Add(15*24*time.Hour), mem, 0)
 	var abandonedAmount float64
 	for _, e := range abandon {
 		if e.kind == "cart_viewed" {
@@ -296,7 +296,7 @@ func TestCrossSessionContinuity(t *testing.T) {
 		}
 	}
 	appProf := deviceProfiles[len(deviceProfiles)-1] // android app
-	recover := buildSession(u, appProf, journeyByName(appJourneys, "push-recovery"), t0.Add(15*24*time.Hour), t0.Add(16*24*time.Hour), mem)
+	recover := buildSession(u, appProf, journeyByName(appJourneys, "push-recovery"), t0.Add(15*24*time.Hour), t0.Add(16*24*time.Hour), mem, 0)
 	for _, e := range recover {
 		if e.kind == "cart_viewed" {
 			if got := e.customProperties["amount"].(float64); got != abandonedAmount {
@@ -306,14 +306,14 @@ func TestCrossSessionContinuity(t *testing.T) {
 	}
 
 	// Trial started, then converted: trial id carries over.
-	trial := buildSession(u, prof, journeyByName(webJourneys, "club-trial"), t0.Add(20*24*time.Hour), t0.Add(21*24*time.Hour), mem)
+	trial := buildSession(u, prof, journeyByName(webJourneys, "club-trial"), t0.Add(20*24*time.Hour), t0.Add(21*24*time.Hour), mem, 0)
 	var trialID string
 	for _, e := range trial {
 		if e.kind == "trial_started" {
 			trialID = e.customProperties["trial_id"].(string)
 		}
 	}
-	convert := buildSession(u, prof, journeyByName(webJourneys, "club-convert"), t0.Add(25*24*time.Hour), t0.Add(26*24*time.Hour), mem)
+	convert := buildSession(u, prof, journeyByName(webJourneys, "club-convert"), t0.Add(25*24*time.Hour), t0.Add(26*24*time.Hour), mem, 0)
 	for _, e := range convert {
 		if e.kind == "trial_converted" {
 			if got := e.customProperties["trial_id"].(string); got != trialID {
@@ -608,7 +608,7 @@ func TestRecordActiveUser(t *testing.T) {
 // returns an error rather than panicking.
 func TestBackfillEventsRejectsBadBatch(t *testing.T) {
 	for _, batch := range []int{0, -1} {
-		if _, err := BackfillEvents(context.Background(), nil, "proj", 100, batch); err == nil {
+		if _, err := BackfillEvents(context.Background(), nil, "proj", time.Time{}, 100, batch); err == nil {
 			t.Errorf("BackfillEvents(batch=%d) = nil error, want a rejection", batch)
 		}
 	}
@@ -681,7 +681,7 @@ func TestPageViewInjectedOnWebNavigation(t *testing.T) {
 	web := deviceProfiles[0] // desktop web
 	t0 := u.join.Add(30 * 24 * time.Hour)
 
-	sess := buildSession(u, web, journeyByName(webJourneys, "browse"), t0, t0.Add(time.Hour), f.memory(u))
+	sess := buildSession(u, web, journeyByName(webJourneys, "browse"), t0, t0.Add(time.Hour), f.memory(u), 0)
 
 	// product_list_viewed always changes the page, so it is preceded by an
 	// injected page_view sharing its url (the explicit home page_view sits on
@@ -727,7 +727,7 @@ func TestPageViewNotInjectedOnApp(t *testing.T) {
 	app := deviceProfiles[len(deviceProfiles)-1] // android app
 	t0 := u.join.Add(30 * 24 * time.Hour)
 
-	sess := buildSession(u, app, journeyByName(appJourneys, "app-browse"), t0, t0.Add(time.Hour), f.memory(u))
+	sess := buildSession(u, app, journeyByName(appJourneys, "app-browse"), t0, t0.Add(time.Hour), f.memory(u), 0)
 	for _, e := range sess {
 		if e.kind == "page_view" {
 			t.Fatalf("app session emitted a page_view (web-only injection leaked)")
@@ -764,7 +764,7 @@ func TestSignupForcedOnce(t *testing.T) {
 		t.Fatalf("first in-window journey = %q, want a signup/install journey", jd1.name)
 	}
 	// Building the session records the signup.
-	buildSession(u, prof, jd1, inWindow, inWindow.Add(time.Hour), f.memory(u))
+	buildSession(u, prof, jd1, inWindow, inWindow.Add(time.Hour), f.memory(u), 0)
 
 	jd2 := f.journeyFor(u, prof, inWindow.Add(2*time.Hour)) // still in window
 	if jd2.name == webSignupJourney.name || jd2.name == appInstallJourney.name {

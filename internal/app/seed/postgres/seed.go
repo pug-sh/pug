@@ -327,7 +327,7 @@ func (s *Seeder) createDemoProject(ctx context.Context, orgID string) (dbread.Pr
 	}
 	slog.InfoContext(ctx, "the demo org had no project, so the seeder created one",
 		slog.String("org_id", orgID), slog.String("project_id", p.ID))
-	return dbread.Project{ID: p.ID, OrgID: p.OrgID, DisplayName: p.DisplayName}, nil
+	return dbread.Project(p), nil
 }
 
 // demoOrgID picks the first of the demo user's orgs, oldest first, that also has
@@ -432,11 +432,7 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, st
 		return dbread.Project{}, "", fmt.Errorf("failed to commit seed transaction: %w", err)
 	}
 
-	return dbread.Project{
-		ID:          p.ID,
-		OrgID:       p.OrgID,
-		DisplayName: p.DisplayName,
-	}, privateKey.RawKey, nil
+	return dbread.Project(p), privateKey.RawKey, nil
 }
 
 // Customers of the Pug & Pals demo store are, naturally, dogs.

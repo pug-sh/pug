@@ -4,9 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -19,9 +17,6 @@ import (
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 )
-
-// crawlerSessionNamespace scopes the UUIDv5 session ids: one session per agent per UTC day.
-var crawlerSessionNamespace = uuid.MustParse("68ce851b-d9d1-4b37-9188-61613959f606")
 
 var (
 	crawlerAcceptedCounter metric.Int64Counter
@@ -106,7 +101,7 @@ func asCrawlerEvent(projectID string, agent crawler.Agent, verdict crawlerips.Ve
 	}
 	e.AutoProperties = props
 	e.DistinctId = proto.String(agent.DistinctID())
-	e.SessionId = proto.String(crawlerSessionID(projectID, agent.Name, e.GetOccurTime().AsTime()))
+	e.SessionId = proto.String(crawler.SessionID(projectID, agent.Name, e.GetOccurTime().AsTime()))
 	e.Client = nil
 }
 
@@ -126,11 +121,6 @@ func withoutQuery(raw string) string {
 		return raw[:i]
 	}
 	return raw
-}
-
-func crawlerSessionID(projectID, agent string, occur time.Time) string {
-	day := occur.UTC().Format(time.DateOnly)
-	return uuid.NewSHA1(crawlerSessionNamespace, []byte(projectID+"|"+agent+"|"+day)).String()
 }
 
 func stringValue(s string) *commonv1.PropertyValue {

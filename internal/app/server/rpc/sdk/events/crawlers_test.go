@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
@@ -22,6 +21,7 @@ import (
 	"github.com/pug-sh/pug/internal/core/authz"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	"github.com/pug-sh/pug/internal/crawler"
 	"github.com/pug-sh/pug/internal/crawlerips"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
@@ -120,7 +120,7 @@ func TestCrawlerRequestIsStored(t *testing.T) {
 	if !e.GetOccurTime().AsTime().Equal(sent.GetOccurTime().AsTime()) {
 		t.Errorf("occur_time = %v, want %v as sent", e.GetOccurTime().AsTime(), sent.GetOccurTime().AsTime())
 	}
-	if e.GetSessionId() != crawlerSessionID("test-project", "GPTBot", sent.GetOccurTime().AsTime()) {
+	if e.GetSessionId() != crawler.SessionID("test-project", "GPTBot", sent.GetOccurTime().AsTime()) {
 		t.Errorf("session_id = %q, want the agent's session for the day", e.GetSessionId())
 	}
 	if e.GetClient() != nil {
@@ -273,26 +273,6 @@ func TestCrawlerRequestsJoinTheBatch(t *testing.T) {
 				t.Errorf("server event = distinct_id %q, properties %v", e.GetDistinctId(), props)
 			}
 		}
-	}
-}
-
-func TestCrawlerSessionIsOnePerAgentPerDay(t *testing.T) {
-	occur := time.Date(2026, 11, 14, 9, 30, 0, 0, time.UTC)
-	base := crawlerSessionID("proj-1", "GPTBot", occur)
-	if crawlerSessionID("proj-1", "GPTBot", occur.Add(14*time.Hour)) != base {
-		t.Error("two requests on one UTC day got two sessions")
-	}
-	for name, other := range map[string]string{
-		"next UTC day":  crawlerSessionID("proj-1", "GPTBot", occur.Add(15*time.Hour)),
-		"another agent": crawlerSessionID("proj-1", "ClaudeBot", occur),
-		"another site":  crawlerSessionID("proj-2", "GPTBot", occur),
-	} {
-		if other == base {
-			t.Errorf("%s shares the session", name)
-		}
-	}
-	if crawlerSessionID("proj-1", "GPTBot", occur.In(time.FixedZone("IST", 5*3600+1800))) != base {
-		t.Error("the session day is not taken in UTC")
 	}
 }
 

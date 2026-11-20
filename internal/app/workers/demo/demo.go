@@ -40,6 +40,7 @@ import (
 	clickhousedeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -139,7 +140,13 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
-	projectID, err := ensureSeed(ctx, cfg, chDB.Conn)
+	project, err := ensureSeed(ctx, cfg, chDB.Conn)
+	if err == nil {
+		err = seed.BackfillCrawlerRequests(ctx, chDB.Conn, project.ID, project.CreateTime.Time)
+	}
+	if err == nil {
+		err = seed.BackfillAIVisits(ctx, chDB.Conn, project.ID, project.CreateTime.Time)
+	}
 	if err != nil {
 		// main logs it too, but only after telemetry has shut down.
 		slog.ErrorContext(ctx, "demo seed failed", slogx.Error(err))
@@ -147,7 +154,7 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
-	return StartWorker(ctx, chDB.Conn, cfg, projectID)
+	return StartWorker(ctx, chDB.Conn, cfg, project.ID)
 }
 
 type seedAction int
@@ -196,35 +203,35 @@ func decideSeedAction(n uint64, seedCount int64) seedAction {
 // across runs, re-running would duplicate rather than repair, so ensureSeed
 // logs a warning and leaves the partial history in place (recovery is to
 // delete the project and restart, which backfills a new one). Returns the demo
-// project id to play live traffic into.
-func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error) {
+// project to play live traffic into.
+func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (dbread.Project, error) {
 	// Postgres is only needed while seeding (account + active-set profiles), so it
 	// is opened and closed here; the caller owns the long-lived ClickHouse conn.
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
-		return "", err
+		return dbread.Project{}, err
 	}
 	pg, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
-		return "", err
+		return dbread.Project{}, err
 	}
 	defer pg.Close()
 
 	project, err := pgseed.SeedAccount(ctx, pg)
 	if err != nil {
-		return "", fmt.Errorf("seed postgres account: %w", err)
+		return dbread.Project{}, fmt.Errorf("seed postgres account: %w", err)
 	}
 
 	// Ensure the showcase dashboards on every start (idempotent): they are static
 	// config, independent of the event-backfill state below, so a warm restart
 	// that skips the backfill still converges the demo project's dashboards.
 	if err := pgseed.SeedDemoDashboards(ctx, pg, project.ID); err != nil {
-		return "", fmt.Errorf("seed demo dashboards: %w", err)
+		return dbread.Project{}, fmt.Errorf("seed demo dashboards: %w", err)
 	}
 
 	n, err := seed.EventCount(ctx, ch, project.ID)
 	if err != nil {
-		return "", fmt.Errorf("check demo data: %w", err)
+		return dbread.Project{}, fmt.Errorf("check demo data: %w", err)
 	}
 	switch action := decideSeedAction(n, cfg.SeedCount); action {
 	case seedSkip:
@@ -235,9 +242,9 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 		// idempotent copy rather than serving a thin dashboard or demanding a
 		// manual reset.
 		if err := healDemoProfiles(ctx, pg, ch, project.ID, n); err != nil {
-			return "", err
+			return dbread.Project{}, err
 		}
-		return project.ID, nil
+		return project, nil
 	case seedWarnPartial:
 		// A previous backfill was interrupted before it finished. Re-running
 		// would duplicate rather than repair (each event has a random id the
@@ -249,11 +256,11 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 			slog.Int64("expected", cfg.SeedCount),
 			slog.String("recovery", "delete this project with `pug projects delete` and restart the demo worker; it backfills a new one"),
 		)
-		return project.ID, nil
+		return project, nil
 	case seedBackfill:
 		// Empty project — fall through to the one-time backfill below.
 	default:
-		return "", fmt.Errorf("unhandled seed action %d", action)
+		return dbread.Project{}, fmt.Errorf("unhandled seed action %d", action)
 	}
 
 	slog.InfoContext(ctx, "no demo data found, backfilling before live traffic",
@@ -267,23 +274,23 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 	// a user with events. Most of the pool stays profile-less: the ~half whose
 	// join date is still in the future (they sign up live as the wall clock
 	// crosses their join) plus past users who churned before the backfill window.
-	indices, err := seed.BackfillEvents(ctx, ch, project.ID, cfg.SeedCount, cfg.SeedBatch)
+	indices, err := seed.BackfillEvents(ctx, ch, project.ID, project.CreateTime.Time, cfg.SeedCount, cfg.SeedBatch)
 	if err != nil {
-		return "", fmt.Errorf("backfill events: %w", err)
+		return dbread.Project{}, fmt.Errorf("backfill events: %w", err)
 	}
 
 	if err := pgseed.SeedProfilesForUsers(ctx, pg, project.ID, indices); err != nil {
-		return "", fmt.Errorf("seed profiles for active users: %w", err)
+		return dbread.Project{}, fmt.Errorf("seed profiles for active users: %w", err)
 	}
 	if err := seed.CopyProfilesToClickHouse(ctx, pg, ch, project.ID); err != nil {
-		return "", fmt.Errorf("copy profiles to clickhouse: %w", err)
+		return dbread.Project{}, fmt.Errorf("copy profiles to clickhouse: %w", err)
 	}
 
 	slog.InfoContext(ctx, "demo backfill complete",
 		slog.String("project_id", project.ID),
 		slog.Int("profiles", len(indices)),
 	)
-	return project.ID, nil
+	return project, nil
 }
 
 // profileHealAction is the reconciliation decision for the demo profile set on a
@@ -374,9 +381,9 @@ type worker struct {
 	insertProfile func(ctx context.Context, ch driver.Conn, projectID string, p seed.LiveProfile) error
 }
 
-// liveBotShare sets the flat crawler session rate as a fraction of the
+// liveBotShare sets the flat bot session rate as a fraction of the
 // configured human peak. ~4% keeps the bot filters and bot-score charts
-// populated without crawlers dominating the live map. Bots don't follow the
+// populated without bots dominating the live map. Bots don't follow the
 // diurnal curve — they crawl around the clock — so their share of total traffic
 // naturally rises at night when human traffic dips.
 const liveBotShare = 0.04
@@ -395,17 +402,24 @@ func StartWorker(ctx context.Context, ch driver.Conn, cfg Config, projectID stri
 		slog.Float64("peak_sessions_per_min", cfg.PeakSessionsPerMin),
 	)
 
-	// players tracks in-flight session goroutines; loops tracks the two
+	// players tracks in-flight session goroutines; loops tracks the
 	// long-lived spawn loops. Keeping them separate means players only ever
 	// gets Add'd from inside a running loop, so the final players.Wait() can't
 	// race a concurrent Add — loops drain first (on ctx cancel), then sessions.
 	var players, loops sync.WaitGroup
 	defer players.Wait()
 
-	// Crawlers: constant low rate, 24/7.
+	// Bot sessions: constant low rate, 24/7.
 	loops.Go(func() {
 		w.spawnLoop(ctx, &players, func() float64 { return cfg.PeakSessionsPerMin * liveBotShare }, func() {
 			w.play(ctx, w.gen.LiveBotSession(time.Now()))
+		})
+	})
+
+	// Crawler requests, as a site's server reports them: one event each.
+	loops.Go(func() {
+		w.spawnLoop(ctx, &players, func() float64 { return seed.CrawlerRequestsPerMinute(time.Now()) }, func() {
+			w.play(ctx, []seed.LiveEvent{seed.LiveCrawlerRequest(w.projectID, time.Now())})
 		})
 	})
 

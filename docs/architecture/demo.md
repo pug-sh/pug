@@ -1,8 +1,8 @@
 # Demo
 
 Status: in progress. Built: the five boards, the generator properties they
-read, six months of history, and the manual rebuild. Not built yet: the rest of
-the generator and the frontend asks.
+read, six months of history, the manual rebuild and crawler traffic (see
+"Crawlers"). Not built yet: the rest of the generator and the frontend asks.
 
 ## Summary
 
@@ -166,6 +166,7 @@ a different hue:
 | Auto, custom and profile filters; IN, IS SET, BETWEEN | 2, 4 |
 | Channel taxonomy, UTM | 2 |
 | Bot tagging and the include-bots toggle | 2 |
+| AI and search crawlers, visits from AI | none: the Overview's crawler section (see "Crawlers") |
 | App versions, crashes, cold starts | 5 |
 | Push notifications | 5 |
 | Markdown explainer | all |
@@ -454,7 +455,7 @@ Six months of history, then live. A visitor should be able to read these:
 | A real channel mix: organic search, direct, paid search, paid social, email, organic social, referral (pet blogs), video | Visitors by channel | must |
 | A conversion rate per channel and per platform: email best, paid social worst, apps above web | Which channels convert | must |
 | A `page_type` on every web event, from the Sankey vocabulary. One `page_view` per page a session visits, walking the transition table from a landing page set by the channel. (Done but the transition table.) | How shoppers move, How far shoppers scroll, top pages | must |
-| Tag bot sessions with `$bot` and `$bot_reason`, using the same `botdetect` matchers as ingest, the way `applyAttribution` mirrors attribution. Add AI crawlers. (Done.) | Crawlers counted as people; Crawler visits | must |
+| Tag bot sessions with `$bot` and `$bot_reason`, using the same `botdetect` matchers as ingest, the way `applyAttribution` mirrors attribution. Add AI crawlers. (Done. The AI crawlers move to crawler requests: see "Crawlers".) | Crawlers counted as people; Crawler visits | must |
 | Every web event keeps the landing referrer, as a single-page store's `document.referrer` does, so `$channel` holds for the whole session (done) | Visitors by channel | must |
 | A release every three weeks, fast adoption, one crashing release with a hotfix | Board 5 | must |
 | `cold_start_ms` on `app_open`, slower on the crashing release (done, slower after every release until that release exists) | App cold start | must |
@@ -478,6 +479,227 @@ Two smaller fixes ride along:
    the same tables as project purge, or rollups and activity states survive.
 2. The old seed comment says the FE renders neither Sankey nor map tiles. It
    renders both now. (Done: the comment is gone.)
+
+## Crawlers
+
+Added and built 2026-11-20.
+
+The Overview's "AI and search crawlers" section reads `crawler_request` events,
+which a site's server sends through `@pug-sh/crawlers`. The demo writes none, so
+the section says "No crawler requests yet". Its "Visits from AI" tile is empty
+too: no demo visit comes from an AI product.
+
+The demo's JavaScript bot sessions also contradict the section. GPTBot, ClaudeBot
+and PerplexityBot send page views there, but these crawlers fetch HTML and never
+run JavaScript, which is why the section exists.
+
+This is generator work only: no migration, no new table and no board changes.
+The Overview is where crawler requests show.
+
+### What the demo writes
+
+The worker writes `crawler_request` events itself, straight to ClickHouse like
+the rest of its traffic. It builds each one the way the events handler's
+`asCrawlerEvent` does, as `botTag` and `applyAttribution` already follow ingest:
+
+| Field | Value |
+|---|---|
+| `kind` | `crawler_request` |
+| `distinct_id` | `crawler-` and the agent's name, from `crawler.Match` on a real user agent |
+| `session_id` | `crawler.SessionID`, the handler's UUIDv5 of project, agent and UTC day, which moved into `internal/crawler` so both use it. |
+| `$url`, `$pathname`, `$hostname` | A store URL with no query string, through `attribution.Derive` |
+| `$bot`, `$bot_reason` | `true`, and the agent's name |
+| `$crawler_company`, `$crawler_category` | From `crawler.Match`. Search engines and SEO tools from the crawler-user-agents list have no company. |
+| `$crawler_verified` | What the IP check would say. The demo has no addresses, so it sets the verdict: `verified` when the operator publishes ranges, `unchecked` when it doesn't, `failed` for the impostors below. |
+| `$status_code` | 200, or 304 for about one in six search-engine requests, as they re-check pages they hold. About 1.5% fail, for four reasons (see "Failures"). |
+
+Like the handler, it adds no geo, user agent fields, channel, UTM or custom
+properties. Crawler ids never get a profile: the live loop plays them as it
+plays bot sessions, without `ensureProfile`. Crawler requests count toward the
+demo org's usage like any event, and the demo org isn't billed.
+
+### The crawlers
+
+25 crawlers, about 3,200 requests on a day without a burst, a tenth of the
+demo's events. The crawler table lists the top 20, so it ends in an "Other
+crawlers" row.
+
+| Company | Crawler | Purpose | A day | IP check |
+|---|---|---|---|---|
+| OpenAI | ChatGPT-User | answers | 250 | verified |
+| Perplexity | Perplexity-User | answers | 80 | verified |
+| Anthropic | Claude-User | answers | 50 | verified |
+| Meta | meta-externalfetcher | answers | 25 | unchecked |
+| DuckDuckGo | DuckAssistBot | answers | 20 | verified |
+| Mistral | MistralAI-User | answers | 15 | verified |
+| Google | Googlebot | search | 700 | verified, 3% failed |
+| Microsoft | bingbot | search | 300 | verified |
+| Apple | Applebot | search | 120 | verified |
+| OpenAI | OAI-SearchBot | search | 120 | verified |
+| Perplexity | PerplexityBot | search | 80 | verified |
+| Anthropic | Claude-SearchBot | search | 50 | verified |
+| Petal Search | PetalBot | search | 30 | unchecked |
+| OpenAI | GPTBot | training | 150 | verified, 2% failed |
+| Anthropic | ClaudeBot | training | 120 | verified |
+| Meta | meta-externalagent | training | 120 | unchecked |
+| Amazon | Amazonbot | training | 60 | verified |
+| ByteDance | Bytespider | training | 60 | unchecked |
+| Common Crawl | CCBot | training | 30 | verified |
+| Ahrefs | AhrefsBot | seo | 300 | unchecked |
+| Semrush | SemrushBot | seo | 250 | unchecked |
+| Majestic | MJ12bot | seo | 100 | unchecked |
+| Moz | dotbot | seo | 80 | unchecked |
+| DataForSEO | DataForSeoBot | seo | 50 | unchecked |
+| Google | GoogleOther | other | 60 | verified |
+
+PetalBot and the SEO tools come from the crawler-user-agents list, so their
+events carry no company; the app names their operators itself. The names are
+the ones `crawler.Match` returns, lower-case `dotbot` included. The failed shares
+are scrapers borrowing a famous crawler's name, and they make the crawler table
+show its impostor notes.
+
+How each purpose moves:
+
+| Purpose | Shape |
+|---|---|
+| answers | Follows `TrafficFactor`, the curve live human traffic uses, since a person asked for each one. Grows about 8% a month (see "Growth"). |
+| search, seo, other | Flat around the clock, with some noise from hour to hour. |
+| training | A low steady rate, plus bursts. Each training crawler returns on its own cycle, anchored to `userJoinEpoch` like the promos, and makes about 1,200 extra requests over six hours: meta-externalagent every 9 days, Bytespider every 11, GPTBot every 16, ClaudeBot every 23, CCBot every 30. That is a burst about every three days. |
+
+What they fetch:
+
+| Purpose | Pages |
+|---|---|
+| answers | Mostly the guides and products people ask about: the food-switching and harness-sizing guides, the No-Pull Harness, the Orthopedic Memory-Foam Bed and the Senior Turkey & Sweet Potato Recipe. Then the rest of the catalog. |
+| search | Home, collections and products, plus `/robots.txt` and `/sitemap.xml` a few times a day |
+| training, seo, other | Every page alike, plus `/robots.txt` |
+
+None fetch the cart, checkout, account or search pages, which the store's
+robots.txt disallows. `/robots.txt` and `/sitemap.xml` are in because the
+collector skips only scripts, styles, images and fonts.
+
+### Visits from AI
+
+About 3% of web sessions arrive from an AI product. They go through the real
+`attribution.Derive`, which books them to the AI Assistants channel:
+
+| Source | Share | Arrives with |
+|---|---|---|
+| ChatGPT | 65% | `utm_source=chatgpt.com`, as ChatGPT tags its links, and a chatgpt.com referrer |
+| Perplexity | 15% | A perplexity.ai referrer |
+| Gemini | 10% | A gemini.google.com referrer |
+| Claude | 6% | A claude.ai referrer |
+| Copilot | 4% | A copilot.microsoft.com referrer |
+
+`landingStep` gives them their own case: three in four land on the pages answers
+fetch most, the two guides and three products above, and the rest on another
+product or the home page. So "Answered from" and the AI visits' landing pages
+tell one story: the pages AI reads are the pages it sends shoppers to.
+
+AI visits are human sessions, so only the human backfill writes their history,
+and a project seeded before them would have none. So on every start the worker
+also backfills them, the way it backfills crawler requests: newest day first,
+one day per insert, carrying on before the earliest AI visit stored. Each day
+gets about 3% of the web sessions already stored for it, and the visits go only
+to users who already have a profile, so the backfill creates none. A project
+whose human backfill made AI visits has them from the window's first day, so
+there it does nothing.
+
+### Failures
+
+About 1.5% of crawler requests fail, so the crawler table's Errors column and
+the Problems tab have something to show:
+
+| Failure | Status | Who | Share |
+|---|---|---|---|
+| `/llms.txt`, which the store doesn't have | 404 | OpenAI's, Anthropic's and Perplexity's crawlers | 2% of their requests |
+| A retired product, `/products/squeaky-duck-classic`, still linked from old pages | 404 | Search engines, SEO tools, training and other crawlers | under 1% of their pages |
+| Rate limited | 429 | SEO tools | 1% |
+| The store overloaded during a training burst | 503 | The bursting crawler | 3% of its burst |
+
+No 400s.
+
+### JavaScript bot sessions
+
+GPTBot, ClaudeBot and PerplexityBot leave `botProfiles`. Googlebot and bingbot
+stay, since both render pages, and so do AhrefsBot, SemrushBot and the two
+scrapers. The bot page views left also get `$crawler_category` and
+`$crawler_company`, as ingest's bot tagging sets them when `crawler.Match` knows
+the user agent. Board 2's "Crawler visits, by bot" still works: it splits page
+views by `$bot_reason`, four and Others.
+
+### Growth
+
+Answers and the AI visit share grow about 8% a month until the demo project's
+create time, then hold. Every rebuild therefore shows the rise, and live traffic
+levels off. If the shop's own growth factor lands in `TrafficFactor`, answers
+take only the difference, or they would grow twice.
+
+### History
+
+Crawler requests have no users and no profiles, so they don't need the human
+backfill. On every start, once the human backfill step is done, the worker:
+
+1. Finds the earliest `crawler_request` in the project, or takes now when there
+   is none.
+2. Walks back from that day to the start of the six-month window, one UTC day per
+   insert. Each day's requests come from a random source seeded by the project
+   and the day, with event ids derived the same way, so a day made twice is the
+   same rows.
+3. Starts live traffic, which adds crawler requests from then on.
+
+Each day is one insert, so a run that dies part-way leaves whole days, and the
+next start carries on from the earliest of them. A restart never repeats a day
+or skips one.
+
+The human backfill's check counts every event but crawler requests, so their
+backfill can't make a human one look done or half-done. `pug seed` runs the same
+step last, after the profiles, so a failure there can't leave events without
+profiles.
+
+The live demo therefore gets six months of crawler history and AI visits at the
+next release, with no rebuild. The AI visit backfill runs after both, and needs
+the human backfill's profiles.
+
+### The story
+
+| Beat | Where it shows |
+|---|---|
+| AI answers grow about 8% a month, faster than the shop | The Answers tile and chart |
+| Answers follow the shoppers' day | The Answers chart, hour by hour |
+| Search engines and SEO tools crawl around the clock | The Search and SEO tiles |
+| Training crawlers come in bursts, each on its own cycle | The Training tile and chart |
+| The pages AI reads are the pages it sends shoppers to | Pages, Answered from; Visits from AI, Landing pages |
+| Some requests borrow Googlebot's and GPTBot's names | The impostor notes under the crawler table |
+| AI crawlers ask for an `/llms.txt` the store doesn't have; old links still reach a retired product | Errors column, Problems tab |
+| A training burst overloads the store | 503s in Problems on burst days |
+
+### Tests
+
+1. Every demo user agent matches its row through `crawler.Match`, and the list
+   covers all five purposes.
+2. A demo crawler request has the properties the handler's
+   `TestCrawlerRequestIsStored` expects of the same request, field for field, as
+   `applyAttribution`'s test mirrors the handler's, and ingest's session id.
+3. A crawler request fails only for the reasons in "Failures", and two weeks
+   hold all four, about 1.5% of requests.
+4. A backfill stopped part-way and run again ends with exactly the rows of one
+   that wasn't stopped, in memory and on ClickHouse. The AI visit backfill
+   writes each day once, gives a day of 2,000 web sessions about 60 visits, and
+   uses no user without a profile.
+5. Each AI source books to AI Assistants through `attribution.Derive`.
+6. No `botProfiles` user agent belongs to OpenAI, Anthropic or Perplexity.
+7. On a seeded project, the last 24 hours hold answers, search, training and seo
+   requests, a `failed` verdict, and AI Assistants sessions.
+
+### Open questions
+
+Both are built as written above; either is a small change.
+
+1. About 3,200 crawler requests a day, a tenth of the demo's events: is that the
+   right size?
+2. `/robots.txt` ranks near the top of Pages, as on a real site. Keep it, or send
+   content pages only?
 
 ## Rebuilding the demo in production
 
