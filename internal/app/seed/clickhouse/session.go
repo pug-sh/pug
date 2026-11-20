@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,7 +41,9 @@ type sessionState struct {
 	purchased  bool // whether this session completed a purchase
 }
 
-func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStart, end time.Time, mem *userMemory) []event {
+// buildSession builds one session; aiShare is the chance an organic web session
+// arrives from an AI product.
+func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStart, end time.Time, mem *userMemory, aiShare float64) []event {
 	if len(jd.steps) == 0 {
 		return nil
 	}
@@ -49,7 +52,7 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 		user: u, prof: prof, start: sessionStart, mem: mem,
 		page: "/", pageTitle: "Pug & Pals — By dogs, for dogs",
 	}
-	stableProps := buildSessionProps(u, prof, sessionStart)
+	stableProps := buildSessionProps(u, prof, sessionStart, aiShare)
 	sessionID := uuid.New().String()
 
 	occur := sessionStart
@@ -120,7 +123,7 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 }
 
 // buildSessionProps returns auto-props that stay constant within a session.
-func buildSessionProps(u *userProfile, prof deviceProfile, sessionStart time.Time) map[string]any {
+func buildSessionProps(u *userProfile, prof deviceProfile, sessionStart time.Time, aiShare float64) map[string]any {
 	props := map[string]any{
 		"$platform":   prof.platform,
 		"$os":         prof.os,
@@ -172,6 +175,12 @@ func buildSessionProps(u *userProfile, prof deviceProfile, sessionStart time.Tim
 				props["$utmContent"] = utm.content
 			}
 			props["$referrerCandidate"] = utm.referrer
+		} else if rand.Float64() < aiShare {
+			ref := aiReferrals[weightedIndex(aiReferralWeights)]
+			props["$referrerCandidate"] = ref.referrer
+			if ref.utmSource != "" {
+				props["$utmSource"] = ref.utmSource
+			}
 		} else {
 			props["$referrerCandidate"] = organicReferrers[rand.IntN(len(organicReferrers))]
 		}
@@ -235,7 +244,7 @@ func (st *sessionState) apply(stp step) map[string]any {
 		}
 
 	case "product_viewed":
-		p := st.pickProduct()
+		p := st.viewProduct(stp.arg)
 		return map[string]any{
 			"product_id": p.id, "product_name": p.name, "category": p.category,
 			"brand": p.brand, "sku": p.sku, "price": p.price, "currency": "USD",
@@ -442,6 +451,11 @@ func (st *sessionState) apply(stp step) map[string]any {
 
 	case "help_article_viewed":
 		a := helpArticles[rand.IntN(len(helpArticles))]
+		for _, h := range helpArticles {
+			if h.id == stp.arg {
+				a = h
+			}
+		}
 		if st.prof.platform == "web" {
 			st.page, st.pageTitle = "/help/"+a.id, a.title
 		}
@@ -566,10 +580,14 @@ func pageType(path string) string {
 
 // landingStep picks where a web session lands from its channel: ads land on
 // products and collections, email on collections, organic search on guides,
-// and some direct visits on search. The rest keep the home page.
+// AI products mostly on the pages their answers feature, and some direct visits
+// on search. The rest keep the home page.
 func landingStep(props map[string]any) step {
 	medium, _ := props["$utmMedium"].(string)
 	referrer, _ := props["$referrerCandidate"].(string)
+	if slices.ContainsFunc(aiReferrals, func(a aiReferral) bool { return a.referrer == referrer }) {
+		return aiLandingStep()
+	}
 
 	var product, collection, guide, search float64
 	switch {
@@ -597,6 +615,59 @@ func landingStep(props map[string]any) step {
 		return step{kind: "help_article_viewed"}
 	case r < product+collection+guide+search:
 		return step{kind: "search"}
+	default:
+		return step{"page_view", "home"}
+	}
+}
+
+// aiVisitShare of organic web sessions arrive from an AI product: about 3% of
+// all web sessions outside promos.
+const aiVisitShare = 0.04
+
+type aiReferral struct {
+	referrer  string
+	utmSource string
+	weight    int
+}
+
+var aiReferrals = []aiReferral{
+	{"https://chatgpt.com/", "chatgpt.com", 65}, // ChatGPT tags its links utm_source=chatgpt.com
+	{"https://www.perplexity.ai/", "", 15},
+	{"https://gemini.google.com/", "", 10},
+	{"https://claude.ai/", "", 6},
+	{"https://copilot.microsoft.com/", "", 4},
+}
+
+var aiReferralWeights = func() []int {
+	w := make([]int, len(aiReferrals))
+	for i, a := range aiReferrals {
+		w[i] = a.weight
+	}
+	return w
+}()
+
+// aiFeaturedPages are the pages AI answers fetch most and AI visitors land on.
+var aiFeaturedPages = []step{
+	{"help_article_viewed", "food-transition-guide"},
+	{"help_article_viewed", "harness-sizing"},
+	{"product_viewed", "no-pull-harness"},
+	{"product_viewed", "orthopedic-memory-foam-bed"},
+	{"product_viewed", "senior-turkey-and-sweet-potato-recipe"},
+}
+
+func stepPath(s step) string {
+	if s.kind == "help_article_viewed" {
+		return "/help/" + s.arg
+	}
+	return "/products/" + s.arg
+}
+
+func aiLandingStep() step {
+	switch r := rand.Float64(); {
+	case r < 0.75:
+		return aiFeaturedPages[rand.IntN(len(aiFeaturedPages))]
+	case r < 0.90:
+		return step{kind: "product_viewed"}
 	default:
 		return step{"page_view", "home"}
 	}
@@ -650,7 +721,18 @@ func coldStartMs(platform string, t time.Time) int {
 }
 
 func (st *sessionState) pickProduct() *product {
-	p := catalog[weightedIndex(catalogWeights)]
+	return st.showProduct(catalog[weightedIndex(catalogWeights)])
+}
+
+// viewProduct shows the product with slug, or a weighted pick when slug names none.
+func (st *sessionState) viewProduct(slug string) *product {
+	if p, ok := productBySlug[slug]; ok {
+		return st.showProduct(p)
+	}
+	return st.pickProduct()
+}
+
+func (st *sessionState) showProduct(p product) *product {
 	st.product = &p
 	if st.prof.platform == "web" {
 		st.page = "/products/" + p.slug

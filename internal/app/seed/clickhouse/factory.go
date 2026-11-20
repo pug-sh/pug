@@ -244,6 +244,13 @@ type sessionFactory struct {
 	memories map[string]*userMemory
 	tracker  *userSessionTracker
 	locs     map[string]*time.Location
+	// growthUntil is when AI visits stop growing; a zero one keeps them flat.
+	growthUntil time.Time
+}
+
+// aiShare is the share of organic web sessions an AI product sends at t.
+func (f *sessionFactory) aiShare(t time.Time) float64 {
+	return aiVisitShare * aiGrowth(t, f.growthUntil)
 }
 
 func newSessionFactory() *sessionFactory {
@@ -469,7 +476,7 @@ func (f *sessionFactory) session(ctx context.Context, start, end time.Time) []ev
 		}
 	}
 
-	sess := buildSession(u, prof, jd, sessionStart, end, f.memory(u))
+	sess := buildSession(u, prof, jd, sessionStart, end, f.memory(u), f.aiShare(sessionStart))
 	if len(sess) == 0 {
 		return sess
 	}
@@ -603,6 +610,12 @@ func (f *sessionFactory) botSession(anchor, end time.Time) []event {
 	if reason, ok := botTag(bp); ok {
 		props["$bot"] = true
 		props["$bot_reason"] = reason
+	}
+	if agent, ok := botCrawler(bp); ok {
+		props["$crawler_category"] = string(agent.Category)
+		if agent.Company != "" {
+			props["$crawler_company"] = agent.Company
+		}
 	}
 
 	occur := anchor

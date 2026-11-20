@@ -100,7 +100,7 @@ func TestPurchaseCarriesBoardProperties(t *testing.T) {
 }
 
 func TestBotProfilesTagLikeIngest(t *testing.T) {
-	want := []string{"Googlebot", "bingbot", "AhrefsBot", "SemrushBot", "GPTBot", "claudebot", "PerplexityBot", "asn:16509", "screen:800x600"}
+	want := []string{"Googlebot", "bingbot", "AhrefsBot", "SemrushBot", "asn:16509", "screen:800x600"}
 	if len(botProfiles) != len(want) {
 		t.Fatalf("%d bot profiles, want %d", len(botProfiles), len(want))
 	}

@@ -78,10 +78,12 @@ var (
 	catalogWeights []int
 	categories     []string
 	byCategory     map[string][]product
+	productBySlug  map[string]product
 )
 
 func init() {
 	byCategory = make(map[string][]product)
+	productBySlug = make(map[string]product)
 	for i, c := range catalogSeed {
 		slug := strings.ToLower(c.name)
 		slug = strings.NewReplacer(" ", "-", "&", "and", "--", "-").Replace(slug)
@@ -101,6 +103,7 @@ func init() {
 			categories = append(categories, p.category)
 		}
 		byCategory[p.category] = append(byCategory[p.category], p)
+		productBySlug[p.slug] = p
 	}
 }
 

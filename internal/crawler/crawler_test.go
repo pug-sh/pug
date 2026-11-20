@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	agents "github.com/monperrus/crawler-user-agents"
 	"google.golang.org/protobuf/proto"
@@ -221,6 +222,29 @@ func TestDistinctID(t *testing.T) {
 		if got := tt.agent.DistinctID(); got != tt.want {
 			t.Errorf("%s: DistinctID() = %q, want %q", tt.agent.Name, got, tt.want)
 		}
+	}
+}
+
+func TestSessionIDIsOnePerAgentPerDay(t *testing.T) {
+	occur := time.Date(2026, 11, 14, 9, 30, 0, 0, time.UTC)
+	base := SessionID("proj-1", "GPTBot", occur)
+	if base != "b586e989-2f88-537e-a6e5-e580fa3af00d" {
+		t.Errorf("SessionID = %q; stored crawler sessions would split", base)
+	}
+	if SessionID("proj-1", "GPTBot", occur.Add(14*time.Hour)) != base {
+		t.Error("two requests on one UTC day got two sessions")
+	}
+	for name, other := range map[string]string{
+		"next UTC day":  SessionID("proj-1", "GPTBot", occur.Add(15*time.Hour)),
+		"another agent": SessionID("proj-1", "ClaudeBot", occur),
+		"another site":  SessionID("proj-2", "GPTBot", occur),
+	} {
+		if other == base {
+			t.Errorf("%s shares the session", name)
+		}
+	}
+	if SessionID("proj-1", "GPTBot", occur.In(time.FixedZone("IST", 5*3600+1800))) != base {
+		t.Error("the session day is not taken in UTC")
 	}
 }
 

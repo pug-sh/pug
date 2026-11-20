@@ -50,10 +50,10 @@ func (g *LiveGenerator) LiveSession(now time.Time) []LiveEvent {
 	u, _, _ := g.f.pickActiveUser(now, now.Add(time.Minute))
 	prof := u.devices[rand.IntN(len(u.devices))]
 	jd := g.f.journeyFor(u, prof, now)
-	return toLiveEvents(buildSession(u, prof, jd, now, now.Add(time.Hour), g.f.memory(u)))
+	return toLiveEvents(buildSession(u, prof, jd, now, now.Add(time.Hour), g.f.memory(u), g.f.aiShare(now)))
 }
 
-// LiveBotSession builds one crawler session starting at now. Bots don't
+// LiveBotSession builds one bot session starting at now. Bots don't
 // sleep: the worker schedules these at a constant rate around the clock,
 // which also makes the bot share of traffic realistically rise at night.
 func (g *LiveGenerator) LiveBotSession(now time.Time) []LiveEvent {

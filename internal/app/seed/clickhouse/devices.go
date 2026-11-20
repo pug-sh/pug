@@ -1,6 +1,9 @@
 package seed
 
-import "github.com/pug-sh/pug/internal/botdetect"
+import (
+	"github.com/pug-sh/pug/internal/botdetect"
+	"github.com/pug-sh/pug/internal/crawler"
+)
 
 // ---------------------------------------------------------------------------
 // Device profiles
@@ -75,9 +78,6 @@ var botProfiles = []botProfile{
 	{"Bingbot", true, "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)", 8075, [2]int64{1366, 768}},
 	{"AhrefsBot", false, "Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)", 16276, [2]int64{1920, 1080}},
 	{"SemrushBot", false, "Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)", 24940, [2]int64{1920, 1080}},
-	{"GPTBot", true, "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)", 8075, [2]int64{1280, 720}},
-	{"ClaudeBot", true, "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)", 16509, [2]int64{1280, 720}},
-	{"PerplexityBot", false, "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)", 16509, [2]int64{1280, 720}},
 	{"", false, stealthUA, 16509, [2]int64{1920, 1080}}, // scraper on a cloud network
 	{"", false, stealthUA, 7922, [2]int64{800, 600}},    // headless Chrome's default screen, home network
 }
@@ -90,4 +90,13 @@ func botTag(bp botProfile) (string, bool) {
 		return reason, true
 	}
 	return botdetect.MatchScreen(bp.screen[0], bp.screen[1])
+}
+
+// botCrawler is the crawler ingest names from bp's user agent, which it does
+// only when the user agent is what tagged the bot.
+func botCrawler(bp botProfile) (crawler.Agent, bool) {
+	if _, ok := botdetect.MatchUserAgent(bp.ua); !ok {
+		return crawler.Agent{}, false
+	}
+	return crawler.Match(bp.ua)
 }

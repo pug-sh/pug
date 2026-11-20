@@ -72,11 +72,11 @@ func resetStores(ctx context.Context) error {
 
 // seedDemoData runs the same event-gated flow as the demo worker
 // (internal/app/workers/demo): ensure the demo account, backfill events, seed
-// Postgres profiles for exactly the users that produced events, then copy those
-// profiles into ClickHouse. When clearDemoRows is set (the NoReset path) it
-// first clears the demo events + profiles from ClickHouse and the demo profiles
-// from Postgres, so a re-seed starts clean instead of pairing fresh events with
-// stale profiles.
+// Postgres profiles for exactly the users that produced events, copy those
+// profiles into ClickHouse, then backfill crawler requests. When clearDemoRows
+// is set (the NoReset path) it first clears the demo events + profiles from
+// ClickHouse and the demo profiles from Postgres, so a re-seed starts clean
+// instead of pairing fresh events with stale profiles.
 func seedDemoData(ctx context.Context, count int64, batchSize int, clearDemoRows bool) error {
 	var pgCfg pgdeps.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
@@ -133,7 +133,7 @@ func seedDemoData(ctx context.Context, count int64, batchSize int, clearDemoRows
 		}
 	}
 
-	indices, err := chseed.BackfillEvents(ctx, ch, project.ID, count, batchSize)
+	indices, err := chseed.BackfillEvents(ctx, ch, project.ID, project.CreateTime.Time, count, batchSize)
 	if err != nil {
 		return fmt.Errorf("backfill events: %w", err)
 	}
@@ -142,6 +142,9 @@ func seedDemoData(ctx context.Context, count int64, batchSize int, clearDemoRows
 	}
 	if err := chseed.CopyProfilesToClickHouse(ctx, pg, ch, project.ID); err != nil {
 		return fmt.Errorf("copy profiles to clickhouse: %w", err)
+	}
+	if err := chseed.BackfillCrawlerRequests(ctx, ch, project.ID, project.CreateTime.Time); err != nil {
+		return err
 	}
 
 	// Saved showcase dashboards are static config (they reference event kinds /

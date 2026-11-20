@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -56,6 +58,17 @@ type Agent struct {
 // DistinctID is the distinct_id a crawler's requests are stored under.
 func (a Agent) DistinctID() string {
 	return DistinctIDPrefix + strings.ToLower(a.Name)
+}
+
+// sessionNamespace scopes the UUIDv5 session ids. Changing it splits each
+// crawler's session in two on the day the change ships.
+var sessionNamespace = uuid.MustParse("68ce851b-d9d1-4b37-9188-61613959f606")
+
+// SessionID is the session a crawler request is stored under: one per agent
+// per UTC day in a project.
+func SessionID(projectID, agent string, occur time.Time) string {
+	day := occur.UTC().Format(time.DateOnly)
+	return uuid.NewSHA1(sessionNamespace, []byte(projectID+"|"+agent+"|"+day)).String()
 }
 
 type row struct {
