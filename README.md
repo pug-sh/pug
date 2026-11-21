@@ -8,7 +8,20 @@ Pug is an open-source product analytics platform. Capture events, identify the
 people behind them, and explore behavior through funnels, retention, trends,
 segmentation, and user-flow analysis, all surfaced on customizable dashboards.
 
-Built in Go on PostgreSQL, ClickHouse, and NATS.
+Built in Go on PostgreSQL, ClickHouse, and NATS, with SDKs for web, mobile, and
+server:
+
+<table>
+  <tr>
+    <td align="center" width="72"><a href="https://github.com/pug-sh/sdk-browser"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/sdks/web-dark.svg" /><img src="docs/assets/sdks/web-light.svg" width="32" height="32" alt="" /></picture><br />Web</a></td>
+    <td align="center" width="72"><a href="https://github.com/pug-sh/sdk-ios"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/sdks/ios-dark.svg" /><img src="docs/assets/sdks/ios-light.svg" width="32" height="32" alt="" /></picture><br />iOS</a></td>
+    <td align="center" width="72"><a href="https://github.com/pug-sh/sdk-android"><img src="docs/assets/sdks/android.svg" width="32" height="32" alt="" /><br />Android</a></td>
+    <td align="center" width="72"><a href="https://github.com/pug-sh/sdk-flutter"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/sdks/flutter-dark.svg" /><img src="docs/assets/sdks/flutter-light.svg" width="32" height="32" alt="" /></picture><br />Flutter</a></td>
+    <td align="center" width="72"><a href="https://github.com/pug-sh/sdk-node"><img src="docs/assets/sdks/nodejs.svg" width="32" height="32" alt="" /><br />Node.js</a></td>
+    <td align="center" width="72"><a href="https://github.com/pug-sh/sdk-go"><img src="docs/assets/sdks/go.svg" width="32" height="32" alt="" /><br />Go</a></td>
+    <td align="center" width="72"><a href="https://github.com/pug-sh/sdk-ruby"><img src="docs/assets/sdks/ruby.svg" width="32" height="32" alt="" /><br />Ruby</a></td>
+  </tr>
+</table>
 
 ## Features
 
@@ -93,6 +106,22 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
   </picture>
   <br /><sub><b>Profiles</b>: the person behind the events, with traits, sessions, and activity.</sub>
 </p>
+
+## SDKs
+
+Send events from your website, apps, and servers. Setup for each is in the
+[SDK docs](https://docs.pug.sh/sdks/).
+
+| SDK | Package |
+|---|---|
+| [Web](https://github.com/pug-sh/sdk-browser): any website, React, Next.js, Vue | [`@pug-sh/browser`](https://www.npmjs.com/package/@pug-sh/browser) on npm |
+| [iOS](https://github.com/pug-sh/sdk-ios): iOS, iPadOS, Mac Catalyst | Swift Package Manager |
+| [Android](https://github.com/pug-sh/sdk-android): Kotlin, callable from Java | [`sh.pug:android`](https://central.sonatype.com/artifact/sh.pug/android) on Maven Central |
+| [Flutter](https://github.com/pug-sh/sdk-flutter) | [`pug_flutter`](https://pub.dev/packages/pug_flutter) on pub.dev |
+| [Node.js](https://github.com/pug-sh/sdk-node) | [`@pug-sh/node`](https://www.npmjs.com/package/@pug-sh/node) on npm |
+| [Go](https://github.com/pug-sh/sdk-go) | [`github.com/pug-sh/sdk-go`](https://pkg.go.dev/github.com/pug-sh/sdk-go) |
+| [Ruby](https://github.com/pug-sh/sdk-ruby): Ruby and Rails | [`pug-sh`](https://rubygems.org/gems/pug-sh) on RubyGems |
+| [AI crawlers](https://github.com/pug-sh/sdk-crawlers): crawler visits, reported from your server | [`@pug-sh/crawlers`](https://www.npmjs.com/package/@pug-sh/crawlers) on npm |
 
 ## MCP server
 
