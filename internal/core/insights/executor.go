@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -670,13 +671,20 @@ func applyTrendsTopN(
 			entriesByKey[othersKey] = othersEntry
 		}
 
+		// A real "$others" value is the bucket itself, as in the rollup SQL: don't merge it
+		// into itself, and list it once when it ranks inside the top N.
 		for _, rk := range restKeys {
+			if rk == othersKey {
+				continue
+			}
 			re := entriesByKey[rk]
 			othersEntry.total += re.total
 			mergeTrendPoints(othersEntry, re.points)
 			delete(entriesByKey, rk)
 		}
-		newKeys = append(newKeys, othersKey)
+		if !slices.Contains(topKeys, othersKey) {
+			newKeys = append(newKeys, othersKey)
+		}
 	}
 
 	return newKeys, entriesByKey
@@ -994,7 +1002,12 @@ func applyRetentionTopN(rows []RetentionRow, properties []string, limit int) []R
 		}
 	}
 
-	for ck, agg := range othersCells {
+	// Sorted: the series keeps row order, and a cohort's points are read by position.
+	cells := slices.SortedFunc(maps.Keys(othersCells), func(a, b cellKey) int {
+		return cmp.Or(a.cohortTime.Compare(b.cohortTime), a.time.Compare(b.time))
+	})
+	for _, ck := range cells {
+		agg := othersCells[ck]
 		pct := 0.0
 		if agg.cohortSize > 0 {
 			pct = (agg.retainedUsers * 100.0) / agg.cohortSize

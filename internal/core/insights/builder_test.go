@@ -2648,6 +2648,45 @@ func TestGroupSeries_MultiBreakdown(t *testing.T) {
 	}
 }
 
+// TestGroupSeries_OthersValueJoinsBucket pins a real "$others" breakdown value to the merged
+// bucket, whether it ranks below the top N or inside it.
+func TestGroupSeries_OthersValueJoinsBucket(t *testing.T) {
+	row := func(plan string, v float64) insights.TrendRow {
+		return insights.TrendRow{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{plan}, Value: v}
+	}
+	type bucket struct {
+		plan  string
+		value float64
+	}
+	for _, tc := range []struct {
+		name string
+		rows []insights.TrendRow
+		want []bucket
+	}{
+		{"ranked below the top N", []insights.TrendRow{row("a", 10), row("b", 9), row("$others", 8)}, []bucket{{"a", 10}, {"$others", 17}}},
+		{"ranked inside the top N", []insights.TrendRow{row("$others", 10), row("a", 9), row("b", 8)}, []bucket{{"$others", 27}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			series, err := insights.GroupSeries(t.Context(), tc.rows, []string{"plan"}, 1)
+			if err != nil {
+				t.Fatalf("GroupSeries: %v", err)
+			}
+			if len(series) != len(tc.want) {
+				t.Fatalf("expected %d series, got %d", len(tc.want), len(series))
+			}
+			for i, w := range tc.want {
+				s := series[i]
+				if len(s.Points) != 1 {
+					t.Fatalf("series %d: expected 1 point, got %d", i, len(s.Points))
+				}
+				if got := s.Points[0].GetValue(); s.Breakdown["plan"] != w.plan || got != w.value {
+					t.Errorf("series %d: got %s=%v, want %s=%v", i, s.Breakdown["plan"], got, w.plan, w.value)
+				}
+			}
+		})
+	}
+}
+
 // TestGroupRetentionSeries_MultiCohortWithBreakdown verifies correct grouping when
 // multiple cohort times exist per breakdown series.
 func TestGroupRetentionSeries_MultiCohortWithBreakdown(t *testing.T) {
@@ -2695,6 +2734,54 @@ func TestGroupRetentionSeries_MultiCohortWithBreakdown(t *testing.T) {
 	}
 	if len(gb.Cohorts) != 2 {
 		t.Fatalf("expected 2 cohorts in GB series, got %d", len(gb.Cohorts))
+	}
+}
+
+// TestGroupRetentionSeries_OthersInTimeOrder pins $others' cohorts and points in time
+// order: the merge collects them in a map, and the app reads a cohort's points by position.
+func TestGroupRetentionSeries_OthersInTimeOrder(t *testing.T) {
+	day := func(d int) time.Time { return time.Date(2024, 1, d, 0, 0, 0, 0, time.UTC) }
+	var rows []insights.RetentionRow
+	for _, country := range []string{"US", "GB", "IN"} {
+		for c := 1; c <= 5; c++ {
+			for p := c; p <= 5; p++ {
+				// IN keeps this cell, so a first-seen order would put it last.
+				if country == "US" && c == 2 && p == 2 {
+					continue
+				}
+				rows = append(rows, insights.RetentionRow{
+					CohortTime: day(c), Time: day(p), Value: 50, CohortSize: 10, Breakdowns: []string{country},
+				})
+			}
+		}
+	}
+
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"}, 1)
+	if err != nil {
+		t.Fatalf("GroupRetentionSeries: %v", err)
+	}
+	if len(series) != 2 {
+		t.Fatalf("expected 2 series, got %d", len(series))
+	}
+	others := series[1]
+	if others.Breakdown["$country"] != "$others" {
+		t.Fatalf("expected $others last, got %v", others.Breakdown)
+	}
+	if len(others.Cohorts) != 5 {
+		t.Fatalf("expected 5 $others cohorts, got %d", len(others.Cohorts))
+	}
+	for i, c := range others.Cohorts {
+		if want := day(i + 1).Format(time.RFC3339); c.GetCohort() != want {
+			t.Errorf("cohort %d: got %s, want %s", i, c.GetCohort(), want)
+		}
+		if len(c.Points) != 5-i {
+			t.Fatalf("cohort %s: expected %d points, got %d", c.GetCohort(), 5-i, len(c.Points))
+		}
+		for j, p := range c.Points {
+			if want := day(i + 1 + j); !p.GetTime().AsTime().Equal(want) {
+				t.Errorf("cohort %s point %d: got %s, want %s", c.GetCohort(), j, p.GetTime().AsTime(), want)
+			}
+		}
 	}
 }
 
