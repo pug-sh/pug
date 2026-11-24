@@ -9,8 +9,8 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // Navigation events.
 //
 // These messages define typed properties for common navigation event kinds.
-// They do not change the Event wire format — SDKs serialize fields into
-// Event.custom_properties (map<string, string>) before sending.
+// They do not change the Event wire format: SDKs send each field as an
+// Event.custom_properties entry, as options.proto describes.
 
 // Web page navigation. Use screen_view for native mobile screens.
 //
