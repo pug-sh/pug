@@ -10,6 +10,7 @@ import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -28,9 +29,11 @@ const (
 // oneof.required option below.
 //
 // Lists, objects, and other compound types are intentionally not included
-// in this iteration — only the five primitive types supported by the
-// ClickHouse Variant storage target. New variants can be added later as
-// additive oneof entries (wire-compatible).
+// in this iteration: only primitive types the ClickHouse Variant storage
+// target can hold. A server older than a oneof case sees no case set and
+// drops the event, and a server before v0.0.55 rejects the whole batch. An
+// events worker older than the case, behind a newer server, sends the whole
+// batch to the DLQ. So SDKs must not send a case their deployment predates.
 type PropertyValue struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Value:
@@ -40,6 +43,7 @@ type PropertyValue struct {
 	//	*PropertyValue_DoubleValue
 	//	*PropertyValue_BoolValue
 	//	*PropertyValue_TimestampValue
+	//	*PropertyValue_DurationValue
 	Value         isPropertyValue_Value `protobuf_oneof:"value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -127,6 +131,15 @@ func (x *PropertyValue) GetTimestampValue() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *PropertyValue) GetDurationValue() *durationpb.Duration {
+	if x != nil {
+		if x, ok := x.Value.(*PropertyValue_DurationValue); ok {
+			return x.DurationValue
+		}
+	}
+	return nil
+}
+
 type isPropertyValue_Value interface {
 	isPropertyValue_Value()
 }
@@ -167,6 +180,12 @@ type PropertyValue_TimestampValue struct {
 	TimestampValue *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=timestamp_value,json=timestampValue,oneof"`
 }
 
+type PropertyValue_DurationValue struct {
+	// Stored as seconds in the Float64 Variant slot, like double_value, so
+	// SUM, AVG and numeric filters work on it.
+	DurationValue *durationpb.Duration `protobuf:"bytes,6,opt,name=duration_value,json=durationValue,oneof"`
+}
+
 func (*PropertyValue_StringValue) isPropertyValue_Value() {}
 
 func (*PropertyValue_IntValue) isPropertyValue_Value() {}
@@ -177,18 +196,21 @@ func (*PropertyValue_BoolValue) isPropertyValue_Value() {}
 
 func (*PropertyValue_TimestampValue) isPropertyValue_Value() {}
 
+func (*PropertyValue_DurationValue) isPropertyValue_Value() {}
+
 var File_common_v1_property_value_proto protoreflect.FileDescriptor
 
 const file_common_v1_property_value_proto_rawDesc = "" +
 	"\n" +
-	"\x1ecommon/v1/property_value.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x83\x02\n" +
+	"\x1ecommon/v1/property_value.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc7\x02\n" +
 	"\rPropertyValue\x12-\n" +
 	"\fstring_value\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bH\x00R\vstringValue\x12\x1d\n" +
 	"\tint_value\x18\x02 \x01(\x03H\x00R\bintValue\x12,\n" +
 	"\fdouble_value\x18\x03 \x01(\x01B\a\xbaH\x04\x12\x02@\x01H\x00R\vdoubleValue\x12\x1f\n" +
 	"\n" +
 	"bool_value\x18\x04 \x01(\bH\x00R\tboolValue\x12E\n" +
-	"\x0ftimestamp_value\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x0etimestampValueB\x0e\n" +
+	"\x0ftimestamp_value\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x0etimestampValue\x12B\n" +
+	"\x0eduration_value\x18\x06 \x01(\v2\x19.google.protobuf.DurationH\x00R\rdurationValueB\x0e\n" +
 	"\x05value\x12\x05\xbaH\x02\b\x01B=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
@@ -207,14 +229,16 @@ var file_common_v1_property_value_proto_msgTypes = make([]protoimpl.MessageInfo,
 var file_common_v1_property_value_proto_goTypes = []any{
 	(*PropertyValue)(nil),         // 0: common.v1.PropertyValue
 	(*timestamppb.Timestamp)(nil), // 1: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 2: google.protobuf.Duration
 }
 var file_common_v1_property_value_proto_depIdxs = []int32{
 	1, // 0: common.v1.PropertyValue.timestamp_value:type_name -> google.protobuf.Timestamp
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 1: common.v1.PropertyValue.duration_value:type_name -> google.protobuf.Duration
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_common_v1_property_value_proto_init() }
@@ -228,6 +252,7 @@ func file_common_v1_property_value_proto_init() {
 		(*PropertyValue_DoubleValue)(nil),
 		(*PropertyValue_BoolValue)(nil),
 		(*PropertyValue_TimestampValue)(nil),
+		(*PropertyValue_DurationValue)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

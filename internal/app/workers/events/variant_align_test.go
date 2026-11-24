@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -25,6 +26,7 @@ var expectedVariantTypes = map[string]string{
 	"double_value":    "Float64",
 	"bool_value":      "Bool",
 	"timestamp_value": "DateTime64(3)",
+	"duration_value":  "Float64",
 }
 
 // samplePropertyValues returns one minimal PropertyValue per oneof case,
@@ -37,6 +39,7 @@ func samplePropertyValues() map[string]*commonv1.PropertyValue {
 		"double_value":    {Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: 1.5}},
 		"bool_value":      {Value: &commonv1.PropertyValue_BoolValue{BoolValue: true}},
 		"timestamp_value": {Value: &commonv1.PropertyValue_TimestampValue{TimestampValue: timestamppb.New(time.Unix(0, 0).UTC())}},
+		"duration_value":  {Value: &commonv1.PropertyValue_DurationValue{DurationValue: durationpb.New(time.Second)}},
 	}
 }
 
@@ -168,4 +171,17 @@ func TestPropertyValueMapToVariantMap(t *testing.T) {
 			t.Error("expected empty (no oneof set) key to be dropped")
 		}
 	})
+}
+
+func TestPropertyValueToVariant_DurationAsSeconds(t *testing.T) {
+	for _, d := range []time.Duration{1500 * time.Millisecond, -1500 * time.Millisecond} {
+		pv := &commonv1.PropertyValue{Value: &commonv1.PropertyValue_DurationValue{DurationValue: durationpb.New(d)}}
+		v, err := propertyValueToVariant(pv)
+		if err != nil {
+			t.Fatalf("%v: %v", d, err)
+		}
+		if got, want := v.Any(), d.Seconds(); got != want {
+			t.Errorf("%v: got %v, want %v", d, got, want)
+		}
+	}
 }

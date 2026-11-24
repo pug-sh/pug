@@ -24,12 +24,14 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 //   bool                      -> bool_value
 //   int32 / int64             -> int_value
 //   double                    -> double_value
-//   google.protobuf.Duration  -> double_value, in seconds (1.5)
+//   google.protobuf.Duration  -> duration_value
 //   google.protobuf.Timestamp -> timestamp_value
 //
-// All SDKs MUST use this mapping. The server keeps each value's type as
-// sent, so a Duration sent as text like "1.5s" could not be summed,
-// averaged or compared as a number.
+// All SDKs MUST use this mapping, and so must require a server and events
+// worker that know duration_value: an older one loses the event or its
+// whole batch (see common.v1.PropertyValue). The server stores a
+// duration_value as seconds, so it can be summed, averaged and compared as
+// a number; a Duration sent as text like "1.5s" stays text and cannot.
 //
 // ──────────────────────────────────────────────────────────────────────────
 // SDK callers can always attach extra custom properties.
