@@ -59,7 +59,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 
 	type stepAcc struct {
 		count int64
-		total time.Duration
+		total float64         // nanoseconds: an int64 time.Duration sum wraps past ~292 years across converters
 		times []time.Duration // per-user delta-from-previous-step durations; appended only when s>0 and the user converted to step s.
 	}
 
@@ -138,7 +138,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 					telemetry.RecordError(ctx, err)
 					return nil, err
 				}
-				accs[s].total += delta
+				accs[s].total += float64(delta)
 				accs[s].times = append(accs[s].times, delta)
 			}
 		}
@@ -174,7 +174,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 			if i > 0 {
 				timing := newStepTiming()
 				if accs[i].count > 0 {
-					timing.Avg = accs[i].total / time.Duration(accs[i].count)
+					timing.Avg = time.Duration(accs[i].total / float64(accs[i].count))
 				}
 				if len(accs[i].times) > 0 {
 					slices.Sort(accs[i].times)

@@ -416,7 +416,7 @@ func (st *sessionState) apply(stp step) map[string]any {
 		return map[string]any{"video_id": st.videoID()}
 
 	case "video_play", "video_pause":
-		return map[string]any{"video_id": st.videoID(), "position": fmt.Sprintf("%ds", rand.IntN(90))}
+		return map[string]any{"video_id": st.videoID(), "position": float64(rand.IntN(90))}
 
 	case "notification_received", "notification_clicked", "notification_dismissed":
 		campaign := stp.arg

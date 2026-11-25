@@ -51,6 +51,9 @@ func propertyValueToVariant(pv *commonv1.PropertyValue) (chcol.Variant, error) {
 		return chcol.NewVariantWithType(v.BoolValue, "Bool"), nil
 	case *commonv1.PropertyValue_TimestampValue:
 		return chcol.NewVariantWithType(v.TimestampValue.AsTime(), "DateTime64(3)"), nil
+	case *commonv1.PropertyValue_DurationValue:
+		d := v.DurationValue
+		return chcol.NewVariantWithType(float64(d.GetSeconds())+float64(d.GetNanos())/1e9, "Float64"), nil
 	default:
 		return chcol.Variant{}, fmt.Errorf("propertyValueToVariant: unsupported PropertyValue variant %T", v)
 	}

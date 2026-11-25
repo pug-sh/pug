@@ -456,6 +456,23 @@ func TestComputeFunnelTiming_MedianOddCount(t *testing.T) {
 	}
 }
 
+func TestComputeFunnelTiming_AvgSumPastInt64(t *testing.T) {
+	t0 := time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	users := []insights.FunnelUserEvents{
+		{UserKey: "u1", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}},
+		{UserKey: "u2", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}},
+		{UserKey: "u3", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}},
+	}
+	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rows[1].Timing.Avg, t1.Sub(t0); got != want {
+		t.Errorf("avg: got %v, want %v", got, want)
+	}
+}
+
 func TestComputeFunnelTiming_MedianEvenCount(t *testing.T) {
 	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
 	// 4 users with step-1 conversion times: 60s, 120s, 180s, 240s → median = (120+180)/2 = 150

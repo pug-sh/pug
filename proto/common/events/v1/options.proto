@@ -16,33 +16,33 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // ──────────────────────────────────────────────────────────────────────────
 // Wire format contract.
 //
-// Well-known event messages do NOT change the Event wire format. SDKs
-// serialize each typed field into a string entry in
-// Event.custom_properties (map<string, string>). The canonical string
-// encoding per type is:
+// Well-known event messages do NOT change the Event wire format. SDKs send
+// each set field as an Event.custom_properties entry, using this
+// common.v1.PropertyValue case for its type:
 //
-//   string                  -> the string itself
-//   bool                    -> "true" or "false"
-//   int32 / int64           -> decimal integer, no thousands separator ("1234")
-//   double                  -> shortest round-trip decimal ("1.5", "99.99",
-//                              never "1.500000" or scientific notation
-//                              unless the value cannot be represented otherwise)
-//   google.protobuf.Duration-> seconds with optional fractional part and a
-//                              trailing "s" ("0s", "1.5s", "3600s")
-//   google.protobuf.Timestamp-> RFC 3339 in UTC ("2026-05-17T04:30:00Z")
+//   string                    -> string_value
+//   bool                      -> bool_value
+//   int32 / int64             -> int_value
+//   double                    -> double_value
+//   google.protobuf.Duration  -> duration_value
+//   google.protobuf.Timestamp -> timestamp_value
 //
-// All SDKs MUST follow these conventions so that aggregations on
-// custom_properties match across languages. The server does not normalize
-// these strings on ingest.
+// All SDKs MUST use this mapping, and so must require a server and events
+// worker that know duration_value: an older one loses the event or its
+// whole batch (see common.v1.PropertyValue). The server stores a
+// duration_value as seconds, so it can be summed, averaged and compared as
+// a number; a Duration sent as text like "1.5s" stays text and cannot.
 //
 // ──────────────────────────────────────────────────────────────────────────
 // SDK callers can always attach extra custom properties.
 //
 // A well-known message describes the curated set of typed fields for a
 // kind; it does not restrict the wire format. SDKs SHOULD expose an API
-// that lets the caller attach extra map<string, string> entries alongside
-// the typed ones — e.g. track("page_view", PageViewProperties{...}, {extra}).
-// The server never rejects an event for carrying additional keys.
+// that lets the caller attach extra custom_properties entries alongside
+// the typed ones, e.g. track("page_view", PageViewProperties{...}, {extra}).
+// The server never rejects an event for carrying additional keys, except
+// one starting with '$', which is reserved for auto-properties: the event
+// is dropped as invalid.
 //
 // ──────────────────────────────────────────────────────────────────────────
 // Naming conventions for new well-known events.
