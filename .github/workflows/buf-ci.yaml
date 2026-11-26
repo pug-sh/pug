@@ -29,3 +29,28 @@ jobs:
           # change detection + BSR push still run.
           format: false
           token: ${{ secrets.BUF_TOKEN }}
+
+  # Starts Leo's proto sync (pug-sh/leo) once the BSR has pug's new protos. It also turns Leo's
+  # scheduled workflows back on, since GitHub turns off a public repo's schedules after 60 days
+  # without activity. The REST call, unlike gh workflow enable, succeeds when one is already on.
+  leo:
+    needs: buf
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: token
+        with:
+          client-id: ${{ vars.LEO_CLIENT_ID }}
+          private-key: ${{ secrets.LEO_PRIVATE_KEY }}
+          owner: pug-sh
+          repositories: leo
+          permission-actions: write
+
+      - env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh api --method PUT repos/pug-sh/leo/actions/workflows/inbox.yml/enable
+          gh api --method PUT repos/pug-sh/leo/actions/workflows/protos.yml/enable
+          gh workflow run protos.yml --repo pug-sh/leo
