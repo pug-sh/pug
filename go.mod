@@ -40,7 +40,7 @@ require (
 	github.com/rs/xid v1.6.0
 	github.com/sethvargo/go-envconfig v1.4.3
 	github.com/spf13/cobra v1.10.2
-	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1
+	github.com/standard-webhooks/standard-webhooks/libraries v1.3.0
 	github.com/testcontainers/testcontainers-go v0.45.0
 	github.com/testcontainers/testcontainers-go/modules/clickhouse v0.45.0
 	github.com/testcontainers/testcontainers-go/modules/nats v0.45.0
